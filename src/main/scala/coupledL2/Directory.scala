@@ -50,7 +50,7 @@ class DirResult(implicit p: Parameters) extends L2Bundle {
 
 class MetaWrite(implicit p: Parameters) extends L2Bundle {
   val set = UInt(setBits.W)
-  val way = UInt(wayBits.W)
+  val wayOH = UInt(cacheParams.ways.W)
   val wmeta = new MetaEntry
 }
 
@@ -63,10 +63,10 @@ class TagWrite(implicit p: Parameters) extends L2Bundle {
 class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
 
   val io = IO(new Bundle() {
-    val read = Flipped(DecoupledIO(new DirRead))
-    val resp = DecoupledIO(new DirResult)
-    val metaWReq = Flipped(DecoupledIO(new MetaWrite))
-    val tagWReq = Flipped(DecoupledIO(new TagWrite))
+    val read = Flipped(ValidIO(new DirRead))
+    val resp = ValidIO(new DirResult)
+    val metaWReq = Flipped(ValidIO(new MetaWrite))
+    val tagWReq = Flipped(ValidIO(new TagWrite))
   })
 
   def invalid_way_sel(metaVec: Seq[MetaEntry], repl: UInt) = {
@@ -78,13 +78,8 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
 
   val sets = cacheParams.sets
   val ways = cacheParams.ways
-  val tag_wen = io.metaWReq.valid
-  val dir_wen = io.tagWReq.valid
-
-  val metaInit = Wire(new MetaEntry())
-  val resetFinish = RegInit(false.B)
-  val resetIdx = RegInit((sets - 1).U)
-  val cycleCnt = Counter(true.B, 2)
+  val tag_wen = io.tagWReq.valid
+  val dir_wen = io.metaWReq.valid
 
   val tagArray = Module(new SRAMTemplate(UInt(tagBits.W), sets, ways, singlePort = true))
   val metaArray = Module(new SRAMTemplate(new MetaEntry, sets, ways, singlePort = true))
@@ -101,7 +96,7 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   // Tag R/W
   tagRead := tagArray.io.r(io.read.fire, io.read.bits.set).resp.data
   tagArray.io.w(
-    io.tagWReq.fire,
+    tag_wen,
     io.tagWReq.bits.wtag,
     io.tagWReq.bits.set,
     UIntToOH(io.tagWReq.bits.way)
@@ -110,10 +105,10 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   // Meta R/W
   metaRead := metaArray.io.r(io.read.fire, io.read.bits.set).resp.data
   metaArray.io.w(
-    !resetFinish || dir_wen,
-    Mux(resetFinish, io.metaWReq.bits.wmeta, metaInit),
-    Mux(resetFinish, io.metaWReq.bits.set, resetIdx),
-    Mux(resetFinish, UIntToOH(io.metaWReq.bits.way), Fill(ways, true.B))
+    dir_wen,
+    io.metaWReq.bits.wmeta,
+    io.metaWReq.bits.set,
+    io.metaWReq.bits.wayOH
   )
 
   // Generate response signals
@@ -150,16 +145,8 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   io.resp.bits.tag   := tag_s2
   io.resp.bits.error := false.B  // depends on ECC
 
-  // Manual initialize meta before reading
-  // TODO: move initialization logic to requestArb
-  metaInit := DontCare
-  metaInit.state := MetaData.INVALID
-  when(resetIdx === 0.U && !cycleCnt._1(0)) {
-    resetFinish := true.B
-  }
-  when(!resetFinish && !cycleCnt._1(0)) {
-    resetIdx := resetIdx - 1.U
-  }
-  io.read.ready := !tag_wen && !dir_wen && resetFinish
+  dontTouch(io)
+  dontTouch(metaArray.io)
+  dontTouch(tagArray.io)
 
 }

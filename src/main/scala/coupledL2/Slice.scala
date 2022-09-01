@@ -36,6 +36,15 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val directory = Module(new Directory())
   val dataStorage = Module(new DataStorage())
 
-  directory.io <> DontCare
+  reqArb.io.dirRead_s1 <> directory.io.read
+  reqArb.io.metaWrite_s1 <> directory.io.metaWReq
+  reqArb.io.taskToPipe_s2 <> mainPipe.io.taskFromArb_s2
+  directory.io.resp <> mainPipe.io.dirResp_s3
 
+  val inBuf = cacheParams.innerBuf
+  reqArb.io.sinkA <> inBuf.a(io.in.a)
+  reqArb.io.sinkC <> inBuf.c(io.in.c)
+
+  directory.io.tagWReq <> DontCare
+  dataStorage.io <> DontCare
 }

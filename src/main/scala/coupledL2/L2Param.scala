@@ -52,6 +52,15 @@ case class L2Param (
   // Manager
   reqKey: Seq[BundleKeyBase] = Nil,
   respField: Seq[BundleFieldBase] = Nil,
+
+  innerBuf: TLBufferParams = TLBufferParams(),
+  outerBuf: TLBufferParams = TLBufferParams(
+    a = BufferParams.default,
+    b = BufferParams.default,
+    c = BufferParams.default,
+    d = BufferParams.default,
+    e = BufferParams.default
+  )
 ) {
 }
 

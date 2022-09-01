@@ -31,10 +31,12 @@ trait HasCoupledL2Parameters {
   val cacheParams = p(L2ParamKey)
 
   val blockBytes = cacheParams.blockBytes
+  val beatBytes = cacheParams.channelBytes.d.get
 
   val wayBits = log2Ceil(cacheParams.ways)
   val setBits = log2Ceil(cacheParams.sets)
   val offsetBits = log2Ceil(blockBytes)
+  val beatBits = offsetBits - log2Ceil(beatBytes)
   val stateBits = MetaData.stateBits
 
   val mshrsAll = 16

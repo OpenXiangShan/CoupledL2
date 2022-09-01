@@ -22,7 +22,10 @@ import chisel3.util._
 import coupledL2.utils._
 import chipsalliance.rocketchip.config.Parameters
 
-class MainPipe(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
+class MainPipe(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
+    val dirResp_s3 = Flipped(ValidIO(new DirResult))
+    val taskFromArb_s2 = Input(new TaskBundle())
   })
+
 }
