@@ -12,6 +12,9 @@ test-top-l2:
 clean:
 	rm -rf ./build
 
+bsp:
+	mill -i mill.bsp.BSP/install
+
 reformat:
 	mill -i __.reformat
 

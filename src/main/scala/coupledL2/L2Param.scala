@@ -53,7 +53,6 @@ case class L2Param (
   reqKey: Seq[BundleKeyBase] = Nil,
   respField: Seq[BundleFieldBase] = Nil,
 ) {
-
 }
 
 case object EdgeInKey extends Field[TLEdgeIn]

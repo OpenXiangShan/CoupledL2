@@ -19,12 +19,12 @@
 
 package coupledL2
 
-import chipsalliance.rocketchip.config.Parameters
 import chisel3._
 import chisel3.util._
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util._
+import chipsalliance.rocketchip.config.Parameters
 
 trait HasCoupledL2Parameters {
   val p: Parameters
@@ -35,8 +35,10 @@ trait HasCoupledL2Parameters {
   val wayBits = log2Ceil(cacheParams.ways)
   val setBits = log2Ceil(cacheParams.sets)
   val offsetBits = log2Ceil(blockBytes)
+  val stateBits = MetaData.stateBits
 
   val mshrsAll = 16
+  val mshrBits = log2Up(mshrsAll)
 
   lazy val edgeIn = p(EdgeInKey)
   lazy val edgeOut = p(EdgeOutKey)
@@ -44,6 +46,14 @@ trait HasCoupledL2Parameters {
   lazy val clientBits = edgeIn.client.clients.count(_.supports.probe)
   lazy val sourceIdBits = edgeIn.bundle.sourceBits
   lazy val msgSizeBits = edgeIn.bundle.sizeBits
+
+  // width params with bank idx (used in prefetcher / ctrl unit)
+  lazy val fullAddressBits = edgeOut.bundle.addressBits
+  lazy val fullTagBits = fullAddressBits - setBits - offsetBits
+  // width params without bank idx (used in slice)
+  // TODO: consider bankbits
+  lazy val addressBits = fullAddressBits
+  lazy val tagBits = fullTagBits
 
   lazy val outerSinkBits = edgeOut.bundle.sinkBits
 
@@ -142,6 +152,23 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
           println(s"\t${i} <= ${c.name}")
       }
     }
+
+    val slices = node.in.zip(node.out).zipWithIndex.map {
+      case (((in, edgeIn), (out, edgeOut)), i) =>
+        require(in.params.dataBits == out.params.dataBits)
+        val rst_L2 = reset
+        val slice = withReset(rst_L2) { 
+          Module(new Slice()(p.alterPartial {
+            case EdgeInKey  => edgeIn
+            case EdgeOutKey => edgeOut
+          })) 
+        }
+        slice.io.in <> in
+        out <> slice.io.out
+
+        slice
+    }
+
   }
 
 }
