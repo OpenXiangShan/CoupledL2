@@ -8,8 +8,8 @@ import $file.`rocket-chip`.`api-config-chipsalliance`.`build-rules`.mill.build
 import $file.`rocket-chip`.hardfloat.build
 
 val defaultVersions = Map(
-  "chisel3" -> "3.5.0-RC1",
-  "chisel3-plugin" -> "3.5.0-RC1",
+  "chisel3" -> "3.5.0",
+  "chisel3-plugin" -> "3.5.0",
   "chiseltest" -> "0.3.2",
   "scala" -> "2.12.13",
   "scalatest" -> "3.2.7"
@@ -29,7 +29,7 @@ trait CommonModule extends ScalaModule {
   override def scalacOptions = Seq("-Xsource:2.11")
 
   val macroParadise = ivy"org.scalamacros:::paradise:2.1.1"
-  val chisel3Plugin = ivy"edu.berkeley.cs:::chisel3-plugin:3.5.0-RC1"
+  val chisel3Plugin = ivy"edu.berkeley.cs:::chisel3-plugin:3.5.0"
 
   override def compileIvyDeps = Agg(macroParadise)
   override def scalacPluginIvyDeps = Agg(macroParadise, chisel3Plugin)
@@ -72,6 +72,8 @@ object rocketchip extends `rocket-chip`.common.CommonRocketChip {
     def chisel3IvyDeps = if(chisel3Module.isEmpty) Agg(
       common.getVersion("chisel3")
     ) else Agg.empty[Dep]
+
+    def chisel3PluginIvyDeps = Agg(common.getVersion("chisel3-plugin", cross=true))
   }
 
   def hardfloatModule = hardfloatRocket
