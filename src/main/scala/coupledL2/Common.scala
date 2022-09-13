@@ -35,7 +35,10 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle {
   val addr = UInt(addressBits.W)          // task address
   val alias = UInt(aliasBits.W)           // color bits in cache-alias issue
   val owner = UInt(ownerBits.W)           // who owns this block
-  val opType = UInt(opTypeBits.W)         // type of the task operation
+  val opcode = UInt(3.W)                  // type of the task operation
+  val channel = UInt(3.W)
+  val param = UInt(3.W)
+  val sourceId = UInt(sourceIdBits.W)     // tilelink sourceID
   val id = UInt(idBits.W)                 // identity of the task
 
   val mshrOpType = UInt(mshrOpTypeBits.W) // type of the MSHR task operation

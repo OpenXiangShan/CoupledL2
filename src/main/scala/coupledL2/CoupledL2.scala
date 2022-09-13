@@ -87,6 +87,14 @@ trait HasCoupledL2Parameters {
     }
   }
 
+  def parseAddress(x: UInt): (UInt, UInt, UInt) = {
+    val offset = x
+    val bankBits = 0  // TODO: fix bankBits
+    val set = offset >> (offsetBits + bankBits)
+    val tag = set >> setBits
+    (tag(tagBits - 1, 0), set(setBits - 1, 0), offset(offsetBits - 1, 0))
+  }
+
 }
 
 trait DontCareInnerLogic { this: Module =>

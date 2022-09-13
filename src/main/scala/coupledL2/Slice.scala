@@ -40,11 +40,16 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   reqArb.io.metaWrite_s1 <> directory.io.metaWReq
   reqArb.io.taskToPipe_s2 <> mainPipe.io.taskFromArb_s2
   directory.io.resp <> mainPipe.io.dirResp_s3
+  mainPipe.io.toMSHRCtl <> mshrCtl.io.fromMainPipe
 
   val inBuf = cacheParams.innerBuf
+  val outBuf = cacheParams.outerBuf
   reqArb.io.sinkA <> inBuf.a(io.in.a)
   reqArb.io.sinkC <> inBuf.c(io.in.c)
+  io.out.a <> outBuf.a(mshrCtl.io.sourceA)
 
   directory.io.tagWReq <> DontCare
   dataStorage.io <> DontCare
+  dontTouch(io.in)
+  dontTouch(io.out)
 }
