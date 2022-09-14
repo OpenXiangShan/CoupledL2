@@ -32,6 +32,7 @@ trait HasCoupledL2Parameters {
 
   val blockBytes = cacheParams.blockBytes
   val beatBytes = cacheParams.channelBytes.d.get
+  val beatSize = blockBytes / beatBytes
 
   val wayBits = log2Ceil(cacheParams.ways)
   val setBits = log2Ceil(cacheParams.sets)
