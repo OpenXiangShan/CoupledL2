@@ -22,7 +22,7 @@ import chisel3.util._
 import chipsalliance.rocketchip.config.Parameters
 import coupledL2.utils.SRAMTemplate
 
-class MSHRBufRead(implicit p: Parameters) extends L2Module {
+class MSHRBufRead(implicit p: Parameters) extends L2Bundle {
   val valid = Input(Bool())
   val beat = Input(UInt(beatBits.W))
   val id = Input(UInt(mshrBits.W))
@@ -31,7 +31,7 @@ class MSHRBufRead(implicit p: Parameters) extends L2Module {
   val last = Input(Bool())
 }
 
-class MSHRBufWrite(implicit p: Parameters) extends L2Module {
+class MSHRBufWrite(implicit p: Parameters) extends L2Bundle {
   val valid = Input(Bool())
   val beat = Input(UInt(beatBits.W))
   val data = Input(new DSData)
@@ -47,7 +47,7 @@ class MSHRBuffer(implicit p: Parameters) extends L2Module {
   })
 
   val buffer = Seq.fill(mshrsAll) {
-    new SRAMTemplate(chiselTypeOf(new DSData()), set=beatSize, way=1, singlePort=true)
+    Module(new SRAMTemplate(new DSData(), set=beatSize, way=1, singlePort=true))
   }
   val valids = RegInit(VecInit(Seq.fill(mshrsAll) {
     VecInit(Seq.fill(beatSize) { false.B })
@@ -68,5 +68,9 @@ class MSHRBuffer(implicit p: Parameters) extends L2Module {
       buf.io.r.req.valid := io.r.valid && io.r.id === i.U
       buf.io.r.req.bits.apply(io.r.beat)
   }
+
+  io.r.ready := true.B
+  io.w.ready := true.B
+  io.r.buffer_data.data := 0.U
 
 }

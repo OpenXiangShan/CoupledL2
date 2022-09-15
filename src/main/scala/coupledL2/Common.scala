@@ -44,3 +44,14 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle {
   val mshrOpType = UInt(mshrOpTypeBits.W) // type of the MSHR task operation
   val mshrId = UInt(mshrBits.W)           // mshr entry index (used only in mshr-task)
 }
+
+class MSHRStatus(implicit p: Parameters) extends L2Bundle {
+  val set = UInt(setBits.W)
+  val tag = UInt(tagBits.W)
+  val way = UInt(wayBits.W)
+}
+
+class MSHRRequest(implicit p: Parameters) extends L2Bundle {
+  val addr = UInt(addressBits.W)
+  val way = UInt(wayBits.W)
+}

@@ -32,6 +32,8 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     val metaWrite_s1 = ValidIO(new MetaWrite())
 
     val taskToPipe_s2 = ValidIO(new TaskBundle())
+
+    val mshrFull = Input(Bool())
   })
 
   val resetFinish = RegInit(false.B)
@@ -39,13 +41,13 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val valids = RegInit(0.U(8.W))  // 7 stages
 
   // Channel interaction
-  io.sinkA.ready := resetFinish && !io.sinkC.valid  // SinkC prior to SinkA
-  io.sinkC.ready := resetFinish
+  io.sinkA.ready := !io.mshrFull && resetFinish && !io.sinkC.valid  // SinkC prior to SinkA
+  io.sinkC.ready := !io.mshrFull && resetFinish
 
   // Task generation and pipelining
   val task_s1 = Wire(Valid(new TaskBundle()))
   task_s1 := DontCare
-  task_s1.valid := io.sinkC.valid || io.sinkA.valid
+  task_s1.valid := (io.sinkC.valid || io.sinkA.valid) && resetFinish && !io.mshrFull
   task_s1.bits.addr := Mux(io.sinkC.valid, io.sinkC.bits.address, io.sinkA.bits.address)
   task_s1.bits.sourceId := Mux(io.sinkC.valid, io.sinkC.bits.source, io.sinkA.bits.source)
   task_s1.bits.opcode := Mux(io.sinkC.valid, io.sinkC.bits.opcode, io.sinkA.bits.opcode)
@@ -57,6 +59,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val (tag_s1, set_s1, offset_s1) = parseAddress(task_s1.bits.addr)
 
   val task_s2 = RegEnable(task_s1, task_s1.valid)
+  task_s2.valid := task_s1.valid
   io.taskToPipe_s2 := task_s2
 
   // Manual initialize meta before reading
