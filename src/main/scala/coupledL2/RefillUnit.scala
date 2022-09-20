@@ -33,6 +33,11 @@ class RefillUnit(implicit p: Parameters) extends L2Module {
     val sinkD = Flipped(DecoupledIO(new TLBundleD(edgeOut.bundle)))
     val sourceE = DecoupledIO(new TLBundleE(edgeIn.bundle))
     val mshrBufWrite = Flipped(new MSHRBufWrite)
+    val resp = new Bundle() {
+      val valid = Output(Bool())
+      val source = Output(UInt(sourceIdBits.W))
+      val respInfo = Output(new RefillUnitResp())
+    }
   })
 
   val (first, last, _, beat) = edgeOut.count(io.sinkD)
@@ -53,6 +58,12 @@ class RefillUnit(implicit p: Parameters) extends L2Module {
   io.mshrBufWrite.beat := beat
   io.mshrBufWrite.data.data := io.sinkD.bits.data
   io.mshrBufWrite.id := io.sinkD.bits.source
+
+  io.resp.valid := (first || last) && io.sinkD.valid
+  io.resp.source := io.sinkD.bits.source
+  io.resp.respInfo.opcode := io.sinkD.bits.opcode
+  io.resp.respInfo.param := io.sinkD.bits.param
+  io.resp.respInfo.last := last
 
   io.sinkD.ready := true.B
 }

@@ -49,9 +49,39 @@ class MSHRStatus(implicit p: Parameters) extends L2Bundle {
   val set = UInt(setBits.W)
   val tag = UInt(tagBits.W)
   val way = UInt(wayBits.W)
+  val off = UInt(offsetBits.W)
 }
 
 class MSHRRequest(implicit p: Parameters) extends L2Bundle {
   val addr = UInt(addressBits.W)
   val way = UInt(wayBits.W)
+  val state = new FSMState()
+}
+
+class RefillUnitResp(implicit p: Parameters) extends L2Bundle {
+  val opcode = UInt(3.W)
+  val param = UInt(3.W)
+  val last = Bool() // last beat
+}
+
+class FSMState(implicit p: Parameters) extends L2Bundle {
+  val s_acquire = Bool()
+  val s_rprobe = Bool()
+  val s_pprobe = Bool()
+  val s_release = Bool()
+  val s_probeack = Bool()
+  val s_execute = Bool()
+  val s_grantack = Bool()
+  val s_writeback = Bool()
+
+  val w_rprobeackfirst = Bool()
+  val w_rprobeacklast = Bool()
+  val w_pprobeackfirst = Bool()
+  val w_pprobeacklast = Bool()
+  val w_pprobeack = Bool()
+  val w_grantfirst = Bool()
+  val w_grantlast = Bool()
+  val w_grant = Bool()
+  val w_releaseack = Bool()
+  val w_grantack = Bool()
 }

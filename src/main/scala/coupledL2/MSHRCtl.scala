@@ -45,15 +45,17 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
         val param = UInt(3.W)
         val source = UInt(sourceIdBits.W)
       })
-      val mshr_alloc_s3 = Flipped(ValidIO(new Bundle() {
-        val addr = UInt(addressBits.W)
-        val way = UInt(wayBits.W)
-      }))
+      val mshr_alloc_s3 = Flipped(ValidIO(new MSHRRequest()))
     }
     val toMainPipe = new Bundle() {
       val mshr_alloc_ptr = Output(UInt(mshrBits.W))
     }
     val mshrFull = Output(Bool())
+    val refillUnitResp = new Bundle() {
+      val valid = Input(Bool())
+      val source = Input(UInt(sourceIdBits.W))
+      val respInfo = Input(new RefillUnitResp())
+    }
   })
 
   val mshrs = Seq.fill(mshrsAll) { Module(new MSHR()) }
@@ -67,14 +69,18 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   val alloc = Vec(mshrsAll, ValidIO(new MSHRRequest))
   mshrs.zipWithIndex.foreach {
     case (mshr, i) =>
+      mshr.io.id := i.U
       mshr.io.alloc.valid := selectedMSHROH(i) && io.fromMainPipe.mshr_alloc_s3.valid
-      mshr.io.alloc.bits.addr := io.fromMainPipe.mshr_alloc_s3.bits.addr
-      mshr.io.alloc.bits.way := io.fromMainPipe.mshr_alloc_s3.bits.way
+      mshr.io.alloc.bits := io.fromMainPipe.mshr_alloc_s3.bits
+
+      mshr.io.resp_refillUnit.valid := io.refillUnitResp.valid && io.refillUnitResp.source === i.U
+      mshr.io.resp_refillUnit.bits := io.refillUnitResp.respInfo
   }
 
   io.toMainPipe.mshr_alloc_ptr := OHToUInt(selectedMSHROH)
   io.mshrFull := mshrFull
 
+  /* Acquire downwards */
   val infoA_s3 = io.fromMainPipe.infoA_s3
   io.sourceA.valid := io.fromMainPipe.need_acquire_s3
   io.sourceA.bits.opcode := infoA_s3.opcode
@@ -85,6 +91,9 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   io.sourceA.bits.mask := Fill(edgeOut.manager.beatBytes, 1.U(1.W))
   io.sourceA.bits.corrupt := false.B
   io.sourceA.bits.data := DontCare
+
+  val sentA_s3 = io.sourceA.fire
+
 
   dontTouch(io.sourceA)
 }
