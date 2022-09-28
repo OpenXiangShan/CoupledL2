@@ -27,8 +27,12 @@ import freechips.rocketchip.tilelink.TLPermissions._
 
 class MainPipe(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
-    val dirResp_s3 = Flipped(ValidIO(new DirResult))
+    /* receive task from arbiter */
     val taskFromArb_s2 = Flipped(ValidIO(new TaskBundle()))
+
+    /* get dir result at stage 3 */
+    val dirResp_s3 = Flipped(ValidIO(new DirResult))
+
     val toMSHRCtl = new Bundle() {
       val need_acquire_s3 = Output(Bool())
       val infoA_s3 = Output(new Bundle() {

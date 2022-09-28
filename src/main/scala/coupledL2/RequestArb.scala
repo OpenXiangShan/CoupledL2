@@ -25,14 +25,18 @@ import chipsalliance.rocketchip.config.Parameters
 
 class RequestArb(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
+    /* receive incoming tasks */
     val sinkA = Flipped(DecoupledIO(new TLBundleA(edgeIn.bundle)))
     val sinkC = Flipped(DecoupledIO(new TLBundleC(edgeIn.bundle)))
 
+    /* read/write directory */
     val dirRead_s1 = ValidIO(new DirRead())  // To directory, read meta/tag
     val metaWrite_s1 = ValidIO(new MetaWrite())
 
+    /* send task to mainpipe */
     val taskToPipe_s2 = ValidIO(new TaskBundle())
 
+    /* mshr full, from MSHRCtrl */
     val mshrFull = Input(Bool())
   })
 
@@ -40,11 +44,11 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val resetIdx = RegInit((cacheParams.sets - 1).U)
   val valids = RegInit(0.U(8.W))  // 7 stages
 
-  // Channel interaction
+  /* Channel interaction */
   io.sinkA.ready := !io.mshrFull && resetFinish && !io.sinkC.valid  // SinkC prior to SinkA
   io.sinkC.ready := !io.mshrFull && resetFinish
 
-  // Task generation and pipelining
+  /* Task generation and pipelining */
   val task_s1 = Wire(Valid(new TaskBundle()))
   task_s1 := DontCare
   task_s1.valid := (io.sinkC.valid || io.sinkA.valid) && resetFinish && !io.mshrFull
@@ -63,7 +67,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   task_s2.valid := task_s1.valid
   io.taskToPipe_s2 := task_s2
 
-  // Manual initialize meta before reading
+  /* Manual initialize meta before reading */
   when(resetIdx === 0.U) {
     resetFinish := true.B
   }
@@ -76,7 +80,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   metaInit.state := MetaData.INVALID
   metaWrite := DontCare  // TODO: consider normal metaWrite
 
-  // Meta read request
+  /* Meta read request */
   io.dirRead_s1.valid := task_s1.valid
   io.dirRead_s1.bits.set := set_s1
   io.dirRead_s1.bits.tag := tag_s1
@@ -85,7 +89,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   io.dirRead_s1.bits.replacerInfo.channel := task_s1.bits.channel
   io.dirRead_s1.bits.idOH := 0.U  // TODO: use idOH to identity whether it is a fresh request or mshr request
 
-  // Meta write request
+  /* Meta write request */
   io.metaWrite_s1.valid := !resetFinish  // TODO: consider normal metaWrite
   io.metaWrite_s1.bits.set := resetIdx
   io.metaWrite_s1.bits.wayOH := Fill(cacheParams.ways, true.B)

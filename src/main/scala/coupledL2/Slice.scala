@@ -45,10 +45,12 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   directory.io.resp <> mainPipe.io.dirResp_s3
   mainPipe.io.toMSHRCtl <> mshrCtl.io.fromMainPipe
   mainPipe.io.fromMSHRCtl <> mshrCtl.io.toMainPipe
+
   refillUnit.io.mshrBufWrite <> mshrBuf.io.w
   refillUnit.io.resp <> mshrCtl.io.refillUnitResp
   mshrBuf.io.r <> DontCare
 
+  /* input & output signals */
   val inBuf = cacheParams.innerBuf
   val outBuf = cacheParams.outerBuf
   reqArb.io.sinkA <> inBuf.a(io.in.a)
