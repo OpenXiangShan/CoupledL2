@@ -36,18 +36,22 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     /* send task to mainpipe */
     val taskToPipe_s2 = ValidIO(new TaskBundle())
 
+    /* send wdata to data storage */
+    val wdataToDS_s2 = Output(new DSBlock())
+
     /* mshr full, from MSHRCtrl */
     val mshrFull = Input(Bool())
   })
 
   val resetFinish = RegInit(false.B)
   val resetIdx = RegInit((cacheParams.sets - 1).U)
-  val valids = RegInit(0.U(8.W))  // 7 stages
+  // val valids = RegInit(0.U(8.W))  // 7 stages
 
   /* Channel interaction */
   io.sinkA.ready := !io.mshrFull && resetFinish && !io.sinkC.valid  // SinkC prior to SinkA
   io.sinkC.ready := !io.mshrFull && resetFinish
 
+  /* ======== Stage 1 ======== */
   /* Task generation and pipelining */
   val task_s1 = Wire(Valid(new TaskBundle()))
   task_s1 := DontCare
@@ -59,28 +63,10 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   task_s1.bits.channel := Mux(io.sinkC.valid, "b100".U, "b001".U)
   task_s1.bits.mshrId := 0.U  // TODO: handle MSHR request
   task_s1.bits.alias := 0.U  // TODO: handle anti-alias
-  val data_s1 = io.sinkC.bits.data
-  val (tag_s1, set_s1, offset_s1) = parseAddress(task_s1.bits.addr)
-
-  val task_s2 = RegInit(0.U.asTypeOf(task_s1))
-  when(task_s1.valid) { task_s2.bits := task_s1.bits }
-  task_s2.valid := task_s1.valid
-  io.taskToPipe_s2 := task_s2
-
-  /* Manual initialize meta before reading */
-  when(resetIdx === 0.U) {
-    resetFinish := true.B
-  }
-  when(!resetFinish) {
-    resetIdx := resetIdx - 1.U
-  }
-  val metaInit = Wire(new MetaEntry())
-  val metaWrite = Wire(new MetaEntry())
-  metaInit := DontCare
-  metaInit.state := MetaData.INVALID
-  metaWrite := DontCare  // TODO: consider normal metaWrite
+  val releaseData = io.sinkC.bits.data
 
   /* Meta read request */
+  val (tag_s1, set_s1, offset_s1) = parseAddress(task_s1.bits.addr)
   io.dirRead_s1.valid := task_s1.valid
   io.dirRead_s1.bits.set := set_s1
   io.dirRead_s1.bits.tag := tag_s1
@@ -90,10 +76,31 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   io.dirRead_s1.bits.idOH := 0.U  // TODO: use idOH to identity whether it is a fresh request or mshr request
 
   /* Meta write request */
+  val metaInit = Wire(new MetaEntry())
+  val metaWrite = Wire(new MetaEntry())
+  metaInit := DontCare
+  metaInit.state := MetaData.INVALID
+  metaWrite := DontCare  // TODO: consider normal metaWrite
+  // Manual initialize meta before reading
+  when(!resetFinish) {
+    resetIdx := resetIdx - 1.U
+  }
+  when(resetIdx === 0.U) {
+    resetFinish := true.B
+  }
   io.metaWrite_s1.valid := !resetFinish  // TODO: consider normal metaWrite
   io.metaWrite_s1.bits.set := resetIdx
   io.metaWrite_s1.bits.wayOH := Fill(cacheParams.ways, true.B)
   io.metaWrite_s1.bits.wmeta := Mux(resetFinish, metaInit, metaWrite)
+
+  /* ========  Stage 2 ======== */
+  val task_s2 = RegInit(0.U.asTypeOf(task_s1))
+  task_s2.valid := task_s1.valid
+  when(task_s1.valid) { task_s2.bits := task_s1.bits }
+  
+  io.taskToPipe_s2 := task_s2
+  io.wdataToDS_s2.data := Cat(RegNext(releaseData), releaseData) // TODO: the first beat is higher bits? 
+  // TODO: we do not need `when(io.sinkC.valid)` for wdata. Valid is asserted by wen signal in mainpipe
 
   dontTouch(io)
 }
