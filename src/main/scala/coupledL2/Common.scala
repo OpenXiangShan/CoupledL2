@@ -30,13 +30,19 @@ class ReplacerInfo(implicit p: Parameters) extends L2Bundle {
   val opcode = UInt(3.W)
 }
 
-class TaskBundle(implicit p: Parameters) extends L2Bundle {
+trait HasChannelBits { this: Bundle =>
+  val channel = UInt(3.W)
+  def fromA = channel(0).asBool
+  def fromB = channel(1).asBool
+  def fromC = channel(2).asBool
+}
+
+class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val valid = Bool()                      // valid
   val addr = UInt(addressBits.W)          // task address
   val alias = UInt(aliasBits.W)           // color bits in cache-alias issue
   val owner = UInt(ownerBits.W)           // who owns this block
   val opcode = UInt(3.W)                  // type of the task operation
-  val channel = UInt(3.W)
   val param = UInt(3.W)
   val sourceId = UInt(sourceIdBits.W)     // tilelink sourceID
   val id = UInt(idBits.W)                 // identity of the task
@@ -50,11 +56,16 @@ class MSHRStatus(implicit p: Parameters) extends L2Bundle {
   val tag = UInt(tagBits.W)
   val way = UInt(wayBits.W)
   val off = UInt(offsetBits.W)
+  val opcode = UInt(3.W)
+  val param = UInt(3.W)
 }
 
 class MSHRRequest(implicit p: Parameters) extends L2Bundle {
   val addr = UInt(addressBits.W)
   val way = UInt(wayBits.W)
+  val opcode = UInt(3.W)
+  val param = UInt(3.W)
+  val dirResult = new DirResult()
   val state = new FSMState()
 }
 
@@ -84,4 +95,13 @@ class FSMState(implicit p: Parameters) extends L2Bundle {
   val w_grant = Bool()
   val w_releaseack = Bool()
   val w_grantack = Bool()
+}
+
+class SourceAReq(implicit p: Parameters) extends L2Bundle {
+  val tag = UInt(tagBits.W)
+  val set = UInt(setBits.W)
+  val off = UInt(offsetBits.W)
+  val opcode = UInt(3.W)
+  val param = UInt(3.W)
+  val source = UInt(mshrBits.W)
 }

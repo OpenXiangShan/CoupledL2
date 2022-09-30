@@ -19,21 +19,30 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
+import coupledL2.MetaData._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
+import freechips.rocketchip.tilelink.TLPermissions._
 import chipsalliance.rocketchip.config.Parameters
+
+class MSHRTasks(implicit p: Parameters) extends L2Bundle {
+  // outer
+  val source_a = DecoupledIO(new SourceAReq) // TODO: no need to use decoupled handshake
+}
 
 class MSHR(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val id = Input(UInt(mshrBits.W))
     val status = ValidIO(new MSHRStatus)
     val alloc = Flipped(ValidIO(new MSHRRequest))
+    val tasks = new MSHRTasks()
     val resp_refillUnit = Flipped(ValidIO(new RefillUnitResp()))
   })
 
   val initState = Wire(new FSMState())
   val state = RegInit(new FSMState(), initState)
   initState.elements.foreach(_._2 := true.B)
+  val meta = RegInit(0.U.asTypeOf(new DirResult()))
 
   /* MSHR Allocation */
   val (alloc_tag, alloc_set, alloc_offset) = parseAddress(io.alloc.bits.addr)
@@ -44,9 +53,33 @@ class MSHR(implicit p: Parameters) extends L2Module {
     status_reg.bits.set := alloc_set
     status_reg.bits.off := alloc_offset
     status_reg.bits.way := io.alloc.bits.way
+    status_reg.bits.opcode := io.alloc.bits.opcode
+    status_reg.bits.param := io.alloc.bits.param
     state := io.alloc.bits.state
+    meta := io.alloc.bits.dirResult
   }
 
+  /* Intermediate logic */
+  val req = status_reg.bits
+  val req_needT = needT(req.opcode, req.param)
+
+  /* Task allocation */
+  io.tasks.source_a.valid := !state.s_acquire && state.s_release && state.s_pprobe
+
+  val oa = io.tasks.source_a.bits
+  oa.tag := status_reg.bits.tag
+  oa.set := status_reg.bits.set
+  oa.off := status_reg.bits.off
+  oa.source := io.id
+  oa.opcode := Mux(meta.hit, AcquirePerm, AcquireBlock)
+  oa.param := Mux(req_needT, Mux(meta.hit, BtoT, NtoT), NtoB)
+
+  /* Task update */
+  when(io.tasks.source_a.fire) {
+    state.s_acquire := true.B
+  }
+
+  /* Refill response */
   when(io.resp_refillUnit.valid) {
     when(io.resp_refillUnit.bits.opcode === Grant || io.resp_refillUnit.bits.opcode === GrantData) {
       state.w_grantfirst := true.B

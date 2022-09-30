@@ -73,6 +73,8 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       mshr.io.alloc.valid := selectedMSHROH(i) && io.fromMainPipe.mshr_alloc_s3.valid
       mshr.io.alloc.bits := io.fromMainPipe.mshr_alloc_s3.bits
 
+      mshr.io.tasks.source_a := DontCare
+
       mshr.io.resp_refillUnit.valid := io.refillUnitResp.valid && io.refillUnitResp.source === i.U
       mshr.io.resp_refillUnit.bits := io.refillUnitResp.respInfo
   }
