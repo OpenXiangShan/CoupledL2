@@ -101,6 +101,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.toMSHRCtl.mshr_alloc_s3.bits.way := dirResult_s3.way
   io.toMSHRCtl.mshr_alloc_s3.bits.opcode := task_s3.bits.opcode
   io.toMSHRCtl.mshr_alloc_s3.bits.param := task_s3.bits.param
+  io.toMSHRCtl.mshr_alloc_s3.bits.source := task_s3.bits.sourceId
   io.toMSHRCtl.mshr_alloc_s3.bits.dirResult := dirResult_s3
   io.toMSHRCtl.mshr_alloc_s3.bits.state := alloc_state
 

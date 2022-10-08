@@ -58,6 +58,7 @@ class MSHRStatus(implicit p: Parameters) extends L2Bundle {
   val off = UInt(offsetBits.W)
   val opcode = UInt(3.W)
   val param = UInt(3.W)
+  val source = UInt(sourceIdBits.W)
 }
 
 class MSHRRequest(implicit p: Parameters) extends L2Bundle {
@@ -65,6 +66,7 @@ class MSHRRequest(implicit p: Parameters) extends L2Bundle {
   val way = UInt(wayBits.W)
   val opcode = UInt(3.W)
   val param = UInt(3.W)
+  val source = UInt(sourceIdBits.W)
   val dirResult = new DirResult()
   val state = new FSMState()
 }
@@ -98,6 +100,15 @@ class FSMState(implicit p: Parameters) extends L2Bundle {
 }
 
 class SourceAReq(implicit p: Parameters) extends L2Bundle {
+  val tag = UInt(tagBits.W)
+  val set = UInt(setBits.W)
+  val off = UInt(offsetBits.W)
+  val opcode = UInt(3.W)
+  val param = UInt(3.W)
+  val source = UInt(mshrBits.W)
+}
+
+class SourceDReq(implicit p: Parameters) extends L2Bundle {
   val tag = UInt(tagBits.W)
   val set = UInt(setBits.W)
   val off = UInt(offsetBits.W)

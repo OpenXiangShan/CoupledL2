@@ -27,7 +27,8 @@ import chipsalliance.rocketchip.config.Parameters
 
 class MSHRTasks(implicit p: Parameters) extends L2Bundle {
   // outer
-  val source_a = DecoupledIO(new SourceAReq) // TODO: no need to use decoupled handshake
+  val source_a = DecoupledIO(new SourceAReq) // To AcquireUnit  // TODO: no need to use decoupled handshake
+  val source_d = DecoupledIO(new SourceDReq) // To Mainpipe
 }
 
 class MSHR(implicit p: Parameters) extends L2Module {
@@ -39,10 +40,17 @@ class MSHR(implicit p: Parameters) extends L2Module {
     val resp_refillUnit = Flipped(ValidIO(new RefillUnitResp()))
   })
 
+  def odOpGen(r: UInt) = {
+    val grantOp = GrantData
+    val opSeq = Seq(AccessAck, AccessAck, AccessAckData, AccessAckData, AccessAckData, HintAck, grantOp, Grant)
+    val opToA = VecInit(opSeq)(r)
+    opToA
+  }
+
   val initState = Wire(new FSMState())
   val state = RegInit(new FSMState(), initState)
   initState.elements.foreach(_._2 := true.B)
-  val meta = RegInit(0.U.asTypeOf(new DirResult()))
+  val dirResult = RegInit(0.U.asTypeOf(new DirResult()))
 
   /* MSHR Allocation */
   val (alloc_tag, alloc_set, alloc_offset) = parseAddress(io.alloc.bits.addr)
@@ -55,24 +63,41 @@ class MSHR(implicit p: Parameters) extends L2Module {
     status_reg.bits.way := io.alloc.bits.way
     status_reg.bits.opcode := io.alloc.bits.opcode
     status_reg.bits.param := io.alloc.bits.param
+    status_reg.bits.source := io.alloc.bits.source
     state := io.alloc.bits.state
-    meta := io.alloc.bits.dirResult
+    dirResult := io.alloc.bits.dirResult
   }
 
   /* Intermediate logic */
   val req = status_reg.bits
+  val meta = dirResult.meta
+  val gotT = RegInit(false.B) // L3 might return T even though L2 wants B
+  val meta_no_client = !meta.clients.orR
+
   val req_needT = needT(req.opcode, req.param)
+  val req_acquire = req.opcode === AcquireBlock || req.opcode === AcquirePerm
+  val req_promoteT = req_acquire && Mux(dirResult.hit, meta_no_client && meta.state === TIP, gotT)
 
   /* Task allocation */
   io.tasks.source_a.valid := !state.s_acquire && state.s_release && state.s_pprobe
+  io.tasks.source_d.valid := !state.s_execute && state.w_grantlast && state.w_pprobeack  // refill when grantlast, TODO: opt?
 
   val oa = io.tasks.source_a.bits
-  oa.tag := status_reg.bits.tag
-  oa.set := status_reg.bits.set
-  oa.off := status_reg.bits.off
+  oa.tag := req.tag
+  oa.set := req.set
+  oa.off := req.off
   oa.source := io.id
-  oa.opcode := Mux(meta.hit, AcquirePerm, AcquireBlock)
-  oa.param := Mux(req_needT, Mux(meta.hit, BtoT, NtoT), NtoB)
+  oa.opcode := Mux(dirResult.hit, AcquirePerm, AcquireBlock)
+  oa.param := Mux(req_needT, Mux(dirResult.hit, BtoT, NtoT), NtoB)
+
+  val od = io.tasks.source_d.bits
+  od.tag := req.tag
+  od.set := req.set
+  od.off := req.off
+  od.source := req.source
+  od.opcode := odOpGen(req.opcode)
+  od.param :=
+    MuxLookup(req.param, req.param, Seq(NtoB -> Mux(req_promoteT, toT, toB), BtoT -> toT, NtoT -> toT))
 
   /* Task update */
   when(io.tasks.source_a.fire) {

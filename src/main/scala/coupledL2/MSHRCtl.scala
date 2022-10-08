@@ -56,6 +56,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       val source = Input(UInt(sourceIdBits.W))
       val respInfo = Input(new RefillUnitResp())
     }
+    val mshrTask = DecoupledIO(new SourceDReq)
   })
 
   val mshrs = Seq.fill(mshrsAll) { Module(new MSHR()) }
@@ -101,10 +102,16 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   io.sourceA.bits.mask := Fill(edgeOut.manager.beatBytes, 1.U(1.W))
   io.sourceA.bits.corrupt := false.B
   io.sourceA.bits.data := DontCare
+  val sentA_s3 = io.sourceA.fire
   */
 
-  val sentA_s3 = io.sourceA.fire
-
+  /* Arbitrate MSHR task to mainPipe */
+  val mshrTaskArb = Module(new FastArbiter(chiselTypeOf(io.mshrTask.bits), mshrsAll))
+  mshrs.zipWithIndex.foreach{
+    case (m, i) =>
+      mshrTaskArb.io.in(i) <> m.io.tasks.source_d
+  }
+  io.mshrTask <> mshrTaskArb.io.out
 
   dontTouch(io.sourceA)
 }

@@ -28,6 +28,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     /* receive incoming tasks */
     val sinkA = Flipped(DecoupledIO(new TLBundleA(edgeIn.bundle)))
     val sinkC = Flipped(DecoupledIO(new TLBundleC(edgeIn.bundle)))
+    val mshrTask = Flipped(DecoupledIO(new SourceDReq))
 
     /* read/write directory */
     val dirRead_s1 = ValidIO(new DirRead())  // To directory, read meta/tag
@@ -50,6 +51,9 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   /* Channel interaction */
   io.sinkA.ready := !io.mshrFull && resetFinish && !io.sinkC.valid  // SinkC prior to SinkA
   io.sinkC.ready := !io.mshrFull && resetFinish
+
+  /* ======== Stage 0 ======== */
+  io.mshrTask.ready := false.B
 
   /* ======== Stage 1 ======== */
   /* Task generation and pipelining */
