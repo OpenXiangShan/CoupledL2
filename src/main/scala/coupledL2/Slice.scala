@@ -45,6 +45,8 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   reqArb.io.wdataToDS_s2 <> dataStorage.io.wdata_s2
 
   directory.io.resp <> mainPipe.io.dirResp_s3
+  dataStorage.io.wen_s3 <> mainPipe.io.wdata_en_s3
+  
   mainPipe.io.toMSHRCtl <> mshrCtl.io.fromMainPipe
   mainPipe.io.fromMSHRCtl <> mshrCtl.io.toMainPipe
 

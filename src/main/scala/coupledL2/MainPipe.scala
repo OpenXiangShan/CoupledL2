@@ -43,17 +43,23 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       })
       val mshr_alloc_s3 = ValidIO(new MSHRRequest())
     }
+
+    val wdata_en_s3 = Output(Bool())
+
     val fromMSHRCtl = new Bundle() {
       val mshr_alloc_ptr = Input(UInt(mshrBits.W))
     }
   })
 
-  /* Stage 3 */
+  /* ======== Stage 3 ======== */
   val task_s3 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
   task_s3.valid := io.taskFromArb_s2.valid
   when(io.taskFromArb_s2.valid) {
     task_s3.bits := io.taskFromArb_s2.bits
   }
+  // val need_retry_s3 = WireInit(false.B)
+  // val hazard_s3 = WireInit(false.B)
+  // val ls_op_done_m3 = WireInit(false.B)
 
   val dirResult_s3 = io.dirResp_s3.bits
   val meta_s3 = dirResult_s3.meta
@@ -71,7 +77,9 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val alloc_on_hit_s3 = false.B  // TODO
   val alloc_on_miss_s3 = true.B  // TODO
 
-  /* Stage 4 */
+  io.wdata_en_s3 := task_s3.valid && req_s3.opcode === ReleaseData
+
+  /* ======== Stage 4 ======== */
   val need_acquire_s4 = RegEnable(need_acquire_s3, task_s3.valid)
 
 

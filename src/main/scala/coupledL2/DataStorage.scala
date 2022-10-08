@@ -43,6 +43,7 @@ class DataStorage(implicit p: Parameters) extends L2Module with DontCareInnerLog
     val rdata_s6 = Output(new DSData())
 
     val wdata_s2 = Input(new DSBlock())
+    val wen_s3 = Input(Bool())
   })
 
 }
