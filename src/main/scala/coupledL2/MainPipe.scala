@@ -86,6 +86,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   // Allocation of MSHR: new request only
   val alloc_state = WireInit(0.U.asTypeOf(new FSMState()))
+  alloc_state.elements.foreach(_._2 := true.B)
   io.toMSHRCtl.mshr_alloc_s3.valid := task_s3.valid && !mshr_req_s3 &&
     ((dirResult_s3.hit && alloc_on_hit_s3) || (!dirResult_s3.hit && alloc_on_miss_s3))
   io.toMSHRCtl.mshr_alloc_s3.bits.addr := task_s3.bits.addr
@@ -110,14 +111,14 @@ class MainPipe(implicit p: Parameters) extends L2Module {
         alloc_state.w_rprobeackfirst := false.B
         alloc_state.w_rprobeacklast := false.B
       }
-      // need Acquire downwards
-      when(!dirResult_s3.hit || meta_s3.state === BRANCH && req_needT) {
-        alloc_state.s_acquire := false.B
-        alloc_state.s_grantack := false.B
-        alloc_state.w_grantfirst := false.B
-        alloc_state.w_grantlast := false.B
-        alloc_state.w_grant := false.B
-      }
+    }
+    // need Acquire downwards
+    when(!dirResult_s3.hit || meta_s3.state === BRANCH && req_needT) {
+      alloc_state.s_acquire := false.B
+      alloc_state.s_grantack := false.B
+      alloc_state.w_grantfirst := false.B
+      alloc_state.w_grantlast := false.B
+      alloc_state.w_grant := false.B
     }
   }
   when(req_s3.fromB) {

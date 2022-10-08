@@ -83,6 +83,14 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   io.mshrFull := mshrFull
 
   /* Acquire downwards */
+  val acquireUnit = Module(new AcquireUnit())
+  acquireUnit.io.sourceA <> io.sourceA
+  mshrs.zipWithIndex.foreach{
+    case (m, i) =>
+      acquireUnit.io.tasks(i) <> m.io.tasks.source_a
+  }
+
+  /* deprecated acquire bypass logic
   val infoA_s3 = io.fromMainPipe.infoA_s3
   io.sourceA.valid := io.fromMainPipe.need_acquire_s3
   io.sourceA.bits.opcode := infoA_s3.opcode
@@ -93,6 +101,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   io.sourceA.bits.mask := Fill(edgeOut.manager.beatBytes, 1.U(1.W))
   io.sourceA.bits.corrupt := false.B
   io.sourceA.bits.data := DontCare
+  */
 
   val sentA_s3 = io.sourceA.fire
 
