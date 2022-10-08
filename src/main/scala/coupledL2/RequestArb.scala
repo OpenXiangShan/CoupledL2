@@ -99,7 +99,8 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   when(task_s1.valid) { task_s2.bits := task_s1.bits }
   
   io.taskToPipe_s2 := task_s2
-  io.wdataToDS_s2.data := Cat(RegNext(releaseData), releaseData) // TODO: the first beat is higher bits? 
+  io.wdataToDS_s2.data := Cat(RegNext(releaseData), releaseData) // TODO: the first beat is higher bits?
+  // TODO: we need to assert L1 sends two beats continuously
   // TODO: we do not need `when(io.sinkC.valid)` for wdata. Valid is asserted by wen signal in mainpipe
 
   dontTouch(io)
