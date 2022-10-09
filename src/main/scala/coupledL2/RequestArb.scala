@@ -20,6 +20,7 @@ package coupledL2
 import chisel3._
 import chisel3.util._
 import coupledL2.utils._
+import coupledL2.TaskInfo._
 import freechips.rocketchip.tilelink._
 import chipsalliance.rocketchip.config.Parameters
 
@@ -29,6 +30,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     val sinkA = Flipped(DecoupledIO(new TLBundleA(edgeIn.bundle)))
     val sinkC = Flipped(DecoupledIO(new TLBundleC(edgeIn.bundle)))
     val mshrTask = Flipped(DecoupledIO(new SourceDReq))
+    val mshrTaskID = Input(UInt(log2Ceil(mshrsAll).W))
 
     /* read/write directory */
     val dirRead_s1 = ValidIO(new DirRead())  // To directory, read meta/tag
@@ -48,32 +50,52 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val resetIdx = RegInit((cacheParams.sets - 1).U)
   // val valids = RegInit(0.U(8.W))  // 7 stages
 
-  /* Channel interaction */
-  io.sinkA.ready := !io.mshrFull && resetFinish && !io.sinkC.valid  // SinkC prior to SinkA
-  io.sinkC.ready := !io.mshrFull && resetFinish
-
   /* ======== Stage 0 ======== */
-  io.mshrTask.ready := false.B
+  io.mshrTask.ready := true.B  // TODO: when to block mshrTask?
+  val mshr_task_s0 = Wire(Valid(new TaskBundle()))
+  mshr_task_s0 := DontCare
+  mshr_task_s0.valid := io.mshrTask.valid
+  mshr_task_s0.bits.set := io.mshrTask.bits.set
+  mshr_task_s0.bits.tag := io.mshrTask.bits.tag
+  mshr_task_s0.bits.off := io.mshrTask.bits.off
+  mshr_task_s0.bits.sourceId := io.mshrTask.bits.source
+  mshr_task_s0.bits.opcode := io.mshrTask.bits.opcode
+  mshr_task_s0.bits.param := io.mshrTask.bits.param
+  mshr_task_s0.bits.channel := 0.U
+  mshr_task_s0.bits.alias := 0.U  // TODO: handle anti-alias
+  mshr_task_s0.bits.mshrOpType := OP_REFILL.U
+  mshr_task_s0.bits.mshrId := io.mshrTaskID
 
   /* ======== Stage 1 ======== */
   /* Task generation and pipelining */
-  val task_s1 = Wire(Valid(new TaskBundle()))
-  task_s1 := DontCare
-  task_s1.valid := (io.sinkC.valid || io.sinkA.valid) && resetFinish && !io.mshrFull
-  task_s1.bits.addr := Mux(io.sinkC.valid, io.sinkC.bits.address, io.sinkA.bits.address)
-  task_s1.bits.sourceId := Mux(io.sinkC.valid, io.sinkC.bits.source, io.sinkA.bits.source)
-  task_s1.bits.opcode := Mux(io.sinkC.valid, io.sinkC.bits.opcode, io.sinkA.bits.opcode)
-  task_s1.bits.param := Mux(io.sinkC.valid, io.sinkC.bits.param, io.sinkA.bits.param)
-  task_s1.bits.channel := Mux(io.sinkC.valid, "b100".U, "b001".U)
-  task_s1.bits.mshrId := 0.U  // TODO: handle MSHR request
-  task_s1.bits.alias := 0.U  // TODO: handle anti-alias
+  val l1_task_s1 = Wire(Valid(new TaskBundle()))
+  l1_task_s1 := DontCare
+  l1_task_s1.valid := (io.sinkC.valid || io.sinkA.valid) && resetFinish && !io.mshrFull
+  val (l1_tag_s1, l1_set_s1, l1_offs_s1) = parseAddress(Mux(io.sinkC.valid, io.sinkC.bits.address, io.sinkA.bits.address))
+  l1_task_s1.bits.set := l1_set_s1
+  l1_task_s1.bits.tag := l1_tag_s1
+  l1_task_s1.bits.off := l1_offs_s1
+  l1_task_s1.bits.sourceId := Mux(io.sinkC.valid, io.sinkC.bits.source, io.sinkA.bits.source)
+  l1_task_s1.bits.opcode := Mux(io.sinkC.valid, io.sinkC.bits.opcode, io.sinkA.bits.opcode)
+  l1_task_s1.bits.param := Mux(io.sinkC.valid, io.sinkC.bits.param, io.sinkA.bits.param)
+  l1_task_s1.bits.channel := Mux(io.sinkC.valid, "b100".U, "b001".U)
+  l1_task_s1.bits.alias := 0.U  // TODO: handle anti-alias
+  l1_task_s1.bits.mshrId := 0.U  // TODO: handle MSHR request
+
+  val mshr_task_s1 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
+  when(mshr_task_s0.valid) {
+    mshr_task_s1 := mshr_task_s0
+  }.otherwise {
+    mshr_task_s1.valid := false.B
+  }
+
+  val task_s1 = Mux(mshr_task_s1.valid, mshr_task_s1, l1_task_s1)
   val releaseData = io.sinkC.bits.data
 
   /* Meta read request */
-  val (tag_s1, set_s1, offset_s1) = parseAddress(task_s1.bits.addr)
   io.dirRead_s1.valid := task_s1.valid
-  io.dirRead_s1.bits.set := set_s1
-  io.dirRead_s1.bits.tag := tag_s1
+  io.dirRead_s1.bits.set := task_s1.bits.set
+  io.dirRead_s1.bits.tag := task_s1.bits.tag
   io.dirRead_s1.bits.source := task_s1.bits.sourceId
   io.dirRead_s1.bits.replacerInfo.opcode := task_s1.bits.opcode
   io.dirRead_s1.bits.replacerInfo.channel := task_s1.bits.channel
@@ -106,6 +128,10 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   io.wdataToDS_s2.data := Cat(RegNext(releaseData), releaseData) // TODO: the first beat is higher bits?
   // TODO: we need to assert L1 sends two beats continuously
   // TODO: we do not need `when(io.sinkC.valid)` for wdata. Valid is asserted by wen signal in mainpipe
+
+  /* Channel interaction */
+  io.sinkA.ready := !io.mshrFull && resetFinish && !io.sinkC.valid && !mshr_task_s1.valid // SinkC prior to SinkA
+  io.sinkC.ready := !io.mshrFull && resetFinish && !mshr_task_s1.valid
 
   dontTouch(io)
 }

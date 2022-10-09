@@ -53,13 +53,12 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val dirResult = RegInit(0.U.asTypeOf(new DirResult()))
 
   /* MSHR Allocation */
-  val (alloc_tag, alloc_set, alloc_offset) = parseAddress(io.alloc.bits.addr)
   val status_reg = RegInit(0.U.asTypeOf(Valid(new MSHRStatus())))
   when(io.alloc.valid) {
     status_reg.valid := true.B
-    status_reg.bits.tag := alloc_tag
-    status_reg.bits.set := alloc_set
-    status_reg.bits.off := alloc_offset
+    status_reg.bits.tag := io.alloc.bits.tag
+    status_reg.bits.set := io.alloc.bits.set
+    status_reg.bits.off := io.alloc.bits.off
     status_reg.bits.way := io.alloc.bits.way
     status_reg.bits.opcode := io.alloc.bits.opcode
     status_reg.bits.param := io.alloc.bits.param
@@ -80,7 +79,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
 
   /* Task allocation */
   io.tasks.source_a.valid := !state.s_acquire && state.s_release && state.s_pprobe
-  io.tasks.source_d.valid := !state.s_execute && state.w_grantlast && state.w_pprobeack  // refill when grantlast, TODO: opt?
+  io.tasks.source_d.valid := !state.s_refill && state.w_grantlast && state.w_pprobeack  // refill when grantlast, TODO: opt?
 
   val oa = io.tasks.source_a.bits
   oa.tag := req.tag
@@ -102,6 +101,9 @@ class MSHR(implicit p: Parameters) extends L2Module {
   /* Task update */
   when(io.tasks.source_a.fire) {
     state.s_acquire := true.B
+  }
+  when(io.tasks.source_d.fire) {
+    state.s_refill := true.B
   }
 
   /* Refill response */

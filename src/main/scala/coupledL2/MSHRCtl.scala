@@ -57,6 +57,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       val respInfo = Input(new RefillUnitResp())
     }
     val mshrTask = DecoupledIO(new SourceDReq)
+    val mshrTaskID = Output(UInt(log2Ceil(mshrsAll).W))
   })
 
   val mshrs = Seq.fill(mshrsAll) { Module(new MSHR()) }
@@ -112,6 +113,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       mshrTaskArb.io.in(i) <> m.io.tasks.source_d
   }
   io.mshrTask <> mshrTaskArb.io.out
+  io.mshrTaskID := mshrTaskArb.io.chosen
 
   dontTouch(io.sourceA)
 }

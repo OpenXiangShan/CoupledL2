@@ -72,4 +72,6 @@ object TaskInfo {
   val opTypeBits = 5  // TODO: list opTypes
   val idBits = 10
   val aliasBits = 1 // TODO: calculate it by size of L1
+
+  val OP_REFILL = 1
 }

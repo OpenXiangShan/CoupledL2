@@ -87,7 +87,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   // Acquire downwards at MainPipe
   io.toMSHRCtl.need_acquire_s3 := false.B //need_acquire_s3 TODO: fast acquire
-  io.toMSHRCtl.infoA_s3.addr := req_s3.addr
+  io.toMSHRCtl.infoA_s3.addr := 0.U  // TODO: fast acquire
   io.toMSHRCtl.infoA_s3.opcode := Mux(dirResult_s3.hit, AcquirePerm, AcquireBlock)
   io.toMSHRCtl.infoA_s3.param := Mux(req_needT_s3, Mux(dirResult_s3.hit, BtoT, NtoT), NtoB)
   io.toMSHRCtl.infoA_s3.source := io.fromMSHRCtl.mshr_alloc_ptr  // TODO
@@ -97,7 +97,9 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   alloc_state.elements.foreach(_._2 := true.B)
   io.toMSHRCtl.mshr_alloc_s3.valid := task_s3.valid && !mshr_req_s3 &&
     ((dirResult_s3.hit && alloc_on_hit_s3) || (!dirResult_s3.hit && alloc_on_miss_s3))
-  io.toMSHRCtl.mshr_alloc_s3.bits.addr := task_s3.bits.addr
+  io.toMSHRCtl.mshr_alloc_s3.bits.set := task_s3.bits.set
+  io.toMSHRCtl.mshr_alloc_s3.bits.tag := task_s3.bits.tag
+  io.toMSHRCtl.mshr_alloc_s3.bits.off := task_s3.bits.off
   io.toMSHRCtl.mshr_alloc_s3.bits.way := dirResult_s3.way
   io.toMSHRCtl.mshr_alloc_s3.bits.opcode := task_s3.bits.opcode
   io.toMSHRCtl.mshr_alloc_s3.bits.param := task_s3.bits.param
@@ -109,7 +111,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val req_needT = needT(req_s3.opcode, req_s3.param)
 
   when(req_s3.fromA) {
-    alloc_state.s_execute := req_s3.opcode === Hint
+    alloc_state.s_refill := req_s3.opcode === Hint
     // need replacement
     when(!dirResult_s3.hit && meta_s3.state =/= INVALID) {
       alloc_state.s_release := false.B

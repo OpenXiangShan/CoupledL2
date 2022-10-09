@@ -38,8 +38,9 @@ trait HasChannelBits { this: Bundle =>
 }
 
 class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
-  val valid = Bool()                      // valid
-  val addr = UInt(addressBits.W)          // task address
+  val set = UInt(setBits.W)
+  val tag = UInt(tagBits.W)
+  val off = UInt(offsetBits.W)
   val alias = UInt(aliasBits.W)           // color bits in cache-alias issue
   val owner = UInt(ownerBits.W)           // who owns this block
   val opcode = UInt(3.W)                  // type of the task operation
@@ -62,7 +63,9 @@ class MSHRStatus(implicit p: Parameters) extends L2Bundle {
 }
 
 class MSHRRequest(implicit p: Parameters) extends L2Bundle {
-  val addr = UInt(addressBits.W)
+  val set = UInt(setBits.W)
+  val tag = UInt(tagBits.W)
+  val off = UInt(offsetBits.W)
   val way = UInt(wayBits.W)
   val opcode = UInt(3.W)
   val param = UInt(3.W)
@@ -83,7 +86,7 @@ class FSMState(implicit p: Parameters) extends L2Bundle {
   val s_pprobe = Bool()
   val s_release = Bool()
   val s_probeack = Bool()
-  val s_execute = Bool()
+  val s_refill = Bool()
   val s_grantack = Bool()
   val s_writeback = Bool()
 
