@@ -45,6 +45,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   reqArb.io.wdataToDS_s2 <> dataStorage.io.wdata_s2
   reqArb.io.mshrTask <> mshrCtl.io.mshrTask
   reqArb.io.mshrTaskID <> mshrCtl.io.mshrTaskID
+  reqArb.io.mshrBufRead <> mshrBuf.io.r
 
   directory.io.resp <> mainPipe.io.dirResp_s3
   dataStorage.io.wen_s3 <> mainPipe.io.wdata_en_s3
@@ -54,7 +55,6 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
 
   refillUnit.io.mshrBufWrite <> mshrBuf.io.w
   refillUnit.io.resp <> mshrCtl.io.refillUnitResp
-  mshrBuf.io.r <> DontCare
 
   /* input & output signals */
   val inBuf = cacheParams.innerBuf

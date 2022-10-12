@@ -28,7 +28,6 @@ class MSHRBufRead(implicit p: Parameters) extends L2Bundle {
   val id = Input(UInt(mshrBits.W))
   val ready = Output(Bool())
   val buffer_data = Output(new DSData)
-  val last = Input(Bool())
 }
 
 class MSHRBufWrite(implicit p: Parameters) extends L2Bundle {

@@ -42,6 +42,9 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     /* send wdata to data storage */
     val wdataToDS_s2 = Output(new DSBlock())
 
+    /* send mshrBuf read request */
+    val mshrBufRead = Flipped(new MSHRBufRead)
+
     /* mshr full, from MSHRCtrl */
     val mshrFull = Input(Bool())
   })
@@ -129,7 +132,16 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   // TODO: we need to assert L1 sends two beats continuously
   // TODO: we do not need `when(io.sinkC.valid)` for wdata. Valid is asserted by wen signal in mainpipe
 
-  /* Channel interaction */
+  val mbRead_valid_m2 = task_s2.valid && task_s2.bits.mshrOpType === OP_REFILL.U
+  val mbRead_valid_m3 = RegNext(mbRead_valid_m2, false.B)
+  val mbRead_id_m2 = task_s2.bits.mshrId
+  val mbRead_id_m3 = RegEnable(mbRead_id_m2, mbRead_valid_m2)
+  io.mshrBufRead.valid := mbRead_valid_m2 || mbRead_valid_m3
+  io.mshrBufRead.id := Mux(mbRead_valid_m2, mbRead_id_m2, mbRead_id_m3)
+  io.mshrBufRead.beat := Mux(mbRead_valid_m2, 0.U, 1.U)  // TODO: remove hardcode here
+  require(beatSize == 2)
+
+    /* Channel interaction */
   io.sinkA.ready := !io.mshrFull && resetFinish && !io.sinkC.valid && !mshr_task_s1.valid // SinkC prior to SinkA
   io.sinkC.ready := !io.mshrFull && resetFinish && !mshr_task_s1.valid
 
