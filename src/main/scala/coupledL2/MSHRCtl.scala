@@ -51,13 +51,13 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       val mshr_alloc_ptr = Output(UInt(mshrBits.W))
     }
     val mshrFull = Output(Bool())
-    val refillUnitResp = new Bundle() {
-      val valid = Input(Bool())
-      val source = Input(UInt(sourceIdBits.W))
-      val respInfo = Input(new RefillUnitResp())
-    }
+    val resps = Input(new Bundle() {
+      val sinkC = new RespBundle
+      val sinkD = new RespBundle
+    })
     val mshrTask = DecoupledIO(new SourceDReq)
     val mshrTaskID = Output(UInt(log2Ceil(mshrsAll).W))
+    val releaseBufWriteId = Output(UInt(mshrBits.W))
   })
 
   val mshrs = Seq.fill(mshrsAll) { Module(new MSHR()) }
@@ -77,8 +77,11 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
 
       mshr.io.tasks.source_a := DontCare
 
-      mshr.io.resp_refillUnit.valid := io.refillUnitResp.valid && io.refillUnitResp.source === i.U
-      mshr.io.resp_refillUnit.bits := io.refillUnitResp.respInfo
+      mshr.io.resps.sink_c.valid := io.resps.sinkC.valid && io.resps.sinkC.set === mshr.io.status.bits.set // TODO: MSHRs are blocked by slot instead of by set
+      mshr.io.resps.sink_c.valid := io.resps.sinkC.respInfo
+      mshr.io.resps.sink_d.valid := io.resps.sinkD.valid && io.resps.sinkD.mshrId === i.U
+      mshr.io.resps.sink_d.valid := io.resps.sinkD.respInfo
+      
   }
 
   io.toMainPipe.mshr_alloc_ptr := OHToUInt(selectedMSHROH)
@@ -114,6 +117,10 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   }
   io.mshrTask <> mshrTaskArb.io.out
   io.mshrTaskID := mshrTaskArb.io.chosen
+
+  io.releaseBufWriteId := ParallelPriorityMux(mshrs.zipWithIndex.map {
+    case (mshr, i) => (mshr.io.status.valid && mshr.io.status.bits.set === io.resps.sinkC.set, i.U)
+  })
 
   dontTouch(io.sourceA)
 }

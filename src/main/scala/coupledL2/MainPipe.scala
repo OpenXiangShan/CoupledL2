@@ -63,16 +63,25 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   val dirResult_s3 = io.dirResp_s3.bits
   val meta_s3 = dirResult_s3.meta
+  val meta_has_clients_s3 = meta_s3.clients.orR
+
   val req_s3 = task_s3.bits
-  val mshr_req_s3 = req_s3.mshrOpType =/= 0.U
+  val mshr_req_s3 = req_s3.mshrTask
   val req_acquire_s3 = req_s3.opcode === AcquireBlock || req_s3.opcode === AcquirePerm
   val req_prefetch_s3 = req_s3.opcode === Hint
   val req_needT_s3 = needT(req_s3.opcode, req_s3.param)
 
   val acquire_on_miss_s3 = req_acquire_s3 || req_prefetch_s3
-  val acquire_on_hit_s3 = dirResult_s3.meta.state === BRANCH && req_needT_s3
-  val need_acquire_s3 = task_s3.valid && !mshr_req_s3 &&
+  val acquire_on_hit_s3 = meta_s3.state === BRANCH && req_needT_s3
+  // For channel A reqs, alloc mshr when acquire downwards is needed
+  val need_mshr_s3_a = //task_s3.valid && !mshr_req_s3 &&
     ((dirResult_s3.hit && acquire_on_hit_s3) || (!dirResult_s3.hit && acquire_on_miss_s3))
+  // For channel B reqs, alloc mshr when Probe hits in both self and client dir
+  val need_mshr_s3_b = dirResult_s3.hit && req_s3.fromB &&
+    !(meta_s3.state === BRANCH && req_s3.param === toB) &&
+    meta_has_clients_s3
+  // For channel C reqs, Release will always hit on MainPipe.
+  val need_mshr_s3 = need_mshr_s3_a || need_mshr_s3_b
 
   val alloc_on_hit_s3 = false.B  // TODO
   val alloc_on_miss_s3 = true.B  // TODO
@@ -91,8 +100,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   // Allocation of MSHR: new request only
   val alloc_state = WireInit(0.U.asTypeOf(new FSMState()))
   alloc_state.elements.foreach(_._2 := true.B)
-  io.toMSHRCtl.mshr_alloc_s3.valid := task_s3.valid && !mshr_req_s3 &&
-    ((dirResult_s3.hit && alloc_on_hit_s3) || (!dirResult_s3.hit && alloc_on_miss_s3))
+  io.toMSHRCtl.mshr_alloc_s3.valid := task_s3.valid && !mshr_req_s3 && need_mshr_s3
   io.toMSHRCtl.mshr_alloc_s3.bits.set := task_s3.bits.set
   io.toMSHRCtl.mshr_alloc_s3.bits.tag := task_s3.bits.tag
   io.toMSHRCtl.mshr_alloc_s3.bits.off := task_s3.bits.off
@@ -109,12 +117,13 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
 
   /* ======== Other Signals Assignment ======== */
-  val meta_no_client = !meta_s3.clients.orR
+  val meta_no_client = !meta_has_clients_s3
   val req_needT = needT(req_s3.opcode, req_s3.param)
 
   // Initial state assignment
   when(req_s3.fromA) {
-    alloc_state.s_refill := req_s3.opcode === Hint
+    alloc_state.s_refill := req_s3.opcode === Hint // Q: Hint also needs refill?
+    alloc_state.w_grantack := req_s3.opcode === Hint
     // need replacement
     when(!dirResult_s3.hit && meta_s3.state =/= INVALID) {
       alloc_state.s_release := false.B
@@ -136,8 +145,11 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     }
   }
   when(req_s3.fromB) {
-    // TODO
-  }
-  when(req_s3.fromC) { // May not allocate MSHR
+    // Only consider the situation when mshr needs to be allocated
+    alloc_state.s_pprobe := false.B
+    alloc_state.w_pprobeackfirst := false.B
+    alloc_state.w_pprobeacklast := false.B
+    alloc_state.w_pprobeack := false.B
+    alloc_state.s_probeack := false.B
   }
 }

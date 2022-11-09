@@ -36,8 +36,10 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val directory = Module(new Directory())
   val dataStorage = Module(new DataStorage())
   val refillUnit = Module(new RefillUnit())
-  val mshrBuf = Module(new MSHRBuffer())
+  val sinkC = Module(new SinkC) // or ReleaseUnit?
+  val refillBuf, releaseBuf = Module(new MSHRBuffer())
 
+  reqArb.io.sinkC <> sinkC.io.toReqArb
   reqArb.io.dirRead_s1 <> directory.io.read
   reqArb.io.metaWrite_s1 <> directory.io.metaWReq
   reqArb.io.taskToPipe_s2 <> mainPipe.io.taskFromArb_s2
@@ -45,7 +47,10 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   reqArb.io.wdataToDS_s2 <> dataStorage.io.wdata_s2
   reqArb.io.mshrTask <> mshrCtl.io.mshrTask
   reqArb.io.mshrTaskID <> mshrCtl.io.mshrTaskID
-  reqArb.io.mshrBufRead <> mshrBuf.io.r
+  reqArb.io.mshrBufRead <> refillBuf.io.r
+
+  mshrCtl.io.resps.sinkC := sinkC.io.resp
+  mshrCtl.io.resps.sinkD := refillUnit.io.resp
 
   directory.io.resp <> mainPipe.io.dirResp_s3
   dataStorage.io.wen_s3 <> mainPipe.io.wdata_en_s3
@@ -53,14 +58,17 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   mainPipe.io.toMSHRCtl <> mshrCtl.io.fromMainPipe
   mainPipe.io.fromMSHRCtl <> mshrCtl.io.toMainPipe
 
-  refillUnit.io.mshrBufWrite <> mshrBuf.io.w
-  refillUnit.io.resp <> mshrCtl.io.refillUnitResp
+  sinkC.io.releaseBufWrite <> releaseBuf.io.w
+  releaseBuf.io.w.id := mshrCtl.io.releaseBufWriteId
+
+  refillUnit.io.refillBufWrite <> refillBuf.io.w
 
   /* input & output signals */
   val inBuf = cacheParams.innerBuf
   val outBuf = cacheParams.outerBuf
   reqArb.io.sinkA <> inBuf.a(io.in.a)
-  reqArb.io.sinkC <> inBuf.c(io.in.c)
+  // reqArb.io.sinkC <> inBuf.c(io.in.c)
+  sinkC.io.c <> inBuf.c(io.in.c)
   io.out.a <> outBuf.a(mshrCtl.io.sourceA)
   refillUnit.io.sinkD <> outBuf.d(io.out.d)
   io.out.e <> outBuf.e(refillUnit.io.sourceE)

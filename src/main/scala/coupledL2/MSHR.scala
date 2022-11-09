@@ -31,13 +31,18 @@ class MSHRTasks(implicit p: Parameters) extends L2Bundle {
   val source_d = DecoupledIO(new SourceDReq) // To Mainpipe
 }
 
+class MSHRResps(implicit p: Parameters) extends L2Bundle {
+  val sink_c = Flipped(ValidIO(new RespInfoBundle))
+  val sink_d = Flipped(ValidIO(new RespInfoBundle))
+}
+
 class MSHR(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val id = Input(UInt(mshrBits.W))
     val status = ValidIO(new MSHRStatus)
     val alloc = Flipped(ValidIO(new MSHRRequest))
     val tasks = new MSHRTasks()
-    val resp_refillUnit = Flipped(ValidIO(new RefillUnitResp()))
+    val resps = new MSHRResps()
   })
 
   def odOpGen(r: UInt) = {
@@ -107,13 +112,14 @@ class MSHR(implicit p: Parameters) extends L2Module {
   }
 
   /* Refill response */
-  when(io.resp_refillUnit.valid) {
-    when(io.resp_refillUnit.bits.opcode === Grant || io.resp_refillUnit.bits.opcode === GrantData) {
+  val d_resp = io.resps.sink_d
+  when(d_resp.valid) {
+    when(d_resp.bits.opcode === Grant || d_resp.bits.opcode === GrantData) {
       state.w_grantfirst := true.B
-      state.w_grantlast := io.resp_refillUnit.bits.last
-      state.w_grant := status_reg.bits.off === 0.U || io.resp_refillUnit.bits.last  // TODO? why offset?
+      state.w_grantlast := d_resp.bits.last
+      state.w_grant := status_reg.bits.off === 0.U || d_resp.bits.last  // TODO? why offset?
     }
-    when(io.resp_refillUnit.bits.opcode === ReleaseAck) {
+    when(d_resp.bits.opcode === ReleaseAck) {
       state.w_releaseack := true.B
     }
   }

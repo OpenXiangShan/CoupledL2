@@ -22,6 +22,7 @@ import chisel3.util._
 import coupledL2.utils._
 import coupledL2.TaskInfo._
 import freechips.rocketchip.tilelink._
+import freechips.rocketchip.tilelink.TLMessages._
 import chipsalliance.rocketchip.config.Parameters
 
 class RequestArb(implicit p: Parameters) extends L2Module {
@@ -66,7 +67,8 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   mshr_task_s0.bits.param := io.mshrTask.bits.param
   mshr_task_s0.bits.channel := 0.U
   mshr_task_s0.bits.alias := 0.U  // TODO: handle anti-alias
-  mshr_task_s0.bits.mshrOpType := OP_REFILL.U
+  // mshr_task_s0.bits.mshrOpType := OP_REFILL.U
+  mshr_task_s0.bits.mshrTask := true.B
   mshr_task_s0.bits.mshrId := io.mshrTaskID
 
   /* ======== Stage 1 ======== */
@@ -83,6 +85,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   l1_task_s1.bits.param := Mux(io.sinkC.valid, io.sinkC.bits.param, io.sinkA.bits.param)
   l1_task_s1.bits.channel := Mux(io.sinkC.valid, "b100".U, "b001".U)
   l1_task_s1.bits.alias := 0.U  // TODO: handle anti-alias
+  l1_task_s1.bits.mshrTask := false.B
   l1_task_s1.bits.mshrId := 0.U  // TODO: handle MSHR request
 
   val mshr_task_s1 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
@@ -132,7 +135,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   // TODO: we need to assert L1 sends two beats continuously
   // TODO: we do not need `when(io.sinkC.valid)` for wdata. Valid is asserted by wen signal in mainpipe
 
-  val mbRead_valid_m2 = task_s2.valid && task_s2.bits.mshrOpType === OP_REFILL.U
+  val mbRead_valid_m2 = task_s2.valid && task_s2.bits.mshrTask && task_s2.bits.opcode === GrantData
   val mbRead_valid_m3 = RegNext(mbRead_valid_m2, false.B)
   val mbRead_id_m2 = task_s2.bits.mshrId
   val mbRead_id_m3 = RegEnable(mbRead_id_m2, mbRead_valid_m2)

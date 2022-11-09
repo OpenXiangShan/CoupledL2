@@ -27,6 +27,7 @@ class MetaEntry(implicit p: Parameters) extends L2Bundle {
   val dirty = Bool()
   val state = UInt(stateBits.W)
   val clients = UInt(clientBits.W)  // valid-bit of clients
+  // TODO: record specific state of clients instead of just 1-bit
   // TODO: record prefetch info
 }
 

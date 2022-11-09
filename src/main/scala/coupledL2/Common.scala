@@ -48,7 +48,9 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val sourceId = UInt(sourceIdBits.W)     // tilelink sourceID
   val id = UInt(idBits.W)                 // identity of the task
 
-  val mshrOpType = UInt(mshrOpTypeBits.W) // type of the MSHR task operation
+  // val mshrOpType = UInt(mshrOpTypeBits.W) // type of the MSHR task operation
+  // MSHR may send Release(Data) or Grant(Data) or ProbeAck(Data) through Main Pipe
+  val mshrTask = Bool()
   val mshrId = UInt(mshrBits.W)           // mshr entry index (used only in mshr-task)
 }
 
@@ -74,10 +76,18 @@ class MSHRRequest(implicit p: Parameters) extends L2Bundle {
   val state = new FSMState()
 }
 
-class RefillUnitResp(implicit p: Parameters) extends L2Bundle {
+class RespInfoBundle(implicit p: Parameters) extends L2Bundle {
   val opcode = UInt(3.W)
   val param = UInt(3.W)
   val last = Bool() // last beat
+}
+
+class RespBundle(implicit p: Parameters) extends L2Bundle {
+  val valid = Bool()
+  val mshrId = UInt(mshrBits.W)
+  val set = UInt(setBits.W)
+  val tag = UInt(tagBits.W)
+  val respInfo = new RespInfoBundle
 }
 
 class FSMState(implicit p: Parameters) extends L2Bundle {
