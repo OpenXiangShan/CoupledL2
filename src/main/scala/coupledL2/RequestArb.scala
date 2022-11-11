@@ -29,7 +29,8 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     /* receive incoming tasks */
     val sinkA = Flipped(DecoupledIO(new TLBundleA(edgeIn.bundle)))
-    val sinkC = Flipped(DecoupledIO(new TLBundleC(edgeIn.bundle)))
+    val sinkB = Flipped(DecoupledIO(new TLBundleB(edgeIn.bundle)))
+    val sinkC = Flipped(DecoupledIO(new TaskBundle))
     val mshrTask = Flipped(DecoupledIO(new SourceDReq))
     val mshrTaskID = Input(UInt(log2Ceil(mshrsAll).W))
 
@@ -73,20 +74,42 @@ class RequestArb(implicit p: Parameters) extends L2Module {
 
   /* ======== Stage 1 ======== */
   /* Task generation and pipelining */
+  def fromTLAtoTaskBundle(a: TLBundleA): TaskBundle = {
+    val task = Wire(new TaskBundle)
+    task := DontCare
+    task.channel := "b001".U
+    task.tag := parseAddress(a.address)._1
+    task.set := parseAddress(a.address)._2
+    task.off := parseAddress(a.address)._3
+    task.alias := 0.U // TODO
+    task.opcode := a.opcode
+    task.param := a.param
+    task.sourceId := a.source
+    task.mshrTask := false.B
+    task
+  }
+
+  def fromTLBtoTaskBundle(b: TLBundleB): TaskBundle = {
+    val task = Wire(new TaskBundle)
+    task := DontCare
+    task.channel := "b010".U
+    task.tag := parseAddress(b.address)._1
+    task.set := parseAddress(b.address)._2
+    task.off := parseAddress(b.address)._3
+    task.alias := 0.U // TODO
+    task.opcode := b.opcode
+    task.param := b.param
+    task.mshrTask := false.B
+    task
+  }
+
+  val sinkA = fromTLAtoTaskBundle(io.sinkA.bits)
+  val sinkB = fromTLBtoTaskBundle(io.sinkB.bits)
+  val sinkC = io.sinkC.bits
+  val sinkValids = VecInit(Seq(io.sinkC, io.sinkB, io.sinkA).map(_.valid)).asUInt
   val l1_task_s1 = Wire(Valid(new TaskBundle()))
-  l1_task_s1 := DontCare
-  l1_task_s1.valid := (io.sinkC.valid || io.sinkA.valid) && resetFinish && !io.mshrFull
-  val (l1_tag_s1, l1_set_s1, l1_offs_s1) = parseAddress(Mux(io.sinkC.valid, io.sinkC.bits.address, io.sinkA.bits.address))
-  l1_task_s1.bits.set := l1_set_s1
-  l1_task_s1.bits.tag := l1_tag_s1
-  l1_task_s1.bits.off := l1_offs_s1
-  l1_task_s1.bits.sourceId := Mux(io.sinkC.valid, io.sinkC.bits.source, io.sinkA.bits.source)
-  l1_task_s1.bits.opcode := Mux(io.sinkC.valid, io.sinkC.bits.opcode, io.sinkA.bits.opcode)
-  l1_task_s1.bits.param := Mux(io.sinkC.valid, io.sinkC.bits.param, io.sinkA.bits.param)
-  l1_task_s1.bits.channel := Mux(io.sinkC.valid, "b100".U, "b001".U)
-  l1_task_s1.bits.alias := 0.U  // TODO: handle anti-alias
-  l1_task_s1.bits.mshrTask := false.B
-  l1_task_s1.bits.mshrId := 0.U  // TODO: handle MSHR request
+  l1_task_s1.valid := sinkValids.orR && resetFinish && !io.mshrFull
+  l1_task_s1.bits := Mux1H(sinkValids, Seq(sinkC, sinkB, sinkA))
 
   val mshr_task_s1 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
   when(mshr_task_s0.valid) {
@@ -96,7 +119,6 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   }
 
   val task_s1 = Mux(mshr_task_s1.valid, mshr_task_s1, l1_task_s1)
-  val releaseData = io.sinkC.bits.data
 
   /* Meta read request */
   io.dirRead_s1.valid := task_s1.valid
@@ -131,7 +153,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   when(task_s1.valid) { task_s2.bits := task_s1.bits }
   
   io.taskToPipe_s2 := task_s2
-  io.wdataToDS_s2.data := Cat(RegNext(releaseData), releaseData) // TODO: the first beat is higher bits?
+  // io.wdataToDS_s2.data := Cat(RegNext(releaseData), releaseData) // TODO: the first beat is higher bits?
   // TODO: we need to assert L1 sends two beats continuously
   // TODO: we do not need `when(io.sinkC.valid)` for wdata. Valid is asserted by wen signal in mainpipe
 

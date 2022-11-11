@@ -43,6 +43,9 @@ trait HasCoupledL2Parameters {
   val mshrsAll = 16
   val mshrBits = log2Up(mshrsAll)
 
+  val bufBlocks = 8 // hold data that flows in MainPipe
+  val bufIdxBits = log2Up(bufBlocks)
+
   lazy val edgeIn = p(EdgeInKey)
   lazy val edgeOut = p(EdgeOutKey)
 

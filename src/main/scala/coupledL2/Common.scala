@@ -47,6 +47,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val param = UInt(3.W)
   val sourceId = UInt(sourceIdBits.W)     // tilelink sourceID
   val id = UInt(idBits.W)                 // identity of the task
+  val bufIdx = UInt(bufIdxBits.W)         // idx of SinkC buffer
 
   // val mshrOpType = UInt(mshrOpTypeBits.W) // type of the MSHR task operation
   // MSHR may send Release(Data) or Grant(Data) or ProbeAck(Data) through Main Pipe

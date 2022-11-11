@@ -49,6 +49,10 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     val fromMSHRCtl = new Bundle() {
       val mshr_alloc_ptr = Input(UInt(mshrBits.W))
     }
+
+    /* DONT pass data in pipeline, use a buffer to save data */
+    val bufRead = Output(ValidIO(new PipeBufferRead))
+    val bufResp = Input(new PipeBufferResp)
   })
 
   /* ======== Stage 3 ======== */
