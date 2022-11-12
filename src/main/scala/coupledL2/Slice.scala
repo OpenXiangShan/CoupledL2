@@ -41,7 +41,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
 
   reqArb.io.sinkC <> sinkC.io.toReqArb
   reqArb.io.dirRead_s1 <> directory.io.read
-  reqArb.io.metaWrite_s1 <> directory.io.metaWReq
+  // reqArb.io.metaWrite_s1 <> directory.io.metaWReq
   reqArb.io.taskToPipe_s2 <> mainPipe.io.taskFromArb_s2
   reqArb.io.mshrFull <> mshrCtl.io.mshrFull
   reqArb.io.wdataToDS_s2 <> dataStorage.io.wdata_s2

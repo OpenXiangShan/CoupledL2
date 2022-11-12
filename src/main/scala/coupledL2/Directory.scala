@@ -32,7 +32,6 @@ class MetaEntry(implicit p: Parameters) extends L2Bundle {
 }
 
 class DirRead(implicit p: Parameters) extends L2Bundle {
-  val idOH = UInt(mshrsAll.W)
   val tag = UInt(tagBits.W)
   val set = UInt(setBits.W)
   val source = UInt(sourceIdBits.W)
@@ -40,7 +39,6 @@ class DirRead(implicit p: Parameters) extends L2Bundle {
 }
 
 class DirResult(implicit p: Parameters) extends L2Bundle {
-  val idOH = UInt(mshrsAll.W)
   val hit = Bool()
   val tag = UInt(tagBits.W)
   val set = UInt(setBits.W)

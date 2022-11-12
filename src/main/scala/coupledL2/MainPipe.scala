@@ -53,6 +53,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     /* DONT pass data in pipeline, use a buffer to save data */
     val bufRead = Output(ValidIO(new PipeBufferRead))
     val bufResp = Input(new PipeBufferResp)
+
+    // TODO: reset Directory
   })
 
   /* ======== Stage 3 ======== */

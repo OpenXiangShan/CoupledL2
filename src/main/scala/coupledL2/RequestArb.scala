@@ -36,7 +36,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
 
     /* read/write directory */
     val dirRead_s1 = ValidIO(new DirRead())  // To directory, read meta/tag
-    val metaWrite_s1 = ValidIO(new MetaWrite())
+    // val metaWrite_s1 = ValidIO(new MetaWrite())
 
     /* send task to mainpipe */
     val taskToPipe_s2 = ValidIO(new TaskBundle())
@@ -121,31 +121,20 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val task_s1 = Mux(mshr_task_s1.valid, mshr_task_s1, l1_task_s1)
 
   /* Meta read request */
-  io.dirRead_s1.valid := task_s1.valid
+  io.dirRead_s1.valid := l1_task_s1.valid
   io.dirRead_s1.bits.set := task_s1.bits.set
   io.dirRead_s1.bits.tag := task_s1.bits.tag
   io.dirRead_s1.bits.source := task_s1.bits.sourceId
   io.dirRead_s1.bits.replacerInfo.opcode := task_s1.bits.opcode
   io.dirRead_s1.bits.replacerInfo.channel := task_s1.bits.channel
-  io.dirRead_s1.bits.idOH := 0.U  // TODO: use idOH to identity whether it is a fresh request or mshr request
 
-  /* Meta write request */
-  val metaInit = Wire(new MetaEntry())
-  val metaWrite = Wire(new MetaEntry())
-  metaInit := DontCare
-  metaInit.state := MetaData.INVALID
-  metaWrite := DontCare  // TODO: consider normal metaWrite
-  // Manual initialize meta before reading
+  /* block reqs when reset */
   when(!resetFinish) {
     resetIdx := resetIdx - 1.U
   }
   when(resetIdx === 0.U) {
     resetFinish := true.B
   }
-  io.metaWrite_s1.valid := !resetFinish  // TODO: consider normal metaWrite
-  io.metaWrite_s1.bits.set := resetIdx
-  io.metaWrite_s1.bits.wayOH := Fill(cacheParams.ways, true.B)
-  io.metaWrite_s1.bits.wmeta := Mux(resetFinish, metaInit, metaWrite)
 
   /* ========  Stage 2 ======== */
   val task_s2 = RegInit(0.U.asTypeOf(task_s1))
@@ -163,11 +152,12 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val mbRead_id_m3 = RegEnable(mbRead_id_m2, mbRead_valid_m2)
   io.mshrBufRead.valid := mbRead_valid_m2 || mbRead_valid_m3
   io.mshrBufRead.id := Mux(mbRead_valid_m2, mbRead_id_m2, mbRead_id_m3)
-  io.mshrBufRead.beat := Mux(mbRead_valid_m2, 0.U, 1.U)  // TODO: remove hardcode here
+  // io.mshrBufRead.beat := Mux(mbRead_valid_m2, 0.U, 1.U)  // TODO: remove hardcode here
   require(beatSize == 2)
 
     /* Channel interaction */
-  io.sinkA.ready := !io.mshrFull && resetFinish && !io.sinkC.valid && !mshr_task_s1.valid // SinkC prior to SinkA
+  io.sinkA.ready := !io.mshrFull && resetFinish && !io.sinkB.valid && !io.sinkC.valid && !mshr_task_s1.valid // SinkC prior to SinkA & SinkB
+  io.sinkB.ready := !io.mshrFull && resetFinish && !io.sinkC.valid && !mshr_task_s1.valid
   io.sinkC.ready := !io.mshrFull && resetFinish && !mshr_task_s1.valid
 
   dontTouch(io)
