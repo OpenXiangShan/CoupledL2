@@ -53,12 +53,15 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   mshrCtl.io.resps.sinkD := refillUnit.io.resp
 
   directory.io.resp <> mainPipe.io.dirResp_s3
-  dataStorage.io.wen_s3 <> mainPipe.io.wdata_en_s3
+
+  dataStorage.io.req <> mainPipe.io.toDS.req_s3
+  dataStorage.io.wdata := mainPipe.io.toDS.wdata_s3
   
   mainPipe.io.toMSHRCtl <> mshrCtl.io.fromMainPipe
   mainPipe.io.fromMSHRCtl <> mshrCtl.io.toMainPipe
   mainPipe.io.bufRead <> sinkC.io.bufRead
   mainPipe.io.bufResp <> sinkC.io.bufResp
+  mainPipe.io.toDS.rdata_s5 := dataStorage.io.rdata
 
   sinkC.io.releaseBufWrite <> releaseBuf.io.w
   releaseBuf.io.w.id := mshrCtl.io.releaseBufWriteId
@@ -76,7 +79,6 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   io.out.e <> outBuf.e(refillUnit.io.sourceE)
 
   directory.io.tagWReq <> DontCare
-  dataStorage.io <> DontCare
   dontTouch(io.in)
   dontTouch(io.out)
 }

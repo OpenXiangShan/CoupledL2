@@ -44,8 +44,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       val mshr_alloc_s3 = ValidIO(new MSHRRequest())
     }
 
-    val wdata_en_s3 = Output(Bool())
-
     val fromMSHRCtl = new Bundle() {
       val mshr_alloc_ptr = Input(UInt(mshrBits.W))
     }
@@ -53,6 +51,13 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     /* DONT pass data in pipeline, use a buffer to save data */
     val bufRead = Output(ValidIO(new PipeBufferRead))
     val bufResp = Input(new PipeBufferResp)
+
+    /* read or write data storage */
+    val toDS = new Bundle() {
+      val req_s3 = ValidIO(new DSRequest)
+      val rdata_s5 = Input(new DSBlock)
+      val wdata_s3 = Output(new DSBlock) 
+    }
 
     // TODO: reset Directory
   })
@@ -91,8 +96,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   val alloc_on_hit_s3 = false.B  // TODO
   val alloc_on_miss_s3 = true.B  // TODO
-
-  io.wdata_en_s3 := task_s3.valid && req_s3.opcode === ReleaseData
 
   /* Signals to MSHR Ctl */
 

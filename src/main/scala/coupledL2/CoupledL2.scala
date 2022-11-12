@@ -30,6 +30,7 @@ trait HasCoupledL2Parameters {
   val p: Parameters
   val cacheParams = p(L2ParamKey)
 
+  val blocks = cacheParams.sets * cacheParams.ways
   val blockBytes = cacheParams.blockBytes
   val beatBytes = cacheParams.channelBytes.d.get
   val beatSize = blockBytes / beatBytes
@@ -45,6 +46,9 @@ trait HasCoupledL2Parameters {
 
   val bufBlocks = 8 // hold data that flows in MainPipe
   val bufIdxBits = log2Up(bufBlocks)
+
+  // 1 cycle for sram read, and latch for another cycle
+  val sramLatency = 2
 
   lazy val edgeIn = p(EdgeInKey)
   lazy val edgeOut = p(EdgeOutKey)
