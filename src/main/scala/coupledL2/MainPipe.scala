@@ -22,6 +22,7 @@ import chisel3.util._
 import coupledL2.utils._
 import coupledL2.MetaData._
 import chipsalliance.rocketchip.config.Parameters
+import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
 
@@ -59,12 +60,59 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       val wdata_s3 = Output(new DSBlock) 
     }
 
+    /* send Release/Grant/ProbeAck via SourceC/D channels */
+    val toSourceC = DecoupledIO(new TLBundleC(edgeOut.bundle))
+    val toSourceD = DecoupledIO(new TLBundleD(edgeOut.bundle))
+
     // TODO: reset Directory
   })
 
+  val c_s2 = Wire(io.toSourceC.cloneType)
+  val d_s2 = Wire(io.toSourceD.cloneType)
+
+  def toTLBundleC(task: TaskBundle, data: UInt = 0.U) = {
+    val c = Wire(new TLBundleC(edgeOut.bundle))
+    c := DontCare
+    c.opcode := task.opcode
+    c.param := task.param
+    c.size := offsetBits.U
+    c.source := task.mshrId
+    c.address := Cat(task.tag, task.set, task.off)
+    c.data := data
+    c.corrupt := false.B
+    c
+  }
+
+  def toTLBundleD(task: TaskBundle, data: UInt = 0.U) = {
+    val d = Wire(new TLBundleD(edgeOut.bundle))
+    d := DontCare
+    d.opcode := task.opcode
+    d.param := task.param
+    d.size := offsetBits.U
+    d.source := task.sourceId
+    d.sink := task.mshrId
+    d.denied := false.B
+    d.data := data
+    d.corrupt := false.B
+    d
+  }
+
+  /* ======== Stage 2 ======== */
+  // send out MSHR task if data is not needed
+  val task_s2 = io.taskFromArb_s2
+  val hasData_s2 = task_s2.bits.opcode(0)
+  val isGrant_s2 = task_s2.bits.fromA && task_s2.bits.opcode === Grant
+  val task_ready_s2 = task_s2.bits.mshrTask && !hasData_s2 // this task is ready to leave pipeline, but channels might be not ready
+  val chnl_ready_s2 = Mux(isGrant_s2, d_s2.ready, c_s2.ready) // channel is ready
+  val fire_s2 = task_ready_s2 && chnl_ready_s2 // both task and channel are ready, this task actually leave pipeline
+  c_s2.valid := io.taskFromArb_s2.valid && task_ready_s2 && !isGrant_s2
+  d_s2.valid := io.taskFromArb_s2.valid && task_ready_s2 && isGrant_s2
+  c_s2.bits := toTLBundleC(task_s2.bits)
+  d_s2.bits := toTLBundleD(task_s2.bits)
+
   /* ======== Stage 3 ======== */
   val task_s3 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
-  task_s3.valid := io.taskFromArb_s2.valid
+  task_s3.valid := io.taskFromArb_s2.valid && !fire_s2
   when(io.taskFromArb_s2.valid) {
     task_s3.bits := io.taskFromArb_s2.bits
   }
@@ -161,4 +209,9 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     alloc_state.w_pprobeack := false.B
     alloc_state.s_probeack := false.B
   }
+
+  assert(io.toSourceD.ready) // SourceD should always be ready
+  assert(io.toSourceC.ready) // SourceC/wbq should be large enough to avoid blocking pipeline
+  TLArbiter.lowest(edgeOut, io.toSourceC,/* s6, s5, ...*/ c_s2)
+  TLArbiter.lowest(edgeIn, io.toSourceD, d_s2)
 }
