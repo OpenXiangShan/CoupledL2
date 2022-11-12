@@ -38,6 +38,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val refillUnit = Module(new RefillUnit())
   val sinkC = Module(new SinkC) // or ReleaseUnit?
   val refillBuf, releaseBuf = Module(new MSHRBuffer())
+  val wbq = Module(new WritebackQueue)
 
   reqArb.io.sinkC <> sinkC.io.toReqArb
   reqArb.io.dirRead_s1 <> directory.io.read
@@ -62,6 +63,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   mainPipe.io.bufRead <> sinkC.io.bufRead
   mainPipe.io.bufResp <> sinkC.io.bufResp
   mainPipe.io.toDS.rdata_s5 := dataStorage.io.rdata
+  mainPipe.io.toSourceC <> wbq.io.req
 
   sinkC.io.releaseBufWrite <> releaseBuf.io.w
   releaseBuf.io.w.id := mshrCtl.io.releaseBufWriteId
@@ -72,9 +74,10 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val inBuf = cacheParams.innerBuf
   val outBuf = cacheParams.outerBuf
   reqArb.io.sinkA <> inBuf.a(io.in.a)
-  // reqArb.io.sinkC <> inBuf.c(io.in.c)
   sinkC.io.c <> inBuf.c(io.in.c)
+  inBuf.d(io.in.d) <> mainPipe.io.toSourceD
   io.out.a <> outBuf.a(mshrCtl.io.sourceA)
+  io.out.c <> outBuf.c(wbq.io.c)
   refillUnit.io.sinkD <> outBuf.d(io.out.d)
   io.out.e <> outBuf.e(refillUnit.io.sourceE)
 
