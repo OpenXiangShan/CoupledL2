@@ -41,11 +41,9 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     /* send task to mainpipe */
     val taskToPipe_s2 = ValidIO(new TaskBundle())
 
-    /* send wdata to data storage */
-    val wdataToDS_s2 = Output(new DSBlock())
-
     /* send mshrBuf read request */
-    val mshrBufRead = Flipped(new MSHRBufRead)
+    val refillBufRead_s2 = Flipped(new MSHRBufRead)
+    val releaseBufRead_s2 = Flipped(new MSHRBufRead)
 
     /* mshr full, from MSHRCtrl */
     val mshrFull = Input(Bool())
@@ -121,7 +119,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val task_s1 = Mux(mshr_task_s1.valid, mshr_task_s1, l1_task_s1)
 
   /* Meta read request */
-  io.dirRead_s1.valid := l1_task_s1.valid
+  io.dirRead_s1.valid := l1_task_s1.valid // only sinkA/B/C tasks need to read directory
   io.dirRead_s1.bits.set := task_s1.bits.set
   io.dirRead_s1.bits.tag := task_s1.bits.tag
   io.dirRead_s1.bits.source := task_s1.bits.sourceId
@@ -142,20 +140,21 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   when(task_s1.valid) { task_s2.bits := task_s1.bits }
   
   io.taskToPipe_s2 := task_s2
-  // io.wdataToDS_s2.data := Cat(RegNext(releaseData), releaseData) // TODO: the first beat is higher bits?
-  // TODO: we need to assert L1 sends two beats continuously
-  // TODO: we do not need `when(io.sinkC.valid)` for wdata. Valid is asserted by wen signal in mainpipe
 
-  val mbRead_valid_m2 = task_s2.valid && task_s2.bits.mshrTask && task_s2.bits.opcode === GrantData
-  val mbRead_valid_m3 = RegNext(mbRead_valid_m2, false.B)
-  val mbRead_id_m2 = task_s2.bits.mshrId
-  val mbRead_id_m3 = RegEnable(mbRead_id_m2, mbRead_valid_m2)
-  io.mshrBufRead.valid := mbRead_valid_m2 || mbRead_valid_m3
-  io.mshrBufRead.id := Mux(mbRead_valid_m2, mbRead_id_m2, mbRead_id_m3)
-  // io.mshrBufRead.beat := Mux(mbRead_valid_m2, 0.U, 1.U)  // TODO: remove hardcode here
+  val mshrTask_s2 = task_s2.valid && task_s2.bits.mshrTask
+  // For GrantData, read refillBuffer
+  io.refillBufRead_s2.valid := mshrTask_s2 && task_s2.bits.fromA && task_s2.bits.opcode === GrantData
+  io.refillBufRead_s2.id := task_s2.bits.mshrId
+  // For ReleaseData or ProbeAckData, read releaseBuffer
+  // channel is used to differentiate GrantData and ProbeAckData
+  io.releaseBufRead_s2.valid := mshrTask_s2 && (task_s2.bits.opcode === ReleaseData ||
+    task_s2.bits.fromB && task_s2.bits.opcode === ProbeAckData)
+  io.releaseBufRead_s2.id := task_s2.bits.mshrId
+  assert(!io.refillBufRead_s2.valid || io.refillBufRead_s2.ready)
+  assert(!io.releaseBufRead_s2.valid || io.releaseBufRead_s2.ready)
   require(beatSize == 2)
 
-    /* Channel interaction */
+  /* Channel interaction */
   io.sinkA.ready := !io.mshrFull && resetFinish && !io.sinkB.valid && !io.sinkC.valid && !mshr_task_s1.valid // SinkC prior to SinkA & SinkB
   io.sinkB.ready := !io.mshrFull && resetFinish && !io.sinkC.valid && !mshr_task_s1.valid
   io.sinkC.ready := !io.mshrFull && resetFinish && !mshr_task_s1.valid
