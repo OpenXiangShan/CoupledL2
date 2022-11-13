@@ -78,9 +78,9 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       mshr.io.tasks.source_a := DontCare
 
       mshr.io.resps.sink_c.valid := io.resps.sinkC.valid && io.resps.sinkC.set === mshr.io.status.bits.set // TODO: MSHRs are blocked by slot instead of by set
-      mshr.io.resps.sink_c.valid := io.resps.sinkC.respInfo
+      mshr.io.resps.sink_c.bits := io.resps.sinkC.respInfo
       mshr.io.resps.sink_d.valid := io.resps.sinkD.valid && io.resps.sinkD.mshrId === i.U
-      mshr.io.resps.sink_d.valid := io.resps.sinkD.respInfo
+      mshr.io.resps.sink_d.bits := io.resps.sinkD.respInfo
       
   }
 
