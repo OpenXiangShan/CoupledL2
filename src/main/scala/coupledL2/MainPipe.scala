@@ -35,13 +35,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     val dirResp_s3 = Flipped(ValidIO(new DirResult))
 
     val toMSHRCtl = new Bundle() {
-      val need_acquire_s3 = Output(Bool())
-      val infoA_s3 = Output(new Bundle() {
-        val addr = UInt(addressBits.W)
-        val opcode = UInt(3.W)
-        val param = UInt(3.W)
-        val source = UInt(sourceIdBits.W)
-      })
       val mshr_alloc_s3 = ValidIO(new MSHRRequest())
     }
 
@@ -158,14 +151,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val alloc_on_miss_s3 = true.B  // TODO
 
   /* Signals to MSHR Ctl */
-
-  // Acquire downwards at MainPipe
-  io.toMSHRCtl.need_acquire_s3 := false.B //need_acquire_s3 TODO: fast acquire
-  io.toMSHRCtl.infoA_s3.addr := 0.U // TODO: fast acquire
-  io.toMSHRCtl.infoA_s3.opcode := Mux(dirResult_s3.hit, AcquirePerm, AcquireBlock)
-  io.toMSHRCtl.infoA_s3.param := Mux(req_needT_s3, Mux(dirResult_s3.hit, BtoT, NtoT), NtoB)
-  io.toMSHRCtl.infoA_s3.source := io.fromMSHRCtl.mshr_alloc_ptr // TODO
-
   // Allocation of MSHR: new request only
   val alloc_state = WireInit(0.U.asTypeOf(new FSMState()))
   alloc_state.elements.foreach(_._2 := true.B)

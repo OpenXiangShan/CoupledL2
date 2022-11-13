@@ -38,13 +38,6 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val sourceA = DecoupledIO(new TLBundleA(edgeIn.bundle))
     val fromMainPipe = new Bundle() {
-      val need_acquire_s3 = Input(Bool())
-      val infoA_s3 = Input(new Bundle() {
-        val addr = UInt(addressBits.W)
-        val opcode = UInt(3.W)
-        val param = UInt(3.W)
-        val source = UInt(sourceIdBits.W)
-      })
       val mshr_alloc_s3 = Flipped(ValidIO(new MSHRRequest()))
     }
     val toMainPipe = new Bundle() {
