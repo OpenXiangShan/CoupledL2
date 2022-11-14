@@ -31,7 +31,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     val sinkA = Flipped(DecoupledIO(new TLBundleA(edgeIn.bundle)))
     val sinkB = Flipped(DecoupledIO(new TLBundleB(edgeIn.bundle)))
     val sinkC = Flipped(DecoupledIO(new TaskBundle))
-    val mshrTask = Flipped(DecoupledIO(new SourceDReq))
+    val mshrTask = Flipped(DecoupledIO(new MSHRTask))
     val mshrTaskID = Input(UInt(log2Ceil(mshrsAll).W))
 
     /* read/write directory */
@@ -69,6 +69,9 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   // mshr_task_s0.bits.mshrOpType := OP_REFILL.U
   mshr_task_s0.bits.mshrTask := true.B
   mshr_task_s0.bits.mshrId := io.mshrTaskID
+  mshr_task_s0.bits.way := io.mshrTask.bits.way
+  mshr_task_s0.bits.metaWrite := io.mshrTask.bits.metaWrite
+  mshr_task_s0.bits.tagWrite := io.mshrTask.bits.tagWrite
 
   /* ======== Stage 1 ======== */
   /* Task generation and pipelining */

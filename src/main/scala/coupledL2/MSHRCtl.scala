@@ -55,7 +55,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       val sinkC = new RespBundle
       val sinkD = new RespBundle
     })
-    val mshrTask = DecoupledIO(new SourceDReq)
+    val mshrTask = DecoupledIO(new MSHRTask)
     val mshrTaskID = Output(UInt(log2Ceil(mshrsAll).W))
     val releaseBufWriteId = Output(UInt(mshrBits.W))
   })
@@ -113,7 +113,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   val mshrTaskArb = Module(new FastArbiter(chiselTypeOf(io.mshrTask.bits), mshrsAll))
   mshrs.zipWithIndex.foreach{
     case (m, i) =>
-      mshrTaskArb.io.in(i) <> m.io.tasks.source_d
+      mshrTaskArb.io.in(i) <> m.io.tasks.mainpipe
   }
   io.mshrTask <> mshrTaskArb.io.out
   io.mshrTaskID := mshrTaskArb.io.chosen

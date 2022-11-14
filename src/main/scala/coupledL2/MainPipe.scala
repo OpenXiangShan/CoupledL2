@@ -67,8 +67,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     // TODO: reset Directory
   })
 
-  val c_s2 = Wire(io.toSourceC.cloneType)
-  val d_s2 = Wire(io.toSourceD.cloneType)
+  val c_s2, c_s3 = Wire(io.toSourceC.cloneType)
+  val d_s2, d_s3 = Wire(io.toSourceD.cloneType)
 
   def toTLBundleC(task: TaskBundle, data: UInt = 0.U) = {
     val c = Wire(new TLBundleC(edgeOut.bundle))
@@ -212,6 +212,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   assert(io.toSourceD.ready) // SourceD should always be ready
   assert(io.toSourceC.ready) // SourceC/wbq should be large enough to avoid blocking pipeline
-  TLArbiter.lowest(edgeOut, io.toSourceC,/* s6, s5, ...*/ c_s2)
-  TLArbiter.lowest(edgeIn, io.toSourceD, d_s2)
+  TLArbiter.lowest(edgeOut, io.toSourceC, c_s3, c_s2)
+  TLArbiter.lowest(edgeIn, io.toSourceD, d_s3, d_s2)
 }

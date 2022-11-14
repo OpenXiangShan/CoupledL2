@@ -28,7 +28,7 @@ import chipsalliance.rocketchip.config.Parameters
 class MSHRTasks(implicit p: Parameters) extends L2Bundle {
   // outer
   val source_a = DecoupledIO(new SourceAReq) // To AcquireUnit  // TODO: no need to use decoupled handshake
-  val source_d = DecoupledIO(new SourceDReq) // To Mainpipe
+  val mainpipe = DecoupledIO(new MSHRTask) // To Mainpipe (SourceC or SourceD)
 }
 
 class MSHRResps(implicit p: Parameters) extends L2Bundle {
@@ -84,7 +84,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
 
   /* Task allocation */
   io.tasks.source_a.valid := !state.s_acquire && state.s_release && state.s_pprobe
-  io.tasks.source_d.valid := !state.s_refill && state.w_grantlast && state.w_pprobeack  // refill when grantlast, TODO: opt?
+  io.tasks.mainpipe.valid := !state.s_refill && state.w_grantlast && state.w_pprobeack  // refill when grantlast, TODO: opt?
 
   val oa = io.tasks.source_a.bits
   oa.tag := req.tag
@@ -94,7 +94,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   oa.opcode := Mux(dirResult.hit, AcquirePerm, AcquireBlock)
   oa.param := Mux(req_needT, Mux(dirResult.hit, BtoT, NtoT), NtoB)
 
-  val od = io.tasks.source_d.bits
+  val od = io.tasks.mainpipe.bits
   od.tag := req.tag
   od.set := req.set
   od.off := req.off
@@ -107,7 +107,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   when(io.tasks.source_a.fire) {
     state.s_acquire := true.B
   }
-  when(io.tasks.source_d.fire) {
+  when(io.tasks.mainpipe.fire) {
     state.s_refill := true.B
   }
 
