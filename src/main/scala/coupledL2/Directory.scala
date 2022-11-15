@@ -31,6 +31,20 @@ class MetaEntry(implicit p: Parameters) extends L2Bundle {
   // TODO: record prefetch info
 }
 
+object MetaEntry {
+  def apply()(implicit p: Parameters) = {
+    val init = WireInit(0.U.asTypeOf(new MetaEntry))
+    init
+  }
+  def apply(dirty: Bool, state: UInt, clients: UInt)(implicit p: Parameters) = {
+    val entry = Wire(new MetaEntry)
+    entry.dirty := dirty
+    entry.state := state
+    entry.clients := clients
+    entry
+  }
+}
+
 class DirRead(implicit p: Parameters) extends L2Bundle {
   val tag = UInt(tagBits.W)
   val set = UInt(setBits.W)

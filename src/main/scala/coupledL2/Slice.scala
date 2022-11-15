@@ -42,7 +42,6 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
 
   reqArb.io.sinkC <> sinkC.io.toReqArb
   reqArb.io.dirRead_s1 <> directory.io.read
-  // reqArb.io.metaWrite_s1 <> directory.io.metaWReq
   reqArb.io.taskToPipe_s2 <> mainPipe.io.taskFromArb_s2
   reqArb.io.mshrFull <> mshrCtl.io.mshrFull
   reqArb.io.mshrTask <> mshrCtl.io.mshrTask
@@ -54,6 +53,8 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   mshrCtl.io.resps.sinkD := refillUnit.io.resp
 
   directory.io.resp <> mainPipe.io.dirResp_s3
+  directory.io.metaWReq <> mainPipe.io.metaWReq
+  directory.io.tagWReq <> mainPipe.io.tagWReq
 
   dataStorage.io.req <> mainPipe.io.toDS.req_s3
   dataStorage.io.wdata := mainPipe.io.toDS.wdata_s3
@@ -64,6 +65,10 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   mainPipe.io.bufResp <> sinkC.io.bufResp
   mainPipe.io.toDS.rdata_s5 := dataStorage.io.rdata
   mainPipe.io.toSourceC <> wbq.io.req
+  mainPipe.io.refillBufResp_s3.valid := RegNext(refillBuf.io.r.valid && refillBuf.io.r.ready)
+  mainPipe.io.refillBufResp_s3.bits := refillBuf.io.r.data
+  mainPipe.io.releaseBufResp_s3.valid := RegNext(releaseBuf.io.r.valid && releaseBuf.io.r.ready)
+  mainPipe.io.releaseBufResp_s3.bits := releaseBuf.io.r.data
 
   sinkC.io.releaseBufWrite <> releaseBuf.io.w
   releaseBuf.io.w.id := mshrCtl.io.releaseBufWriteId
@@ -81,7 +86,6 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   refillUnit.io.sinkD <> outBuf.d(io.out.d)
   io.out.e <> outBuf.e(refillUnit.io.sourceE)
 
-  directory.io.tagWReq <> DontCare
   dontTouch(io.in)
   dontTouch(io.out)
 }
