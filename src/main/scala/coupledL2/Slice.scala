@@ -37,7 +37,8 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val dataStorage = Module(new DataStorage())
   val refillUnit = Module(new RefillUnit())
   val sinkC = Module(new SinkC) // or ReleaseUnit?
-  val refillBuf, releaseBuf = Module(new MSHRBuffer())
+  val refillBuf = Module(new MSHRBuffer())
+  val releaseBuf = Module(new MSHRBuffer(wPorts = releaseBufWPorts))
   val wbq = Module(new WritebackQueue)
 
   val prbq = Module(new ProbeQueue())
@@ -73,10 +74,11 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   mainPipe.io.releaseBufResp_s3.valid := RegNext(releaseBuf.io.r.valid && releaseBuf.io.r.ready)
   mainPipe.io.releaseBufResp_s3.bits := releaseBuf.io.r.data
 
-  sinkC.io.releaseBufWrite <> releaseBuf.io.w
-  releaseBuf.io.w.id := mshrCtl.io.releaseBufWriteId
+  releaseBuf.io.w.last <> sinkC.io.releaseBufWrite
+  releaseBuf.io.w.last.id := mshrCtl.io.releaseBufWriteId
+  VecInit(releaseBuf.io.w.init) <> mainPipe.io.releaseBufWrite
 
-  refillUnit.io.refillBufWrite <> refillBuf.io.w
+  refillUnit.io.refillBufWrite <> refillBuf.io.w.last
 
   /* input & output signals */
   val inBuf = cacheParams.innerBuf

@@ -20,7 +20,8 @@ package coupledL2
 import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config.Parameters
-import coupledL2.utils.SRAMTemplate
+import coupledL2.utils._
+import java.util.ResourceBundle
 
 // read with block granularity
 class MSHRBufRead(implicit p: Parameters) extends L2Bundle {
@@ -41,39 +42,44 @@ class MSHRBufWrite(implicit p: Parameters) extends L2Bundle {
 
 // TODO: should it have both r/w port?
 // MSHR Buffer is used when MSHR needs to save data, so each buffer entry corresponds to an MSHR
-class MSHRBuffer(implicit p: Parameters) extends L2Module {
+class MSHRBuffer(wPorts: Int = 1)(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val r = new MSHRBufRead()
-    val w = new MSHRBufWrite()
+    val w = Vec(wPorts, new MSHRBufWrite)
   })
 
   val buffer = Seq.fill(mshrsAll) {
     Module(new SRAMTemplate(new DSData(), set = 1, way = beatSize, singlePort = true))
   }
   val valids = RegInit(VecInit(Seq.fill(mshrsAll) {
-    VecInit(Seq.fill(beatSize) { false.B })
-  }))  // Used for assertion
-
-  when(io.w.valid) {
-    assert(!valids(io.w.id)(io.w.beat), "[%d] attempt to write a valid entry", io.w.id)
-    valids(io.w.id)(io.w.beat) := true.B
+    VecInit(Seq.fill(beatSize)(false.B))
+  }))
+  io.w.foreach {
+    case w =>
+      when (w.valid) { valids(w.id)(w.beat) := true.B }
   }
-  when(io.r.valid) {
+  when (io.r.valid) {
     assert(valids(io.r.id).asUInt.andR, "[%d] attempt to read an invalid entry", io.r.id)
     valids(io.r.id).foreach(_ := false.B)
   }
 
-  buffer.zipWithIndex.foreach{
+  buffer.zipWithIndex.foreach {
     case (buf, i) =>
       assert(!buf.io.r.req.valid || buf.io.r.req.ready, "avoid rw hazard manually")
-      buf.io.w.req.valid := io.w.valid && io.w.id === i.U
-      buf.io.w.req.bits.apply(io.w.data, 0.U, UIntToOH(io.w.beat))
+      val w_sel = VecInit(io.w.map(w => w.valid && w.id === i.U)).asUInt
+      val w_id = ParallelPriorityMux(w_sel, io.w.map(_.id))
+      val w_beat = ParallelPriorityMux(w_sel, io.w.map(_.beat))
+      val w_data = ParallelPriorityMux(w_sel, io.w.map(_.data))
+      buf.io.w.req.valid := w_sel.orR
+      buf.io.w.req.bits.apply(w_data, 0.U, UIntToOH(w_beat))
+      assert(PopCount(w_sel) <= 1.U)
+
       buf.io.r.req.valid := io.r.valid && io.r.id === i.U
       buf.io.r.req.bits.apply(0.U)
   }
 
   io.r.ready := true.B
-  io.w.ready := true.B
+  io.w.foreach(_.ready := true.B)
 
   val ridReg = RegNext(io.r.id)
   io.r.data.data := VecInit(buffer.map(_.io.r.resp.data.asUInt))(ridReg)
