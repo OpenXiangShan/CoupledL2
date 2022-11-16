@@ -71,6 +71,9 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     /* write dir, including reset dir */
     val metaWReq = ValidIO(new MetaWrite)
     val tagWReq = ValidIO(new TagWrite)
+
+    /* read DS and write data into ReleaseBuf when the task needs to replace */
+    val releaseBufWrite = Flipped(Vec(releaseBufWPorts - 1, new MSHRBufWrite())) // s5 & s6
   })
 
   val resetFinish = RegInit(false.B)
@@ -243,22 +246,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val beats_unready_s3 = (beatsOH_s3 & ~beatsOH_ready_s3).orR
   val (beat_s3, next_beatsOH_s3) = getBeat(data_s3, beatsOH_s3)
 
-  c_s3.valid := task_s3.valid && Mux(
-    mshr_req_s3,
-    mshr_release_s3 || mshr_probeack_s3,
-    req_s3.fromB && !need_mshr_s3 && !beats_unready_s3
-  )
-  c_s3.bits := toTLBundleC(source_req_s3, beat_s3)
-  d_s3.valid := task_s3.valid && Mux(
-    mshr_req_s3,
-    mshr_grant_s3,
-    req_s3.fromC || req_s3.fromA && !need_mshr_s3 && !beats_unready_s3
-  )
-  d_s3.bits := toTLBundleD(source_req_s3, beat_s3)
-  val task_ready_s3 = !hasData_s3 || (!mshr_req_s3 && (req_s3.fromC || need_mshr_s3))
-  val mshr_fire_s3 = !mshr_req_s3 && need_mshr_s3
-  val chnl_fire_s3 = task_ready_s3 && (c_s3.fire() || d_s3.fire()) && !next_beatsOH_s3.orR
-
   // write/read data storage
   val wen_c = !mshr_req_s3 && req_s3.fromC && isParamFromT(req_s3.param) && req_s3.opcode(0)
   val wen_mshr_grant = mshr_grantdata_s3
@@ -269,6 +256,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val need_data_on_miss_a = req_s3.fromA && !mshr_req_s3 && !dirResult_s3.hit && (meta_s3.state === TRUNK || meta_s3.state === TIP && meta_s3.dirty)
   val need_data_b = req_s3.fromB && !mshr_req_s3 && dirResult_s3.hit && (meta_s3.state === TRUNK || meta_s3.state === TIP && meta_s3.dirty)
   val ren = Mux(dirResult_s3.hit, need_data_on_hit_a, need_data_on_miss_a) || need_data_b
+  val need_write_releaseBuf = need_data_on_miss_a || need_data_b
   io.toDS.req_s3.valid := task_s3.valid && (ren || wen)
   io.toDS.req_s3.bits.way := Mux(mshr_req_s3, req_s3.way, dirResult_s3.way)
   io.toDS.req_s3.bits.set := dirResult_s3.set
@@ -323,24 +311,43 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.tagWReq.bits.way := req_s3.way
   io.tagWReq.bits.wtag := req_s3.tag
 
+  val task_ready_s3 = !hasData_s3 || (!mshr_req_s3 && (req_s3.fromC || need_mshr_s3))
+  val mshr_fire_s3 = !mshr_req_s3 && need_mshr_s3 && !need_write_releaseBuf
+  val chnl_fire_s3 = task_ready_s3 && (c_s3.fire() || d_s3.fire()) && !next_beatsOH_s3.orR
+  c_s3.valid := task_s3.valid && Mux(
+    mshr_req_s3,
+    mshr_release_s3 || mshr_probeack_s3,
+    req_s3.fromB && !need_mshr_s3 && !beats_unready_s3
+  )
+  c_s3.bits := toTLBundleC(source_req_s3, beat_s3)
+  d_s3.valid := task_s3.valid && Mux(
+    mshr_req_s3,
+    mshr_grant_s3,
+    req_s3.fromC || req_s3.fromA && !need_mshr_s3 && !beats_unready_s3
+  )
+  d_s3.bits := toTLBundleD(source_req_s3, beat_s3)
+
   /* ======== Stage 4 ======== */
   val task_s4 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
   val beatsOH_s4 = RegInit(0.U(beatSize.W))
   val beatsOH_ready_s4 = RegInit(0.U(beatSize.W))
   val data_s4 = Reg(UInt((blockBytes * 8).W))
   val ren_s4 = RegInit(false.B)
+  val need_write_releaseBuf_s4 = Reg(Bool())
   task_s4.valid := task_s3.valid && !mshr_fire_s3 && !chnl_fire_s3
   when (task_s3.valid) {
     task_s4.bits := source_req_s3
+    task_s4.bits.mshrId := Mux(need_mshr_s3, io.fromMSHRCtl.mshr_alloc_ptr, task_s4.bits.mshrId)
     beatsOH_s4 := Mux(c_s3.fire() || d_s3.fire(), next_beatsOH_s3, beatsOH_s3)
     beatsOH_ready_s4 := beatsOH_ready_s3
     data_s4 := data_s3
     ren_s4 := ren
+    need_write_releaseBuf_s4 := need_write_releaseBuf
   }
   val beats_unready_s4 = (beatsOH_s4 & ~beatsOH_ready_s4).orR
   val (beat_s4, next_beatsOH_s4) = getBeat(data_s4, beatsOH_s4)
-  c_s4.valid := task_s4.valid && !beats_unready_s4 && isC(task_s4.bits.opcode)
-  d_s4.valid := task_s4.valid && !beats_unready_s4 && !isC(task_s4.bits.opcode)
+  c_s4.valid := task_s4.valid && !beats_unready_s4 && isC(task_s4.bits.opcode) && !need_write_releaseBuf_s4
+  d_s4.valid := task_s4.valid && !beats_unready_s4 && !isC(task_s4.bits.opcode) && !need_write_releaseBuf_s4
   c_s4.bits := toTLBundleC(task_s4.bits, beat_s4)
   d_s4.bits := toTLBundleD(task_s4.bits, beat_s4)
   val chnl_fire_s4 = (c_s4.fire() || d_s4.fire()) && !next_beatsOH_s4.orR
@@ -351,40 +358,58 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val beatsOH_s5 = RegInit(0.U(beatSize.W))
   val beatsOH_ready_s5 = RegNext(beatsOH_ready_s4) | Fill(beatSize, ren_s5)
   val data_s5 = Reg(UInt((blockBytes * 8).W))
+  val need_write_releaseBuf_s5 = Reg(Bool())
   task_s5.valid := task_s4.valid && !chnl_fire_s4
   when (task_s4.valid) {
     task_s5.bits := task_s4.bits
     beatsOH_s5 := Mux(c_s4.fire() || d_s4.fire(), next_beatsOH_s4, beatsOH_s4)
     ren_s5 := ren_s4
     data_s5 := data_s4
+    need_write_releaseBuf_s5 := need_write_releaseBuf_s4
   }
   assert(!(beatsOH_s5 & ~beatsOH_ready_s5).orR) // data should always be ready by s5
   val rdata_s5 = io.toDS.rdata_s5.data
   val merged_data_s5 = Mux(ren_s5, rdata_s5, data_s5)
   val (beat_s5, next_beatsOH_s5) = getBeat(merged_data_s5, beatsOH_s5)
-  c_s5.valid := task_s5.valid && isC(task_s5.bits.opcode)
-  d_s5.valid := task_s5.valid && !isC(task_s5.bits.opcode)
+  c_s5.valid := task_s5.valid && isC(task_s5.bits.opcode) && !need_write_releaseBuf_s5
+  d_s5.valid := task_s5.valid && !isC(task_s5.bits.opcode) && !need_write_releaseBuf_s5
   c_s5.bits := toTLBundleC(task_s5.bits, beat_s5)
   d_s5.bits := toTLBundleD(task_s5.bits, beat_s5)
   val chnl_fire_s5 = (c_s5.fire() || d_s5.fire()) && !next_beatsOH_s5
+
+  val releaseBufWrite_s5 = new MSHRBufWrite
+  releaseBufWrite_s5.valid := task_s5.valid && need_write_releaseBuf_s5
+  releaseBufWrite_s5.beat := PriorityEncoder(beatsOH_s5)
+  releaseBufWrite_s5.data := beat_s5
+  releaseBufWrite_s5.id := task_s5.bits.mshrId
+  assert(!releaseBufWrite_s5.valid || releaseBufWrite_s5.ready)
 
   /* ======== Stage 6 ======== */
   val task_s6 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
   val beatsOH_s6 = RegInit(0.U(beatSize.W))
   val data_s6 = Reg(UInt((blockBytes * 8).W))
+  val need_write_releaseBuf_s6 = Reg(Bool())
   task_s6.valid := task_s5.valid && !chnl_fire_s5
   when (task_s5.valid) {
     task_s6.bits := task_s5.bits
     beatsOH_s6 := Mux(c_s5.fire() || d_s5.fire(), next_beatsOH_s5, beatsOH_s5)
     data_s6 := merged_data_s5
+    need_write_releaseBuf_s6 := need_write_releaseBuf_s5
   }
   val (beat_s6, next_beatsOH_s6) = getBeat(data_s6, beatsOH_s6)
   assert(!next_beatsOH_s6) // all the beats should be sent out by s6
   assert(c_s6.ready && d_s6.ready) // s6 has the highest priority for SourceC/D
-  c_s6.valid := task_s6.valid && isC(task_s6.bits.opcode)
-  d_s6.valid := task_s6.valid && !isC(task_s6.bits.opcode)
+  c_s6.valid := task_s6.valid && isC(task_s6.bits.opcode) && !need_write_releaseBuf_s6
+  d_s6.valid := task_s6.valid && !isC(task_s6.bits.opcode) && !need_write_releaseBuf_s6
   c_s6.bits := toTLBundleC(task_s6.bits, beat_s6)
   d_s6.bits := toTLBundleD(task_s6.bits, beat_s6)
+
+  val releaseBufWrite_s6 = new MSHRBufWrite
+  releaseBufWrite_s6.valid := task_s6.valid && need_write_releaseBuf_s6
+  releaseBufWrite_s6.beat := PriorityEncoder(beatsOH_s6)
+  releaseBufWrite_s6.data := beat_s6
+  releaseBufWrite_s6.id := task_s6.bits.mshrId
+  assert(!releaseBufWrite_s6.valid || releaseBufWrite_s6.ready)
 
   /* ======== Other Signals Assignment ======== */
   val meta_no_client = !meta_has_clients_s3
@@ -427,4 +452,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   assert(io.toSourceC.ready) // SourceC/wbq should be large enough to avoid blocking pipeline
   TLArbiter.lowest(edgeOut, io.toSourceC, c_s6, c_s5, c_s4, c_s3, c_s2)
   TLArbiter.lowest(edgeIn, io.toSourceD, d_s6, d_s5, d_s4, d_s3, d_s2)
+
+  io.releaseBufWrite(0) <> releaseBufWrite_s6
+  io.releaseBufWrite(1) <> releaseBufWrite_s5
 }

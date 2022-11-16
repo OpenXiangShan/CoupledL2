@@ -50,6 +50,8 @@ trait HasCoupledL2Parameters {
   // 1 cycle for sram read, and latch for another cycle
   val sramLatency = 2
 
+  val releaseBufWPorts = 3 // sinkC and mainpipe s5, s6
+
   lazy val edgeIn = p(EdgeInKey)
   lazy val edgeOut = p(EdgeOutKey)
 
