@@ -40,6 +40,9 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val refillBuf, releaseBuf = Module(new MSHRBuffer())
   val wbq = Module(new WritebackQueue)
 
+  val prbq = Module(new ProbeQueue())
+  prbq.io <> DontCare // @XiaBin TODO
+
   reqArb.io.sinkC <> sinkC.io.toReqArb
   reqArb.io.dirRead_s1 <> directory.io.read
   reqArb.io.taskToPipe_s2 <> mainPipe.io.taskFromArb_s2
