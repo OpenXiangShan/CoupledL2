@@ -36,20 +36,28 @@ class MSHRSelector(implicit p: Parameters) extends L2Module {
 
 class MSHRCtl(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
-    val sourceA = DecoupledIO(new TLBundleA(edgeIn.bundle))
+    /* interact with mainpipe */
     val fromMainPipe = new Bundle() {
       val mshr_alloc_s3 = Flipped(ValidIO(new MSHRRequest()))
     }
     val toMainPipe = new Bundle() {
       val mshr_alloc_ptr = Output(UInt(mshrBits.W))
     }
+
+    /* to request arbiter */
     val mshrFull = Output(Bool())
+    val mshrTask = DecoupledIO(new MSHRTask)
+    val mshrTaskID = Output(UInt(mshrBits.W))
+
+    /* send reqs */
+    val sourceA = DecoupledIO(new TLBundleA(edgeOut.bundle))
+
+    /* receive resps */
     val resps = Input(new Bundle() {
       val sinkC = new RespBundle
       val sinkD = new RespBundle
     })
-    val mshrTask = DecoupledIO(new MSHRTask)
-    val mshrTaskID = Output(UInt(log2Ceil(mshrsAll).W))
+    
     val releaseBufWriteId = Output(UInt(mshrBits.W))
   })
 
@@ -82,25 +90,11 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
 
   /* Acquire downwards */
   val acquireUnit = Module(new AcquireUnit())
-  acquireUnit.io.sourceA <> io.sourceA
   mshrs.zipWithIndex.foreach{
     case (m, i) =>
       acquireUnit.io.tasks(i) <> m.io.tasks.source_a
   }
-
-  /* deprecated acquire bypass logic
-  val infoA_s3 = io.fromMainPipe.infoA_s3
-  io.sourceA.valid := io.fromMainPipe.need_acquire_s3
-  io.sourceA.bits.opcode := infoA_s3.opcode
-  io.sourceA.bits.param := infoA_s3.param
-  io.sourceA.bits.size := offsetBits.U
-  io.sourceA.bits.source := infoA_s3.source
-  io.sourceA.bits.address := infoA_s3.addr
-  io.sourceA.bits.mask := Fill(edgeOut.manager.beatBytes, 1.U(1.W))
-  io.sourceA.bits.corrupt := false.B
-  io.sourceA.bits.data := DontCare
-  val sentA_s3 = io.sourceA.fire
-  */
+  io.sourceA <> acquireUnit.io.sourceA
 
   /* Arbitrate MSHR task to mainPipe */
   val mshrTaskArb = Module(new FastArbiter(chiselTypeOf(io.mshrTask.bits), mshrsAll))

@@ -81,9 +81,13 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   /* input & output signals */
   val inBuf = cacheParams.innerBuf
   val outBuf = cacheParams.outerBuf
+  
+  /* connect upward channels */
   reqArb.io.sinkA <> inBuf.a(io.in.a)
   sinkC.io.c <> inBuf.c(io.in.c)
   inBuf.d(io.in.d) <> mainPipe.io.toSourceD
+
+  /* connect downward channels */
   io.out.a <> outBuf.a(mshrCtl.io.sourceA)
   io.out.c <> outBuf.c(wbq.io.c)
   refillUnit.io.sinkD <> outBuf.d(io.out.d)

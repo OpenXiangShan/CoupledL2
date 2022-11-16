@@ -37,6 +37,8 @@ trait HasChannelBits { this: Bundle =>
   def fromC = channel(2).asBool
 }
 
+// We generate a Task for every TL request
+// this is the info that flows in Mainpipe
 class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val set = UInt(setBits.W)
   val tag = UInt(tagBits.W)
@@ -70,6 +72,7 @@ class MSHRStatus(implicit p: Parameters) extends L2Bundle {
   val source = UInt(sourceIdBits.W)
 }
 
+// MSHR Task that MainPipe sends to MSHRCtl
 class MSHRRequest(implicit p: Parameters) extends L2Bundle {
   val set = UInt(setBits.W)
   val tag = UInt(tagBits.W)
@@ -127,6 +130,7 @@ class SourceAReq(implicit p: Parameters) extends L2Bundle {
   val source = UInt(mshrBits.W)
 }
 
+// MSHRTask that MSHRCtl sends to ReqArb
 class MSHRTask(implicit p: Parameters) extends L2Bundle {
   val tag = UInt(tagBits.W)
   val set = UInt(setBits.W)

@@ -30,9 +30,9 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     /* receive incoming tasks */
     val sinkA = Flipped(DecoupledIO(new TLBundleA(edgeIn.bundle)))
     val sinkB = Flipped(DecoupledIO(new TLBundleB(edgeIn.bundle)))
-    val sinkC = Flipped(DecoupledIO(new TaskBundle))
+    val sinkC = Flipped(DecoupledIO(new TaskBundle)) // sinkC is TaskBundle
     val mshrTask = Flipped(DecoupledIO(new MSHRTask))
-    val mshrTaskID = Input(UInt(log2Ceil(mshrsAll).W))
+    val mshrTaskID = Input(UInt(mshrBits.W))
 
     /* read/write directory */
     val dirRead_s1 = ValidIO(new DirRead())  // To directory, read meta/tag
@@ -104,13 +104,13 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     task
   }
 
-  val sinkA = fromTLAtoTaskBundle(io.sinkA.bits)
-  val sinkB = fromTLBtoTaskBundle(io.sinkB.bits)
-  val sinkC = io.sinkC.bits
+  val A_task = fromTLAtoTaskBundle(io.sinkA.bits)
+  val B_task = fromTLBtoTaskBundle(io.sinkB.bits)
+  val C_task = io.sinkC.bits
   val sinkValids = VecInit(Seq(io.sinkC, io.sinkB, io.sinkA).map(_.valid)).asUInt
   val l1_task_s1 = Wire(Valid(new TaskBundle()))
   l1_task_s1.valid := sinkValids.orR && resetFinish && !io.mshrFull
-  l1_task_s1.bits := Mux1H(sinkValids, Seq(sinkC, sinkB, sinkA))
+  l1_task_s1.bits := Mux1H(sinkValids, Seq(C_task, B_task, A_task))
 
   val mshr_task_s1 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
   when(mshr_task_s0.valid) {
