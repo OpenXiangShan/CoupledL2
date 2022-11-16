@@ -9,6 +9,3 @@ make init
 make compile
 ```
 
-## Pull request
-
-Please run `make checkformat` and `make reformat` before commit
