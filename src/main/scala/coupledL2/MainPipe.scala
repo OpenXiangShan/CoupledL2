@@ -238,25 +238,26 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     (next_beat, next_beatsOH)
   }
 
-  val beatsOH = Fill(beatSize, hasData_s3) // beats that needs to send out
-  val beatsOH_ready = Fill(beatSize, mshr_req_s3) // beats that are already ready
-  val (beat_s3, next_beatsOH_s3) = getBeat(data_s3, beatsOH)
+  val beatsOH_s3 = Fill(beatSize, hasData_s3) // beats that needs to send out
+  val beatsOH_ready_s3 = Fill(beatSize, mshr_req_s3) // beats that are already ready
+  val beats_unready_s3 = (beatsOH_s3 & ~beatsOH_ready_s3).orR
+  val (beat_s3, next_beatsOH_s3) = getBeat(data_s3, beatsOH_s3)
 
   c_s3.valid := task_s3.valid && Mux(
     mshr_req_s3,
     mshr_release_s3 || mshr_probeack_s3,
-    req_s3.fromB && !need_mshr_s3
+    req_s3.fromB && !need_mshr_s3 && !beats_unready_s3
   )
   c_s3.bits := toTLBundleC(source_req_s3, beat_s3)
   d_s3.valid := task_s3.valid && Mux(
     mshr_req_s3,
     mshr_grant_s3,
-    req_s3.fromC || req_s3.fromA && !need_mshr_s3
+    req_s3.fromC || req_s3.fromA && !need_mshr_s3 && !beats_unready_s3
   )
   d_s3.bits := toTLBundleD(source_req_s3, beat_s3)
   val task_ready_s3 = !hasData_s3 || (!mshr_req_s3 && (req_s3.fromC || need_mshr_s3))
   val mshr_fire_s3 = !mshr_req_s3 && need_mshr_s3
-  val chnl_fire_s3 = task_ready_s3 && (c_s3.fire() || d_s3.fire())
+  val chnl_fire_s3 = task_ready_s3 && (c_s3.fire() || d_s3.fire()) && !next_beatsOH_s3.orR
 
   // write/read data storage
   val wen_c = !mshr_req_s3 && req_s3.fromC && isParamFromT(req_s3.param) && req_s3.opcode(0)
