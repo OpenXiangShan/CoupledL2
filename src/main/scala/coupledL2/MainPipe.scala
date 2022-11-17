@@ -48,8 +48,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     val bufResp = Input(new PipeBufferResp)
 
     /* get ReleaseBuffer and RefillBuffer read result */
-    val refillBufResp_s3 = ValidIO(new DSBlock)
-    val releaseBufResp_s3 = ValidIO(new DSBlock)
+    val refillBufResp_s3 = Flipped(ValidIO(new DSBlock))
+    val releaseBufResp_s3 = Flipped(ValidIO(new DSBlock))
 
     /* read or write data storage */
     val toDS = new Bundle() {
@@ -368,10 +368,10 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   d_s5.bits := toTLBundleD(task_s5.bits, beat_s5)
   val chnl_fire_s5 = (c_s5.fire() || d_s5.fire()) && !next_beatsOH_s5
 
-  val releaseBufWrite_s5 = new MSHRBufWrite
+  val releaseBufWrite_s5 = io.releaseBufWrite(1) // ! TODO: where is ready signal used
   releaseBufWrite_s5.valid := task_s5.valid && need_write_releaseBuf_s5
   releaseBufWrite_s5.beat := PriorityEncoder(beatsOH_s5)
-  releaseBufWrite_s5.data := beat_s5
+  releaseBufWrite_s5.data.data := beat_s5
   releaseBufWrite_s5.id := task_s5.bits.mshrId
   assert(!releaseBufWrite_s5.valid || releaseBufWrite_s5.ready)
 
@@ -395,10 +395,10 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   c_s6.bits := toTLBundleC(task_s6.bits, beat_s6)
   d_s6.bits := toTLBundleD(task_s6.bits, beat_s6)
 
-  val releaseBufWrite_s6 = new MSHRBufWrite
+  val releaseBufWrite_s6 = io.releaseBufWrite(0)
   releaseBufWrite_s6.valid := task_s6.valid && need_write_releaseBuf_s6
   releaseBufWrite_s6.beat := PriorityEncoder(beatsOH_s6)
-  releaseBufWrite_s6.data := beat_s6
+  releaseBufWrite_s6.data.data := beat_s6
   releaseBufWrite_s6.id := task_s6.bits.mshrId
   assert(!releaseBufWrite_s6.valid || releaseBufWrite_s6.ready)
 
@@ -444,6 +444,4 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   TLArbiter.lowest(edgeOut, io.toSourceC, c_s6, c_s5, c_s4, c_s3, c_s2)
   TLArbiter.lowest(edgeIn, io.toSourceD, d_s6, d_s5, d_s4, d_s3, d_s2)
 
-  io.releaseBufWrite(0) <> releaseBufWrite_s6
-  io.releaseBufWrite(1) <> releaseBufWrite_s5
 }
