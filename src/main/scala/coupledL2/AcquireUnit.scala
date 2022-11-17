@@ -26,26 +26,22 @@ import chipsalliance.rocketchip.config.Parameters
 class AcquireUnit(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val sourceA = DecoupledIO(new TLBundleA(edgeOut.bundle))
-    val tasks = Vec(mshrsAll, Flipped(DecoupledIO(new SourceAReq)))
+    val task = Flipped(DecoupledIO(new SourceAReq))
   })
 
-  val arbiter = Module(new FastArbiter(chiselTypeOf(io.tasks(0).bits), mshrsAll))
-  for ((arb, req) <- arbiter.io.in.zip(io.tasks)) {
-    arb <> req
-  }
-  val task = arbiter.io.out
-  task.ready := io.sourceA.ready
+  val a = io.sourceA
+  io.task.ready := a.ready
 
-  io.sourceA.valid := task.valid
-  io.sourceA.bits.opcode := task.bits.opcode
-  io.sourceA.bits.param := task.bits.param
-  io.sourceA.bits.size := offsetBits.U
-  io.sourceA.bits.source := task.bits.source
-  io.sourceA.bits.address := Cat(task.bits.tag, task.bits.set, 0.U(offsetBits.W))
-  io.sourceA.bits.mask := Fill(edgeOut.manager.beatBytes, 1.U(1.W))
-  io.sourceA.bits.data := DontCare
-  io.sourceA.bits.echo.lift(DirtyKey).foreach(_ := true.B)
-  io.sourceA.bits.corrupt := false.B
+  a.valid := io.task.valid
+  a.bits.opcode := io.task.bits.opcode
+  a.bits.param := io.task.bits.param
+  a.bits.size := offsetBits.U
+  a.bits.source := io.task.bits.source
+  a.bits.address := Cat(io.task.bits.tag, io.task.bits.set, 0.U(offsetBits.W))
+  a.bits.mask := Fill(edgeOut.manager.beatBytes, 1.U(1.W))
+  a.bits.data := DontCare
+  a.bits.echo.lift(DirtyKey).foreach(_ := true.B)
+  a.bits.corrupt := false.B
 
   dontTouch(io)
 }

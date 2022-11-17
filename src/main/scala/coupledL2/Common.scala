@@ -53,13 +53,14 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
 
   // val mshrOpType = UInt(mshrOpTypeBits.W) // type of the MSHR task operation
   // MSHR may send Release(Data) or Grant(Data) or ProbeAck(Data) through Main Pipe
-  val mshrTask = Bool()
+  val mshrTask = Bool()                   // is task from mshr
   val mshrId = UInt(mshrBits.W)           // mshr entry index (used only in mshr-task)
 
   // if this is an mshr task and it needs to write dir
   val way = UInt(wayBits.W)
-  val metaWrite = ValidIO(new MetaEntry)
-  val tagWrite = Bool()
+  val meta = new MetaEntry()
+  val metaWen = Bool()
+  val tagWen = Bool()
 }
 
 class MSHRStatus(implicit p: Parameters) extends L2Bundle {
@@ -74,15 +75,9 @@ class MSHRStatus(implicit p: Parameters) extends L2Bundle {
 
 // MSHR Task that MainPipe sends to MSHRCtl
 class MSHRRequest(implicit p: Parameters) extends L2Bundle {
-  val set = UInt(setBits.W)
-  val tag = UInt(tagBits.W)
-  val off = UInt(offsetBits.W)
-  val way = UInt(wayBits.W)
-  val opcode = UInt(3.W)
-  val param = UInt(3.W)
-  val source = UInt(sourceIdBits.W)
   val dirResult = new DirResult()
   val state = new FSMState()
+  val task = new TaskBundle()
 }
 
 class RespInfoBundle(implicit p: Parameters) extends L2Bundle {
@@ -128,17 +123,4 @@ class SourceAReq(implicit p: Parameters) extends L2Bundle {
   val opcode = UInt(3.W)
   val param = UInt(3.W)
   val source = UInt(mshrBits.W)
-}
-
-// MSHRTask that MSHRCtl sends to ReqArb
-class MSHRTask(implicit p: Parameters) extends L2Bundle {
-  val tag = UInt(tagBits.W)
-  val set = UInt(setBits.W)
-  val off = UInt(offsetBits.W)
-  val opcode = UInt(3.W)
-  val param = UInt(3.W)
-  val source = UInt(mshrBits.W)
-  val way = UInt(wayBits.W)
-  val metaWrite = ValidIO(new MetaEntry)
-  val tagWrite = Bool()
 }

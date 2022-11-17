@@ -28,7 +28,7 @@ import chipsalliance.rocketchip.config.Parameters
 class MSHRTasks(implicit p: Parameters) extends L2Bundle {
   // outer
   val source_a = DecoupledIO(new SourceAReq) // To AcquireUnit  // TODO: no need to use decoupled handshake
-  val mainpipe = DecoupledIO(new MSHRTask) // To Mainpipe (SourceC or SourceD)
+  val mainpipe = DecoupledIO(new TaskBundle) // To Mainpipe (SourceC or SourceD)
 }
 
 class MSHRResps(implicit p: Parameters) extends L2Bundle {
@@ -61,15 +61,16 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val status_reg = RegInit(0.U.asTypeOf(Valid(new MSHRStatus())))
   when(io.alloc.valid) {
     status_reg.valid := true.B
-    status_reg.bits.tag := io.alloc.bits.tag
-    status_reg.bits.set := io.alloc.bits.set
-    status_reg.bits.off := io.alloc.bits.off
-    status_reg.bits.way := io.alloc.bits.way
-    status_reg.bits.opcode := io.alloc.bits.opcode
-    status_reg.bits.param := io.alloc.bits.param
-    status_reg.bits.source := io.alloc.bits.source
     state := io.alloc.bits.state
     dirResult := io.alloc.bits.dirResult
+    val ms_task = io.alloc.bits.task
+    status_reg.bits.tag := ms_task.tag
+    status_reg.bits.set := ms_task.set
+    status_reg.bits.off := ms_task.off
+    status_reg.bits.way := ms_task.way
+    status_reg.bits.opcode := ms_task.opcode
+    status_reg.bits.param := ms_task.param
+    status_reg.bits.source := ms_task.sourceId
   }
 
   /* Intermediate logic */
@@ -87,6 +88,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.tasks.mainpipe.valid := !state.s_refill && state.w_grantlast && state.w_pprobeack  // refill when grantlast, TODO: opt?
 
   val oa = io.tasks.source_a.bits
+  oa := DontCare
   oa.tag := req.tag
   oa.set := req.set
   oa.off := req.off
@@ -95,13 +97,15 @@ class MSHR(implicit p: Parameters) extends L2Module {
   oa.param := Mux(req_needT, Mux(dirResult.hit, BtoT, NtoT), NtoB)
 
   val od = io.tasks.mainpipe.bits
+  od := DontCare
   od.tag := req.tag
   od.set := req.set
   od.off := req.off
-  od.source := req.source
+  od.sourceId := req.source
   od.opcode := odOpGen(req.opcode)
   od.param :=
     MuxLookup(req.param, req.param, Seq(NtoB -> Mux(req_promoteT, toT, toB), BtoT -> toT, NtoT -> toT))
+  // TODO: write tag/meta
 
   /* Task update */
   when(io.tasks.source_a.fire) {

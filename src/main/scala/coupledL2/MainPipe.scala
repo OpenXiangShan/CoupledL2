@@ -28,12 +28,13 @@ import freechips.rocketchip.tilelink.TLPermissions._
 
 class MainPipe(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
-    /* receive task from arbiter */
+    /* receive task from arbiter at stage 2 */
     val taskFromArb_s2 = Flipped(ValidIO(new TaskBundle()))
 
     /* get dir result at stage 3 */
     val dirResp_s3 = Flipped(ValidIO(new DirResult))
 
+    /* send task to MSHRCtl at stage 3 */
     val toMSHRCtl = new Bundle() {
       val mshr_alloc_s3 = ValidIO(new MSHRRequest())
     }
@@ -42,7 +43,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       val mshr_alloc_ptr = Input(UInt(mshrBits.W))
     }
 
-    /* DONT pass data in pipeline, use a buffer to save data */
+    /* DONT pass data in pipeline, use a buffer to save data */ //TODO
     val bufRead = Output(ValidIO(new PipeBufferRead))
     val bufResp = Input(new PipeBufferResp)
 
@@ -71,6 +72,13 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   val resetFinish = RegInit(false.B)
   val resetIdx = RegInit((cacheParams.sets - 1).U)
+  /* block reqs when reset */
+  when(!resetFinish) {
+    resetIdx := resetIdx - 1.U
+  }
+  when(resetIdx === 0.U) {
+    resetFinish := true.B
+  }
 
   val c_s2, c_s3, c_s4, c_s5, c_s6 = Wire(io.toSourceC.cloneType)
   val d_s2, d_s3, d_s4, d_s5, d_s6 = Wire(io.toSourceD.cloneType)
@@ -136,7 +144,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val mshr_req_s3 = req_s3.mshrTask
   val req_acquire_s3 = req_s3.opcode === AcquireBlock || req_s3.opcode === AcquirePerm
   val req_prefetch_s3 = req_s3.opcode === Hint
-  val req_needT_s3 = needT(req_s3.opcode, req_s3.param)
+  val req_needT_s3 = needT(req_s3.opcode, req_s3.param) // require T status to handle req
 
   val acquire_on_miss_s3 = req_acquire_s3 || req_prefetch_s3
   val acquire_on_hit_s3 = meta_s3.state === BRANCH && req_needT_s3
@@ -157,16 +165,21 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   // Allocation of MSHR: new request only
   val alloc_state = WireInit(0.U.asTypeOf(new FSMState()))
   alloc_state.elements.foreach(_._2 := true.B)
+  io.toMSHRCtl.mshr_alloc_s3 := DontCare
   io.toMSHRCtl.mshr_alloc_s3.valid := task_s3.valid && !mshr_req_s3 && need_mshr_s3
-  io.toMSHRCtl.mshr_alloc_s3.bits.set := req_s3.set
-  io.toMSHRCtl.mshr_alloc_s3.bits.tag := req_s3.tag
-  io.toMSHRCtl.mshr_alloc_s3.bits.off := req_s3.off
-  io.toMSHRCtl.mshr_alloc_s3.bits.way := dirResult_s3.way
-  io.toMSHRCtl.mshr_alloc_s3.bits.opcode := req_s3.opcode
-  io.toMSHRCtl.mshr_alloc_s3.bits.param := req_s3.param
-  io.toMSHRCtl.mshr_alloc_s3.bits.source := req_s3.sourceId
   io.toMSHRCtl.mshr_alloc_s3.bits.dirResult := dirResult_s3
   io.toMSHRCtl.mshr_alloc_s3.bits.state := alloc_state
+  val ms_task = io.toMSHRCtl.mshr_alloc_s3.bits.task
+  ms_task.set := req_s3.set
+  ms_task.tag := req_s3.tag
+  ms_task.off := req_s3.off
+  //
+  ms_task.opcode := req_s3.opcode
+  ms_task.param := req_s3.param
+  ms_task.sourceId := req_s3.sourceId
+  //
+  ms_task.way := dirResult_s3.way
+  //
 
   val sink_resp_s3 = WireInit(0.U.asTypeOf(Valid(new TaskBundle))) // resp for sinkA/B/C request that does not need to alloc mshr
   val sink_resp_s3_opcode_a = Mux(req_s3.opcode === AcquirePerm && req_s3.param === BtoT, Grant, GrantData)
@@ -256,17 +269,10 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     )
   )
 
-  // write dir
-  when (!resetFinish) {
-    resetIdx := resetIdx - 1.U
-  }
-  when (resetIdx === 0.U) {
-    resetFinish := true.B
-  }
   val metaW_valid_s3_a = !mshr_req_s3 && req_s3.fromA && !need_mshr_s3_a && !meta_s3.clients.orR
   val metaW_valid_s3_b = !mshr_req_s3 && req_s3.fromB && !need_mshr_s3_b && (meta_s3.state === TIP || meta_s3.state === BRANCH && req_s3.param === toN)
   val metaW_valid_s3_c = !mshr_req_s3 && req_s3.fromC
-  val metaW_valid_s3_mshr = mshr_req_s3 && req_s3.metaWrite.valid
+  val metaW_valid_s3_mshr = mshr_req_s3 && req_s3.metaWen
   require(clientBits == 1)
   val metaW_s3_a = MetaEntry(meta_s3.dirty, meta_s3.state, Fill(clientBits, true.B))
   val metaW_s3_b = Mux(req_s3.param === toN, MetaEntry(), MetaEntry(false.B, BRANCH, 0.U))
@@ -278,7 +284,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   )
   val metaW_s3_c_clients = Fill(clientBits, !isToN(req_s3.param))
   val metaW_s3_c = MetaEntry(metaW_s3_c_dirty, metaW_s3_c_state, metaW_s3_c_clients)
-  val metaW_s3_mshr = req_s3.metaWrite.bits
+  val metaW_s3_mshr = req_s3.meta
   io.metaWReq.valid := !resetFinish || task_s3.valid && (metaW_valid_s3_a || metaW_valid_s3_b || metaW_valid_s3_c || metaW_valid_s3_mshr)
   io.metaWReq.bits.set := Mux(resetFinish, req_s3.set, resetIdx)
   io.metaWReq.bits.wayOH := Mux(resetFinish, UIntToOH(Mux(mshr_req_s3, req_s3.way, dirResult_s3.way)), Fill(cacheParams.ways, true.B))
@@ -291,7 +297,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     MetaEntry()
   )
 
-  io.tagWReq.valid := task_s3.valid && mshr_grant_s3 && req_s3.tagWrite
+  io.tagWReq.valid := task_s3.valid && mshr_grant_s3 && req_s3.tagWen
   io.tagWReq.bits.set := req_s3.set
   io.tagWReq.bits.way := req_s3.way
   io.tagWReq.bits.wtag := req_s3.tag

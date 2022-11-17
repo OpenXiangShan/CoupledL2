@@ -31,8 +31,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     val sinkA = Flipped(DecoupledIO(new TLBundleA(edgeIn.bundle)))
     val sinkB = Flipped(DecoupledIO(new TLBundleB(edgeIn.bundle)))
     val sinkC = Flipped(DecoupledIO(new TaskBundle)) // sinkC is TaskBundle
-    val mshrTask = Flipped(DecoupledIO(new MSHRTask))
-    val mshrTaskID = Input(UInt(mshrBits.W))
+    val mshrTask = Flipped(DecoupledIO(new TaskBundle))
 
     /* read/write directory */
     val dirRead_s1 = ValidIO(new DirRead())  // To directory, read meta/tag
@@ -49,29 +48,23 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     val mshrFull = Input(Bool())
   })
 
+  /* ======== Reset ======== */
   val resetFinish = RegInit(false.B)
   val resetIdx = RegInit((cacheParams.sets - 1).U)
+  /* block reqs when reset */
+  when(!resetFinish) {
+    resetIdx := resetIdx - 1.U
+  }
+  when(resetIdx === 0.U) {
+    resetFinish := true.B
+  }
   // val valids = RegInit(0.U(8.W))  // 7 stages
 
   /* ======== Stage 0 ======== */
   io.mshrTask.ready := true.B  // TODO: when to block mshrTask?
   val mshr_task_s0 = Wire(Valid(new TaskBundle()))
-  mshr_task_s0 := DontCare
   mshr_task_s0.valid := io.mshrTask.valid
-  mshr_task_s0.bits.set := io.mshrTask.bits.set
-  mshr_task_s0.bits.tag := io.mshrTask.bits.tag
-  mshr_task_s0.bits.off := io.mshrTask.bits.off
-  mshr_task_s0.bits.sourceId := io.mshrTask.bits.source
-  mshr_task_s0.bits.opcode := io.mshrTask.bits.opcode
-  mshr_task_s0.bits.param := io.mshrTask.bits.param
-  mshr_task_s0.bits.channel := 0.U
-  mshr_task_s0.bits.alias := 0.U  // TODO: handle anti-alias
-  // mshr_task_s0.bits.mshrOpType := OP_REFILL.U
-  mshr_task_s0.bits.mshrTask := true.B
-  mshr_task_s0.bits.mshrId := io.mshrTaskID
-  mshr_task_s0.bits.way := io.mshrTask.bits.way
-  mshr_task_s0.bits.metaWrite := io.mshrTask.bits.metaWrite
-  mshr_task_s0.bits.tagWrite := io.mshrTask.bits.tagWrite
+  mshr_task_s0.bits := io.mshrTask.bits
 
   /* ======== Stage 1 ======== */
   /* Task generation and pipelining */
@@ -108,9 +101,9 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val B_task = fromTLBtoTaskBundle(io.sinkB.bits)
   val C_task = io.sinkC.bits
   val sinkValids = VecInit(Seq(io.sinkC, io.sinkB, io.sinkA).map(_.valid)).asUInt
-  val l1_task_s1 = Wire(Valid(new TaskBundle()))
-  l1_task_s1.valid := sinkValids.orR && resetFinish && !io.mshrFull
-  l1_task_s1.bits := Mux1H(sinkValids, Seq(C_task, B_task, A_task))
+  val chnl_task_s1 = Wire(Valid(new TaskBundle()))
+  chnl_task_s1.valid := sinkValids.orR && resetFinish && !io.mshrFull
+  chnl_task_s1.bits := Mux1H(sinkValids, Seq(C_task, B_task, A_task))
 
   val mshr_task_s1 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
   when(mshr_task_s0.valid) {
@@ -119,23 +112,15 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     mshr_task_s1.valid := false.B
   }
 
-  val task_s1 = Mux(mshr_task_s1.valid, mshr_task_s1, l1_task_s1)
+  val task_s1 = Mux(mshr_task_s1.valid, mshr_task_s1, chnl_task_s1)
 
   /* Meta read request */
-  io.dirRead_s1.valid := l1_task_s1.valid // only sinkA/B/C tasks need to read directory
+  io.dirRead_s1.valid := chnl_task_s1.valid // ^ only sinkA/B/C tasks need to read directory
   io.dirRead_s1.bits.set := task_s1.bits.set
   io.dirRead_s1.bits.tag := task_s1.bits.tag
   io.dirRead_s1.bits.source := task_s1.bits.sourceId
   io.dirRead_s1.bits.replacerInfo.opcode := task_s1.bits.opcode
   io.dirRead_s1.bits.replacerInfo.channel := task_s1.bits.channel
-
-  /* block reqs when reset */
-  when(!resetFinish) {
-    resetIdx := resetIdx - 1.U
-  }
-  when(resetIdx === 0.U) {
-    resetFinish := true.B
-  }
 
   /* ========  Stage 2 ======== */
   val task_s2 = RegInit(0.U.asTypeOf(task_s1))
