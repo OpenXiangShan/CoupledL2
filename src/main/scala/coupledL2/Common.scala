@@ -63,7 +63,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val tagWen = Bool()
 }
 
-class MSHRStatus(implicit p: Parameters) extends L2Bundle {
+class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val set = UInt(setBits.W)
   val tag = UInt(tagBits.W)
   val way = UInt(wayBits.W)

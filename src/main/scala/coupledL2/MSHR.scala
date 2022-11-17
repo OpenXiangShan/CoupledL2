@@ -64,6 +64,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     state := io.alloc.bits.state
     dirResult := io.alloc.bits.dirResult
     val ms_task = io.alloc.bits.task
+    status_reg.bits.channel := ms_task.channel
     status_reg.bits.tag := ms_task.tag
     status_reg.bits.set := ms_task.set
     status_reg.bits.off := ms_task.off
@@ -98,6 +99,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
 
   val od = io.tasks.mainpipe.bits
   od := DontCare
+  od.channel := req.channel
   od.tag := req.tag
   od.set := req.set
   od.off := req.off
