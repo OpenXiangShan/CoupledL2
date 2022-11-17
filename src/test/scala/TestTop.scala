@@ -39,7 +39,7 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
     masterNode
   }
 
-  val l1d_nodes = (0 until 2) map( i => createClientNode(s"l1d$i", 32))
+  val l1d_nodes = (0 until 1) map( i => createClientNode(s"l1d$i", 32))
   val master_nodes = l1d_nodes
 
   val l2 = LazyModule(new CoupledL2())
