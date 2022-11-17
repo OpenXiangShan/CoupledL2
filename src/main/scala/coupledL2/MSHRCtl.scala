@@ -86,7 +86,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
 
   /* Acquire downwards */
   val acquireUnit = Module(new AcquireUnit())
-  val oaArb = Module(new FastArbiter(chiselTypeOf(io.sourceA.bits), mshrsAll))
+  val oaArb = Module(new FastArbiter(new SourceAReq, mshrsAll))
   mshrs.zipWithIndex.foreach{
     case (m, i) =>
       oaArb.io.in(i) <> m.io.tasks.source_a
