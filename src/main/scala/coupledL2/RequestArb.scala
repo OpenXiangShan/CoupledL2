@@ -97,6 +97,14 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     task
   }
 
+  /* latch mshr_task from s0 to s1 */
+  val mshr_task_s1 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
+  mshr_task_s1.valid := mshr_task_s0.valid
+  when(mshr_task_s0.valid) {
+    mshr_task_s1.bits := mshr_task_s0.bits
+  }
+
+  /* Channel interaction from s1 */
   val A_task = fromTLAtoTaskBundle(io.sinkA.bits)
   val B_task = fromTLBtoTaskBundle(io.sinkB.bits)
   val C_task = io.sinkC.bits
@@ -105,17 +113,15 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   chnl_task_s1.valid := sinkValids.orR && resetFinish && !io.mshrFull
   chnl_task_s1.bits := Mux1H(sinkValids, Seq(C_task, B_task, A_task))
 
-  val mshr_task_s1 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
-  when(mshr_task_s0.valid) {
-    mshr_task_s1 := mshr_task_s0
-  }.otherwise {
-    mshr_task_s1.valid := false.B
-  }
+  io.sinkA.ready := !io.mshrFull && resetFinish && !io.sinkB.valid && !io.sinkC.valid && !mshr_task_s1.valid // SinkC prior to SinkA & SinkB
+  io.sinkB.ready := !io.mshrFull && resetFinish && !io.sinkC.valid && !mshr_task_s1.valid
+  io.sinkC.ready := !io.mshrFull && resetFinish && !mshr_task_s1.valid
 
   val task_s1 = Mux(mshr_task_s1.valid, mshr_task_s1, chnl_task_s1)
 
   /* Meta read request */
-  io.dirRead_s1.valid := chnl_task_s1.valid // ^ only sinkA/B/C tasks need to read directory
+  // ^ only sinkA/B/C tasks need to read directory
+  io.dirRead_s1.valid := chnl_task_s1.valid && !mshr_task_s1.valid
   io.dirRead_s1.bits.set := task_s1.bits.set
   io.dirRead_s1.bits.tag := task_s1.bits.tag
   io.dirRead_s1.bits.source := task_s1.bits.sourceId
@@ -141,11 +147,6 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   assert(!io.refillBufRead_s2.valid || io.refillBufRead_s2.ready)
   assert(!io.releaseBufRead_s2.valid || io.releaseBufRead_s2.ready)
   require(beatSize == 2)
-
-  /* Channel interaction */
-  io.sinkA.ready := !io.mshrFull && resetFinish && !io.sinkB.valid && !io.sinkC.valid && !mshr_task_s1.valid // SinkC prior to SinkA & SinkB
-  io.sinkB.ready := !io.mshrFull && resetFinish && !io.sinkC.valid && !mshr_task_s1.valid
-  io.sinkC.ready := !io.mshrFull && resetFinish && !mshr_task_s1.valid
 
   dontTouch(io)
 }

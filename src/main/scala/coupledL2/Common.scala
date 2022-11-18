@@ -95,15 +95,17 @@ class RespBundle(implicit p: Parameters) extends L2Bundle {
 }
 
 class FSMState(implicit p: Parameters) extends L2Bundle {
-  val s_acquire = Bool()
-  val s_rprobe = Bool()
-  val s_pprobe = Bool()
-  val s_release = Bool()
-  val s_probeack = Bool()
-  val s_refill = Bool()
-  val s_grantack = Bool()
-  val s_writeback = Bool()
+  // schedule
+  val s_acquire = Bool()  // acquire downwards
+  val s_rprobe = Bool()   // probe upwards, caused by replace
+  val s_pprobe = Bool()   // probe upwards, casued by probe
+  val s_release = Bool()  // release downwards
+  val s_probeack = Bool() // respond probeack downwards
+  val s_refill = Bool()   // respond grant upwards
+  val s_grantack = Bool() // respond grantack downwards
+  val s_writeback = Bool()// writeback tag/dir
 
+  // wait
   val w_rprobeackfirst = Bool()
   val w_rprobeacklast = Bool()
   val w_pprobeackfirst = Bool()

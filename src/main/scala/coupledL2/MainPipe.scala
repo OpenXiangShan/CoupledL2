@@ -115,11 +115,11 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val task_s2 = io.taskFromArb_s2
   val hasData_s2 = task_s2.bits.opcode(0)
   val isGrant_s2 = task_s2.bits.fromA && task_s2.bits.opcode === Grant
-  val task_ready_s2 = task_s2.bits.mshrTask && !hasData_s2 // this task is ready to leave pipeline, but channels might be not ready
+  val task_ready_s2 = task_s2.bits.mshrTask && !hasData_s2 // this task is ready to leave pipeline, but channels might not be ready
   val chnl_ready_s2 = Mux(isGrant_s2, d_s2.ready, c_s2.ready) // channel is ready
-  val chnl_fire_s2 = task_ready_s2 && chnl_ready_s2 // both task and channel are ready, this task actually leave pipeline
-  c_s2.valid := io.taskFromArb_s2.valid && task_ready_s2 && !isGrant_s2
-  d_s2.valid := io.taskFromArb_s2.valid && task_ready_s2 && isGrant_s2
+  val chnl_fire_s2 = c_s2.fire() || d_s2.fire() // both task and channel are ready, this task actually leave pipeline
+  c_s2.valid := task_s2.valid && task_ready_s2 && !isGrant_s2
+  d_s2.valid := task_s2.valid && task_ready_s2 && isGrant_s2
   c_s2.bits := toTLBundleC(task_s2.bits)
   d_s2.bits := toTLBundleD(task_s2.bits)
 
@@ -128,9 +128,9 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   /* ======== Stage 3 ======== */
   val task_s3 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
-  task_s3.valid := io.taskFromArb_s2.valid && !chnl_fire_s2
-  when(io.taskFromArb_s2.valid) {
-    task_s3.bits := io.taskFromArb_s2.bits
+  task_s3.valid := task_s2.valid && !chnl_fire_s2
+  when(task_s2.valid) {
+    task_s3.bits := task_s2.bits
   }
   // val need_retry_s3 = WireInit(false.B)
   // val hazard_s3 = WireInit(false.B)
@@ -146,7 +146,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val req_prefetch_s3 = req_s3.opcode === Hint
   val req_needT_s3 = needT(req_s3.opcode, req_s3.param) // require T status to handle req
 
-  val acquire_on_miss_s3 = req_acquire_s3 || req_prefetch_s3
+  val acquire_on_miss_s3 = req_acquire_s3 || req_prefetch_s3 // TODO: remove this cause always acquire on miss?
   val acquire_on_hit_s3 = meta_s3.state === BRANCH && req_needT_s3
   // For channel A reqs, alloc mshr when acquire downwards is needed
   val need_mshr_s3_a = //task_s3.valid && !mshr_req_s3 &&
@@ -157,9 +157,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     meta_has_clients_s3
   // For channel C reqs, Release will always hit on MainPipe.
   val need_mshr_s3 = need_mshr_s3_a || need_mshr_s3_b
-
-  val alloc_on_hit_s3 = false.B  // TODO
-  val alloc_on_miss_s3 = true.B  // TODO
 
   /* Signals to MSHR Ctl */
   // Allocation of MSHR: new request only
@@ -412,26 +409,24 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   assert(!releaseBufWrite_s6.valid || releaseBufWrite_s6.ready)
 
   /* ======== Other Signals Assignment ======== */
-  val meta_no_client = !meta_has_clients_s3
-  val req_needT = needT(req_s3.opcode, req_s3.param)
-
   // Initial state assignment
+  // ! Caution: s_ and w_ are false valid
   when(req_s3.fromA) {
-    alloc_state.s_refill := req_s3.opcode === Hint // Q: Hint also needs refill?
-    alloc_state.w_grantack := req_s3.opcode === Hint
+    alloc_state.s_refill := req_prefetch_s3   // no need to refill upwards for prefetch
+    alloc_state.w_grantack := req_prefetch_s3 // TODO: Hint also needs refill?
     // need replacement
     when(!dirResult_s3.hit && meta_s3.state =/= INVALID) {
       alloc_state.s_release := false.B
       alloc_state.w_releaseack := false.B
       // need rprobe for release
-      when(!meta_no_client) {
+      when(meta_has_clients_s3) {
         alloc_state.s_rprobe := false.B
         alloc_state.w_rprobeackfirst := false.B
         alloc_state.w_rprobeacklast := false.B
       }
     }
     // need Acquire downwards
-    when(!dirResult_s3.hit || meta_s3.state === BRANCH && req_needT) {
+    when(need_mshr_s3_a) {
       alloc_state.s_acquire := false.B
       alloc_state.s_grantack := false.B
       alloc_state.w_grantfirst := false.B
