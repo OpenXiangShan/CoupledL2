@@ -37,6 +37,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val dataStorage = Module(new DataStorage())
   val refillUnit = Module(new RefillUnit())
   val sinkC = Module(new SinkC) // or ReleaseUnit?
+  val sinkE = Module(new SinkE)
   val refillBuf = Module(new MSHRBuffer())
   val releaseBuf = Module(new MSHRBuffer(wPorts = releaseBufWPorts))
   val wbq = Module(new WritebackQueue)
@@ -54,6 +55,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
 
   mshrCtl.io.resps.sinkC := sinkC.io.resp
   mshrCtl.io.resps.sinkD := refillUnit.io.resp
+  mshrCtl.io.resps.sinkE := sinkE.io.resp
 
   directory.io.resp <> mainPipe.io.dirResp_s3
   directory.io.metaWReq <> mainPipe.io.metaWReq
@@ -87,6 +89,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   reqArb.io.sinkA <> inBuf.a(io.in.a)
   sinkC.io.c <> inBuf.c(io.in.c)
   io.in.d <> inBuf.d(mainPipe.io.toSourceD)
+  sinkE.io.sinkE <> inBuf.e(io.in.e)
 
   /* connect downward channels */
   io.out.a <> outBuf.a(mshrCtl.io.sourceA)
