@@ -452,6 +452,11 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   // assert(io.toSourceC.ready) // SourceC/wbq should be large enough to avoid blocking pipeline
   val c = Seq(c_s6, c_s5, c_s4, c_s3, c_s2)
   val d = Seq(d_s6, d_s5, d_s4, d_s3, d_s2)
-  TLArbiter.lowestFromSeq(edgeOut, io.toSourceC, c)
-  TLArbiter.lowestFromSeq(edgeIn, io.toSourceD, d)
+  // DONT use TLArbiter because TLArbiter will send continuous beats for the same source
+  val c_arb = Module(new Arbiter(new TLBundleC(edgeOut.bundle), c.size))
+  val d_arb = Module(new Arbiter(new TLBundleD(edgeIn.bundle), d.size))
+  c_arb.io.in <> c
+  d_arb.io.in <> d
+  io.toSourceC <> c_arb.io.out
+  io.toSourceD <> d_arb.io.out
 }
