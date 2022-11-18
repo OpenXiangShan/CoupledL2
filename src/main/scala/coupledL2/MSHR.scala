@@ -108,6 +108,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
   od.param :=
     MuxLookup(req.param, req.param, Seq(NtoB -> Mux(req_promoteT, toT, toB), BtoT -> toT, NtoT -> toT))
   // TODO: write tag/meta
+  od.mshrTask := true.B
+  od.mshrId := io.id
 
   /* Task update */
   when(io.tasks.source_a.fire) {
