@@ -34,6 +34,7 @@ class MSHRTasks(implicit p: Parameters) extends L2Bundle {
 class MSHRResps(implicit p: Parameters) extends L2Bundle {
   val sink_c = Flipped(ValidIO(new RespInfoBundle))
   val sink_d = Flipped(ValidIO(new RespInfoBundle))
+  val sink_e = Flipped(ValidIO(new RespInfoBundle))
 }
 
 class MSHR(implicit p: Parameters) extends L2Module {
@@ -130,6 +131,10 @@ class MSHR(implicit p: Parameters) extends L2Module {
     when(d_resp.bits.opcode === ReleaseAck) {
       state.w_releaseack := true.B
     }
+  }
+
+  when (io.resps.sink_e.valid) {
+    state.w_grantack := true.B
   }
 
   io.status.valid := status_reg.valid
