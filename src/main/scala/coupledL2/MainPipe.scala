@@ -60,7 +60,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
     /* send Release/Grant/ProbeAck via SourceC/D channels */
     val toSourceC = DecoupledIO(new TLBundleC(edgeOut.bundle))
-    val toSourceD = DecoupledIO(new TLBundleD(edgeOut.bundle))
+    val toSourceD = DecoupledIO(new TLBundleD(edgeIn.bundle))
 
     /* write dir, including reset dir */
     val metaWReq = ValidIO(new MetaWrite)
@@ -97,7 +97,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   }
 
   def toTLBundleD(task: TaskBundle, data: UInt = 0.U) = {
-    val d = Wire(new TLBundleD(edgeOut.bundle))
+    val d = Wire(new TLBundleD(edgeIn.bundle))
     d := DontCare
     d.opcode := task.opcode
     d.param := task.param
@@ -170,6 +170,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.toMSHRCtl.mshr_alloc_s3.bits.dirResult := dirResult_s3
   io.toMSHRCtl.mshr_alloc_s3.bits.state := alloc_state
   val ms_task = io.toMSHRCtl.mshr_alloc_s3.bits.task
+  ms_task.channel := req_s3.channel
   ms_task.set := req_s3.set
   ms_task.tag := req_s3.tag
   ms_task.off := req_s3.off
@@ -328,7 +329,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   task_s4.valid := task_s3.valid && !mshr_fire_s3 && !chnl_fire_s3
   when (task_s3.valid) {
     task_s4.bits := source_req_s3
-    task_s4.bits.mshrId := Mux(need_mshr_s3, io.fromMSHRCtl.mshr_alloc_ptr, task_s4.bits.mshrId)
+    task_s4.bits.mshrId := Mux(!task_s3.bits.mshrTask && need_mshr_s3, io.fromMSHRCtl.mshr_alloc_ptr, task_s3.bits.mshrId)
     beatsOH_s4 := Mux(c_s3.fire() || d_s3.fire(), next_beatsOH_s3, beatsOH_s3)
     beatsOH_ready_s4 := beatsOH_ready_s3
     data_s4 := data_s3
@@ -337,8 +338,10 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   }
   val beats_unready_s4 = (beatsOH_s4 & ~beatsOH_ready_s4).orR
   val (beat_s4, next_beatsOH_s4) = getBeat(data_s4, beatsOH_s4)
-  c_s4.valid := task_s4.valid && !beats_unready_s4 && isC(task_s4.bits.opcode) && !need_write_releaseBuf_s4
-  d_s4.valid := task_s4.valid && !beats_unready_s4 && !isC(task_s4.bits.opcode) && !need_write_releaseBuf_s4
+  val isC_s4 = task_s4.bits.opcode(2, 1) === Release(2, 1) && !task_s4.bits.fromB || task_s4.bits.opcode(2, 1) === ProbeAck(2, 1) && task_s4.bits.fromB
+  val isD_s4 = task_s4.bits.opcode(2, 1) === Grant(2, 1) && task_s4.bits.fromA || task_s4.bits.fromC
+  c_s4.valid := task_s4.valid && !beats_unready_s4 && isC_s4 && !need_write_releaseBuf_s4
+  d_s4.valid := task_s4.valid && !beats_unready_s4 && isD_s4 && !need_write_releaseBuf_s4
   c_s4.bits := toTLBundleC(task_s4.bits, beat_s4)
   d_s4.bits := toTLBundleD(task_s4.bits, beat_s4)
   val chnl_fire_s4 = (c_s4.fire() || d_s4.fire()) && !next_beatsOH_s4.orR
@@ -350,6 +353,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val beatsOH_ready_s5 = RegNext(beatsOH_ready_s4) | Fill(beatSize, ren_s5)
   val data_s5 = Reg(UInt((blockBytes * 8).W))
   val need_write_releaseBuf_s5 = Reg(Bool())
+  val isC_s5, isD_s5 = Reg(Bool())
   task_s5.valid := task_s4.valid && !chnl_fire_s4
   when (task_s4.valid) {
     task_s5.bits := task_s4.bits
@@ -357,13 +361,15 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     ren_s5 := ren_s4
     data_s5 := data_s4
     need_write_releaseBuf_s5 := need_write_releaseBuf_s4
+    isC_s5 := isC_s4
+    isD_s5 := isD_s4
   }
   assert(!(beatsOH_s5 & ~beatsOH_ready_s5).orR) // data should always be ready by s5
   val rdata_s5 = io.toDS.rdata_s5.data
   val merged_data_s5 = Mux(ren_s5, rdata_s5, data_s5)
   val (beat_s5, next_beatsOH_s5) = getBeat(merged_data_s5, beatsOH_s5)
-  c_s5.valid := task_s5.valid && isC(task_s5.bits.opcode) && !need_write_releaseBuf_s5
-  d_s5.valid := task_s5.valid && !isC(task_s5.bits.opcode) && !need_write_releaseBuf_s5
+  c_s5.valid := task_s5.valid && isC_s5 && !need_write_releaseBuf_s5
+  d_s5.valid := task_s5.valid && isD_s5 && !need_write_releaseBuf_s5
   c_s5.bits := toTLBundleC(task_s5.bits, beat_s5)
   d_s5.bits := toTLBundleD(task_s5.bits, beat_s5)
   val chnl_fire_s5 = (c_s5.fire() || d_s5.fire()) && !next_beatsOH_s5
@@ -380,18 +386,21 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val beatsOH_s6 = RegInit(0.U(beatSize.W))
   val data_s6 = Reg(UInt((blockBytes * 8).W))
   val need_write_releaseBuf_s6 = Reg(Bool())
+  val isC_s6, isD_s6 = Reg(Bool())
   task_s6.valid := task_s5.valid && !chnl_fire_s5
   when (task_s5.valid) {
     task_s6.bits := task_s5.bits
     beatsOH_s6 := Mux(c_s5.fire() || d_s5.fire(), next_beatsOH_s5, beatsOH_s5)
     data_s6 := merged_data_s5
     need_write_releaseBuf_s6 := need_write_releaseBuf_s5
+    isC_s6 := isC_s5
+    isD_s6 := isD_s5
   }
   val (beat_s6, next_beatsOH_s6) = getBeat(data_s6, beatsOH_s6)
   assert(!next_beatsOH_s6) // all the beats should be sent out by s6
-  assert(c_s6.ready && d_s6.ready) // s6 has the highest priority for SourceC/D
-  c_s6.valid := task_s6.valid && isC(task_s6.bits.opcode) && !need_write_releaseBuf_s6
-  d_s6.valid := task_s6.valid && !isC(task_s6.bits.opcode) && !need_write_releaseBuf_s6
+  // assert(c_s6.ready && d_s6.ready) // s6 has the highest priority for SourceC/D
+  c_s6.valid := task_s6.valid && isC_s6 && !need_write_releaseBuf_s6
+  d_s6.valid := task_s6.valid && isD_s6 && !need_write_releaseBuf_s6
   c_s6.bits := toTLBundleC(task_s6.bits, beat_s6)
   d_s6.bits := toTLBundleD(task_s6.bits, beat_s6)
 
@@ -439,9 +448,10 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     alloc_state.s_probeack := false.B
   }
 
-  assert(io.toSourceD.ready) // SourceD should always be ready
-  assert(io.toSourceC.ready) // SourceC/wbq should be large enough to avoid blocking pipeline
-  TLArbiter.lowest(edgeOut, io.toSourceC, c_s6, c_s5, c_s4, c_s3, c_s2)
-  TLArbiter.lowest(edgeIn, io.toSourceD, d_s6, d_s5, d_s4, d_s3, d_s2)
-
+  // assert(io.toSourceD.ready) // SourceD should always be ready
+  // assert(io.toSourceC.ready) // SourceC/wbq should be large enough to avoid blocking pipeline
+  val c = Seq(c_s6, c_s5, c_s4, c_s3, c_s2)
+  val d = Seq(d_s6, d_s5, d_s4, d_s3, d_s2)
+  TLArbiter.lowestFromSeq(edgeOut, io.toSourceC, c)
+  TLArbiter.lowestFromSeq(edgeIn, io.toSourceD, d)
 }
