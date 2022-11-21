@@ -99,7 +99,7 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   val tagRead = Wire(Vec(ways, UInt(tagBits.W)))
   val metaRead = Wire(Vec(ways, new MetaEntry()))
 
-  val reqValidReg = RegInit(false.B)
+  val reqValidReg = RegNext(io.read.fire, false.B)
 
   tagArray.io.r <> DontCare
   tagArray.io.w <> DontCare
@@ -130,7 +130,6 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
      stage 2: output latched hit/way and chosen meta/tag by way
   */
   // TODO: how about moving hit/way calculation to stage 2? Cuz SRAM latency can be high under high frequency
-  reqValidReg := RegNext(io.read.fire, false.B)
   val reqReg = RegEnable(io.read.bits, enable = io.read.fire)
   val tagMatchVec = tagRead.map(_ (tagBits - 1, 0) === reqReg.tag)
   val metaValidVec = metaRead.map(_.state =/= MetaData.INVALID)
@@ -150,12 +149,14 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   val tagAll_s2 = RegEnable(tagRead, reqValidReg)
   val meta_s2 = metaAll_s2(way_s2)
   val tag_s2 = tagAll_s2(way_s2)
+  val set_s2 = RegEnable(reqReg.set, reqValidReg)
 
   io.resp.valid      := reqValid_s2
   io.resp.bits.hit   := hit_s2
   io.resp.bits.way   := way_s2
   io.resp.bits.meta  := meta_s2
   io.resp.bits.tag   := tag_s2
+  io.resp.bits.set   := set_s2
   io.resp.bits.error := false.B  // depends on ECC
 
   dontTouch(io)
