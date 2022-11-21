@@ -142,7 +142,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   val req_s3 = task_s3.bits
   val mshr_req_s3 = req_s3.mshrTask
-  val req_acquire_s3 = req_s3.opcode === AcquireBlock || req_s3.opcode === AcquirePerm
+  val req_acquire_s3 = (req_s3.opcode === AcquireBlock || req_s3.opcode === AcquirePerm) && req_s3.fromA
   val req_prefetch_s3 = req_s3.opcode === Hint
   val req_needT_s3 = needT(req_s3.opcode, req_s3.param) // require T status to handle req
 
