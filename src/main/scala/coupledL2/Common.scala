@@ -102,7 +102,7 @@ class FSMState(implicit p: Parameters) extends L2Bundle {
   val s_release = Bool()  // release downwards
   val s_probeack = Bool() // respond probeack downwards
   val s_refill = Bool()   // respond grant upwards
-  val s_grantack = Bool() // respond grantack downwards
+  // val s_grantack = Bool() // respond grantack downwards
   val s_writeback = Bool()// writeback tag/dir
 
   // wait
