@@ -52,6 +52,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   reqArb.io.mshrTask <> mshrCtl.io.mshrTask
   reqArb.io.refillBufRead_s2 <> refillBuf.io.r
   reqArb.io.releaseBufRead_s2 <> releaseBuf.io.r
+  reqArb.io.blockSinkReq_s1 := mainPipe.io.metaWReq.valid || mainPipe.io.tagWReq.valid
 
   mshrCtl.io.resps.sinkC := sinkC.io.resp
   mshrCtl.io.resps.sinkD := refillUnit.io.resp
