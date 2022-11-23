@@ -152,7 +152,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
 
   val no_schedule = state.s_refill && state.s_probeack
   val no_wait = state.w_rprobeacklast && state.w_pprobeacklast && state.w_grantlast && state.w_releaseack && state.w_grantack
-  when (no_schedule && no_wait) {
+  when (no_schedule && no_wait && status_reg.valid) {
     status_reg.valid := false.B
   }
 
