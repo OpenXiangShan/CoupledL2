@@ -180,7 +180,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   //
 
   val sink_resp_s3 = WireInit(0.U.asTypeOf(Valid(new TaskBundle))) // resp for sinkA/B/C request that does not need to alloc mshr
-  val sink_resp_s3_opcode_a = Mux(req_s3.opcode === AcquirePerm && req_s3.param === BtoT, Grant, GrantData)
+  val sink_resp_s3_opcode_a = Mux(req_s3.opcode === AcquirePerm, Grant, GrantData)
   val sink_resp_s3_opcode_b = Mux(meta_s3.state === TIP && meta_s3.dirty, ProbeAckData, ProbeAck)
   val sink_resp_s3_param_a = Mux(req_s3.param === NtoB, toB, toT)
   val sink_resp_s3_param_b = Mux(
