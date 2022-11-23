@@ -29,7 +29,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     /* receive incoming tasks */
     val sinkA = Flipped(DecoupledIO(new TLBundleA(edgeIn.bundle)))
-    val sinkB = Flipped(DecoupledIO(new TLBundleB(edgeIn.bundle)))
+    val sinkB = Flipped(DecoupledIO(new TLBundleB(edgeOut.bundle)))
     val sinkC = Flipped(DecoupledIO(new TaskBundle)) // sinkC is TaskBundle
     val mshrTask = Flipped(DecoupledIO(new TaskBundle))
 
@@ -111,7 +111,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val sinkValids = VecInit(Seq(io.sinkC, io.sinkB, io.sinkA).map(_.valid)).asUInt
   val chnl_task_s1 = Wire(Valid(new TaskBundle()))
   chnl_task_s1.valid := sinkValids.orR && resetFinish && !io.mshrFull
-  chnl_task_s1.bits := Mux1H(sinkValids, Seq(C_task, B_task, A_task))
+  chnl_task_s1.bits := ParallelPriorityMux(sinkValids, Seq(C_task, B_task, A_task))
 
   io.sinkA.ready := !io.mshrFull && resetFinish && !io.sinkB.valid && !io.sinkC.valid && !mshr_task_s1.valid // SinkC prior to SinkA & SinkB
   io.sinkB.ready := !io.mshrFull && resetFinish && !io.sinkC.valid && !mshr_task_s1.valid
