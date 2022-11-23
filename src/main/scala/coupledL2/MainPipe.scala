@@ -361,7 +361,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     isC_s5 := isC_s4
     isD_s5 := isD_s4
   }
-  assert(!(beatsOH_s5 & ~beatsOH_ready_s5).orR) // data should always be ready by s5
+  assert(!task_s5.valid || !(beatsOH_s5 & ~beatsOH_ready_s5).orR) // data should always be ready by s5
   val rdata_s5 = io.toDS.rdata_s5.data
   val merged_data_s5 = Mux(ren_s5, rdata_s5, data_s5)
   val (beat_s5, next_beatsOH_s5) = getBeat(merged_data_s5, beatsOH_s5)
@@ -394,7 +394,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     isD_s6 := isD_s5
   }
   val (beat_s6, next_beatsOH_s6) = getBeat(data_s6, beatsOH_s6)
-  assert(!next_beatsOH_s6) // all the beats should be sent out by s6
+  assert(!task_s6.valid || !next_beatsOH_s6) // all the beats should be sent out by s6
   // assert(c_s6.ready && d_s6.ready) // s6 has the highest priority for SourceC/D
   c_s6.valid := task_s6.valid && isC_s6 && !need_write_releaseBuf_s6
   d_s6.valid := task_s6.valid && isD_s6 && !need_write_releaseBuf_s6
