@@ -80,8 +80,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     resetFinish := true.B
   }
 
-  val c_s2, c_s3, c_s4, c_s5, c_s6 = Wire(io.toSourceC.cloneType)
-  val d_s2, d_s3, d_s4, d_s5, d_s6 = Wire(io.toSourceD.cloneType)
+  val c_s3, c_s4, c_s5, c_s6 = Wire(io.toSourceC.cloneType)
+  val d_s3, d_s4, d_s5, d_s6 = Wire(io.toSourceD.cloneType)
 
   def toTLBundleC(task: TaskBundle, data: UInt = 0.U) = {
     val c = Wire(new TLBundleC(edgeOut.bundle))
@@ -115,20 +115,20 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val task_s2 = io.taskFromArb_s2
   val hasData_s2 = task_s2.bits.opcode(0)
   val isGrant_s2 = task_s2.bits.fromA && task_s2.bits.opcode === Grant
-  val task_ready_s2 = task_s2.bits.mshrTask && !hasData_s2 // this task is ready to leave pipeline, but channels might not be ready
-  val chnl_ready_s2 = Mux(isGrant_s2, d_s2.ready, c_s2.ready) // channel is ready
-  val chnl_fire_s2 = c_s2.fire() || d_s2.fire() // both task and channel are ready, this task actually leave pipeline
-  c_s2.valid := task_s2.valid && task_ready_s2 && !isGrant_s2
-  d_s2.valid := task_s2.valid && task_ready_s2 && isGrant_s2
-  c_s2.bits := toTLBundleC(task_s2.bits)
-  d_s2.bits := toTLBundleD(task_s2.bits)
+  // val task_ready_s2 = task_s2.bits.mshrTask && !hasData_s2 // this task is ready to leave pipeline, but channels might not be ready
+  // val chnl_ready_s2 = Mux(isGrant_s2, d_s2.ready, c_s2.ready) // channel is ready
+  // val chnl_fire_s2 = c_s2.fire() || d_s2.fire() // both task and channel are ready, this task actually leave pipeline
+  // c_s2.valid := task_s2.valid && task_ready_s2 && !isGrant_s2
+  // d_s2.valid := task_s2.valid && task_ready_s2 && isGrant_s2
+  // c_s2.bits := toTLBundleC(task_s2.bits)
+  // d_s2.bits := toTLBundleD(task_s2.bits)
 
   io.bufRead.valid := task_s2.valid && task_s2.bits.fromC && task_s2.bits.opcode(0)
   io.bufRead.bits.bufIdx := task_s2.bits.bufIdx
 
   /* ======== Stage 3 ======== */
   val task_s3 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
-  task_s3.valid := task_s2.valid && !chnl_fire_s2
+  task_s3.valid := task_s2.valid// && !chnl_fire_s2
   when(task_s2.valid) {
     task_s3.bits := task_s2.bits
   }
@@ -444,8 +444,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   // assert(io.toSourceD.ready) // SourceD should always be ready
   // assert(io.toSourceC.ready) // SourceC/wbq should be large enough to avoid blocking pipeline
-  val c = Seq(c_s6, c_s5, c_s4, c_s3, c_s2)
-  val d = Seq(d_s6, d_s5, d_s4, d_s3, d_s2)
+  val c = Seq(c_s6, c_s5, c_s4, c_s3)
+  val d = Seq(d_s6, d_s5, d_s4, d_s3)
   // DONT use TLArbiter because TLArbiter will send continuous beats for the same source
   val c_arb = Module(new Arbiter(new TLBundleC(edgeOut.bundle), c.size))
   val d_arb = Module(new Arbiter(new TLBundleD(edgeIn.bundle), d.size))

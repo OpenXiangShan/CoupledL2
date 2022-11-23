@@ -29,6 +29,10 @@ class MetaEntry(implicit p: Parameters) extends L2Bundle {
   val clients = UInt(clientBits.W)  // valid-bit of clients
   // TODO: record specific state of clients instead of just 1-bit
   // TODO: record prefetch info
+
+  def =/=(entry: MetaEntry): Bool = {
+    this.asUInt =/= entry.asUInt
+  }
 }
 
 object MetaEntry {

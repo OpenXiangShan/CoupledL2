@@ -57,6 +57,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val state = RegInit(new FSMState(), initState)
   initState.elements.foreach(_._2 := true.B)
   val dirResult = RegInit(0.U.asTypeOf(new DirResult()))
+  val gotT = RegInit(false.B) // TODO: L3 might return T even though L2 wants B
 
   /* MSHR Allocation */
   val status_reg = RegInit(0.U.asTypeOf(Valid(new MSHRStatus())))
@@ -73,12 +74,12 @@ class MSHR(implicit p: Parameters) extends L2Module {
     status_reg.bits.opcode := ms_task.opcode
     status_reg.bits.param := ms_task.param
     status_reg.bits.source := ms_task.sourceId
+    gotT := false.B
   }
 
   /* Intermediate logic */
   val req = status_reg.bits
   val meta = dirResult.meta
-  val gotT = RegInit(false.B) // L3 might return T even though L2 wants B
   val meta_no_client = !meta.clients.orR
 
   val req_needT = needT(req.opcode, req.param)
@@ -98,7 +99,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   oa.opcode := Mux(dirResult.hit, AcquirePerm, AcquireBlock)
   oa.param := Mux(req_needT, Mux(dirResult.hit, BtoT, NtoT), NtoB)
 
-  val od = io.tasks.mainpipe.bits
+  val od = io.tasks.mainpipe.bits // TODO: consider Release and ProbeAck
   od := DontCare
   od.channel := req.channel
   od.tag := req.tag
@@ -111,6 +112,17 @@ class MSHR(implicit p: Parameters) extends L2Module {
   // TODO: write tag/meta
   od.mshrTask := true.B
   od.mshrId := io.id
+  od.way := req.way
+  od.meta.dirty := dirResult.hit && dirResult.meta.dirty
+  od.meta.state := Mux(
+    req_promoteT || req_needT,
+    TRUNK,
+    BRANCH
+  )
+  require(clientBits == 1)
+  od.meta.clients := Fill(clientBits, 1.U(1.W))
+  od.metaWen := od.meta =/= dirResult.meta
+  od.tagWen := !dirResult.hit
 
   /* Task update */
   when(io.tasks.source_a.fire) {
@@ -127,6 +139,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
       state.w_grantfirst := true.B
       state.w_grantlast := d_resp.bits.last
       state.w_grant := status_reg.bits.off === 0.U || d_resp.bits.last  // TODO? why offset?
+      gotT := d_resp.bits.param === toT
     }
     when(d_resp.bits.opcode === ReleaseAck) {
       state.w_releaseack := true.B
