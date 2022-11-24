@@ -255,7 +255,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val need_write_releaseBuf = need_data_on_miss_a || need_data_b
   io.toDS.req_s3.valid := task_s3.valid && (ren || wen)
   io.toDS.req_s3.bits.way := Mux(mshr_req_s3, req_s3.way, dirResult_s3.way)
-  io.toDS.req_s3.bits.set := dirResult_s3.set
+  io.toDS.req_s3.bits.set := Mux(mshr_req_s3, req_s3.set, dirResult_s3.set)
   io.toDS.req_s3.bits.wen := wen
   io.toDS.wdata_s3.data := Mux(
     !mshr_req_s3,
