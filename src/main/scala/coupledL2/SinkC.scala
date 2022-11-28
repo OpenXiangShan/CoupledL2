@@ -49,15 +49,20 @@ class SinkC(implicit p: Parameters) extends L2Module {
   val isRelease = io.c.bits.opcode(1)
   val hasData = io.c.bits.opcode(0)
 
-  // io.toReqArb <> io.c
-  // io.toReqArb.valid := io.c.valid && isRelease
-  val buf = Reg(Vec(bufBlocks, Vec(beatSize, UInt((beatBytes * 8).W))))
+  // dataBuf entry is valid when Release has data
+  // taskBuf entry is valid when ReqArb is not ready to receive C tasks
+  val dataBuf = Reg(Vec(bufBlocks, Vec(beatSize, UInt((beatBytes * 8).W))))
   val beatValids = RegInit(VecInit(Seq.fill(bufBlocks)(VecInit(Seq.fill(beatSize)(false.B)))))
-  val bufValids = VecInit(beatValids.map(_.asUInt.orR)).asUInt
+  val dataValids = VecInit(beatValids.map(_.asUInt.orR)).asUInt
+  val taskBuf = Reg(Vec(bufBlocks, new TaskBundle))
+  val taskValids = RegInit(VecInit(Seq.fill(bufBlocks)(false.B)))
+  val taskArb = Module(new RRArbiter(new TaskBundle, bufBlocks))
+  val bufValids = taskValids.asUInt | dataValids
+
   val full = bufValids.andR
   val noSpace = full && hasData
   val nextPtr = PriorityEncoder(~bufValids)
-  val nextPtrReg = RegEnable(nextPtr, io.c.fire() && first && isRelease && hasData)
+  val nextPtrReg = RegEnable(nextPtr, io.c.fire() && isRelease && first && hasData)
 
   def toTaskBundle(c: TLBundleC): TaskBundle = {
     val task = Wire(new TaskBundle)
@@ -74,24 +79,49 @@ class SinkC(implicit p: Parameters) extends L2Module {
     task
   }
 
-  when (io.c.fire() && hasData) {
-    when (first) {
-      buf(nextPtr)(beat) := io.c.bits.data
-      beatValids(nextPtr)(beat) := true.B
-    }.otherwise {
-      assert(last) // there should be only 2 beats
-      buf(nextPtrReg)(beat) := io.c.bits.data
-      beatValids(nextPtrReg)(beat) := true.B
+  when (io.c.fire() && isRelease) {
+    when (hasData) {
+      when (first) {
+        dataBuf(nextPtr)(beat) := io.c.bits.data
+        beatValids(nextPtr)(beat) := true.B
+      }.otherwise {
+        assert(last)
+        dataBuf(nextPtrReg)(beat) := io.c.bits.data
+        beatValids(nextPtrReg)(beat) := true.B
+      }
     }
+  }
+
+  when (io.c.fire() && isRelease && last && (!io.toReqArb.ready || taskArb.io.out.valid)) {
+    when (hasData) {
+      taskValids(nextPtrReg) := true.B
+      taskBuf(nextPtrReg) := toTaskBundle(io.c.bits)
+      taskBuf(nextPtrReg).bufIdx := nextPtrReg
+    }.otherwise {
+      taskValids(nextPtr) := true.B
+      taskBuf(nextPtr) := toTaskBundle(io.c.bits)
+      taskBuf(nextPtr).bufIdx := nextPtr
+    }
+  }
+
+  taskArb.io.out.ready := io.toReqArb.ready
+  taskArb.io.in.zipWithIndex.foreach {
+    case (in, i) =>
+      in.valid := taskValids(i)
+      in.bits := taskBuf(i)
+      when (in.fire()) {
+        taskValids(i) := false.B
+      }
   }
 
   when (io.bufRead.valid) {
     beatValids(io.bufRead.bits.bufIdx).foreach(_ := false.B)
   }
 
-  io.toReqArb.valid := io.c.valid && isRelease && last
-  io.toReqArb.bits := toTaskBundle(io.c.bits)
-  io.toReqArb.bits.bufIdx := nextPtrReg
+  val cValid = io.c.valid && isRelease && last
+  io.toReqArb.valid := cValid || taskArb.io.out.valid
+  io.toReqArb.bits := Mux(taskArb.io.out.valid, taskArb.io.out.bits, toTaskBundle(io.c.bits))
+  io.toReqArb.bits.bufIdx := Mux(taskArb.io.out.valid, taskArb.io.out.bits.bufIdx, nextPtrReg)
 
   io.resp.valid := io.c.valid && (first || last) && !isRelease
   io.resp.mshrId := 0.U // DontCare
@@ -106,7 +136,8 @@ class SinkC(implicit p: Parameters) extends L2Module {
   io.releaseBufWrite.data.data := io.c.bits.data
   io.releaseBufWrite.id := DontCare // id is given by MSHRCtl by comparing address to the MSHRs
 
-  io.c.ready := !first || !noSpace && !(isRelease && !io.toReqArb.ready)
+  // io.c.ready := !first || !noSpace && !(isRelease && !io.toReqArb.ready)
+  io.c.ready := !isRelease || !first || !full || !hasData && io.toReqArb.ready
 
-  io.bufResp.data := buf(io.bufRead.bits.bufIdx)
+  io.bufResp.data := dataBuf(io.bufRead.bits.bufIdx)
 }

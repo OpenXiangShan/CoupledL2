@@ -61,6 +61,8 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val meta = new MetaEntry()
   val metaWen = Bool()
   val tagWen = Bool()
+
+  def hasData = opcode(0)
 }
 
 class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits {
