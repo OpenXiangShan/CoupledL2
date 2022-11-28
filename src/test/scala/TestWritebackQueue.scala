@@ -16,23 +16,23 @@ import scala.collection.mutable.ArrayBuffer
 
 
 
-object TestWritebackQueue extends App {
-  val config = new Config((_, _, _) => {
-    case L2ParamKey => L2Param(
-      echoField = Seq(DirtyField())
-    )
-  })
+// object TestWritebackQueue extends App {
+//   val config = new Config((_, _, _) => {
+//     case L2ParamKey => L2Param(
+//       echoField = Seq(DirtyField())
+//     )
+//   })
 
-  val top_coupledl2 = DisableMonitors(p => LazyModule(new TestTop_L2()(p)) )(config)
-  chisel3.stage.ChiselStage.elaborate(top_coupledl2.module)
+//   val top_coupledl2 = DisableMonitors(p => LazyModule(new TestTop_L2()(p)) )(config)
+//   chisel3.stage.ChiselStage.elaborate(top_coupledl2.module)
 
-  val arb_args = chisel3.aop.Select.collectDeep[WritebackQueue](top_coupledl2.module){
-    case ds: WritebackQueue =>
-      ds
-  }.head
+//   val arb_args = chisel3.aop.Select.collectDeep[WritebackQueue](top_coupledl2.module){
+//     case ds: WritebackQueue =>
+//       ds
+//   }.head
 
-  (new chisel3.stage.ChiselStage).emitVerilog(new WritebackQueue()(arb_args.p))
-}
+//   (new chisel3.stage.ChiselStage).emitVerilog(new WritebackQueue()(arb_args.p))
+// }
 
 
 

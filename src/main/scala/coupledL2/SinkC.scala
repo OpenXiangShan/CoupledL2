@@ -102,7 +102,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
   io.resp.respInfo.last := last
 
   io.releaseBufWrite.valid := io.c.valid && io.c.bits.opcode === ProbeAckData
-  io.releaseBufWrite.beat := beat
+  io.releaseBufWrite.beat_sel := UIntToOH(beat)
   io.releaseBufWrite.data.data := io.c.bits.data
   io.releaseBufWrite.id := DontCare // id is given by MSHRCtl by comparing address to the MSHRs
 

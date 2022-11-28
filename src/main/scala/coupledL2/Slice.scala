@@ -38,9 +38,10 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val refillUnit = Module(new RefillUnit())
   val sinkC = Module(new SinkC) // or ReleaseUnit?
   val sinkE = Module(new SinkE)
+  val sourceC = Module(new SourceC)
+  val sourceD = Module(new SourceD)
   val refillBuf = Module(new MSHRBuffer())
-  val releaseBuf = Module(new MSHRBuffer(wPorts = releaseBufWPorts))
-  val wbq = Module(new WritebackQueue)
+  val releaseBuf = Module(new MSHRBuffer(wPorts = 2))
 
   val prbq = Module(new ProbeQueue())
   prbq.io <> DontCare // @XiaBin TODO
@@ -70,17 +71,20 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   mainPipe.io.bufRead <> sinkC.io.bufRead
   mainPipe.io.bufResp <> sinkC.io.bufResp
   mainPipe.io.toDS.rdata_s5 := dataStorage.io.rdata
-  mainPipe.io.toSourceC <> wbq.io.req
   mainPipe.io.refillBufResp_s3.valid := RegNext(refillBuf.io.r.valid && refillBuf.io.r.ready)
   mainPipe.io.refillBufResp_s3.bits := refillBuf.io.r.data
   mainPipe.io.releaseBufResp_s3.valid := RegNext(releaseBuf.io.r.valid && releaseBuf.io.r.ready)
   mainPipe.io.releaseBufResp_s3.bits := releaseBuf.io.r.data
 
-  releaseBuf.io.w.last <> sinkC.io.releaseBufWrite
-  releaseBuf.io.w.last.id := mshrCtl.io.releaseBufWriteId
-  VecInit(releaseBuf.io.w.init) <> mainPipe.io.releaseBufWrite
+  releaseBuf.io.w(0) <> sinkC.io.releaseBufWrite
+  releaseBuf.io.w(0).id := mshrCtl.io.releaseBufWriteId
+  releaseBuf.io.w(1) <> mainPipe.io.releaseBufWrite
 
   refillUnit.io.refillBufWrite <> refillBuf.io.w.last
+
+  sourceC.io.in <> mainPipe.io.toSourceC
+
+  sourceD.io.in <> mainPipe.io.toSourceD
 
   /* input & output signals */
   val inBuf = cacheParams.innerBuf
@@ -89,13 +93,13 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   /* connect upward channels */
   reqArb.io.sinkA <> inBuf.a(io.in.a)
   sinkC.io.c <> inBuf.c(io.in.c)
-  io.in.d <> inBuf.d(mainPipe.io.toSourceD)
+  io.in.d <> inBuf.d(sourceD.io.out)
   sinkE.io.sinkE <> inBuf.e(io.in.e)
 
   /* connect downward channels */
   io.out.a <> outBuf.a(mshrCtl.io.sourceA)
   reqArb.io.sinkB <> outBuf.b(io.out.b)
-  io.out.c <> outBuf.c(wbq.io.c)
+  io.out.c <> outBuf.c(sourceC.io.out)
   refillUnit.io.sinkD <> outBuf.d(io.out.d)
   io.out.e <> outBuf.e(refillUnit.io.sourceE)
 
