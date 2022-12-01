@@ -158,6 +158,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
 
   io.status.valid := status_reg.valid
   io.status.bits <> status_reg.bits
+  io.status.bits.nestB := status_reg.valid && w_releaseack && w_rprobeacklast && w_pprobeacklast
 
   dontTouch(state)
 }

@@ -80,7 +80,7 @@ class TagWrite(implicit p: Parameters) extends L2Bundle {
 class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
 
   val io = IO(new Bundle() {
-    val read = Flipped(ValidIO(new DirRead))
+    val read = Flipped(DecoupledIO(new DirRead))
     val resp = ValidIO(new DirResult)
     val metaWReq = Flipped(ValidIO(new MetaWrite))
     val tagWReq = Flipped(ValidIO(new TagWrite))
@@ -166,5 +166,7 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   dontTouch(io)
   dontTouch(metaArray.io)
   dontTouch(tagArray.io)
+
+  io.read.ready := !io.metaWReq.valid && !io.tagWReq.valid
 
 }

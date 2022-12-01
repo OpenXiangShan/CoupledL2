@@ -73,6 +73,7 @@ class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val opcode = UInt(3.W)
   val param = UInt(3.W)
   val source = UInt(sourceIdBits.W)
+  val nestB = Bool()
 }
 
 // MSHR Task that MainPipe sends to MSHRCtl
