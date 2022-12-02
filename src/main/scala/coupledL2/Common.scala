@@ -129,3 +129,12 @@ class SourceAReq(implicit p: Parameters) extends L2Bundle {
   val param = UInt(3.W)
   val source = UInt(mshrBits.W)
 }
+
+class NestedWriteback(implicit p: Parameters) extends L2Bundle {
+  val set = UInt(setBits.W)
+  val tag = UInt(tagBits.W)
+  val b_toN = Bool()
+  val b_toB = Bool()
+  val b_clr_dirty = Bool()
+  val c_set_dirty = Bool()
+}

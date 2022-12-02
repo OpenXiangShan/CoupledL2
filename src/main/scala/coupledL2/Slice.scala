@@ -41,7 +41,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val sourceC = Module(new SourceC)
   val sourceD = Module(new SourceD)
   val refillBuf = Module(new MSHRBuffer())
-  val releaseBuf = Module(new MSHRBuffer(wPorts = 2))
+  val releaseBuf = Module(new MSHRBuffer(wPorts = 3))
 
   val prbq = Module(new ProbeQueue())
   prbq.io <> DontCare // @XiaBin TODO
@@ -49,15 +49,17 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   reqArb.io.sinkC <> sinkC.io.toReqArb
   reqArb.io.dirRead_s1 <> directory.io.read
   reqArb.io.taskToPipe_s2 <> mainPipe.io.taskFromArb_s2
-  reqArb.io.mshrFull <> mshrCtl.io.mshrFull
   reqArb.io.mshrTask <> mshrCtl.io.mshrTask
   reqArb.io.refillBufRead_s2 <> refillBuf.io.r
   reqArb.io.releaseBufRead_s2 <> releaseBuf.io.r
-  reqArb.io.blockSinkReq_s1 := mainPipe.io.metaWReq.valid || mainPipe.io.tagWReq.valid
+  reqArb.io.fromMSHRCtl := mshrCtl.io.toReqArb
+  reqArb.io.fromMainPipe := mainPipe.io.toReqArb
 
+  mshrCtl.io.fromReqArb.status_s1 := reqArb.io.status_s1
   mshrCtl.io.resps.sinkC := sinkC.io.resp
   mshrCtl.io.resps.sinkD := refillUnit.io.resp
   mshrCtl.io.resps.sinkE := sinkE.io.resp
+  mshrCtl.io.nestedwb := mainPipe.io.nestedwb
 
   directory.io.resp <> mainPipe.io.dirResp_s3
   directory.io.metaWReq <> mainPipe.io.metaWReq
@@ -75,10 +77,15 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   mainPipe.io.refillBufResp_s3.bits := refillBuf.io.r.data
   mainPipe.io.releaseBufResp_s3.valid := RegNext(releaseBuf.io.r.valid && releaseBuf.io.r.ready)
   mainPipe.io.releaseBufResp_s3.bits := releaseBuf.io.r.data
+  mainPipe.io.fromReqArb.status_s1 := reqArb.io.status_s1
 
   releaseBuf.io.w(0) <> sinkC.io.releaseBufWrite
   releaseBuf.io.w(0).id := mshrCtl.io.releaseBufWriteId
   releaseBuf.io.w(1) <> mainPipe.io.releaseBufWrite
+  releaseBuf.io.w(2).valid := mshrCtl.io.nestedwbDataId.valid
+  releaseBuf.io.w(2).beat_sel := Fill(beatSize, 1.U(1.W))
+  releaseBuf.io.w(2).data := mainPipe.io.nestedwbData
+  releaseBuf.io.w(2).id := mshrCtl.io.nestedwbDataId.bits
 
   refillUnit.io.refillBufWrite <> refillBuf.io.w.last
 

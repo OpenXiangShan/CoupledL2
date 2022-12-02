@@ -34,7 +34,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     val mshrTask = Flipped(DecoupledIO(new TaskBundle))
 
     /* read/write directory */
-    val dirRead_s1 = ValidIO(new DirRead())  // To directory, read meta/tag
+    val dirRead_s1 = DecoupledIO(new DirRead())  // To directory, read meta/tag
     // val metaWrite_s1 = ValidIO(new MetaWrite())
 
     /* send task to mainpipe */
@@ -45,7 +45,25 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     val releaseBufRead_s2 = Flipped(new MSHRBufRead)
 
     /* mshr full, from MSHRCtrl */
-    val mshrFull = Input(Bool())
+    // val mshrFull = Input(Bool())
+
+    /* status of s1*/
+    val status_s1 = Output(new Bundle() {
+      val sets = Vec(3, UInt(setBits.W)) // set of sinkC, sinkB, sinkA req in s1
+      // val channel = UInt(3.W)
+    })
+
+    /* handle set conflict and nestB */
+    val fromMSHRCtl = Input(new Bundle() {
+      val blockA_s1 = Bool()
+      val blockB_s1 = Bool()
+      val blockC_s1 = Bool()
+    })
+    val fromMainPipe = Input(new Bundle() {
+      val blockA_s1 = Bool()
+      val blockB_s1 = Bool()
+      val blockC_s1 = Bool()
+    })
   })
 
   /* ======== Reset ======== */
@@ -108,14 +126,20 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val A_task = fromTLAtoTaskBundle(io.sinkA.bits)
   val B_task = fromTLBtoTaskBundle(io.sinkB.bits)
   val C_task = io.sinkC.bits
-  val sinkValids = VecInit(Seq(io.sinkC, io.sinkB, io.sinkA).map(_.valid)).asUInt
+  val sinkValids = VecInit(Seq(
+    io.sinkC.valid && !io.fromMSHRCtl.blockC_s1 && !io.fromMainPipe.blockC_s1,
+    io.sinkB.valid && !io.fromMSHRCtl.blockB_s1 && !io.fromMainPipe.blockB_s1,
+    io.sinkA.valid && !io.fromMSHRCtl.blockA_s1 && !io.fromMainPipe.blockA_s1
+  )).asUInt
   val chnl_task_s1 = Wire(Valid(new TaskBundle()))
-  chnl_task_s1.valid := io.dirRead_s1.ready && sinkValids.orR && resetFinish && !io.mshrFull
+  chnl_task_s1.valid := io.dirRead_s1.ready && sinkValids.orR && resetFinish
   chnl_task_s1.bits := ParallelPriorityMux(sinkValids, Seq(C_task, B_task, A_task))
 
-  io.sinkA.ready := !io.mshrFull && io.dirRead_s1.ready && resetFinish && !io.sinkB.valid && !io.sinkC.valid && !mshr_task_s1.valid // SinkC prior to SinkA & SinkB
-  io.sinkB.ready := !io.mshrFull && io.dirRead_s1.ready && resetFinish && !io.sinkC.valid && !mshr_task_s1.valid
-  io.sinkC.ready := !io.mshrFull && io.dirRead_s1.ready && resetFinish && !mshr_task_s1.valid
+  io.status_s1.sets := VecInit(Seq(C_task.set, B_task.set, A_task.set))
+
+  io.sinkA.ready := !io.fromMSHRCtl.blockA_s1 && !io.fromMainPipe.blockA_s1 && io.dirRead_s1.ready && resetFinish && !io.sinkB.valid && !io.sinkC.valid && !mshr_task_s1.valid // SinkC prior to SinkA & SinkB
+  io.sinkB.ready := !io.fromMSHRCtl.blockB_s1 && !io.fromMainPipe.blockB_s1 && io.dirRead_s1.ready && resetFinish && !io.sinkC.valid && !mshr_task_s1.valid
+  io.sinkC.ready := !io.fromMSHRCtl.blockC_s1 && !io.fromMainPipe.blockC_s1 && io.dirRead_s1.ready && resetFinish && !mshr_task_s1.valid
 
   val task_s1 = Mux(mshr_task_s1.valid, mshr_task_s1, chnl_task_s1)
 
