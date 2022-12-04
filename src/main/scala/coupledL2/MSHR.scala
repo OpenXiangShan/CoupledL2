@@ -44,6 +44,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
     val alloc = Flipped(ValidIO(new MSHRRequest))
     val tasks = new MSHRTasks()
     val resps = new MSHRResps()
+    val nestedwb = Input(new NestedWriteback)
+    val nestedwbData = Output(Bool())
   })
 
   def odOpGen(r: UInt) = {
@@ -158,6 +160,27 @@ class MSHR(implicit p: Parameters) extends L2Module {
 
   io.status.valid := status_reg.valid
   io.status.bits <> status_reg.bits
+  io.status.bits.nestB := status_reg.valid && state.w_releaseack && state.w_rprobeacklast && state.w_pprobeacklast && !state.w_grantfirst
+
+  val nestedwb_match = status_reg.valid && dirResult.meta.state =/= INVALID &&
+    dirResult.set === io.nestedwb.set &&
+    dirResult.tag === io.nestedwb.tag
+  when (nestedwb_match) {
+    when (io.nestedwb.b_toN) {
+      dirResult.hit := false.B
+    }
+    when (io.nestedwb.b_toB) {
+      dirResult.meta.state := BRANCH
+    }
+    when (io.nestedwb.b_clr_dirty) {
+      dirResult.meta.dirty := false.B
+    }
+    when (io.nestedwb.c_set_dirty) {
+      dirResult.meta.dirty := true.B
+    }
+  }
+
+  io.nestedwbData := nestedwb_match && io.nestedwb.c_set_dirty
 
   dontTouch(state)
 }

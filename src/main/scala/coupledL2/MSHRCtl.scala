@@ -36,6 +36,18 @@ class MSHRSelector(implicit p: Parameters) extends L2Module {
 
 class MSHRCtl(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
+    /* interact with req arb */
+    val fromReqArb = Input(new Bundle() {
+      val status_s1 = new Bundle() {
+        val sets = Vec(3, UInt(setBits.W))
+        // val channel = UInt(3.W)
+      }
+    })
+    val toReqArb = Output(new Bundle() {
+      val blockA_s1 = Bool()
+      val blockB_s1 = Bool()
+      val blockC_s1 = Bool()
+    })
     /* interact with mainpipe */
     val fromMainPipe = new Bundle() {
       val mshr_alloc_s3 = Flipped(ValidIO(new MSHRRequest))
@@ -45,7 +57,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     }
 
     /* to request arbiter */
-    val mshrFull = Output(Bool())
+    // val mshrFull = Output(Bool())
     val mshrTask = DecoupledIO(new TaskBundle())
 
     /* send reqs */
@@ -59,12 +71,17 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     })
     
     val releaseBufWriteId = Output(UInt(mshrBits.W))
+
+    /* nested writeback */
+    val nestedwb = Input(new NestedWriteback)
+    val nestedwbDataId = Output(ValidIO(UInt(mshrBits.W)))
   })
 
   val mshrs = Seq.fill(mshrsAll) { Module(new MSHR()) }
 
   val mshrValids = VecInit(mshrs.map(m => m.io.status.valid))
   val mshrFull = PopCount(Cat(mshrs.map(_.io.status.valid))) >= (mshrsAll-2).U
+  val a_mshrFull = PopCount(Cat(mshrs.map(_.io.status.valid))) >= (mshrsAll-3).U // the last idle mshr should not be allocated for channel A req
   val mshrSelector = Module(new MSHRSelector())
   mshrSelector.io.idle := mshrs.map(m => !m.io.status.valid)
   val selectedMSHROH = mshrSelector.io.out.bits
@@ -82,10 +99,17 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       m.io.resps.sink_e.valid := io.resps.sinkE.valid && io.resps.sinkE.mshrId === i.U
       m.io.resps.sink_e.bits := io.resps.sinkE.respInfo
       
+      m.io.nestedwb := io.nestedwb
   }
 
   io.toMainPipe.mshr_alloc_ptr := OHToUInt(selectedMSHROH)
-  io.mshrFull := mshrFull
+  // io.mshrFull := mshrFull
+  val setMatchVec_a = mshrs.map(m => m.io.status.valid && m.io.status.bits.set === io.fromReqArb.status_s1.sets(2))
+  val setMatchVec_b = mshrs.map(m => m.io.status.valid && m.io.status.bits.set === io.fromReqArb.status_s1.sets(1))
+  val setConflictVec_b = (setMatchVec_b zip mshrs.map(_.io.status.bits.nestB)).map(x => x._1 && !x._2)
+  io.toReqArb.blockC_s1 := false.B
+  io.toReqArb.blockB_s1 := mshrFull || Cat(setConflictVec_b).orR
+  io.toReqArb.blockA_s1 := a_mshrFull || Cat(setMatchVec_a).orR
 
   /* Acquire downwards */
   val acquireUnit = Module(new AcquireUnit())
@@ -107,6 +131,11 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
 
   io.releaseBufWriteId := ParallelPriorityMux(mshrs.zipWithIndex.map {
     case (mshr, i) => (mshr.io.status.valid && mshr.io.status.bits.set === io.resps.sinkC.set, i.U)
+  })
+
+  io.nestedwbDataId.valid := Cat(mshrs.map(_.io.nestedwbData)).orR
+  io.nestedwbDataId.bits := ParallelPriorityMux(mshrs.zipWithIndex.map {
+    case (mshr, i) => (mshr.io.nestedwbData, i.U)
   })
 
   dontTouch(io.sourceA)

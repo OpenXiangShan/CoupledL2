@@ -73,6 +73,7 @@ class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val opcode = UInt(3.W)
   val param = UInt(3.W)
   val source = UInt(sourceIdBits.W)
+  val nestB = Bool()
 }
 
 // MSHR Task that MainPipe sends to MSHRCtl
@@ -127,4 +128,13 @@ class SourceAReq(implicit p: Parameters) extends L2Bundle {
   val opcode = UInt(3.W)
   val param = UInt(3.W)
   val source = UInt(mshrBits.W)
+}
+
+class NestedWriteback(implicit p: Parameters) extends L2Bundle {
+  val set = UInt(setBits.W)
+  val tag = UInt(tagBits.W)
+  val b_toN = Bool()
+  val b_toB = Bool()
+  val b_clr_dirty = Bool()
+  val c_set_dirty = Bool()
 }

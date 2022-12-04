@@ -31,6 +31,19 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     /* receive task from arbiter at stage 2 */
     val taskFromArb_s2 = Flipped(ValidIO(new TaskBundle()))
 
+    /* handle set conflict in req arb */
+    val fromReqArb = Input(new Bundle() {
+      val status_s1 = new Bundle() {
+        val sets = Vec(3, UInt(setBits.W))
+        // val channel = UInt(3.W)
+      }
+    })
+    val toReqArb = Output(new Bundle() {
+      val blockA_s1 = Bool()
+      val blockB_s1 = Bool()
+      val blockC_s1 = Bool()
+    })
+
     /* get dir result at stage 3 */
     val dirResp_s3 = Flipped(ValidIO(new DirResult))
 
@@ -70,6 +83,9 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
     /* read DS and write data into ReleaseBuf when the task needs to replace */
     val releaseBufWrite = Flipped(new MSHRBufWrite()) // s5 & s6
+
+    val nestedwb = Output(new NestedWriteback)
+    val nestedwbData = Output(new DSBlock)
   })
 
   val resetFinish = RegInit(false.B)
@@ -240,13 +256,14 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   // write/read data storage
   val wen_c = !mshr_req_s3 && req_s3.fromC && isParamFromT(req_s3.param) && req_s3.opcode(0)
   val wen_mshr_grant = mshr_grantdata_s3
-  val wen_mshr_probeack = mshr_probeack_s3
+  val wen_mshr_probeack = mshr_probeackdata_s3
   val wen = wen_c || wen_mshr_grant || wen_mshr_probeack
   val need_data_on_hit_a = req_s3.fromA && !mshr_req_s3 && req_s3.opcode === AcquireBlock && (isT(meta_s3.state) || req_s3.param === NtoB)
   // read data ahead of time to prepare for ReleaseData later 
   val need_data_on_miss_a = req_s3.fromA && !mshr_req_s3 && !dirResult_s3.hit && (meta_s3.state === TRUNK || meta_s3.state === TIP && meta_s3.dirty)
   val need_data_b = req_s3.fromB && !mshr_req_s3 && dirResult_s3.hit && (meta_s3.state === TRUNK || meta_s3.state === TIP && meta_s3.dirty)
   val ren = Mux(dirResult_s3.hit, need_data_on_hit_a, need_data_on_miss_a) || need_data_b
+  val bufResp_s3 = RegNext(io.bufResp.data.asUInt)
   val need_write_releaseBuf = need_data_on_miss_a || need_data_b
   io.toDS.req_s3.valid := task_s3.valid && (ren || wen)
   io.toDS.req_s3.bits.way := Mux(mshr_req_s3, req_s3.way, dirResult_s3.way)
@@ -254,7 +271,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.toDS.req_s3.bits.wen := wen
   io.toDS.wdata_s3.data := Mux(
     !mshr_req_s3,
-    RegNext(io.bufResp.data.asUInt),
+    bufResp_s3,
     Mux(
       req_s3.fromA,
       io.refillBufResp_s3.bits.data,
@@ -314,6 +331,23 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   )
   d_s3.bits.task := source_req_s3
   d_s3.bits.data.data := data_s3
+
+  val block_s1 = Seq(io.toReqArb.blockC_s1, io.toReqArb.blockB_s1, io.toReqArb.blockA_s1)
+  (block_s1 zip io.fromReqArb.status_s1.sets).foreach {
+    case (block, set) =>
+      block := 
+        task_s2.valid && !task_s2.bits.mshrTask && task_s2.bits.set === set ||
+        io.toMSHRCtl.mshr_alloc_s3.valid && task_s3.bits.set === set
+  }
+
+  io.nestedwb.set := req_s3.set
+  io.nestedwb.tag := req_s3.tag
+  io.nestedwb.b_toN := task_s3.valid && metaW_valid_s3_b && req_s3.param === toN
+  io.nestedwb.b_toB := task_s3.valid && metaW_valid_s3_b && req_s3.param =/= toB // assume L3 won't send Probe toT
+  io.nestedwb.b_clr_dirty := task_s3.valid && metaW_valid_s3_b && meta_s3.dirty
+  io.nestedwb.c_set_dirty := task_s3.valid && metaW_valid_s3_c && metaW_s3_c_dirty
+
+  io.nestedwbData := bufResp_s3.asTypeOf(new DSBlock)
 
   /* ======== Stage 4 ======== */
   val task_s4 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
