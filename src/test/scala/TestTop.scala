@@ -54,10 +54,7 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
     case (tllogger, l1d) =>
       tllogger := TLBuffer() := l1d
   }
-  // for (i <- 0 until 1) {
-  //   l1d_l2_tllog_nodes(i) := TLBuffer() := l1d_nodes(i)
-  // }
-
+  
   for (tllogger <- l1d_l2_tllog_nodes) {
     xbar :=* tllogger
   }
