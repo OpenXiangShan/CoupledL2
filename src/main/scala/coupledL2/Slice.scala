@@ -99,6 +99,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   
   /* connect upward channels */
   reqArb.io.sinkA <> inBuf.a(io.in.a)
+  io.in.b <> inBuf.b(mshrCtl.io.sourceB)
   sinkC.io.c <> inBuf.c(io.in.c)
   io.in.d <> inBuf.d(sourceD.io.out)
   sinkE.io.sinkE <> inBuf.e(io.in.e)

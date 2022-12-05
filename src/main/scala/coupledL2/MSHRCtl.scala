@@ -62,6 +62,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
 
     /* send reqs */
     val sourceA = DecoupledIO(new TLBundleA(edgeOut.bundle))
+    val sourceB = DecoupledIO(new TLBundleA(edgeIn.bundle))
 
     /* receive resps */
     val resps = Input(new Bundle() {
@@ -113,21 +114,16 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
 
   /* Acquire downwards */
   val acquireUnit = Module(new AcquireUnit())
-  val oaArb = Module(new FastArbiter(new SourceAReq, mshrsAll))
-  mshrs.zipWithIndex.foreach{
-    case (m, i) =>
-      oaArb.io.in(i) <> m.io.tasks.source_a
-  }
-  acquireUnit.io.task <> oaArb.io.out
+  fastArb(mshrs.map(_.io.tasks.source_a), acquireUnit.io.task, Some("source_a"))
   io.sourceA <> acquireUnit.io.sourceA
 
+  /* Probe upwards */
+  val sourceB = Module(new SourceB())
+  fastArb(mshrs.map(_.io.tasks.source_b), sourceB.io.task, Some("source_b"))
+  io.sourceB <> sourceB.io.sourceB
+
   /* Arbitrate MSHR task to RequestArbiter */
-  val mshrTaskArb = Module(new FastArbiter(chiselTypeOf(io.mshrTask.bits), mshrsAll))
-  mshrs.zipWithIndex.foreach{
-    case (m, i) =>
-      mshrTaskArb.io.in(i) <> m.io.tasks.mainpipe
-  }
-  io.mshrTask <> mshrTaskArb.io.out
+  fastArb(mshrs.map(_.io.tasks.mainpipe), io.mshrTask, Some("mshr_task"))
 
   io.releaseBufWriteId := ParallelPriorityMux(mshrs.zipWithIndex.map {
     case (mshr, i) => (mshr.io.status.valid && mshr.io.status.bits.set === io.resps.sinkC.set, i.U)

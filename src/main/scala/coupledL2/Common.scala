@@ -21,6 +21,7 @@ import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config.Parameters
 import TaskInfo._
+import freechips.rocketchip.tilelink.TLPermissions._
 
 abstract class L2Module(implicit val p: Parameters) extends MultiIOModule with HasCoupledL2Parameters
 abstract class L2Bundle(implicit val p: Parameters) extends Bundle with HasCoupledL2Parameters
@@ -106,7 +107,7 @@ class FSMState(implicit p: Parameters) extends L2Bundle {
   val s_probeack = Bool() // respond probeack downwards
   val s_refill = Bool()   // respond grant upwards
   // val s_grantack = Bool() // respond grantack downwards
-  val s_writeback = Bool()// writeback tag/dir
+  // val s_writeback = Bool()// writeback tag/dir
 
   // wait
   val w_rprobeackfirst = Bool()
@@ -126,8 +127,16 @@ class SourceAReq(implicit p: Parameters) extends L2Bundle {
   val set = UInt(setBits.W)
   val off = UInt(offsetBits.W)
   val opcode = UInt(3.W)
-  val param = UInt(3.W)
+  val param = UInt(aWidth.W)
   val source = UInt(mshrBits.W)
+}
+
+class SourceBReq(implicit p: Parameters) extends L2Bundle {
+  val tag = UInt(tagBits.W)
+  val set = UInt(setBits.W)
+  val off = UInt(offsetBits.W)
+  val opcode = UInt(3.W)
+  val param = UInt(bdWidth.W)
 }
 
 class NestedWriteback(implicit p: Parameters) extends L2Bundle {
