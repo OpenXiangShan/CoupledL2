@@ -137,8 +137,8 @@ class RequestArb(implicit p: Parameters) extends L2Module {
 
   io.status_s1.sets := VecInit(Seq(C_task.set, B_task.set, A_task.set))
 
-  io.sinkA.ready := !io.fromMSHRCtl.blockA_s1 && !io.fromMainPipe.blockA_s1 && io.dirRead_s1.ready && resetFinish && !io.sinkB.valid && !io.sinkC.valid && !mshr_task_s1.valid // SinkC prior to SinkA & SinkB
-  io.sinkB.ready := !io.fromMSHRCtl.blockB_s1 && !io.fromMainPipe.blockB_s1 && io.dirRead_s1.ready && resetFinish && !io.sinkC.valid && !mshr_task_s1.valid
+  io.sinkA.ready := !io.fromMSHRCtl.blockA_s1 && !io.fromMainPipe.blockA_s1 && io.dirRead_s1.ready && resetFinish && !sinkValids(1) && !sinkValids(0) && !mshr_task_s1.valid // SinkC prior to SinkA & SinkB
+  io.sinkB.ready := !io.fromMSHRCtl.blockB_s1 && !io.fromMainPipe.blockB_s1 && io.dirRead_s1.ready && resetFinish && !sinkValids(0) && !mshr_task_s1.valid
   io.sinkC.ready := !io.fromMSHRCtl.blockC_s1 && !io.fromMainPipe.blockC_s1 && io.dirRead_s1.ready && resetFinish && !mshr_task_s1.valid
 
   val task_s1 = Mux(mshr_task_s1.valid, mshr_task_s1, chnl_task_s1)
