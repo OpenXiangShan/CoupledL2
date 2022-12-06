@@ -242,10 +242,10 @@ class MSHR(implicit p: Parameters) extends L2Module {
   when (c_resp.valid) {
     when (c_resp.bits.opcode === ProbeAck || c_resp.bits.opcode === ProbeAckData) {
       state.w_rprobeackfirst := true.B
-      state.w_rprobeacklast := c_resp.bits.last
+      state.w_rprobeacklast := state.w_rprobeacklast || c_resp.bits.last
       state.w_pprobeackfirst := true.B
-      state.w_pprobeacklast := c_resp.bits.last
-      state.w_pprobeack := status_reg.bits.off === 0.U || c_resp.bits.last
+      state.w_pprobeacklast := state.w_pprobeacklast || c_resp.bits.last
+      state.w_pprobeack := state.w_pprobeack || status_reg.bits.off === 0.U || c_resp.bits.last
     }
     when (c_resp.bits.opcode === ProbeAckData) {
       probeDirty := true.B
