@@ -6,9 +6,6 @@ import chipsalliance.rocketchip.config._
 import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
-import freechips.rocketchip.util.{ElaborationArtefacts, HasRocketChipStageUtils}
-import coupledL2.debug.TLLogger
-import coupledL2.utils.ChiselDB
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -43,20 +40,14 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
   }
 
   val l1d_nodes = (0 until 1) map( i => createClientNode(s"l1d$i", 32))
-  val l1d_l2_tllog_nodes = (0 until 1) map( i => TLLogger(s"L1D_L2_$i"))
   val master_nodes = l1d_nodes
 
   val l2 = LazyModule(new CoupledL2())
   val xbar = TLXbar()
   val ram = LazyModule(new TLRAM(AddressSet(0, 0xffffL), beatBytes = 32))
 
-  l1d_l2_tllog_nodes.zip(l1d_nodes).foreach{
-    case (tllogger, l1d) =>
-      tllogger := TLBuffer() := l1d
-  }
-  
-  for (tllogger <- l1d_l2_tllog_nodes) {
-    xbar :=* tllogger
+  for (l1d <- l1d_nodes) {
+    xbar := TLBuffer() := l1d
   }
 
   ram.node :=
@@ -74,7 +65,7 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
   }
 }
 
-object TestTop_L2 extends App with HasRocketChipStageUtils {
+object TestTop_L2 extends App {
   val config = new Config((_, _, _) => {
     case L2ParamKey => L2Param(
       echoField = Seq(DirtyField())
@@ -85,12 +76,4 @@ object TestTop_L2 extends App with HasRocketChipStageUtils {
   (new ChiselStage).execute(args, Seq(
     ChiselGeneratorAnnotation(() => top.module)
   ))
-  ChiselDB.addToElaborationArtefacts
-  ElaborationArtefacts.files.foreach{
-    case (extension, contents) =>
-      val prefix = extension match {
-        case "h" | "cpp" => "chisel_db"
-      }
-      writeOutputFile("./build", s"$prefix.${extension}", contents())
-  }
 }
