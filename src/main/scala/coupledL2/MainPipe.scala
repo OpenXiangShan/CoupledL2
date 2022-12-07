@@ -224,6 +224,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       0.U // param of ReleaseAck must be 0
     )
   )
+  sink_resp_s3.bits.mshrId := mshrsAll.U // extra id for reqs that do not enter mshr
 
   val source_req_s3 = Wire(new TaskBundle)
   source_req_s3 := Mux(sink_resp_s3.valid, sink_resp_s3.bits, req_s3)
@@ -360,7 +361,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   task_s4.valid := task_s3.valid && !mshr_fire_s3 && !chnl_fire_s3
   when (task_s3.valid) {
     task_s4.bits := source_req_s3
-    task_s4.bits.mshrId := Mux(!task_s3.bits.mshrTask && need_mshr_s3, io.fromMSHRCtl.mshr_alloc_ptr, task_s3.bits.mshrId)
+    task_s4.bits.mshrId := Mux(!task_s3.bits.mshrTask && need_mshr_s3, io.fromMSHRCtl.mshr_alloc_ptr, source_req_s3.mshrId)
     // beatsOH_s4 := Mux(c_s3.fire() || d_s3.fire(), next_beatsOH_s3, beatsOH_s3)
     // beatsOH_ready_s4 := beatsOH_ready_s3
     data_unready_s4 := data_unready_s3

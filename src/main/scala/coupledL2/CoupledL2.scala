@@ -43,7 +43,7 @@ trait HasCoupledL2Parameters {
   val stateBits = MetaData.stateBits
 
   val mshrsAll = 16
-  val mshrBits = log2Up(mshrsAll)
+  val mshrBits = log2Up(mshrsAll+1)
 
   val bufBlocks = 8 // hold data that flows in MainPipe
   val bufIdxBits = log2Up(bufBlocks)
@@ -135,7 +135,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
         supports = TLSlaveToMasterTransferSizes(
           probe = xfer
         ),
-        sourceId = IdRange(0, mshrsAll)
+        sourceId = IdRange(0, mshrsAll+1)
       )
     ),
     channelBytes = cacheParams.channelBytes,
@@ -162,7 +162,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     },
     beatBytes = 32,
     minLatency = 2,
-    endSinkId = mshrsAll
+    endSinkId = mshrsAll+1
   )
 
   val node = TLAdapterNode(
