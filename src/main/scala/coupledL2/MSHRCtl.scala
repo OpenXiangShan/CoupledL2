@@ -93,11 +93,11 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       m.io.alloc.valid := selectedMSHROH(i) && io.fromMainPipe.mshr_alloc_s3.valid
       m.io.alloc.bits := io.fromMainPipe.mshr_alloc_s3.bits
 
-      m.io.resps.sink_c.valid := io.resps.sinkC.valid && io.resps.sinkC.set === m.io.status.bits.set // ! TODO: MSHRs are blocked by slot instead of by set
+      m.io.resps.sink_c.valid := m.io.status.valid && io.resps.sinkC.valid && io.resps.sinkC.set === m.io.status.bits.set // ! TODO: MSHRs are blocked by slot instead of by set
       m.io.resps.sink_c.bits := io.resps.sinkC.respInfo
-      m.io.resps.sink_d.valid := io.resps.sinkD.valid && io.resps.sinkD.mshrId === i.U
+      m.io.resps.sink_d.valid := m.io.status.valid && io.resps.sinkD.valid && io.resps.sinkD.mshrId === i.U
       m.io.resps.sink_d.bits := io.resps.sinkD.respInfo
-      m.io.resps.sink_e.valid := io.resps.sinkE.valid && io.resps.sinkE.mshrId === i.U
+      m.io.resps.sink_e.valid := m.io.status.valid && io.resps.sinkE.valid && io.resps.sinkE.mshrId === i.U
       m.io.resps.sink_e.bits := io.resps.sinkE.respInfo
       
       m.io.nestedwb := io.nestedwb
