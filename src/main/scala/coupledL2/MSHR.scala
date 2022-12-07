@@ -206,7 +206,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     ),
     clients = Fill(clientBits, 1.U(1.W))
   )
-  mp_grant.metaWen := mp_grant.meta =/= meta
+  mp_grant.metaWen := true.B
   mp_grant.tagWen := !dirResult.hit
 
   io.tasks.mainpipe.bits := ParallelPriorityMux(
