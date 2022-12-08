@@ -250,12 +250,12 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     )
   )
 
-  val metaW_valid_s3_a = !mshr_req_s3 && req_s3.fromA && !need_mshr_s3_a && !meta_s3.clients.orR
+  val metaW_valid_s3_a = !mshr_req_s3 && req_s3.fromA && !need_mshr_s3_a// && !meta_s3.clients.orR
   val metaW_valid_s3_b = !mshr_req_s3 && req_s3.fromB && !need_mshr_s3_b && (meta_s3.state === TIP || meta_s3.state === BRANCH && req_s3.param === toN)
   val metaW_valid_s3_c = !mshr_req_s3 && req_s3.fromC
   val metaW_valid_s3_mshr = mshr_req_s3 && req_s3.metaWen
   require(clientBits == 1)
-  val metaW_s3_a = MetaEntry(meta_s3.dirty, meta_s3.state, Fill(clientBits, true.B))
+  val metaW_s3_a = MetaEntry(meta_s3.dirty, Mux(req_needT_s3, TRUNK, meta_s3.state), Fill(clientBits, true.B))
   val metaW_s3_b = Mux(req_s3.param === toN, MetaEntry(), MetaEntry(false.B, BRANCH, 0.U))
   val metaW_s3_c_dirty = meta_s3.dirty || wen_c
   val metaW_s3_c_state = Mux(
