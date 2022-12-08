@@ -26,6 +26,7 @@ import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util._
 import chipsalliance.rocketchip.config.Parameters
+import scala.math.max
 
 trait HasCoupledL2Parameters {
   val p: Parameters
@@ -43,7 +44,8 @@ trait HasCoupledL2Parameters {
   val stateBits = MetaData.stateBits
 
   val mshrsAll = 16
-  val mshrBits = log2Up(mshrsAll+1)
+  val idsAll = 128 // TODO: parameterize this?
+  val mshrBits = log2Up(idsAll)
 
   val bufBlocks = 8 // hold data that flows in MainPipe
   val bufIdxBits = log2Up(bufBlocks)
@@ -59,6 +61,12 @@ trait HasCoupledL2Parameters {
   lazy val clientBits = edgeIn.client.clients.count(_.supports.probe)
   lazy val sourceIdBits = edgeIn.bundle.sourceBits
   lazy val msgSizeBits = edgeIn.bundle.sizeBits
+  lazy val sourceIdAll = 1 << sourceIdBits
+  // id of 0XXXX refers to mshrid
+  // id of 1XXXX refers to reqs that do not enter mshr
+  // require(isPow2(idsAll))
+  // require(idsAll >= mshrsAll * 2)
+  // require(idsAll >= sourceIdAll * 2)
 
   // width params with bank idx (used in prefetcher / ctrl unit)
   lazy val fullAddressBits = edgeOut.bundle.addressBits
@@ -135,7 +143,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
         supports = TLSlaveToMasterTransferSizes(
           probe = xfer
         ),
-        sourceId = IdRange(0, mshrsAll+1)
+        sourceId = IdRange(0, idsAll)
       )
     ),
     channelBytes = cacheParams.channelBytes,
@@ -162,7 +170,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     },
     beatBytes = 32,
     minLatency = 2,
-    endSinkId = mshrsAll+1
+    endSinkId = idsAll
   )
 
   val node = TLAdapterNode(

@@ -22,14 +22,28 @@ import chisel3.util._
 import coupledL2.utils._
 import chipsalliance.rocketchip.config.Parameters
 import freechips.rocketchip.tilelink._
+import freechips.rocketchip.tilelink.TLMessages._
 
-class SourceD(implicit p: Parameters) extends L2Module {
+// Send out Grant/GrantData/ReleaseAck through d and
+// receive GrantAck through e
+class GrantBuffer(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
-    val in = Flipped(DecoupledIO(new Bundle() {
+    val d_task = Flipped(DecoupledIO(new Bundle() {
       val task = new TaskBundle()
       val data = new DSBlock()
     }))
-    val out = DecoupledIO(new TLBundleD(edgeIn.bundle))
+    val d = DecoupledIO(new TLBundleD(edgeIn.bundle))
+    val e = Flipped(DecoupledIO(new TLBundleE(edgeIn.bundle)))
+    val e_resp = Output(new RespBundle)
+
+    val fromReqArb = Input(new Bundle() {
+      val status_s1 = new PipeEntranceStatus
+    })
+    val toReqArb = Output(new Bundle() {
+      val blockA_s1 = Bool()
+      val blockB_s1 = Bool()
+      val blockC_s1 = Bool()
+    })
   })
 
   val beat_valids = RegInit(VecInit(Seq.fill(mshrsAll) {
@@ -41,12 +55,37 @@ class SourceD(implicit p: Parameters) extends L2Module {
   val full = block_valids.andR
   val selectOH = ParallelPriorityMux(~block_valids, (0 until mshrsAll).map(i => (1 << i).U))
 
+  // used to block Probe upwards
+  val inflight_grant_set = Reg(Vec(sourceIdAll, UInt(setBits.W)))
+  val inflight_grant_tag = Reg(Vec(sourceIdAll, UInt(tagBits.W)))
+  val inflight_grant_valid = RegInit(VecInit(Seq.fill(sourceIdAll)(false.B)))
+  val inflight_grant = inflight_grant_valid zip (inflight_grant_set zip inflight_grant_tag)
+
+  when (io.d_task.fire() && io.d_task.bits.task.opcode(2, 1) === Grant(2, 1)) {
+    val id = io.d_task.bits.task.mshrId(sourceIdBits-1, 0)
+    inflight_grant_set(id) := io.d_task.bits.task.set
+    inflight_grant_tag(id) := io.d_task.bits.task.tag
+    inflight_grant_valid(id) := true.B
+  }
+  when (io.e.fire) {
+    val id = io.e.bits.sink(sourceIdBits-1, 0)
+    inflight_grant_valid(id) := false.B
+  }
+
+  io.toReqArb.blockA_s1 := Cat(inflight_grant.map { case (v, (set, _)) =>
+    v && set === io.fromReqArb.status_s1.a_set
+  }).orR
+  io.toReqArb.blockB_s1 := Cat(inflight_grant.map { case (v, (set, tag)) =>
+    v && set === io.fromReqArb.status_s1.b_set && tag === io.fromReqArb.status_s1.b_tag
+  }).orR
+  io.toReqArb.blockC_s1 := false.B
+
   selectOH.asBools.zipWithIndex.foreach {
     case (sel, i) =>
-      when (sel && io.in.fire()) {
+      when (sel && io.d_task.fire()) {
         beat_valids(i).foreach(_ := true.B)
-        tasks(i) := io.in.bits.task
-        datas(i) := io.in.bits.data
+        tasks(i) := io.d_task.bits.task
+        datas(i) := io.d_task.bits.data
       }
   }
 
@@ -76,7 +115,7 @@ class SourceD(implicit p: Parameters) extends L2Module {
     (next_beat, next_beatsOH)
   }
 
-  val out_bundles = Wire(Vec(mshrsAll, io.out.cloneType))
+  val out_bundles = Wire(Vec(mshrsAll, io.d.cloneType))
   out_bundles.zipWithIndex.foreach {
     case (out, i) =>
       out.valid := block_valids(i)
@@ -95,7 +134,14 @@ class SourceD(implicit p: Parameters) extends L2Module {
       }
   }
 
-  TLArbiter.lowest(edgeIn, io.out, out_bundles:_*)
+  TLArbiter.lowest(edgeIn, io.d, out_bundles:_*)
 
-  io.in.ready := !full
+  io.d_task.ready := !full
+
+  io.e.ready := true.B
+  io.e_resp := DontCare
+  io.e_resp.valid := io.e.valid
+  io.e_resp.mshrId := io.e.bits.sink
+  io.e_resp.respInfo.opcode := GrantAck
+  io.e_resp.respInfo.last := true.B
 }

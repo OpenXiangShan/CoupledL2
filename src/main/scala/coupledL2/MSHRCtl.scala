@@ -38,10 +38,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     /* interact with req arb */
     val fromReqArb = Input(new Bundle() {
-      val status_s1 = new Bundle() {
-        val sets = Vec(3, UInt(setBits.W))
-        // val channel = UInt(3.W)
-      }
+      val status_s1 = new PipeEntranceStatus
     })
     val toReqArb = Output(new Bundle() {
       val blockA_s1 = Bool()

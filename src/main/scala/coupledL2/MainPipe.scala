@@ -33,10 +33,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
     /* handle set conflict in req arb */
     val fromReqArb = Input(new Bundle() {
-      val status_s1 = new Bundle() {
-        val sets = Vec(3, UInt(setBits.W))
-        // val channel = UInt(3.W)
-      }
+      val status_s1 = new PipeEntranceStatus
     })
     val toReqArb = Output(new Bundle() {
       val blockA_s1 = Bool()
@@ -100,33 +97,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   val c_s3, c_s4, c_s5 = Wire(io.toSourceC.cloneType)
   val d_s3, d_s4, d_s5 = Wire(io.toSourceD.cloneType)
-
-  // def toTLBundleC(task: TaskBundle, data: UInt = 0.U) = {
-  //   val c = Wire(new TLBundleC(edgeOut.bundle))
-  //   c := DontCare
-  //   c.opcode := task.opcode
-  //   c.param := task.param
-  //   c.size := offsetBits.U
-  //   c.source := task.mshrId
-  //   c.address := Cat(task.tag, task.set, task.off)
-  //   c.data := data
-  //   c.corrupt := false.B
-  //   c
-  // }
-
-  // def toTLBundleD(task: TaskBundle, data: UInt = 0.U) = {
-  //   val d = Wire(new TLBundleD(edgeIn.bundle))
-  //   d := DontCare
-  //   d.opcode := task.opcode
-  //   d.param := task.param
-  //   d.size := offsetBits.U
-  //   d.source := task.sourceId
-  //   d.sink := task.mshrId
-  //   d.denied := false.B
-  //   d.data := data
-  //   d.corrupt := false.B
-  //   d
-  // }
 
   /* ======== Stage 2 ======== */
   // send out MSHR task if data is not needed
@@ -224,7 +194,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       0.U // param of ReleaseAck must be 0
     )
   )
-  sink_resp_s3.bits.mshrId := mshrsAll.U // extra id for reqs that do not enter mshr
+  sink_resp_s3.bits.mshrId := (1 << (mshrBits-1)).U + sink_resp_s3.bits.sourceId // extra id for reqs that do not enter mshr
 
   val source_req_s3 = Wire(new TaskBundle)
   source_req_s3 := Mux(sink_resp_s3.valid, sink_resp_s3.bits, req_s3)
@@ -333,13 +303,13 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   d_s3.bits.task := source_req_s3
   d_s3.bits.data.data := data_s3
 
-  val block_s1 = Seq(io.toReqArb.blockC_s1, io.toReqArb.blockB_s1, io.toReqArb.blockA_s1)
-  (block_s1 zip io.fromReqArb.status_s1.sets).foreach {
-    case (block, set) =>
-      block := 
-        task_s2.valid && !task_s2.bits.mshrTask && task_s2.bits.set === set ||
-        io.toMSHRCtl.mshr_alloc_s3.valid && task_s3.bits.set === set
-  }
+  // val block_s1 = Seq(io.toReqArb.blockC_s1, io.toReqArb.blockB_s1, io.toReqArb.blockA_s1)
+  // (block_s1 zip io.fromReqArb.status_s1.sets).foreach {
+  //   case (block, set) =>
+  //     block := 
+  //       task_s2.valid && !task_s2.bits.mshrTask && task_s2.bits.set === set ||
+  //       io.toMSHRCtl.mshr_alloc_s3.valid && task_s3.bits.set === set
+  // }
 
   io.nestedwb.set := req_s3.set
   io.nestedwb.tag := req_s3.tag
@@ -420,6 +390,16 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   d_s5.bits.data.data := merged_data_s5
   
 
+  io.toReqArb.blockC_s1 := task_s2.valid && !task_s2.bits.mshrTask && task_s2.bits.set === io.fromReqArb.status_s1.c_set ||
+    io.toMSHRCtl.mshr_alloc_s3.valid && task_s3.bits.set === io.fromReqArb.status_s1.c_set
+  io.toReqArb.blockB_s1 := task_s2.valid && !task_s2.bits.mshrTask && task_s2.bits.set === io.fromReqArb.status_s1.b_set ||
+    task_s3.valid && !task_s3.bits.mshrTask && task_s3.bits.set === io.fromReqArb.status_s1.b_set ||
+    task_s4.valid && !task_s4.bits.mshrTask && task_s4.bits.set === io.fromReqArb.status_s1.b_set && task_s4.bits.opcode(2, 1) === Grant(2, 1) ||
+    task_s5.valid && !task_s5.bits.mshrTask && task_s5.bits.set === io.fromReqArb.status_s1.b_set && task_s5.bits.opcode(2, 1) === Grant(2, 1)
+  io.toReqArb.blockA_s1 := task_s2.valid && !task_s2.bits.mshrTask && task_s2.bits.set === io.fromReqArb.status_s1.a_set ||
+    task_s3.valid && !task_s3.bits.mshrTask && task_s3.bits.set === io.fromReqArb.status_s1.a_set ||
+    task_s4.valid && !task_s4.bits.mshrTask && task_s4.bits.set === io.fromReqArb.status_s1.a_set && task_s4.bits.opcode(2, 1) === Grant(2, 1) ||
+    task_s5.valid && !task_s5.bits.mshrTask && task_s5.bits.set === io.fromReqArb.status_s1.a_set && task_s5.bits.opcode(2, 1) === Grant(2, 1)
   // /* ======== Stage 6 ======== */
   // val task_s6 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
   // val beatsOH_s6 = RegInit(0.U(beatSize.W))
