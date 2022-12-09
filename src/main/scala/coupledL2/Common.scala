@@ -21,6 +21,7 @@ import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config.Parameters
 import TaskInfo._
+import freechips.rocketchip.tilelink.TLPermissions._
 
 abstract class L2Module(implicit val p: Parameters) extends MultiIOModule with HasCoupledL2Parameters
 abstract class L2Bundle(implicit val p: Parameters) extends Bundle with HasCoupledL2Parameters
@@ -37,6 +38,8 @@ trait HasChannelBits { this: Bundle =>
   def fromC = channel(2).asBool
 }
 
+// We generate a Task for every TL request
+// this is the info that flows in Mainpipe
 class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val set = UInt(setBits.W)
   val tag = UInt(tagBits.W)
@@ -47,12 +50,32 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val param = UInt(3.W)
   val sourceId = UInt(sourceIdBits.W)     // tilelink sourceID
   val id = UInt(idBits.W)                 // identity of the task
+  val bufIdx = UInt(bufIdxBits.W)         // idx of SinkC buffer
 
-  val mshrOpType = UInt(mshrOpTypeBits.W) // type of the MSHR task operation
+  // val mshrOpType = UInt(mshrOpTypeBits.W) // type of the MSHR task operation
+  // MSHR may send Release(Data) or Grant(Data) or ProbeAck(Data) through Main Pipe
+  val mshrTask = Bool()                   // is task from mshr
   val mshrId = UInt(mshrBits.W)           // mshr entry index (used only in mshr-task)
+
+  // if this is an mshr task and it needs to write dir
+  val way = UInt(wayBits.W)
+  val meta = new MetaEntry()
+  val metaWen = Bool()
+  val tagWen = Bool()
+
+  def hasData = opcode(0)
 }
 
-class MSHRStatus(implicit p: Parameters) extends L2Bundle {
+class PipeEntranceStatus(implicit p: Parameters) extends L2Bundle {
+  val sets = Vec(3, UInt(setBits.W))
+  val b_tag = UInt(tagBits.W)
+
+  def c_set = sets(0)
+  def b_set = sets(1)
+  def a_set = sets(2)
+}
+
+class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val set = UInt(setBits.W)
   val tag = UInt(tagBits.W)
   val way = UInt(wayBits.W)
@@ -60,36 +83,42 @@ class MSHRStatus(implicit p: Parameters) extends L2Bundle {
   val opcode = UInt(3.W)
   val param = UInt(3.W)
   val source = UInt(sourceIdBits.W)
+  val nestB = Bool()
 }
 
+// MSHR Task that MainPipe sends to MSHRCtl
 class MSHRRequest(implicit p: Parameters) extends L2Bundle {
-  val set = UInt(setBits.W)
-  val tag = UInt(tagBits.W)
-  val off = UInt(offsetBits.W)
-  val way = UInt(wayBits.W)
-  val opcode = UInt(3.W)
-  val param = UInt(3.W)
-  val source = UInt(sourceIdBits.W)
   val dirResult = new DirResult()
   val state = new FSMState()
+  val task = new TaskBundle()
 }
 
-class RefillUnitResp(implicit p: Parameters) extends L2Bundle {
+class RespInfoBundle(implicit p: Parameters) extends L2Bundle {
   val opcode = UInt(3.W)
   val param = UInt(3.W)
   val last = Bool() // last beat
 }
 
-class FSMState(implicit p: Parameters) extends L2Bundle {
-  val s_acquire = Bool()
-  val s_rprobe = Bool()
-  val s_pprobe = Bool()
-  val s_release = Bool()
-  val s_probeack = Bool()
-  val s_refill = Bool()
-  val s_grantack = Bool()
-  val s_writeback = Bool()
+class RespBundle(implicit p: Parameters) extends L2Bundle {
+  val valid = Bool()
+  val mshrId = UInt(mshrBits.W)
+  val set = UInt(setBits.W)
+  val tag = UInt(tagBits.W)
+  val respInfo = new RespInfoBundle
+}
 
+class FSMState(implicit p: Parameters) extends L2Bundle {
+  // schedule
+  val s_acquire = Bool()  // acquire downwards
+  val s_rprobe = Bool()   // probe upwards, caused by replace
+  val s_pprobe = Bool()   // probe upwards, casued by probe
+  val s_release = Bool()  // release downwards
+  val s_probeack = Bool() // respond probeack downwards
+  val s_refill = Bool()   // respond grant upwards
+  // val s_grantack = Bool() // respond grantack downwards
+  // val s_writeback = Bool()// writeback tag/dir
+
+  // wait
   val w_rprobeackfirst = Bool()
   val w_rprobeacklast = Bool()
   val w_pprobeackfirst = Bool()
@@ -107,15 +136,23 @@ class SourceAReq(implicit p: Parameters) extends L2Bundle {
   val set = UInt(setBits.W)
   val off = UInt(offsetBits.W)
   val opcode = UInt(3.W)
-  val param = UInt(3.W)
+  val param = UInt(aWidth.W)
   val source = UInt(mshrBits.W)
 }
 
-class SourceDReq(implicit p: Parameters) extends L2Bundle {
+class SourceBReq(implicit p: Parameters) extends L2Bundle {
   val tag = UInt(tagBits.W)
   val set = UInt(setBits.W)
   val off = UInt(offsetBits.W)
   val opcode = UInt(3.W)
-  val param = UInt(3.W)
-  val source = UInt(mshrBits.W)
+  val param = UInt(bdWidth.W)
+}
+
+class NestedWriteback(implicit p: Parameters) extends L2Bundle {
+  val set = UInt(setBits.W)
+  val tag = UInt(tagBits.W)
+  val b_toN = Bool()
+  val b_toB = Bool()
+  val b_clr_dirty = Bool()
+  val c_set_dirty = Bool()
 }

@@ -15,6 +15,9 @@ clean:
 bsp:
 	mill -i mill.bsp.BSP/install
 
+idea:
+	mill -i mill.scalalib.GenIdea/idea
+
 reformat:
 	mill -i __.reformat
 

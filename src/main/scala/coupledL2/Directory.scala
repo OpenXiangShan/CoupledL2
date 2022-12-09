@@ -27,11 +27,29 @@ class MetaEntry(implicit p: Parameters) extends L2Bundle {
   val dirty = Bool()
   val state = UInt(stateBits.W)
   val clients = UInt(clientBits.W)  // valid-bit of clients
+  // TODO: record specific state of clients instead of just 1-bit
   // TODO: record prefetch info
+
+  def =/=(entry: MetaEntry): Bool = {
+    this.asUInt =/= entry.asUInt
+  }
+}
+
+object MetaEntry {
+  def apply()(implicit p: Parameters) = {
+    val init = WireInit(0.U.asTypeOf(new MetaEntry))
+    init
+  }
+  def apply(dirty: Bool, state: UInt, clients: UInt)(implicit p: Parameters) = {
+    val entry = Wire(new MetaEntry)
+    entry.dirty := dirty
+    entry.state := state
+    entry.clients := clients
+    entry
+  }
 }
 
 class DirRead(implicit p: Parameters) extends L2Bundle {
-  val idOH = UInt(mshrsAll.W)
   val tag = UInt(tagBits.W)
   val set = UInt(setBits.W)
   val source = UInt(sourceIdBits.W)
@@ -39,7 +57,6 @@ class DirRead(implicit p: Parameters) extends L2Bundle {
 }
 
 class DirResult(implicit p: Parameters) extends L2Bundle {
-  val idOH = UInt(mshrsAll.W)
   val hit = Bool()
   val tag = UInt(tagBits.W)
   val set = UInt(setBits.W)
@@ -63,7 +80,7 @@ class TagWrite(implicit p: Parameters) extends L2Bundle {
 class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
 
   val io = IO(new Bundle() {
-    val read = Flipped(ValidIO(new DirRead))
+    val read = Flipped(DecoupledIO(new DirRead))
     val resp = ValidIO(new DirResult)
     val metaWReq = Flipped(ValidIO(new MetaWrite))
     val tagWReq = Flipped(ValidIO(new TagWrite))
@@ -86,7 +103,7 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   val tagRead = Wire(Vec(ways, UInt(tagBits.W)))
   val metaRead = Wire(Vec(ways, new MetaEntry()))
 
-  val reqValidReg = RegInit(false.B)
+  val reqValidReg = RegNext(io.read.fire, false.B)
 
   tagArray.io.r <> DontCare
   tagArray.io.w <> DontCare
@@ -117,7 +134,6 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
      stage 2: output latched hit/way and chosen meta/tag by way
   */
   // TODO: how about moving hit/way calculation to stage 2? Cuz SRAM latency can be high under high frequency
-  reqValidReg := RegNext(io.read.fire, false.B)
   val reqReg = RegEnable(io.read.bits, enable = io.read.fire)
   val tagMatchVec = tagRead.map(_ (tagBits - 1, 0) === reqReg.tag)
   val metaValidVec = metaRead.map(_.state =/= MetaData.INVALID)
@@ -137,16 +153,20 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   val tagAll_s2 = RegEnable(tagRead, reqValidReg)
   val meta_s2 = metaAll_s2(way_s2)
   val tag_s2 = tagAll_s2(way_s2)
+  val set_s2 = RegEnable(reqReg.set, reqValidReg)
 
   io.resp.valid      := reqValid_s2
   io.resp.bits.hit   := hit_s2
   io.resp.bits.way   := way_s2
   io.resp.bits.meta  := meta_s2
   io.resp.bits.tag   := tag_s2
+  io.resp.bits.set   := set_s2
   io.resp.bits.error := false.B  // depends on ECC
 
   dontTouch(io)
   dontTouch(metaArray.io)
   dontTouch(tagArray.io)
+
+  io.read.ready := !io.metaWReq.valid && !io.tagWReq.valid
 
 }

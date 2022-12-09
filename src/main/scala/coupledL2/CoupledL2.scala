@@ -21,15 +21,18 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
+import coupledL2.utils.{FastArbiter}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util._
 import chipsalliance.rocketchip.config.Parameters
+import scala.math.max
 
 trait HasCoupledL2Parameters {
   val p: Parameters
   val cacheParams = p(L2ParamKey)
 
+  val blocks = cacheParams.sets * cacheParams.ways
   val blockBytes = cacheParams.blockBytes
   val beatBytes = cacheParams.channelBytes.d.get
   val beatSize = blockBytes / beatBytes
@@ -41,7 +44,16 @@ trait HasCoupledL2Parameters {
   val stateBits = MetaData.stateBits
 
   val mshrsAll = 16
-  val mshrBits = log2Up(mshrsAll)
+  val idsAll = 128 // TODO: parameterize this?
+  val mshrBits = log2Up(idsAll)
+
+  val bufBlocks = 8 // hold data that flows in MainPipe
+  val bufIdxBits = log2Up(bufBlocks)
+
+  // 1 cycle for sram read, and latch for another cycle
+  val sramLatency = 2
+
+  val releaseBufWPorts = 3 // sinkC and mainpipe s5, s6
 
   lazy val edgeIn = p(EdgeInKey)
   lazy val edgeOut = p(EdgeOutKey)
@@ -49,6 +61,12 @@ trait HasCoupledL2Parameters {
   lazy val clientBits = edgeIn.client.clients.count(_.supports.probe)
   lazy val sourceIdBits = edgeIn.bundle.sourceBits
   lazy val msgSizeBits = edgeIn.bundle.sizeBits
+  lazy val sourceIdAll = 1 << sourceIdBits
+  // id of 0XXXX refers to mshrid
+  // id of 1XXXX refers to reqs that do not enter mshr
+  // require(isPow2(idsAll))
+  // require(idsAll >= mshrsAll * 2)
+  // require(idsAll >= sourceIdAll * 2)
 
   // width params with bank idx (used in prefetcher / ctrl unit)
   lazy val fullAddressBits = edgeOut.bundle.addressBits
@@ -96,6 +114,12 @@ trait HasCoupledL2Parameters {
     (tag(tagBits - 1, 0), set(setBits - 1, 0), offset(offsetBits - 1, 0))
   }
 
+  def fastArb[T <: Bundle](in: Seq[DecoupledIO[T]], out: DecoupledIO[T], name: Option[String] = None): Unit = {
+    val arb = Module(new FastArbiter[T](chiselTypeOf(out.bits), in.size))
+    if (name.nonEmpty) { arb.suggestName(s"${name.get}_arb") }
+    for ((a, req) <- arb.io.in.zip(in)) { a <> req }
+    out <> arb.io.out
+  }
 }
 
 trait DontCareInnerLogic { this: Module =>
@@ -119,7 +143,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
         supports = TLSlaveToMasterTransferSizes(
           probe = xfer
         ),
-        sourceId = IdRange(0, mshrsAll)
+        sourceId = IdRange(0, idsAll)
       )
     ),
     channelBytes = cacheParams.channelBytes,
@@ -146,7 +170,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     },
     beatBytes = 32,
     minLatency = 2,
-    endSinkId = mshrsAll
+    endSinkId = idsAll
   )
 
   val node = TLAdapterNode(

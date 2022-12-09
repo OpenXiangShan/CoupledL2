@@ -5,7 +5,7 @@
  * XiangShan is licensed under Mulan PSL v2.
  * You can use this software according to the terms and conditions of the Mulan PSL v2.
  * You may obtain a copy of Mulan PSL v2 at:
- * http://license.coscl.org.cn/MulanPSL2
+ *          http://license.coscl.org.cn/MulanPSL2
  *
  * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
  * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
@@ -19,29 +19,20 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import coupledL2.utils._
 import freechips.rocketchip.tilelink._
+import freechips.rocketchip.tilelink.TLMessages._
 import chipsalliance.rocketchip.config.Parameters
 
-class AcquireUnit(implicit p: Parameters) extends L2Module {
+class SinkE(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
-    val sourceA = DecoupledIO(new TLBundleA(edgeOut.bundle))
-    val task = Flipped(DecoupledIO(new SourceAReq))
+    val sinkE = Flipped(Decoupled(new TLBundleE(edgeIn.bundle)))
+    val resp = Output(new RespBundle)
   })
 
-  val a = io.sourceA
-  io.task.ready := a.ready
-
-  a.valid := io.task.valid
-  a.bits.opcode := io.task.bits.opcode
-  a.bits.param := io.task.bits.param
-  a.bits.size := offsetBits.U
-  a.bits.source := io.task.bits.source
-  a.bits.address := Cat(io.task.bits.tag, io.task.bits.set, 0.U(offsetBits.W))
-  a.bits.mask := Fill(edgeOut.manager.beatBytes, 1.U(1.W))
-  a.bits.data := DontCare
-  a.bits.echo.lift(DirtyKey).foreach(_ := true.B)
-  a.bits.corrupt := false.B
-
-  dontTouch(io)
+  io.sinkE.ready := true.B
+  io.resp := DontCare
+  io.resp.valid := io.sinkE.valid
+  io.resp.mshrId := io.sinkE.bits.sink
+  io.resp.respInfo.opcode := GrantAck
+  io.resp.respInfo.last := true.B
 }

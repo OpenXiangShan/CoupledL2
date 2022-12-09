@@ -36,84 +36,100 @@ class MSHRSelector(implicit p: Parameters) extends L2Module {
 
 class MSHRCtl(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
-    val sourceA = DecoupledIO(new TLBundleA(edgeIn.bundle))
+    /* interact with req arb */
+    val fromReqArb = Input(new Bundle() {
+      val status_s1 = new PipeEntranceStatus
+    })
+    val toReqArb = Output(new Bundle() {
+      val blockA_s1 = Bool()
+      val blockB_s1 = Bool()
+      val blockC_s1 = Bool()
+    })
+    /* interact with mainpipe */
     val fromMainPipe = new Bundle() {
-      val need_acquire_s3 = Input(Bool())
-      val infoA_s3 = Input(new Bundle() {
-        val addr = UInt(addressBits.W)
-        val opcode = UInt(3.W)
-        val param = UInt(3.W)
-        val source = UInt(sourceIdBits.W)
-      })
-      val mshr_alloc_s3 = Flipped(ValidIO(new MSHRRequest()))
+      val mshr_alloc_s3 = Flipped(ValidIO(new MSHRRequest))
     }
     val toMainPipe = new Bundle() {
       val mshr_alloc_ptr = Output(UInt(mshrBits.W))
     }
-    val mshrFull = Output(Bool())
-    val refillUnitResp = new Bundle() {
-      val valid = Input(Bool())
-      val source = Input(UInt(sourceIdBits.W))
-      val respInfo = Input(new RefillUnitResp())
-    }
-    val mshrTask = DecoupledIO(new SourceDReq)
-    val mshrTaskID = Output(UInt(log2Ceil(mshrsAll).W))
+
+    /* to request arbiter */
+    // val mshrFull = Output(Bool())
+    val mshrTask = DecoupledIO(new TaskBundle())
+
+    /* send reqs */
+    val sourceA = DecoupledIO(new TLBundleA(edgeOut.bundle))
+    val sourceB = DecoupledIO(new TLBundleA(edgeIn.bundle))
+
+    /* receive resps */
+    val resps = Input(new Bundle() {
+      val sinkC = new RespBundle
+      val sinkD = new RespBundle
+      val sinkE = new RespBundle
+    })
+    
+    val releaseBufWriteId = Output(UInt(mshrBits.W))
+
+    /* nested writeback */
+    val nestedwb = Input(new NestedWriteback)
+    val nestedwbDataId = Output(ValidIO(UInt(mshrBits.W)))
   })
 
   val mshrs = Seq.fill(mshrsAll) { Module(new MSHR()) }
 
   val mshrValids = VecInit(mshrs.map(m => m.io.status.valid))
   val mshrFull = PopCount(Cat(mshrs.map(_.io.status.valid))) >= (mshrsAll-2).U
+  val a_mshrFull = PopCount(Cat(mshrs.map(_.io.status.valid))) >= (mshrsAll-3).U // the last idle mshr should not be allocated for channel A req
   val mshrSelector = Module(new MSHRSelector())
   mshrSelector.io.idle := mshrs.map(m => !m.io.status.valid)
   val selectedMSHROH = mshrSelector.io.out.bits
 
-  val alloc = Vec(mshrsAll, ValidIO(new MSHRRequest))
   mshrs.zipWithIndex.foreach {
-    case (mshr, i) =>
-      mshr.io.id := i.U
-      mshr.io.alloc.valid := selectedMSHROH(i) && io.fromMainPipe.mshr_alloc_s3.valid
-      mshr.io.alloc.bits := io.fromMainPipe.mshr_alloc_s3.bits
+    case (m, i) =>
+      m.io.id := i.U
+      m.io.alloc.valid := selectedMSHROH(i) && io.fromMainPipe.mshr_alloc_s3.valid
+      m.io.alloc.bits := io.fromMainPipe.mshr_alloc_s3.bits
 
-      mshr.io.tasks.source_a := DontCare
-
-      mshr.io.resp_refillUnit.valid := io.refillUnitResp.valid && io.refillUnitResp.source === i.U
-      mshr.io.resp_refillUnit.bits := io.refillUnitResp.respInfo
+      m.io.resps.sink_c.valid := m.io.status.valid && io.resps.sinkC.valid && io.resps.sinkC.set === m.io.status.bits.set // ! TODO: MSHRs are blocked by slot instead of by set
+      m.io.resps.sink_c.bits := io.resps.sinkC.respInfo
+      m.io.resps.sink_d.valid := m.io.status.valid && io.resps.sinkD.valid && io.resps.sinkD.mshrId === i.U
+      m.io.resps.sink_d.bits := io.resps.sinkD.respInfo
+      m.io.resps.sink_e.valid := m.io.status.valid && io.resps.sinkE.valid && io.resps.sinkE.mshrId === i.U
+      m.io.resps.sink_e.bits := io.resps.sinkE.respInfo
+      
+      m.io.nestedwb := io.nestedwb
   }
 
   io.toMainPipe.mshr_alloc_ptr := OHToUInt(selectedMSHROH)
-  io.mshrFull := mshrFull
+  // io.mshrFull := mshrFull
+  val setMatchVec_a = mshrs.map(m => m.io.status.valid && m.io.status.bits.set === io.fromReqArb.status_s1.sets(2))
+  val setMatchVec_b = mshrs.map(m => m.io.status.valid && m.io.status.bits.set === io.fromReqArb.status_s1.sets(1))
+  val setConflictVec_b = (setMatchVec_b zip mshrs.map(_.io.status.bits.nestB)).map(x => x._1 && !x._2)
+  io.toReqArb.blockC_s1 := false.B
+  io.toReqArb.blockB_s1 := mshrFull || Cat(setConflictVec_b).orR
+  io.toReqArb.blockA_s1 := a_mshrFull || Cat(setMatchVec_a).orR
 
   /* Acquire downwards */
   val acquireUnit = Module(new AcquireUnit())
-  acquireUnit.io.sourceA <> io.sourceA
-  mshrs.zipWithIndex.foreach{
-    case (m, i) =>
-      acquireUnit.io.tasks(i) <> m.io.tasks.source_a
-  }
+  fastArb(mshrs.map(_.io.tasks.source_a), acquireUnit.io.task, Some("source_a"))
+  io.sourceA <> acquireUnit.io.sourceA
 
-  /* deprecated acquire bypass logic
-  val infoA_s3 = io.fromMainPipe.infoA_s3
-  io.sourceA.valid := io.fromMainPipe.need_acquire_s3
-  io.sourceA.bits.opcode := infoA_s3.opcode
-  io.sourceA.bits.param := infoA_s3.param
-  io.sourceA.bits.size := offsetBits.U
-  io.sourceA.bits.source := infoA_s3.source
-  io.sourceA.bits.address := infoA_s3.addr
-  io.sourceA.bits.mask := Fill(edgeOut.manager.beatBytes, 1.U(1.W))
-  io.sourceA.bits.corrupt := false.B
-  io.sourceA.bits.data := DontCare
-  val sentA_s3 = io.sourceA.fire
-  */
+  /* Probe upwards */
+  val sourceB = Module(new SourceB())
+  fastArb(mshrs.map(_.io.tasks.source_b), sourceB.io.task, Some("source_b"))
+  io.sourceB <> sourceB.io.sourceB
 
-  /* Arbitrate MSHR task to mainPipe */
-  val mshrTaskArb = Module(new FastArbiter(chiselTypeOf(io.mshrTask.bits), mshrsAll))
-  mshrs.zipWithIndex.foreach{
-    case (m, i) =>
-      mshrTaskArb.io.in(i) <> m.io.tasks.source_d
-  }
-  io.mshrTask <> mshrTaskArb.io.out
-  io.mshrTaskID := mshrTaskArb.io.chosen
+  /* Arbitrate MSHR task to RequestArbiter */
+  fastArb(mshrs.map(_.io.tasks.mainpipe), io.mshrTask, Some("mshr_task"))
+
+  io.releaseBufWriteId := ParallelPriorityMux(mshrs.zipWithIndex.map {
+    case (mshr, i) => (mshr.io.status.valid && mshr.io.status.bits.set === io.resps.sinkC.set, i.U)
+  })
+
+  io.nestedwbDataId.valid := Cat(mshrs.map(_.io.nestedwbData)).orR
+  io.nestedwbDataId.bits := ParallelPriorityMux(mshrs.zipWithIndex.map {
+    case (mshr, i) => (mshr.io.nestedwbData, i.U)
+  })
 
   dontTouch(io.sourceA)
 }

@@ -36,37 +36,83 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val directory = Module(new Directory())
   val dataStorage = Module(new DataStorage())
   val refillUnit = Module(new RefillUnit())
-  val mshrBuf = Module(new MSHRBuffer())
+  val sinkC = Module(new SinkC) // or ReleaseUnit?
+  // val sinkE = Module(new SinkE)
+  val sourceC = Module(new SourceC)
+  val grantBuf = Module(new GrantBuffer)
+  val refillBuf = Module(new MSHRBuffer())
+  val releaseBuf = Module(new MSHRBuffer(wPorts = 3))
 
+  val prbq = Module(new ProbeQueue())
+  prbq.io <> DontCare // @XiaBin TODO
+
+  reqArb.io.sinkC <> sinkC.io.toReqArb
   reqArb.io.dirRead_s1 <> directory.io.read
-  reqArb.io.metaWrite_s1 <> directory.io.metaWReq
   reqArb.io.taskToPipe_s2 <> mainPipe.io.taskFromArb_s2
-  reqArb.io.mshrFull <> mshrCtl.io.mshrFull
-  reqArb.io.wdataToDS_s2 <> dataStorage.io.wdata_s2
   reqArb.io.mshrTask <> mshrCtl.io.mshrTask
-  reqArb.io.mshrTaskID <> mshrCtl.io.mshrTaskID
-  reqArb.io.mshrBufRead <> mshrBuf.io.r
+  reqArb.io.refillBufRead_s2 <> refillBuf.io.r
+  reqArb.io.releaseBufRead_s2 <> releaseBuf.io.r
+  reqArb.io.fromMSHRCtl := mshrCtl.io.toReqArb
+  reqArb.io.fromMainPipe := mainPipe.io.toReqArb
+  reqArb.io.fromGrantBuffer := grantBuf.io.toReqArb
+
+  mshrCtl.io.fromReqArb.status_s1 := reqArb.io.status_s1
+  mshrCtl.io.resps.sinkC := sinkC.io.resp
+  mshrCtl.io.resps.sinkD := refillUnit.io.resp
+  mshrCtl.io.resps.sinkE := grantBuf.io.e_resp
+  mshrCtl.io.nestedwb := mainPipe.io.nestedwb
 
   directory.io.resp <> mainPipe.io.dirResp_s3
-  dataStorage.io.wen_s3 <> mainPipe.io.wdata_en_s3
+  directory.io.metaWReq <> mainPipe.io.metaWReq
+  directory.io.tagWReq <> mainPipe.io.tagWReq
+
+  dataStorage.io.req <> mainPipe.io.toDS.req_s3
+  dataStorage.io.wdata := mainPipe.io.toDS.wdata_s3
   
   mainPipe.io.toMSHRCtl <> mshrCtl.io.fromMainPipe
   mainPipe.io.fromMSHRCtl <> mshrCtl.io.toMainPipe
+  mainPipe.io.bufRead <> sinkC.io.bufRead
+  mainPipe.io.bufResp <> sinkC.io.bufResp
+  mainPipe.io.toDS.rdata_s5 := dataStorage.io.rdata
+  mainPipe.io.refillBufResp_s3.valid := RegNext(refillBuf.io.r.valid && refillBuf.io.r.ready)
+  mainPipe.io.refillBufResp_s3.bits := refillBuf.io.r.data
+  mainPipe.io.releaseBufResp_s3.valid := RegNext(releaseBuf.io.r.valid && releaseBuf.io.r.ready)
+  mainPipe.io.releaseBufResp_s3.bits := releaseBuf.io.r.data
+  mainPipe.io.fromReqArb.status_s1 := reqArb.io.status_s1
 
-  refillUnit.io.mshrBufWrite <> mshrBuf.io.w
-  refillUnit.io.resp <> mshrCtl.io.refillUnitResp
+  releaseBuf.io.w(0) <> sinkC.io.releaseBufWrite
+  releaseBuf.io.w(0).id := mshrCtl.io.releaseBufWriteId
+  releaseBuf.io.w(1) <> mainPipe.io.releaseBufWrite
+  releaseBuf.io.w(2).valid := mshrCtl.io.nestedwbDataId.valid
+  releaseBuf.io.w(2).beat_sel := Fill(beatSize, 1.U(1.W))
+  releaseBuf.io.w(2).data := mainPipe.io.nestedwbData
+  releaseBuf.io.w(2).id := mshrCtl.io.nestedwbDataId.bits
+
+  refillUnit.io.refillBufWrite <> refillBuf.io.w.last
+
+  sourceC.io.in <> mainPipe.io.toSourceC
+
+  grantBuf.io.d_task <> mainPipe.io.toSourceD
+  grantBuf.io.fromReqArb.status_s1 := reqArb.io.status_s1
 
   /* input & output signals */
   val inBuf = cacheParams.innerBuf
   val outBuf = cacheParams.outerBuf
+  
+  /* connect upward channels */
   reqArb.io.sinkA <> inBuf.a(io.in.a)
-  reqArb.io.sinkC <> inBuf.c(io.in.c)
+  io.in.b <> inBuf.b(mshrCtl.io.sourceB)
+  sinkC.io.c <> inBuf.c(io.in.c)
+  io.in.d <> inBuf.d(grantBuf.io.d)
+  grantBuf.io.e <> inBuf.e(io.in.e)
+
+  /* connect downward channels */
   io.out.a <> outBuf.a(mshrCtl.io.sourceA)
+  reqArb.io.sinkB <> outBuf.b(io.out.b)
+  io.out.c <> outBuf.c(sourceC.io.out)
   refillUnit.io.sinkD <> outBuf.d(io.out.d)
   io.out.e <> outBuf.e(refillUnit.io.sourceE)
 
-  directory.io.tagWReq <> DontCare
-  dataStorage.io <> DontCare
   dontTouch(io.in)
   dontTouch(io.out)
 }

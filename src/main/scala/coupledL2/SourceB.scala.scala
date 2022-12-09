@@ -1,3 +1,4 @@
+
 /** *************************************************************************************
  * Copyright (c) 2020-2021 Institute of Computing Technology, Chinese Academy of Sciences
  * Copyright (c) 2020-2021 Peng Cheng Laboratory
@@ -23,25 +24,22 @@ import coupledL2.utils._
 import freechips.rocketchip.tilelink._
 import chipsalliance.rocketchip.config.Parameters
 
-class AcquireUnit(implicit p: Parameters) extends L2Module {
+class SourceB(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
-    val sourceA = DecoupledIO(new TLBundleA(edgeOut.bundle))
-    val task = Flipped(DecoupledIO(new SourceAReq))
+    val sourceB = DecoupledIO(new TLBundleB(edgeIn.bundle))
+    val task = Flipped(DecoupledIO(new SourceBReq))
   })
 
-  val a = io.sourceA
-  io.task.ready := a.ready
+  val b = io.sourceB
+  io.task.ready := b.ready
 
-  a.valid := io.task.valid
-  a.bits.opcode := io.task.bits.opcode
-  a.bits.param := io.task.bits.param
-  a.bits.size := offsetBits.U
-  a.bits.source := io.task.bits.source
-  a.bits.address := Cat(io.task.bits.tag, io.task.bits.set, 0.U(offsetBits.W))
-  a.bits.mask := Fill(edgeOut.manager.beatBytes, 1.U(1.W))
-  a.bits.data := DontCare
-  a.bits.echo.lift(DirtyKey).foreach(_ := true.B)
-  a.bits.corrupt := false.B
-
-  dontTouch(io)
+  b.valid := io.task.valid
+  b.bits.opcode := io.task.bits.opcode
+  b.bits.param := io.task.bits.param
+  b.bits.size := offsetBits.U
+  b.bits.source := 0.U // make sure there are only 1 client
+  b.bits.address := Cat(io.task.bits.tag, io.task.bits.set, 0.U(offsetBits.W))
+  b.bits.mask := Fill(beatBytes, 1.U(1.W))
+  b.bits.data := DontCare
+  b.bits.corrupt := false.B
 }

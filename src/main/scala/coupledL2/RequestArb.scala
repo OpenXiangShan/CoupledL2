@@ -22,105 +22,138 @@ import chisel3.util._
 import coupledL2.utils._
 import coupledL2.TaskInfo._
 import freechips.rocketchip.tilelink._
+import freechips.rocketchip.tilelink.TLMessages._
 import chipsalliance.rocketchip.config.Parameters
 
 class RequestArb(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     /* receive incoming tasks */
     val sinkA = Flipped(DecoupledIO(new TLBundleA(edgeIn.bundle)))
-    val sinkC = Flipped(DecoupledIO(new TLBundleC(edgeIn.bundle)))
-    val mshrTask = Flipped(DecoupledIO(new SourceDReq))
-    val mshrTaskID = Input(UInt(log2Ceil(mshrsAll).W))
+    val sinkB = Flipped(DecoupledIO(new TLBundleB(edgeOut.bundle)))
+    val sinkC = Flipped(DecoupledIO(new TaskBundle)) // sinkC is TaskBundle
+    val mshrTask = Flipped(DecoupledIO(new TaskBundle))
 
     /* read/write directory */
-    val dirRead_s1 = ValidIO(new DirRead())  // To directory, read meta/tag
-    val metaWrite_s1 = ValidIO(new MetaWrite())
+    val dirRead_s1 = DecoupledIO(new DirRead())  // To directory, read meta/tag
+    // val metaWrite_s1 = ValidIO(new MetaWrite())
 
     /* send task to mainpipe */
     val taskToPipe_s2 = ValidIO(new TaskBundle())
 
-    /* send wdata to data storage */
-    val wdataToDS_s2 = Output(new DSBlock())
-
     /* send mshrBuf read request */
-    val mshrBufRead = Flipped(new MSHRBufRead)
+    val refillBufRead_s2 = Flipped(new MSHRBufRead)
+    val releaseBufRead_s2 = Flipped(new MSHRBufRead)
 
     /* mshr full, from MSHRCtrl */
-    val mshrFull = Input(Bool())
+    // val mshrFull = Input(Bool())
+
+    /* status of s1*/
+    val status_s1 = Output(new PipeEntranceStatus)
+
+    /* handle set conflict and nestB */
+    val fromMSHRCtl = Input(new Bundle() {
+      val blockA_s1 = Bool()
+      val blockB_s1 = Bool()
+      val blockC_s1 = Bool()
+    })
+    val fromMainPipe = Input(new Bundle() {
+      val blockA_s1 = Bool()
+      val blockB_s1 = Bool()
+      val blockC_s1 = Bool()
+    })
+    val fromGrantBuffer = Input(new Bundle() {
+      val blockA_s1 = Bool()
+      val blockB_s1 = Bool()
+      val blockC_s1 = Bool()
+    })
   })
 
+  /* ======== Reset ======== */
   val resetFinish = RegInit(false.B)
   val resetIdx = RegInit((cacheParams.sets - 1).U)
-  // val valids = RegInit(0.U(8.W))  // 7 stages
-
-  /* ======== Stage 0 ======== */
-  io.mshrTask.ready := true.B  // TODO: when to block mshrTask?
-  val mshr_task_s0 = Wire(Valid(new TaskBundle()))
-  mshr_task_s0 := DontCare
-  mshr_task_s0.valid := io.mshrTask.valid
-  mshr_task_s0.bits.set := io.mshrTask.bits.set
-  mshr_task_s0.bits.tag := io.mshrTask.bits.tag
-  mshr_task_s0.bits.off := io.mshrTask.bits.off
-  mshr_task_s0.bits.sourceId := io.mshrTask.bits.source
-  mshr_task_s0.bits.opcode := io.mshrTask.bits.opcode
-  mshr_task_s0.bits.param := io.mshrTask.bits.param
-  mshr_task_s0.bits.channel := 0.U
-  mshr_task_s0.bits.alias := 0.U  // TODO: handle anti-alias
-  mshr_task_s0.bits.mshrOpType := OP_REFILL.U
-  mshr_task_s0.bits.mshrId := io.mshrTaskID
-
-  /* ======== Stage 1 ======== */
-  /* Task generation and pipelining */
-  val l1_task_s1 = Wire(Valid(new TaskBundle()))
-  l1_task_s1 := DontCare
-  l1_task_s1.valid := (io.sinkC.valid || io.sinkA.valid) && resetFinish && !io.mshrFull
-  val (l1_tag_s1, l1_set_s1, l1_offs_s1) = parseAddress(Mux(io.sinkC.valid, io.sinkC.bits.address, io.sinkA.bits.address))
-  l1_task_s1.bits.set := l1_set_s1
-  l1_task_s1.bits.tag := l1_tag_s1
-  l1_task_s1.bits.off := l1_offs_s1
-  l1_task_s1.bits.sourceId := Mux(io.sinkC.valid, io.sinkC.bits.source, io.sinkA.bits.source)
-  l1_task_s1.bits.opcode := Mux(io.sinkC.valid, io.sinkC.bits.opcode, io.sinkA.bits.opcode)
-  l1_task_s1.bits.param := Mux(io.sinkC.valid, io.sinkC.bits.param, io.sinkA.bits.param)
-  l1_task_s1.bits.channel := Mux(io.sinkC.valid, "b100".U, "b001".U)
-  l1_task_s1.bits.alias := 0.U  // TODO: handle anti-alias
-  l1_task_s1.bits.mshrId := 0.U  // TODO: handle MSHR request
-
-  val mshr_task_s1 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
-  when(mshr_task_s0.valid) {
-    mshr_task_s1 := mshr_task_s0
-  }.otherwise {
-    mshr_task_s1.valid := false.B
-  }
-
-  val task_s1 = Mux(mshr_task_s1.valid, mshr_task_s1, l1_task_s1)
-  val releaseData = io.sinkC.bits.data
-
-  /* Meta read request */
-  io.dirRead_s1.valid := task_s1.valid
-  io.dirRead_s1.bits.set := task_s1.bits.set
-  io.dirRead_s1.bits.tag := task_s1.bits.tag
-  io.dirRead_s1.bits.source := task_s1.bits.sourceId
-  io.dirRead_s1.bits.replacerInfo.opcode := task_s1.bits.opcode
-  io.dirRead_s1.bits.replacerInfo.channel := task_s1.bits.channel
-  io.dirRead_s1.bits.idOH := 0.U  // TODO: use idOH to identity whether it is a fresh request or mshr request
-
-  /* Meta write request */
-  val metaInit = Wire(new MetaEntry())
-  val metaWrite = Wire(new MetaEntry())
-  metaInit := DontCare
-  metaInit.state := MetaData.INVALID
-  metaWrite := DontCare  // TODO: consider normal metaWrite
-  // Manual initialize meta before reading
+  /* block reqs when reset */
   when(!resetFinish) {
     resetIdx := resetIdx - 1.U
   }
   when(resetIdx === 0.U) {
     resetFinish := true.B
   }
-  io.metaWrite_s1.valid := !resetFinish  // TODO: consider normal metaWrite
-  io.metaWrite_s1.bits.set := resetIdx
-  io.metaWrite_s1.bits.wayOH := Fill(cacheParams.ways, true.B)
-  io.metaWrite_s1.bits.wmeta := Mux(resetFinish, metaInit, metaWrite)
+  // val valids = RegInit(0.U(8.W))  // 7 stages
+
+  /* ======== Stage 0 ======== */
+  io.mshrTask.ready := true.B  // TODO: when to block mshrTask?
+  val mshr_task_s0 = Wire(Valid(new TaskBundle()))
+  mshr_task_s0.valid := io.mshrTask.valid
+  mshr_task_s0.bits := io.mshrTask.bits
+
+  /* ======== Stage 1 ======== */
+  /* Task generation and pipelining */
+  def fromTLAtoTaskBundle(a: TLBundleA): TaskBundle = {
+    val task = Wire(new TaskBundle)
+    task := DontCare
+    task.channel := "b001".U
+    task.tag := parseAddress(a.address)._1
+    task.set := parseAddress(a.address)._2
+    task.off := parseAddress(a.address)._3
+    task.alias := 0.U // TODO
+    task.opcode := a.opcode
+    task.param := a.param
+    task.sourceId := a.source
+    task.mshrTask := false.B
+    task
+  }
+
+  def fromTLBtoTaskBundle(b: TLBundleB): TaskBundle = {
+    val task = Wire(new TaskBundle)
+    task := DontCare
+    task.channel := "b010".U
+    task.tag := parseAddress(b.address)._1
+    task.set := parseAddress(b.address)._2
+    task.off := parseAddress(b.address)._3
+    task.alias := 0.U // TODO
+    task.opcode := b.opcode
+    task.param := b.param
+    task.mshrTask := false.B
+    task
+  }
+
+  /* latch mshr_task from s0 to s1 */
+  val mshr_task_s1 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
+  mshr_task_s1.valid := mshr_task_s0.valid
+  when(mshr_task_s0.valid) {
+    mshr_task_s1.bits := mshr_task_s0.bits
+  }
+
+  /* Channel interaction from s1 */
+  val A_task = fromTLAtoTaskBundle(io.sinkA.bits)
+  val B_task = fromTLBtoTaskBundle(io.sinkB.bits)
+  val C_task = io.sinkC.bits
+  val sinkValids = VecInit(Seq(
+    io.sinkC.valid && !io.fromMSHRCtl.blockC_s1 && !io.fromMainPipe.blockC_s1 && !io.fromGrantBuffer.blockC_s1,
+    io.sinkB.valid && !io.fromMSHRCtl.blockB_s1 && !io.fromMainPipe.blockB_s1 && !io.fromGrantBuffer.blockB_s1,
+    io.sinkA.valid && !io.fromMSHRCtl.blockA_s1 && !io.fromMainPipe.blockA_s1 && !io.fromGrantBuffer.blockA_s1
+  )).asUInt
+  val chnl_task_s1 = Wire(Valid(new TaskBundle()))
+  chnl_task_s1.valid := io.dirRead_s1.ready && sinkValids.orR && resetFinish
+  chnl_task_s1.bits := ParallelPriorityMux(sinkValids, Seq(C_task, B_task, A_task))
+
+  io.status_s1.sets := VecInit(Seq(C_task.set, B_task.set, A_task.set))
+  io.status_s1.b_tag := B_task.tag
+
+  io.sinkA.ready := !io.fromMSHRCtl.blockA_s1 && !io.fromMainPipe.blockA_s1 && !io.fromGrantBuffer.blockA_s1 && io.dirRead_s1.ready && resetFinish && !sinkValids(1) && !sinkValids(0) && !mshr_task_s1.valid // SinkC prior to SinkA & SinkB
+  io.sinkB.ready := !io.fromMSHRCtl.blockB_s1 && !io.fromMainPipe.blockB_s1 && !io.fromGrantBuffer.blockB_s1 && io.dirRead_s1.ready && resetFinish && !sinkValids(0) && !mshr_task_s1.valid
+  io.sinkC.ready := !io.fromMSHRCtl.blockC_s1 && !io.fromMainPipe.blockC_s1 && !io.fromGrantBuffer.blockC_s1 && io.dirRead_s1.ready && resetFinish && !mshr_task_s1.valid
+
+  val task_s1 = Mux(mshr_task_s1.valid, mshr_task_s1, chnl_task_s1)
+
+  /* Meta read request */
+  // ^ only sinkA/B/C tasks need to read directory
+  io.dirRead_s1.valid := chnl_task_s1.valid && !mshr_task_s1.valid
+  io.dirRead_s1.bits.set := task_s1.bits.set
+  io.dirRead_s1.bits.tag := task_s1.bits.tag
+  io.dirRead_s1.bits.source := task_s1.bits.sourceId
+  io.dirRead_s1.bits.replacerInfo.opcode := task_s1.bits.opcode
+  io.dirRead_s1.bits.replacerInfo.channel := task_s1.bits.channel
 
   /* ========  Stage 2 ======== */
   val task_s2 = RegInit(0.U.asTypeOf(task_s1))
@@ -128,22 +161,19 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   when(task_s1.valid) { task_s2.bits := task_s1.bits }
   
   io.taskToPipe_s2 := task_s2
-  io.wdataToDS_s2.data := Cat(RegNext(releaseData), releaseData) // TODO: the first beat is higher bits?
-  // TODO: we need to assert L1 sends two beats continuously
-  // TODO: we do not need `when(io.sinkC.valid)` for wdata. Valid is asserted by wen signal in mainpipe
 
-  val mbRead_valid_m2 = task_s2.valid && task_s2.bits.mshrOpType === OP_REFILL.U
-  val mbRead_valid_m3 = RegNext(mbRead_valid_m2, false.B)
-  val mbRead_id_m2 = task_s2.bits.mshrId
-  val mbRead_id_m3 = RegEnable(mbRead_id_m2, mbRead_valid_m2)
-  io.mshrBufRead.valid := mbRead_valid_m2 || mbRead_valid_m3
-  io.mshrBufRead.id := Mux(mbRead_valid_m2, mbRead_id_m2, mbRead_id_m3)
-  io.mshrBufRead.beat := Mux(mbRead_valid_m2, 0.U, 1.U)  // TODO: remove hardcode here
+  val mshrTask_s2 = task_s2.valid && task_s2.bits.mshrTask
+  // For GrantData, read refillBuffer
+  io.refillBufRead_s2.valid := mshrTask_s2 && task_s2.bits.fromA && task_s2.bits.opcode === GrantData
+  io.refillBufRead_s2.id := task_s2.bits.mshrId
+  // For ReleaseData or ProbeAckData, read releaseBuffer
+  // channel is used to differentiate GrantData and ProbeAckData
+  io.releaseBufRead_s2.valid := mshrTask_s2 && (task_s2.bits.opcode === ReleaseData ||
+    task_s2.bits.fromB && task_s2.bits.opcode === ProbeAckData)
+  io.releaseBufRead_s2.id := task_s2.bits.mshrId
+  assert(!io.refillBufRead_s2.valid || io.refillBufRead_s2.ready)
+  assert(!io.releaseBufRead_s2.valid || io.releaseBufRead_s2.ready)
   require(beatSize == 2)
-
-    /* Channel interaction */
-  io.sinkA.ready := !io.mshrFull && resetFinish && !io.sinkC.valid && !mshr_task_s1.valid // SinkC prior to SinkA
-  io.sinkC.ready := !io.mshrFull && resetFinish && !mshr_task_s1.valid
 
   dontTouch(io)
 }

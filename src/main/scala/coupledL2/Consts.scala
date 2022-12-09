@@ -30,7 +30,7 @@ object MetaData {
   def TRUNK:   UInt = 2.U(stateBits.W) // unique inner master cache is trunk
   def TIP:     UInt = 3.U(stateBits.W) // we are trunk, inner masters are branch
 
-  // Does a request need trunk?
+  // Does a request need trunk to be handled?
   def needT(opcode: UInt, param: UInt): Bool = {
     !opcode(2) ||
     (opcode === TLMessages.Hint && param === TLHints.PREFETCH_WRITE) ||
@@ -67,11 +67,11 @@ object MetaData {
 }
 
 object TaskInfo {
-  val mshrOpTypeBits = 2
+  // val mshrOpTypeBits = 2
   val ownerBits = 3
-  val opTypeBits = 5  // TODO: list opTypes
+  // val opTypeBits = 5  // TODO: list opTypes
   val idBits = 10
   val aliasBits = 1 // TODO: calculate it by size of L1
 
-  val OP_REFILL = 1
+  // val OP_REFILL = 1
 }
