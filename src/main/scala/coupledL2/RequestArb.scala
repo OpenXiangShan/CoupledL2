@@ -51,21 +51,9 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     val status_s1 = Output(new PipeEntranceStatus)
 
     /* handle set conflict and nestB */
-    val fromMSHRCtl = Input(new Bundle() {
-      val blockA_s1 = Bool()
-      val blockB_s1 = Bool()
-      val blockC_s1 = Bool()
-    })
-    val fromMainPipe = Input(new Bundle() {
-      val blockA_s1 = Bool()
-      val blockB_s1 = Bool()
-      val blockC_s1 = Bool()
-    })
-    val fromGrantBuffer = Input(new Bundle() {
-      val blockA_s1 = Bool()
-      val blockB_s1 = Bool()
-      val blockC_s1 = Bool()
-    })
+    val fromMSHRCtl = Input(new BlockInfo())
+    val fromMainPipe = Input(new BlockInfo())
+    val fromGrantBuffer = Input(new BlockInfo())
   })
 
   /* ======== Reset ======== */

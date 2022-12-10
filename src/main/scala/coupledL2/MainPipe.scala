@@ -35,11 +35,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     val fromReqArb = Input(new Bundle() {
       val status_s1 = new PipeEntranceStatus
     })
-    val toReqArb = Output(new Bundle() {
-      val blockA_s1 = Bool()
-      val blockB_s1 = Bool()
-      val blockC_s1 = Bool()
-    })
+    val toReqArb = Output(new BlockInfo())
 
     /* get dir result at stage 3 */
     val dirResp_s3 = Flipped(ValidIO(new DirResult))

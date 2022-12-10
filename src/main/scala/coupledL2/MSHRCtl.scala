@@ -40,11 +40,8 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     val fromReqArb = Input(new Bundle() {
       val status_s1 = new PipeEntranceStatus
     })
-    val toReqArb = Output(new Bundle() {
-      val blockA_s1 = Bool()
-      val blockB_s1 = Bool()
-      val blockC_s1 = Bool()
-    })
+    val toReqArb = Output(new BlockInfo())
+
     /* interact with mainpipe */
     val fromMainPipe = new Bundle() {
       val mshr_alloc_s3 = Flipped(ValidIO(new MSHRRequest))

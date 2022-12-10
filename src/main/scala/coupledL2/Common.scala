@@ -148,6 +148,12 @@ class SourceBReq(implicit p: Parameters) extends L2Bundle {
   val param = UInt(bdWidth.W)
 }
 
+class BlockInfo(implicit p: Parameters) extends L2Bundle {
+  val blockA_s1 = Bool()
+  val blockB_s1 = Bool()
+  val blockC_s1 = Bool()
+}
+
 class NestedWriteback(implicit p: Parameters) extends L2Bundle {
   val set = UInt(setBits.W)
   val tag = UInt(tagBits.W)
