@@ -82,6 +82,12 @@ object rocketchip extends `rocket-chip`.common.CommonRocketChip {
 
 }
 
+object huancun extends SbtModule with ScalafmtModule with CommonModule {
+  override def millSourcePath = os.pwd / "HuanCun"
+  override def moduleDeps = super.moduleDeps ++ Seq(
+    rocketchip
+  )
+}
 
 object CoupledL2 extends SbtModule with ScalafmtModule with CommonModule {
 
@@ -93,7 +99,10 @@ object CoupledL2 extends SbtModule with ScalafmtModule with CommonModule {
     getVersion("chiseltest"),
   )
 
-  override def moduleDeps = super.moduleDeps ++ Seq(rocketchip)
+  override def moduleDeps = super.moduleDeps ++ Seq(
+    rocketchip,
+    huancun
+  )
 
   object test extends Tests {
     override def ivyDeps = super.ivyDeps() ++ Agg(
