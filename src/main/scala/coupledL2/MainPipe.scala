@@ -109,9 +109,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   when(task_s2.valid) {
     task_s3.bits := task_s2.bits
   }
-  // val need_retry_s3 = WireInit(false.B)
-  // val hazard_s3 = WireInit(false.B)
-  // val ls_op_done_m3 = WireInit(false.B)
 
   val dirResult_s3 = io.dirResp_s3.bits
   val meta_s3 = dirResult_s3.meta
@@ -157,50 +154,36 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   //
 
   val sink_resp_s3 = WireInit(0.U.asTypeOf(Valid(new TaskBundle))) // resp for sinkA/B/C request that does not need to alloc mshr
-  val sink_resp_s3_opcode_a = Mux(req_s3.opcode === AcquirePerm, Grant, GrantData)
-  val sink_resp_s3_opcode_b = Mux(meta_s3.state === TIP && meta_s3.dirty, ProbeAckData, ProbeAck)
-  val sink_resp_s3_param_a = Mux(req_s3.param === NtoB, toB, toT)
-  val sink_resp_s3_param_b = Mux(
-    !dirResult_s3.hit,
-    NtoN,
-    MuxLookup(Cat(req_s3.param, meta_s3.state), BtoB, Seq(
-      Cat(toN, BRANCH) -> BtoN,
-      Cat(toN, TIP)    -> TtoN,
-      Cat(toB, TIP)    -> TtoB,
-      Cat(toT, TIP)    -> TtoT
-    )) // other combinations should miss or have mshr allocated
-  )
   sink_resp_s3.valid := task_s3.valid && !mshr_req_s3 && !need_mshr_s3
-  sink_resp_s3.bits := task_s3.bits
-  sink_resp_s3.bits.opcode := Mux(
-    req_s3.fromA,
-    sink_resp_s3_opcode_a,
-    Mux(
-      req_s3.fromB,
-      sink_resp_s3_opcode_b,
-      ReleaseAck
-    )
-  )
-  sink_resp_s3.bits.param := Mux(
-    req_s3.fromA,
-    sink_resp_s3_param_a,
-    Mux(
-      req_s3.fromB,
-      sink_resp_s3_param_b,
-      0.U // param of ReleaseAck must be 0
-    )
-  )
   sink_resp_s3.bits.mshrId := (1 << (mshrBits-1)).U + sink_resp_s3.bits.sourceId // extra id for reqs that do not enter mshr
+  when(req_s3.fromA) {
+    sink_resp_s3.bits.opcode := Mux(req_s3.opcode === AcquirePerm, Grant, GrantData)
+    sink_resp_s3.bits.param  := Mux(req_s3.param === NtoB, toB, toT)
+  }.elsewhen(req_s3.fromB) {
+    sink_resp_s3.bits.opcode := Mux(meta_s3.state === TIP && meta_s3.dirty, ProbeAckData, ProbeAck)
+    sink_resp_s3.bits.param  := Mux(!dirResult_s3.hit, NtoN,
+      MuxLookup(Cat(req_s3.param, meta_s3.state), BtoB, Seq(
+        Cat(toN, BRANCH) -> BtoN,
+        Cat(toN, TIP)    -> TtoN,
+        Cat(toB, TIP)    -> TtoB,
+        Cat(toT, TIP)    -> TtoT
+      )) // other combinations should miss or have mshr allocated
+    )
+  }.otherwise { // req_s3.fromC
+    sink_resp_s3.bits.opcode := ReleaseAck
+    sink_resp_s3.bits.param  := 0.U // param of ReleaseAck must be 0
+  }
 
   val source_req_s3 = Wire(new TaskBundle)
   source_req_s3 := Mux(sink_resp_s3.valid, sink_resp_s3.bits, req_s3)
   val data_s3 = Mux(io.refillBufResp_s3.valid, io.refillBufResp_s3.bits.data, io.releaseBufResp_s3.bits.data)
   val hasData_s3 = source_req_s3.opcode(0)
-  val mshr_release_s3 = mshr_req_s3 && req_s3.opcode(2, 1) === Release(2, 1) // Release or ReleaseData from mshr
-  val mshr_grant_s3 = mshr_req_s3 && req_s3.opcode(2, 1) === Grant(2, 1) && req_s3.fromA // Grant or GrantData from mshr
-  val mshr_grantdata_s3 = mshr_req_s3 && req_s3.opcode === GrantData && req_s3.fromA
-  val mshr_probeack_s3 = mshr_req_s3 && req_s3.opcode(2, 1) === ProbeAck(2, 1) && req_s3.fromB // ProbeAck or ProbeAckData from mshr
-  val mshr_probeackdata_s3 = mshr_req_s3 && req_s3.opcode === ProbeAckData && req_s3.fromB
+  // TODO[ivy]: Check whether this need channel from.ABC
+  val mshr_grant_s3        = mshr_req_s3 && req_s3.fromA && req_s3.opcode(2, 1) === Grant(2, 1) // Grant or GrantData from mshr
+  val mshr_grantdata_s3    = mshr_req_s3 && req_s3.fromA && req_s3.opcode === GrantData
+  val mshr_probeack_s3     = mshr_req_s3 && req_s3.fromB && req_s3.opcode(2, 1) === ProbeAck(2, 1) // ProbeAck or ProbeAckData from mshr
+  val mshr_probeackdata_s3 = mshr_req_s3 && req_s3.fromB && req_s3.opcode === ProbeAckData
+  val mshr_release_s3      = mshr_req_s3 && req_s3.opcode(2, 1) === Release(2, 1) // voluntary Release or ReleaseData from mshr
   assert(!(io.refillBufResp_s3.valid && io.releaseBufResp_s3.valid))
 
   // def getBeat(data: UInt, beatsOH: UInt): (UInt, UInt) = {
@@ -384,15 +367,17 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   c_s5.bits.data.data := merged_data_s5
   d_s5.bits.task := task_s5.bits
   d_s5.bits.data.data := merged_data_s5
-  
 
-  io.toReqArb.blockC_s1 := task_s2.valid && !task_s2.bits.mshrTask && task_s2.bits.set === io.fromReqArb.status_s1.c_set ||
+  io.toReqArb.blockC_s1 :=
+    task_s2.valid && !task_s2.bits.mshrTask && task_s2.bits.set === io.fromReqArb.status_s1.c_set ||
     io.toMSHRCtl.mshr_alloc_s3.valid && task_s3.bits.set === io.fromReqArb.status_s1.c_set
-  io.toReqArb.blockB_s1 := task_s2.valid && !task_s2.bits.mshrTask && task_s2.bits.set === io.fromReqArb.status_s1.b_set ||
+  io.toReqArb.blockB_s1 :=
+    task_s2.valid && !task_s2.bits.mshrTask && task_s2.bits.set === io.fromReqArb.status_s1.b_set ||
     task_s3.valid && !task_s3.bits.mshrTask && task_s3.bits.set === io.fromReqArb.status_s1.b_set ||
     task_s4.valid && !task_s4.bits.mshrTask && task_s4.bits.set === io.fromReqArb.status_s1.b_set && task_s4.bits.opcode(2, 1) === Grant(2, 1) ||
     task_s5.valid && !task_s5.bits.mshrTask && task_s5.bits.set === io.fromReqArb.status_s1.b_set && task_s5.bits.opcode(2, 1) === Grant(2, 1)
-  io.toReqArb.blockA_s1 := task_s2.valid && !task_s2.bits.mshrTask && task_s2.bits.set === io.fromReqArb.status_s1.a_set ||
+  io.toReqArb.blockA_s1 :=
+    task_s2.valid && !task_s2.bits.mshrTask && task_s2.bits.set === io.fromReqArb.status_s1.a_set ||
     task_s3.valid && !task_s3.bits.mshrTask && task_s3.bits.set === io.fromReqArb.status_s1.a_set ||
     task_s4.valid && !task_s4.bits.mshrTask && task_s4.bits.set === io.fromReqArb.status_s1.a_set && task_s4.bits.opcode(2, 1) === Grant(2, 1) ||
     task_s5.valid && !task_s5.bits.mshrTask && task_s5.bits.set === io.fromReqArb.status_s1.a_set && task_s5.bits.opcode(2, 1) === Grant(2, 1)
@@ -490,7 +475,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   val c = Seq(c_s5, c_s4, c_s3)
   val d = Seq(d_s5, d_s4, d_s3)
-  // DONT use TLArbiter because TLArbiter will send continuous beats for the same source
+  // DO NOT use TLArbiter because TLArbiter will send continuous beats for the same source
   val c_arb = Module(new Arbiter(io.toSourceC.bits.cloneType, c.size))
   val d_arb = Module(new Arbiter(io.toSourceD.bits.cloneType, d.size))
   c_arb.io.in <> c
