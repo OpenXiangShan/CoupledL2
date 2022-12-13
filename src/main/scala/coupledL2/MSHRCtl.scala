@@ -56,7 +56,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
 
     /* send reqs */
     val sourceA = DecoupledIO(new TLBundleA(edgeOut.bundle))
-    val sourceB = DecoupledIO(new TLBundleA(edgeIn.bundle))
+    val sourceB = DecoupledIO(new TLBundleB(edgeIn.bundle))
 
     /* receive resps */
     val resps = Input(new Bundle() {
@@ -80,6 +80,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   val mshrSelector = Module(new MSHRSelector())
   mshrSelector.io.idle := mshrs.map(m => !m.io.status.valid)
   val selectedMSHROH = mshrSelector.io.out.bits
+  io.toMainPipe.mshr_alloc_ptr := OHToUInt(selectedMSHROH)
 
   mshrs.zipWithIndex.foreach {
     case (m, i) =>
@@ -97,7 +98,6 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       m.io.nestedwb := io.nestedwb
   }
 
-  io.toMainPipe.mshr_alloc_ptr := OHToUInt(selectedMSHROH)
   // io.mshrFull := mshrFull
   val setMatchVec_a = mshrs.map(m => m.io.status.valid && m.io.status.bits.set === io.fromReqArb.status_s1.sets(2))
   val setMatchVec_b = mshrs.map(m => m.io.status.valid && m.io.status.bits.set === io.fromReqArb.status_s1.sets(1))
