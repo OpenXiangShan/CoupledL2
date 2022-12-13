@@ -121,7 +121,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   ob.param := Mux(!state.s_pprobe, req.param, toN)
 
   val mp_release, mp_probeack, mp_grant = Wire(new TaskBundle)
-  // TODO[ivy]: check channel
+
   mp_release := DontCare
   mp_release.channel := req.channel
   mp_release.tag := dirResult.tag
