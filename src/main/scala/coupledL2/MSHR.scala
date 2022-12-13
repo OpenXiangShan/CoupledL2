@@ -151,12 +151,12 @@ class MSHR(implicit p: Parameters) extends L2Module {
     ProbeAck
   )
   mp_probeack.param := ParallelLookUp(
-    Cat(isT(meta.state), req.param),
+    Cat(isT(meta.state), req.param(bdWidth - 1, 0)),
     Seq(
       Cat(false.B, toN) -> BtoN,
       Cat(false.B, toB) -> BtoB, // TODO: make sure that this req will not enter mshr in this situation
       Cat(true.B,  toN) -> TtoN,
-      Cat(true.B,  toB) -> TtoN
+      Cat(true.B,  toB) -> TtoB
     )
   )
   mp_probeack.mshrTask := true.B
