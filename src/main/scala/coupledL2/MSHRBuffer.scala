@@ -50,7 +50,7 @@ class MSHRBuffer(wPorts: Int = 1)(implicit p: Parameters) extends L2Module {
 
   val buffer = Seq.fill(mshrsAll) {
     Seq.fill(beatSize) {
-      Module(new SRAMTemplate(new DSData(), set = 1, way = 1, singlePort = true))
+      Module(new SRAMTemplate(new DSBeat(), set = 1, way = 1, singlePort = true))
     }
   }
   val valids = RegInit(VecInit(Seq.fill(mshrsAll) {
@@ -84,7 +84,7 @@ class MSHRBuffer(wPorts: Int = 1)(implicit p: Parameters) extends L2Module {
         case (entry, j) =>
           entry.io.w.req.valid := wens.orR && w_beat_sel(j)
           entry.io.w.req.bits.apply(
-            data = w_data.data((j + 1) * beatBytes * 8 - 1, j * beatBytes * 8).asTypeOf(new DSData),
+            data = w_data.data((j + 1) * beatBytes * 8 - 1, j * beatBytes * 8).asTypeOf(new DSBeat),
             setIdx = 0.U,
             waymask = 1.U
           )

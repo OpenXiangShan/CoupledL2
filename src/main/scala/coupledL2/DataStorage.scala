@@ -28,7 +28,7 @@ class DSRequest(implicit p: Parameters) extends L2Bundle {
   val wen = Bool()
 }
 
-class DSData(implicit p: Parameters) extends L2Bundle {
+class DSBeat(implicit p: Parameters) extends L2Bundle {
   val data = UInt((beatBytes * 8).W)
 }
 
@@ -38,12 +38,6 @@ class DSBlock(implicit p: Parameters) extends L2Bundle {
 
 class DataStorage(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val io = IO(new Bundle() {
-    // val rreq_s3 = Flipped(ValidIO(new DSRequest()))
-    // val rdata_s6 = Output(new DSData())
-
-    // val wdata_s2 = Input(new DSBlock())
-    // val wen_s3 = Input(Bool())
-
     // there is only 1 read or write request in the same cycle,
     // so only 1 req port is necessary
     val req = Flipped(ValidIO(new DSRequest))
