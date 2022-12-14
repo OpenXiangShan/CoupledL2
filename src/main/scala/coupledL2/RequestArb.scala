@@ -47,25 +47,13 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     /* mshr full, from MSHRCtrl */
     // val mshrFull = Input(Bool())
 
-    /* status of s1*/
+    /* status of s1 */
     val status_s1 = Output(new PipeEntranceStatus)
 
     /* handle set conflict and nestB */
-    val fromMSHRCtl = Input(new Bundle() {
-      val blockA_s1 = Bool()
-      val blockB_s1 = Bool()
-      val blockC_s1 = Bool()
-    })
-    val fromMainPipe = Input(new Bundle() {
-      val blockA_s1 = Bool()
-      val blockB_s1 = Bool()
-      val blockC_s1 = Bool()
-    })
-    val fromGrantBuffer = Input(new Bundle() {
-      val blockA_s1 = Bool()
-      val blockB_s1 = Bool()
-      val blockC_s1 = Bool()
-    })
+    val fromMSHRCtl = Input(new BlockInfo())
+    val fromMainPipe = Input(new BlockInfo())
+    val fromGrantBuffer = Input(new BlockInfo())
   })
 
   /* ======== Reset ======== */
@@ -128,21 +116,24 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val A_task = fromTLAtoTaskBundle(io.sinkA.bits)
   val B_task = fromTLBtoTaskBundle(io.sinkB.bits)
   val C_task = io.sinkC.bits
+  val block_A = io.fromMSHRCtl.blockA_s1 || io.fromMainPipe.blockA_s1 || io.fromGrantBuffer.blockA_s1
+  val block_B = io.fromMSHRCtl.blockB_s1 || io.fromMainPipe.blockB_s1 || io.fromGrantBuffer.blockB_s1
+  val block_C = io.fromMSHRCtl.blockC_s1 || io.fromMainPipe.blockC_s1 || io.fromGrantBuffer.blockC_s1
+
   val sinkValids = VecInit(Seq(
-    io.sinkC.valid && !io.fromMSHRCtl.blockC_s1 && !io.fromMainPipe.blockC_s1 && !io.fromGrantBuffer.blockC_s1,
-    io.sinkB.valid && !io.fromMSHRCtl.blockB_s1 && !io.fromMainPipe.blockB_s1 && !io.fromGrantBuffer.blockB_s1,
-    io.sinkA.valid && !io.fromMSHRCtl.blockA_s1 && !io.fromMainPipe.blockA_s1 && !io.fromGrantBuffer.blockA_s1
+    io.sinkC.valid && !block_C,
+    io.sinkB.valid && !block_B,
+    io.sinkA.valid && !block_A
   )).asUInt
+
+  val sink_ready_basic = io.dirRead_s1.ready && resetFinish && !mshr_task_s1.valid
+  io.sinkA.ready := sink_ready_basic && !block_A && !sinkValids(1) && !sinkValids(0) // SinkC prior to SinkA & SinkB
+  io.sinkB.ready := sink_ready_basic && !block_B && !sinkValids(0) // SinkB prior to SinkA
+  io.sinkC.ready := sink_ready_basic && !block_C
+
   val chnl_task_s1 = Wire(Valid(new TaskBundle()))
   chnl_task_s1.valid := io.dirRead_s1.ready && sinkValids.orR && resetFinish
   chnl_task_s1.bits := ParallelPriorityMux(sinkValids, Seq(C_task, B_task, A_task))
-
-  io.status_s1.sets := VecInit(Seq(C_task.set, B_task.set, A_task.set))
-  io.status_s1.b_tag := B_task.tag
-
-  io.sinkA.ready := !io.fromMSHRCtl.blockA_s1 && !io.fromMainPipe.blockA_s1 && !io.fromGrantBuffer.blockA_s1 && io.dirRead_s1.ready && resetFinish && !sinkValids(1) && !sinkValids(0) && !mshr_task_s1.valid // SinkC prior to SinkA & SinkB
-  io.sinkB.ready := !io.fromMSHRCtl.blockB_s1 && !io.fromMainPipe.blockB_s1 && !io.fromGrantBuffer.blockB_s1 && io.dirRead_s1.ready && resetFinish && !sinkValids(0) && !mshr_task_s1.valid
-  io.sinkC.ready := !io.fromMSHRCtl.blockC_s1 && !io.fromMainPipe.blockC_s1 && !io.fromGrantBuffer.blockC_s1 && io.dirRead_s1.ready && resetFinish && !mshr_task_s1.valid
 
   val task_s1 = Mux(mshr_task_s1.valid, mshr_task_s1, chnl_task_s1)
 
@@ -155,6 +146,10 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   io.dirRead_s1.bits.replacerInfo.opcode := task_s1.bits.opcode
   io.dirRead_s1.bits.replacerInfo.channel := task_s1.bits.channel
 
+  /* status of s1 */
+  io.status_s1.sets := VecInit(Seq(C_task.set, B_task.set, A_task.set))
+  io.status_s1.b_tag := B_task.tag
+
   /* ========  Stage 2 ======== */
   val task_s2 = RegInit(0.U.asTypeOf(task_s1))
   task_s2.valid := task_s1.valid
@@ -162,6 +157,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   
   io.taskToPipe_s2 := task_s2
 
+  // MSHR task
   val mshrTask_s2 = task_s2.valid && task_s2.bits.mshrTask
   // For GrantData, read refillBuffer
   io.refillBufRead_s2.valid := mshrTask_s2 && task_s2.bits.fromA && task_s2.bits.opcode === GrantData
@@ -173,6 +169,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   io.releaseBufRead_s2.id := task_s2.bits.mshrId
   assert(!io.refillBufRead_s2.valid || io.refillBufRead_s2.ready)
   assert(!io.releaseBufRead_s2.valid || io.releaseBufRead_s2.ready)
+
   require(beatSize == 2)
 
   dontTouch(io)
