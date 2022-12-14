@@ -279,6 +279,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
 
   io.status.valid := status_reg.valid
   io.status.bits <> status_reg.bits
+  // For A reqs, we only concern about the tag to be replaced
+  io.status.bits.tag := Mux(req.fromB, req.tag, dirResult.tag)
   io.status.bits.nestB := status_reg.valid && state.w_releaseack && state.w_rprobeacklast && state.w_pprobeacklast && !state.w_grantfirst
 
   val nestedwb_match = status_reg.valid && dirResult.meta.state =/= INVALID &&

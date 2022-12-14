@@ -82,13 +82,19 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   val selectedMSHROH = mshrSelector.io.out.bits
   io.toMainPipe.mshr_alloc_ptr := OHToUInt(selectedMSHROH)
 
+  val resp_sinkC_match_vec = mshrs.map(mshr =>
+    mshr.io.status.valid &&
+    io.resps.sinkC.set === mshr.io.status.bits.set &&
+    io.resps.sinkC.tag === mshr.io.status.bits.tag
+  )
+
   mshrs.zipWithIndex.foreach {
     case (m, i) =>
       m.io.id := i.U
       m.io.alloc.valid := selectedMSHROH(i) && io.fromMainPipe.mshr_alloc_s3.valid
       m.io.alloc.bits := io.fromMainPipe.mshr_alloc_s3.bits
 
-      m.io.resps.sink_c.valid := m.io.status.valid && io.resps.sinkC.valid && io.resps.sinkC.set === m.io.status.bits.set // ! TODO: MSHRs are blocked by slot instead of by set
+      m.io.resps.sink_c.valid := io.resps.sinkC.valid && resp_sinkC_match_vec(i)
       m.io.resps.sink_c.bits := io.resps.sinkC.respInfo
       m.io.resps.sink_d.valid := m.io.status.valid && io.resps.sinkD.valid && io.resps.sinkD.mshrId === i.U
       m.io.resps.sink_d.bits := io.resps.sinkD.respInfo
@@ -119,9 +125,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   /* Arbitrate MSHR task to RequestArbiter */
   fastArb(mshrs.map(_.io.tasks.mainpipe), io.mshrTask, Some("mshr_task"))
 
-  io.releaseBufWriteId := ParallelPriorityMux(mshrs.zipWithIndex.map {
-    case (mshr, i) => (mshr.io.status.valid && mshr.io.status.bits.set === io.resps.sinkC.set, i.U)
-  })
+  io.releaseBufWriteId := ParallelPriorityMux(resp_sinkC_match_vec, (0 until mshrsAll).map(i => i.U))
 
   io.nestedwbDataId.valid := Cat(mshrs.map(_.io.nestedwbData)).orR
   io.nestedwbDataId.bits := ParallelPriorityMux(mshrs.zipWithIndex.map {
