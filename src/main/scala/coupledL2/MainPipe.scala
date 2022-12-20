@@ -235,8 +235,10 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val metaW_valid_s3_c = !mshr_req_s3 && req_s3.fromC
   val metaW_valid_s3_mshr = mshr_req_s3 && req_s3.metaWen
   require(clientBits == 1)
-  val metaW_s3_a = MetaEntry(meta_s3.dirty, Mux(req_needT_s3, TRUNK, meta_s3.state), Fill(clientBits, true.B))
-  val metaW_s3_b = Mux(req_s3.param === toN, MetaEntry(), MetaEntry(false.B, BRANCH, 0.U))
+  val metaW_s3_a = MetaEntry(meta_s3.dirty, Mux(req_needT_s3, TRUNK, meta_s3.state),
+    Fill(clientBits, true.B), VecInit(Seq.fill(clientBits)(0.U(aliasBits.W)))) //[Alias] TODO
+  val metaW_s3_b = Mux(req_s3.param === toN, MetaEntry(),
+    MetaEntry(false.B, BRANCH, Fill(clientBits, true.B), VecInit(Seq.fill(clientBits)(0.U(aliasBits.W))))) //[Alias] TODO
   val metaW_s3_c_dirty = meta_s3.dirty || wen_c
   val metaW_s3_c_state = Mux(
     isParamFromT(req_s3.param),
@@ -244,7 +246,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     meta_s3.state
   )
   val metaW_s3_c_clients = Fill(clientBits, !isToN(req_s3.param))
-  val metaW_s3_c = MetaEntry(metaW_s3_c_dirty, metaW_s3_c_state, metaW_s3_c_clients)
+  val metaW_s3_c = MetaEntry(metaW_s3_c_dirty, metaW_s3_c_state, metaW_s3_c_clients,
+    VecInit(Seq.fill(clientBits)(0.U(aliasBits.W)))) //[Alias] TODO
   val metaW_s3_mshr = req_s3.meta
   io.metaWReq.valid := !resetFinish || task_s3.valid && (metaW_valid_s3_a || metaW_valid_s3_b || metaW_valid_s3_c || metaW_valid_s3_mshr)
   io.metaWReq.bits.set := Mux(resetFinish, req_s3.set, resetIdx)

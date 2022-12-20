@@ -28,6 +28,8 @@ class MetaEntry(implicit p: Parameters) extends L2Bundle {
   val state = UInt(stateBits.W)
   val clients = UInt(clientBits.W)  // valid-bit of clients
   // TODO: record specific state of clients instead of just 1-bit
+  val alias = Vec(clientBits, UInt(aliasBits.W))
+
   // TODO: record prefetch info
 
   def =/=(entry: MetaEntry): Bool = {
@@ -40,11 +42,12 @@ object MetaEntry {
     val init = WireInit(0.U.asTypeOf(new MetaEntry))
     init
   }
-  def apply(dirty: Bool, state: UInt, clients: UInt)(implicit p: Parameters) = {
+  def apply(dirty: Bool, state: UInt, clients: UInt, alias: Vec[UInt])(implicit p: Parameters) = {
     val entry = Wire(new MetaEntry)
     entry.dirty := dirty
     entry.state := state
     entry.clients := clients
+    entry.alias := alias
     entry
   }
 }

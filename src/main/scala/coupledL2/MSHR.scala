@@ -173,7 +173,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
         meta.state
       )
     ),
-    clients = Fill(clientBits, !probeGotN)
+    clients = Fill(clientBits, !probeGotN),
+    alias = VecInit(Seq.fill(clientBits)(0.U(aliasBits.W))) //[Alias] TODO
   )
   mp_probeack.metaWen := true.B
   mp_probeack.tagWen := false.B
@@ -204,7 +205,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
       TRUNK,
       BRANCH
     ),
-    clients = Fill(clientBits, 1.U(1.W))
+    clients = Fill(clientBits, 1.U(1.W)),
+    alias = VecInit(Seq.fill(clientBits)(0.U(aliasBits.W))) //[Alias] TODO
   )
   mp_grant.metaWen := true.B
   mp_grant.tagWen := !dirResult.hit
