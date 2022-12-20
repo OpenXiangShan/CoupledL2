@@ -83,7 +83,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     task.tag := parseAddress(a.address)._1
     task.set := parseAddress(a.address)._2
     task.off := parseAddress(a.address)._3
-    task.alias := 0.U // TODO
+    task.alias := a.user.lift(AliasKey).getOrElse(0.U)
     task.opcode := a.opcode
     task.param := a.param
     task.sourceId := a.source
@@ -98,7 +98,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     task.tag := parseAddress(b.address)._1
     task.set := parseAddress(b.address)._2
     task.off := parseAddress(b.address)._3
-    task.alias := 0.U // TODO
+    task.alias := 0.U
     task.opcode := b.opcode
     task.param := b.param
     task.mshrTask := false.B

@@ -42,6 +42,7 @@ trait HasCoupledL2Parameters {
   val offsetBits = log2Ceil(blockBytes)
   val beatBits = offsetBits - log2Ceil(beatBytes)
   val stateBits = MetaData.stateBits
+  val aliasBits = 2
 
   val mshrsAll = 16
   val idsAll = 128 // TODO: parameterize this?
