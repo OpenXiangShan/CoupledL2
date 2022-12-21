@@ -239,11 +239,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val metaW_valid_s3_mshr = mshr_req_s3 && req_s3.metaWen
   require(clientBits == 1)
   //[Alias] TODO: consider 1 client for now
-  val metaW_s3_a_alias = WireInit(meta_s3.alias)
-  metaW_s3_a_alias(0) := req_s3.alias
-
-  val metaW_s3_a = MetaEntry(meta_s3.dirty, Mux(req_needT_s3, TRUNK, meta_s3.state),
-    Fill(clientBits, true.B), VecInit(Seq.fill(clientBits)(0.U(aliasBits.W)))) //[Alias] TODO
+  val metaW_s3_a = MetaEntry(meta_s3.dirty, Mux(req_needT_s3, TRUNK, meta_s3.state), Fill(clientBits, true.B), meta_s3.alias)
   val metaW_s3_b = Mux(req_s3.param === toN, MetaEntry(), MetaEntry(false.B, BRANCH, Fill(clientBits, true.B), meta_s3.alias))
 
   val metaW_s3_c_dirty = meta_s3.dirty || wen_c
