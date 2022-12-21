@@ -112,16 +112,19 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   val dirResult_s3 = io.dirResp_s3.bits
   val meta_s3 = dirResult_s3.meta
-  val meta_has_clients_s3 = meta_s3.clients.orR
-
   val req_s3 = task_s3.bits
+
   val mshr_req_s3 = req_s3.mshrTask
   val req_acquire_s3 = (req_s3.opcode === AcquireBlock || req_s3.opcode === AcquirePerm) && req_s3.fromA
   val req_prefetch_s3 = req_s3.opcode === Hint
+
+  val meta_has_clients_s3 = meta_s3.clients.orR
   val req_needT_s3 = needT(req_s3.opcode, req_s3.param) // require T status to handle req
+  //[Alias] TODO: consider 1 client for now
+  val cache_alias = req_acquire_s3 && dirResult_s3.hit && meta_s3.clients(0) && meta_s3.alias(0) =/= req_s3.alias
 
   val acquire_on_miss_s3 = req_acquire_s3 || req_prefetch_s3 // TODO: remove this cause always acquire on miss?
-  val acquire_on_hit_s3 = meta_s3.state === BRANCH && req_needT_s3
+  val acquire_on_hit_s3 = meta_s3.state === BRANCH && req_needT_s3 || cache_alias
   // For channel A reqs, alloc mshr when acquire downwards is needed
   val need_mshr_s3_a = //task_s3.valid && !mshr_req_s3 &&
     ((dirResult_s3.hit && acquire_on_hit_s3) || (!dirResult_s3.hit && acquire_on_miss_s3))
@@ -129,7 +132,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val need_mshr_s3_b = dirResult_s3.hit && req_s3.fromB &&
     !(meta_s3.state === BRANCH && req_s3.param === toB) &&
     meta_has_clients_s3
-  // For channel C reqs, Release will always hit on MainPipe.
+  // For channel C reqs, Release will always hit on MainPipe, no need for MSHR
   val need_mshr_s3 = need_mshr_s3_a || need_mshr_s3_b
 
   /* Signals to MSHR Ctl */
@@ -145,7 +148,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   ms_task.set := req_s3.set
   ms_task.tag := req_s3.tag
   ms_task.off := req_s3.off
-  //
+  ms_task.alias := req_s3.alias
   ms_task.opcode := req_s3.opcode
   ms_task.param := req_s3.param
   ms_task.sourceId := req_s3.sourceId
@@ -235,20 +238,21 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val metaW_valid_s3_c = !mshr_req_s3 && req_s3.fromC
   val metaW_valid_s3_mshr = mshr_req_s3 && req_s3.metaWen
   require(clientBits == 1)
+  //[Alias] TODO: consider 1 client for now
+  val metaW_s3_a_alias = WireInit(meta_s3.alias)
+  metaW_s3_a_alias(0) := req_s3.alias
+
   val metaW_s3_a = MetaEntry(meta_s3.dirty, Mux(req_needT_s3, TRUNK, meta_s3.state),
     Fill(clientBits, true.B), VecInit(Seq.fill(clientBits)(0.U(aliasBits.W)))) //[Alias] TODO
-  val metaW_s3_b = Mux(req_s3.param === toN, MetaEntry(),
-    MetaEntry(false.B, BRANCH, Fill(clientBits, true.B), VecInit(Seq.fill(clientBits)(0.U(aliasBits.W))))) //[Alias] TODO
+  val metaW_s3_b = Mux(req_s3.param === toN, MetaEntry(), MetaEntry(false.B, BRANCH, Fill(clientBits, true.B), meta_s3.alias))
+
   val metaW_s3_c_dirty = meta_s3.dirty || wen_c
-  val metaW_s3_c_state = Mux(
-    isParamFromT(req_s3.param),
-    TIP,
-    meta_s3.state
-  )
+  val metaW_s3_c_state = Mux(isParamFromT(req_s3.param), TIP, meta_s3.state)
   val metaW_s3_c_clients = Fill(clientBits, !isToN(req_s3.param))
-  val metaW_s3_c = MetaEntry(metaW_s3_c_dirty, metaW_s3_c_state, metaW_s3_c_clients,
-    VecInit(Seq.fill(clientBits)(0.U(aliasBits.W)))) //[Alias] TODO
+  val metaW_s3_c = MetaEntry(metaW_s3_c_dirty, metaW_s3_c_state, metaW_s3_c_clients, meta_s3.alias)
+
   val metaW_s3_mshr = req_s3.meta
+
   io.metaWReq.valid := !resetFinish || task_s3.valid && (metaW_valid_s3_a || metaW_valid_s3_b || metaW_valid_s3_c || metaW_valid_s3_mshr)
   io.metaWReq.bits.set := Mux(resetFinish, req_s3.set, resetIdx)
   io.metaWReq.bits.wayOH := Mux(resetFinish, UIntToOH(Mux(mshr_req_s3, req_s3.way, dirResult_s3.way)), Fill(cacheParams.ways, true.B))
