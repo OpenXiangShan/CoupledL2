@@ -124,10 +124,10 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val cache_alias = req_acquire_s3 && dirResult_s3.hit && meta_s3.clients(0) && meta_s3.alias(0) =/= req_s3.alias
 
   val acquire_on_miss_s3 = req_acquire_s3 || req_prefetch_s3 // TODO: remove this cause always acquire on miss?
-  val acquire_on_hit_s3 = meta_s3.state === BRANCH && req_needT_s3 || cache_alias
-  // For channel A reqs, alloc mshr when acquire downwards is needed
-  val need_mshr_s3_a = //task_s3.valid && !mshr_req_s3 &&
-    ((dirResult_s3.hit && acquire_on_hit_s3) || (!dirResult_s3.hit && acquire_on_miss_s3))
+  val acquire_on_hit_s3 = meta_s3.state === BRANCH && req_needT_s3
+  // For channel A reqs, alloc mshr when: acquire downwards is needed || alias
+  val need_acquire_s3_a = ((dirResult_s3.hit && acquire_on_hit_s3) || (!dirResult_s3.hit && acquire_on_miss_s3))
+  val need_mshr_s3_a = need_acquire_s3_a || cache_alias
   // For channel B reqs, alloc mshr when Probe hits in both self and client dir
   val need_mshr_s3_b = dirResult_s3.hit && req_s3.fromB &&
     !(meta_s3.state === BRANCH && req_s3.param === toB) &&
@@ -429,11 +429,17 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       }
     }
     // need Acquire downwards
-    when(need_mshr_s3_a) {
+    when(need_acquire_s3_a) {
       alloc_state.s_acquire := false.B
       alloc_state.w_grantfirst := false.B
       alloc_state.w_grantlast := false.B
       alloc_state.w_grant := false.B
+    }
+    // need Probe for alias
+    when(cache_alias) {
+      alloc_state.s_rprobe := false.B
+      alloc_state.w_rprobeackfirst := false.B
+      alloc_state.w_rprobeacklast := false.B
     }
   }
   when(req_s3.fromB) {
