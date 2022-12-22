@@ -200,6 +200,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_grant.mshrTask := true.B
   mp_grant.mshrId := io.id
   mp_grant.way := req.way
+  val meta_alias = WireInit(dirResult.meta.alias)
+  meta_alias(0) := req.alias
   mp_grant.meta := MetaEntry(
     dirty = dirResult.hit && dirResult.meta.dirty,
     state = Mux(
@@ -208,7 +210,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
       BRANCH
     ),
     clients = Fill(clientBits, 1.U(1.W)),
-    alias = req.alias //[Alias] TODO: consider one client for now
+    alias = meta_alias //[Alias] TODO: consider one client for now
   )
   mp_grant.metaWen := true.B
   mp_grant.tagWen := !dirResult.hit
