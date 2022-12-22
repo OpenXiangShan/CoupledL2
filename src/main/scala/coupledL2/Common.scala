@@ -83,6 +83,7 @@ class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val opcode = UInt(3.W)
   val param = UInt(3.W)
   val source = UInt(sourceIdBits.W)
+  val alias = UInt(aliasBits.W)
   val nestB = Bool()
 }
 
@@ -146,6 +147,7 @@ class SourceBReq(implicit p: Parameters) extends L2Bundle {
   val off = UInt(offsetBits.W)
   val opcode = UInt(3.W)
   val param = UInt(bdWidth.W)
+  val alias = UInt(aliasBits.W)
 }
 
 class BlockInfo(implicit p: Parameters) extends L2Bundle {

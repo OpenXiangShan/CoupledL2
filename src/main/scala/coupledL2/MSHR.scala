@@ -80,6 +80,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     status_reg.bits.opcode := ms_task.opcode
     status_reg.bits.param := ms_task.param
     status_reg.bits.source := ms_task.sourceId
+    status_reg.bits.alias := ms_task.alias
     gotT := false.B
     probeDirty := false.B
     probeGotN := false.B
@@ -100,7 +101,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.tasks.source_b.valid := !state.s_pprobe || !state.s_rprobe
   val mp_release_valid = !state.s_release && state.w_rprobeacklast
   val mp_probeack_valid = !state.s_probeack && state.w_pprobeacklast
-  val mp_grant_valid = !state.s_refill && state.w_grantlast
+  val mp_grant_valid = !state.s_refill && state.w_grantlast && state.w_rprobeacklast // [Alias] grant after rprobe done
   io.tasks.mainpipe.valid := mp_release_valid || mp_probeack_valid || mp_grant_valid
 
   val oa = io.tasks.source_a.bits
@@ -119,6 +120,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   ob.off := 0.U
   ob.opcode := Probe
   ob.param := Mux(!state.s_pprobe, req.param, toN)
+  ob.alias := req.alias
 
   val mp_release, mp_probeack, mp_grant = Wire(new TaskBundle)
 
@@ -174,7 +176,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
       )
     ),
     clients = Fill(clientBits, !probeGotN),
-    alias = VecInit(Seq.fill(clientBits)(0.U(aliasBits.W))) //[Alias] TODO
+    alias = dirResult.meta.alias //[Alias] TODO: Keep alias bits unchanged
   )
   mp_probeack.metaWen := true.B
   mp_probeack.tagWen := false.B
@@ -206,7 +208,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
       BRANCH
     ),
     clients = Fill(clientBits, 1.U(1.W)),
-    alias = VecInit(Seq.fill(clientBits)(0.U(aliasBits.W))) //[Alias] TODO
+    alias = req.alias //[Alias] TODO: consider one client for now
   )
   mp_grant.metaWen := true.B
   mp_grant.tagWen := !dirResult.hit
