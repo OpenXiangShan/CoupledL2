@@ -19,7 +19,8 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import coupledL2.utils._
+import coupledL2.utils.SRAMTemplate
+import utility.RegNextN
 import chipsalliance.rocketchip.config.Parameters
 
 class DSRequest(implicit p: Parameters) extends L2Bundle {
