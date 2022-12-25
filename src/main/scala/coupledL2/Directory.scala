@@ -20,7 +20,8 @@ package coupledL2
 import chisel3._
 import chisel3.util._
 import freechips.rocketchip.util.SetAssocLRU
-import coupledL2.utils._
+import coupledL2.utils.SRAMTemplate
+import utility.ParallelPriorityMux
 import chipsalliance.rocketchip.config.Parameters
 
 class MetaEntry(implicit p: Parameters) extends L2Bundle {
