@@ -179,7 +179,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
       )
     ),
     clients = Fill(clientBits, !probeGotN),
-    alias = dirResult.meta.alias //[Alias] TODO: Keep alias bits unchanged
+    alias = meta.alias //[Alias] TODO: Keep alias bits unchanged
   )
   mp_probeack.metaWen := true.B
   mp_probeack.tagWen := false.B
@@ -204,10 +204,10 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_grant.mshrId := io.id
   mp_grant.way := req.way
   mp_grant.aliasTask := req.aliasTask
-  val meta_alias = WireInit(dirResult.meta.alias)
+  val meta_alias = WireInit(meta.alias)
   meta_alias(0) := req.alias
   mp_grant.meta := MetaEntry(
-    dirty = dirResult.hit && dirResult.meta.dirty,
+    dirty = dirResult.hit && meta.dirty,
     state = Mux(
       req_promoteT || req_needT,
       TRUNK,
@@ -291,7 +291,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.status.bits <> status_reg.bits
   io.status.bits.nestB := status_reg.valid && state.w_releaseack && state.w_rprobeacklast && state.w_pprobeacklast && !state.w_grantfirst
 
-  val nestedwb_match = status_reg.valid && dirResult.meta.state =/= INVALID &&
+  val nestedwb_match = status_reg.valid && meta.state =/= INVALID &&
     dirResult.set === io.nestedwb.set &&
     dirResult.tag === io.nestedwb.tag
   when (nestedwb_match) {
@@ -299,13 +299,13 @@ class MSHR(implicit p: Parameters) extends L2Module {
       dirResult.hit := false.B
     }
     when (io.nestedwb.b_toB) {
-      dirResult.meta.state := BRANCH
+      meta.state := BRANCH
     }
     when (io.nestedwb.b_clr_dirty) {
-      dirResult.meta.dirty := false.B
+      meta.dirty := false.B
     }
     when (io.nestedwb.c_set_dirty) {
-      dirResult.meta.dirty := true.B
+      meta.dirty := true.B
     }
   }
 
