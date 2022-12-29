@@ -121,7 +121,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   ob.off := 0.U
   ob.opcode := Probe
   ob.param := Mux(!state.s_pprobe, req.param, toN)
-  ob.alias := req.alias
+  ob.alias := meta.alias(0)
 
   val mp_release, mp_probeack, mp_grant = Wire(new TaskBundle)
 
