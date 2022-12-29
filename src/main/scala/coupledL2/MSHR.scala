@@ -81,6 +81,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     status_reg.bits.param := ms_task.param
     status_reg.bits.source := ms_task.sourceId
     status_reg.bits.alias := ms_task.alias
+    status_reg.bits.aliasTask := ms_task.aliasTask
     gotT := false.B
     probeDirty := false.B
     probeGotN := false.B
@@ -138,6 +139,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_release.param := Mux(isT(meta.state), TtoN, BtoN)
   mp_release.mshrTask := true.B
   mp_release.mshrId := io.id
+  mp_release.aliasTask := false.B
   mp_release.way := req.way
   mp_release.metaWen := false.B
   mp_release.tagWen := false.B
@@ -163,6 +165,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   )
   mp_probeack.mshrTask := true.B
   mp_probeack.mshrId := io.id
+  mp_probeack.aliasTask := false.B
   mp_probeack.way := req.way
   mp_probeack.meta := MetaEntry(
     dirty = false.B,
@@ -200,6 +203,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_grant.mshrTask := true.B
   mp_grant.mshrId := io.id
   mp_grant.way := req.way
+  mp_grant.aliasTask := req.aliasTask
   val meta_alias = WireInit(dirResult.meta.alias)
   meta_alias(0) := req.alias
   mp_grant.meta := MetaEntry(

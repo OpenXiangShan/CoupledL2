@@ -152,6 +152,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   ms_task.opcode := req_s3.opcode
   ms_task.param := req_s3.param
   ms_task.sourceId := req_s3.sourceId
+  ms_task.aliasTask := cache_alias
   //
   ms_task.way := dirResult_s3.way
   //
@@ -216,7 +217,9 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   // read data ahead of time to prepare for ReleaseData later 
   val need_data_on_miss_a = req_s3.fromA && !mshr_req_s3 && !dirResult_s3.hit && (meta_s3.state === TRUNK || meta_s3.state === TIP && meta_s3.dirty)
   val need_data_b = req_s3.fromB && !mshr_req_s3 && dirResult_s3.hit && (meta_s3.state === TRUNK || meta_s3.state === TIP && meta_s3.dirty)
-  val ren = Mux(dirResult_s3.hit, need_data_on_hit_a, need_data_on_miss_a) || need_data_b
+  val need_data_alias = mshr_grantdata_s3 && req_s3.aliasTask
+
+  val ren = Mux(dirResult_s3.hit, need_data_on_hit_a, need_data_on_miss_a) || need_data_b || need_data_alias
   val bufResp_s3 = RegNext(io.bufResp.data.asUInt)
   val need_write_releaseBuf = need_data_on_miss_a || need_data_b
   io.toDS.req_s3.valid := task_s3.valid && (ren || wen)
@@ -266,11 +269,13 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.tagWReq.bits.way := req_s3.way
   io.tagWReq.bits.wtag := req_s3.tag
 
-  val task_ready_s3 = !hasData_s3 || (mshr_req_s3 || (req_s3.fromC || need_mshr_s3))
+  val alias_grantdata_s3 = mshr_grantdata_s3 && req_s3.aliasTask
+  val task_ready_s3 = !hasData_s3 || req_s3.fromC || need_mshr_s3 || (mshr_req_s3 && !alias_grantdata_s3)
   val mshr_fire_s3 = !mshr_req_s3 && need_mshr_s3 && !need_write_releaseBuf
   val chnl_fire_s3 = task_ready_s3 && (c_s3.fire() || d_s3.fire())// && !next_beatsOH_s3.orR
 
-  val data_unready_s3 = hasData_s3 && !mshr_req_s3
+  //[Alias] TODO: may change this to ren?
+  val data_unready_s3 = hasData_s3 && (!mshr_req_s3 || alias_grantdata_s3)
   c_s3.valid := task_s3.valid && Mux(
     mshr_req_s3,
     mshr_release_s3 || mshr_probeack_s3,
@@ -280,7 +285,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   c_s3.bits.data.data := data_s3
   d_s3.valid := task_s3.valid && Mux(
     mshr_req_s3,
-    mshr_grant_s3,
+    mshr_grant_s3 && !alias_grantdata_s3, // grant under alias is ok to send
     req_s3.fromC || req_s3.fromA && !need_mshr_s3 && !data_unready_s3
   )
   d_s3.bits.task := source_req_s3
