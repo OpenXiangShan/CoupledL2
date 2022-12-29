@@ -204,6 +204,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_grant.mshrId := io.id
   mp_grant.way := req.way
   mp_grant.aliasTask := req.aliasTask
+  mp_grant.useProbeData := probeDirty
   val meta_alias = WireInit(meta.alias)
   meta_alias(0) := req.alias
   mp_grant.meta := MetaEntry(
