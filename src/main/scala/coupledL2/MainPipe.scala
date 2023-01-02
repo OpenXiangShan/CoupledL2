@@ -153,6 +153,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   ms_task.param := req_s3.param
   ms_task.sourceId := req_s3.sourceId
   ms_task.aliasTask := cache_alias
+  ms_task.useProbeData := false.B
   //
   ms_task.way := dirResult_s3.way
   //
@@ -212,7 +213,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val wen_c = !mshr_req_s3 && req_s3.fromC && isParamFromT(req_s3.param) && req_s3.opcode(0)
   val wen_mshr_grant = mshr_grantdata_s3 && !req_s3.aliasTask
   val wen_mshr_probeack = mshr_probeackdata_s3
-  val wen_mshr_alias = mshr_grantdata_s3 && req_s3.aliasTask && req_s3.useProbeData // write probe-alias-Data into DS
+  val wen_mshr_alias = mshr_grant_s3 && req_s3.aliasTask && req_s3.useProbeData // write probe-alias-Data into DS
   val wen = wen_c || wen_mshr_grant || wen_mshr_probeack || wen_mshr_alias
 
   val need_data_on_hit_a = req_s3.fromA && !mshr_req_s3 && req_s3.opcode === AcquireBlock && (isT(meta_s3.state) || req_s3.param === NtoB)
