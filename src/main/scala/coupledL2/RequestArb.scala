@@ -161,7 +161,8 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val mshrTask_s2 = task_s2.valid && task_s2.bits.mshrTask
   // For GrantData, read refillBuffer
   // Caution: GrantData-alias may read DataStorage or ReleaseBuf instead
-  io.refillBufRead_s2.valid := mshrTask_s2 && task_s2.bits.fromA && task_s2.bits.opcode === GrantData && !task_s2.bits.aliasTask
+  io.refillBufRead_s2.valid := mshrTask_s2 && !task_s2.bits.aliasTask && task_s2.bits.fromA &&
+    (task_s2.bits.opcode === GrantData || task_s2.bits.opcode === Grant && task_s2.bits.tagWen)
   io.refillBufRead_s2.id := task_s2.bits.mshrId
   // For ReleaseData or ProbeAckData, read releaseBuffer
   // channel is used to differentiate GrantData and ProbeAckData
