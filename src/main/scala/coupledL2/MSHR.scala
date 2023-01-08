@@ -211,7 +211,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val meta_alias = WireInit(meta.alias)
   meta_alias(0) := req.alias
   mp_grant.meta := MetaEntry(
-    dirty = dirResult.hit && meta.dirty,
+    dirty = (dirResult.hit && meta.dirty) || probeDirty, // [Alias] probeDirty also sets meta.dirty
     state = Mux(
       req_promoteT || req_needT,
       TRUNK,
