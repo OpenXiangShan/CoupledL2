@@ -62,6 +62,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   initState.elements.foreach(_._2 := true.B)
   val dirResult = RegInit(0.U.asTypeOf(new DirResult()))
   val gotT = RegInit(false.B) // TODO: L3 might return T even though L2 wants B
+  val gotDirty = RegInit(false.B)
   val probeDirty = RegInit(false.B)
   val probeGotN = RegInit(false.B)
 
@@ -80,7 +81,9 @@ class MSHR(implicit p: Parameters) extends L2Module {
     status_reg.bits.opcode := ms_task.opcode
     status_reg.bits.param := ms_task.param
     status_reg.bits.source := ms_task.sourceId
+    status_reg.bits.needProbeAckData := ms_task.needProbeAckData
     gotT := false.B
+    gotDirty := false.B
     probeDirty := false.B
     probeGotN := false.B
   }
@@ -137,7 +140,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_release.mshrTask := true.B
   mp_release.mshrId := io.id
   mp_release.way := req.way
-  mp_release.metaWen := false.B
+  mp_release.metaWen := true.B
+  mp_release.meta := MetaEntry(dirty = false.B, state = INVALID, clients = 0.U)
   mp_release.tagWen := false.B
 
   mp_probeack := DontCare
@@ -146,7 +150,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_probeack.set := req.set
   mp_probeack.off := req.off
   mp_probeack.opcode := Mux(
-    meta.dirty && isT(meta.state) || probeDirty,
+    meta.dirty && isT(meta.state) || probeDirty || req.needProbeAckData,
     ProbeAckData,
     ProbeAck
   )
@@ -198,7 +202,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_grant.mshrId := io.id
   mp_grant.way := req.way
   mp_grant.meta := MetaEntry(
-    dirty = dirResult.hit && dirResult.meta.dirty,
+    dirty = dirResult.hit && dirResult.meta.dirty || gotDirty,
     state = Mux(
       req_promoteT || req_needT,
       TRUNK,
@@ -261,6 +265,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
       state.w_grantlast := d_resp.bits.last
       state.w_grant := status_reg.bits.off === 0.U || d_resp.bits.last  // TODO? why offset?
       gotT := d_resp.bits.param === toT
+      gotDirty := gotDirty || d_resp.bits.dirty
     }
     when(d_resp.bits.opcode === ReleaseAck) {
       state.w_releaseack := true.B

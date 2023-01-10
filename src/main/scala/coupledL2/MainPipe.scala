@@ -149,6 +149,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   ms_task.opcode := req_s3.opcode
   ms_task.param := req_s3.param
   ms_task.sourceId := req_s3.sourceId
+  ms_task.needProbeAckData := req_s3.needProbeAckData
   //
   ms_task.way := dirResult_s3.way
   //
@@ -162,7 +163,11 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     sink_resp_s3.bits.opcode := Mux(req_s3.opcode === AcquirePerm, Grant, GrantData)
     sink_resp_s3.bits.param  := Mux(req_s3.param === NtoB, toB, toT)
   }.elsewhen(req_s3.fromB) {
-    sink_resp_s3.bits.opcode := Mux(meta_s3.state === TIP && meta_s3.dirty, ProbeAckData, ProbeAck)
+    sink_resp_s3.bits.opcode := Mux(
+      dirResult_s3.hit && (meta_s3.state === TIP && meta_s3.dirty || req_s3.needProbeAckData),
+      ProbeAckData,
+      ProbeAck
+    )
     sink_resp_s3.bits.param  := Mux(!dirResult_s3.hit, NtoN,
       MuxLookup(Cat(req_s3.param, meta_s3.state), BtoB, Seq(
         Cat(toN, BRANCH) -> BtoN,
@@ -212,7 +217,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val need_data_on_hit_a = req_s3.fromA && !mshr_req_s3 && req_s3.opcode === AcquireBlock && (isT(meta_s3.state) || req_s3.param === NtoB)
   // read data ahead of time to prepare for ReleaseData later 
   val need_data_on_miss_a = req_s3.fromA && !mshr_req_s3 && !dirResult_s3.hit && (meta_s3.state === TRUNK || meta_s3.state === TIP && meta_s3.dirty)
-  val need_data_b = req_s3.fromB && !mshr_req_s3 && dirResult_s3.hit && (meta_s3.state === TRUNK || meta_s3.state === TIP && meta_s3.dirty)
+  val need_data_b = req_s3.fromB && !mshr_req_s3 && dirResult_s3.hit &&
+    (meta_s3.state === TRUNK || meta_s3.state === TIP && meta_s3.dirty || req_s3.needProbeAckData)
   val ren = Mux(dirResult_s3.hit, need_data_on_hit_a, need_data_on_miss_a) || need_data_b
   val bufResp_s3 = RegNext(io.bufResp.data.asUInt)
   val need_write_releaseBuf = need_data_on_miss_a || need_data_b && need_mshr_s3_b
@@ -321,7 +327,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   }
   // val beats_unready_s4 = (beatsOH_s4 & ~beatsOH_ready_s4).orR
   // val (beat_s4, next_beatsOH_s4) = getBeat(data_s4, beatsOH_s4)
-  val isC_s4 = task_s4.bits.opcode(2, 1) === Release(2, 1) && !task_s4.bits.fromB || task_s4.bits.opcode(2, 1) === ProbeAck(2, 1) && task_s4.bits.fromB
+  val isC_s4 = task_s4.bits.opcode(2, 1) === Release(2, 1) && task_s4.bits.fromA || task_s4.bits.opcode(2, 1) === ProbeAck(2, 1) && task_s4.bits.fromB
   val isD_s4 = task_s4.bits.opcode(2, 1) === Grant(2, 1) && task_s4.bits.fromA || task_s4.bits.fromC
   val chnl_fire_s4 = (c_s4.fire() || d_s4.fire())// && !next_beatsOH_s4.orR
 

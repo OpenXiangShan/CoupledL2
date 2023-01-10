@@ -51,6 +51,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val sourceId = UInt(sourceIdBits.W)     // tilelink sourceID
   val id = UInt(idBits.W)                 // identity of the task
   val bufIdx = UInt(bufIdxBits.W)         // idx of SinkC buffer
+  val needProbeAckData = Bool()           // only used for SinkB reqs
 
   // val mshrOpType = UInt(mshrOpTypeBits.W) // type of the MSHR task operation
   // MSHR may send Release(Data) or Grant(Data) or ProbeAck(Data) through Main Pipe
@@ -84,6 +85,7 @@ class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val param = UInt(3.W)
   val source = UInt(sourceIdBits.W)
   val nestB = Bool()
+  val needProbeAckData = Bool() // only for B reqs
 }
 
 // MSHR Task that MainPipe sends to MSHRCtl
@@ -97,6 +99,7 @@ class RespInfoBundle(implicit p: Parameters) extends L2Bundle {
   val opcode = UInt(3.W)
   val param = UInt(3.W)
   val last = Bool() // last beat
+  val dirty = Bool() // only used for sinkD resps
 }
 
 class RespBundle(implicit p: Parameters) extends L2Bundle {

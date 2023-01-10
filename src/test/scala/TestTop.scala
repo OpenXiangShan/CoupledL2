@@ -107,7 +107,8 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
     case L2ParamKey => L2Param(
       name = s"l2$i",
       ways = 4,
-      sets = 128
+      sets = 128,
+      echoField = Seq(DirtyField())
     )
   }))).node)
 

@@ -101,6 +101,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     task.alias := 0.U // TODO
     task.opcode := b.opcode
     task.param := b.param
+    task.needProbeAckData := b.data(0) // TODO: parameterize this
     task.mshrTask := false.B
     task
   }

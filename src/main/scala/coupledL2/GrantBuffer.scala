@@ -138,6 +138,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   io.e_resp := DontCare
   io.e_resp.valid := io.e.valid
   io.e_resp.mshrId := io.e.bits.sink
+  io.e_resp.respInfo := DontCare
   io.e_resp.respInfo.opcode := GrantAck
   io.e_resp.respInfo.last := true.B
 }
