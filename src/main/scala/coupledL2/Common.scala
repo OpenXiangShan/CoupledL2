@@ -45,7 +45,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val tag = UInt(tagBits.W)
   val off = UInt(offsetBits.W)
   val alias = UInt(aliasBits.W)           // color bits in cache-alias issue
-  val owner = UInt(ownerBits.W)           // who owns this block
+  val owner = UInt(ownerBits.W)           // who owns this block, TODO: unused
   val opcode = UInt(3.W)                  // type of the task operation
   val param = UInt(3.W)
   val sourceId = UInt(sourceIdBits.W)     // tilelink sourceID
@@ -57,6 +57,8 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   // MSHR may send Release(Data) or Grant(Data) or ProbeAck(Data) through Main Pipe
   val mshrTask = Bool()                   // is task from mshr
   val mshrId = UInt(mshrBits.W)           // mshr entry index (used only in mshr-task)
+  val aliasTask = Bool()                  // Anti-alias
+  val useProbeData = Bool()               // use ProbeAckData, read from ReleaseBuffer
 
   // if this is an mshr task and it needs to write dir
   val way = UInt(wayBits.W)
@@ -84,6 +86,8 @@ class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val opcode = UInt(3.W)
   val param = UInt(3.W)
   val source = UInt(sourceIdBits.W)
+  val alias = UInt(aliasBits.W)
+  val aliasTask = Bool()
   val nestB = Bool()
   val needProbeAckData = Bool() // only for B reqs
 }
@@ -149,6 +153,7 @@ class SourceBReq(implicit p: Parameters) extends L2Bundle {
   val off = UInt(offsetBits.W)
   val opcode = UInt(3.W)
   val param = UInt(bdWidth.W)
+  val alias = UInt(aliasBits.W)
 }
 
 class BlockInfo(implicit p: Parameters) extends L2Bundle {

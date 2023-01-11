@@ -42,6 +42,7 @@ trait HasCoupledL2Parameters {
   val offsetBits = log2Ceil(blockBytes)
   val beatBits = offsetBits - log2Ceil(beatBytes)
   val stateBits = MetaData.stateBits
+  val aliasBits = 2
 
   val mshrsAll = 16
   val idsAll = 128 // TODO: parameterize this?
@@ -148,7 +149,9 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     ),
     channelBytes = cacheParams.channelBytes,
     minLatency = 1,
-    echoFields = cacheParams.echoField
+    echoFields = cacheParams.echoField,
+    requestFields = cacheParams.reqField,
+    responseKeys = cacheParams.respKey
   )
 
   val managerPortParams = (m: TLSlavePortParameters) => TLSlavePortParameters.v1(
@@ -170,6 +173,8 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     },
     beatBytes = 32,
     minLatency = 2,
+    responseFields = cacheParams.respField,
+    requestKeys = cacheParams.reqKey,
     endSinkId = idsAll
   )
 
@@ -180,6 +185,14 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
 
   lazy val module = new LazyModuleImp(this) {
     val banks = node.in.size
+
+    def print_bundle_fields(fs: Seq[BundleFieldBase], prefix: String) = {
+      if(fs.nonEmpty){
+        println(fs.map{f => s"$prefix/${f.key.name}: (${f.data.getWidth}-bit)"}.mkString("\n"))
+      }
+    }
+    print_bundle_fields(node.in.head._2.bundle.requestFields, "usr")
+    print_bundle_fields(node.in.head._2.bundle.echoFields, "echo")
 
     node.edges.in.headOption.foreach { n =>
       n.client.clients.zipWithIndex.foreach {

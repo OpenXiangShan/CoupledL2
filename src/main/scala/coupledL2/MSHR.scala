@@ -82,6 +82,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
     status_reg.bits.param := ms_task.param
     status_reg.bits.source := ms_task.sourceId
     status_reg.bits.needProbeAckData := ms_task.needProbeAckData
+    status_reg.bits.alias := ms_task.alias
+    status_reg.bits.aliasTask := ms_task.aliasTask
     gotT := false.B
     gotDirty := false.B
     probeDirty := false.B
@@ -103,7 +105,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.tasks.source_b.valid := !state.s_pprobe || !state.s_rprobe
   val mp_release_valid = !state.s_release && state.w_rprobeacklast
   val mp_probeack_valid = !state.s_probeack && state.w_pprobeacklast
-  val mp_grant_valid = !state.s_refill && state.w_grantlast
+  val mp_grant_valid = !state.s_refill && state.w_grantlast && state.w_rprobeacklast // [Alias] grant after rprobe done
   io.tasks.mainpipe.valid := mp_release_valid || mp_probeack_valid || mp_grant_valid
 
   val oa = io.tasks.source_a.bits
@@ -122,6 +124,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   ob.off := 0.U
   ob.opcode := Probe
   ob.param := Mux(!state.s_pprobe, req.param, toN)
+  ob.alias := meta.alias(0)
 
   val mp_release, mp_probeack, mp_grant = Wire(new TaskBundle)
 
@@ -139,9 +142,10 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_release.param := Mux(isT(meta.state), TtoN, BtoN)
   mp_release.mshrTask := true.B
   mp_release.mshrId := io.id
+  mp_release.aliasTask := false.B
   mp_release.way := req.way
   mp_release.metaWen := true.B
-  mp_release.meta := MetaEntry(dirty = false.B, state = INVALID, clients = 0.U)
+  mp_release.meta := MetaEntry(dirty = false.B, state = INVALID, clients = 0.U, alias = meta.alias)
   mp_release.tagWen := false.B
 
   mp_probeack := DontCare
@@ -165,6 +169,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   )
   mp_probeack.mshrTask := true.B
   mp_probeack.mshrId := io.id
+  mp_probeack.aliasTask := false.B
   mp_probeack.way := req.way
   mp_probeack.meta := MetaEntry(
     dirty = false.B,
@@ -177,7 +182,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
         meta.state
       )
     ),
-    clients = Fill(clientBits, !probeGotN)
+    clients = Fill(clientBits, !probeGotN),
+    alias = meta.alias //[Alias] TODO: Keep alias bits unchanged
   )
   mp_probeack.metaWen := true.B
   mp_probeack.tagWen := false.B
@@ -201,14 +207,22 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_grant.mshrTask := true.B
   mp_grant.mshrId := io.id
   mp_grant.way := req.way
+  mp_grant.alias := req.alias
+  mp_grant.aliasTask := req.aliasTask
+  // [Alias] write probeData into DS for alias-caused Probe,
+  // but not replacement-cased Probe
+  mp_grant.useProbeData := probeDirty && dirResult.hit
+  val meta_alias = WireInit(meta.alias)
+  meta_alias(0) := req.alias
   mp_grant.meta := MetaEntry(
-    dirty = dirResult.hit && dirResult.meta.dirty || gotDirty,
+    dirty = (dirResult.hit && meta.dirty) || gotDirty || probeDirty, // [Alias] probeDirty also sets meta.dirty
     state = Mux(
       req_promoteT || req_needT,
       TRUNK,
       BRANCH
     ),
-    clients = Fill(clientBits, 1.U(1.W))
+    clients = Fill(clientBits, 1.U(1.W)),
+    alias = meta_alias //[Alias] TODO: consider one client for now
   )
   mp_grant.metaWen := true.B
   mp_grant.tagWen := !dirResult.hit
@@ -288,7 +302,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.status.bits.tag := Mux(req.fromB, req.tag, dirResult.tag)
   io.status.bits.nestB := status_reg.valid && state.w_releaseack && state.w_rprobeacklast && state.w_pprobeacklast && !state.w_grantfirst
 
-  val nestedwb_match = status_reg.valid && dirResult.meta.state =/= INVALID &&
+  val nestedwb_match = status_reg.valid && meta.state =/= INVALID &&
     dirResult.set === io.nestedwb.set &&
     dirResult.tag === io.nestedwb.tag
   when (nestedwb_match) {
@@ -296,13 +310,13 @@ class MSHR(implicit p: Parameters) extends L2Module {
       dirResult.hit := false.B
     }
     when (io.nestedwb.b_toB) {
-      dirResult.meta.state := BRANCH
+      meta.state := BRANCH
     }
     when (io.nestedwb.b_clr_dirty) {
-      dirResult.meta.dirty := false.B
+      meta.dirty := false.B
     }
     when (io.nestedwb.c_set_dirty) {
-      dirResult.meta.dirty := true.B
+      meta.dirty := true.B
     }
   }
 

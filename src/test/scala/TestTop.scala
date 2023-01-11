@@ -33,7 +33,7 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
         channelBytes = TLChannelBeatBytes(cacheParams.blockBytes),
         minLatency = 1,
         echoFields = Nil,
-        requestFields = Nil,
+        requestFields = Seq(AliasField(2)),
         responseKeys = cacheParams.respKey
       )
     ))
