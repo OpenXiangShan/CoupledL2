@@ -211,7 +211,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   // write/read data storage
   val wen_c = !mshr_req_s3 && req_s3.fromC && isParamFromT(req_s3.param) && req_s3.opcode(0)
-  val wen_mshr_grant = mshr_grantdata_s3
+  val wen_mshr_grant = mshr_grant_s3
   val wen_mshr_probeack = mshr_probeackdata_s3
   val wen = wen_c || wen_mshr_grant || wen_mshr_probeack
   val need_data_on_hit_a = req_s3.fromA && !mshr_req_s3 && req_s3.opcode === AcquireBlock && (isT(meta_s3.state) || req_s3.param === NtoB)
