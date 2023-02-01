@@ -209,9 +209,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_grant.way := req.way
   mp_grant.alias := req.alias
   mp_grant.aliasTask := req.aliasTask
-  // [Alias] write probeData into DS for alias-caused Probe,
-  // but not replacement-cased Probe
-  mp_grant.useProbeData := probeDirty && dirResult.hit
+  // [Alias] write probeData into DS for alias-caused Probe
+  mp_grant.probeDirty := probeDirty//[Alias] TODO: && dirResult.hit
   val meta_alias = WireInit(meta.alias)
   meta_alias(0) := req.alias
   mp_grant.meta := MetaEntry(

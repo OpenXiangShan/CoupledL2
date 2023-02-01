@@ -57,8 +57,8 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   // MSHR may send Release(Data) or Grant(Data) or ProbeAck(Data) through Main Pipe
   val mshrTask = Bool()                   // is task from mshr
   val mshrId = UInt(mshrBits.W)           // mshr entry index (used only in mshr-task)
-  val aliasTask = Bool()                  // Anti-alias
-  val useProbeData = Bool()               // use ProbeAckData, read from ReleaseBuffer
+  val aliasTask = Bool()                  // anti-alias
+  val probeDirty = Bool()                 // anti-alias-probe returns data
 
   // if this is an mshr task and it needs to write dir
   val way = UInt(wayBits.W)
