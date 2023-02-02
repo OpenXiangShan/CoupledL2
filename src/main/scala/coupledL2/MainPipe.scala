@@ -61,7 +61,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     val toDS = new Bundle() {
       val req_s3 = ValidIO(new DSRequest)
       val rdata_s5 = Input(new DSBlock)
-      val wdata_s3 = Output(new DSBlock) 
+      val wdata_s3 = Output(new DSBlock)
     }
 
     /* send Release/Grant/ProbeAck via SourceC/D channels */
@@ -221,14 +221,15 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val wen = wen_c || wen_mshr_grant || wen_mshr_probeack || wen_mshr_alias
 
   val need_data_on_hit_a = req_s3.fromA && !mshr_req_s3 && req_s3.opcode === AcquireBlock && (isT(meta_s3.state) || req_s3.param === NtoB)
-  // read data ahead of time to prepare for ReleaseData later 
+  // read data ahead of time to prepare for ReleaseData later
   val need_data_on_miss_a = req_s3.fromA && !mshr_req_s3 && !dirResult_s3.hit && (meta_s3.state === TRUNK || meta_s3.state === TIP && meta_s3.dirty)
   val need_data_b = req_s3.fromB && !mshr_req_s3 && dirResult_s3.hit &&
     (meta_s3.state === TRUNK || meta_s3.state === TIP && meta_s3.dirty || req_s3.needProbeAckData)
+  val need_data_alias = cache_alias && !mshr_req_s3
 
-  val ren = Mux(dirResult_s3.hit, need_data_on_hit_a, need_data_on_miss_a) || need_data_b || cache_alias
+  val ren = Mux(dirResult_s3.hit, need_data_on_hit_a, need_data_on_miss_a) || need_data_b || need_data_alias
   val bufResp_s3 = RegNext(io.bufResp.data.asUInt) // for Release from C
-  val need_write_releaseBuf = need_data_on_miss_a || need_data_b && need_mshr_s3_b || cache_alias
+  val need_write_releaseBuf = need_data_on_miss_a || need_data_b && need_mshr_s3_b || need_data_alias
   io.toDS.req_s3.valid := task_s3.valid && (ren || wen)
   io.toDS.req_s3.bits.way := Mux(mshr_req_s3, req_s3.way, dirResult_s3.way)
   io.toDS.req_s3.bits.set := Mux(mshr_req_s3, req_s3.set, dirResult_s3.set)
