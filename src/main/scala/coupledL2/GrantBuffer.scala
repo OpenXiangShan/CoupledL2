@@ -130,7 +130,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
       }
   }
 
-  TLArbiter.lowest(edgeIn, io.d, out_bundles:_*)
+  TLArbiter.robin(edgeIn, io.d, out_bundles:_*)
 
   io.d_task.ready := !full
 

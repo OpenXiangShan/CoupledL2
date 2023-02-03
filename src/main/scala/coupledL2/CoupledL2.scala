@@ -24,6 +24,7 @@ import chisel3.util._
 import coupledL2.utils.{FastArbiter}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
+import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.util._
 import chipsalliance.rocketchip.config.Parameters
 import scala.math.max
@@ -120,6 +121,13 @@ trait HasCoupledL2Parameters {
     if (name.nonEmpty) { arb.suggestName(s"${name.get}_arb") }
     for ((a, req) <- arb.io.in.zip(in)) { a <> req }
     out <> arb.io.out
+  }
+
+  def odOpGen(r: UInt) = {
+    val grantOp = GrantData
+    val opSeq = Seq(AccessAck, AccessAck, AccessAckData, AccessAckData, AccessAckData, HintAck, grantOp, Grant)
+    val opToA = VecInit(opSeq)(r)
+    opToA
   }
 }
 

@@ -162,15 +162,16 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val mshrTask_s2 = task_s2.valid && task_s2.bits.mshrTask
   // For GrantData, read refillBuffer
   // Caution: GrantData-alias may read DataStorage or ReleaseBuf instead
-  io.refillBufRead_s2.valid := mshrTask_s2 && !task_s2.bits.aliasTask && task_s2.bits.fromA &&
-    (task_s2.bits.opcode === GrantData || task_s2.bits.opcode === Grant && task_s2.bits.tagWen)
+  io.refillBufRead_s2.valid := mshrTask_s2 && !task_s2.bits.useProbeData && task_s2.bits.fromA &&
+    (task_s2.bits.opcode === GrantData || task_s2.bits.opcode === Grant ||
+      task_s2.bits.opcode === AccessAckData)
   io.refillBufRead_s2.id := task_s2.bits.mshrId
   // For ReleaseData or ProbeAckData, read releaseBuffer
   // channel is used to differentiate GrantData and ProbeAckData
   io.releaseBufRead_s2.valid := mshrTask_s2 && (
     task_s2.bits.opcode === ReleaseData ||
     task_s2.bits.fromB && task_s2.bits.opcode === ProbeAckData ||
-    task_s2.bits.fromA && task_s2.bits.opcode(2, 1) === Grant(2, 1) && task_s2.bits.aliasTask && task_s2.bits.useProbeData)
+    task_s2.bits.fromA && task_s2.bits.useProbeData)
   io.releaseBufRead_s2.id := task_s2.bits.mshrId
   assert(!io.refillBufRead_s2.valid || io.refillBufRead_s2.ready)
   assert(!io.releaseBufRead_s2.valid || io.releaseBufRead_s2.ready)

@@ -58,13 +58,14 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val mshrTask = Bool()                   // is task from mshr
   val mshrId = UInt(mshrBits.W)           // mshr entry index (used only in mshr-task)
   val aliasTask = Bool()                  // Anti-alias
-  val useProbeData = Bool()               // use ProbeAckData, read from ReleaseBuffer
+  val useProbeData = Bool()               // data source, true for ReleaseBuf and false for RefillBuf
 
   // if this is an mshr task and it needs to write dir
   val way = UInt(wayBits.W)
   val meta = new MetaEntry()
   val metaWen = Bool()
   val tagWen = Bool()
+  val dsWen = Bool()
 
   def hasData = opcode(0)
 }

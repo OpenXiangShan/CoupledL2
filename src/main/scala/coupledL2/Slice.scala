@@ -39,7 +39,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val sinkC = Module(new SinkC) // or ReleaseUnit?
   val sourceC = Module(new SourceC)
   val grantBuf = Module(new GrantBuffer)
-  val refillBuf = Module(new MSHRBuffer())
+  val refillBuf = Module(new MSHRBuffer(wPorts = 2))
   val releaseBuf = Module(new MSHRBuffer(wPorts = 3))
 
   val prbq = Module(new ProbeQueue())
@@ -87,7 +87,8 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   releaseBuf.io.w(2).data := mainPipe.io.nestedwbData
   releaseBuf.io.w(2).id := mshrCtl.io.nestedwbDataId.bits
 
-  refillUnit.io.refillBufWrite <> refillBuf.io.w.last
+  refillBuf.io.w(0) <> refillUnit.io.refillBufWrite
+  refillBuf.io.w(1) <> mainPipe.io.refillBufWrite
 
   sourceC.io.in <> mainPipe.io.toSourceC
 
