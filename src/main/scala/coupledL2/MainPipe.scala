@@ -420,15 +420,15 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   d_s5.bits.data.data := merged_data_s5
 
   io.toReqArb.blockC_s1 :=
-    task_s2.valid && !task_s2.bits.mshrTask && task_s2.bits.set === io.fromReqArb.status_s1.c_set ||
+    task_s2.valid && task_s2.bits.set === io.fromReqArb.status_s1.c_set ||
     io.toMSHRCtl.mshr_alloc_s3.valid && task_s3.bits.set === io.fromReqArb.status_s1.c_set
   io.toReqArb.blockB_s1 :=
-    task_s2.valid && !task_s2.bits.mshrTask && task_s2.bits.set === io.fromReqArb.status_s1.b_set ||
+    task_s2.valid && task_s2.bits.set === io.fromReqArb.status_s1.b_set ||
     task_s3.valid && !task_s3.bits.mshrTask && task_s3.bits.set === io.fromReqArb.status_s1.b_set ||
     task_s4.valid && !task_s4.bits.mshrTask && task_s4.bits.set === io.fromReqArb.status_s1.b_set /*&& task_s4.bits.opcode(2, 1) === Grant(2, 1)*/ ||
     task_s5.valid && !task_s5.bits.mshrTask && task_s5.bits.set === io.fromReqArb.status_s1.b_set /*&& task_s5.bits.opcode(2, 1) === Grant(2, 1)*/
   io.toReqArb.blockA_s1 :=
-    task_s2.valid && !task_s2.bits.mshrTask && task_s2.bits.set === io.fromReqArb.status_s1.a_set ||
+    task_s2.valid && task_s2.bits.set === io.fromReqArb.status_s1.a_set ||
     task_s3.valid && !task_s3.bits.mshrTask && task_s3.bits.set === io.fromReqArb.status_s1.a_set ||
     task_s4.valid && !task_s4.bits.mshrTask && task_s4.bits.set === io.fromReqArb.status_s1.a_set /*&& task_s4.bits.opcode(2, 1) === Grant(2, 1)*/ ||
     task_s5.valid && !task_s5.bits.mshrTask && task_s5.bits.set === io.fromReqArb.status_s1.a_set /*&& task_s5.bits.opcode(2, 1) === Grant(2, 1)*/
