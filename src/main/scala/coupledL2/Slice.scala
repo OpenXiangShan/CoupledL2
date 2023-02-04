@@ -36,6 +36,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val directory = Module(new Directory())
   val dataStorage = Module(new DataStorage())
   val refillUnit = Module(new RefillUnit())
+  val sinkA = Module(new SinkA)
   val sinkC = Module(new SinkC) // or ReleaseUnit?
   val sourceC = Module(new SourceC)
   val grantBuf = Module(new GrantBuffer)
@@ -45,6 +46,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val prbq = Module(new ProbeQueue())
   prbq.io <> DontCare // @XiaBin TODO
 
+  reqArb.io.sinkA <> sinkA.io.toReqArb
   reqArb.io.sinkC <> sinkC.io.toReqArb
   reqArb.io.dirRead_s1 <> directory.io.read
   reqArb.io.taskToPipe_s2 <> mainPipe.io.taskFromArb_s2
@@ -60,6 +62,8 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   mshrCtl.io.resps.sinkD := refillUnit.io.resp
   mshrCtl.io.resps.sinkE := grantBuf.io.e_resp
   mshrCtl.io.nestedwb := mainPipe.io.nestedwb
+  mshrCtl.io.pbRead <> sinkA.io.pbRead
+  mshrCtl.io.pbResp <> sinkA.io.pbResp
 
   directory.io.resp <> mainPipe.io.dirResp_s3
   directory.io.metaWReq <> mainPipe.io.metaWReq
@@ -100,7 +104,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val outBuf = cacheParams.outerBuf
   
   /* connect upward channels */
-  reqArb.io.sinkA <> inBuf.a(io.in.a)
+  sinkA.io.a <> inBuf.a(io.in.a)
   io.in.b <> inBuf.b(mshrCtl.io.sourceB)
   sinkC.io.c <> inBuf.c(io.in.c)
   io.in.d <> inBuf.d(grantBuf.io.d)

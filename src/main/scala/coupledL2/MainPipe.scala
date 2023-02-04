@@ -121,6 +121,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val req_acquire_s3 = (req_s3.opcode === AcquireBlock || req_s3.opcode === AcquirePerm) && req_s3.fromA && !mshr_req_s3
   val req_prefetch_s3 = req_s3.opcode === Hint && req_s3.fromA && !mshr_req_s3
   val req_get_s3 = req_s3.opcode === Get && req_s3.fromA && !mshr_req_s3
+  val req_put_s3 = (req_s3.opcode === PutFullData || req_s3.opcode === PutPartialData) && req_s3.fromA && !mshr_req_s3
 
   val meta_has_clients_s3 = meta_s3.clients.orR
   val req_needT_s3 = needT(req_s3.opcode, req_s3.param) // require T status to handle req
@@ -137,7 +138,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   )
   val need_probe_s3_a = req_s3.fromA && req_get_s3 && dirResult_s3.hit && meta_s3.state === TRUNK
   assert(RegNext(!(task_s3.valid && !mshr_req_s3 && dirResult_s3.hit && meta_s3.state === TRUNK && !meta_s3.clients.orR)))
-  val need_mshr_s3_a = need_acquire_s3_a || need_probe_s3_a || cache_alias
+  val need_mshr_s3_a = need_acquire_s3_a || need_probe_s3_a || cache_alias || req_put_s3
   // For channel B reqs, alloc mshr when Probe hits in both self and client dir
   val need_mshr_s3_b = dirResult_s3.hit && req_s3.fromB &&
     !(meta_s3.state === BRANCH && req_s3.param === toB) &&
@@ -165,6 +166,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   ms_task.needProbeAckData := req_s3.needProbeAckData
   ms_task.aliasTask := cache_alias
   ms_task.useProbeData := false.B
+  ms_task.pbIdx := req_s3.pbIdx
   //
   ms_task.way := dirResult_s3.way
   //
@@ -207,6 +209,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val mshr_grant_s3         = mshr_req_s3 && req_s3.fromA && req_s3.opcode(2, 1) === Grant(2, 1) // Grant or GrantData from mshr
   val mshr_grantdata_s3     = mshr_req_s3 && req_s3.fromA && req_s3.opcode === GrantData
   val mshr_accessackdata_s3 = mshr_req_s3 && req_s3.fromA && req_s3.opcode === AccessAckData
+  val mshr_accessack_s3     = mshr_req_s3 && req_s3.fromA && req_s3.opcode === AccessAck
   val mshr_probeack_s3      = mshr_req_s3 && req_s3.fromB && req_s3.opcode(2, 1) === ProbeAck(2, 1) // ProbeAck or ProbeAckData from mshr
   val mshr_probeackdata_s3  = mshr_req_s3 && req_s3.fromB && req_s3.opcode === ProbeAckData
   val mshr_release_s3       = mshr_req_s3 && req_s3.opcode(2, 1) === Release(2, 1) // voluntary Release or ReleaseData from mshr
@@ -317,7 +320,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   c_s3.bits.data.data := data_s3
   d_s3.valid := task_s3.valid && Mux(
     mshr_req_s3,
-    mshr_grant_s3/* && !need_data_alias*/ || mshr_accessackdata_s3,
+    mshr_grant_s3/* && !need_data_alias*/ || mshr_accessackdata_s3 || mshr_accessack_s3,
     req_s3.fromC || req_s3.fromA && !need_mshr_s3 && !data_unready_s3
   )
   d_s3.bits.task := source_req_s3
@@ -463,7 +466,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   // ! Caution: s_ and w_ are false valid
   when(req_s3.fromA) {
     alloc_state.s_refill := req_prefetch_s3   // no need to refill upwards for prefetch
-    alloc_state.w_grantack := req_prefetch_s3 || req_get_s3
+    alloc_state.w_grantack := req_prefetch_s3 || req_get_s3 || req_put_s3
     // need replacement
     when(!dirResult_s3.hit && meta_s3.state =/= INVALID) {
       alloc_state.s_release := false.B
@@ -476,7 +479,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       }
     }
     // need Acquire downwards
-    when(need_acquire_s3_a) {
+    when(need_acquire_s3_a || req_put_s3) {
       alloc_state.s_acquire := false.B
       alloc_state.w_grantfirst := false.B
       alloc_state.w_grantlast := false.B

@@ -28,7 +28,7 @@ import chipsalliance.rocketchip.config.Parameters
 class RequestArb(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     /* receive incoming tasks */
-    val sinkA = Flipped(DecoupledIO(new TLBundleA(edgeIn.bundle)))
+    val sinkA = Flipped(DecoupledIO(new TaskBundle))
     val sinkB = Flipped(DecoupledIO(new TLBundleB(edgeOut.bundle)))
     val sinkC = Flipped(DecoupledIO(new TaskBundle)) // sinkC is TaskBundle
     val mshrTask = Flipped(DecoupledIO(new TaskBundle))
@@ -76,21 +76,6 @@ class RequestArb(implicit p: Parameters) extends L2Module {
 
   /* ======== Stage 1 ======== */
   /* Task generation and pipelining */
-  def fromTLAtoTaskBundle(a: TLBundleA): TaskBundle = {
-    val task = Wire(new TaskBundle)
-    task := DontCare
-    task.channel := "b001".U
-    task.tag := parseAddress(a.address)._1
-    task.set := parseAddress(a.address)._2
-    task.off := parseAddress(a.address)._3
-    task.alias := a.user.lift(AliasKey).getOrElse(0.U)
-    task.opcode := a.opcode
-    task.param := a.param
-    task.sourceId := a.source
-    task.mshrTask := false.B
-    task
-  }
-
   def fromTLBtoTaskBundle(b: TLBundleB): TaskBundle = {
     val task = Wire(new TaskBundle)
     task := DontCare
@@ -114,7 +99,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   }
 
   /* Channel interaction from s1 */
-  val A_task = fromTLAtoTaskBundle(io.sinkA.bits)
+  val A_task = io.sinkA.bits
   val B_task = fromTLBtoTaskBundle(io.sinkB.bits)
   val C_task = io.sinkC.bits
   val block_A = io.fromMSHRCtl.blockA_s1 || io.fromMainPipe.blockA_s1 || io.fromGrantBuffer.blockA_s1

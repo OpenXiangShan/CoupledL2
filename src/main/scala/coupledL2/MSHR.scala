@@ -77,6 +77,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     status_reg.bits.needProbeAckData := ms_task.needProbeAckData
     status_reg.bits.alias := ms_task.alias
     status_reg.bits.aliasTask := ms_task.aliasTask
+    status_reg.bits.pbIdx := ms_task.pbIdx
     gotT := false.B
     gotDirty := false.B
     probeDirty := false.B
@@ -90,6 +91,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
 
   val req_needT = needT(req.opcode, req.param)
   val req_acquire = req.opcode === AcquireBlock || req.opcode === AcquirePerm
+  val req_put = req.opcode === PutFullData || req.opcode === PutPartialData
   val req_promoteT = req_acquire && Mux(dirResult.hit, meta_no_client && meta.state === TIP, gotT)
 
   /* Task allocation */
@@ -107,8 +109,17 @@ class MSHR(implicit p: Parameters) extends L2Module {
   oa.set := req.set
   oa.off := req.off
   oa.source := io.id
-  oa.opcode := Mux(dirResult.hit, AcquirePerm, AcquireBlock)
-  oa.param := Mux(req_needT, Mux(dirResult.hit, BtoT, NtoT), NtoB)
+  oa.opcode := Mux(
+    req_put,
+    req.opcode,
+    Mux(dirResult.hit, AcquirePerm, AcquireBlock)
+  )
+  oa.param := Mux(
+    req_put,
+    req.param,
+    Mux(req_needT, Mux(dirResult.hit, BtoT, NtoT), NtoB)
+  )
+  oa.pbIdx := req.pbIdx
 
   val ob = io.tasks.source_b.bits
   ob := DontCare
@@ -202,8 +213,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_grant.sourceId := req.source
   mp_grant.opcode := odOpGen(req.opcode)
   mp_grant.param := Mux(
-    req.opcode === Get,
-    0.U, // Get -> AccessData
+    req.opcode === Get || req_put,
+    0.U, // Get/Put -> AccessAckData/AccessAck
     MuxLookup( // Acquire -> Grant
       req.param,
       req.param,
@@ -235,9 +246,9 @@ class MSHR(implicit p: Parameters) extends L2Module {
     clients = Fill(clientBits, !(req.opcode === Get && (!dirResult.hit || meta_no_client || probeGotN))),
     alias = meta_alias //[Alias] TODO: consider one client for now
   )
-  mp_grant.metaWen := true.B
-  mp_grant.tagWen := !dirResult.hit
-  mp_grant.dsWen := !dirResult.hit || probeDirty && (req.opcode === Get || req.aliasTask)
+  mp_grant.metaWen := !req_put
+  mp_grant.tagWen := !dirResult.hit && !req_put
+  mp_grant.dsWen := !dirResult.hit && !req_put || probeDirty && (req.opcode === Get || req.aliasTask)
 
   io.tasks.mainpipe.bits := ParallelPriorityMux(
     Seq(
@@ -286,10 +297,12 @@ class MSHR(implicit p: Parameters) extends L2Module {
   }
 
   when (d_resp.valid) {
-    when(d_resp.bits.opcode === Grant || d_resp.bits.opcode === GrantData) {
+    when(d_resp.bits.opcode === Grant || d_resp.bits.opcode === GrantData || d_resp.bits.opcode === AccessAck) {
       state.w_grantfirst := true.B
       state.w_grantlast := d_resp.bits.last
       state.w_grant := status_reg.bits.off === 0.U || d_resp.bits.last  // TODO? why offset?
+    }
+    when(d_resp.bits.opcode === Grant || d_resp.bits.opcode === GrantData) {
       gotT := d_resp.bits.param === toT
       gotDirty := gotDirty || d_resp.bits.dirty
     }

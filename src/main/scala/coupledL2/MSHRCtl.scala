@@ -70,6 +70,10 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     /* nested writeback */
     val nestedwb = Input(new NestedWriteback)
     val nestedwbDataId = Output(ValidIO(UInt(mshrBits.W)))
+
+    /* read putBuffer */
+    val pbRead = DecoupledIO(new PutBufferRead)
+    val pbResp = Flipped(ValidIO(new PutBufferEntry))
   })
 
   val mshrs = Seq.fill(mshrsAll) { Module(new MSHR()) }
@@ -116,6 +120,8 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   val acquireUnit = Module(new AcquireUnit())
   fastArb(mshrs.map(_.io.tasks.source_a), acquireUnit.io.task, Some("source_a"))
   io.sourceA <> acquireUnit.io.sourceA
+  io.pbRead <> acquireUnit.io.pbRead
+  io.pbResp <> acquireUnit.io.pbResp
 
   /* Probe upwards */
   val sourceB = Module(new SourceB())
