@@ -48,6 +48,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val owner = UInt(ownerBits.W)           // who owns this block, TODO: unused
   val opcode = UInt(3.W)                  // type of the task operation
   val param = UInt(3.W)
+  val size = UInt(msgSizeBits.W)
   val sourceId = UInt(sourceIdBits.W)     // tilelink sourceID
   val id = UInt(idBits.W)                 // identity of the task
   val bufIdx = UInt(bufIdxBits.W)         // idx of SinkC buffer
@@ -89,6 +90,7 @@ class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val off = UInt(offsetBits.W)
   val opcode = UInt(3.W)
   val param = UInt(3.W)
+  val size = UInt(msgSizeBits.W)
   val source = UInt(sourceIdBits.W)
   val alias = UInt(aliasBits.W)
   val aliasTask = Bool()
@@ -149,6 +151,7 @@ class SourceAReq(implicit p: Parameters) extends L2Bundle {
   val off = UInt(offsetBits.W)
   val opcode = UInt(3.W)
   val param = UInt(aWidth.W)
+  val size = UInt(msgSizeBits.W)
   val source = UInt(mshrBits.W)
   val pbIdx = UInt(mshrBits.W)
 }

@@ -71,6 +71,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.alias := a.user.lift(AliasKey).getOrElse(0.U)
     task.opcode := a.opcode
     task.param := a.param
+    task.size := a.size
     task.sourceId := a.source
     task.mshrTask := false.B
     task.pbIdx := insertIdx

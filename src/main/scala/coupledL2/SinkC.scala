@@ -74,6 +74,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
     task.alias := 0.U
     task.opcode := c.opcode
     task.param := c.param
+    task.size := c.size
     task.sourceId := c.source
     task.mshrTask := false.B
     task

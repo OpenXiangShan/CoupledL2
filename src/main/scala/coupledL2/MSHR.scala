@@ -73,6 +73,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     status_reg.bits.way := ms_task.way
     status_reg.bits.opcode := ms_task.opcode
     status_reg.bits.param := ms_task.param
+    status_reg.bits.size := ms_task.size
     status_reg.bits.source := ms_task.sourceId
     status_reg.bits.needProbeAckData := ms_task.needProbeAckData
     status_reg.bits.alias := ms_task.alias
@@ -119,6 +120,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     req.param,
     Mux(req_needT, Mux(dirResult.hit, BtoT, NtoT), NtoB)
   )
+  oa.size := req.size
   oa.pbIdx := req.pbIdx
 
   val ob = io.tasks.source_b.bits

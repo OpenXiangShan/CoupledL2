@@ -162,6 +162,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   ms_task.alias := req_s3.alias
   ms_task.opcode := req_s3.opcode
   ms_task.param := req_s3.param
+  ms_task.size := req_s3.size
   ms_task.sourceId := req_s3.sourceId
   ms_task.needProbeAckData := req_s3.needProbeAckData
   ms_task.aliasTask := cache_alias

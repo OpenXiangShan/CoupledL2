@@ -49,7 +49,7 @@ class AcquireUnit(implicit p: Parameters) extends L2Module {
   // S0: read putBuffer
   val s0_task = RegEnable(task, io.task.fire() && put)
   val s0_count = RegInit(0.U(beatBits.W))
-  val s0_last = s0_count === (beatSize-1).U
+  val s0_last = s0_count === Mux(s0_task.size === log2Ceil(blockBytes).U, (beatSize-1).U, 0.U) // TODO
   val s0_valid = io.pbRead.fire()
 
   when(io.pbRead.fire()) {
@@ -85,7 +85,7 @@ class AcquireUnit(implicit p: Parameters) extends L2Module {
   a_put.valid := s1_valid
   a_put.bits.opcode := s1_task.opcode
   a_put.bits.param := s1_task.param
-  a_put.bits.size := offsetBits.U // TODO
+  a_put.bits.size := s1_task.size // TODO
   a_put.bits.source := task.source
   a_put.bits.address := Cat(task.tag, task.set, task.off)
   a_put.bits.echo.lift(DirtyKey).foreach(_ := true.B)
