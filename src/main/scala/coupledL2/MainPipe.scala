@@ -61,7 +61,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     val toDS = new Bundle() {
       val req_s3 = ValidIO(new DSRequest)
       val rdata_s5 = Input(new DSBlock)
-      val wdata_s3 = Output(new DSBlock) 
+      val wdata_s3 = Output(new DSBlock)
     }
 
     /* send Release/Grant/ProbeAck via SourceC/D channels */
@@ -306,12 +306,12 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.tagWReq.bits.way := req_s3.way
   io.tagWReq.bits.wtag := req_s3.tag
 
-  val task_ready_s3 = !hasData_s3 || req_s3.fromC || need_mshr_s3 || (mshr_req_s3 /*&& !need_data_alias*/)
+  val task_ready_s3 = !hasData_s3 || req_s3.fromC || need_mshr_s3 || mshr_req_s3
   val mshr_fire_s3 = !mshr_req_s3 && need_mshr_s3 && !need_write_releaseBuf && !need_write_refillBuf
   val chnl_fire_s3 = task_ready_s3 && (c_s3.fire() || d_s3.fire())// && !next_beatsOH_s3.orR
 
   //[Alias] TODO: may change this to ren?
-  val data_unready_s3 = hasData_s3 && (!mshr_req_s3/* || need_data_alias*/)
+  val data_unready_s3 = hasData_s3 && !mshr_req_s3
   c_s3.valid := task_s3.valid && Mux(
     mshr_req_s3,
     mshr_release_s3 || mshr_probeack_s3,
@@ -321,7 +321,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   c_s3.bits.data.data := data_s3
   d_s3.valid := task_s3.valid && Mux(
     mshr_req_s3,
-    mshr_grant_s3/* && !need_data_alias*/ || mshr_accessackdata_s3 || mshr_accessack_s3,
+    mshr_grant_s3 || mshr_accessackdata_s3 || mshr_accessack_s3,
     req_s3.fromC || req_s3.fromA && !need_mshr_s3 && !data_unready_s3
   )
   d_s3.bits.task := source_req_s3
