@@ -102,7 +102,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.tasks.source_b.valid := !state.s_pprobe || !state.s_rprobe
   val mp_release_valid = !state.s_release && state.w_rprobeacklast
   val mp_probeack_valid = !state.s_probeack && state.w_pprobeacklast
-  val mp_grant_valid = !state.s_refill && state.w_grantlast && state.w_rprobeacklast // [Alias] grant after rprobe done
+  val mp_grant_valid = !state.s_refill && state.w_grantlast && state.w_rprobeacklast && state.s_release // [Alias] grant after rprobe done
   io.tasks.mainpipe.valid := mp_release_valid || mp_probeack_valid || mp_grant_valid
 
   val oa = io.tasks.source_a.bits
