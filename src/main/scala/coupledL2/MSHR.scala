@@ -151,7 +151,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_release.off := 0.U
   mp_release.alias := 0.U
   mp_release.opcode := Mux(
-    meta.dirty && isT(meta.state) || probeDirty,
+    meta.dirty && meta.state =/= INVALID || probeDirty,
     ReleaseData,
     Release
   )

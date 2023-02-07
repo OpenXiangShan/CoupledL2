@@ -239,7 +239,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   val need_data_on_hit_a = req_s3.fromA && !mshr_req_s3 && (req_get_s3 || req_s3.opcode === AcquireBlock)
   // read data ahead of time to prepare for ReleaseData later 
-  val need_data_on_miss_a = req_s3.fromA && !mshr_req_s3 && !dirResult_s3.hit && (meta_s3.state === TRUNK || meta_s3.state === TIP && meta_s3.dirty)
+  val need_data_on_miss_a = req_s3.fromA && !mshr_req_s3 && !dirResult_s3.hit && (meta_s3.state === TRUNK || (meta_s3.state === TIP || meta_s3.state === BRANCH) && meta_s3.dirty)
   val need_data_b = req_s3.fromB && !mshr_req_s3 && dirResult_s3.hit &&
     (meta_s3.state === TRUNK || meta_s3.state === TIP && meta_s3.dirty || req_s3.needProbeAckData)
   // val need_data_alias = mshr_grantdata_s3 && req_s3.aliasTask && !req_s3.useProbeData // probe-alias-Ack no data, use DS data
@@ -254,7 +254,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     cache_alias ||
     need_data_on_miss_a ||
     need_data_b && need_mshr_s3_b
-  val need_write_refillBuf = req_s3.fromA && !mshr_req_s3 && req_needT_s3 && dirResult_s3.hit && meta_s3.state === BRANCH
+  val need_write_refillBuf = req_s3.fromA && !mshr_req_s3 && req_needT_s3 && dirResult_s3.hit && meta_s3.state === BRANCH && !req_put_s3
   io.toDS.req_s3.valid := task_s3.valid && (ren || wen)
   io.toDS.req_s3.bits.way := Mux(mshr_req_s3, req_s3.way, dirResult_s3.way)
   io.toDS.req_s3.bits.set := Mux(mshr_req_s3, req_s3.set, dirResult_s3.set)
@@ -368,7 +368,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   // val beats_unready_s4 = (beatsOH_s4 & ~beatsOH_ready_s4).orR
   // val (beat_s4, next_beatsOH_s4) = getBeat(data_s4, beatsOH_s4)
   val isC_s4 = task_s4.bits.opcode(2, 1) === Release(2, 1) && task_s4.bits.fromA || task_s4.bits.opcode(2, 1) === ProbeAck(2, 1) && task_s4.bits.fromB
-  val isD_s4 = (task_s4.bits.opcode(2, 1) === Grant(2, 1) || task_s4.bits.opcode === AccessAckData) && task_s4.bits.fromA || task_s4.bits.fromC
+  val isD_s4 = (task_s4.bits.opcode(2, 1) === Grant(2, 1) || task_s4.bits.opcode === AccessAckData || task_s4.bits.opcode === AccessAck) && task_s4.bits.fromA || task_s4.bits.fromC
   val chnl_fire_s4 = (c_s4.fire() || d_s4.fire())// && !next_beatsOH_s4.orR
 
   c_s4.valid := task_s4.valid && !data_unready_s4 && isC_s4 && !need_write_releaseBuf_s4 && !need_write_refillBuf_s4
