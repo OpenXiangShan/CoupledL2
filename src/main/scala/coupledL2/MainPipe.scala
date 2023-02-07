@@ -301,7 +301,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     MetaEntry()
   )
 
-  io.tagWReq.valid := task_s3.valid && mshr_grant_s3 && req_s3.tagWen
+  io.tagWReq.valid := task_s3.valid && (mshr_grant_s3 || mshr_accessack_s3 || mshr_accessackdata_s3) && req_s3.tagWen
   io.tagWReq.bits.set := req_s3.set
   io.tagWReq.bits.way := req_s3.way
   io.tagWReq.bits.wtag := req_s3.tag

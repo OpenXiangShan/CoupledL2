@@ -87,7 +87,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   io.toMainPipe.mshr_alloc_ptr := OHToUInt(selectedMSHROH)
 
   val resp_sinkC_match_vec = mshrs.map(mshr =>
-    mshr.io.status.valid &&
+    mshr.io.status.valid && mshr.io.status.bits.w_c_resp &&
     io.resps.sinkC.set === mshr.io.status.bits.set &&
     io.resps.sinkC.tag === mshr.io.status.bits.tag
   )

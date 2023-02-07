@@ -97,6 +97,9 @@ class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val nestB = Bool()
   val needProbeAckData = Bool() // only for B reqs
   val pbIdx = UInt(mshrBits.W)
+  val w_c_resp = Bool()
+  val w_d_resp = Bool()
+  val w_e_resp = Bool()
 }
 
 // MSHR Task that MainPipe sends to MSHRCtl
