@@ -4,3 +4,6 @@
 [submodule "utility"]
 	path = utility
 	url = https://github.com/OpenXiangShan/utility
+[submodule "HuanCun"]
+	path = HuanCun
+	url = https://github.com/OpenXiangShan/HuanCun.git
