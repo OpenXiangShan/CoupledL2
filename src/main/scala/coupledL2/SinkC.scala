@@ -71,9 +71,10 @@ class SinkC(implicit p: Parameters) extends L2Module {
     task.tag := parseAddress(c.address)._1
     task.set := parseAddress(c.address)._2
     task.off := parseAddress(c.address)._3
-    task.alias := 0.U // TODO
+    task.alias := 0.U
     task.opcode := c.opcode
     task.param := c.param
+    task.size := c.size
     task.sourceId := c.source
     task.mshrTask := false.B
     task
@@ -130,6 +131,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
   io.resp.respInfo.opcode := io.c.bits.opcode
   io.resp.respInfo.param := io.c.bits.param
   io.resp.respInfo.last := last
+  io.resp.respInfo.dirty := io.c.bits.opcode(0)
 
   io.releaseBufWrite.valid := io.c.valid && io.c.bits.opcode === ProbeAckData
   io.releaseBufWrite.beat_sel := UIntToOH(beat)

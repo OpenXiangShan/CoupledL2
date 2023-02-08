@@ -28,7 +28,7 @@ import chipsalliance.rocketchip.config.Parameters
 class RequestArb(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     /* receive incoming tasks */
-    val sinkA = Flipped(DecoupledIO(new TLBundleA(edgeIn.bundle)))
+    val sinkA = Flipped(DecoupledIO(new TaskBundle))
     val sinkB = Flipped(DecoupledIO(new TLBundleB(edgeOut.bundle)))
     val sinkC = Flipped(DecoupledIO(new TaskBundle)) // sinkC is TaskBundle
     val mshrTask = Flipped(DecoupledIO(new TaskBundle))
@@ -47,13 +47,18 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     /* mshr full, from MSHRCtrl */
     // val mshrFull = Input(Bool())
 
-    /* status of s1 */
-    val status_s1 = Output(new PipeEntranceStatus)
+    /* status of each pipeline stage */
+    val status_s1 = Output(new PipeEntranceStatus) // set & tag of entrance status
+    val status_vec = Vec(2, ValidIO(new PipeStatus)) // whether this stage will flow into SourceD
 
-    /* handle set conflict and nestB */
+    /* handle set conflict, capacity conflict and nestB */
     val fromMSHRCtl = Input(new BlockInfo())
     val fromMainPipe = Input(new BlockInfo())
-    val fromGrantBuffer = Input(new BlockInfo())
+    // val fromGrantBuffer = Input(new BlockInfo())
+    val fromGrantBuffer = Input(new Bundle() {
+      val blockSinkReqEntrance = new BlockInfo()
+      val blockMSHRReqEntrance = Bool()
+    })
   })
 
   /* ======== Reset ======== */
@@ -69,28 +74,13 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   // val valids = RegInit(0.U(8.W))  // 7 stages
 
   /* ======== Stage 0 ======== */
-  io.mshrTask.ready := true.B  // TODO: when to block mshrTask?
+  io.mshrTask.ready := !io.fromGrantBuffer.blockMSHRReqEntrance
   val mshr_task_s0 = Wire(Valid(new TaskBundle()))
-  mshr_task_s0.valid := io.mshrTask.valid
+  mshr_task_s0.valid := io.mshrTask.fire()
   mshr_task_s0.bits := io.mshrTask.bits
 
   /* ======== Stage 1 ======== */
   /* Task generation and pipelining */
-  def fromTLAtoTaskBundle(a: TLBundleA): TaskBundle = {
-    val task = Wire(new TaskBundle)
-    task := DontCare
-    task.channel := "b001".U
-    task.tag := parseAddress(a.address)._1
-    task.set := parseAddress(a.address)._2
-    task.off := parseAddress(a.address)._3
-    task.alias := 0.U // TODO
-    task.opcode := a.opcode
-    task.param := a.param
-    task.sourceId := a.source
-    task.mshrTask := false.B
-    task
-  }
-
   def fromTLBtoTaskBundle(b: TLBundleB): TaskBundle = {
     val task = Wire(new TaskBundle)
     task := DontCare
@@ -98,9 +88,11 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     task.tag := parseAddress(b.address)._1
     task.set := parseAddress(b.address)._2
     task.off := parseAddress(b.address)._3
-    task.alias := 0.U // TODO
+    task.alias := 0.U
     task.opcode := b.opcode
     task.param := b.param
+    task.size := b.size
+    task.needProbeAckData := b.data(0) // TODO: parameterize this
     task.mshrTask := false.B
     task
   }
@@ -113,12 +105,12 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   }
 
   /* Channel interaction from s1 */
-  val A_task = fromTLAtoTaskBundle(io.sinkA.bits)
+  val A_task = io.sinkA.bits
   val B_task = fromTLBtoTaskBundle(io.sinkB.bits)
   val C_task = io.sinkC.bits
-  val block_A = io.fromMSHRCtl.blockA_s1 || io.fromMainPipe.blockA_s1 || io.fromGrantBuffer.blockA_s1
-  val block_B = io.fromMSHRCtl.blockB_s1 || io.fromMainPipe.blockB_s1 || io.fromGrantBuffer.blockB_s1
-  val block_C = io.fromMSHRCtl.blockC_s1 || io.fromMainPipe.blockC_s1 || io.fromGrantBuffer.blockC_s1
+  val block_A = io.fromMSHRCtl.blockA_s1 || io.fromMainPipe.blockA_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockA_s1
+  val block_B = io.fromMSHRCtl.blockB_s1 || io.fromMainPipe.blockB_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockB_s1
+  val block_C = io.fromMSHRCtl.blockC_s1 || io.fromMainPipe.blockC_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockC_s1
 
   val sinkValids = VecInit(Seq(
     io.sinkC.valid && !block_C,
@@ -146,10 +138,6 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   io.dirRead_s1.bits.replacerInfo.opcode := task_s1.bits.opcode
   io.dirRead_s1.bits.replacerInfo.channel := task_s1.bits.channel
 
-  /* status of s1 */
-  io.status_s1.sets := VecInit(Seq(C_task.set, B_task.set, A_task.set))
-  io.status_s1.b_tag := B_task.tag
-
   /* ========  Stage 2 ======== */
   val task_s2 = RegInit(0.U.asTypeOf(task_s1))
   task_s2.valid := task_s1.valid
@@ -159,18 +147,34 @@ class RequestArb(implicit p: Parameters) extends L2Module {
 
   // MSHR task
   val mshrTask_s2 = task_s2.valid && task_s2.bits.mshrTask
+  val mshrTask_s2_a_upwards = task_s2.bits.fromA &&
+    (task_s2.bits.opcode === GrantData || task_s2.bits.opcode === Grant ||
+      task_s2.bits.opcode === AccessAckData)
   // For GrantData, read refillBuffer
-  io.refillBufRead_s2.valid := mshrTask_s2 && task_s2.bits.fromA && task_s2.bits.opcode === GrantData
+  // Caution: GrantData-alias may read DataStorage or ReleaseBuf instead
+  io.refillBufRead_s2.valid := mshrTask_s2 && !task_s2.bits.useProbeData && mshrTask_s2_a_upwards
   io.refillBufRead_s2.id := task_s2.bits.mshrId
   // For ReleaseData or ProbeAckData, read releaseBuffer
   // channel is used to differentiate GrantData and ProbeAckData
-  io.releaseBufRead_s2.valid := mshrTask_s2 && (task_s2.bits.opcode === ReleaseData ||
-    task_s2.bits.fromB && task_s2.bits.opcode === ProbeAckData)
+  io.releaseBufRead_s2.valid := mshrTask_s2 && (
+    task_s2.bits.opcode === ReleaseData ||
+    task_s2.bits.fromB && task_s2.bits.opcode === ProbeAckData ||
+    task_s2.bits.fromA && task_s2.bits.useProbeData && mshrTask_s2_a_upwards)
   io.releaseBufRead_s2.id := task_s2.bits.mshrId
   assert(!io.refillBufRead_s2.valid || io.refillBufRead_s2.ready)
   assert(!io.releaseBufRead_s2.valid || io.releaseBufRead_s2.ready)
 
   require(beatSize == 2)
+
+  /* status of each pipeline stage */
+  io.status_s1.sets := VecInit(Seq(C_task.set, B_task.set, A_task.set))
+  io.status_s1.b_tag := B_task.tag
+  require(io.status_vec.size == 2)
+  io.status_vec.zip(Seq(task_s1, task_s2)).foreach {
+    case (status, task) =>
+      status.valid := task.valid
+      status.bits.channel := task.bits.channel
+  }
 
   dontTouch(io)
 }

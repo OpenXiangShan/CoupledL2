@@ -82,7 +82,6 @@ object rocketchip extends `rocket-chip`.common.CommonRocketChip {
 
 }
 
-
 object utility extends SbtModule with ScalafmtModule with CommonModule {
 
    override def ivyDeps = Agg(common.getVersion("chisel3"))

@@ -27,6 +27,15 @@ import chipsalliance.rocketchip.config.Field
 // General parameter key of CoupledL2
 case object L2ParamKey extends Field[L2Param](L2Param())
 
+// Indicate alias bit of upper level cache
+case object AliasKey extends ControlKey[UInt]("alias")
+case class AliasField(width: Int) extends BundleField(AliasKey) {
+  override def data: UInt = Output(UInt(width.W))
+  override def default(x: UInt): Unit = {
+    x := 0.U(width.W)
+  }
+}
+
 // Indicate whether this block is dirty or not (only used in handle Release/ReleaseData)
 // Now it only works for non-inclusive cache (ignored in inclusive cache)
 case object DirtyKey extends ControlKey[Bool](name = "blockisdirty")
@@ -38,7 +47,8 @@ case class DirtyField() extends BundleField(DirtyKey) {
   }
 }
 
-case class L2Param (
+case class L2Param
+(
   name: String = "L2",
   ways: Int = 4,
   sets: Int = 128,
@@ -50,7 +60,7 @@ case class L2Param (
   reqField: Seq[BundleFieldBase] = Nil, 
   respKey: Seq[BundleKeyBase] = Nil,
   // Manager
-  reqKey: Seq[BundleKeyBase] = Nil,
+  reqKey: Seq[BundleKeyBase] = Seq(AliasKey),
   respField: Seq[BundleFieldBase] = Nil,
 
   innerBuf: TLBufferParams = TLBufferParams(),
