@@ -37,6 +37,9 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     })
     val toReqArb = Output(new BlockInfo())
 
+    /* handle capacity conflict of GrantBuffer */
+    val status_vec = Vec(3, ValidIO(new PipeStatus))
+
     /* get dir result at stage 3 */
     val dirResp_s3 = Flipped(ValidIO(new DirResult))
 
@@ -436,6 +439,20 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     task_s3.valid && !task_s3.bits.mshrTask && task_s3.bits.set === io.fromReqArb.status_s1.a_set ||
     task_s4.valid && !task_s4.bits.mshrTask && task_s4.bits.set === io.fromReqArb.status_s1.a_set /*&& task_s4.bits.opcode(2, 1) === Grant(2, 1)*/ ||
     task_s5.valid && !task_s5.bits.mshrTask && task_s5.bits.set === io.fromReqArb.status_s1.a_set /*&& task_s5.bits.opcode(2, 1) === Grant(2, 1)*/
+
+  require(io.status_vec.size == 3)
+  io.status_vec(0).valid := task_s3.valid && Mux(
+    mshr_req_s3,
+    mshr_grant_s3 || mshr_accessackdata_s3 || mshr_accessack_s3,
+    req_s3.fromC || req_s3.fromA && !need_mshr_s3
+  )
+  io.status_vec(0).bits.channel := task_s3.bits.channel
+  io.status_vec(1).valid := task_s4.valid && isD_s4 && !need_write_releaseBuf_s4 && !need_write_refillBuf_s4
+  io.status_vec(1).bits.channel := task_s4.bits.channel
+  io.status_vec(2).valid := d_s5.valid
+  io.status_vec(2).bits.channel := task_s5.bits.channel
+
+
   // /* ======== Stage 6 ======== */
   // val task_s6 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
   // val beatsOH_s6 = RegInit(0.U(beatSize.W))

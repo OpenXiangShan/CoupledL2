@@ -74,6 +74,8 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   def hasData = opcode(0)
 }
 
+class PipeStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits
+
 class PipeEntranceStatus(implicit p: Parameters) extends L2Bundle {
   val sets = Vec(3, UInt(setBits.W))
   val b_tag = UInt(tagBits.W)

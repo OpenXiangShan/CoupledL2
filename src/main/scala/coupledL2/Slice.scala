@@ -98,6 +98,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
 
   grantBuf.io.d_task <> mainPipe.io.toSourceD
   grantBuf.io.fromReqArb.status_s1 := reqArb.io.status_s1
+  grantBuf.io.pipeStatusVec := reqArb.io.status_vec ++ mainPipe.io.status_vec
 
   /* input & output signals */
   val inBuf = cacheParams.innerBuf
