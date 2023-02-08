@@ -94,7 +94,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val req_acquire = req.opcode === AcquireBlock || req.opcode === AcquirePerm
   val req_put = req.opcode === PutFullData || req.opcode === PutPartialData
   val req_get = req.opcode === Get
-  val req_promoteT = req_acquire && Mux(dirResult.hit, meta_no_client && meta.state === TIP, gotT)
+  val req_promoteT = (req_acquire || req_get) && Mux(dirResult.hit, meta_no_client && meta.state === TIP, gotT)
 
   /* Task allocation */
   // Theoretically, data to be released is saved in ReleaseBuffer, so Acquire can be sent as soon as req enters mshr
