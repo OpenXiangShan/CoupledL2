@@ -45,26 +45,36 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val tag = UInt(tagBits.W)
   val off = UInt(offsetBits.W)
   val alias = UInt(aliasBits.W)           // color bits in cache-alias issue
-  val owner = UInt(ownerBits.W)           // who owns this block
+  val owner = UInt(ownerBits.W)           // who owns this block, TODO: unused
   val opcode = UInt(3.W)                  // type of the task operation
   val param = UInt(3.W)
+  val size = UInt(msgSizeBits.W)
   val sourceId = UInt(sourceIdBits.W)     // tilelink sourceID
   val id = UInt(idBits.W)                 // identity of the task
   val bufIdx = UInt(bufIdxBits.W)         // idx of SinkC buffer
+  val needProbeAckData = Bool()           // only used for SinkB reqs
 
   // val mshrOpType = UInt(mshrOpTypeBits.W) // type of the MSHR task operation
   // MSHR may send Release(Data) or Grant(Data) or ProbeAck(Data) through Main Pipe
   val mshrTask = Bool()                   // is task from mshr
   val mshrId = UInt(mshrBits.W)           // mshr entry index (used only in mshr-task)
+  val aliasTask = Bool()                  // Anti-alias
+  val useProbeData = Bool()               // data source, true for ReleaseBuf and false for RefillBuf
+
+  // For Put
+  val pbIdx = UInt(mshrBits.W)
 
   // if this is an mshr task and it needs to write dir
   val way = UInt(wayBits.W)
   val meta = new MetaEntry()
   val metaWen = Bool()
   val tagWen = Bool()
+  val dsWen = Bool()
 
   def hasData = opcode(0)
 }
+
+class PipeStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits
 
 class PipeEntranceStatus(implicit p: Parameters) extends L2Bundle {
   val sets = Vec(3, UInt(setBits.W))
@@ -82,8 +92,16 @@ class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val off = UInt(offsetBits.W)
   val opcode = UInt(3.W)
   val param = UInt(3.W)
+  val size = UInt(msgSizeBits.W)
   val source = UInt(sourceIdBits.W)
+  val alias = UInt(aliasBits.W)
+  val aliasTask = Bool()
   val nestB = Bool()
+  val needProbeAckData = Bool() // only for B reqs
+  val pbIdx = UInt(mshrBits.W)
+  val w_c_resp = Bool()
+  val w_d_resp = Bool()
+  val w_e_resp = Bool()
 }
 
 // MSHR Task that MainPipe sends to MSHRCtl
@@ -97,6 +115,7 @@ class RespInfoBundle(implicit p: Parameters) extends L2Bundle {
   val opcode = UInt(3.W)
   val param = UInt(3.W)
   val last = Bool() // last beat
+  val dirty = Bool() // only used for sinkD resps
 }
 
 class RespBundle(implicit p: Parameters) extends L2Bundle {
@@ -137,7 +156,9 @@ class SourceAReq(implicit p: Parameters) extends L2Bundle {
   val off = UInt(offsetBits.W)
   val opcode = UInt(3.W)
   val param = UInt(aWidth.W)
+  val size = UInt(msgSizeBits.W)
   val source = UInt(mshrBits.W)
+  val pbIdx = UInt(mshrBits.W)
 }
 
 class SourceBReq(implicit p: Parameters) extends L2Bundle {
@@ -146,6 +167,7 @@ class SourceBReq(implicit p: Parameters) extends L2Bundle {
   val off = UInt(offsetBits.W)
   val opcode = UInt(3.W)
   val param = UInt(bdWidth.W)
+  val alias = UInt(aliasBits.W)
 }
 
 class BlockInfo(implicit p: Parameters) extends L2Bundle {
@@ -161,4 +183,15 @@ class NestedWriteback(implicit p: Parameters) extends L2Bundle {
   val b_toB = Bool()
   val b_clr_dirty = Bool()
   val c_set_dirty = Bool()
+}
+
+// Put Buffer
+class PutBufferRead(implicit p: Parameters) extends L2Bundle {
+  val idx = UInt(mshrBits.W)
+  val count = UInt(beatBits.W)
+}
+
+class PutBufferEntry(implicit p: Parameters) extends L2Bundle {
+  val data = new DSBeat
+  val mask = UInt(beatBytes.W)
 }

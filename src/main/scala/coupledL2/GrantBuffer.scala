@@ -39,7 +39,11 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     val fromReqArb = Input(new Bundle() {
       val status_s1 = new PipeEntranceStatus
     })
-    val toReqArb = Output(new BlockInfo())
+    val pipeStatusVec = Flipped(Vec(5, ValidIO(new PipeStatus)))
+    val toReqArb = Output(new Bundle() {
+      val blockSinkReqEntrance = new BlockInfo()
+      val blockMSHRReqEntrance = Bool()
+    })
   })
 
   val beat_valids = RegInit(VecInit(Seq.fill(mshrsAll) {
@@ -47,7 +51,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   }))
   val block_valids = VecInit(beat_valids.map(_.asUInt.orR)).asUInt
   val tasks = Reg(Vec(mshrsAll, new TaskBundle))
-  val datas = Reg(Vec(mshrsAll, new DSBlock))
+  val datas = Reg(Vec(mshrsAll, new DSBlock ))
   val full = block_valids.andR
   val selectOH = ParallelPriorityMux(~block_valids, (0 until mshrsAll).map(i => (1 << i).U))
 
@@ -68,13 +72,22 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     inflight_grant_valid(id) := false.B
   }
 
-  io.toReqArb.blockA_s1 := Cat(inflight_grant.map { case (v, (set, _)) =>
+  // handle capacity conflict
+  val noSpaceForSinkReq = PopCount(Cat(VecInit(io.pipeStatusVec.tail.map { case s =>
+    s.valid && (s.bits.fromA || s.bits.fromC)
+  }).asUInt, block_valids)) >= mshrsAll.U
+  val noSpaceForMSHRReq = PopCount(Cat(VecInit(io.pipeStatusVec.map { case s =>
+    s.valid && s.bits.fromA
+  }).asUInt, block_valids)) >= mshrsAll.U
+
+  io.toReqArb.blockSinkReqEntrance.blockA_s1 := Cat(inflight_grant.map { case (v, (set, _)) =>
     v && set === io.fromReqArb.status_s1.a_set
-  }).orR
-  io.toReqArb.blockB_s1 := Cat(inflight_grant.map { case (v, (set, tag)) =>
+  }).orR || noSpaceForSinkReq
+  io.toReqArb.blockSinkReqEntrance.blockB_s1 := Cat(inflight_grant.map { case (v, (set, tag)) =>
     v && set === io.fromReqArb.status_s1.b_set && tag === io.fromReqArb.status_s1.b_tag
   }).orR
-  io.toReqArb.blockC_s1 := false.B
+  io.toReqArb.blockSinkReqEntrance.blockC_s1 := noSpaceForSinkReq
+  io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq
 
   selectOH.asBools.zipWithIndex.foreach {
     case (sel, i) =>
@@ -130,14 +143,19 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
       }
   }
 
-  TLArbiter.lowest(edgeIn, io.d, out_bundles:_*)
+  TLArbiter.robin(edgeIn, io.d, out_bundles:_*)
 
   io.d_task.ready := !full
+
+  // GrantBuf should always be ready.
+  // If not, block reqs at the entrance of the pipeline when GrantBuf is about to be full.
+  assert(!io.d_task.valid || io.d_task.ready) 
 
   io.e.ready := true.B
   io.e_resp := DontCare
   io.e_resp.valid := io.e.valid
   io.e_resp.mshrId := io.e.bits.sink
+  io.e_resp.respInfo := DontCare
   io.e_resp.respInfo.opcode := GrantAck
   io.e_resp.respInfo.last := true.B
 }
