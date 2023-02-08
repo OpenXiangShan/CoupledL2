@@ -59,6 +59,7 @@ trait HasCoupledL2Parameters {
 
   lazy val edgeIn = p(EdgeInKey)
   lazy val edgeOut = p(EdgeOutKey)
+  lazy val bankBits = p(BankBitsKey)
 
   lazy val clientBits = edgeIn.client.clients.count(_.supports.probe)
   lazy val sourceIdBits = edgeIn.bundle.sourceBits
@@ -75,8 +76,8 @@ trait HasCoupledL2Parameters {
   lazy val fullTagBits = fullAddressBits - setBits - offsetBits
   // width params without bank idx (used in slice)
   // TODO: consider bankbits
-  lazy val addressBits = fullAddressBits
-  lazy val tagBits = fullTagBits
+  lazy val addressBits = fullAddressBits - bankBits
+  lazy val tagBits = fullTagBits - bankBits
 
   lazy val outerSinkBits = edgeOut.bundle.sinkBits
 
@@ -110,7 +111,6 @@ trait HasCoupledL2Parameters {
 
   def parseAddress(x: UInt): (UInt, UInt, UInt) = {
     val offset = x
-    val bankBits = 0  // TODO: fix bankBits
     val set = offset >> (offsetBits + bankBits)
     val tag = set >> setBits
     (tag(tagBits - 1, 0), set(setBits - 1, 0), offset(offsetBits - 1, 0))
@@ -193,6 +193,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
 
   lazy val module = new LazyModuleImp(this) {
     val banks = node.in.size
+    val bankBits = if (banks == 1) 0 else log2Up(banks)
 
     def print_bundle_fields(fs: Seq[BundleFieldBase], prefix: String) = {
       if(fs.nonEmpty){
@@ -209,6 +210,19 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
       }
     }
 
+    def restoreAddress(x: UInt, idx: Int) = {
+      restoreAddressUInt(x, idx.U)
+    }
+    def restoreAddressUInt(x: UInt, idx: UInt) = {
+      if(bankBits == 0){
+        x
+      } else {
+        val high = x >> offsetBits
+        val low = x(offsetBits - 1, 0)
+        Cat(high, idx(bankBits - 1, 0), low)
+      }
+    }
+
     val slices = node.in.zip(node.out).zipWithIndex.map {
       case (((in, edgeIn), (out, edgeOut)), i) =>
         require(in.params.dataBits == out.params.dataBits)
@@ -217,12 +231,23 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
           Module(new Slice()(p.alterPartial {
             case EdgeInKey  => edgeIn
             case EdgeOutKey => edgeOut
+            case BankBitsKey => bankBits
           })) 
         }
         slice.io.in <> in
+        in.b.bits.address := restoreAddress(slice.io.in.b.bits.address, i)
         out <> slice.io.out
+        out.a.bits.address := restoreAddress(slice.io.out.a.bits.address, i)
+        out.c.bits.address := restoreAddress(slice.io.out.c.bits.address, i)
 
         slice
+    }
+
+    node.edges.in.headOption.foreach { n =>
+      n.client.clients.zipWithIndex.foreach {
+        case (c, i) =>
+          println(s"\t${i} <= ${c.name}")
+      }
     }
 
   }
