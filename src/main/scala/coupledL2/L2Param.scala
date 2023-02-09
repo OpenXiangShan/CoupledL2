@@ -77,3 +77,5 @@ case class L2Param
 case object EdgeInKey extends Field[TLEdgeIn]
 
 case object EdgeOutKey extends Field[TLEdgeOut]
+
+case object BankBitsKey extends Field[Int]
