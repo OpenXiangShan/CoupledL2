@@ -100,7 +100,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
       }
   }
   // If no prefetch, there never should be HintAck
-  assert(prefetchOpt.nonEmpty.B || io.d_task.bits.task.opcode =/= HintAck && io.d_task.valid)
+  assert(prefetchOpt.nonEmpty.B || !io.d_task.valid || io.d_task.bits.task.opcode =/= HintAck)
 
   def toTLBundleD(task: TaskBundle, data: UInt = 0.U) = {
     val d = Wire(new TLBundleD(edgeIn.bundle))
