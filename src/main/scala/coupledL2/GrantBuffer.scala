@@ -52,8 +52,8 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     VecInit(Seq.fill(beatSize)(false.B))
   }))
   val block_valids = VecInit(beat_valids.map(_.asUInt.orR)).asUInt
-  val tasks = Reg(Vec(mshrsAll, new TaskBundle))
-  val datas = Reg(Vec(mshrsAll, new DSBlock ))
+  val taskAll = Reg(Vec(mshrsAll, new TaskBundle))
+  val dataAll = Reg(Vec(mshrsAll, new DSBlock))
   val full = block_valids.andR
   val selectOH = ParallelPriorityMux(~block_valids, (0 until mshrsAll).map(i => (1 << i).U))
 
@@ -95,8 +95,8 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     case (sel, i) =>
       when (sel && io.d_task.fire() && !(io.d_task.bits.task.opcode === HintAck && !io.d_task.bits.task.fromL2pft.getOrElse(false.B))) {
         beat_valids(i).foreach(_ := true.B)
-        tasks(i) := io.d_task.bits.task
-        datas(i) := io.d_task.bits.data
+        taskAll(i) := io.d_task.bits.task
+        dataAll(i) := io.d_task.bits.data
       }
   }
   // If no prefetch, there never should be HintAck
@@ -131,11 +131,11 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   val out_bundles = Wire(Vec(mshrsAll, io.d.cloneType))
   out_bundles.zipWithIndex.foreach {
     case (out, i) =>
-      out.valid := block_valids(i) && tasks(i).opcode =/= HintAck // L1 does not need HintAck (for now)
-      val data = datas(i).data
+      out.valid := block_valids(i) && taskAll(i).opcode =/= HintAck // L1 does not need HintAck (for now)
+      val data = dataAll(i).data
       val beatsOH = beat_valids(i).asUInt
       val (beat, next_beatsOH) = getBeat(data, beatsOH)
-      out.bits := toTLBundleD(tasks(i), beat)
+      out.bits := toTLBundleD(taskAll(i), beat)
       val hasData = out.bits.opcode(0)
 
       when (out.fire()) {
@@ -152,9 +152,9 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     case (out, ins) =>
       ins.zipWithIndex.foreach {
         case (in, i) =>
-          in.valid := block_valids(i) && tasks(i).opcode === HintAck
-          in.bits.tag := tasks(i).tag
-          in.bits.set := tasks(i).set
+          in.valid := block_valids(i) && taskAll(i).opcode === HintAck
+          in.bits.tag := taskAll(i).tag
+          in.bits.set := taskAll(i).set
           when (in.fire()) {
             beat_valids(i).foreach(_ := false.B)
           }

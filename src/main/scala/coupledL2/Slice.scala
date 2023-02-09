@@ -101,6 +101,8 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   grantBuf.io.d_task <> mainPipe.io.toSourceD
   grantBuf.io.fromReqArb.status_s1 := reqArb.io.status_s1
   grantBuf.io.pipeStatusVec := reqArb.io.status_vec ++ mainPipe.io.status_vec
+  mshrCtl.io.pipeStatusVec(0) := reqArb.io.status_vec(1) // s2 status
+  mshrCtl.io.pipeStatusVec(1) := mainPipe.io.status_vec(0) // s3 status
 
   io.prefetch.foreach {
     p =>
