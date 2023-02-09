@@ -228,7 +228,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val need_data_on_miss_a = req_s3.fromA && !mshr_req_s3 && !dirResult_s3.hit && (meta_s3.state === TRUNK || (meta_s3.state === TIP || meta_s3.state === BRANCH) && meta_s3.dirty)
   val need_data_b = req_s3.fromB && !mshr_req_s3 && dirResult_s3.hit &&
     (meta_s3.state === TRUNK || meta_s3.state === TIP && meta_s3.dirty || req_s3.needProbeAckData)
-  // val need_data_alias = mshr_grantdata_s3 && req_s3.aliasTask && !req_s3.useProbeData // probe-alias-Ack no data, use DS data
 
   val ren = Mux(dirResult_s3.hit, need_data_on_hit_a, need_data_on_miss_a) || need_data_b// || need_data_alias
   val bufResp_s3 = RegNext(io.bufResp.data.asUInt) // for Release from C
@@ -424,7 +423,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   /* ======== Other Signals Assignment ======== */
   // Initial state assignment
-  // ! Caution: s_ and w_ are false valid
+  // ! Caution: s_ and w_ are false-as-valid
   when(req_s3.fromA) {
     alloc_state.s_refill := req_prefetch_s3   // no need to refill upwards for prefetch
     alloc_state.w_grantack := req_prefetch_s3 || req_get_s3 || req_put_s3
