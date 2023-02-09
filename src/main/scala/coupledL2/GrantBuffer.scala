@@ -23,6 +23,7 @@ import utility._
 import chipsalliance.rocketchip.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
+import coupledL2.prefetch.PrefetchResp
 
 // Send out Grant/GrantData/ReleaseAck through d and
 // receive GrantAck through e
@@ -44,6 +45,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
       val blockSinkReqEntrance = new BlockInfo()
       val blockMSHRReqEntrance = Bool()
     })
+    val prefetchResp = prefetchOpt.map(_ => DecoupledIO(new PrefetchResp))
   })
 
   val beat_valids = RegInit(VecInit(Seq.fill(mshrsAll) {
@@ -91,12 +93,14 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
 
   selectOH.asBools.zipWithIndex.foreach {
     case (sel, i) =>
-      when (sel && io.d_task.fire()) {
+      when (sel && io.d_task.fire() && !(io.d_task.bits.task.opcode === HintAck && !io.d_task.bits.task.fromL2pft.getOrElse(false.B))) {
         beat_valids(i).foreach(_ := true.B)
         tasks(i) := io.d_task.bits.task
         datas(i) := io.d_task.bits.data
       }
   }
+  // If no prefetch, there never should be HintAck
+  assert(prefetchOpt.nonEmpty.B || io.d_task.bits.task.opcode =/= HintAck && io.d_task.valid)
 
   def toTLBundleD(task: TaskBundle, data: UInt = 0.U) = {
     val d = Wire(new TLBundleD(edgeIn.bundle))
@@ -127,7 +131,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   val out_bundles = Wire(Vec(mshrsAll, io.d.cloneType))
   out_bundles.zipWithIndex.foreach {
     case (out, i) =>
-      out.valid := block_valids(i)
+      out.valid := block_valids(i) && tasks(i).opcode =/= HintAck // L1 does not need HintAck (for now)
       val data = datas(i).data
       val beatsOH = beat_valids(i).asUInt
       val (beat, next_beatsOH) = getBeat(data, beatsOH)
@@ -141,6 +145,21 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
           beat_valids(i).foreach(_ := false.B)
         }
       }
+  }
+
+  val pft_resps = prefetchOpt.map(_ => Wire(Vec(mshrsAll, DecoupledIO(new PrefetchResp))))
+  io.prefetchResp.zip(pft_resps).foreach {
+    case (out, ins) =>
+      ins.zipWithIndex.foreach {
+        case (in, i) =>
+          in.valid := block_valids(i) && tasks(i).opcode === HintAck
+          in.bits.tag := tasks(i).tag
+          in.bits.set := tasks(i).set
+          when (in.fire()) {
+            beat_valids(i).foreach(_ := false.B)
+          }
+      }
+      fastArb(ins, out, Some("pft_resp_arb"))
   }
 
   TLArbiter.robin(edgeIn, io.d, out_bundles:_*)

@@ -21,13 +21,14 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import utility.FastArbiter
+import utility.{FastArbiter, Pipeline}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.util._
 import chipsalliance.rocketchip.config.Parameters
 import scala.math.max
+import coupledL2.prefetch._
 
 trait HasCoupledL2Parameters {
   val p: Parameters
@@ -44,6 +45,7 @@ trait HasCoupledL2Parameters {
   val beatBits = offsetBits - log2Ceil(beatBytes)
   val stateBits = MetaData.stateBits
   val aliasBits = 2
+  val pageOffsetBits = log2Ceil(cacheParams.pageBytes)
 
   val mshrsAll = 16
   val idsAll = 128 // TODO: parameterize this?
@@ -56,6 +58,10 @@ trait HasCoupledL2Parameters {
   val sramLatency = 2
 
   val releaseBufWPorts = 3 // sinkC and mainpipe s5, s6
+  
+  // Prefetch
+  val prefetchOpt = cacheParams.prefetch
+  val hasPrefetchBit = prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchBit
 
   lazy val edgeIn = p(EdgeInKey)
   lazy val edgeOut = p(EdgeOutKey)
@@ -109,11 +115,22 @@ trait HasCoupledL2Parameters {
     }
   }
 
+  def parseFullAddress(x: UInt): (UInt, UInt, UInt) = {
+    val offset = x // TODO: check address mapping
+    val set = offset >> offsetBits
+    val tag = set >> setBits
+    (tag(fullTagBits - 1, 0), set(setBits - 1, 0), offset(offsetBits - 1, 0))
+  }
+
   def parseAddress(x: UInt): (UInt, UInt, UInt) = {
     val offset = x
     val set = offset >> (offsetBits + bankBits)
     val tag = set >> setBits
     (tag(tagBits - 1, 0), set(setBits - 1, 0), offset(offsetBits - 1, 0))
+  }
+
+  def getPPN(x: UInt): UInt = {
+    x(x.getWidth - 1, pageOffsetBits)
   }
 
   def fastArb[T <: Bundle](in: Seq[DecoupledIO[T]], out: DecoupledIO[T], name: Option[String] = None): Unit = {
@@ -191,10 +208,28 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     managerFn = managerPortParams
   )
 
+  val pf_recv_node: Option[BundleBridgeSink[PrefetchRecv]] = prefetchOpt match {
+    case Some(_: PrefetchReceiverParams) =>
+      Some(BundleBridgeSink(Some(() => new PrefetchRecv)))
+    case _ => None
+  }
+
   lazy val module = new LazyModuleImp(this) {
     val banks = node.in.size
     val bankBits = if (banks == 1) 0 else log2Up(banks)
 
+    // Display info
+    val sizeBytes = cacheParams.toCacheParams.capacity.toDouble
+    def sizeBytesToStr(sizeBytes: Double): String = sizeBytes match {
+      case _ if sizeBytes >= 1024 * 1024 => (sizeBytes / 1024 / 1024) + "MB"
+      case _ if sizeBytes >= 1024        => (sizeBytes / 1024) + "KB"
+      case _                            => "B"
+    }
+    val sizeStr = sizeBytesToStr(sizeBytes)
+    val prefetch = "prefetch: " + cacheParams.prefetch
+    println(s"====== Inclusive ${cacheParams.name} ($sizeStr * $banks-bank) $prefetch ======")
+    println(s"bankBits: ${bankBits}")
+    println(s"sets:${cacheParams.sets} ways:${cacheParams.ways} blockBytes:${cacheParams.blockBytes}")
     def print_bundle_fields(fs: Seq[BundleFieldBase], prefix: String) = {
       if(fs.nonEmpty){
         println(fs.map{f => s"$prefix/${f.key.name}: (${f.data.getWidth}-bit)"}.mkString("\n"))
@@ -210,6 +245,32 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
       }
     }
 
+    // connection between prefetcher and the slices
+    val pftParams: Parameters = p.alterPartial {
+      case EdgeInKey => node.in.head._2
+      case EdgeOutKey => node.out.head._2
+      case BankBitsKey => bankBits
+    }
+    val prefetcher = prefetchOpt.map(_ => Module(new Prefetcher()(pftParams)))
+    val prefetchTrains = prefetchOpt.map(_ => Wire(Vec(banks, DecoupledIO(new PrefetchTrain()(pftParams)))))
+    val prefetchResps = prefetchOpt.map(_ => Wire(Vec(banks, DecoupledIO(new PrefetchResp()(pftParams)))))
+    val prefetchReqsReady = WireInit(VecInit(Seq.fill(banks)(false.B)))
+    prefetchOpt.foreach {
+      _ =>
+        fastArb(prefetchTrains.get, prefetcher.get.io.train, Some("prefetch_train"))
+        prefetcher.get.io.req.ready := Cat(prefetchReqsReady).orR
+        fastArb(prefetchResps.get, prefetcher.get.io.resp, Some("prefetch_resp"))
+    }
+    pf_recv_node match {
+      case Some(x) =>
+        prefetcher.get.io.recv_addr.valid := x.in.head._1.addr_valid
+        prefetcher.get.io.recv_addr.bits := x.in.head._1.addr
+        prefetcher.get.io_l2_pf_en := x.in.head._1.l2_pf_en
+      case None =>
+        prefetcher.foreach(_.io.recv_addr := DontCare)
+        prefetcher.foreach(_.io_l2_pf_en := DontCare)
+    }
+
     def restoreAddress(x: UInt, idx: Int) = {
       restoreAddressUInt(x, idx.U)
     }
@@ -221,6 +282,9 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
         val low = x(offsetBits - 1, 0)
         Cat(high, idx(bankBits - 1, 0), low)
       }
+    }
+    def bank_eq(set: UInt, bankId: Int, bankBits: Int): Bool = {
+      if(bankBits == 0) true.B else set(bankBits - 1, 0) === bankId.U
     }
 
     val slices = node.in.zip(node.out).zipWithIndex.map {
@@ -240,14 +304,33 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
         out.a.bits.address := restoreAddress(slice.io.out.a.bits.address, i)
         out.c.bits.address := restoreAddress(slice.io.out.c.bits.address, i)
 
-        slice
-    }
+        slice.io.prefetch.zip(prefetcher).foreach {
+          case (s, p) =>
+            s.req.valid := p.io.req.valid && bank_eq(p.io.req.bits.set, i, bankBits)
+            s.req.bits := p.io.req.bits
+            prefetchReqsReady(i) := s.req.ready && bank_eq(p.io.req.bits.set, i, bankBits)
+            val train = Pipeline(s.train)
+            val resp = Pipeline(s.resp)
+            prefetchTrains.get(i) <> train
+            prefetchResps.get(i) <> resp
+            // restore to full address
+            if(bankBits != 0){
+              val train_full_addr = Cat(
+                train.bits.tag, train.bits.set, i.U(bankBits.W), 0.U(offsetBits.W)
+              )
+              val (train_tag, train_set, _) = s.parseFullAddress(train_full_addr)
+              val resp_full_addr = Cat(
+                resp.bits.tag, resp.bits.set, i.U(bankBits.W), 0.U(offsetBits.W)
+              )
+              val (resp_tag, resp_set, _) = s.parseFullAddress(resp_full_addr)
+              prefetchTrains.get(i).bits.tag := train_tag
+              prefetchTrains.get(i).bits.set := train_set
+              prefetchResps.get(i).bits.tag := resp_tag
+              prefetchResps.get(i).bits.set := resp_set
+            }
+        }
 
-    node.edges.in.headOption.foreach { n =>
-      n.client.clients.zipWithIndex.foreach {
-        case (c, i) =>
-          println(s"\t${i} <= ${c.name}")
-      }
+        slice
     }
 
   }

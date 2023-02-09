@@ -23,6 +23,8 @@ import freechips.rocketchip.diplomacy.BufferParams
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util._
 import chipsalliance.rocketchip.config.Field
+import huancun.CacheParameters
+import coupledL2.prefetch._
 
 // General parameter key of CoupledL2
 case object L2ParamKey extends Field[L2Param](L2Param())
@@ -33,6 +35,15 @@ case class AliasField(width: Int) extends BundleField(AliasKey) {
   override def data: UInt = Output(UInt(width.W))
   override def default(x: UInt): Unit = {
     x := 0.U(width.W)
+  }
+}
+
+// Indicate whether Hint is needed by upper level cache
+case object PrefetchKey extends ControlKey[Bool](name = "needHint")
+case class PrefetchField() extends BundleField(PrefetchKey) {
+  override def data: Bool = Output(Bool())
+  override def default(x: Bool): Unit = {
+    x := false.B
   }
 }
 
@@ -53,6 +64,7 @@ case class L2Param
   ways: Int = 4,
   sets: Int = 128,
   blockBytes: Int = 64,
+  pageBytes: Int = 4096,
   channelBytes: TLChannelBeatBytes = TLChannelBeatBytes(32),
 
   // Client
@@ -70,8 +82,20 @@ case class L2Param
     c = BufferParams.default,
     d = BufferParams.default,
     e = BufferParams.default
-  )
+  ),
+  clientCaches: Seq[CacheParameters] = Nil,
+
+  // Prefetch
+  prefetch: Option[PrefetchParameters] = None
 ) {
+  def toCacheParams: CacheParameters = CacheParameters(
+    name = name,
+    sets = sets,
+    ways = ways,
+    blockGranularity = log2Ceil(sets),
+    blockBytes = blockBytes,
+    inner = clientCaches
+  )
 }
 
 case object EdgeInKey extends Field[TLEdgeIn]

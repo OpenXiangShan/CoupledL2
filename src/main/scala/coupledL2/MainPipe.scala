@@ -104,14 +104,13 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   // send out MSHR task if data is not needed
   val task_s2 = io.taskFromArb_s2
   val hasData_s2 = task_s2.bits.opcode(0)
-  val isGrant_s2 = task_s2.bits.fromA && task_s2.bits.opcode === Grant
 
   io.bufRead.valid := task_s2.valid && task_s2.bits.fromC && task_s2.bits.opcode(0)
   io.bufRead.bits.bufIdx := task_s2.bits.bufIdx
 
   /* ======== Stage 3 ======== */
   val task_s3 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
-  task_s3.valid := task_s2.valid// && !chnl_fire_s2
+  task_s3.valid := task_s2.valid
   when(task_s2.valid) {
     task_s3.bits := task_s2.bits
   }
@@ -171,6 +170,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   ms_task.aliasTask := cache_alias
   ms_task.useProbeData := false.B
   ms_task.pbIdx := req_s3.pbIdx
+  ms_task.fromL2pft.foreach(_ := req_s3.fromL2pft.get)
+  ms_task.needHint.foreach(_ := req_s3.needHint.get)
   //
   ms_task.way := dirResult_s3.way
   //
@@ -214,6 +215,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val mshr_grantdata_s3     = mshr_req_s3 && req_s3.fromA && req_s3.opcode === GrantData
   val mshr_accessackdata_s3 = mshr_req_s3 && req_s3.fromA && req_s3.opcode === AccessAckData
   val mshr_accessack_s3     = mshr_req_s3 && req_s3.fromA && req_s3.opcode === AccessAck
+  val mshr_hintack_s3       = mshr_req_s3 && req_s3.fromA && req_s3.opcode === HintAck
   val mshr_probeack_s3      = mshr_req_s3 && req_s3.fromB && req_s3.opcode(2, 1) === ProbeAck(2, 1) // ProbeAck or ProbeAckData from mshr
   val mshr_probeackdata_s3  = mshr_req_s3 && req_s3.fromB && req_s3.opcode === ProbeAckData
   val mshr_release_s3       = mshr_req_s3 && req_s3.opcode(2, 1) === Release(2, 1) // voluntary Release or ReleaseData from mshr
@@ -221,7 +223,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   // write/read data storage
   val wen_c = !mshr_req_s3 && req_s3.fromC && isParamFromT(req_s3.param) && req_s3.opcode(0)
-  val wen = wen_c || req_s3.dsWen && (mshr_grant_s3 || mshr_accessackdata_s3 || mshr_probeack_s3)
+  val wen = wen_c || req_s3.dsWen && (mshr_grant_s3 || mshr_accessackdata_s3 || mshr_probeack_s3 || mshr_hintack_s3)
 
   val need_data_on_hit_a = req_s3.fromA && !mshr_req_s3 && (req_get_s3 || req_s3.opcode === AcquireBlock)
   // read data ahead of time to prepare for ReleaseData later 
@@ -240,7 +242,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     cache_alias ||
     need_data_on_miss_a ||
     need_data_b && need_mshr_s3_b
-  val need_write_refillBuf = req_s3.fromA && !mshr_req_s3 && req_needT_s3 && dirResult_s3.hit && meta_s3.state === BRANCH && !req_put_s3
+  val need_write_refillBuf = req_s3.fromA && !mshr_req_s3 && req_needT_s3 && dirResult_s3.hit && meta_s3.state === BRANCH && !req_put_s3 && !req_prefetch_s3
   io.toDS.req_s3.valid := task_s3.valid && (ren || wen)
   io.toDS.req_s3.bits.way := Mux(mshr_req_s3, req_s3.way, dirResult_s3.way)
   io.toDS.req_s3.bits.set := Mux(mshr_req_s3, req_s3.set, dirResult_s3.set)
@@ -256,7 +258,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     )
   )
 
-  val metaW_valid_s3_a = !mshr_req_s3 && req_s3.fromA && !need_mshr_s3_a && !req_get_s3// && !meta_s3.clients.orR
+  val metaW_valid_s3_a = !mshr_req_s3 && req_s3.fromA && !need_mshr_s3_a && !req_get_s3 && !req_prefetch_s3
   val metaW_valid_s3_b = !mshr_req_s3 && req_s3.fromB && !need_mshr_s3_b && (meta_s3.state === TIP || meta_s3.state === BRANCH && req_s3.param === toN)
   val metaW_valid_s3_c = !mshr_req_s3 && req_s3.fromC
   val metaW_valid_s3_mshr = mshr_req_s3 && req_s3.metaWen
@@ -287,7 +289,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     MetaEntry()
   )
 
-  io.tagWReq.valid := task_s3.valid && (mshr_grant_s3 || mshr_accessack_s3 || mshr_accessackdata_s3) && req_s3.tagWen
+  io.tagWReq.valid := task_s3.valid && (mshr_grant_s3 || mshr_accessack_s3 || mshr_accessackdata_s3 || mshr_hintack_s3) && req_s3.tagWen
   io.tagWReq.bits.set := req_s3.set
   io.tagWReq.bits.way := req_s3.way
   io.tagWReq.bits.wtag := req_s3.tag
@@ -307,7 +309,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   c_s3.bits.data.data := data_s3
   d_s3.valid := task_s3.valid && Mux(
     mshr_req_s3,
-    mshr_grant_s3 || mshr_accessackdata_s3 || mshr_accessack_s3,
+    mshr_grant_s3 || mshr_accessackdata_s3 || mshr_accessack_s3 || mshr_hintack_s3,
     req_s3.fromC || req_s3.fromA && !need_mshr_s3 && !data_unready_s3
   )
   d_s3.bits.task := source_req_s3
@@ -324,8 +326,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   /* ======== Stage 4 ======== */
   val task_s4 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
-  // val beatsOH_s4 = RegInit(0.U(beatSize.W))
-  // val beatsOH_ready_s4 = RegInit(0.U(beatSize.W))
   val data_unready_s4 = Reg(Bool())
   val data_s4 = Reg(UInt((blockBytes * 8).W))
   val ren_s4 = RegInit(false.B)
@@ -335,19 +335,19 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   when (task_s3.valid) {
     task_s4.bits := source_req_s3
     task_s4.bits.mshrId := Mux(!task_s3.bits.mshrTask && need_mshr_s3, io.fromMSHRCtl.mshr_alloc_ptr, source_req_s3.mshrId)
-    // beatsOH_s4 := Mux(c_s3.fire() || d_s3.fire(), next_beatsOH_s3, beatsOH_s3)
-    // beatsOH_ready_s4 := beatsOH_ready_s3
     data_unready_s4 := data_unready_s3
     data_s4 := data_s3
     ren_s4 := ren
     need_write_releaseBuf_s4 := need_write_releaseBuf
     need_write_refillBuf_s4 := need_write_refillBuf
   }
-  // val beats_unready_s4 = (beatsOH_s4 & ~beatsOH_ready_s4).orR
-  // val (beat_s4, next_beatsOH_s4) = getBeat(data_s4, beatsOH_s4)
   val isC_s4 = task_s4.bits.opcode(2, 1) === Release(2, 1) && task_s4.bits.fromA || task_s4.bits.opcode(2, 1) === ProbeAck(2, 1) && task_s4.bits.fromB
-  val isD_s4 = (task_s4.bits.opcode(2, 1) === Grant(2, 1) || task_s4.bits.opcode === AccessAckData || task_s4.bits.opcode === AccessAck) && task_s4.bits.fromA || task_s4.bits.fromC
-  val chnl_fire_s4 = (c_s4.fire() || d_s4.fire())// && !next_beatsOH_s4.orR
+  val isD_s4 = task_s4.bits.fromA && (
+    task_s4.bits.opcode(2, 1) === Grant(2, 1) ||
+    task_s4.bits.opcode(2, 1) === AccessAck(2, 1) ||
+    task_s4.bits.opcode === HintAck
+  ) || task_s4.bits.fromC
+  val chnl_fire_s4 = c_s4.fire() || d_s4.fire()
 
   c_s4.valid := task_s4.valid && !data_unready_s4 && isC_s4 && !need_write_releaseBuf_s4 && !need_write_refillBuf_s4
   d_s4.valid := task_s4.valid && !data_unready_s4 && isD_s4 && !need_write_releaseBuf_s4 && !need_write_refillBuf_s4
@@ -375,7 +375,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   }
   val rdata_s5 = io.toDS.rdata_s5.data
   val merged_data_s5 = Mux(ren_s5, rdata_s5, data_s5)
-  val chnl_fire_s5 = (c_s5.fire() || d_s5.fire())
+  val chnl_fire_s5 = c_s5.fire() || d_s5.fire()
 
   io.releaseBufWrite.valid := task_s5.valid && need_write_releaseBuf_s5
   io.releaseBufWrite.beat_sel := Fill(beatSize, 1.U(1.W))
@@ -426,7 +426,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   // Initial state assignment
   // ! Caution: s_ and w_ are false valid
   when(req_s3.fromA) {
-    alloc_state.s_refill := req_prefetch_s3   // no need to refill upwards for prefetch
+    alloc_state.s_refill := false.B
     alloc_state.w_grantack := req_prefetch_s3 || req_get_s3 || req_put_s3
     // need replacement
     when(!dirResult_s3.hit && meta_s3.state =/= INVALID) {
@@ -452,6 +452,12 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       alloc_state.s_rprobe := false.B
       alloc_state.w_rprobeackfirst := false.B
       alloc_state.w_rprobeacklast := false.B
+    }
+    // need trigger a prefetch, send PrefetchTrain msg to Prefetcher
+    prefetchOpt.foreach {_ =>
+      when (req_s3.fromA && req_s3.needHint.getOrElse(false.B) && (!dirResult_s3.hit || meta_s3.prefetch.get)) {
+        alloc_state.s_triggerprefetch.foreach(_ := false.B)
+      }
     }
   }
   when(req_s3.fromB) {

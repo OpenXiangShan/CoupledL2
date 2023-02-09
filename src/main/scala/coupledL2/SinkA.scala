@@ -22,10 +22,13 @@ import chisel3.util._
 import chipsalliance.rocketchip.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
+import freechips.rocketchip.tilelink.TLHints._
+import coupledL2.prefetch.PrefetchReq
 
 class SinkA(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val a = Flipped(DecoupledIO(new TLBundleA(edgeIn.bundle)))
+    val prefetchReq = prefetchOpt.map(_ => Flipped(DecoupledIO(new PrefetchReq)))
     val toReqArb = DecoupledIO(new TaskBundle)
     val pbRead = Flipped(DecoupledIO(new PutBufferRead))
     val pbResp = ValidIO(new PutBufferEntry)
@@ -59,7 +62,10 @@ class SinkA(implicit p: Parameters) extends L2Module {
     beatValids(io.pbRead.bits.idx)(io.pbRead.bits.count) := false.B
   }
 
-  io.a.ready := !first || io.toReqArb.ready && !noSpace
+  val commonReq = Wire(io.toReqArb.cloneType)
+  val prefetchReq = prefetchOpt.map(_ => Wire(io.toReqArb.cloneType))
+
+  io.a.ready := !first || commonReq.ready && !noSpace
 
   def fromTLAtoTaskBundle(a: TLBundleA): TaskBundle = {
     val task = Wire(new TaskBundle)
@@ -75,10 +81,40 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.sourceId := a.source
     task.mshrTask := false.B
     task.pbIdx := insertIdx
+    task.fromL2pft.foreach(_ := false.B)
+    task.needHint.foreach(_ := a.user.lift(PrefetchKey).getOrElse(false.B))
     task
   }
-  io.toReqArb.valid := io.a.valid && first && !noSpace
-  io.toReqArb.bits := fromTLAtoTaskBundle(io.a.bits)
+  def fromPrefetchReqtoTaskBundle(req: PrefetchReq): TaskBundle = {
+    val task = Wire(new TaskBundle)
+    val fullAddr = Cat(req.tag, req.set, 0.U(offsetBits.W))
+    task := DontCare
+    task.channel := "b001".U
+    task.tag := parseAddress(fullAddr)._1
+    task.set := parseAddress(fullAddr)._2
+    task.off := 0.U
+    task.alias := 0.U // TODO: check this
+    task.opcode := Hint
+    task.param := Mux(req.needT, PREFETCH_WRITE, PREFETCH_READ)
+    task.size := offsetBits.U
+    task.sourceId := req.source
+    task.needProbeAckData := false.B
+    task.mshrTask := false.B
+    task.aliasTask := false.B
+    task.fromL2pft.foreach(_ := req.isBOP)
+    task.needHint.foreach(_ := false.B)
+    task
+  }
+  commonReq.valid := io.a.valid && first && !noSpace
+  commonReq.bits := fromTLAtoTaskBundle(io.a.bits)
+  if (prefetchOpt.nonEmpty) {
+    prefetchReq.get.valid := io.prefetchReq.get.valid
+    prefetchReq.get.bits := fromPrefetchReqtoTaskBundle(io.prefetchReq.get.bits)
+    io.prefetchReq.get.ready := prefetchReq.get.ready
+    fastArb(Seq(commonReq, prefetchReq.get), io.toReqArb)
+  } else {
+    io.toReqArb <> commonReq
+  }
 
   io.pbRead.ready := beatValids(io.pbRead.bits.idx)(io.pbRead.bits.count)
   assert(!io.pbRead.valid || io.pbRead.ready)

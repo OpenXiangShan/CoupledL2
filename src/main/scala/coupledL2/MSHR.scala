@@ -25,12 +25,14 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
 import chipsalliance.rocketchip.config.Parameters
+import coupledL2.prefetch.PrefetchTrain
 
 class MSHRTasks(implicit p: Parameters) extends L2Bundle {
   // outer
   val source_a = DecoupledIO(new SourceAReq) // To AcquireUnit  // TODO: no need to use decoupled handshake
   val source_b = DecoupledIO(new SourceBReq)
   val mainpipe = DecoupledIO(new TaskBundle) // To Mainpipe (SourceC or SourceD)
+  val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain)) // To prefetcher
 }
 
 class MSHRResps(implicit p: Parameters) extends L2Bundle {
@@ -79,6 +81,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     status_reg.bits.alias := ms_task.alias
     status_reg.bits.aliasTask := ms_task.aliasTask
     status_reg.bits.pbIdx := ms_task.pbIdx
+    status_reg.bits.fromL2pft.foreach(_ := ms_task.fromL2pft.get)
     gotT := false.B
     gotDirty := false.B
     probeDirty := false.B
@@ -88,13 +91,15 @@ class MSHR(implicit p: Parameters) extends L2Module {
   /* Intermediate logic */
   val req = status_reg.bits
   val meta = dirResult.meta
+  val meta_pft = meta.prefetch.getOrElse(false.B)
   val meta_no_client = !meta.clients.orR
 
   val req_needT = needT(req.opcode, req.param)
-  val req_acquire = req.opcode === AcquireBlock || req.opcode === AcquirePerm
+  val req_acquire = req.opcode === AcquireBlock && req.fromA || req.opcode === AcquirePerm // AcquireBlock and Probe share the same opcode
   val req_put = req.opcode === PutFullData || req.opcode === PutPartialData
   val req_get = req.opcode === Get
-  val req_promoteT = (req_acquire || req_get) && Mux(dirResult.hit, meta_no_client && meta.state === TIP, gotT)
+  val req_prefetch = req.opcode === Hint
+  val req_promoteT = (req_acquire || req_get || req_prefetch) && Mux(dirResult.hit, meta_no_client && meta.state === TIP, gotT)
 
   /* Task allocation */
   // Theoretically, data to be released is saved in ReleaseBuffer, so Acquire can be sent as soon as req enters mshr
@@ -104,6 +109,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val mp_probeack_valid = !state.s_probeack && state.w_pprobeacklast
   val mp_grant_valid = !state.s_refill && state.w_grantlast && state.w_rprobeacklast && state.s_release // [Alias] grant after rprobe done
   io.tasks.mainpipe.valid := mp_release_valid || mp_probeack_valid || mp_grant_valid
+  io.tasks.prefetchTrain.foreach(t => t.valid := !state.s_triggerprefetch.getOrElse(true.B))
 
   val oa = io.tasks.source_a.bits
   oa := DontCare
@@ -202,7 +208,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
       )
     ),
     clients = Fill(clientBits, !probeGotN),
-    alias = meta.alias //[Alias] TODO: Keep alias bits unchanged
+    alias = meta.alias, //[Alias] TODO: Keep alias bits unchanged
+    prefetch = req.param =/= toN && meta_pft
   )
   mp_probeack.metaWen := true.B
   mp_probeack.tagWen := false.B
@@ -216,7 +223,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_grant.sourceId := req.source
   mp_grant.opcode := odOpGen(req.opcode)
   mp_grant.param := Mux(
-    req_get || req_put,
+    req_get || req_put || req_prefetch,
     0.U, // Get/Put -> AccessAckData/AccessAck
     MuxLookup( // Acquire -> Grant
       req.param,
@@ -236,6 +243,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   // [Alias] write probeData into DS for alias-caused Probe,
   // but not replacement-cased Probe
   mp_grant.useProbeData := dirResult.hit && req_get || req.aliasTask
+  mp_grant.fromL2pft.foreach(_ := req.fromL2pft.get)
 
   val meta_alias = WireInit(meta.alias)
   meta_alias(0) := req.alias
@@ -250,12 +258,17 @@ class MSHR(implicit p: Parameters) extends L2Module {
       ),
       Mux(
         req_promoteT || req_needT,
-        TRUNK,
+        Mux(req_prefetch, TIP, TRUNK),
         BRANCH
       )
     ),
-    clients = Fill(clientBits, !(req_get && (!dirResult.hit || meta_no_client || probeGotN))),
-    alias = meta_alias //[Alias] TODO: consider one client for now
+    clients = Mux(
+      req_prefetch,
+      Mux(dirResult.hit, meta.clients, Fill(clientBits, false.B)),
+      Fill(clientBits, !(req_get && (!dirResult.hit || meta_no_client || probeGotN)))
+    ),
+    alias = meta_alias, //[Alias] TODO: consider one client for now
+    prefetch = req_prefetch || dirResult.hit && meta_pft
   )
   mp_grant.metaWen := !req_put
   mp_grant.tagWen := !dirResult.hit && !req_put
@@ -268,6 +281,14 @@ class MSHR(implicit p: Parameters) extends L2Module {
       mp_probeack_valid -> mp_probeack
     )
   )
+
+  io.tasks.prefetchTrain.foreach {
+    train =>
+      train.bits.tag := req.tag
+      train.bits.set := req.set
+      train.bits.needT := req_needT
+      train.bits.source := req.source
+  }
 
   /* Task update */
   when (io.tasks.source_a.fire) {
@@ -285,6 +306,12 @@ class MSHR(implicit p: Parameters) extends L2Module {
     }.elsewhen (mp_probeack_valid) {
       state.s_probeack := true.B
     }
+  }
+  prefetchOpt.foreach {
+    _ =>
+      when (io.tasks.prefetchTrain.get.fire()) {
+        state.s_triggerprefetch.get := true.B
+      }
   }
 
   /* Refill response */
@@ -326,7 +353,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     state.w_grantack := true.B
   }
 
-  val no_schedule = state.s_refill && state.s_probeack
+  val no_schedule = state.s_refill && state.s_probeack && state.s_triggerprefetch.getOrElse(true.B)
   val no_wait = state.w_rprobeacklast && state.w_pprobeacklast && state.w_grantlast && state.w_releaseack && state.w_grantack
   when (no_schedule && no_wait && status_reg.valid) {
     status_reg.valid := false.B
