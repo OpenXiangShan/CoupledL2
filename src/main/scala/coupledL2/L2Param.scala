@@ -72,7 +72,7 @@ case class L2Param
   reqField: Seq[BundleFieldBase] = Nil, 
   respKey: Seq[BundleKeyBase] = Nil,
   // Manager
-  reqKey: Seq[BundleKeyBase] = Seq(AliasKey),
+  reqKey: Seq[BundleKeyBase] = Seq(AliasKey, PrefetchKey),
   respField: Seq[BundleFieldBase] = Nil,
 
   innerBuf: TLBufferParams = TLBufferParams(),
