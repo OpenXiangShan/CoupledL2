@@ -413,7 +413,10 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.status_vec(0).valid := task_s3.valid && Mux(
     mshr_req_s3,
     mshr_grant_s3 || mshr_accessackdata_s3 || mshr_accessack_s3,
-    req_s3.fromC || req_s3.fromA && !need_mshr_s3
+    true.B
+    // TODO: To consider grantBuffer capacity conflict,
+    // only " req_s3.fromC || req_s3.fromA && !need_mshr_s3 " is needed
+    // But to consider mshrFull, all channel_reqs are needed
   )
   io.status_vec(0).bits.channel := task_s3.bits.channel
   io.status_vec(1).valid := task_s4.valid && isD_s4 && !need_write_releaseBuf_s4 && !need_write_refillBuf_s4
