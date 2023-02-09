@@ -22,6 +22,7 @@ import chisel3.util._
 import utility._
 import chipsalliance.rocketchip.config.Parameters
 import freechips.rocketchip.tilelink._
+import coupledL2.prefetch.PrefetchTrain
 
 class MSHRSelector(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
@@ -57,6 +58,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     /* send reqs */
     val sourceA = DecoupledIO(new TLBundleA(edgeOut.bundle))
     val sourceB = DecoupledIO(new TLBundleB(edgeIn.bundle))
+    val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain))
 
     /* receive resps */
     val resps = Input(new Bundle() {
@@ -135,6 +137,12 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
 
   /* Arbitrate MSHR task to RequestArbiter */
   fastArb(mshrs.map(_.io.tasks.mainpipe), io.mshrTask, Some("mshr_task"))
+
+  /* Arbitrate prefetchTrains to Prefetcher */
+  prefetchOpt.foreach {
+    _ =>
+      fastArb(mshrs.map(_.io.tasks.prefetchTrain.get), io.prefetchTrain.get, Some("prefetch_train"))
+  }
 
   io.releaseBufWriteId := ParallelPriorityMux(resp_sinkC_match_vec, (0 until mshrsAll).map(i => i.U))
 

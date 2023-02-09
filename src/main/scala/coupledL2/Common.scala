@@ -64,6 +64,11 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   // For Put
   val pbIdx = UInt(mshrBits.W)
 
+  // For Intent
+  val fromL2pft = prefetchOpt.map(_ => Bool()) // Is the prefetch req from L2(BOP) or from L1 prefetch?
+                                          // If true, MSHR should send an ack to L2 prefetcher.
+  val needHint = prefetchOpt.map(_ => Bool())
+
   // if this is an mshr task and it needs to write dir
   val way = UInt(wayBits.W)
   val meta = new MetaEntry()
@@ -102,6 +107,8 @@ class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val w_c_resp = Bool()
   val w_d_resp = Bool()
   val w_e_resp = Bool()
+  val fromL2pft = prefetchOpt.map(_ => Bool())
+  val needHint = prefetchOpt.map(_ => Bool())
 }
 
 // MSHR Task that MainPipe sends to MSHRCtl
@@ -136,6 +143,7 @@ class FSMState(implicit p: Parameters) extends L2Bundle {
   val s_refill = Bool()   // respond grant upwards
   // val s_grantack = Bool() // respond grantack downwards
   // val s_writeback = Bool()// writeback tag/dir
+  val s_triggerprefetch = prefetchOpt.map(_ => Bool())
 
   // wait
   val w_rprobeackfirst = Bool()
@@ -194,4 +202,10 @@ class PutBufferRead(implicit p: Parameters) extends L2Bundle {
 class PutBufferEntry(implicit p: Parameters) extends L2Bundle {
   val data = new DSBeat
   val mask = UInt(beatBytes.W)
+}
+
+class PrefetchRecv extends Bundle {
+  val addr = UInt(64.W)
+  val addr_valid = Bool()
+  val l2_pf_en = Bool()
 }

@@ -7,6 +7,7 @@ import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import huancun._
+import coupledL2.prefetch._
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -89,7 +90,7 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
         channelBytes = TLChannelBeatBytes(cacheParams.blockBytes),
         minLatency = 1,
         echoFields = Nil,
-        requestFields = Seq(AliasField(2)),
+        requestFields = Seq(AliasField(2), PrefetchField()),
         responseKeys = cacheParams.respKey
       )
     ))
@@ -112,7 +113,11 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
       name = s"l2",
       ways = 4,
       sets = 128,
-      echoField = Seq(DirtyField())
+      echoField = Seq(DirtyField()),
+      prefetch = Some(BOPParameters(
+        rrTableEntries = 16,
+        rrTagBits = 6
+      ))
     )
   }))).node
 

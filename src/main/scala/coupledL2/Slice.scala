@@ -23,11 +23,13 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util.leftOR
 import chipsalliance.rocketchip.config.Parameters
 import coupledL2.utils._
+import coupledL2.prefetch.PrefetchIO
 
 class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val io = IO(new Bundle {
     val in = Flipped(TLBundle(edgeIn.bundle))
     val out = TLBundle(edgeOut.bundle)
+    val prefetch = prefetchOpt.map(_ => Flipped(new PrefetchIO))
   })
 
   val reqArb = Module(new RequestArb())
@@ -101,6 +103,14 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   grantBuf.io.pipeStatusVec := reqArb.io.status_vec ++ mainPipe.io.status_vec
   mshrCtl.io.pipeStatusVec(0) := reqArb.io.status_vec(1) // s2 status
   mshrCtl.io.pipeStatusVec(1) := mainPipe.io.status_vec(0) // s3 status
+
+  io.prefetch.foreach {
+    p =>
+      p.train <> mshrCtl.io.prefetchTrain.get
+      sinkA.io.prefetchReq.get <> p.req
+      p.resp <> grantBuf.io.prefetchResp.get
+      p.recv_addr := DontCare
+  }
 
   /* input & output signals */
   val inBuf = cacheParams.innerBuf
