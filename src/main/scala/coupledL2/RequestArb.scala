@@ -127,6 +127,8 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   chnl_task_s1.valid := io.dirRead_s1.ready && sinkValids.orR && resetFinish
   chnl_task_s1.bits := ParallelPriorityMux(sinkValids, Seq(C_task, B_task, A_task))
 
+  // mshr_task_s1 is s1_[reg]
+  // task_s1 is [wire] to s2_reg
   val task_s1 = Mux(mshr_task_s1.valid, mshr_task_s1, chnl_task_s1)
 
   /* Meta read request */

@@ -74,13 +74,18 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     /* read putBuffer */
     val pbRead = DecoupledIO(new PutBufferRead)
     val pbResp = Flipped(ValidIO(new PutBufferEntry))
+
+    /* status of s2 and s3 */
+    val pipeStatusVec = Flipped(Vec(2, ValidIO(new PipeStatus)))
   })
 
   val mshrs = Seq.fill(mshrsAll) { Module(new MSHR()) }
-
   val mshrValids = VecInit(mshrs.map(m => m.io.status.valid))
-  val mshrFull = PopCount(Cat(mshrs.map(_.io.status.valid))) >= (mshrsAll-2).U
-  val a_mshrFull = PopCount(Cat(mshrs.map(_.io.status.valid))) >= (mshrsAll-3).U // the last idle mshr should not be allocated for channel A req
+
+  val pipeReqCount = PopCount(Cat(io.pipeStatusVec.map(_.valid))) // TODO: consider add !mshrTask to optimize
+  val mshrCount = PopCount(Cat(mshrs.map(_.io.status.valid)))
+  val mshrFull = pipeReqCount + mshrCount >= mshrsAll.U
+  val a_mshrFull = pipeReqCount + mshrCount >= (mshrsAll-1).U // the last idle mshr should not be allocated for channel A req
   val mshrSelector = Module(new MSHRSelector())
   mshrSelector.io.idle := mshrs.map(m => !m.io.status.valid)
   val selectedMSHROH = mshrSelector.io.out.bits
