@@ -74,6 +74,8 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   def hasData = opcode(0)
 }
 
+class PipeStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits
+
 class PipeEntranceStatus(implicit p: Parameters) extends L2Bundle {
   val sets = Vec(3, UInt(setBits.W))
   val b_tag = UInt(tagBits.W)
@@ -97,6 +99,9 @@ class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val nestB = Bool()
   val needProbeAckData = Bool() // only for B reqs
   val pbIdx = UInt(mshrBits.W)
+  val w_c_resp = Bool()
+  val w_d_resp = Bool()
+  val w_e_resp = Bool()
 }
 
 // MSHR Task that MainPipe sends to MSHRCtl

@@ -33,6 +33,7 @@ class AcquireUnit(implicit p: Parameters) extends L2Module {
   })
 
   val a = io.sourceA
+  val a_out = Wire(a.cloneType)
   val a_acquire = Wire(a.cloneType)
   val a_put = Wire(a.cloneType)
   val task = io.task.bits
@@ -86,14 +87,16 @@ class AcquireUnit(implicit p: Parameters) extends L2Module {
   a_put.bits.opcode := s1_task.opcode
   a_put.bits.param := s1_task.param
   a_put.bits.size := s1_task.size // TODO
-  a_put.bits.source := task.source
-  a_put.bits.address := Cat(task.tag, task.set, task.off)
+  a_put.bits.source := s1_task.source
+  a_put.bits.address := Cat(s1_task.tag, s1_task.set, s1_task.off)
   a_put.bits.echo.lift(DirtyKey).foreach(_ := true.B)
   a_put.bits.mask := s1_pb_latch.mask
   a_put.bits.data := s1_pb_latch.data.data
   a_put.bits.corrupt := false.B
 
-  TLArbiter.lowest(edgeOut, io.sourceA, a_put, a_acquire)
+  TLArbiter.lowest(edgeOut, a_out, a_put, a_acquire)
+  io.sourceA <> a_out
+  io.sourceA.valid := a_out.valid && !(a_acquire.valid && !a_put.valid && busy)
 
   io.task.ready := a_acquire.ready && !busy
 

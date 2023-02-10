@@ -47,13 +47,18 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     /* mshr full, from MSHRCtrl */
     // val mshrFull = Input(Bool())
 
-    /* status of s1 */
-    val status_s1 = Output(new PipeEntranceStatus)
+    /* status of each pipeline stage */
+    val status_s1 = Output(new PipeEntranceStatus) // set & tag of entrance status
+    val status_vec = Vec(2, ValidIO(new PipeStatus)) // whether this stage will flow into SourceD
 
-    /* handle set conflict and nestB */
+    /* handle set conflict, capacity conflict and nestB */
     val fromMSHRCtl = Input(new BlockInfo())
     val fromMainPipe = Input(new BlockInfo())
-    val fromGrantBuffer = Input(new BlockInfo())
+    // val fromGrantBuffer = Input(new BlockInfo())
+    val fromGrantBuffer = Input(new Bundle() {
+      val blockSinkReqEntrance = new BlockInfo()
+      val blockMSHRReqEntrance = Bool()
+    })
   })
 
   /* ======== Reset ======== */
@@ -69,9 +74,9 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   // val valids = RegInit(0.U(8.W))  // 7 stages
 
   /* ======== Stage 0 ======== */
-  io.mshrTask.ready := true.B  // TODO: when to block mshrTask?
+  io.mshrTask.ready := !io.fromGrantBuffer.blockMSHRReqEntrance
   val mshr_task_s0 = Wire(Valid(new TaskBundle()))
-  mshr_task_s0.valid := io.mshrTask.valid
+  mshr_task_s0.valid := io.mshrTask.fire()
   mshr_task_s0.bits := io.mshrTask.bits
 
   /* ======== Stage 1 ======== */
@@ -103,9 +108,9 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val A_task = io.sinkA.bits
   val B_task = fromTLBtoTaskBundle(io.sinkB.bits)
   val C_task = io.sinkC.bits
-  val block_A = io.fromMSHRCtl.blockA_s1 || io.fromMainPipe.blockA_s1 || io.fromGrantBuffer.blockA_s1
-  val block_B = io.fromMSHRCtl.blockB_s1 || io.fromMainPipe.blockB_s1 || io.fromGrantBuffer.blockB_s1
-  val block_C = io.fromMSHRCtl.blockC_s1 || io.fromMainPipe.blockC_s1 || io.fromGrantBuffer.blockC_s1
+  val block_A = io.fromMSHRCtl.blockA_s1 || io.fromMainPipe.blockA_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockA_s1
+  val block_B = io.fromMSHRCtl.blockB_s1 || io.fromMainPipe.blockB_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockB_s1
+  val block_C = io.fromMSHRCtl.blockC_s1 || io.fromMainPipe.blockC_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockC_s1
 
   val sinkValids = VecInit(Seq(
     io.sinkC.valid && !block_C,
@@ -122,6 +127,8 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   chnl_task_s1.valid := io.dirRead_s1.ready && sinkValids.orR && resetFinish
   chnl_task_s1.bits := ParallelPriorityMux(sinkValids, Seq(C_task, B_task, A_task))
 
+  // mshr_task_s1 is s1_[reg]
+  // task_s1 is [wire] to s2_reg
   val task_s1 = Mux(mshr_task_s1.valid, mshr_task_s1, chnl_task_s1)
 
   /* Meta read request */
@@ -132,10 +139,6 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   io.dirRead_s1.bits.source := task_s1.bits.sourceId
   io.dirRead_s1.bits.replacerInfo.opcode := task_s1.bits.opcode
   io.dirRead_s1.bits.replacerInfo.channel := task_s1.bits.channel
-
-  /* status of s1 */
-  io.status_s1.sets := VecInit(Seq(C_task.set, B_task.set, A_task.set))
-  io.status_s1.b_tag := B_task.tag
 
   /* ========  Stage 2 ======== */
   val task_s2 = RegInit(0.U.asTypeOf(task_s1))
@@ -164,6 +167,16 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   assert(!io.releaseBufRead_s2.valid || io.releaseBufRead_s2.ready)
 
   require(beatSize == 2)
+
+  /* status of each pipeline stage */
+  io.status_s1.sets := VecInit(Seq(C_task.set, B_task.set, A_task.set))
+  io.status_s1.b_tag := B_task.tag
+  require(io.status_vec.size == 2)
+  io.status_vec.zip(Seq(task_s1, task_s2)).foreach {
+    case (status, task) =>
+      status.valid := task.valid
+      status.bits.channel := task.bits.channel
+  }
 
   dontTouch(io)
 }
