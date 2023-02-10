@@ -77,7 +77,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     status_reg.bits.source := ms_task.sourceId
     status_reg.bits.needProbeAckData := ms_task.needProbeAckData
     status_reg.bits.alias.foreach(_ := ms_task.alias.getOrElse(0.U))
-    status_reg.bits.aliasTask := ms_task.aliasTask
+    status_reg.bits.aliasTask.foreach(_ := ms_task.aliasTask.getOrElse(false.B))
     status_reg.bits.pbIdx := ms_task.pbIdx
     gotT := false.B
     gotDirty := false.B
@@ -158,7 +158,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_release.param := Mux(isT(meta.state), TtoN, BtoN)
   mp_release.mshrTask := true.B
   mp_release.mshrId := io.id
-  mp_release.aliasTask := false.B
+  mp_release.aliasTask.foreach(_ := false.B)
   mp_release.useProbeData := true.B // read ReleaseBuf when useProbeData && opcode(0) is true
   mp_release.way := req.way
   mp_release.metaWen := true.B
@@ -187,7 +187,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   )
   mp_probeack.mshrTask := true.B
   mp_probeack.mshrId := io.id
-  mp_probeack.aliasTask := false.B
+  mp_probeack.aliasTask.foreach(_ := false.B)
   mp_probeack.useProbeData := true.B // read ReleaseBuf when useProbeData && opcode(0) is true
   mp_probeack.way := req.way
   mp_probeack.meta := MetaEntry(
@@ -232,10 +232,10 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_grant.mshrId := io.id
   mp_grant.way := req.way
   mp_grant.alias.foreach(_ := req.alias.getOrElse(0.U))
-  mp_grant.aliasTask := req.aliasTask
+  mp_grant.aliasTask.foreach(_ := req.aliasTask.getOrElse(false.B))
   // [Alias] write probeData into DS for alias-caused Probe,
   // but not replacement-cased Probe
-  mp_grant.useProbeData := dirResult.hit && req_get || req.aliasTask
+  mp_grant.useProbeData := dirResult.hit && req_get || req.aliasTask.getOrElse(false.B)
 
   mp_grant.meta := MetaEntry(
     dirty = gotDirty || dirResult.hit && (meta.dirty || probeDirty),
@@ -257,7 +257,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   )
   mp_grant.metaWen := !req_put
   mp_grant.tagWen := !dirResult.hit && !req_put
-  mp_grant.dsWen := !dirResult.hit && !req_put || probeDirty && (req_get || req.aliasTask)
+  mp_grant.dsWen := !dirResult.hit && !req_put || probeDirty && (req_get || req.aliasTask.getOrElse(false.B))
 
   io.tasks.mainpipe.bits := ParallelPriorityMux(
     Seq(

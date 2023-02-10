@@ -169,7 +169,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   ms_task.size := req_s3.size
   ms_task.sourceId := req_s3.sourceId
   ms_task.needProbeAckData := req_s3.needProbeAckData
-  ms_task.aliasTask := cache_alias
+  ms_task.aliasTask.foreach(_ := cache_alias)
   ms_task.useProbeData := false.B
   ms_task.pbIdx := req_s3.pbIdx
   //

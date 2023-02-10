@@ -20,7 +20,7 @@ package coupledL2
 import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config.Parameters
-import TaskInfo._
+
 import freechips.rocketchip.tilelink.TLPermissions._
 
 abstract class L2Module(implicit val p: Parameters) extends MultiIOModule with HasCoupledL2Parameters
@@ -45,12 +45,10 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val tag = UInt(tagBits.W)
   val off = UInt(offsetBits.W)
   val alias = aliasBitsOpt.map(_ => UInt(aliasBitsOpt.get.W)) // color bits in cache-alias issue
-  val owner = UInt(ownerBits.W)           // who owns this block, TODO: unused
   val opcode = UInt(3.W)                  // type of the task operation
   val param = UInt(3.W)
   val size = UInt(msgSizeBits.W)
   val sourceId = UInt(sourceIdBits.W)     // tilelink sourceID
-  val id = UInt(idBits.W)                 // identity of the task
   val bufIdx = UInt(bufIdxBits.W)         // idx of SinkC buffer
   val needProbeAckData = Bool()           // only used for SinkB reqs
 
@@ -58,7 +56,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   // MSHR may send Release(Data) or Grant(Data) or ProbeAck(Data) through Main Pipe
   val mshrTask = Bool()                   // is task from mshr
   val mshrId = UInt(mshrBits.W)           // mshr entry index (used only in mshr-task)
-  val aliasTask = Bool()                  // Anti-alias
+  val aliasTask = aliasBitsOpt.map(_ => Bool()) // Anti-alias
   val useProbeData = Bool()               // data source, true for ReleaseBuf and false for RefillBuf
 
   // For Put
@@ -95,7 +93,7 @@ class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val size = UInt(msgSizeBits.W)
   val source = UInt(sourceIdBits.W)
   val alias = aliasBitsOpt.map(_ => UInt(aliasBitsOpt.get.W))
-  val aliasTask = Bool()
+  val aliasTask = aliasBitsOpt.map(_ => Bool())
   val nestB = Bool()
   val needProbeAckData = Bool() // only for B reqs
   val pbIdx = UInt(mshrBits.W)
