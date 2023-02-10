@@ -57,6 +57,10 @@ trait HasCoupledL2Parameters {
 
   val releaseBufWPorts = 3 // sinkC and mainpipe s5, s6
 
+  val useFIFOGrantBuffer = true
+
+  val hintCycleAhead = 2 // how many cycles the hint will send before grantData
+
   lazy val edgeIn = p(EdgeInKey)
   lazy val edgeOut = p(EdgeOutKey)
 

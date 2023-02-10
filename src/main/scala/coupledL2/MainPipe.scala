@@ -82,6 +82,10 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
     val nestedwb = Output(new NestedWriteback)
     val nestedwbData = Output(new DSBlock)
+
+    val l1Hint = Valid(new L2ToL1Hint())
+    val grantBufferHint = Flipped(Valid(new L2ToL1Hint()))
+    val globalCounter = Input(UInt(log2Ceil(mshrsAll).W))
   })
 
   val resetFinish = RegInit(false.B)
@@ -96,6 +100,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   val c_s3, c_s4, c_s5 = Wire(io.toSourceC.cloneType)
   val d_s3, d_s4, d_s5 = Wire(io.toSourceD.cloneType)
+  val hint_s4, hint_s5 = Wire(io.l1Hint.cloneType)
 
   /* ======== Stage 2 ======== */
   // send out MSHR task if data is not needed
@@ -378,6 +383,11 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   d_s4.bits.task := task_s4.bits
   d_s4.bits.data.data := data_s4
 
+  // l1 acquire and l2 hit situation
+  val validHint_s4 = task_s4.valid && task_s4.bits.opcode === GrantData && !task_s4.bits.mshrTask && ((io.globalCounter + 2.U) === hintCycleAhead.U)
+  hint_s4.valid := validHint_s4
+  hint_s4.bits.sourceId := task_s4.bits.sourceId
+
   /* ======== Stage 5 ======== */
   val task_s5 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
   val ren_s5 = RegInit(false.B)
@@ -403,6 +413,11 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val merged_data_s5 = Mux(ren_s5, rdata_s5, data_s5)
   // val (beat_s5, next_beatsOH_s5) = getBeat(merged_data_s5, beatsOH_s5)
   val chnl_fire_s5 = (c_s5.fire() || d_s5.fire())// && !next_beatsOH_s5
+
+  // l1 acquire and l2 hit situation
+  val validHint_s5 = task_s5.valid && task_s5.bits.opcode === GrantData && !task_s5.bits.mshrTask && ((io.globalCounter + 1.U) === hintCycleAhead.U)
+  hint_s5.valid := validHint_s5
+  hint_s5.bits.sourceId := task_s5.bits.sourceId
 
   io.releaseBufWrite.valid := task_s5.valid && need_write_releaseBuf_s5
   io.releaseBufWrite.beat_sel := Fill(beatSize, 1.U(1.W)) //PriorityEncoder(beatsOH_s5)
@@ -542,6 +557,19 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val d_arb = Module(new Arbiter(io.toSourceD.bits.cloneType, d.size))
   c_arb.io.in <> c
   d_arb.io.in <> d
+
+  val hint_valid = Seq(io.grantBufferHint.valid, hint_s4.valid, hint_s5.valid)
+  val hint_bits = Seq(io.grantBufferHint.bits, hint_s4.bits, hint_s5.bits)
+
+  io.l1Hint.valid := VecInit(hint_valid).asUInt.orR
+  io.l1Hint.bits := ParallelMux(hint_valid zip hint_bits)
+  assert(PopCount(VecInit(hint_valid)) <= 1.U)
+
+  val timer = RegInit(0.U(64.W))
+  timer := timer + 1.U
+  // when(io.l1Hint.valid) {
+  //   printf("hint at %x, sourceId is %x\n", timer, io.l1Hint.bits.sourceId)
+  // }
 
   io.toSourceC <> c_arb.io.out
   io.toSourceD <> d_arb.io.out

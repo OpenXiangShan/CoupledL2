@@ -190,3 +190,8 @@ class PutBufferEntry(implicit p: Parameters) extends L2Bundle {
   val data = new DSBeat
   val mask = UInt(beatBytes.W)
 }
+
+// custom l2 - l1 interface
+class L2ToL1Hint(implicit p: Parameters) extends L2Bundle {
+  val sourceId = UInt(sourceIdBits.W)    // tilelink sourceID
+}

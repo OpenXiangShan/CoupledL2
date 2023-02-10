@@ -24,31 +24,28 @@ import chipsalliance.rocketchip.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 
-abstract class BaseGrantBuffer(implicit p: Parameters) extends L2Module {
-  val io = IO(new Bundle() {
-    val d_task = Flipped(DecoupledIO(new Bundle() {
-      val task = new TaskBundle()
-      val data = new DSBlock()
-    }))
-    val d = DecoupledIO(new TLBundleD(edgeIn.bundle))
-    val e = Flipped(DecoupledIO(new TLBundleE(edgeIn.bundle)))
-    val e_resp = Output(new RespBundle)
-
-    val fromReqArb = Input(new Bundle() {
-      val status_s1 = new PipeEntranceStatus
-    })
-    val toReqArb = Output(new BlockInfo())
-    val l1Hint = Valid(new L2ToL1Hint())
-    val globalCounter = Output(UInt(log2Ceil(mshrsAll).W))
-  })
-
-  io.l1Hint := DontCare
-  io.globalCounter := DontCare
-}
-
 // Send out Grant/GrantData/ReleaseAck through d and
 // receive GrantAck through e
-class GrantBuffer(implicit p: Parameters) extends BaseGrantBuffer {
+// FIFO version of GrantBuffer
+class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCircularQueuePtrHelper{
+
+  class GrantBufferPtr(implicit p: Parameters) extends CircularQueuePtr[GrantBufferPtr](mshrsAll){ }
+
+  object GrantBufferPtr {
+    def apply(f: Bool, v: UInt)(implicit p: Parameters): GrantBufferPtr = {
+      val ptr = Wire(new GrantBufferPtr)
+      ptr.flag := f
+      ptr.value := v
+      ptr
+    }
+  }
+
+  val enqPtrExt = RegInit(0.U.asTypeOf(new GrantBufferPtr))
+  val deqPtrExt = RegInit(0.U.asTypeOf(new GrantBufferPtr))
+
+  val enqPtr = enqPtrExt.value
+  val deqPtr = deqPtrExt.value
+
   val beat_valids = RegInit(VecInit(Seq.fill(mshrsAll) {
     VecInit(Seq.fill(beatSize)(false.B))
   }))
@@ -56,7 +53,38 @@ class GrantBuffer(implicit p: Parameters) extends BaseGrantBuffer {
   val tasks = Reg(Vec(mshrsAll, new TaskBundle))
   val datas = Reg(Vec(mshrsAll, new DSBlock))
   val full = block_valids.andR
-  val selectOH = ParallelPriorityMux(~block_valids, (0 until mshrsAll).map(i => (1 << i).U))
+
+  // hint interface: l2 will send hint to l1 before sending grantData (2 cycle ahead)
+  val globalCounter = RegInit(0.U(log2Ceil(mshrsAll).W))
+  val beat_counters = RegInit(VecInit(Seq.fill(mshrsAll) {
+    0.U(log2Ceil(mshrsAll).W)
+  }))
+  io.globalCounter := globalCounter
+
+  when(io.d_task.fire()) {
+    val hasData = io.d_task.bits.task.opcode(0)
+    when(hasData) {
+      globalCounter := globalCounter + 1.U // counter = counter + 2 - 1
+    }.otherwise {
+      globalCounter := globalCounter // counter = counter + 1 - 1
+    }
+  }.otherwise {
+    globalCounter := Mux(globalCounter === 0.U, 0.U, globalCounter - 1.U) // counter = counter - 1
+  }
+
+  // GrantData
+  val hint_valid_vec = beat_counters.zip(tasks).map{case (counter, task) => { counter === hintCycleAhead.U && task.opcode(0) }}
+  val sourceid_vec = tasks.map{case task => task.sourceId}
+
+  io.l1Hint.valid := VecInit(hint_valid_vec).asUInt.orR
+  io.l1Hint.bits.sourceId := ParallelMux(hint_valid_vec zip sourceid_vec)
+  assert(PopCount(VecInit(hint_valid_vec)) <= 1.U)
+
+  beat_counters.foreach {
+    case (counter) => {
+      counter := Mux(counter === 0.U, 0.U, counter - 1.U)
+    }
+  }
 
   // used to block Probe upwards
   val inflight_grant_set = Reg(Vec(sourceIdAll, UInt(setBits.W)))
@@ -83,13 +111,12 @@ class GrantBuffer(implicit p: Parameters) extends BaseGrantBuffer {
   }).orR
   io.toReqArb.blockC_s1 := false.B
 
-  selectOH.asBools.zipWithIndex.foreach {
-    case (sel, i) =>
-      when (sel && io.d_task.fire()) {
-        beat_valids(i).foreach(_ := true.B)
-        tasks(i) := io.d_task.bits.task
-        datas(i) := io.d_task.bits.data
-      }
+  when(io.d_task.fire()) {
+    beat_valids(enqPtr).foreach(_ := true.B)
+    tasks(enqPtr) := io.d_task.bits.task
+    datas(enqPtr) := io.d_task.bits.data
+    beat_counters(enqPtr) := globalCounter
+    enqPtrExt := enqPtrExt + 1.U
   }
 
   def toTLBundleD(task: TaskBundle, data: UInt = 0.U) = {
@@ -118,26 +145,30 @@ class GrantBuffer(implicit p: Parameters) extends BaseGrantBuffer {
     (next_beat, next_beatsOH)
   }
 
-  val out_bundles = Wire(Vec(mshrsAll, io.d.cloneType))
-  out_bundles.zipWithIndex.foreach {
-    case (out, i) =>
-      out.valid := block_valids(i)
-      val data = datas(i).data
-      val beatsOH = beat_valids(i).asUInt
+  io.d := DontCare
+  for(idx <- (0 until mshrsAll)) {
+    when(deqPtr === idx.U) {
+      io.d.valid := block_valids(idx)
+      val data = datas(idx).data
+      val beatsOH = beat_valids(idx).asUInt
       val (beat, next_beatsOH) = getBeat(data, beatsOH)
-      out.bits := toTLBundleD(tasks(i), beat)
-      val hasData = out.bits.opcode(0)
+      io.d.bits := toTLBundleD(tasks(idx), beat)
+      val hasData = io.d.bits.opcode(0)
 
-      when (out.fire()) {
+      when (io.d.fire()) {
         when (hasData) {
-          beat_valids(i) := VecInit(next_beatsOH.asBools)
+          beat_valids(idx) := VecInit(next_beatsOH.asBools)
+          // only when all beats fire, inc deqPtrExt
+          when(next_beatsOH === 0.U) {
+            deqPtrExt := deqPtrExt + 1.U
+          }
         }.otherwise {
-          beat_valids(i).foreach(_ := false.B)
+          beat_valids(idx).foreach(_ := false.B)
+          deqPtrExt := deqPtrExt + 1.U
         }
       }
+    }
   }
-
-  TLArbiter.robin(edgeIn, io.d, out_bundles:_*)
 
   io.d_task.ready := !full
 
@@ -148,4 +179,5 @@ class GrantBuffer(implicit p: Parameters) extends BaseGrantBuffer {
   io.e_resp.respInfo := DontCare
   io.e_resp.respInfo.opcode := GrantAck
   io.e_resp.respInfo.last := true.B
+
 }
