@@ -40,6 +40,6 @@ class SourceB(implicit p: Parameters) extends L2Module {
   b.bits.source := 0.U // make sure there are only 1 client
   b.bits.address := Cat(io.task.bits.tag, io.task.bits.set, 0.U(offsetBits.W))
   b.bits.mask := Fill(beatBytes, 1.U(1.W))
-  b.bits.data := Cat(io.task.bits.alias, 0.U(1.W)) // TODO: this is the same as HuanCun
+  b.bits.data := Cat(io.task.bits.alias.getOrElse(0.U), 0.U(1.W)) // TODO: this is the same as HuanCun
   b.bits.corrupt := false.B
 }

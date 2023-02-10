@@ -44,7 +44,8 @@ trait HasCoupledL2Parameters {
   val offsetBits = log2Ceil(blockBytes)
   val beatBits = offsetBits - log2Ceil(beatBytes)
   val stateBits = MetaData.stateBits
-  val aliasBits = 2
+  val aliasBitsOpt = if(cacheParams.clientCaches.isEmpty) None
+                  else cacheParams.clientCaches.head.aliasBitsOpt
   val pageOffsetBits = log2Ceil(cacheParams.pageBytes)
 
   val mshrsAll = 16

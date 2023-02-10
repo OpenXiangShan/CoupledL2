@@ -74,7 +74,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.tag := parseAddress(a.address)._1
     task.set := parseAddress(a.address)._2
     task.off := parseAddress(a.address)._3
-    task.alias := a.user.lift(AliasKey).getOrElse(0.U)
+    task.alias.foreach(_ := a.user.lift(AliasKey).getOrElse(0.U))
     task.opcode := a.opcode
     task.param := a.param
     task.size := a.size
@@ -93,14 +93,14 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.tag := parseAddress(fullAddr)._1
     task.set := parseAddress(fullAddr)._2
     task.off := 0.U
-    task.alias := 0.U // TODO: check this
+    task.alias.foreach(_ := 0.U)
     task.opcode := Hint
     task.param := Mux(req.needT, PREFETCH_WRITE, PREFETCH_READ)
     task.size := offsetBits.U
     task.sourceId := req.source
     task.needProbeAckData := false.B
     task.mshrTask := false.B
-    task.aliasTask := false.B
+    task.aliasTask.foreach(_ := false.B)
     task.fromL2pft.foreach(_ := req.isBOP)
     task.needHint.foreach(_ := false.B)
     task

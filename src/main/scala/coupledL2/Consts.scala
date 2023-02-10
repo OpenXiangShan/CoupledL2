@@ -65,12 +65,3 @@ object MetaData {
     )
   }
 }
-
-object TaskInfo {
-  // val mshrOpTypeBits = 2
-  val ownerBits = 3
-  // val opTypeBits = 5  // TODO: list opTypes
-  val idBits = 10
-
-  // val OP_REFILL = 1
-}

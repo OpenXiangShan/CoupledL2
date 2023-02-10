@@ -128,7 +128,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val meta_has_clients_s3 = meta_s3.clients.orR
   val req_needT_s3 = needT(req_s3.opcode, req_s3.param) // require T status to handle req
   //[Alias] TODO: consider 1 client for now
-  val cache_alias = (req_acquire_s3 || req_get_s3) && dirResult_s3.hit && meta_s3.clients(0) && meta_s3.alias(0) =/= req_s3.alias
+  val cache_alias = (req_acquire_s3 || req_get_s3) && dirResult_s3.hit && meta_s3.clients(0) &&
+    meta_s3.alias.getOrElse(0.U) =/= req_s3.alias.getOrElse(0.U)
 
   val acquire_on_miss_s3 = req_acquire_s3 || req_prefetch_s3 || req_get_s3 // TODO: remove this cause always acquire on miss?
   val acquire_on_hit_s3 = meta_s3.state === BRANCH && req_needT_s3
@@ -161,13 +162,13 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   ms_task.set := req_s3.set
   ms_task.tag := req_s3.tag
   ms_task.off := req_s3.off
-  ms_task.alias := req_s3.alias
+  ms_task.alias.foreach(_ := req_s3.alias.getOrElse(0.U))
   ms_task.opcode := req_s3.opcode
   ms_task.param := req_s3.param
   ms_task.size := req_s3.size
   ms_task.sourceId := req_s3.sourceId
   ms_task.needProbeAckData := req_s3.needProbeAckData
-  ms_task.aliasTask := cache_alias
+  ms_task.aliasTask.foreach(_ := cache_alias)
   ms_task.useProbeData := false.B
   ms_task.pbIdx := req_s3.pbIdx
   ms_task.fromL2pft.foreach(_ := req_s3.fromL2pft.get)
@@ -231,7 +232,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val need_data_b = req_s3.fromB && !mshr_req_s3 && dirResult_s3.hit &&
     (meta_s3.state === TRUNK || meta_s3.state === TIP && meta_s3.dirty || req_s3.needProbeAckData)
 
-  val ren = Mux(dirResult_s3.hit, need_data_on_hit_a, need_data_on_miss_a) || need_data_b// || need_data_alias
+  val ren = Mux(dirResult_s3.hit, need_data_on_hit_a, need_data_on_miss_a) || need_data_b
   val bufResp_s3 = RegNext(io.bufResp.data.asUInt) // for Release from C
   // need_write_releaseBuf indicates that DS should be read and the data will be written into ReleaseBuffer
   // need_write_releaseBuf is assigned true when:
@@ -262,11 +263,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val metaW_valid_s3_c = !mshr_req_s3 && req_s3.fromC
   val metaW_valid_s3_mshr = mshr_req_s3 && req_s3.metaWen
   require(clientBits == 1)
-  //[Alias] TODO: consider 1 client for now
-  val metaW_s3_a_alias = WireInit(meta_s3.alias)
-  metaW_s3_a_alias(0) := req_s3.alias
-  val metaW_s3_a = MetaEntry(meta_s3.dirty, Mux(req_needT_s3, TRUNK, meta_s3.state), Fill(clientBits, true.B), metaW_s3_a_alias)
 
+  val metaW_s3_a = MetaEntry(meta_s3.dirty, Mux(req_needT_s3, TRUNK, meta_s3.state), Fill(clientBits, true.B), req_s3.alias)
   val metaW_s3_b = Mux(req_s3.param === toN, MetaEntry(), MetaEntry(false.B, BRANCH, meta_s3.clients, meta_s3.alias))
 
   val metaW_s3_c_dirty = meta_s3.dirty || wen_c
