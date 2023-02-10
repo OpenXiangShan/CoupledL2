@@ -88,7 +88,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     task.tag := parseAddress(b.address)._1
     task.set := parseAddress(b.address)._2
     task.off := parseAddress(b.address)._3
-    task.alias := 0.U
+    task.alias.foreach(_ := 0.U)
     task.opcode := b.opcode
     task.param := b.param
     task.size := b.size

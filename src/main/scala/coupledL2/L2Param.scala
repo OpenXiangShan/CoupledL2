@@ -27,6 +27,21 @@ import chipsalliance.rocketchip.config.Field
 // General parameter key of CoupledL2
 case object L2ParamKey extends Field[L2Param](L2Param())
 
+// L1 Cache Params, used for TestTop generation
+case class L1Param
+(
+  name: String = "L1D",
+  sets: Int = 32,
+  ways: Int = 8,
+  blockBytes: Int = 64,
+  aliasBitsOpt: Option[Int] = None,
+) {
+  val capacity = sets * ways * blockBytes
+  val setBits = log2Ceil(sets)
+  val offsetBits = log2Ceil(blockBytes)
+  val needResolveAlias = aliasBitsOpt.nonEmpty
+}
+
 // Indicate alias bit of upper level cache
 case object AliasKey extends ControlKey[UInt]("alias")
 case class AliasField(width: Int) extends BundleField(AliasKey) {
@@ -54,6 +69,7 @@ case class L2Param
   sets: Int = 128,
   blockBytes: Int = 64,
   channelBytes: TLChannelBeatBytes = TLChannelBeatBytes(32),
+  clientCaches: Seq[L1Param] = Nil,
 
   // Client
   echoField: Seq[BundleFieldBase] = Nil,

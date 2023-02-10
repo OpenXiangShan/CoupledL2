@@ -201,6 +201,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
       name = s"l2$i",
       ways = 4,
       sets = 128,
+      clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
       echoField = Seq(DirtyField())
     )
   }))).node)
@@ -254,6 +255,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
 object TestTop_L2 extends App {
   val config = new Config((_, _, _) => {
     case L2ParamKey => L2Param(
+      clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
       echoField = Seq(DirtyField())
     )
   })
@@ -267,6 +269,7 @@ object TestTop_L2 extends App {
 object TestTop_L2L3 extends App {
   val config = new Config((_, _, _) => {
     case L2ParamKey => L2Param(
+      clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
       echoField = Seq(DirtyField())
     )
     case HCCacheParamsKey => HCCacheParameters(
@@ -283,7 +286,8 @@ object TestTop_L2L3 extends App {
 object TestTop_L2L3L2 extends App {
   val config = new Config((_, _, _) => {
     case L2ParamKey => L2Param(
-      echoField = Seq(DirtyField())
+      clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
+     // echoField = Seq(DirtyField())
     )
     case HCCacheParamsKey => HCCacheParameters(
       echoField = Seq(DirtyField())

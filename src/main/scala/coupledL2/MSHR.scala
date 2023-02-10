@@ -76,7 +76,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     status_reg.bits.size := ms_task.size
     status_reg.bits.source := ms_task.sourceId
     status_reg.bits.needProbeAckData := ms_task.needProbeAckData
-    status_reg.bits.alias := ms_task.alias
+    status_reg.bits.alias.foreach(_ := ms_task.alias.getOrElse(0.U))
     status_reg.bits.aliasTask := ms_task.aliasTask
     status_reg.bits.pbIdx := ms_task.pbIdx
     gotT := false.B
@@ -140,7 +140,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
       toN
     )
   )
-  ob.alias := meta.alias(0)
+  ob.alias.foreach(_ := meta.alias.getOrElse(0.U))
 
   val mp_release, mp_probeack, mp_grant = Wire(new TaskBundle)
 
@@ -149,7 +149,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_release.tag := dirResult.tag
   mp_release.set := req.set
   mp_release.off := 0.U
-  mp_release.alias := 0.U
+  mp_release.alias.foreach(_ := 0.U)
   mp_release.opcode := Mux(
     meta.dirty && meta.state =/= INVALID || probeDirty,
     ReleaseData,
@@ -231,14 +231,12 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_grant.mshrTask := true.B
   mp_grant.mshrId := io.id
   mp_grant.way := req.way
-  mp_grant.alias := req.alias
+  mp_grant.alias.foreach(_ := req.alias.getOrElse(0.U))
   mp_grant.aliasTask := req.aliasTask
   // [Alias] write probeData into DS for alias-caused Probe,
   // but not replacement-cased Probe
   mp_grant.useProbeData := dirResult.hit && req_get || req.aliasTask
 
-  val meta_alias = WireInit(meta.alias)
-  meta_alias(0) := req.alias
   mp_grant.meta := MetaEntry(
     dirty = gotDirty || dirResult.hit && (meta.dirty || probeDirty),
     state = Mux(
@@ -255,7 +253,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
       )
     ),
     clients = Fill(clientBits, !(req_get && (!dirResult.hit || meta_no_client || probeGotN))),
-    alias = meta_alias //[Alias] TODO: consider one client for now
+    alias = req.alias
   )
   mp_grant.metaWen := !req_put
   mp_grant.tagWen := !dirResult.hit && !req_put

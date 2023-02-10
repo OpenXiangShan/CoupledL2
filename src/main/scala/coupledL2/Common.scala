@@ -44,7 +44,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val set = UInt(setBits.W)
   val tag = UInt(tagBits.W)
   val off = UInt(offsetBits.W)
-  val alias = UInt(aliasBits.W)           // color bits in cache-alias issue
+  val alias = aliasBitsOpt.map(_ => UInt(aliasBitsOpt.get.W)) // color bits in cache-alias issue
   val owner = UInt(ownerBits.W)           // who owns this block, TODO: unused
   val opcode = UInt(3.W)                  // type of the task operation
   val param = UInt(3.W)
@@ -94,7 +94,7 @@ class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val param = UInt(3.W)
   val size = UInt(msgSizeBits.W)
   val source = UInt(sourceIdBits.W)
-  val alias = UInt(aliasBits.W)
+  val alias = aliasBitsOpt.map(_ => UInt(aliasBitsOpt.get.W))
   val aliasTask = Bool()
   val nestB = Bool()
   val needProbeAckData = Bool() // only for B reqs
@@ -167,7 +167,7 @@ class SourceBReq(implicit p: Parameters) extends L2Bundle {
   val off = UInt(offsetBits.W)
   val opcode = UInt(3.W)
   val param = UInt(bdWidth.W)
-  val alias = UInt(aliasBits.W)
+  val alias = aliasBitsOpt.map(_ => UInt(aliasBitsOpt.get.W))
 }
 
 class BlockInfo(implicit p: Parameters) extends L2Bundle {
