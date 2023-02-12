@@ -101,7 +101,10 @@ case class L2Param
   ),
 
   // Prefetch
-  prefetch: Option[PrefetchParameters] = None
+  prefetch: Option[PrefetchParameters] = None,
+
+  // Performance analysis
+  enablePerf: Boolean = false
 ) {
   def toCacheParams: CacheParameters = CacheParameters(
     name = name,

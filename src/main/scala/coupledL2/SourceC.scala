@@ -22,6 +22,7 @@ import chisel3.util._
 import utility._
 import chipsalliance.rocketchip.config.Parameters
 import freechips.rocketchip.tilelink._
+import coupledL2.utils.XSPerfAccumulate
 
 // // wbq receive reqs from MainPipe unconditionally, and send them out through channel C
 // // NOTICE: channel C may be unable to receive
@@ -176,4 +177,6 @@ class SourceC(implicit p: Parameters) extends L2Module {
   TLArbiter.lowest(edgeIn, io.out, out_bundles:_*)
 
   io.in.ready := !full
+
+  XSPerfAccumulate(cacheParams, "sourceC_full", full)
 }

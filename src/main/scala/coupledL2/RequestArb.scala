@@ -23,6 +23,7 @@ import utility._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import chipsalliance.rocketchip.config.Parameters
+import coupledL2.utils.XSPerfAccumulate
 
 class RequestArb(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
@@ -180,4 +181,36 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   }
 
   dontTouch(io)
+
+  // Performance counters
+  XSPerfAccumulate(cacheParams, "mshr_req", mshr_task_s0.valid)
+  XSPerfAccumulate(cacheParams, "mshr_req_stall", io.mshrTask.valid && !io.mshrTask.ready)
+
+  XSPerfAccumulate(cacheParams, "sinkA_req", io.sinkA.fire())
+  XSPerfAccumulate(cacheParams, "sinkB_req", io.sinkB.fire())
+  XSPerfAccumulate(cacheParams, "sinkC_req", io.sinkC.fire())
+  
+  XSPerfAccumulate(cacheParams, "sinkA_stall", io.sinkA.valid && !io.sinkA.ready)
+  XSPerfAccumulate(cacheParams, "sinkB_stall", io.sinkB.valid && !io.sinkB.ready)
+  XSPerfAccumulate(cacheParams, "sinkC_stall", io.sinkC.valid && !io.sinkC.ready)
+
+  XSPerfAccumulate(cacheParams, "sinkA_stall_by_mshr", io.sinkA.valid && io.fromMSHRCtl.blockA_s1)
+  XSPerfAccumulate(cacheParams, "sinkB_stall_by_mshr", io.sinkB.valid && io.fromMSHRCtl.blockB_s1)
+
+  XSPerfAccumulate(cacheParams, "sinkA_stall_by_mainpipe", io.sinkA.valid && io.fromMainPipe.blockA_s1)
+  XSPerfAccumulate(cacheParams, "sinkB_stall_by_mainpipe", io.sinkB.valid && io.fromMainPipe.blockB_s1)
+  XSPerfAccumulate(cacheParams, "sinkC_stall_by_mainpipe", io.sinkC.valid && io.fromMainPipe.blockC_s1)
+
+  XSPerfAccumulate(cacheParams, "sinkA_stall_by_grantbuf", io.sinkA.valid && io.fromGrantBuffer.blockSinkReqEntrance.blockA_s1)
+  XSPerfAccumulate(cacheParams, "sinkB_stall_by_grantbuf", io.sinkB.valid && io.fromGrantBuffer.blockSinkReqEntrance.blockB_s1)
+  XSPerfAccumulate(cacheParams, "sinkC_stall_by_grantbuf", io.sinkC.valid && io.fromGrantBuffer.blockSinkReqEntrance.blockC_s1)
+
+  XSPerfAccumulate(cacheParams, "sinkA_stall_by_dir", io.sinkA.valid && !block_A && !io.dirRead_s1.ready)
+  XSPerfAccumulate(cacheParams, "sinkB_stall_by_dir", io.sinkB.valid && !block_B && !io.dirRead_s1.ready)
+  XSPerfAccumulate(cacheParams, "sinkC_stall_by_dir", io.sinkC.valid && !block_C && !io.dirRead_s1.ready)
+
+  XSPerfAccumulate(cacheParams, "sinkA_stall_by_sinkB", io.sinkA.valid && sink_ready_basic && !block_A && sinkValids(1) && !sinkValids(0))
+  XSPerfAccumulate(cacheParams, "sinkA_stall_by_sinkC", io.sinkA.valid && sink_ready_basic && !block_A && sinkValids(0))
+  XSPerfAccumulate(cacheParams, "sinkB_stall_by_sinkC", io.sinkB.valid && sink_ready_basic && !block_B && sinkValids(0))
+
 }

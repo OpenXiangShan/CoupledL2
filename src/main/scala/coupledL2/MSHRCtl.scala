@@ -22,7 +22,9 @@ import chisel3.util._
 import utility._
 import chipsalliance.rocketchip.config.Parameters
 import freechips.rocketchip.tilelink._
+import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.prefetch.PrefetchTrain
+import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram}
 
 class MSHRSelector(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
@@ -152,4 +154,30 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   })
 
   dontTouch(io.sourceA)
+
+  // Performance counters
+  XSPerfAccumulate(cacheParams, "capacity_conflict_to_sinkA", a_mshrFull)
+  XSPerfAccumulate(cacheParams, "capacity_conflict_to_sinkB", mshrFull)
+  XSPerfAccumulate(cacheParams, "set_conflict_to_sinkA", Cat(setMatchVec_a).orR)
+  XSPerfAccumulate(cacheParams, "set_conflict_to_sinkB", Cat(setConflictVec_b).orR)
+  XSPerfHistogram(cacheParams, "mshr_alloc", io.toMainPipe.mshr_alloc_ptr,
+    enable = io.fromMainPipe.mshr_alloc_s3.valid,
+    start = 0, stop = mshrsAll, step = 1)
+  
+  if (cacheParams.enablePerf) {
+    val start = 0
+    val stop = 100
+    val step = 5
+    val acquire_period = ParallelMux(mshrs.map { case m => m.io.resps.sink_d.valid -> m.acquire_period })
+    val release_period = ParallelMux(mshrs.map { case m => m.io.resps.sink_d.valid -> m.release_period })
+    val probe_period = ParallelMux(mshrs.map { case m => m.io.resps.sink_c.valid -> m.probe_period })
+    val acquire_period_en = io.resps.sinkD.valid &&
+      (io.resps.sinkD.respInfo.opcode === Grant || io.resps.sinkD.respInfo.opcode === GrantData)
+    val release_period_en = io.resps.sinkD.valid && io.resps.sinkD.respInfo.opcode === ReleaseAck
+    val probe_period_en = io.resps.sinkC.valid &&
+      (io.resps.sinkC.respInfo.opcode === ProbeAck || io.resps.sinkC.respInfo.opcode === ProbeAckData)
+    XSPerfHistogram(cacheParams, "acquire_period", acquire_period, acquire_period_en, start, stop, step)
+    XSPerfHistogram(cacheParams, "release_period", release_period, release_period_en, start, stop, step)
+    XSPerfHistogram(cacheParams, "probe_period", probe_period, probe_period_en, start, stop, step)
+  }
 }

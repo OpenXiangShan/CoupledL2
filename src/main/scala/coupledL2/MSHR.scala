@@ -26,6 +26,7 @@ import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
 import chipsalliance.rocketchip.config.Parameters
 import coupledL2.prefetch.PrefetchTrain
+import coupledL2.utils.XSPerfAccumulate
 
 class MSHRTasks(implicit p: Parameters) extends L2Bundle {
   // outer
@@ -61,6 +62,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val probeDirty = RegInit(false.B)
   val probeGotN = RegInit(false.B)
 
+  val timer = RegInit(0.U(64.W)) // for performance analysis
+
   /* MSHR Allocation */
   val status_reg = RegInit(0.U.asTypeOf(Valid(new MSHRStatus())))
   when(io.alloc.valid) {
@@ -86,6 +89,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     gotDirty := false.B
     probeDirty := false.B
     probeGotN := false.B
+    timer := 1.U
   }
 
   /* Intermediate logic */
@@ -350,10 +354,15 @@ class MSHR(implicit p: Parameters) extends L2Module {
     state.w_grantack := true.B
   }
 
+  when (status_reg.valid) {
+    timer := timer + 1.U
+  }
+  
   val no_schedule = state.s_refill && state.s_probeack && state.s_triggerprefetch.getOrElse(true.B)
   val no_wait = state.w_rprobeacklast && state.w_pprobeacklast && state.w_grantlast && state.w_releaseack && state.w_grantack
   when (no_schedule && no_wait && status_reg.valid) {
     status_reg.valid := false.B
+    timer := 0.U
   }
 
   io.status.valid := status_reg.valid
@@ -389,4 +398,18 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.nestedwbData := nestedwb_match && io.nestedwb.c_set_dirty
 
   dontTouch(state)
+
+  // Performance counters
+  // time stamp
+  // if (cacheParams.enablePerf) {
+    val acquire_ts = RegEnable(timer, io.tasks.source_a.fire())
+    val probe_ts = RegEnable(timer, io.tasks.source_b.fire())
+    val release_ts = RegEnable(timer, !mp_grant_valid && mp_release_valid && io.tasks.mainpipe.ready)
+    val acquire_period = IO(Output(UInt(64.W)))
+    val probe_period = IO(Output(UInt(64.W)))
+    val release_period = IO(Output(UInt(64.W)))
+    acquire_period := timer - acquire_ts
+    probe_period := timer - probe_ts
+    release_period := timer - release_ts
+  // }
 }

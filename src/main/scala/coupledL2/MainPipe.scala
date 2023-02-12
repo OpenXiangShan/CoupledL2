@@ -25,6 +25,7 @@ import chipsalliance.rocketchip.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
+import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram}
 
 class MainPipe(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
@@ -479,4 +480,56 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   io.toSourceC <> c_arb.io.out
   io.toSourceD <> d_arb.io.out
+
+  // Performance counters
+  // num of mshr req
+  XSPerfAccumulate(cacheParams, "mshr_grant_req", task_s3.valid && mshr_grant_s3)
+  XSPerfAccumulate(cacheParams, "mshr_grantdata_req", task_s3.valid && mshr_grantdata_s3)
+  XSPerfAccumulate(cacheParams, "mshr_accessackdata_req", task_s3.valid && mshr_accessackdata_s3)
+  XSPerfAccumulate(cacheParams, "mshr_accessack_req", task_s3.valid && mshr_accessack_s3)
+  XSPerfAccumulate(cacheParams, "mshr_hintack_req", task_s3.valid && mshr_hintack_s3)
+  XSPerfAccumulate(cacheParams, "mshr_probeack_req", task_s3.valid && mshr_probeack_s3)
+  XSPerfAccumulate(cacheParams, "mshr_probeackdata_req", task_s3.valid && mshr_probeackdata_s3)
+  XSPerfAccumulate(cacheParams, "mshr_release_req", task_s3.valid && mshr_release_s3)
+
+  // directory access result
+  val hit_s3 = task_s3.valid && !mshr_req_s3 && dirResult_s3.hit
+  val miss_s3 = task_s3.valid && !mshr_req_s3 && !dirResult_s3.hit
+  XSPerfAccumulate(cacheParams, "a_req_hit", hit_s3 && req_s3.fromA)
+  XSPerfAccumulate(cacheParams, "acquire_hit", hit_s3 && req_s3.fromA &&
+    (req_s3.opcode === AcquireBlock || req_s3.opcode === AcquirePerm))
+  XSPerfAccumulate(cacheParams, "get_hit", hit_s3 && req_s3.fromA && req_s3.opcode === Get)
+
+  XSPerfAccumulate(cacheParams, "a_req_miss", miss_s3 && req_s3.fromA)
+  XSPerfAccumulate(cacheParams, "acquire_miss", miss_s3 && req_s3.fromA &&
+    (req_s3.opcode === AcquireBlock || req_s3.opcode === AcquirePerm))
+  XSPerfAccumulate(cacheParams, "get_miss", miss_s3 && req_s3.fromA && req_s3.opcode === Get)
+
+  XSPerfAccumulate(cacheParams, "a_req_need_replacement", io.toMSHRCtl.mshr_alloc_s3.valid && !alloc_state.s_release)
+
+  XSPerfAccumulate(cacheParams, "b_req_hit", hit_s3 && req_s3.fromB)
+  XSPerfAccumulate(cacheParams, "b_req_miss", miss_s3 && req_s3.fromB)
+
+  XSPerfHistogram(cacheParams, "a_req_access_way", perfCnt = dirResult_s3.way,
+    enable = task_s3.valid && !mshr_req_s3 && req_s3.fromA && !req_put_s3, start = 0, stop = cacheParams.ways, step = 1)
+  XSPerfHistogram(cacheParams, "a_req_hit_way", perfCnt = dirResult_s3.way,
+    enable = hit_s3 && req_s3.fromA && !req_put_s3, start = 0, stop = cacheParams.ways, step = 1)
+  XSPerfHistogram(cacheParams, "a_req_miss_way_choice", perfCnt = dirResult_s3.way,
+    enable = miss_s3 && req_s3.fromA && !req_put_s3, start = 0, stop = cacheParams.ways, step = 1)
+  
+  // pipeline stages for sourceC and sourceD reqs
+  val sourceC_pipe_len = ParallelMux(Seq(
+    c_s5.fire() -> 5.U,
+    c_s4.fire() -> 4.U,
+    c_s3.fire() -> 3.U
+  ))
+  val sourceD_pipe_len = ParallelMux(Seq(
+    d_s5.fire() -> 5.U,
+    d_s4.fire() -> 4.U,
+    d_s3.fire() -> 3.U
+  ))
+  XSPerfHistogram(cacheParams, "sourceC_pipeline_stages", sourceC_pipe_len,
+    enable = io.toSourceC.fire(), start = 3, stop = 5+1, step = 1)
+  XSPerfHistogram(cacheParams, "sourceD_pipeline_stages", sourceD_pipe_len,
+    enable = io.toSourceD.fire(), start = 3, stop = 5+1, step = 1)
 }

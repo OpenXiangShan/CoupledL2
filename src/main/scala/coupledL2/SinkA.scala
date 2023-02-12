@@ -24,6 +24,7 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLHints._
 import coupledL2.prefetch.PrefetchReq
+import coupledL2.utils.XSPerfAccumulate
 
 class SinkA(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
@@ -121,4 +122,31 @@ class SinkA(implicit p: Parameters) extends L2Module {
 
   io.pbResp.valid := RegNext(io.pbRead.fire())
   io.pbResp.bits := RegEnable(putBuffer(io.pbRead.bits.idx)(io.pbRead.bits.count), io.pbRead.fire())
+
+  // Performance counters
+  // num of reqs
+  XSPerfAccumulate(cacheParams, "sinkA_req", io.toReqArb.fire())
+  XSPerfAccumulate(cacheParams, "sinkA_acquire_req", io.a.fire() && io.a.bits.opcode(2, 1) === AcquireBlock(2, 1))
+  XSPerfAccumulate(cacheParams, "sinkA_acquireblock_req", io.a.fire() && io.a.bits.opcode === AcquireBlock)
+  XSPerfAccumulate(cacheParams, "sinkA_acquireperm_req", io.a.fire() && io.a.bits.opcode === AcquirePerm)
+  XSPerfAccumulate(cacheParams, "sinkA_get_req", io.a.fire() && io.a.bits.opcode === Get)
+  XSPerfAccumulate(cacheParams, "sinkA_put_req", io.toReqArb.fire() &&
+    (io.toReqArb.bits.opcode === PutFullData || io.toReqArb.bits.opcode === PutPartialData))
+  XSPerfAccumulate(cacheParams, "sinkA_put_beat", io.a.fire() &&
+    (io.a.bits.opcode === PutFullData || io.a.bits.opcode === PutPartialData))
+  prefetchOpt.foreach { _ => XSPerfAccumulate(cacheParams, "sinkA_prefetch_req", io.prefetchReq.get.fire()) }
+
+  // cycels stalled by mainpipe
+  val stall = io.toReqArb.valid && !io.toReqArb.ready
+  XSPerfAccumulate(cacheParams, "sinkA_stall_by_mainpipe", stall)
+  XSPerfAccumulate(cacheParams, "sinkA_acquire_stall_by_mainpipe", stall &&
+    (io.toReqArb.bits.opcode === AcquireBlock || io.toReqArb.bits.opcode === AcquirePerm))
+  XSPerfAccumulate(cacheParams, "sinkA_get_stall_by_mainpipe", stall && io.toReqArb.bits.opcode === Get)
+  XSPerfAccumulate(cacheParams, "sinkA_put_stall_by_mainpipe", stall &&
+    (io.toReqArb.bits.opcode === PutFullData || io.toReqArb.bits.opcode === PutPartialData))
+  prefetchOpt.foreach { _ => XSPerfAccumulate(cacheParams, "sinkA_prefetch_stall_by_mainpipe", stall && io.toReqArb.bits.opcode === Hint) }
+
+  // cycles stalled for no space
+  XSPerfAccumulate(cacheParams, "sinkA_put_stall_for_noSpace", io.a.valid && first && noSpace)
+  XSPerfAccumulate(cacheParams, "putbuffer_full", full)
 }

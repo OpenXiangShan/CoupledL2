@@ -24,6 +24,7 @@ import chipsalliance.rocketchip.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.prefetch.PrefetchResp
+import coupledL2.utils.XSPerfAccumulate
 
 // Send out Grant/GrantData/ReleaseAck through d and
 // receive GrantAck through e
@@ -177,4 +178,6 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   io.e_resp.respInfo := DontCare
   io.e_resp.respInfo.opcode := GrantAck
   io.e_resp.respInfo.last := true.B
+
+  XSPerfAccumulate(cacheParams, "grant_buffer_full", full)
 }

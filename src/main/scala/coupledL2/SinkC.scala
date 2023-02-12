@@ -22,6 +22,7 @@ import chisel3.util._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import chipsalliance.rocketchip.config.Parameters
+import coupledL2.utils.XSPerfAccumulate
 
 class PipeBufferRead(implicit p: Parameters) extends L2Bundle {
   val bufIdx = UInt(bufIdxBits.W)
@@ -142,4 +143,11 @@ class SinkC(implicit p: Parameters) extends L2Module {
   io.c.ready := !isRelease || !first || !full || !hasData && io.toReqArb.ready
 
   io.bufResp.data := dataBuf(io.bufRead.bits.bufIdx)
+
+  // Performance counters
+  val stall = io.c.valid && isRelease && !io.c.ready
+  XSPerfAccumulate(cacheParams, "sinkC_c_stall", stall)
+  XSPerfAccumulate(cacheParams, "sinkC_c_stall_for_noSpace", stall && hasData && first && full)
+  XSPerfAccumulate(cacheParams, "sinkC_toReqArb_stall", io.toReqArb.valid && !io.toReqArb.ready)
+  XSPerfAccumulate(cacheParams, "sinkC_buf_full", full)
 }
