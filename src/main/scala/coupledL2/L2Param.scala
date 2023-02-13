@@ -82,6 +82,7 @@ case class L2Param
   pageBytes: Int = 4096,
   channelBytes: TLChannelBeatBytes = TLChannelBeatBytes(32),
   clientCaches: Seq[L1Param] = Nil,
+  replacement: String = "plru",
 
   // Client
   echoField: Seq[BundleFieldBase] = Nil,
@@ -104,7 +105,7 @@ case class L2Param
   prefetch: Option[PrefetchParameters] = None,
 
   // Performance analysis
-  enablePerf: Boolean = false
+  enablePerf: Boolean = true
 ) {
   def toCacheParams: CacheParameters = CacheParameters(
     name = name,

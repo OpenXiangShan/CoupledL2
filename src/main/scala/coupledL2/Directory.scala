@@ -20,9 +20,10 @@ package coupledL2
 import chisel3._
 import chisel3.util._
 import freechips.rocketchip.util.SetAssocLRU
-import coupledL2.utils.SRAMTemplate
+import coupledL2.utils._
 import utility.ParallelPriorityMux
 import chipsalliance.rocketchip.config.Parameters
+import freechips.rocketchip.tilelink.TLMessages
 
 class MetaEntry(implicit p: Parameters) extends L2Bundle {
   val dirty = Bool()
@@ -110,6 +111,7 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   val ways = cacheParams.ways
   val tag_wen = io.tagWReq.valid
   val dir_wen = io.metaWReq.valid
+  val replacer_wen = RegInit(false.B)
 
   val tagArray = Module(new SRAMTemplate(UInt(tagBits.W), sets, ways, singlePort = true))
   val metaArray = Module(new SRAMTemplate(new MetaEntry, sets, ways, singlePort = true))
@@ -148,16 +150,36 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   */
   // TODO: how about moving hit/way calculation to stage 2? Cuz SRAM latency can be high under high frequency
   val reqReg = RegEnable(io.read.bits, enable = io.read.fire)
+  val hit_s1 = Wire(Bool())
+  val way_s1 = Wire(UInt(wayBits.W))
+
+  // Replacer
+  val repl = ReplacementPolicy.fromString(cacheParams.replacement, ways)
+  val repl_state = if(cacheParams.replacement == "random"){
+    when(io.tagWReq.fire){
+      repl.miss
+    }
+    0.U
+  } else {
+    val replacer_sram = Module(new SRAMTemplate(UInt(repl.nBits.W), sets, singlePort = true, shouldReset = true))
+    val repl_sram_r = replacer_sram.io.r(io.read.fire, io.read.bits.set).resp.data(0)
+    val repl_state_hold = WireInit(0.U(repl.nBits.W))
+    repl_state_hold := HoldUnless(repl_sram_r, RegNext(io.read.fire, false.B))
+    val next_state = repl.get_next_state(repl_state_hold, way_s1)
+    replacer_sram.io.w(replacer_wen, RegNext(next_state), RegNext(reqReg.set), 1.U)
+    repl_state_hold
+  }
+
   val tagMatchVec = tagRead.map(_ (tagBits - 1, 0) === reqReg.tag)
   val metaValidVec = metaRead.map(_.state =/= MetaData.INVALID)
   val hitVec = tagMatchVec.zip(metaValidVec).map(x => x._1 && x._2)
   val hitWay = OHToUInt(hitVec)
-  val replaceWay = 0.U(wayBits.W)  // TODO: add replacer logic
+  val replaceWay = repl.get_replace_way(repl_state)
   val (inv, invalidWay) = invalid_way_sel(metaRead, replaceWay)
   val chosenWay = Mux(inv, invalidWay, replaceWay)
 
-  val hit_s1 = Cat(hitVec).orR
-  val way_s1 = Mux(hit_s1, hitWay, chosenWay)
+  hit_s1 := Cat(hitVec).orR
+  way_s1 := Mux(hit_s1, hitWay, chosenWay)
 
   val reqValid_s2 = reqValidReg
   val hit_s2 = RegEnable(hit_s1, false.B, reqValidReg)
@@ -180,6 +202,13 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   dontTouch(metaArray.io)
   dontTouch(tagArray.io)
 
-  io.read.ready := !io.metaWReq.valid && !io.tagWReq.valid
+  io.read.ready := !io.metaWReq.valid && !io.tagWReq.valid && !replacer_wen
+
+  val update = reqReg.replacerInfo.channel(0) && (reqReg.replacerInfo.opcode === TLMessages.AcquirePerm || reqReg.replacerInfo.opcode === TLMessages.AcquireBlock)
+  when(reqValidReg && update) {
+    replacer_wen := true.B
+  }.otherwise {
+    replacer_wen := false.B
+  }
 
 }
