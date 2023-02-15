@@ -109,12 +109,14 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
 
   val sets = cacheParams.sets
   val ways = cacheParams.ways
-  val tag_wen = io.tagWReq.valid
-  val dir_wen = io.metaWReq.valid
-  val replacer_wen = RegInit(false.B)
+  val banks = cacheParams.dirNBanks
 
-  val tagArray = Module(new SRAMTemplate(UInt(tagBits.W), sets, ways, singlePort = true))
-  val metaArray = Module(new SRAMTemplate(new MetaEntry, sets, ways, singlePort = true))
+  val tagWen  = io.tagWReq.valid
+  val metaWen = io.metaWReq.valid
+  val replacerWen = RegInit(false.B)
+
+  val tagArray  = Module(new BankedSRAM(UInt(tagBits.W), sets, ways, banks, singlePort = true))
+  val metaArray = Module(new BankedSRAM(new MetaEntry, sets, ways, banks, singlePort = true))
   val tagRead = Wire(Vec(ways, UInt(tagBits.W)))
   val metaRead = Wire(Vec(ways, new MetaEntry()))
 
@@ -128,7 +130,7 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   // Tag R/W
   tagRead := tagArray.io.r(io.read.fire, io.read.bits.set).resp.data
   tagArray.io.w(
-    tag_wen,
+    tagWen,
     io.tagWReq.bits.wtag,
     io.tagWReq.bits.set,
     UIntToOH(io.tagWReq.bits.way)
@@ -137,36 +139,39 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   // Meta R/W
   metaRead := metaArray.io.r(io.read.fire, io.read.bits.set).resp.data
   metaArray.io.w(
-    dir_wen,
+    metaWen,
     io.metaWReq.bits.wmeta,
     io.metaWReq.bits.set,
     io.metaWReq.bits.wayOH
   )
 
   // Generate response signals
-  /* stage 0: io.read.fire, access Tag/Meta
-     stage 1: get Tag/Meta, calculate hit/way
-     stage 2: output latched hit/way and chosen meta/tag by way
+  /* stage 1: io.read.fire, access Tag/Meta
+     stage 2: get Tag/Meta, calculate hit/way
+     stage 3: output latched hit/way and chosen meta/tag by way
   */
   // TODO: how about moving hit/way calculation to stage 2? Cuz SRAM latency can be high under high frequency
   val reqReg = RegEnable(io.read.bits, enable = io.read.fire)
-  val hit_s1 = Wire(Bool())
-  val way_s1 = Wire(UInt(wayBits.W))
+  val hit_s2 = Wire(Bool())
+  val way_s2 = Wire(UInt(wayBits.W))
 
   // Replacer
   val repl = ReplacementPolicy.fromString(cacheParams.replacement, ways)
-  val repl_state = if(cacheParams.replacement == "random"){
+  val random_repl = cacheParams.replacement == "random"
+  val replacer_sram_opt = if(random_repl) None else
+    Some(Module(new BankedSRAM(UInt(repl.nBits.W), sets, 1, banks, singlePort = true, shouldReset = true)))
+
+  val repl_state = if(random_repl){
     when(io.tagWReq.fire){
       repl.miss
     }
     0.U
   } else {
-    val replacer_sram = Module(new SRAMTemplate(UInt(repl.nBits.W), sets, singlePort = true, shouldReset = true))
-    val repl_sram_r = replacer_sram.io.r(io.read.fire, io.read.bits.set).resp.data(0)
+    val repl_sram_r = replacer_sram_opt.get.io.r(io.read.fire, io.read.bits.set).resp.data(0)
     val repl_state_hold = WireInit(0.U(repl.nBits.W))
     repl_state_hold := HoldUnless(repl_sram_r, RegNext(io.read.fire, false.B))
-    val next_state = repl.get_next_state(repl_state_hold, way_s1)
-    replacer_sram.io.w(replacer_wen, RegNext(next_state), RegNext(reqReg.set), 1.U)
+    val next_state = repl.get_next_state(repl_state_hold, way_s2)
+    replacer_sram_opt.get.io.w(replacerWen, RegNext(next_state), RegNext(reqReg.set), 1.U)
     repl_state_hold
   }
 
@@ -178,37 +183,39 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   val (inv, invalidWay) = invalid_way_sel(metaRead, replaceWay)
   val chosenWay = Mux(inv, invalidWay, replaceWay)
 
-  hit_s1 := Cat(hitVec).orR
-  way_s1 := Mux(hit_s1, hitWay, chosenWay)
+  hit_s2 := Cat(hitVec).orR
+  way_s2 := Mux(hit_s2, hitWay, chosenWay)
 
-  val reqValid_s2 = reqValidReg
-  val hit_s2 = RegEnable(hit_s1, false.B, reqValidReg)
-  val way_s2 = RegEnable(way_s1, 0.U, reqValidReg)
-  val metaAll_s2 = RegEnable(metaRead, reqValidReg)
-  val tagAll_s2 = RegEnable(tagRead, reqValidReg)
-  val meta_s2 = metaAll_s2(way_s2)
-  val tag_s2 = tagAll_s2(way_s2)
-  val set_s2 = RegEnable(reqReg.set, reqValidReg)
+  val reqValid_s3 = reqValidReg
+  val hit_s3 = RegEnable(hit_s2, false.B, reqValidReg)
+  val way_s3 = RegEnable(way_s2, 0.U, reqValidReg)
+  val metaAll_s3 = RegEnable(metaRead, reqValidReg)
+  val tagAll_s3 = RegEnable(tagRead, reqValidReg)
+  val meta_s3 = metaAll_s3(way_s3)
+  val tag_s3 = tagAll_s3(way_s3)
+  val set_s3 = RegEnable(reqReg.set, reqValidReg)
 
-  io.resp.valid      := reqValid_s2
-  io.resp.bits.hit   := hit_s2
-  io.resp.bits.way   := way_s2
-  io.resp.bits.meta  := meta_s2
-  io.resp.bits.tag   := tag_s2
-  io.resp.bits.set   := set_s2
+  io.resp.valid      := reqValid_s3
+  io.resp.bits.hit   := hit_s3
+  io.resp.bits.way   := way_s3
+  io.resp.bits.meta  := meta_s3
+  io.resp.bits.tag   := tag_s3
+  io.resp.bits.set   := set_s3
   io.resp.bits.error := false.B  // depends on ECC
 
   dontTouch(io)
   dontTouch(metaArray.io)
   dontTouch(tagArray.io)
 
-  io.read.ready := !io.metaWReq.valid && !io.tagWReq.valid && !replacer_wen
+  io.read.ready := !io.metaWReq.valid && !io.tagWReq.valid && !replacerWen
+  val replacerRready = if(cacheParams.replacement == "random") true.B else replacer_sram_opt.get.io.r.req.ready
+  io.read.ready := tagArray.io.r.req.ready && metaArray.io.r.req.ready && replacerRready
 
   val update = reqReg.replacerInfo.channel(0) && (reqReg.replacerInfo.opcode === TLMessages.AcquirePerm || reqReg.replacerInfo.opcode === TLMessages.AcquireBlock)
   when(reqValidReg && update) {
-    replacer_wen := true.B
+    replacerWen := true.B
   }.otherwise {
-    replacer_wen := false.B
+    replacerWen := false.B
   }
 
 }
