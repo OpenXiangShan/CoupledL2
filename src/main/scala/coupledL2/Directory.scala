@@ -109,7 +109,7 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
 
   val sets = cacheParams.sets
   val ways = cacheParams.ways
-  val banks = 4 //[B]: TODO
+  val banks = cacheParams.dirNBanks
 
   val tagWen  = io.tagWReq.valid
   val metaWen = io.metaWReq.valid

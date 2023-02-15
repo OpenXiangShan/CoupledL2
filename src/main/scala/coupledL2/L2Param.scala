@@ -78,6 +78,7 @@ case class L2Param
   name: String = "L2",
   ways: Int = 4,
   sets: Int = 128,
+  dirNBanks: Int = 8,
   blockBytes: Int = 64,
   pageBytes: Int = 4096,
   channelBytes: TLChannelBeatBytes = TLChannelBeatBytes(32),

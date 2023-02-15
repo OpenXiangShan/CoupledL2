@@ -5,6 +5,7 @@ import chisel3.util._
 
 // divide SRAM into n banks
 // use lower-bits of setIdx to select bank
+// allow parallel accesses to different banks
 class BankedSRAM[T <: Data]
 (
   gen: T, sets: Int, ways: Int, n: Int = 1,
