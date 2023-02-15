@@ -81,6 +81,9 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
 
     /* status of s2 and s3 */
     val pipeStatusVec = Flipped(Vec(2, ValidIO(new PipeStatus)))
+
+    /* to ReqBuffer, to solve set conflict */
+    val mshr_status = Vec(mshrsAll, ValidIO(new MSHRStatus))
   })
 
   val mshrs = Seq.fill(mshrsAll) { Module(new MSHR()) }
@@ -115,6 +118,8 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       m.io.resps.sink_e.bits := io.resps.sinkE.respInfo
       
       m.io.nestedwb := io.nestedwb
+
+      io.mshr_status(i) := m.io.status
   }
 
   // io.mshrFull := mshrFull

@@ -107,6 +107,7 @@ class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val w_e_resp = Bool()
   val fromL2pft = prefetchOpt.map(_ => Bool())
   val needHint = prefetchOpt.map(_ => Bool())
+  val will_free = Bool()
 }
 
 // MSHR Task that MainPipe sends to MSHRCtl

@@ -360,7 +360,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
   
   val no_schedule = state.s_refill && state.s_probeack && state.s_triggerprefetch.getOrElse(true.B)
   val no_wait = state.w_rprobeacklast && state.w_pprobeacklast && state.w_grantlast && state.w_releaseack && state.w_grantack
-  when (no_schedule && no_wait && status_reg.valid) {
+  val will_free = no_schedule && no_wait
+  when (will_free && status_reg.valid) {
     status_reg.valid := false.B
     timer := 0.U
   }
@@ -373,6 +374,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.status.bits.w_c_resp := !state.w_rprobeacklast || !state.w_pprobeacklast || !state.w_pprobeack
   io.status.bits.w_d_resp := !state.w_grantlast || !state.w_grant || !state.w_releaseack
   io.status.bits.w_e_resp := !state.w_grantack
+  io.status.bits.will_free := will_free
   assert(io.status.bits.w_c_resp || !c_resp.valid)
   assert(io.status.bits.w_d_resp || !d_resp.valid)
   assert(io.status.bits.w_e_resp || !e_resp.valid)
