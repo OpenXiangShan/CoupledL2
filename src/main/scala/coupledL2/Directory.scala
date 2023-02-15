@@ -109,12 +109,14 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
 
   val sets = cacheParams.sets
   val ways = cacheParams.ways
-  val tag_wen = io.tagWReq.valid
-  val dir_wen = io.metaWReq.valid
-  val replacer_wen = RegInit(false.B)
+  val banks = 4 //[B]: TODO
 
-  val tagArray = Module(new SRAMTemplate(UInt(tagBits.W), sets, ways, singlePort = true))
-  val metaArray = Module(new SRAMTemplate(new MetaEntry, sets, ways, singlePort = true))
+  val tagWen  = io.tagWReq.valid
+  val metaWen = io.metaWReq.valid
+  val replacerWen = RegInit(false.B)
+
+  val tagArray  = Module(new BankedSRAM(UInt(tagBits.W), sets, ways, banks, singlePort = true))
+  val metaArray = Module(new BankedSRAM(new MetaEntry, sets, ways, banks, singlePort = true))
   val tagRead = Wire(Vec(ways, UInt(tagBits.W)))
   val metaRead = Wire(Vec(ways, new MetaEntry()))
 
@@ -128,7 +130,7 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   // Tag R/W
   tagRead := tagArray.io.r(io.read.fire, io.read.bits.set).resp.data
   tagArray.io.w(
-    tag_wen,
+    tagWen,
     io.tagWReq.bits.wtag,
     io.tagWReq.bits.set,
     UIntToOH(io.tagWReq.bits.way)
@@ -137,7 +139,7 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   // Meta R/W
   metaRead := metaArray.io.r(io.read.fire, io.read.bits.set).resp.data
   metaArray.io.w(
-    dir_wen,
+    metaWen,
     io.metaWReq.bits.wmeta,
     io.metaWReq.bits.set,
     io.metaWReq.bits.wayOH
@@ -155,18 +157,21 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
 
   // Replacer
   val repl = ReplacementPolicy.fromString(cacheParams.replacement, ways)
-  val repl_state = if(cacheParams.replacement == "random"){
+  val random_repl = cacheParams.replacement == "random"
+  val replacer_sram_opt = if(random_repl) None else
+    Some(Module(new BankedSRAM(UInt(repl.nBits.W), sets, 1, banks, singlePort = true, shouldReset = true)))
+
+  val repl_state = if(random_repl){
     when(io.tagWReq.fire){
       repl.miss
     }
     0.U
   } else {
-    val replacer_sram = Module(new SRAMTemplate(UInt(repl.nBits.W), sets, singlePort = true, shouldReset = true))
-    val repl_sram_r = replacer_sram.io.r(io.read.fire, io.read.bits.set).resp.data(0)
+    val repl_sram_r = replacer_sram_opt.get.io.r(io.read.fire, io.read.bits.set).resp.data(0)
     val repl_state_hold = WireInit(0.U(repl.nBits.W))
     repl_state_hold := HoldUnless(repl_sram_r, RegNext(io.read.fire, false.B))
     val next_state = repl.get_next_state(repl_state_hold, way_s1)
-    replacer_sram.io.w(replacer_wen, RegNext(next_state), RegNext(reqReg.set), 1.U)
+    replacer_sram_opt.get.io.w(replacerWen, RegNext(next_state), RegNext(reqReg.set), 1.U)
     repl_state_hold
   }
 
@@ -202,13 +207,15 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   dontTouch(metaArray.io)
   dontTouch(tagArray.io)
 
-  io.read.ready := !io.metaWReq.valid && !io.tagWReq.valid && !replacer_wen
+  io.read.ready := !io.metaWReq.valid && !io.tagWReq.valid && !replacerWen
+  val replacerRready = if(cacheParams.replacement == "random") true.B else replacer_sram_opt.get.io.r.req.ready
+  io.read.ready := tagArray.io.r.req.ready && metaArray.io.r.req.ready && replacerRready
 
   val update = reqReg.replacerInfo.channel(0) && (reqReg.replacerInfo.opcode === TLMessages.AcquirePerm || reqReg.replacerInfo.opcode === TLMessages.AcquireBlock)
   when(reqValidReg && update) {
-    replacer_wen := true.B
+    replacerWen := true.B
   }.otherwise {
-    replacer_wen := false.B
+    replacerWen := false.B
   }
 
 }
