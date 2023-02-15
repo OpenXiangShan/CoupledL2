@@ -14,7 +14,7 @@ class BankedSRAM[T <: Data]
 ) extends Module {
   val io = IO(new Bundle() {
     val r = Flipped(new SRAMReadBus(gen, sets, ways))
-    val w = Flipped(new SRAMWriteBus(gen, sets, 1))
+    val w = Flipped(new SRAMWriteBus(gen, sets, ways))
   })
 
   val innerSet = sets / n
@@ -37,7 +37,7 @@ class BankedSRAM[T <: Data]
     sram.io.r.req.valid := io.r.req.valid && ren
     sram.io.r.req.bits.apply(r_setIdx)
     sram.io.w.req.valid := io.w.req.valid && wen
-    sram.io.w.req.bits.apply(io.w.req.bits.data(0), w_setIdx, 1.U)
+    sram.io.w.req.bits.apply(io.w.req.bits.data, w_setIdx, io.w.req.bits.waymask.getOrElse(1.U))
     sram
   }
 
@@ -46,13 +46,16 @@ class BankedSRAM[T <: Data]
   val ren_vec = if(clk_div_by_2){
     RegNext(ren_vec_1, 0.U.asTypeOf(ren_vec_0))
   } else ren_vec_1
-  assert({PopCount(ren_vec) <= 1.U}) // only one read
+
+  // only one read/write
+  assert({PopCount(ren_vec) <= 1.U})
+  assert({PopCount(Cat(banks.map(_.io.r.req.fire))) <= 1.U})
 
   // block read when there is write request of the same bank
-  io.r.req.ready := Cat(banks.map(s => s.io.r.req.ready && !s.io.w.req.valid))(r_bankSel)
+  io.r.req.ready := Cat(banks.map(s => s.io.r.req.ready && !s.io.w.req.valid).reverse)(r_bankSel)
   // TODO: r.ready low when w.valid is also guaranteed in SRAMTemplate
   io.r.resp.data := Mux1H(ren_vec, banks.map(_.io.r.resp.data))
 
-  io.w.req.ready := Cat(banks.map(_.io.w.req.ready))(w_bankSel)
+  io.w.req.ready := Cat(banks.map(_.io.w.req.ready).reverse)(w_bankSel)
 
 }
