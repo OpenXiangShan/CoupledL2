@@ -73,7 +73,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 16)(implicit p: Paramet
     valids(insert_idx) := true.B
     wait_table(insert_idx) := VecInit(conflict_mask).asUInt()
     buffer_dep_mask(insert_idx) := VecInit(req_deps)
-    assert(PopCount(conflict_mask) <= 1.U)
+    assert(PopCount(conflict_mask) <= 2.U)
     rdys(insert_idx) := !conflict && !Cat(req_deps).orR()
   }
 
