@@ -84,6 +84,7 @@ case class L2Param
   channelBytes: TLChannelBeatBytes = TLChannelBeatBytes(32),
   clientCaches: Seq[L1Param] = Nil,
   replacement: String = "plru",
+  mshrs: Int = 16,
 
   // Client
   echoField: Seq[BundleFieldBase] = Nil,

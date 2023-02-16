@@ -28,6 +28,9 @@ class grantAckQEntry(implicit p: Parameters) extends L2Bundle {
   val sink = UInt(outerSinkBits.W)
 }
 
+// Communicate with L3
+// Receive Grant/GrantData/ReleaseAck from d and
+// Send GrantAck through e
 class RefillUnit(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val sinkD = Flipped(DecoupledIO(new TLBundleD(edgeOut.bundle)))

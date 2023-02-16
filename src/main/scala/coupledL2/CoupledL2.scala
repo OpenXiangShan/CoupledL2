@@ -48,10 +48,6 @@ trait HasCoupledL2Parameters {
                   else cacheParams.clientCaches.head.aliasBitsOpt
   val pageOffsetBits = log2Ceil(cacheParams.pageBytes)
 
-  val mshrsAll = 16
-  val idsAll = 128 // TODO: parameterize this?
-  val mshrBits = log2Up(idsAll)
-
   val bufBlocks = 8 // hold data that flows in MainPipe
   val bufIdxBits = log2Up(bufBlocks)
 
@@ -69,14 +65,16 @@ trait HasCoupledL2Parameters {
   lazy val bankBits = p(BankBitsKey)
 
   lazy val clientBits = edgeIn.client.clients.count(_.supports.probe)
-  lazy val sourceIdBits = edgeIn.bundle.sourceBits
+  lazy val sourceIdBits = edgeIn.bundle.sourceBits // ids of L1
   lazy val msgSizeBits = edgeIn.bundle.sizeBits
   lazy val sourceIdAll = 1 << sourceIdBits
-  // id of 0XXXX refers to mshrid
+
+  val mshrsAll = cacheParams.mshrs
+  val idsAll = 256// ids of L2 //TODO: Paramterize like this: max(mshrsAll * 2, sourceIdAll * 2)
+  val mshrBits = log2Up(idsAll)
+  // id of 0XXXX refers to mshrId
   // id of 1XXXX refers to reqs that do not enter mshr
   // require(isPow2(idsAll))
-  // require(idsAll >= mshrsAll * 2)
-  // require(idsAll >= sourceIdAll * 2)
 
   // width params with bank idx (used in prefetcher / ctrl unit)
   lazy val fullAddressBits = edgeOut.bundle.addressBits

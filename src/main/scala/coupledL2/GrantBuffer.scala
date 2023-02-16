@@ -26,7 +26,8 @@ import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.prefetch.PrefetchResp
 import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram}
 
-// Send out Grant/GrantData/ReleaseAck through d and
+// Communicate with L1
+// Send out Grant/GrantData/ReleaseAck from d and
 // receive GrantAck through e
 class GrantBuffer(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
@@ -59,20 +60,31 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   val selectOH = ParallelPriorityMux(~block_valids, (0 until mshrsAll).map(i => (1 << i).U))
 
   // used to block Probe upwards
-  val inflight_grant_set = Reg(Vec(sourceIdAll, UInt(setBits.W)))
-  val inflight_grant_tag = Reg(Vec(sourceIdAll, UInt(tagBits.W)))
-  val inflight_grant_valid = RegInit(VecInit(Seq.fill(sourceIdAll)(false.B)))
-  val inflight_grant = inflight_grant_valid zip (inflight_grant_set zip inflight_grant_tag)
+  val inflight_grant_entry = new L2Bundle(){
+    val valid = Bool()
+    val set = UInt(setBits.W)
+    val tag = UInt(tagBits.W)
+    val sink = UInt(mshrBits.W)
+  }
+  // sourceIdAll (= L1 Ids) entries
+  val inflight_grant = RegInit(VecInit(Seq.fill(sourceIdAll)(0.U.asTypeOf(inflight_grant_entry))))
 
   when (io.d_task.fire() && io.d_task.bits.task.opcode(2, 1) === Grant(2, 1)) {
-    val id = io.d_task.bits.task.mshrId(sourceIdBits-1, 0)
-    inflight_grant_set(id) := io.d_task.bits.task.set
-    inflight_grant_tag(id) := io.d_task.bits.task.tag
-    inflight_grant_valid(id) := true.B
+    // choose an empty entry
+    val valids = VecInit(inflight_grant.map(_.valid)).asUInt
+    val insertIdx = PriorityEncoder(~valids)
+    val entry = inflight_grant(insertIdx)
+    entry.valid := true.B
+    entry.set := io.d_task.bits.task.set
+    entry.tag := io.d_task.bits.task.tag
+    entry.sink := io.d_task.bits.task.mshrId
   }
   when (io.e.fire) {
-    val id = io.e.bits.sink(sourceIdBits-1, 0)
-    inflight_grant_valid(id) := false.B
+    // compare sink to clear buffer
+    val sinkMatchVec = inflight_grant.map(g => g.valid && g.sink === io.e.bits.sink)
+    assert(PopCount(sinkMatchVec) === 1.U, "GrantBuf: there must be one and only one match")
+    val bufIdx = OHToUInt(sinkMatchVec)
+    inflight_grant(bufIdx).valid := false.B
   }
 
   // handle capacity conflict
@@ -83,12 +95,10 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     s.valid && s.bits.fromA
   }).asUInt, block_valids)) >= mshrsAll.U
 
-  io.toReqArb.blockSinkReqEntrance.blockA_s1 := Cat(inflight_grant.map { case (v, (set, _)) =>
-    v && set === io.fromReqArb.status_s1.a_set
-  }).orR || noSpaceForSinkReq
-  io.toReqArb.blockSinkReqEntrance.blockB_s1 := Cat(inflight_grant.map { case (v, (set, tag)) =>
-    v && set === io.fromReqArb.status_s1.b_set && tag === io.fromReqArb.status_s1.b_tag
-  }).orR
+  io.toReqArb.blockSinkReqEntrance.blockA_s1 := Cat(inflight_grant.map(g => g.valid &&
+    g.set === io.fromReqArb.status_s1.a_set)).orR || noSpaceForSinkReq
+  io.toReqArb.blockSinkReqEntrance.blockB_s1 := Cat(inflight_grant.map(g => g.valid &&
+    g.set === io.fromReqArb.status_s1.b_set && g.tag === io.fromReqArb.status_s1.b_tag)).orR
   io.toReqArb.blockSinkReqEntrance.blockC_s1 := noSpaceForSinkReq
   io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq
 
@@ -189,7 +199,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     }
     timers.zipWithIndex.foreach {
       case (timer, i) =>
-        when (inflight_grant_valid(i)) { timer := timer + 1.U }
+        when (inflight_grant(i).valid) { timer := timer + 1.U }
     }
     val t = WireInit(0.U(64.W))
     when (io.e.fire()) {
