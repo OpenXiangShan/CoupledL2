@@ -155,6 +155,8 @@ class FSMState(implicit p: Parameters) extends L2Bundle {
   val w_grant = Bool()
   val w_releaseack = Bool()
   val w_grantack = Bool()
+
+  val w_release_sent = Bool()
 }
 
 class SourceAReq(implicit p: Parameters) extends L2Bundle {

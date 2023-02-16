@@ -40,6 +40,9 @@ class MSHRResps(implicit p: Parameters) extends L2Bundle {
   val sink_c = Flipped(ValidIO(new RespInfoBundle))
   val sink_d = Flipped(ValidIO(new RespInfoBundle))
   val sink_e = Flipped(ValidIO(new RespInfoBundle))
+  // make sure that Acquire is sent after Release,
+  // so resp from SourceC is needed to initiate Acquire
+  val source_c = Flipped(ValidIO(new RespInfoBundle))
 }
 
 class MSHR(implicit p: Parameters) extends L2Module {
@@ -107,7 +110,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
 
   /* Task allocation */
   // Theoretically, data to be released is saved in ReleaseBuffer, so Acquire can be sent as soon as req enters mshr
-  io.tasks.source_a.valid := !state.s_acquire
+  io.tasks.source_a.valid := !state.s_acquire && state.s_release && state.w_release_sent
   io.tasks.source_b.valid := !state.s_pprobe || !state.s_rprobe
   val mp_release_valid = !state.s_release && state.w_rprobeacklast
   val mp_probeack_valid = !state.s_probeack && state.w_pprobeacklast
@@ -352,6 +355,10 @@ class MSHR(implicit p: Parameters) extends L2Module {
 
   when (e_resp.valid) {
     state.w_grantack := true.B
+  }
+
+  when (io.resps.source_c.valid) {
+    state.w_release_sent := true.B
   }
 
   when (status_reg.valid) {

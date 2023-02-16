@@ -67,6 +67,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   mshrCtl.io.resps.sinkC := sinkC.io.resp
   mshrCtl.io.resps.sinkD := refillUnit.io.resp
   mshrCtl.io.resps.sinkE := grantBuf.io.e_resp
+  mshrCtl.io.resps.sourceC := sourceC.io.resp
   mshrCtl.io.nestedwb := mainPipe.io.nestedwb
   mshrCtl.io.pbRead <> sinkA.io.pbRead
   mshrCtl.io.pbResp <> sinkA.io.pbResp

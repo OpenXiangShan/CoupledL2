@@ -447,6 +447,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       alloc_state.w_grantlast := false.B
       alloc_state.w_grant := false.B
     }
+    alloc_state.w_release_sent := alloc_state.s_acquire || alloc_state.s_release
     // need Probe for alias
     // need Probe when Get hits on a TRUNK block
     when(cache_alias || need_probe_s3_a) {
