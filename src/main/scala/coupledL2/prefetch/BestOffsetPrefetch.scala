@@ -282,4 +282,12 @@ class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   io.req.bits.isBOP := true.B
   io.train.ready := scoreTable.io.req.ready && (!req_valid || io.req.ready)
   io.resp.ready := rrTable.io.w.ready
+
+  for (off <- offsetList) {
+    if (off < 0) {
+      XSPerfAccumulate(cacheParams, "best_offset_neg_" + (-off).toString, prefetchOffset === off.S(offsetWidth.W).asUInt)
+    } else {
+      XSPerfAccumulate(cacheParams, "best_offset_pos_" + off.toString, prefetchOffset === off.U)
+    }
+  }
 }
