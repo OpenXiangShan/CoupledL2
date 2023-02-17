@@ -213,4 +213,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   XSPerfAccumulate(cacheParams, "sinkA_stall_by_sinkC", io.sinkA.valid && sink_ready_basic && !block_A && sinkValids(0))
   XSPerfAccumulate(cacheParams, "sinkB_stall_by_sinkC", io.sinkB.valid && sink_ready_basic && !block_B && sinkValids(0))
 
+  XSPerfAccumulate(cacheParams, "sinkA_stall_by_mshrTask", io.sinkA.valid && mshr_task_s1.valid)
+  XSPerfAccumulate(cacheParams, "sinkB_stall_by_mshrTask", io.sinkB.valid && mshr_task_s1.valid)
+  XSPerfAccumulate(cacheParams, "sinkC_stall_by_mshrTask", io.sinkC.valid && mshr_task_s1.valid)
 }

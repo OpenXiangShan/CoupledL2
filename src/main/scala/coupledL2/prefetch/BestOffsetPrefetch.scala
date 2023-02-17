@@ -22,6 +22,7 @@ import chipsalliance.rocketchip.config.Parameters
 import chisel3._
 import chisel3.util._
 import coupledL2.HasCoupledL2Parameters
+import coupledL2.utils.XSPerfAccumulate
 
 case class BOPParameters(
   rrTableEntries: Int = 256,
