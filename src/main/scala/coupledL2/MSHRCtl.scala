@@ -24,7 +24,7 @@ import chipsalliance.rocketchip.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.prefetch.PrefetchTrain
-import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram}
+import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram, XSPerfMax}
 
 class MSHRSelector(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
@@ -191,5 +191,18 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     XSPerfHistogram(cacheParams, "acquire_period", acquire_period, acquire_period_en, start, stop, step)
     XSPerfHistogram(cacheParams, "release_period", release_period, release_period_en, start, stop, step)
     XSPerfHistogram(cacheParams, "probe_period", probe_period, probe_period_en, start, stop, step)
+
+    val timers = RegInit(VecInit(Seq.fill(mshrsAll)(0.U(64.W))))
+    for (((timer, m), i) <- timers.zip(mshrs).zipWithIndex) {
+      when (m.io.alloc.valid) {
+        timer := 1.U
+      }.otherwise {
+        timer := timer + 1.U
+      }
+      val enable = m.io.status.valid && m.io.status.bits.will_free
+      XSPerfHistogram(cacheParams, "mshr_latency_" + Integer.toString(i, 10),
+        timer, enable, 0, 300, 10)
+      XSPerfMax(cacheParams, "mshr_latency", timer, enable)
+    }
   }
 }

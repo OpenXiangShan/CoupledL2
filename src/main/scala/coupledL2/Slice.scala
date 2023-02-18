@@ -137,4 +137,24 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
 
   dontTouch(io.in)
   dontTouch(io.out)
+
+  if (cacheParams.enablePerf) {
+    val a_begin_times = RegInit(VecInit(Seq.fill(sourceIdAll)(0.U(64.W))))
+    val timer = RegInit(0.U(64.W))
+    timer := timer + 1.U
+    a_begin_times.zipWithIndex.foreach {
+      case (r, i) =>
+        when (sinkA.io.a.fire() && sinkA.io.a.bits.source === i.U) {
+          r := timer
+        }
+    }
+    val d_source = grantBuf.io.d.bits.source
+    val delay = timer - a_begin_times(d_source)
+    val (first, _, _, _) = edgeIn.count(grantBuf.io.d)
+    val delay_sample = grantBuf.io.d.fire() && first
+    XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 0, 20, 1, true, true)
+    XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 20, 300, 10, true, false)
+    XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 300, 500, 20, true, false)
+    XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 500, 1000, 100, true, false)
+  }
 }
