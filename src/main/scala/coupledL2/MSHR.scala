@@ -33,7 +33,7 @@ class MSHRTasks(implicit p: Parameters) extends L2Bundle {
   val source_a = DecoupledIO(new SourceAReq) // To AcquireUnit  // TODO: no need to use decoupled handshake
   val source_b = DecoupledIO(new SourceBReq)
   val mainpipe = DecoupledIO(new TaskBundle) // To Mainpipe (SourceC or SourceD)
-  val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain)) // To prefetcher
+  // val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain)) // To prefetcher
 }
 
 class MSHRResps(implicit p: Parameters) extends L2Bundle {
@@ -116,7 +116,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val mp_probeack_valid = !state.s_probeack && state.w_pprobeacklast
   val mp_grant_valid = !state.s_refill && state.w_grantlast && state.w_rprobeacklast && state.s_release // [Alias] grant after rprobe done
   io.tasks.mainpipe.valid := mp_release_valid || mp_probeack_valid || mp_grant_valid
-  io.tasks.prefetchTrain.foreach(t => t.valid := !state.s_triggerprefetch.getOrElse(true.B))
+  // io.tasks.prefetchTrain.foreach(t => t.valid := !state.s_triggerprefetch.getOrElse(true.B))
 
   val oa = io.tasks.source_a.bits
   oa := DontCare
@@ -286,13 +286,13 @@ class MSHR(implicit p: Parameters) extends L2Module {
     )
   )
 
-  io.tasks.prefetchTrain.foreach {
-    train =>
-      train.bits.tag := req.tag
-      train.bits.set := req.set
-      train.bits.needT := req_needT
-      train.bits.source := req.source
-  }
+  // io.tasks.prefetchTrain.foreach {
+  //   train =>
+  //     train.bits.tag := req.tag
+  //     train.bits.set := req.set
+  //     train.bits.needT := req_needT
+  //     train.bits.source := req.source
+  // }
 
   /* Task update */
   when (io.tasks.source_a.fire) {
@@ -311,12 +311,12 @@ class MSHR(implicit p: Parameters) extends L2Module {
       state.s_probeack := true.B
     }
   }
-  prefetchOpt.foreach {
-    _ =>
-      when (io.tasks.prefetchTrain.get.fire()) {
-        state.s_triggerprefetch.get := true.B
-      }
-  }
+  // prefetchOpt.foreach {
+  //   _ =>
+  //     when (io.tasks.prefetchTrain.get.fire()) {
+  //       state.s_triggerprefetch.get := true.B
+  //     }
+  // }
 
   /* Refill response */
   val c_resp = io.resps.sink_c
@@ -365,7 +365,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     timer := timer + 1.U
   }
   
-  val no_schedule = state.s_refill && state.s_probeack && state.s_triggerprefetch.getOrElse(true.B)
+  val no_schedule = state.s_refill && state.s_probeack// && state.s_triggerprefetch.getOrElse(true.B)
   val no_wait = state.w_rprobeacklast && state.w_pprobeacklast && state.w_grantlast && state.w_releaseack && state.w_grantack
   val will_free = no_schedule && no_wait
   when (will_free && status_reg.valid) {

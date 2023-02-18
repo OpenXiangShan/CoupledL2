@@ -60,7 +60,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     /* send reqs */
     val sourceA = DecoupledIO(new TLBundleA(edgeOut.bundle))
     val sourceB = DecoupledIO(new TLBundleB(edgeIn.bundle))
-    val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain))
+    // val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain))
 
     /* receive resps */
     val resps = Input(new Bundle() {
@@ -149,10 +149,10 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   fastArb(mshrs.map(_.io.tasks.mainpipe), io.mshrTask, Some("mshr_task"))
 
   /* Arbitrate prefetchTrains to Prefetcher */
-  prefetchOpt.foreach {
-    _ =>
-      fastArb(mshrs.map(_.io.tasks.prefetchTrain.get), io.prefetchTrain.get, Some("prefetch_train"))
-  }
+  // prefetchOpt.foreach {
+  //   _ =>
+  //     fastArb(mshrs.map(_.io.tasks.prefetchTrain.get), io.prefetchTrain.get, Some("prefetch_train"))
+  // }
 
   io.releaseBufWriteId := ParallelPriorityMux(resp_sinkC_match_vec, (0 until mshrsAll).map(i => i.U))
 
@@ -171,6 +171,10 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   XSPerfHistogram(cacheParams, "mshr_alloc", io.toMainPipe.mshr_alloc_ptr,
     enable = io.fromMainPipe.mshr_alloc_s3.valid,
     start = 0, stop = mshrsAll, step = 1)
+  // prefetchOpt.foreach {
+  //   _ =>
+  //     XSPerfAccumulate(cacheParams, "prefetch_trains", io.prefetchTrain.get.fire())
+  // }
   
   if (cacheParams.enablePerf) {
     val start = 0

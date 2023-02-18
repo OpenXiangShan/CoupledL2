@@ -111,7 +111,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
 
   io.prefetch.foreach {
     p =>
-      p.train <> mshrCtl.io.prefetchTrain.get
+      p.train <> mainPipe.io.prefetchTrain.get
       sinkA.io.prefetchReq.get <> p.req
       p.resp <> grantBuf.io.prefetchResp.get
       p.recv_addr := DontCare
