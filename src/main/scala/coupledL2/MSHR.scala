@@ -277,6 +277,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_grant.metaWen := !req_put
   mp_grant.tagWen := !dirResult.hit && !req_put
   mp_grant.dsWen := !dirResult.hit && !req_put || probeDirty && (req_get || req.aliasTask.getOrElse(false.B))
+  mp_grant.fromL2pft.foreach(_ := req.fromL2pft.get)
+  mp_grant.needHint.foreach(_ := false.B)
 
   io.tasks.mainpipe.bits := ParallelPriorityMux(
     Seq(
