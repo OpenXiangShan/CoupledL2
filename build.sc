@@ -89,6 +89,16 @@ object huancun extends SbtModule with ScalafmtModule with CommonModule {
   )
 }
 
+object utility extends SbtModule with ScalafmtModule with CommonModule {
+
+   override def ivyDeps = Agg(common.getVersion("chisel3"))
+
+   override def millSourcePath = os.pwd / "utility"
+
+   override def moduleDeps = super.moduleDeps ++ Seq(rocketchip)
+ }
+
+
 object CoupledL2 extends SbtModule with ScalafmtModule with CommonModule {
 
   override def millSourcePath = millOuterCtx.millSourcePath
@@ -99,10 +109,7 @@ object CoupledL2 extends SbtModule with ScalafmtModule with CommonModule {
     getVersion("chiseltest"),
   )
 
-  override def moduleDeps = super.moduleDeps ++ Seq(
-    rocketchip,
-    huancun
-  )
+  override def moduleDeps = super.moduleDeps ++ Seq(rocketchip, utility)
 
   object test extends Tests {
     override def ivyDeps = super.ivyDeps() ++ Agg(

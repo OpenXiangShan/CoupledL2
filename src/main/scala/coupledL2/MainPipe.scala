@@ -19,7 +19,7 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import coupledL2.utils._
+import utility._
 import coupledL2.MetaData._
 import chipsalliance.rocketchip.config.Parameters
 import freechips.rocketchip.tilelink._
