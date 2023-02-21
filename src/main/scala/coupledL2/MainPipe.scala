@@ -86,8 +86,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     val nestedwb = Output(new NestedWriteback)
     val nestedwbData = Output(new DSBlock)
 
-    val l1Hint = Valid(new L2ToL1Hint())
-    val grantBufferHint = Flipped(Valid(new L2ToL1Hint()))
+    val l1Hint = ValidIO(new L2ToL1Hint())
+    val grantBufferHint = Flipped(ValidIO(new L2ToL1Hint()))
     val globalCounter = Input(UInt(log2Ceil(mshrsAll).W))
   })
 
@@ -361,8 +361,10 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   d_s4.bits.data.data := data_s4
 
   // l1 acquire and l2 hit situation
-  val validHint_s4 = task_s4.valid && task_s4.bits.opcode === GrantData && !task_s4.bits.mshrTask && ((io.globalCounter + 2.U) === hintCycleAhead.U)
-  hint_s4.valid := validHint_s4
+  val validHint_s4 = task_s4.valid && task_s4.bits.opcode === GrantData && task_s4.bits.fromA && !task_s4.bits.mshrTask && ((io.globalCounter + 2.U) === hintCycleAhead.U)
+  // l1 acquire and l2 miss situation
+  val validHintMiss_s4 = task_s4.valid && task_s4.bits.opcode === GrantData && task_s4.bits.fromA && task_s4.bits.mshrTask && Mux(d_s5.valid, ((io.globalCounter + 2.U) === hintCycleAhead.U), ((io.globalCounter + 1.U) === hintCycleAhead.U))
+  hint_s4.valid := validHint_s4 || validHintMiss_s4
   hint_s4.bits.sourceId := task_s4.bits.sourceId
 
   /* ======== Stage 5 ======== */
@@ -387,8 +389,10 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val chnl_fire_s5 = (c_s5.fire() || d_s5.fire())
 
   // l1 acquire and l2 hit situation
-  val validHint_s5 = task_s5.valid && task_s5.bits.opcode === GrantData && !task_s5.bits.mshrTask && ((io.globalCounter + 1.U) === hintCycleAhead.U)
-  hint_s5.valid := validHint_s5
+  val validHint_s5 = task_s5.valid && task_s5.bits.opcode === GrantData && task_s5.bits.fromA && !task_s5.bits.mshrTask && ((io.globalCounter + 1.U) === hintCycleAhead.U)
+  // l1 acquire and l2 miss situation
+  val validHintMiss_s5 = task_s5.valid && task_s5.bits.opcode === GrantData && task_s5.bits.fromA && task_s5.bits.mshrTask && ((io.globalCounter + 1.U) === hintCycleAhead.U)
+  hint_s5.valid := validHint_s5 || validHintMiss_s5
   hint_s5.bits.sourceId := task_s5.bits.sourceId
 
   io.releaseBufWrite.valid := task_s5.valid && need_write_releaseBuf_s5
@@ -495,8 +499,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.l1Hint.bits := ParallelMux(hint_valid zip hint_bits)
   assert(PopCount(VecInit(hint_valid)) <= 1.U)
 
-  val timer = RegInit(0.U(64.W))
-  timer := timer + 1.U
+  // val timer = RegInit(0.U(64.W))
+  // timer := timer + 1.U
   // when(io.l1Hint.valid) {
   //   printf("hint at %x, sourceId is %x\n", timer, io.l1Hint.bits.sourceId)
   // }

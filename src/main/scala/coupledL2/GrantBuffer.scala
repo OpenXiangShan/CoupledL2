@@ -38,9 +38,9 @@ abstract class BaseGrantBuffer(implicit p: Parameters) extends L2Module {
       val status_s1 = new PipeEntranceStatus
     })
 
-    val l1Hint = Valid(new L2ToL1Hint())
+    val l1Hint = ValidIO(new L2ToL1Hint())
     val globalCounter = Output(UInt(log2Ceil(mshrsAll).W))
-    
+
     val pipeStatusVec = Flipped(Vec(5, ValidIO(new PipeStatus)))
     val toReqArb = Output(new Bundle() {
       val blockSinkReqEntrance = new BlockInfo()
