@@ -23,15 +23,18 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util.leftOR
 import chipsalliance.rocketchip.config.Parameters
 import coupledL2.utils._
+import coupledL2.prefetch.PrefetchIO
 
 class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val io = IO(new Bundle {
     val in = Flipped(TLBundle(edgeIn.bundle))
     val out = TLBundle(edgeOut.bundle)
     val l1Hint = Output(new L2ToL1Hint())
+    val prefetch = prefetchOpt.map(_ => Flipped(new PrefetchIO))
   })
 
   val reqArb = Module(new RequestArb())
+  val a_reqBuf = Module(new RequestBuffer)
   val mainPipe = Module(new MainPipe())
   val mshrCtl = Module(new MSHRCtl())
   val directory = Module(new Directory())
@@ -47,7 +50,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val prbq = Module(new ProbeQueue())
   prbq.io <> DontCare // @XiaBin TODO
 
-  reqArb.io.sinkA <> sinkA.io.toReqArb
+  reqArb.io.sinkA <> a_reqBuf.io.out
   reqArb.io.sinkC <> sinkC.io.toReqArb
   reqArb.io.dirRead_s1 <> directory.io.read
   reqArb.io.taskToPipe_s2 <> mainPipe.io.taskFromArb_s2
@@ -58,10 +61,14 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   reqArb.io.fromMainPipe := mainPipe.io.toReqArb
   reqArb.io.fromGrantBuffer := grantBuf.io.toReqArb
 
+  a_reqBuf.io.in <> sinkA.io.toReqArb
+  a_reqBuf.io.mshr_status := mshrCtl.io.mshr_status
+
   mshrCtl.io.fromReqArb.status_s1 := reqArb.io.status_s1
   mshrCtl.io.resps.sinkC := sinkC.io.resp
   mshrCtl.io.resps.sinkD := refillUnit.io.resp
   mshrCtl.io.resps.sinkE := grantBuf.io.e_resp
+  mshrCtl.io.resps.sourceC := sourceC.io.resp
   mshrCtl.io.nestedwb := mainPipe.io.nestedwb
   mshrCtl.io.pbRead <> sinkA.io.pbRead
   mshrCtl.io.pbResp <> sinkA.io.pbResp
@@ -107,6 +114,14 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   mshrCtl.io.pipeStatusVec(0) := reqArb.io.status_vec(1) // s2 status
   mshrCtl.io.pipeStatusVec(1) := mainPipe.io.status_vec(0) // s3 status
 
+  io.prefetch.foreach {
+    p =>
+      p.train <> mainPipe.io.prefetchTrain.get
+      sinkA.io.prefetchReq.get <> p.req
+      p.resp <> grantBuf.io.prefetchResp.get
+      p.recv_addr := DontCare
+  }
+
   /* input & output signals */
   val inBuf = cacheParams.innerBuf
   val outBuf = cacheParams.outerBuf
@@ -127,4 +142,24 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
 
   dontTouch(io.in)
   dontTouch(io.out)
+
+  if (cacheParams.enablePerf) {
+    val a_begin_times = RegInit(VecInit(Seq.fill(sourceIdAll)(0.U(64.W))))
+    val timer = RegInit(0.U(64.W))
+    timer := timer + 1.U
+    a_begin_times.zipWithIndex.foreach {
+      case (r, i) =>
+        when (sinkA.io.a.fire() && sinkA.io.a.bits.source === i.U) {
+          r := timer
+        }
+    }
+    val d_source = grantBuf.io.d.bits.source
+    val delay = timer - a_begin_times(d_source)
+    val (first, _, _, _) = edgeIn.count(grantBuf.io.d)
+    val delay_sample = grantBuf.io.d.fire() && first
+    XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 0, 20, 1, true, true)
+    XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 20, 300, 10, true, false)
+    XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 300, 500, 20, true, false)
+    XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 500, 1000, 100, true, false)
+  }
 }

@@ -23,6 +23,8 @@ import utility._
 import chipsalliance.rocketchip.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
+import coupledL2.prefetch.PrefetchResp
+import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram}
 
 abstract class BaseGrantBuffer(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
@@ -46,6 +48,7 @@ abstract class BaseGrantBuffer(implicit p: Parameters) extends L2Module {
       val blockSinkReqEntrance = new BlockInfo()
       val blockMSHRReqEntrance = Bool()
     })
+    val prefetchResp = prefetchOpt.map(_ => DecoupledIO(new PrefetchResp))
   })
 
   io.l1Hint := DontCare
@@ -65,20 +68,31 @@ class GrantBuffer(implicit p: Parameters) extends BaseGrantBuffer {
   val selectOH = ParallelPriorityMux(~block_valids, (0 until mshrsAll).map(i => (1 << i).U))
 
   // used to block Probe upwards
-  val inflight_grant_set = Reg(Vec(sourceIdAll, UInt(setBits.W)))
-  val inflight_grant_tag = Reg(Vec(sourceIdAll, UInt(tagBits.W)))
-  val inflight_grant_valid = RegInit(VecInit(Seq.fill(sourceIdAll)(false.B)))
-  val inflight_grant = inflight_grant_valid zip (inflight_grant_set zip inflight_grant_tag)
+  val inflight_grant_entry = new L2Bundle(){
+    val valid = Bool()
+    val set = UInt(setBits.W)
+    val tag = UInt(tagBits.W)
+    val sink = UInt(mshrBits.W)
+  }
+  // sourceIdAll (= L1 Ids) entries
+  val inflight_grant = RegInit(VecInit(Seq.fill(sourceIdAll)(0.U.asTypeOf(inflight_grant_entry))))
 
   when (io.d_task.fire() && io.d_task.bits.task.opcode(2, 1) === Grant(2, 1)) {
-    val id = io.d_task.bits.task.mshrId(sourceIdBits-1, 0)
-    inflight_grant_set(id) := io.d_task.bits.task.set
-    inflight_grant_tag(id) := io.d_task.bits.task.tag
-    inflight_grant_valid(id) := true.B
+    // choose an empty entry
+    val valids = VecInit(inflight_grant.map(_.valid)).asUInt
+    val insertIdx = PriorityEncoder(~valids)
+    val entry = inflight_grant(insertIdx)
+    entry.valid := true.B
+    entry.set := io.d_task.bits.task.set
+    entry.tag := io.d_task.bits.task.tag
+    entry.sink := io.d_task.bits.task.mshrId
   }
   when (io.e.fire) {
-    val id = io.e.bits.sink(sourceIdBits-1, 0)
-    inflight_grant_valid(id) := false.B
+    // compare sink to clear buffer
+    val sinkMatchVec = inflight_grant.map(g => g.valid && g.sink === io.e.bits.sink)
+    assert(PopCount(sinkMatchVec) === 1.U, "GrantBuf: there must be one and only one match")
+    val bufIdx = OHToUInt(sinkMatchVec)
+    inflight_grant(bufIdx).valid := false.B
   }
 
   // handle capacity conflict
@@ -89,23 +103,23 @@ class GrantBuffer(implicit p: Parameters) extends BaseGrantBuffer {
     s.valid && s.bits.fromA
   }).asUInt, block_valids)) >= mshrsAll.U
 
-  io.toReqArb.blockSinkReqEntrance.blockA_s1 := Cat(inflight_grant.map { case (v, (set, _)) =>
-    v && set === io.fromReqArb.status_s1.a_set
-  }).orR || noSpaceForSinkReq
-  io.toReqArb.blockSinkReqEntrance.blockB_s1 := Cat(inflight_grant.map { case (v, (set, tag)) =>
-    v && set === io.fromReqArb.status_s1.b_set && tag === io.fromReqArb.status_s1.b_tag
-  }).orR
+  io.toReqArb.blockSinkReqEntrance.blockA_s1 := Cat(inflight_grant.map(g => g.valid &&
+    g.set === io.fromReqArb.status_s1.a_set)).orR || noSpaceForSinkReq
+  io.toReqArb.blockSinkReqEntrance.blockB_s1 := Cat(inflight_grant.map(g => g.valid &&
+    g.set === io.fromReqArb.status_s1.b_set && g.tag === io.fromReqArb.status_s1.b_tag)).orR
   io.toReqArb.blockSinkReqEntrance.blockC_s1 := noSpaceForSinkReq
   io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq
 
   selectOH.asBools.zipWithIndex.foreach {
     case (sel, i) =>
-      when (sel && io.d_task.fire()) {
+      when (sel && io.d_task.fire() && !(io.d_task.bits.task.opcode === HintAck && !io.d_task.bits.task.fromL2pft.getOrElse(false.B))) {
         beat_valids(i).foreach(_ := true.B)
         taskAll(i) := io.d_task.bits.task
         dataAll(i) := io.d_task.bits.data
       }
   }
+  // If no prefetch, there never should be HintAck
+  assert(prefetchOpt.nonEmpty.B || !io.d_task.valid || io.d_task.bits.task.opcode =/= HintAck)
 
   def toTLBundleD(task: TaskBundle, data: UInt = 0.U) = {
     val d = Wire(new TLBundleD(edgeIn.bundle))
@@ -136,7 +150,7 @@ class GrantBuffer(implicit p: Parameters) extends BaseGrantBuffer {
   val out_bundles = Wire(Vec(mshrsAll, io.d.cloneType))
   out_bundles.zipWithIndex.foreach {
     case (out, i) =>
-      out.valid := block_valids(i)
+      out.valid := block_valids(i) && taskAll(i).opcode =/= HintAck // L1 does not need HintAck (for now)
       val data = dataAll(i).data
       val beatsOH = beat_valids(i).asUInt
       val (beat, next_beatsOH) = getBeat(data, beatsOH)
@@ -150,6 +164,21 @@ class GrantBuffer(implicit p: Parameters) extends BaseGrantBuffer {
           beat_valids(i).foreach(_ := false.B)
         }
       }
+  }
+
+  val pft_resps = prefetchOpt.map(_ => Wire(Vec(mshrsAll, DecoupledIO(new PrefetchResp))))
+  io.prefetchResp.zip(pft_resps).foreach {
+    case (out, ins) =>
+      ins.zipWithIndex.foreach {
+        case (in, i) =>
+          in.valid := block_valids(i) && taskAll(i).opcode === HintAck
+          in.bits.tag := taskAll(i).tag
+          in.bits.set := taskAll(i).set
+          when (in.fire()) {
+            beat_valids(i).foreach(_ := false.B)
+          }
+      }
+      fastArb(ins, out, Some("pft_resp_arb"))
   }
 
   TLArbiter.robin(edgeIn, io.d, out_bundles:_*)
@@ -167,4 +196,26 @@ class GrantBuffer(implicit p: Parameters) extends BaseGrantBuffer {
   io.e_resp.respInfo := DontCare
   io.e_resp.respInfo.opcode := GrantAck
   io.e_resp.respInfo.last := true.B
+
+  XSPerfAccumulate(cacheParams, "grant_buffer_full", full)
+
+  if (cacheParams.enablePerf) {
+    val timers = Reg(Vec(sourceIdAll, UInt(64.W)))
+    when (io.d_task.fire() && io.d_task.bits.task.opcode(2, 1) === Grant(2, 1)) {
+      val id = io.d_task.bits.task.mshrId(sourceIdBits-1, 0)
+      timers(id) := 1.U
+    }
+    timers.zipWithIndex.foreach {
+      case (timer, i) =>
+        when (inflight_grant(i).valid) { timer := timer + 1.U }
+    }
+    val t = WireInit(0.U(64.W))
+    when (io.e.fire()) {
+      val id = io.e.bits.sink(sourceIdBits-1, 0)
+      timers(id) := 0.U
+      t := timers(id)
+    }
+    XSPerfHistogram(cacheParams, "grant_grantack_period", t, io.e.fire(),
+      0, 10, 1)
+  }
 }

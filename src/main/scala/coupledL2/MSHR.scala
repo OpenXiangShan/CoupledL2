@@ -25,18 +25,24 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
 import chipsalliance.rocketchip.config.Parameters
+import coupledL2.prefetch.PrefetchTrain
+import coupledL2.utils.XSPerfAccumulate
 
 class MSHRTasks(implicit p: Parameters) extends L2Bundle {
   // outer
   val source_a = DecoupledIO(new SourceAReq) // To AcquireUnit  // TODO: no need to use decoupled handshake
   val source_b = DecoupledIO(new SourceBReq)
   val mainpipe = DecoupledIO(new TaskBundle) // To Mainpipe (SourceC or SourceD)
+  // val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain)) // To prefetcher
 }
 
 class MSHRResps(implicit p: Parameters) extends L2Bundle {
   val sink_c = Flipped(ValidIO(new RespInfoBundle))
   val sink_d = Flipped(ValidIO(new RespInfoBundle))
   val sink_e = Flipped(ValidIO(new RespInfoBundle))
+  // make sure that Acquire is sent after Release,
+  // so resp from SourceC is needed to initiate Acquire
+  val source_c = Flipped(ValidIO(new RespInfoBundle))
 }
 
 class MSHR(implicit p: Parameters) extends L2Module {
@@ -59,6 +65,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val probeDirty = RegInit(false.B)
   val probeGotN = RegInit(false.B)
 
+  val timer = RegInit(0.U(64.W)) // for performance analysis
+
   /* MSHR Allocation */
   val status_reg = RegInit(0.U.asTypeOf(Valid(new MSHRStatus())))
   when(io.alloc.valid) {
@@ -76,34 +84,39 @@ class MSHR(implicit p: Parameters) extends L2Module {
     status_reg.bits.size := ms_task.size
     status_reg.bits.source := ms_task.sourceId
     status_reg.bits.needProbeAckData := ms_task.needProbeAckData
-    status_reg.bits.alias := ms_task.alias
-    status_reg.bits.aliasTask := ms_task.aliasTask
+    status_reg.bits.alias.foreach(_ := ms_task.alias.getOrElse(0.U))
+    status_reg.bits.aliasTask.foreach(_ := ms_task.aliasTask.getOrElse(false.B))
     status_reg.bits.pbIdx := ms_task.pbIdx
+    status_reg.bits.fromL2pft.foreach(_ := ms_task.fromL2pft.get)
     gotT := false.B
     gotDirty := false.B
     probeDirty := false.B
     probeGotN := false.B
+    timer := 1.U
   }
 
   /* Intermediate logic */
   val req = status_reg.bits
   val meta = dirResult.meta
+  val meta_pft = meta.prefetch.getOrElse(false.B)
   val meta_no_client = !meta.clients.orR
 
   val req_needT = needT(req.opcode, req.param)
-  val req_acquire = req.opcode === AcquireBlock || req.opcode === AcquirePerm
+  val req_acquire = req.opcode === AcquireBlock && req.fromA || req.opcode === AcquirePerm // AcquireBlock and Probe share the same opcode
   val req_put = req.opcode === PutFullData || req.opcode === PutPartialData
   val req_get = req.opcode === Get
-  val req_promoteT = (req_acquire || req_get) && Mux(dirResult.hit, meta_no_client && meta.state === TIP, gotT)
+  val req_prefetch = req.opcode === Hint
+  val req_promoteT = (req_acquire || req_get || req_prefetch) && Mux(dirResult.hit, meta_no_client && meta.state === TIP, gotT)
 
   /* Task allocation */
   // Theoretically, data to be released is saved in ReleaseBuffer, so Acquire can be sent as soon as req enters mshr
-  io.tasks.source_a.valid := !state.s_acquire
+  io.tasks.source_a.valid := !state.s_acquire && state.s_release && state.w_release_sent
   io.tasks.source_b.valid := !state.s_pprobe || !state.s_rprobe
   val mp_release_valid = !state.s_release && state.w_rprobeacklast
   val mp_probeack_valid = !state.s_probeack && state.w_pprobeacklast
   val mp_grant_valid = !state.s_refill && state.w_grantlast && state.w_rprobeacklast && state.s_release // [Alias] grant after rprobe done
   io.tasks.mainpipe.valid := mp_release_valid || mp_probeack_valid || mp_grant_valid
+  // io.tasks.prefetchTrain.foreach(t => t.valid := !state.s_triggerprefetch.getOrElse(true.B))
 
   val oa = io.tasks.source_a.bits
   oa := DontCare
@@ -140,7 +153,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
       toN
     )
   )
-  ob.alias := meta.alias(0)
+  ob.alias.foreach(_ := meta.alias.getOrElse(0.U))
 
   val mp_release, mp_probeack, mp_grant = Wire(new TaskBundle)
 
@@ -149,7 +162,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_release.tag := dirResult.tag
   mp_release.set := req.set
   mp_release.off := 0.U
-  mp_release.alias := 0.U
+  mp_release.alias.foreach(_ := 0.U)
   mp_release.opcode := Mux(
     meta.dirty && meta.state =/= INVALID || probeDirty,
     ReleaseData,
@@ -158,7 +171,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_release.param := Mux(isT(meta.state), TtoN, BtoN)
   mp_release.mshrTask := true.B
   mp_release.mshrId := io.id
-  mp_release.aliasTask := false.B
+  mp_release.aliasTask.foreach(_ := false.B)
   mp_release.useProbeData := true.B // read ReleaseBuf when useProbeData && opcode(0) is true
   mp_release.way := req.way
   mp_release.metaWen := true.B
@@ -187,7 +200,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   )
   mp_probeack.mshrTask := true.B
   mp_probeack.mshrId := io.id
-  mp_probeack.aliasTask := false.B
+  mp_probeack.aliasTask.foreach(_ := false.B)
   mp_probeack.useProbeData := true.B // read ReleaseBuf when useProbeData && opcode(0) is true
   mp_probeack.way := req.way
   mp_probeack.meta := MetaEntry(
@@ -202,7 +215,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
       )
     ),
     clients = Fill(clientBits, !probeGotN),
-    alias = meta.alias //[Alias] TODO: Keep alias bits unchanged
+    alias = meta.alias, //[Alias] TODO: Keep alias bits unchanged
+    prefetch = req.param =/= toN && meta_pft
   )
   mp_probeack.metaWen := true.B
   mp_probeack.tagWen := false.B
@@ -216,7 +230,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_grant.sourceId := req.source
   mp_grant.opcode := odOpGen(req.opcode)
   mp_grant.param := Mux(
-    req_get || req_put,
+    req_get || req_put || req_prefetch,
     0.U, // Get/Put -> AccessAckData/AccessAck
     MuxLookup( // Acquire -> Grant
       req.param,
@@ -231,14 +245,12 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_grant.mshrTask := true.B
   mp_grant.mshrId := io.id
   mp_grant.way := req.way
-  mp_grant.alias := req.alias
-  mp_grant.aliasTask := req.aliasTask
+  mp_grant.alias.foreach(_ := req.alias.getOrElse(0.U))
+  mp_grant.aliasTask.foreach(_ := req.aliasTask.getOrElse(false.B))
   // [Alias] write probeData into DS for alias-caused Probe,
   // but not replacement-cased Probe
-  mp_grant.useProbeData := dirResult.hit && req_get || req.aliasTask
+  mp_grant.useProbeData := dirResult.hit && req_get || req.aliasTask.getOrElse(false.B)
 
-  val meta_alias = WireInit(meta.alias)
-  meta_alias(0) := req.alias
   mp_grant.meta := MetaEntry(
     dirty = gotDirty || dirResult.hit && (meta.dirty || probeDirty),
     state = Mux(
@@ -250,16 +262,23 @@ class MSHR(implicit p: Parameters) extends L2Module {
       ),
       Mux(
         req_promoteT || req_needT,
-        TRUNK,
+        Mux(req_prefetch, TIP, TRUNK),
         BRANCH
       )
     ),
-    clients = Fill(clientBits, !(req_get && (!dirResult.hit || meta_no_client || probeGotN))),
-    alias = meta_alias //[Alias] TODO: consider one client for now
+    clients = Mux(
+      req_prefetch,
+      Mux(dirResult.hit, meta.clients, Fill(clientBits, false.B)),
+      Fill(clientBits, !(req_get && (!dirResult.hit || meta_no_client || probeGotN)))
+    ),
+    alias = req.alias,
+    prefetch = req_prefetch || dirResult.hit && meta_pft
   )
   mp_grant.metaWen := !req_put
   mp_grant.tagWen := !dirResult.hit && !req_put
-  mp_grant.dsWen := !dirResult.hit && !req_put || probeDirty && (req_get || req.aliasTask)
+  mp_grant.dsWen := !dirResult.hit && !req_put || probeDirty && (req_get || req.aliasTask.getOrElse(false.B))
+  mp_grant.fromL2pft.foreach(_ := req.fromL2pft.get)
+  mp_grant.needHint.foreach(_ := false.B)
 
   io.tasks.mainpipe.bits := ParallelPriorityMux(
     Seq(
@@ -268,6 +287,14 @@ class MSHR(implicit p: Parameters) extends L2Module {
       mp_probeack_valid -> mp_probeack
     )
   )
+
+  // io.tasks.prefetchTrain.foreach {
+  //   train =>
+  //     train.bits.tag := req.tag
+  //     train.bits.set := req.set
+  //     train.bits.needT := req_needT
+  //     train.bits.source := req.source
+  // }
 
   /* Task update */
   when (io.tasks.source_a.fire) {
@@ -286,6 +313,12 @@ class MSHR(implicit p: Parameters) extends L2Module {
       state.s_probeack := true.B
     }
   }
+  // prefetchOpt.foreach {
+  //   _ =>
+  //     when (io.tasks.prefetchTrain.get.fire()) {
+  //       state.s_triggerprefetch.get := true.B
+  //     }
+  // }
 
   /* Refill response */
   val c_resp = io.resps.sink_c
@@ -326,10 +359,20 @@ class MSHR(implicit p: Parameters) extends L2Module {
     state.w_grantack := true.B
   }
 
-  val no_schedule = state.s_refill && state.s_probeack
+  when (io.resps.source_c.valid) {
+    state.w_release_sent := true.B
+  }
+
+  when (status_reg.valid) {
+    timer := timer + 1.U
+  }
+  
+  val no_schedule = state.s_refill && state.s_probeack// && state.s_triggerprefetch.getOrElse(true.B)
   val no_wait = state.w_rprobeacklast && state.w_pprobeacklast && state.w_grantlast && state.w_releaseack && state.w_grantack
-  when (no_schedule && no_wait && status_reg.valid) {
+  val will_free = no_schedule && no_wait
+  when (will_free && status_reg.valid) {
     status_reg.valid := false.B
+    timer := 0.U
   }
 
   io.status.valid := status_reg.valid
@@ -340,6 +383,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.status.bits.w_c_resp := !state.w_rprobeacklast || !state.w_pprobeacklast || !state.w_pprobeack
   io.status.bits.w_d_resp := !state.w_grantlast || !state.w_grant || !state.w_releaseack
   io.status.bits.w_e_resp := !state.w_grantack
+  io.status.bits.will_free := will_free
   assert(io.status.bits.w_c_resp || !c_resp.valid)
   assert(io.status.bits.w_d_resp || !d_resp.valid)
   assert(io.status.bits.w_e_resp || !e_resp.valid)
@@ -365,4 +409,18 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.nestedwbData := nestedwb_match && io.nestedwb.c_set_dirty
 
   dontTouch(state)
+
+  // Performance counters
+  // time stamp
+  // if (cacheParams.enablePerf) {
+    val acquire_ts = RegEnable(timer, io.tasks.source_a.fire())
+    val probe_ts = RegEnable(timer, io.tasks.source_b.fire())
+    val release_ts = RegEnable(timer, !mp_grant_valid && mp_release_valid && io.tasks.mainpipe.ready)
+    val acquire_period = IO(Output(UInt(64.W)))
+    val probe_period = IO(Output(UInt(64.W)))
+    val release_period = IO(Output(UInt(64.W)))
+    acquire_period := timer - acquire_ts
+    probe_period := timer - probe_ts
+    release_period := timer - release_ts
+  // }
 }

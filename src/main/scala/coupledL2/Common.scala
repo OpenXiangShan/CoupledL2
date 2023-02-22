@@ -20,7 +20,7 @@ package coupledL2
 import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config.Parameters
-import TaskInfo._
+
 import freechips.rocketchip.tilelink.TLPermissions._
 
 abstract class L2Module(implicit val p: Parameters) extends MultiIOModule with HasCoupledL2Parameters
@@ -44,13 +44,11 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val set = UInt(setBits.W)
   val tag = UInt(tagBits.W)
   val off = UInt(offsetBits.W)
-  val alias = UInt(aliasBits.W)           // color bits in cache-alias issue
-  val owner = UInt(ownerBits.W)           // who owns this block, TODO: unused
+  val alias = aliasBitsOpt.map(_ => UInt(aliasBitsOpt.get.W)) // color bits in cache-alias issue
   val opcode = UInt(3.W)                  // type of the task operation
   val param = UInt(3.W)
   val size = UInt(msgSizeBits.W)
   val sourceId = UInt(sourceIdBits.W)     // tilelink sourceID
-  val id = UInt(idBits.W)                 // identity of the task
   val bufIdx = UInt(bufIdxBits.W)         // idx of SinkC buffer
   val needProbeAckData = Bool()           // only used for SinkB reqs
 
@@ -58,11 +56,16 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   // MSHR may send Release(Data) or Grant(Data) or ProbeAck(Data) through Main Pipe
   val mshrTask = Bool()                   // is task from mshr
   val mshrId = UInt(mshrBits.W)           // mshr entry index (used only in mshr-task)
-  val aliasTask = Bool()                  // Anti-alias
+  val aliasTask = aliasBitsOpt.map(_ => Bool()) // Anti-alias
   val useProbeData = Bool()               // data source, true for ReleaseBuf and false for RefillBuf
 
   // For Put
   val pbIdx = UInt(mshrBits.W)
+
+  // For Intent
+  val fromL2pft = prefetchOpt.map(_ => Bool()) // Is the prefetch req from L2(BOP) or from L1 prefetch?
+                                          // If true, MSHR should send an ack to L2 prefetcher.
+  val needHint = prefetchOpt.map(_ => Bool())
 
   // if this is an mshr task and it needs to write dir
   val way = UInt(wayBits.W)
@@ -94,14 +97,17 @@ class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val param = UInt(3.W)
   val size = UInt(msgSizeBits.W)
   val source = UInt(sourceIdBits.W)
-  val alias = UInt(aliasBits.W)
-  val aliasTask = Bool()
+  val alias = aliasBitsOpt.map(_ => UInt(aliasBitsOpt.get.W))
+  val aliasTask = aliasBitsOpt.map(_ => Bool())
   val nestB = Bool()
   val needProbeAckData = Bool() // only for B reqs
   val pbIdx = UInt(mshrBits.W)
   val w_c_resp = Bool()
   val w_d_resp = Bool()
   val w_e_resp = Bool()
+  val fromL2pft = prefetchOpt.map(_ => Bool())
+  val needHint = prefetchOpt.map(_ => Bool())
+  val will_free = Bool()
 }
 
 // MSHR Task that MainPipe sends to MSHRCtl
@@ -136,6 +142,7 @@ class FSMState(implicit p: Parameters) extends L2Bundle {
   val s_refill = Bool()   // respond grant upwards
   // val s_grantack = Bool() // respond grantack downwards
   // val s_writeback = Bool()// writeback tag/dir
+  // val s_triggerprefetch = prefetchOpt.map(_ => Bool())
 
   // wait
   val w_rprobeackfirst = Bool()
@@ -148,6 +155,8 @@ class FSMState(implicit p: Parameters) extends L2Bundle {
   val w_grant = Bool()
   val w_releaseack = Bool()
   val w_grantack = Bool()
+
+  val w_release_sent = Bool()
 }
 
 class SourceAReq(implicit p: Parameters) extends L2Bundle {
@@ -167,7 +176,7 @@ class SourceBReq(implicit p: Parameters) extends L2Bundle {
   val off = UInt(offsetBits.W)
   val opcode = UInt(3.W)
   val param = UInt(bdWidth.W)
-  val alias = UInt(aliasBits.W)
+  val alias = aliasBitsOpt.map(_ => UInt(aliasBitsOpt.get.W))
 }
 
 class BlockInfo(implicit p: Parameters) extends L2Bundle {
@@ -194,6 +203,12 @@ class PutBufferRead(implicit p: Parameters) extends L2Bundle {
 class PutBufferEntry(implicit p: Parameters) extends L2Bundle {
   val data = new DSBeat
   val mask = UInt(beatBytes.W)
+}
+
+class PrefetchRecv extends Bundle {
+  val addr = UInt(64.W)
+  val addr_valid = Bool()
+  val l2_pf_en = Bool()
 }
 
 // custom l2 - l1 interface

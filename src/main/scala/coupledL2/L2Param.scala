@@ -23,9 +23,26 @@ import freechips.rocketchip.diplomacy.BufferParams
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util._
 import chipsalliance.rocketchip.config.Field
+import huancun.CacheParameters
+import coupledL2.prefetch._
 
 // General parameter key of CoupledL2
 case object L2ParamKey extends Field[L2Param](L2Param())
+
+// L1 Cache Params, used for TestTop generation
+case class L1Param
+(
+  name: String = "L1D",
+  sets: Int = 32,
+  ways: Int = 8,
+  blockBytes: Int = 64,
+  aliasBitsOpt: Option[Int] = None,
+) {
+  val capacity = sets * ways * blockBytes
+  val setBits = log2Ceil(sets)
+  val offsetBits = log2Ceil(blockBytes)
+  val needResolveAlias = aliasBitsOpt.nonEmpty
+}
 
 // Indicate alias bit of upper level cache
 case object AliasKey extends ControlKey[UInt]("alias")
@@ -33,6 +50,15 @@ case class AliasField(width: Int) extends BundleField(AliasKey) {
   override def data: UInt = Output(UInt(width.W))
   override def default(x: UInt): Unit = {
     x := 0.U(width.W)
+  }
+}
+
+// Indicate whether Hint is needed by upper level cache
+case object PrefetchKey extends ControlKey[Bool](name = "needHint")
+case class PrefetchField() extends BundleField(PrefetchKey) {
+  override def data: Bool = Output(Bool())
+  override def default(x: Bool): Unit = {
+    x := false.B
   }
 }
 
@@ -52,15 +78,20 @@ case class L2Param
   name: String = "L2",
   ways: Int = 4,
   sets: Int = 128,
+  dirNBanks: Int = 8,
   blockBytes: Int = 64,
+  pageBytes: Int = 4096,
   channelBytes: TLChannelBeatBytes = TLChannelBeatBytes(32),
+  clientCaches: Seq[L1Param] = Nil,
+  replacement: String = "plru",
+  mshrs: Int = 16,
 
   // Client
   echoField: Seq[BundleFieldBase] = Nil,
   reqField: Seq[BundleFieldBase] = Nil, 
   respKey: Seq[BundleKeyBase] = Nil,
   // Manager
-  reqKey: Seq[BundleKeyBase] = Seq(AliasKey),
+  reqKey: Seq[BundleKeyBase] = Seq(AliasKey, PrefetchKey),
   respField: Seq[BundleFieldBase] = Nil,
 
   innerBuf: TLBufferParams = TLBufferParams(),
@@ -70,10 +101,25 @@ case class L2Param
     c = BufferParams.default,
     d = BufferParams.default,
     e = BufferParams.default
-  )
+  ),
+
+  // Prefetch
+  prefetch: Option[PrefetchParameters] = None,
+
+  // Performance analysis
+  enablePerf: Boolean = true
 ) {
+  def toCacheParams: CacheParameters = CacheParameters(
+    name = name,
+    sets = sets,
+    ways = ways,
+    blockGranularity = log2Ceil(sets),
+    blockBytes = blockBytes
+  )
 }
 
 case object EdgeInKey extends Field[TLEdgeIn]
 
 case object EdgeOutKey extends Field[TLEdgeOut]
+
+case object BankBitsKey extends Field[Int]

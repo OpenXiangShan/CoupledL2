@@ -22,6 +22,9 @@ import chisel3.util._
 import utility._
 import chipsalliance.rocketchip.config.Parameters
 import freechips.rocketchip.tilelink._
+import freechips.rocketchip.tilelink.TLMessages._
+import coupledL2.prefetch.PrefetchTrain
+import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram, XSPerfMax}
 
 class MSHRSelector(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
@@ -57,12 +60,14 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     /* send reqs */
     val sourceA = DecoupledIO(new TLBundleA(edgeOut.bundle))
     val sourceB = DecoupledIO(new TLBundleB(edgeIn.bundle))
+    // val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain))
 
     /* receive resps */
     val resps = Input(new Bundle() {
       val sinkC = new RespBundle
       val sinkD = new RespBundle
       val sinkE = new RespBundle
+      val sourceC = new RespBundle
     })
     
     val releaseBufWriteId = Output(UInt(mshrBits.W))
@@ -77,6 +82,9 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
 
     /* status of s2 and s3 */
     val pipeStatusVec = Flipped(Vec(2, ValidIO(new PipeStatus)))
+
+    /* to ReqBuffer, to solve set conflict */
+    val mshr_status = Vec(mshrsAll, ValidIO(new MSHRStatus))
   })
 
   val mshrs = Seq.fill(mshrsAll) { Module(new MSHR()) }
@@ -109,8 +117,12 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       m.io.resps.sink_d.bits := io.resps.sinkD.respInfo
       m.io.resps.sink_e.valid := m.io.status.valid && io.resps.sinkE.valid && io.resps.sinkE.mshrId === i.U
       m.io.resps.sink_e.bits := io.resps.sinkE.respInfo
+      m.io.resps.source_c.valid := m.io.status.valid && io.resps.sourceC.valid && io.resps.sourceC.mshrId === i.U
+      m.io.resps.source_c.bits := io.resps.sourceC.respInfo
       
       m.io.nestedwb := io.nestedwb
+
+      io.mshr_status(i) := m.io.status
   }
 
   // io.mshrFull := mshrFull
@@ -136,6 +148,12 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   /* Arbitrate MSHR task to RequestArbiter */
   fastArb(mshrs.map(_.io.tasks.mainpipe), io.mshrTask, Some("mshr_task"))
 
+  /* Arbitrate prefetchTrains to Prefetcher */
+  // prefetchOpt.foreach {
+  //   _ =>
+  //     fastArb(mshrs.map(_.io.tasks.prefetchTrain.get), io.prefetchTrain.get, Some("prefetch_train"))
+  // }
+
   io.releaseBufWriteId := ParallelPriorityMux(resp_sinkC_match_vec, (0 until mshrsAll).map(i => i.U))
 
   io.nestedwbDataId.valid := Cat(mshrs.map(_.io.nestedwbData)).orR
@@ -144,4 +162,47 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   })
 
   dontTouch(io.sourceA)
+
+  // Performance counters
+  XSPerfAccumulate(cacheParams, "capacity_conflict_to_sinkA", a_mshrFull)
+  XSPerfAccumulate(cacheParams, "capacity_conflict_to_sinkB", mshrFull)
+  XSPerfAccumulate(cacheParams, "set_conflict_to_sinkA", Cat(setMatchVec_a).orR)
+  XSPerfAccumulate(cacheParams, "set_conflict_to_sinkB", Cat(setConflictVec_b).orR)
+  XSPerfHistogram(cacheParams, "mshr_alloc", io.toMainPipe.mshr_alloc_ptr,
+    enable = io.fromMainPipe.mshr_alloc_s3.valid,
+    start = 0, stop = mshrsAll, step = 1)
+  // prefetchOpt.foreach {
+  //   _ =>
+  //     XSPerfAccumulate(cacheParams, "prefetch_trains", io.prefetchTrain.get.fire())
+  // }
+  
+  if (cacheParams.enablePerf) {
+    val start = 0
+    val stop = 100
+    val step = 5
+    val acquire_period = ParallelMux(mshrs.map { case m => m.io.resps.sink_d.valid -> m.acquire_period })
+    val release_period = ParallelMux(mshrs.map { case m => m.io.resps.sink_d.valid -> m.release_period })
+    val probe_period = ParallelMux(mshrs.map { case m => m.io.resps.sink_c.valid -> m.probe_period })
+    val acquire_period_en = io.resps.sinkD.valid &&
+      (io.resps.sinkD.respInfo.opcode === Grant || io.resps.sinkD.respInfo.opcode === GrantData)
+    val release_period_en = io.resps.sinkD.valid && io.resps.sinkD.respInfo.opcode === ReleaseAck
+    val probe_period_en = io.resps.sinkC.valid &&
+      (io.resps.sinkC.respInfo.opcode === ProbeAck || io.resps.sinkC.respInfo.opcode === ProbeAckData)
+    XSPerfHistogram(cacheParams, "acquire_period", acquire_period, acquire_period_en, start, stop, step)
+    XSPerfHistogram(cacheParams, "release_period", release_period, release_period_en, start, stop, step)
+    XSPerfHistogram(cacheParams, "probe_period", probe_period, probe_period_en, start, stop, step)
+
+    val timers = RegInit(VecInit(Seq.fill(mshrsAll)(0.U(64.W))))
+    for (((timer, m), i) <- timers.zip(mshrs).zipWithIndex) {
+      when (m.io.alloc.valid) {
+        timer := 1.U
+      }.otherwise {
+        timer := timer + 1.U
+      }
+      val enable = m.io.status.valid && m.io.status.bits.will_free
+      XSPerfHistogram(cacheParams, "mshr_latency_" + Integer.toString(i, 10),
+        timer, enable, 0, 300, 10)
+      XSPerfMax(cacheParams, "mshr_latency", timer, enable)
+    }
+  }
 }

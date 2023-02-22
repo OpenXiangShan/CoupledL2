@@ -1,4 +1,3 @@
-
 /** *************************************************************************************
  * Copyright (c) 2020-2021 Institute of Computing Technology, Chinese Academy of Sciences
  * Copyright (c) 2020-2021 Peng Cheng Laboratory
@@ -16,30 +15,34 @@
  * *************************************************************************************
  */
 
-package coupledL2
+package coupledL2.prefetch
 
+import chipsalliance.rocketchip.config.Parameters
 import chisel3._
 import chisel3.util._
-import coupledL2.utils._
 import freechips.rocketchip.tilelink._
-import chipsalliance.rocketchip.config.Parameters
+import coupledL2._
+import utility.Pipeline
 
-class SourceB(implicit p: Parameters) extends L2Module {
-  val io = IO(new Bundle() {
-    val sourceB = DecoupledIO(new TLBundleB(edgeIn.bundle))
-    val task = Flipped(DecoupledIO(new SourceBReq))
-  })
+// TODO: PrefetchReceiver is temporarily used since L1&L2 do not support Hint.
+// TODO: Delete this after Hint is accomplished.
 
-  val b = io.sourceB
-  io.task.ready := b.ready
+case class PrefetchReceiverParams(n: Int = 32) extends PrefetchParameters {
+  override val hasPrefetchBit: Boolean = true
+  override val inflightEntries: Int = n
+}
 
-  b.valid := io.task.valid
-  b.bits.opcode := io.task.bits.opcode
-  b.bits.param := io.task.bits.param
-  b.bits.size := offsetBits.U
-  b.bits.source := 0.U // make sure there are only 1 client
-  b.bits.address := Cat(io.task.bits.tag, io.task.bits.set, 0.U(offsetBits.W))
-  b.bits.mask := Fill(beatBytes, 1.U(1.W))
-  b.bits.data := Cat(io.task.bits.alias.getOrElse(0.U), 0.U(1.W)) // TODO: this is the same as HuanCun
-  b.bits.corrupt := false.B
+class PrefetchReceiver()(implicit p: Parameters) extends PrefetchModule {
+  val io = IO(new PrefetchIO())
+  // just ignore train reqs
+  io.train.ready := true.B
+  io.resp.ready := true.B
+
+  io.req.bits.tag := parseFullAddress(io.recv_addr.bits)._1
+  io.req.bits.set := parseFullAddress(io.recv_addr.bits)._2
+  io.req.bits.needT := false.B
+  io.req.bits.isBOP := false.B
+  io.req.bits.source := 0.U // TODO: ensure source 0 is dcache
+  io.req.valid := io.recv_addr.valid
+
 }

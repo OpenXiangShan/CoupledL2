@@ -7,14 +7,15 @@ import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import huancun._
+import coupledL2.prefetch._
 
 import scala.collection.mutable.ArrayBuffer
 
 class TestTop_L2()(implicit p: Parameters) extends LazyModule {
 
-  /* L1D   L1D
-   *  \    /
-   *    L2
+  /*   L1D
+   *    | 
+   *   L2
    */
 
   val delayFactor = 0.5
@@ -89,7 +90,7 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
         channelBytes = TLChannelBeatBytes(cacheParams.blockBytes),
         minLatency = 1,
         echoFields = Nil,
-        requestFields = Seq(AliasField(2)),
+        requestFields = Seq(AliasField(2), PrefetchField()),
         responseKeys = cacheParams.respKey
       )
     ))
@@ -112,7 +113,12 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
       name = s"l2",
       ways = 4,
       sets = 128,
-      echoField = Seq(DirtyField())
+      clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
+      echoField = Seq(DirtyField()),
+      prefetch = Some(BOPParameters(
+        rrTableEntries = 16,
+        rrTagBits = 6
+      ))
     )
   }))).node
 
@@ -201,6 +207,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
       name = s"l2$i",
       ways = 4,
       sets = 128,
+      clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
       echoField = Seq(DirtyField())
     )
   }))).node)
@@ -254,6 +261,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
 object TestTop_L2 extends App {
   val config = new Config((_, _, _) => {
     case L2ParamKey => L2Param(
+      clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
       echoField = Seq(DirtyField())
     )
   })
@@ -267,6 +275,7 @@ object TestTop_L2 extends App {
 object TestTop_L2L3 extends App {
   val config = new Config((_, _, _) => {
     case L2ParamKey => L2Param(
+      clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
       echoField = Seq(DirtyField())
     )
     case HCCacheParamsKey => HCCacheParameters(
@@ -283,7 +292,8 @@ object TestTop_L2L3 extends App {
 object TestTop_L2L3L2 extends App {
   val config = new Config((_, _, _) => {
     case L2ParamKey => L2Param(
-      echoField = Seq(DirtyField())
+      clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
+     // echoField = Seq(DirtyField())
     )
     case HCCacheParamsKey => HCCacheParameters(
       echoField = Seq(DirtyField())

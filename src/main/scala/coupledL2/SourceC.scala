@@ -22,6 +22,7 @@ import chisel3.util._
 import utility._
 import chipsalliance.rocketchip.config.Parameters
 import freechips.rocketchip.tilelink._
+import coupledL2.utils.XSPerfAccumulate
 
 // // wbq receive reqs from MainPipe unconditionally, and send them out through channel C
 // // NOTICE: channel C may be unable to receive
@@ -108,6 +109,7 @@ class SourceC(implicit p: Parameters) extends L2Module {
       val data = new DSBlock()
     }))
     val out = DecoupledIO(new TLBundleC(edgeOut.bundle))
+    val resp = Output(new RespBundle)
   })
 
   val beat_valids = RegInit(VecInit(Seq.fill(mshrsAll) { // TODO: make sure there are enough entries
@@ -176,4 +178,15 @@ class SourceC(implicit p: Parameters) extends L2Module {
   TLArbiter.lowest(edgeIn, io.out, out_bundles:_*)
 
   io.in.ready := !full
+
+  val (first, last, done, count) = edgeOut.count(io.out)
+  val isRelease = io.out.bits.opcode === TLMessages.Release
+  val isReleaseData = io.out.bits.opcode === TLMessages.ReleaseData
+  io.resp.valid := io.out.fire() && first && (isRelease || isReleaseData)
+  io.resp.mshrId := io.out.bits.source
+  io.resp.set := parseFullAddress(io.out.bits.address)._2
+  io.resp.tag := parseFullAddress(io.out.bits.address)._1
+  io.resp.respInfo := DontCare
+
+  XSPerfAccumulate(cacheParams, "sourceC_full", full)
 }
