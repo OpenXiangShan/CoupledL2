@@ -28,6 +28,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val io = IO(new Bundle {
     val in = Flipped(TLBundle(edgeIn.bundle))
     val out = TLBundle(edgeOut.bundle)
+    val l1Hint = Output(new L2ToL1Hint())
   })
 
   val reqArb = Module(new RequestArb())
@@ -97,6 +98,8 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   refillBuf.io.w(1) <> mainPipe.io.refillBufWrite
 
   sourceC.io.in <> mainPipe.io.toSourceC
+  
+  io.l1Hint := mainPipe.io.l1Hint
 
   grantBuf.io.d_task <> mainPipe.io.toSourceD
   grantBuf.io.fromReqArb.status_s1 := reqArb.io.status_s1

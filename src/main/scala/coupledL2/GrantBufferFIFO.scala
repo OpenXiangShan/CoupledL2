@@ -77,7 +77,7 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
   val sourceid_vec = tasks.map{case task => task.sourceId}
 
   io.l1Hint.valid := VecInit(hint_valid_vec).asUInt.orR
-  io.l1Hint.bits.sourceId := ParallelMux(hint_valid_vec zip sourceid_vec)
+  io.l1Hint.sourceId := ParallelMux(hint_valid_vec zip sourceid_vec)
   assert(PopCount(VecInit(hint_valid_vec)) <= 1.U)
 
   beat_counters.foreach {

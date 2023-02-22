@@ -86,8 +86,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     val nestedwb = Output(new NestedWriteback)
     val nestedwbData = Output(new DSBlock)
 
-    val l1Hint = ValidIO(new L2ToL1Hint())
-    val grantBufferHint = Flipped(ValidIO(new L2ToL1Hint()))
+    val l1Hint = Output(new L2ToL1Hint())
+    val grantBufferHint = Input(new L2ToL1Hint())
     val globalCounter = Input(UInt(log2Ceil(mshrsAll).W))
   })
 
@@ -493,16 +493,16 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   d_arb.io.in <> d
 
   val hint_valid = Seq(io.grantBufferHint.valid, hint_s4.valid, hint_s5.valid)
-  val hint_bits = Seq(io.grantBufferHint.bits, hint_s4.bits, hint_s5.bits)
+  val hint_sourceId = Seq(io.grantBufferHint.sourceId, hint_s4.sourceId, hint_s5.sourceId)
 
   io.l1Hint.valid := VecInit(hint_valid).asUInt.orR
-  io.l1Hint.bits := ParallelMux(hint_valid zip hint_bits)
+  io.l1Hint.sourceId := ParallelMux(hint_valid zip hint_sourceId)
   assert(PopCount(VecInit(hint_valid)) <= 1.U)
 
   // val timer = RegInit(0.U(64.W))
   // timer := timer + 1.U
   // when(io.l1Hint.valid) {
-  //   printf("hint at %x, sourceId is %x\n", timer, io.l1Hint.bits.sourceId)
+  //   printf("hint at %x, sourceId is %x\n", timer, io.l1Hint.sourceId)
   // }
 
   io.toSourceC <> c_arb.io.out

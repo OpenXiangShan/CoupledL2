@@ -197,6 +197,9 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
 
   lazy val module = new LazyModuleImp(this) {
     val banks = node.in.size
+    val io = IO(new Bundle {
+      val l2_hint = Valid(UInt(32.W))
+    })
 
     def print_bundle_fields(fs: Seq[BundleFieldBase], prefix: String) = {
       if(fs.nonEmpty){
@@ -228,7 +231,13 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
 
         slice
     }
-
+    val l1Hint_arb = Module(new Arbiter(new L2ToL1Hint(), slices.size))
+    val slices_l1Hint = slices.zipWithIndex.map {
+      case (s, i) => Pipeline(s.io.l1Hint, depth = 2, pipe = false, name = Some(s"l1Hint_buffer_$i"))
+    }
+    l1Hint_arb.io.in <> VecInit(slices_l1Hint)
+    io.l2_hint.valid := l1Hint_arb.io.out.fire()
+    io.l2_hint.bits := l1Hint_arb.io.out.bits.sourceId
   }
 
 }
