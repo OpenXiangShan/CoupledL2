@@ -33,7 +33,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   })
 
   val reqArb = Module(new RequestArb())
-  val a_reqBuf = Module(new RequestBuffer)
+  val a_reqBuf = Module(new RequestBuffer(entries = 4))
   val mainPipe = Module(new MainPipe())
   val mshrCtl = Module(new MSHRCtl())
   val directory = Module(new Directory())

@@ -112,7 +112,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
     prefetchReq.get.valid := io.prefetchReq.get.valid
     prefetchReq.get.bits := fromPrefetchReqtoTaskBundle(io.prefetchReq.get.bits)
     io.prefetchReq.get.ready := prefetchReq.get.ready
-    fastArb(Seq(commonReq, prefetchReq.get), io.toReqArb)
+    arb(Seq(commonReq, prefetchReq.get), io.toReqArb)
   } else {
     io.toReqArb <> commonReq
   }
