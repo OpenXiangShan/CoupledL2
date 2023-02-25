@@ -106,4 +106,11 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 16)(implicit p: Paramet
   }
   XSPerfAccumulate(cacheParams, "recv_prefetch", io.in.fire() && isPrefetch)
   XSPerfAccumulate(cacheParams, "recv_normal", io.in.fire() && !isPrefetch)
+
+  // when (io.in.fire() && isPrefetch) {
+  //   printf("*pref* %x %x\n", io.in.bits.tag, io.in.bits.set)
+  // }
+  // when (io.in.fire() && !isPrefetch) {
+  //   printf("*norm* %x %x\n", io.in.bits.tag, io.in.bits.set)
+  // }
 }
