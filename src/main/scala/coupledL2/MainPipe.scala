@@ -187,11 +187,13 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   sink_resp_s3.bits := task_s3.bits
 
   sink_resp_s3.bits.mshrId := (1 << (mshrBits-1)).U + sink_resp_s3.bits.sourceId // extra id for reqs that do not enter mshr
+
+  val sink_resp_s3_a_promoteT = dirResult_s3.hit && isT(meta_s3.state)
   when(req_s3.fromA) {
     sink_resp_s3.bits.opcode := odOpGen(req_s3.opcode)
     sink_resp_s3.bits.param := Mux(
       req_acquire_s3,
-      Mux(req_s3.param === NtoB, toB, toT),
+      Mux(req_s3.param === NtoB && !sink_resp_s3_a_promoteT, toB, toT),
       0.U // reserved
     )
   }.elsewhen(req_s3.fromB) {
@@ -269,7 +271,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val metaW_valid_s3_mshr = mshr_req_s3 && req_s3.metaWen
   require(clientBits == 1)
 
-  val metaW_s3_a = MetaEntry(meta_s3.dirty, Mux(req_needT_s3, TRUNK, meta_s3.state), Fill(clientBits, true.B), req_s3.alias)
+  val metaW_s3_a = MetaEntry(meta_s3.dirty, Mux(req_needT_s3 || sink_resp_s3_a_promoteT, TRUNK, meta_s3.state), Fill(clientBits, true.B), req_s3.alias)
   val metaW_s3_b = Mux(req_s3.param === toN, MetaEntry(), MetaEntry(false.B, BRANCH, meta_s3.clients, meta_s3.alias))
 
   val metaW_s3_c_dirty = meta_s3.dirty || wen_c
