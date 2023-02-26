@@ -163,17 +163,18 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_release.set := req.set
   mp_release.off := 0.U
   mp_release.alias.foreach(_ := 0.U)
-  mp_release.opcode := Mux(
+  mp_release.opcode := { if (cacheParams.alwaysReleaseData) ReleaseData else Mux(
     meta.dirty && meta.state =/= INVALID || probeDirty,
     ReleaseData,
     Release
-  )
+  ) }
   mp_release.param := Mux(isT(meta.state), TtoN, BtoN)
   mp_release.mshrTask := true.B
   mp_release.mshrId := io.id
   mp_release.aliasTask.foreach(_ := false.B)
   mp_release.useProbeData := true.B // read ReleaseBuf when useProbeData && opcode(0) is true
   mp_release.way := req.way
+  mp_release.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
   mp_release.metaWen := true.B
   mp_release.meta := MetaEntry(dirty = false.B, state = INVALID, clients = 0.U, alias = meta.alias)
   mp_release.tagWen := false.B

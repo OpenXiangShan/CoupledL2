@@ -233,7 +233,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   val need_data_on_hit_a = req_s3.fromA && !mshr_req_s3 && (req_get_s3 || req_s3.opcode === AcquireBlock)
   // read data ahead of time to prepare for ReleaseData later 
-  val need_data_on_miss_a = req_s3.fromA && !mshr_req_s3 && !dirResult_s3.hit && (meta_s3.state === TRUNK || (meta_s3.state === TIP || meta_s3.state === BRANCH) && meta_s3.dirty)
+  val need_data_on_miss_a = req_s3.fromA && !mshr_req_s3 && !dirResult_s3.hit && meta_s3.state =/= INVALID
   val need_data_b = req_s3.fromB && !mshr_req_s3 && dirResult_s3.hit &&
     (meta_s3.state === TRUNK || meta_s3.state === TIP && meta_s3.dirty || req_s3.needProbeAckData)
 

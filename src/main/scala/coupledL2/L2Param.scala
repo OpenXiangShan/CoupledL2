@@ -85,6 +85,7 @@ case class L2Param
   clientCaches: Seq[L1Param] = Nil,
   replacement: String = "plru",
   mshrs: Int = 16,
+  alwaysReleaseData: Boolean = true,
 
   // Client
   echoField: Seq[BundleFieldBase] = Nil,
