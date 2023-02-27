@@ -85,7 +85,11 @@ case class L2Param
   clientCaches: Seq[L1Param] = Nil,
   replacement: String = "plru",
   mshrs: Int = 16,
-  alwaysReleaseData: Boolean = true,
+  releaseData: Int = 1,
+  // 0 for dirty alone
+  // 1 for dirty and accessed
+  // 2 for all except prefetch & !accessed
+  // 3 for all
 
   // Client
   echoField: Seq[BundleFieldBase] = Nil,
