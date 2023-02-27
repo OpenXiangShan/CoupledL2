@@ -163,8 +163,11 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_release.set := req.set
   mp_release.off := 0.U
   mp_release.alias.foreach(_ := 0.U)
+  // if dirty, we must ReleaseData
+  // if accessed, we ReleaseData to keep the data in L3, for future access to be faster
+  // [Access] TODO: consider use a counter
   mp_release.opcode := Mux(
-    meta.dirty && meta.state =/= INVALID || probeDirty,
+    meta.dirty && meta.state =/= INVALID || probeDirty || meta.accessed,
     ReleaseData,
     Release
   )
@@ -215,8 +218,9 @@ class MSHR(implicit p: Parameters) extends L2Module {
       )
     ),
     clients = Fill(clientBits, !probeGotN),
-    alias = meta.alias, //[Alias] TODO: Keep alias bits unchanged
-    prefetch = req.param =/= toN && meta_pft
+    alias = meta.alias, //[Alias] Keep alias bits unchanged
+    prefetch = req.param =/= toN && meta_pft,
+    accessed = req.param =/= toN && meta.accessed
   )
   mp_probeack.metaWen := true.B
   mp_probeack.tagWen := false.B
@@ -272,7 +276,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
       Fill(clientBits, !(req_get && (!dirResult.hit || meta_no_client || probeGotN)))
     ),
     alias = req.alias,
-    prefetch = req_prefetch || dirResult.hit && meta_pft
+    prefetch = req_prefetch || dirResult.hit && meta_pft,
+    accessed = req_acquire || req_get || req_put //[Access] TODO: check
   )
   mp_grant.metaWen := !req_put
   mp_grant.tagWen := !dirResult.hit && !req_put
