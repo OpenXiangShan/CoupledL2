@@ -132,6 +132,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   val meta_has_clients_s3 = meta_s3.clients.orR
   val req_needT_s3 = needT(req_s3.opcode, req_s3.param) // require T status to handle req
+  val a_need_replacement = req_s3.fromA && !dirResult_s3.hit && meta_s3.state =/= INVALID // b and c do not need replacement
   //[Alias] TODO: consider 1 client for now
   val cache_alias = (req_acquire_s3 || req_get_s3) && dirResult_s3.hit && meta_s3.clients(0) &&
     meta_s3.alias.getOrElse(0.U) =/= req_s3.alias.getOrElse(0.U)
@@ -146,6 +147,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   )
   val need_probe_s3_a = req_s3.fromA && req_get_s3 && dirResult_s3.hit && meta_s3.state === TRUNK
   assert(RegNext(!(task_s3.valid && !mshr_req_s3 && dirResult_s3.hit && meta_s3.state === TRUNK && !meta_s3.clients.orR)))
+
   val need_mshr_s3_a = need_acquire_s3_a || need_probe_s3_a || cache_alias || req_put_s3
   // For channel B reqs, alloc mshr when Probe hits in both self and client dir
   val need_mshr_s3_b = dirResult_s3.hit && req_s3.fromB &&
@@ -182,6 +184,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   ms_task.way := dirResult_s3.way
   //
 
+  // ======== Resps to SinkA/B/C Reqs ======== //
   val sink_resp_s3 = WireInit(0.U.asTypeOf(Valid(new TaskBundle))) // resp for sinkA/B/C request that does not need to alloc mshr
   sink_resp_s3.valid := task_s3.valid && !mshr_req_s3 && !need_mshr_s3
   sink_resp_s3.bits := task_s3.bits
@@ -217,6 +220,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   val source_req_s3 = Wire(new TaskBundle)
   source_req_s3 := Mux(sink_resp_s3.valid, sink_resp_s3.bits, req_s3)
+
+  // ================ //
   val data_s3 = Mux(io.refillBufResp_s3.valid, io.refillBufResp_s3.bits.data, io.releaseBufResp_s3.bits.data)
   val hasData_s3 = source_req_s3.opcode(0)
   val mshr_grant_s3         = mshr_req_s3 && req_s3.fromA && req_s3.opcode(2, 1) === Grant(2, 1) // Grant or GrantData from mshr
@@ -229,27 +234,20 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val mshr_release_s3       = mshr_req_s3 && req_s3.opcode(2, 1) === Release(2, 1) // voluntary Release or ReleaseData from mshr
   assert(!(io.refillBufResp_s3.valid && io.releaseBufResp_s3.valid))
 
+  // ======== Interact with DS ======== //
   // write/read data storage
   val wen_c = !mshr_req_s3 && req_s3.fromC && isParamFromT(req_s3.param) && req_s3.opcode(0)
   val wen = wen_c || req_s3.dsWen && (mshr_grant_s3 || mshr_accessackdata_s3 || mshr_probeack_s3 || mshr_hintack_s3)
 
   val need_data_on_hit_a = req_s3.fromA && !mshr_req_s3 && (req_get_s3 || req_s3.opcode === AcquireBlock)
   // read data ahead of time to prepare for ReleaseData later 
-  val need_data_on_miss_a = req_s3.fromA && !mshr_req_s3 && !dirResult_s3.hit && meta_s3.state =/= INVALID
+  val need_data_on_miss_a = a_need_replacement && !mshr_req_s3
   val need_data_b = req_s3.fromB && !mshr_req_s3 && dirResult_s3.hit &&
     (meta_s3.state === TRUNK || meta_s3.state === TIP && meta_s3.dirty || req_s3.needProbeAckData)
 
   val ren = Mux(dirResult_s3.hit, need_data_on_hit_a, need_data_on_miss_a) || need_data_b
   val bufResp_s3 = RegNext(io.bufResp.data.asUInt) // for Release from C
-  // need_write_releaseBuf indicates that DS should be read and the data will be written into ReleaseBuffer
-  // need_write_releaseBuf is assigned true when:
-  // 1. inner clients' data is needed, but whether the client will ack data is uncertain, so DS data is also needed, or
-  // 2. replacement occurs, so DS data should be read for replacement later
-  val need_write_releaseBuf = need_probe_s3_a ||
-    cache_alias ||
-    need_data_on_miss_a ||
-    need_data_b && need_mshr_s3_b
-  val need_write_refillBuf = req_s3.fromA && !mshr_req_s3 && req_needT_s3 && dirResult_s3.hit && meta_s3.state === BRANCH && !req_put_s3 && !req_prefetch_s3
+
   io.toDS.req_s3.valid := task_s3.valid && (ren || wen)
   io.toDS.req_s3.bits.way := Mux(mshr_req_s3, req_s3.way, dirResult_s3.way)
   io.toDS.req_s3.bits.set := Mux(mshr_req_s3, req_s3.set, dirResult_s3.set)
@@ -265,6 +263,20 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     )
   )
 
+  // ======== Read DS and store data in Buffer ======== //
+  // A: need_write_releaseBuf indicates that DS should be read and the data will be written into ReleaseBuffer
+  //    need_write_releaseBuf is assigned true when:
+  //  1. inner clients' data is needed, but whether the client will ack data is uncertain, so DS data is also needed, or
+  //  2. replacement occurs, so DS data should be read for replacement later
+  val need_write_releaseBuf = need_probe_s3_a ||
+    cache_alias ||
+    need_data_on_miss_a ||
+    need_data_b && need_mshr_s3_b
+  // B: need_write_refillBuf when L1 AcquireBlock BtoT
+  //    L2 sends AcquirePerm to L3, so GrantData to L1 needs to read DS ahead of time and store in RefillBuffer
+  val need_write_refillBuf = req_s3.fromA && !mshr_req_s3 && req_needT_s3 && dirResult_s3.hit && meta_s3.state === BRANCH && !req_put_s3 && !req_prefetch_s3
+
+  // ======== Write Directory ======== //
   val metaW_valid_s3_a = !mshr_req_s3 && req_s3.fromA && !need_mshr_s3_a && !req_get_s3 && !req_prefetch_s3 // get & prefetch that hit will not write meta
   val metaW_valid_s3_b = !mshr_req_s3 && req_s3.fromB && !need_mshr_s3_b && dirResult_s3.hit && (meta_s3.state === TIP || meta_s3.state === BRANCH && req_s3.param === toN)
   val metaW_valid_s3_c = !mshr_req_s3 && req_s3.fromC
@@ -302,6 +314,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val mshr_fire_s3 = !mshr_req_s3 && need_mshr_s3 && !need_write_releaseBuf && !need_write_refillBuf
   val chnl_fire_s3 = task_ready_s3 && (c_s3.fire() || d_s3.fire())// && !next_beatsOH_s3.orR
 
+  // ======== Interact with Channels (C & D) ======== //
   //[Alias] TODO: may change this to ren?
   val data_unready_s3 = hasData_s3 && !mshr_req_s3
   c_s3.valid := task_s3.valid && Mux(
@@ -319,6 +332,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   d_s3.bits.task := source_req_s3
   d_s3.bits.data.data := data_s3
 
+  // ======== nested & prefetch ======== //
   io.nestedwb.set := req_s3.set
   io.nestedwb.tag := req_s3.tag
   io.nestedwb.b_toN := task_s3.valid && metaW_valid_s3_b && req_s3.param === toN
@@ -410,6 +424,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   d_s5.bits.task := task_s5.bits
   d_s5.bits.data.data := merged_data_s5
 
+  // ======== BlockInfo ======== //
   io.toReqArb.blockC_s1 :=
     task_s2.valid && task_s2.bits.set === io.fromReqArb.status_s1.c_set ||
     io.toMSHRCtl.mshr_alloc_s3.valid && task_s3.bits.set === io.fromReqArb.status_s1.c_set
@@ -424,6 +439,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     task_s4.valid && !task_s4.bits.mshrTask && task_s4.bits.set === io.fromReqArb.status_s1.a_set ||
     task_s5.valid && !task_s5.bits.mshrTask && task_s5.bits.set === io.fromReqArb.status_s1.a_set
 
+  // ======== Pipeline Status ======== //
   require(io.status_vec.size == 3)
   io.status_vec(0).valid := task_s3.valid && Mux(
     mshr_req_s3,
@@ -446,8 +462,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     alloc_state.s_refill := false.B
     alloc_state.w_grantack := req_prefetch_s3 || req_get_s3 || req_put_s3
     // need replacement
-    when(!dirResult_s3.hit && meta_s3.state =/= INVALID) {
-      alloc_state.s_release := false.B
+    when(a_need_replacement) {
+      alloc_state.s_release := false.B //[TODO] Now we send release through MainPipe the first time it enters
       alloc_state.w_releaseack := false.B
       // need rprobe for release
       when(meta_has_clients_s3) {
@@ -463,7 +479,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       alloc_state.w_grantlast := false.B
       alloc_state.w_grant := false.B
     }
-    alloc_state.w_release_sent := alloc_state.s_acquire || alloc_state.s_release
+    alloc_state.w_release_sent := alloc_state.s_acquire || alloc_state.s_release // if no need to send Acquire or Release, set w_release_sent as low
     // need Probe for alias
     // need Probe when Get hits on a TRUNK block
     when(cache_alias || need_probe_s3_a) {

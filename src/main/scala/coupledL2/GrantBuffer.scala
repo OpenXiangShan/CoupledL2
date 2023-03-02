@@ -87,7 +87,9 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     inflight_grant(bufIdx).valid := false.B
   }
 
-  // handle capacity conflict
+  // handle capacity conflict of GrantBuffer
+  // count the number of valid blocks + those in pipe that might use GrantBuf
+  // so that GrantBuffer will not exceed capacity
   val noSpaceForSinkReq = PopCount(Cat(VecInit(io.pipeStatusVec.tail.map { case s =>
     s.valid && (s.bits.fromA || s.bits.fromC)
   }).asUInt, block_valids)) >= mshrsAll.U
