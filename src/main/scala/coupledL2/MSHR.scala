@@ -163,17 +163,24 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_release.set := req.set
   mp_release.off := 0.U
   mp_release.alias.foreach(_ := 0.U)
-  mp_release.opcode := Mux(
-    meta.dirty && meta.state =/= INVALID || probeDirty,
-    ReleaseData,
-    Release
-  )
+  // if dirty, we must ReleaseData
+  // if accessed, we ReleaseData to keep the data in L3, for future access to be faster
+  // [Access] TODO: consider use a counter
+  mp_release.opcode := {
+    cacheParams.releaseData match {
+      case 0 => Mux(meta.dirty && meta.state =/= INVALID || probeDirty, ReleaseData, Release)
+      case 1 => Mux(meta.dirty && meta.state =/= INVALID || probeDirty || meta.accessed, ReleaseData, Release)
+      case 2 => Mux(meta.prefetch.getOrElse(false.B) && !meta.accessed, Release, ReleaseData)
+      case 3 => ReleaseData
+    }
+  }
   mp_release.param := Mux(isT(meta.state), TtoN, BtoN)
   mp_release.mshrTask := true.B
   mp_release.mshrId := io.id
   mp_release.aliasTask.foreach(_ := false.B)
   mp_release.useProbeData := true.B // read ReleaseBuf when useProbeData && opcode(0) is true
   mp_release.way := req.way
+  mp_release.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
   mp_release.metaWen := true.B
   mp_release.meta := MetaEntry(dirty = false.B, state = INVALID, clients = 0.U, alias = meta.alias)
   mp_release.tagWen := false.B
@@ -215,8 +222,9 @@ class MSHR(implicit p: Parameters) extends L2Module {
       )
     ),
     clients = Fill(clientBits, !probeGotN),
-    alias = meta.alias, //[Alias] TODO: Keep alias bits unchanged
-    prefetch = req.param =/= toN && meta_pft
+    alias = meta.alias, //[Alias] Keep alias bits unchanged
+    prefetch = req.param =/= toN && meta_pft,
+    accessed = req.param =/= toN && meta.accessed
   )
   mp_probeack.metaWen := true.B
   mp_probeack.tagWen := false.B
@@ -272,7 +280,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
       Fill(clientBits, !(req_get && (!dirResult.hit || meta_no_client || probeGotN)))
     ),
     alias = req.alias,
-    prefetch = req_prefetch || dirResult.hit && meta_pft
+    prefetch = req_prefetch || dirResult.hit && meta_pft,
+    accessed = req_acquire || req_get || req_put //[Access] TODO: check
   )
   mp_grant.metaWen := !req_put
   mp_grant.tagWen := !dirResult.hit && !req_put

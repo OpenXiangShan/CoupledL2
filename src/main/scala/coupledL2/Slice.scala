@@ -20,6 +20,7 @@ package coupledL2
 import chisel3._
 import chisel3.util._
 import freechips.rocketchip.tilelink._
+import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.util.leftOR
 import chipsalliance.rocketchip.config.Parameters
 import coupledL2.utils._
@@ -151,10 +152,10 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
     val d_source = grantBuf.io.d.bits.source
     val delay = timer - a_begin_times(d_source)
     val (first, _, _, _) = edgeIn.count(grantBuf.io.d)
-    val delay_sample = grantBuf.io.d.fire() && first
+    val delay_sample = grantBuf.io.d.fire && grantBuf.io.d.bits.opcode =/= ReleaseAck && first
     XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 0, 20, 1, true, true)
-    XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 20, 300, 10, true, false)
-    XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 300, 500, 20, true, false)
+    XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 20, 300, 10, true, true)
+    XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 300, 500, 20, true, true)
     XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 500, 1000, 100, true, false)
   }
 }

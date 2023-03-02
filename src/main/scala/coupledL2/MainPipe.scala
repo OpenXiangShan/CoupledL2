@@ -187,11 +187,13 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   sink_resp_s3.bits := task_s3.bits
 
   sink_resp_s3.bits.mshrId := (1 << (mshrBits-1)).U + sink_resp_s3.bits.sourceId // extra id for reqs that do not enter mshr
+
+  val sink_resp_s3_a_promoteT = dirResult_s3.hit && isT(meta_s3.state)
   when(req_s3.fromA) {
     sink_resp_s3.bits.opcode := odOpGen(req_s3.opcode)
     sink_resp_s3.bits.param := Mux(
       req_acquire_s3,
-      Mux(req_s3.param === NtoB, toB, toT),
+      Mux(req_s3.param === NtoB && !sink_resp_s3_a_promoteT, toB, toT),
       0.U // reserved
     )
   }.elsewhen(req_s3.fromB) {
@@ -233,7 +235,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   val need_data_on_hit_a = req_s3.fromA && !mshr_req_s3 && (req_get_s3 || req_s3.opcode === AcquireBlock)
   // read data ahead of time to prepare for ReleaseData later 
-  val need_data_on_miss_a = req_s3.fromA && !mshr_req_s3 && !dirResult_s3.hit && (meta_s3.state === TRUNK || (meta_s3.state === TIP || meta_s3.state === BRANCH) && meta_s3.dirty)
+  val need_data_on_miss_a = req_s3.fromA && !mshr_req_s3 && !dirResult_s3.hit && meta_s3.state =/= INVALID
   val need_data_b = req_s3.fromB && !mshr_req_s3 && dirResult_s3.hit &&
     (meta_s3.state === TRUNK || meta_s3.state === TIP && meta_s3.dirty || req_s3.needProbeAckData)
 
@@ -263,19 +265,19 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     )
   )
 
-  val metaW_valid_s3_a = !mshr_req_s3 && req_s3.fromA && !need_mshr_s3_a && !req_get_s3 && !req_prefetch_s3
+  val metaW_valid_s3_a = !mshr_req_s3 && req_s3.fromA && !need_mshr_s3_a && !req_get_s3 && !req_prefetch_s3 // get & prefetch that hit will not write meta
   val metaW_valid_s3_b = !mshr_req_s3 && req_s3.fromB && !need_mshr_s3_b && dirResult_s3.hit && (meta_s3.state === TIP || meta_s3.state === BRANCH && req_s3.param === toN)
   val metaW_valid_s3_c = !mshr_req_s3 && req_s3.fromC
   val metaW_valid_s3_mshr = mshr_req_s3 && req_s3.metaWen
   require(clientBits == 1)
 
-  val metaW_s3_a = MetaEntry(meta_s3.dirty, Mux(req_needT_s3, TRUNK, meta_s3.state), Fill(clientBits, true.B), req_s3.alias)
-  val metaW_s3_b = Mux(req_s3.param === toN, MetaEntry(), MetaEntry(false.B, BRANCH, meta_s3.clients, meta_s3.alias))
+  val metaW_s3_a = MetaEntry(meta_s3.dirty, Mux(req_needT_s3 || sink_resp_s3_a_promoteT, TRUNK, meta_s3.state), Fill(clientBits, true.B), req_s3.alias, accessed = true.B)
+  val metaW_s3_b = Mux(req_s3.param === toN, MetaEntry(), MetaEntry(false.B, BRANCH, meta_s3.clients, meta_s3.alias, accessed = meta_s3.accessed))
 
   val metaW_s3_c_dirty = meta_s3.dirty || wen_c
   val metaW_s3_c_state = Mux(isParamFromT(req_s3.param), TIP, meta_s3.state)
   val metaW_s3_c_clients = Fill(clientBits, !isToN(req_s3.param))
-  val metaW_s3_c = MetaEntry(metaW_s3_c_dirty, metaW_s3_c_state, metaW_s3_c_clients, meta_s3.alias)
+  val metaW_s3_c = MetaEntry(metaW_s3_c_dirty, metaW_s3_c_state, metaW_s3_c_clients, meta_s3.alias, accessed = meta_s3.accessed)
 
   val metaW_s3_mshr = req_s3.meta
 
@@ -555,6 +557,9 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       XSPerfAccumulate(cacheParams, "a_req_trigger_prefetch_not_ready", io.prefetchTrain.get.valid && !io.prefetchTrain.get.ready)
       XSPerfAccumulate(cacheParams, "acquire_trigger_prefetch_on_miss", io.prefetchTrain.get.fire() && req_acquire_s3 && !dirResult_s3.hit)
       XSPerfAccumulate(cacheParams, "acquire_trigger_prefetch_on_hit_pft", io.prefetchTrain.get.fire() && req_acquire_s3 && dirResult_s3.hit && meta_s3.prefetch.get)
+      XSPerfAccumulate(cacheParams, "release_all", mshr_release_s3)
+      XSPerfAccumulate(cacheParams, "release_prefetch_accessed", mshr_release_s3 && meta_s3.prefetch.get && meta_s3.accessed)
+      XSPerfAccumulate(cacheParams, "release_prefetch_not_accessed", mshr_release_s3 && meta_s3.prefetch.get && !meta_s3.accessed)
       XSPerfAccumulate(cacheParams, "get_trigger_prefetch_on_miss", io.prefetchTrain.get.fire() && req_get_s3 && !dirResult_s3.hit)
       XSPerfAccumulate(cacheParams, "get_trigger_prefetch_on_hit_pft", io.prefetchTrain.get.fire() && req_get_s3 && dirResult_s3.hit && meta_s3.prefetch.get)
   }
