@@ -115,6 +115,8 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   val metaRead = Wire(Vec(ways, new MetaEntry()))
 
   val reqValidReg = RegNext(io.read.fire, false.B)
+  val resetFinish = RegInit(false.B)
+  val resetIdx = RegInit((sets - 1).U)
 
   tagArray.io.r <> DontCare
   tagArray.io.w <> DontCare
@@ -160,6 +162,56 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
       repl.miss
     }
     0.U
+  } else if(cacheParams.replacement == "srrip"){
+    val replacer_sram = Module(new SRAMTemplate(UInt(repl.nBits.W), sets, singlePort = true, shouldReset = true))
+    val repl_sram_r = replacer_sram.io.r(io.read.fire(), io.read.bits.set).resp.data(0)
+    val repl_state_hold = WireInit(0.U(repl.nBits.W))
+    repl_state_hold := HoldUnless(repl_sram_r, RegNext(io.read.fire(), false.B))
+    val next_state = repl.get_next_state(repl_state_hold, way_s2, hit_s2)
+    val repl_init = Wire(Vec(ways, UInt(2.W)))
+    repl_init.foreach(_ := 2.U(2.W))
+    replacer_sram.io.w(
+      !resetFinish || replacerWen,
+      Mux(resetFinish, RegNext(next_state), repl_init.asUInt),
+      Mux(resetFinish, RegNext(reqReg.set), resetIdx),
+      1.U
+    )
+
+    repl_state_hold
+  } else if(cacheParams.replacement == "drrip"){
+    //Set Dueling
+    val PSEL = RegInit(512.U(10.W)) //32-monitor sets, 10-bits psel
+    // track monitor sets' hit rate for each policy: srrip-0,128...3968;brrip-64,192...4032
+    when(reqValidReg && (reqReg.set(6,0)===0.U) && !hit_s2){  //SDMs_srrip miss
+      PSEL := PSEL + 1.U
+    } .elsewhen(reqValidReg && (reqReg.set(6,0)===64.U) && !hit_s2){ //SDMs_brrip miss
+      PSEL := PSEL - 1.U
+    }
+
+    val replacer_sram = Module(new SRAMTemplate(UInt(repl.nBits.W), sets, singlePort = true, shouldReset = true))
+    val repl_sram_r = replacer_sram.io.r(io.read.fire(), io.read.bits.set).resp.data(0)
+    val repl_state_hold = WireInit(0.U(repl.nBits.W))
+    repl_state_hold := HoldUnless(repl_sram_r, RegNext(io.read.fire(), false.B))
+    // decide use which policy by policy selection counter, for insertion
+    /*if set -> SDMs: use fix policy
+      else if PSEL(MSB)==0: use srrip
+      else if PSEL(MSB)==1: use brrip*/
+    val repl_type = WireInit(false.B)
+    repl_type := Mux(reqReg.set(6,0)===0.U, false.B, 
+                    Mux(reqReg.set(6,0)===64.U, true.B,
+                      Mux(PSEL(9)===0.U, false.B, true.B)))    // false.B - srrip, true.B - brrip
+    val next_state = repl.get_next_state(repl_state_hold, way_s2, hit_s2, repl_type)
+
+    val repl_init = Wire(Vec(ways, UInt(2.W)))
+    repl_init.foreach(_ := 2.U(2.W))
+    replacer_sram.io.w(
+      !resetFinish || replacerWen,
+      Mux(resetFinish, RegNext(next_state), repl_init.asUInt),
+      Mux(resetFinish, RegNext(reqReg.set), resetIdx),
+      1.U
+    )
+
+    repl_state_hold
   } else {
     val repl_sram_r = replacer_sram_opt.get.io.r(io.read.fire, io.read.bits.set).resp.data(0)
     val repl_state_hold = WireInit(0.U(repl.nBits.W))
@@ -210,6 +262,13 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
     replacerWen := true.B
   }.otherwise {
     replacerWen := false.B
+  }
+
+  when(resetIdx === 0.U) {
+    resetFinish := true.B
+  }
+  when(!resetFinish) {
+    resetIdx := resetIdx - 1.U
   }
 
 }

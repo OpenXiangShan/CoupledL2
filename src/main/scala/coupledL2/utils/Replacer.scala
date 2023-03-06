@@ -39,6 +39,9 @@ abstract class ReplacementPolicy {
   def get_next_state(state: UInt, touch_ways: Seq[Valid[UInt]]): UInt = {
     touch_ways.foldLeft(state)((prev, touch_way) => Mux(touch_way.valid, get_next_state(prev, touch_way.bits), prev))
   }
+  def get_next_state(state: UInt, touch_way: UInt, hit: Bool): UInt = {0.U}
+  def get_next_state(state: UInt, touch_way: UInt, hit: Bool, chosen_type: Bool): UInt = {0.U}
+
   def get_replace_way(state: UInt): UInt
 }
 
@@ -53,6 +56,9 @@ object ReplacementPolicy {
     case "random" => new RandomReplacement(n_ways)
     case "lru"    => new TrueLRU(n_ways)
     case "plru"   => new PseudoLRU(n_ways)
+    case "srrip"   => new StaticRRIP(n_ways)
+    case "brrip"   => new BRRIP(n_ways)
+    case "drrip"   => new DRRIP(n_ways)
     case t => throw new IllegalArgumentException(s"unknown Replacement Policy type $t")
   }
 }
@@ -303,4 +309,148 @@ class SetAssocReplacer(n_sets: Int, n_ways: Int, policy: String) extends SetAsso
   }
 
   def way(set: UInt) = logic.get_replace_way(state_vec(set))
+}
+
+
+ // 2-bit static Re-Reference Interval Prediction
+class StaticRRIP(n_ways: Int) extends ReplacementPolicy {
+  def nBits = 2 * n_ways
+  def perSet = true
+
+  private val state_reg = RegInit(0.U(nBits.W))
+  def state_read = WireDefault(state_reg)
+
+  def access(touch_way: UInt) = {}
+  def access(touch_ways: Seq[Valid[UInt]]) = {}
+  def get_next_state(state: UInt, touch_way: UInt) = 0.U //DontCare
+
+  override def get_next_state(state: UInt, touch_way: UInt, hit: Bool): UInt = {
+    val State  = Wire(Vec(n_ways, UInt(2.W)))
+    val nextState  = Wire(Vec(n_ways, UInt(2.W)))
+    State.zipWithIndex.map { case (e, i) =>
+      e := state(2*i+1,2*i)
+    }
+    // hit-Promotion, miss-Insertion & Aging
+    val increcement = 3.U(2.W) - State(touch_way)
+    nextState.zipWithIndex.map { case (e, i) =>
+      e := Mux(i.U === touch_way, 
+              Mux(hit, 0.U(2.W), 2.U(2.W)), 
+              Mux(hit, State(i), State(i)+increcement) 
+            )
+    }
+    Cat(nextState.map(x=>x).reverse)
+  }
+
+  def get_replace_way(state: UInt): UInt = {
+    val RRPVVec  = Wire(Vec(n_ways, UInt(2.W)))
+    RRPVVec.zipWithIndex.map { case (e, i) =>
+        e := state(2*i+1,2*i)
+    }
+    // scan each way's rrpv, find the least re-referenced way
+    val lrrWayVec = Wire(Vec(n_ways,Bool()))
+    lrrWayVec.zipWithIndex.map { case (e, i) =>
+      val isLarger = Wire(Vec(n_ways,Bool()))
+      for (j <- 0 until n_ways) {
+        isLarger(j) := RRPVVec(j) > RRPVVec(i)
+      }
+      e := !(isLarger.contains(true.B))
+    }
+    PriorityEncoder(lrrWayVec)
+  }
+
+  def way = get_replace_way(state_reg)
+  def miss = access(way)
+  def hit = {}
+}
+
+//BRRIP, 2-bit bimodal rrip
+class BRRIP(n_ways: Int) extends ReplacementPolicy {
+  def nBits = 2 * n_ways
+  def perSet = true
+
+  private val state_reg = RegInit(0.U(nBits.W))
+  def state_read = WireDefault(state_reg)
+  private val rand = new scala.util.Random(64)
+
+  def access(touch_way: UInt) = {}
+  def access(touch_ways: Seq[Valid[UInt]]) = {}
+  def get_next_state(state: UInt, touch_way: UInt) = 0.U //DontCare
+
+  override def get_next_state(state: UInt, touch_way: UInt, hit: Bool): UInt = {
+    val State  = Wire(Vec(n_ways, UInt(2.W)))
+    val nextState  = Wire(Vec(n_ways, UInt(2.W)))
+    State.zipWithIndex.map { case (e, i) =>
+      e := state(2*i+1,2*i)
+    }
+    
+    // hit-Promotion, miss-Insertion & Aging
+    val increcement = 3.U(2.W) - State(touch_way)
+    val random = (rand.nextInt(32)).U
+    nextState.zipWithIndex.map { case (e, i) =>
+      e := Mux(i.U === touch_way, 
+              Mux(hit, 0.U(2.W), Mux(random === 0.U, 2.U(2.W), 3.U(2.W))),      //TODO: touch_way=3 for most insertions, touch_rrpv=2 with certain probability
+              Mux(hit, State(i), State(i)+increcement) 
+            )
+    }
+    Cat(nextState.map(x=>x).reverse)
+  }
+
+  def get_replace_way(state: UInt): UInt = {
+    val RRPVVec  = Wire(Vec(n_ways, UInt(2.W)))
+    RRPVVec.zipWithIndex.map { case (e, i) =>
+        e := state(2*i+1,2*i)
+    }
+    // scan each way's rrpv, find the least re-referenced way
+    val lrrWayVec = Wire(Vec(n_ways,Bool()))
+    lrrWayVec.zipWithIndex.map { case (e, i) =>
+      val isLarger = Wire(Vec(n_ways,Bool()))
+      for (j <- 0 until n_ways) {
+        isLarger(j) := RRPVVec(j) > RRPVVec(i)
+      }
+      e := !(isLarger.contains(true.B))
+    }
+    PriorityEncoder(lrrWayVec)
+  }
+
+  def way = get_replace_way(state_reg)
+  def miss = access(way)
+  def hit = {}
+}
+
+// DRRIP, a hybrid of SRRIP and BRRIP by set dueling
+class DRRIP(n_ways: Int) extends ReplacementPolicy {
+  private val repl_SRRIP = ReplacementPolicy.fromString("srrip", n_ways)
+  private val repl_BRRIP = ReplacementPolicy.fromString("brrip", n_ways)
+
+  def nBits = 2 * n_ways
+  def perSet = true
+  private val state_reg = RegInit(0.U(nBits.W))
+  def state_read = WireDefault(state_reg)
+  def access(touch_way: UInt) = {}
+  def access(touch_ways: Seq[Valid[UInt]]) = {}
+  def way = 0.U
+  def miss = access(way)
+  def hit = {}
+
+  def get_next_state(state: UInt, touch_way: UInt) = 0.U //DontCare
+  override def get_next_state(state: UInt, touch_way: UInt, hit: Bool, chosen_type: Bool): UInt = {
+    Mux(chosen_type, repl_BRRIP.get_next_state(state, touch_way, hit), repl_SRRIP.get_next_state(state, touch_way, hit))
+  }
+  def get_replace_way(state: UInt): UInt = {
+    val RRPVVec  = Wire(Vec(n_ways, UInt(2.W)))
+    RRPVVec.zipWithIndex.map { case (e, i) =>
+        e := state(2*i+1,2*i)
+    }
+    // scan each way's rrpv, find the least re-referenced way
+    val lrrWayVec = Wire(Vec(n_ways,Bool()))
+    lrrWayVec.zipWithIndex.map { case (e, i) =>
+      val isLarger = Wire(Vec(n_ways,Bool()))
+      for (j <- 0 until n_ways) {
+        isLarger(j) := RRPVVec(j) > RRPVVec(i)
+      }
+      e := !(isLarger.contains(true.B))
+    }
+    PriorityEncoder(lrrWayVec)
+  }
+  
 }
