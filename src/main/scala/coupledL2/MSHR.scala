@@ -182,7 +182,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_release.way := req.way
   mp_release.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
   mp_release.metaWen := true.B
-  mp_release.meta := MetaEntry(dirty = false.B, state = INVALID, clients = 0.U, alias = meta.alias)
+  mp_release.meta := MetaEntry()
   mp_release.tagWen := false.B
   mp_release.dsWen := false.B
 
