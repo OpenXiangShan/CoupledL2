@@ -163,14 +163,13 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
     }
     0.U
   } else if(cacheParams.replacement == "srrip"){
-    val replacer_sram = Module(new SRAMTemplate(UInt(repl.nBits.W), sets, singlePort = true, shouldReset = true))
-    val repl_sram_r = replacer_sram.io.r(io.read.fire(), io.read.bits.set).resp.data(0)
+    val repl_sram_r = replacer_sram_opt.get.io.r(io.read.fire(), io.read.bits.set).resp.data(0)
     val repl_state_hold = WireInit(0.U(repl.nBits.W))
     repl_state_hold := HoldUnless(repl_sram_r, RegNext(io.read.fire(), false.B))
     val next_state = repl.get_next_state(repl_state_hold, way_s2, hit_s2)
     val repl_init = Wire(Vec(ways, UInt(2.W)))
     repl_init.foreach(_ := 2.U(2.W))
-    replacer_sram.io.w(
+    replacer_sram_opt.get.io.w(
       !resetFinish || replacerWen,
       Mux(resetFinish, RegNext(next_state), repl_init.asUInt),
       Mux(resetFinish, RegNext(reqReg.set), resetIdx),
@@ -188,8 +187,7 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
       PSEL := PSEL - 1.U
     }
 
-    val replacer_sram = Module(new SRAMTemplate(UInt(repl.nBits.W), sets, singlePort = true, shouldReset = true))
-    val repl_sram_r = replacer_sram.io.r(io.read.fire(), io.read.bits.set).resp.data(0)
+    val repl_sram_r = replacer_sram_opt.get.io.r(io.read.fire(), io.read.bits.set).resp.data(0)
     val repl_state_hold = WireInit(0.U(repl.nBits.W))
     repl_state_hold := HoldUnless(repl_sram_r, RegNext(io.read.fire(), false.B))
     // decide use which policy by policy selection counter, for insertion
@@ -204,7 +202,7 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
 
     val repl_init = Wire(Vec(ways, UInt(2.W)))
     repl_init.foreach(_ := 2.U(2.W))
-    replacer_sram.io.w(
+    replacer_sram_opt.get.io.w(
       !resetFinish || replacerWen,
       Mux(resetFinish, RegNext(next_state), repl_init.asUInt),
       Mux(resetFinish, RegNext(reqReg.set), resetIdx),

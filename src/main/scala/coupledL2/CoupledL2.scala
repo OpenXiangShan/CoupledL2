@@ -228,6 +228,8 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     val prefetch = "prefetch: " + cacheParams.prefetch
     println(s"====== Inclusive ${cacheParams.name} ($sizeStr * $banks-bank) $prefetch ======")
     println(s"bankBits: ${bankBits}")
+    println(s"replacement: ${cacheParams.replacement}")
+    println(s"replace policy: ${cacheParams.releaseData}")
     println(s"sets:${cacheParams.sets} ways:${cacheParams.ways} blockBytes:${cacheParams.blockBytes}")
     def print_bundle_fields(fs: Seq[BundleFieldBase], prefix: String) = {
       if(fs.nonEmpty){
