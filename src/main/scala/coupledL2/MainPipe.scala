@@ -499,13 +499,16 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   when(req_s3.fromA) {
     alloc_state.s_refill := false.B
     alloc_state.w_grantack := req_prefetch_s3 || req_get_s3 || req_put_s3
-    // need rprobe for replacement-release
-    when(a_need_replacement && meta_has_clients_s3) {
-      alloc_state.s_release := false.B
+    // need replacement
+    when(a_need_replacement) {
       alloc_state.w_releaseack := false.B
-      alloc_state.s_rprobe := false.B
-      alloc_state.w_rprobeackfirst := false.B
-      alloc_state.w_rprobeacklast := false.B
+      // need rprobe for release
+      when(meta_has_clients_s3) {
+        alloc_state.s_release := false.B // release when rprobe is sent in MSHR
+        alloc_state.s_rprobe := false.B
+        alloc_state.w_rprobeackfirst := false.B
+        alloc_state.w_rprobeacklast := false.B
+      }
     }
     // need Acquire downwards
     when(need_acquire_s3_a || req_put_s3) {
