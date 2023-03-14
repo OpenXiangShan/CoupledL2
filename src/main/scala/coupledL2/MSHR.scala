@@ -182,7 +182,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   mp_release.way := req.way
   mp_release.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
   mp_release.metaWen := true.B
-  mp_release.meta := MetaEntry(dirty = false.B, state = INVALID, clients = 0.U, alias = meta.alias)
+  mp_release.meta := MetaEntry()
   mp_release.tagWen := false.B
   mp_release.dsWen := false.B
 
@@ -389,13 +389,14 @@ class MSHR(implicit p: Parameters) extends L2Module {
   // For A reqs, we only concern about the tag to be replaced
   io.status.bits.tag := Mux(state.s_release, req.tag, dirResult.tag) // s_release is low-as-valid 
   io.status.bits.nestB := status_reg.valid && state.w_releaseack && state.w_rprobeacklast && state.w_pprobeacklast && !state.w_grantfirst
+  // wait for resps, high as valid
   io.status.bits.w_c_resp := !state.w_rprobeacklast || !state.w_pprobeacklast || !state.w_pprobeack
   io.status.bits.w_d_resp := !state.w_grantlast || !state.w_grant || !state.w_releaseack
   io.status.bits.w_e_resp := !state.w_grantack
   io.status.bits.will_free := will_free
-  assert(io.status.bits.w_c_resp || !c_resp.valid)
-  assert(io.status.bits.w_d_resp || !d_resp.valid)
-  assert(io.status.bits.w_e_resp || !e_resp.valid)
+  assert(!(c_resp.valid && !io.status.bits.w_c_resp))
+  assert(!(d_resp.valid && !io.status.bits.w_d_resp))
+  assert(!(e_resp.valid && !io.status.bits.w_e_resp))
 
   val nestedwb_match = status_reg.valid && meta.state =/= INVALID &&
     dirResult.set === io.nestedwb.set &&
