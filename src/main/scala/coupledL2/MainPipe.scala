@@ -54,7 +54,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       val mshr_alloc_ptr = Input(UInt(mshrBits.W))
     }
 
-    /* DONT pass data in pipeline, use a buffer to save data */ //TODO
+    /* read C-channel Release Data and write into DS */
     val bufRead = Output(ValidIO(new PipeBufferRead))
     val bufResp = Input(new PipeBufferResp)
 
@@ -272,7 +272,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val need_data_b         = sinkB_req_s3 && dirResult_s3.hit &&
                               (meta_s3.state === TRUNK || meta_s3.state === TIP && meta_s3.dirty || req_s3.needProbeAckData)
   val ren                 = Mux(dirResult_s3.hit, need_data_on_hit_a, need_data_on_miss_a) || need_data_b
-  val bufResp_s3          = RegNext(io.bufResp.data.asUInt) // for Release from C
+  val bufResp_s3          = RegNext(io.bufResp.data.asUInt) // for Release from C-channel
 
   io.toDS.req_s3.valid    := task_s3.valid && (ren || wen)
   io.toDS.req_s3.bits.way := Mux(mshr_req_s3, req_s3.way, dirResult_s3.way)
