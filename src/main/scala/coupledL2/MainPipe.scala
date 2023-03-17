@@ -464,20 +464,28 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   d_s5.bits.data.data := merged_data_s5
 
   // ======== BlockInfo ======== //
+  def pipelineBlock(chn: Char, s: TaskBundle, allTask: Boolean = false, tag: Boolean = false): Bool = {
+    val s1 = io.fromReqArb.status_s1
+    val s1_tag = if(chn == 'a') s1.a_tag else s1.b_tag
+    val s1_set = if(chn == 'a') s1.a_set else s1.b_set
+
+    // tag true: compare tag+set
+    s.set === s1_set && (if(allTask) true.B else !s.mshrTask) && (if(tag) s.tag === s1_tag else true.B)
+  }
+
   io.toReqArb.blockC_s1 :=
     task_s2.valid && task_s2.bits.set === io.fromReqArb.status_s1.c_set ||
     io.toMSHRCtl.mshr_alloc_s3.valid && task_s3.bits.set === io.fromReqArb.status_s1.c_set
   io.toReqArb.blockB_s1 :=
-    task_s2.valid && task_s2.bits.set === io.fromReqArb.status_s1.b_set ||
-    task_s3.valid && !task_s3.bits.mshrTask && task_s3.bits.set === io.fromReqArb.status_s1.b_set ||
-    task_s4.valid && !task_s4.bits.mshrTask && task_s4.bits.set === io.fromReqArb.status_s1.b_set ||
-    task_s5.valid && !task_s5.bits.mshrTask && task_s5.bits.set === io.fromReqArb.status_s1.b_set
+    task_s2.valid && pipelineBlock('b', task_s2.bits, allTask = true) ||
+    task_s3.valid && pipelineBlock('b', task_s3.bits)                 ||
+    task_s4.valid && pipelineBlock('b', task_s4.bits, tag = true)     ||
+    task_s5.valid && pipelineBlock('b', task_s5.bits, tag = true)
   io.toReqArb.blockA_s1 :=
-    task_s2.valid && task_s2.bits.set === io.fromReqArb.status_s1.a_set ||
-    task_s3.valid && !task_s3.bits.mshrTask && task_s3.bits.set === io.fromReqArb.status_s1.a_set ||
-    task_s4.valid && !task_s4.bits.mshrTask && task_s4.bits.set === io.fromReqArb.status_s1.a_set ||
-    task_s5.valid && !task_s5.bits.mshrTask && task_s5.bits.set === io.fromReqArb.status_s1.a_set
-
+    task_s2.valid && pipelineBlock('a', task_s2.bits, allTask = true) ||
+    task_s3.valid && pipelineBlock('a', task_s3.bits)                 ||
+    task_s4.valid && pipelineBlock('a', task_s4.bits, tag = true)     ||
+    task_s5.valid && pipelineBlock('a', task_s5.bits, tag = true)
   // ======== Pipeline Status ======== //
   require(io.status_vec.size == 3)
   io.status_vec(0).valid := task_s3.valid && Mux(
