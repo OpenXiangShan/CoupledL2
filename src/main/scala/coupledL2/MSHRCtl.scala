@@ -126,8 +126,11 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   }
 
   // io.mshrFull := mshrFull
-  val setMatchVec_a = mshrs.map(m => m.io.status.valid && m.io.status.bits.set === io.fromReqArb.status_s1.sets(2))
-  val setMatchVec_b = mshrs.map(m => m.io.status.valid && m.io.status.bits.set === io.fromReqArb.status_s1.sets(1))
+  val setMatchVec_a = mshrs.map(m => m.io.status.valid &&
+    m.io.status.bits.tag === io.fromReqArb.status_s1.a_tag &&
+    m.io.status.bits.set === io.fromReqArb.status_s1.a_set
+  )
+  val setMatchVec_b = mshrs.map(m => m.io.status.valid && m.io.status.bits.set === io.fromReqArb.status_s1.b_set)
   val setConflictVec_b = (setMatchVec_b zip mshrs.map(_.io.status.bits.nestB)).map(x => x._1 && !x._2)
   io.toReqArb.blockC_s1 := false.B
   io.toReqArb.blockB_s1 := mshrFull || Cat(setConflictVec_b).orR

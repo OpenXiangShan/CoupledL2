@@ -50,6 +50,9 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val prbq = Module(new ProbeQueue())
   prbq.io <> DontCare // @XiaBin TODO
 
+  a_reqBuf.io.in <> sinkA.io.toReqArb
+  a_reqBuf.io.mshrStatus := mshrCtl.io.mshr_status
+
   reqArb.io.sinkA <> a_reqBuf.io.out
   reqArb.io.sinkC <> sinkC.io.toReqArb
   reqArb.io.dirRead_s1 <> directory.io.read
@@ -60,9 +63,6 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   reqArb.io.fromMSHRCtl := mshrCtl.io.toReqArb
   reqArb.io.fromMainPipe := mainPipe.io.toReqArb
   reqArb.io.fromGrantBuffer := grantBuf.io.toReqArb
-
-  a_reqBuf.io.in <> sinkA.io.toReqArb
-  a_reqBuf.io.mshr_status := mshrCtl.io.mshr_status
 
   mshrCtl.io.fromReqArb.status_s1 := reqArb.io.status_s1
   mshrCtl.io.resps.sinkC := sinkC.io.resp

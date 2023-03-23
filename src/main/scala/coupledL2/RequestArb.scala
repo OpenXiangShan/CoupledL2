@@ -28,9 +28,9 @@ import coupledL2.utils.XSPerfAccumulate
 class RequestArb(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     /* receive incoming tasks */
-    val sinkA = Flipped(DecoupledIO(new TaskBundle))
-    val sinkB = Flipped(DecoupledIO(new TLBundleB(edgeOut.bundle)))
-    val sinkC = Flipped(DecoupledIO(new TaskBundle)) // sinkC is TaskBundle
+    val sinkA    = Flipped(DecoupledIO(new TaskBundle))
+    val sinkB    = Flipped(DecoupledIO(new TLBundleB(edgeOut.bundle)))
+    val sinkC    = Flipped(DecoupledIO(new TaskBundle))
     val mshrTask = Flipped(DecoupledIO(new TaskBundle))
 
     /* read/write directory */
@@ -96,6 +96,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     task.mshrTask := false.B
     task.fromL2pft.foreach(_ := false.B)
     task.needHint.foreach(_ := false.B)
+    task.wayMask := Fill(cacheParams.ways, "b1".U)
     task
   }
 
@@ -138,7 +139,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   io.dirRead_s1.valid := chnl_task_s1.valid && !mshr_task_s1.valid
   io.dirRead_s1.bits.set := task_s1.bits.set
   io.dirRead_s1.bits.tag := task_s1.bits.tag
-  io.dirRead_s1.bits.source := task_s1.bits.sourceId
+  io.dirRead_s1.bits.wayMask := task_s1.bits.wayMask
   io.dirRead_s1.bits.replacerInfo.opcode := task_s1.bits.opcode
   io.dirRead_s1.bits.replacerInfo.channel := task_s1.bits.channel
 

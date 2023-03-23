@@ -187,22 +187,22 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.toMSHRCtl.mshr_alloc_s3.bits.state := alloc_state
 
   val ms_task = io.toMSHRCtl.mshr_alloc_s3.bits.task
-  ms_task.channel := req_s3.channel
-  ms_task.set := req_s3.set
-  ms_task.tag := req_s3.tag
-  ms_task.off := req_s3.off
-  ms_task.alias.foreach(_ := req_s3.alias.getOrElse(0.U))
-  ms_task.opcode := req_s3.opcode
-  ms_task.param := req_s3.param
-  ms_task.size := req_s3.size
-  ms_task.sourceId := req_s3.sourceId
+  ms_task.channel          := req_s3.channel
+  ms_task.set              := req_s3.set
+  ms_task.tag              := req_s3.tag
+  ms_task.off              := req_s3.off
+  ms_task.alias.foreach(_  := req_s3.alias.getOrElse(0.U))
+  ms_task.opcode           := req_s3.opcode
+  ms_task.param            := req_s3.param
+  ms_task.size             := req_s3.size
+  ms_task.sourceId         := req_s3.sourceId
   ms_task.needProbeAckData := req_s3.needProbeAckData
   ms_task.aliasTask.foreach(_ := cache_alias)
-  ms_task.useProbeData := false.B
-  ms_task.pbIdx := req_s3.pbIdx
+  ms_task.useProbeData     := false.B
+  ms_task.pbIdx            := req_s3.pbIdx
   ms_task.fromL2pft.foreach(_ := req_s3.fromL2pft.get)
-  ms_task.needHint.foreach(_ := req_s3.needHint.get)
-  ms_task.way := dirResult_s3.way
+  ms_task.needHint.foreach(_  := req_s3.needHint.get)
+  ms_task.way              := dirResult_s3.way
 
   // ======== Resps to SinkA/B/C Reqs ======== //
   val sink_resp_s3 = WireInit(0.U.asTypeOf(Valid(new TaskBundle))) // resp for sinkA/B/C request that does not need to alloc mshr

@@ -60,7 +60,7 @@ object MetaEntry {
 class DirRead(implicit p: Parameters) extends L2Bundle {
   val tag = UInt(tagBits.W)
   val set = UInt(setBits.W)
-  val source = UInt(sourceIdBits.W)
+  val wayMask = UInt(cacheParams.ways.W)
   val replacerInfo = new ReplacerInfo()
 }
 
@@ -226,9 +226,15 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   val replaceWay = repl.get_replace_way(repl_state)
   val (inv, invalidWay) = invalid_way_sel(metaRead, replaceWay)
   val chosenWay = Mux(inv, invalidWay, replaceWay)
+  // if chosenWay not in wayMask, then choose a way in wayMask
+  val finalWay = Mux(
+    reqReg.wayMask(chosenWay),
+    chosenWay,
+    PriorityEncoder(reqReg.wayMask)
+  )
 
   hit_s2 := Cat(hitVec).orR
-  way_s2 := Mux(hit_s2, hitWay, chosenWay)
+  way_s2 := Mux(hit_s2, hitWay, finalWay)
 
   val reqValid_s3 = reqValidReg
   val hit_s3 = RegEnable(hit_s2, false.B, reqValidReg)

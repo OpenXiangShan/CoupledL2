@@ -77,6 +77,9 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val tagWen = Bool()
   val dsWen = Bool()
 
+  // for Dir to choose a way not occupied by some unfinished MSHR task
+  val wayMask = UInt(cacheParams.ways.W)
+
   def hasData = opcode(0)
 }
 
