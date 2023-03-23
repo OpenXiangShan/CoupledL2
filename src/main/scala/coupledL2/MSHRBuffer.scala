@@ -20,7 +20,7 @@ package coupledL2
 import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config.Parameters
-import coupledL2.utils._
+import utility._
 import java.util.ResourceBundle
 
 // read with block granularity
@@ -48,23 +48,19 @@ class MSHRBuffer(wPorts: Int = 1)(implicit p: Parameters) extends L2Module {
     val w = Vec(wPorts, new MSHRBufWrite)
   })
 
-  val buffer = Seq.fill(mshrsAll) {
-    Seq.fill(beatSize) {
-      Module(new SRAMTemplate(new DSBeat(), set = 1, way = 1, singlePort = true))
-    }
-  }
+  val buffer = Module(new SRAMTemplate(new DSBeat(), set = mshrsAll, way = beatSize, singlePort = false))
   val valids = RegInit(VecInit(Seq.fill(mshrsAll) {
     VecInit(Seq.fill(beatSize)(false.B))
   }))
 
-  io.w.foreach {
-    case w =>
-      when (w.valid) {
-        w.beat_sel.asBools.zipWithIndex.foreach {
-          case (sel, i) =>
-            when (sel) { valids(w.id)(i) := true.B }
-        }
-      }
+  val w = ParallelMux(io.w.map(_.valid), io.w)
+  val w_valid = Cat(io.w.map(_.valid)).orR
+
+  when (w_valid) {
+    w.beat_sel.asBools.zipWithIndex.foreach {
+      case (sel, i) =>
+        when (sel) { valids(w.id)(i) := true.B }
+    }
   }
 
   when (io.r.valid) {
@@ -72,32 +68,24 @@ class MSHRBuffer(wPorts: Int = 1)(implicit p: Parameters) extends L2Module {
     valids(io.r.id).foreach(_ := false.B)
   }
 
-  buffer.zipWithIndex.foreach {
-    case (block, i) =>
-      val wens = VecInit(io.w.map(w => w.valid && w.id === i.U)).asUInt
-      assert(PopCount(wens) <= 1.U)
+  buffer.io.w.req.valid := w_valid
+  buffer.io.w.req.bits.apply(
+    data = w.data.asTypeOf(buffer.io.w.req.bits.data),
+    setIdx = w.id,
+    waymask = w.beat_sel
+  )
+  buffer.io.r.req.valid := io.r.valid
+  buffer.io.r.req.bits.apply(io.r.id)
 
-      val w_beat_sel = PriorityMux(wens, io.w.map(_.beat_sel))
-      val w_data = PriorityMux(wens, io.w.map(_.data))
-      val ren = io.r.valid && io.r.id === i.U
-      block.zipWithIndex.foreach {
-        case (entry, j) =>
-          entry.io.w.req.valid := wens.orR && w_beat_sel(j)
-          entry.io.w.req.bits.apply(
-            data = w_data.data((j + 1) * beatBytes * 8 - 1, j * beatBytes * 8).asTypeOf(new DSBeat),
-            setIdx = 0.U,
-            waymask = 1.U
-          )
-          entry.io.r.req.valid := ren
-          entry.io.r.req.bits.apply(0.U)
+  io.r.ready := true.B
+  // io.w.foreach(_.ready := true.B)
+  io.w.zipWithIndex.foreach {
+    case (x, i) =>
+      i match {
+        case 0 => x.ready := true.B
+        case _ => x.ready := !Cat(io.w.take(i).map(_.valid)).orR
       }
   }
 
-  io.r.ready := true.B
-  io.w.foreach(_.ready := true.B)
-
-  val ridReg = RegNext(io.r.id)
-  io.r.data.data := VecInit(buffer.map {
-    case block => VecInit(block.map(_.io.r.resp.data.asUInt)).asUInt
-  })(ridReg)
+  io.r.data.data := buffer.io.r.resp.data.asUInt
 }

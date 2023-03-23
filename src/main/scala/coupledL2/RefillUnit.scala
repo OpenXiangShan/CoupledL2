@@ -67,5 +67,5 @@ class RefillUnit(implicit p: Parameters) extends L2Module {
   io.resp.respInfo.last := last
   io.resp.respInfo.dirty := io.sinkD.bits.echo.lift(DirtyKey).getOrElse(false.B)
 
-  io.sinkD.ready := true.B
+  io.sinkD.ready := !hasData || io.refillBufWrite.ready
 }

@@ -91,16 +91,18 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   mainPipe.io.releaseBufResp_s3.bits := releaseBuf.io.r.data
   mainPipe.io.fromReqArb.status_s1 := reqArb.io.status_s1
 
-  releaseBuf.io.w(0) <> sinkC.io.releaseBufWrite
-  releaseBuf.io.w(0).id := mshrCtl.io.releaseBufWriteId
-  releaseBuf.io.w(1) <> mainPipe.io.releaseBufWrite
-  releaseBuf.io.w(2).valid := mshrCtl.io.nestedwbDataId.valid
-  releaseBuf.io.w(2).beat_sel := Fill(beatSize, 1.U(1.W))
-  releaseBuf.io.w(2).data := mainPipe.io.nestedwbData
-  releaseBuf.io.w(2).id := mshrCtl.io.nestedwbDataId.bits
+  // TODO: merge write port 0 and 1
+  releaseBuf.io.w(0) <> mainPipe.io.releaseBufWrite
+  releaseBuf.io.w(1).valid := RegNext(RegNext(mshrCtl.io.nestedwbDataId.valid))
+  releaseBuf.io.w(1).beat_sel := RegNext(RegNext(Fill(beatSize, 1.U(1.W))))
+  releaseBuf.io.w(1).data := RegNext(RegNext(mainPipe.io.nestedwbData))
+  releaseBuf.io.w(1).id := RegNext(RegNext(mshrCtl.io.nestedwbDataId.bits))
+  releaseBuf.io.w(2) <> sinkC.io.releaseBufWrite
+  releaseBuf.io.w(2).id := mshrCtl.io.releaseBufWriteId
+  assert(!(releaseBuf.io.w(0).valid && releaseBuf.io.w(1).valid))
 
-  refillBuf.io.w(0) <> refillUnit.io.refillBufWrite
-  refillBuf.io.w(1) <> mainPipe.io.refillBufWrite
+  refillBuf.io.w(0) <> mainPipe.io.refillBufWrite
+  refillBuf.io.w(1) <> refillUnit.io.refillBufWrite
 
   sourceC.io.in <> mainPipe.io.toSourceC
 
