@@ -41,7 +41,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
     val c = Flipped(DecoupledIO(new TLBundleC(edgeIn.bundle)))
     val toReqArb = DecoupledIO(new TaskBundle) // Release/ReleaseData
     val resp = Output(new RespBundle)
-    val releaseBufWrite = Flipped(new MSHRBufWrite)
+    val releaseBufWrite = DecoupledIO(new MSHRBufWrite)
     val bufRead = Input(ValidIO(new PipeBufferRead))
     val bufResp = Output(new PipeBufferResp)
   })
@@ -135,9 +135,9 @@ class SinkC(implicit p: Parameters) extends L2Module {
   io.resp.respInfo.dirty := io.c.bits.opcode(0)
 
   io.releaseBufWrite.valid := io.c.valid && io.c.bits.opcode === ProbeAckData
-  io.releaseBufWrite.beat_sel := UIntToOH(beat)
-  io.releaseBufWrite.data.data := Fill(beatSize, io.c.bits.data)
-  io.releaseBufWrite.id := DontCare // id is given by MSHRCtl by comparing address to the MSHRs
+  io.releaseBufWrite.bits.beat_sel := UIntToOH(beat)
+  io.releaseBufWrite.bits.data.data := Fill(beatSize, io.c.bits.data)
+  io.releaseBufWrite.bits.id := DontCare // id is given by MSHRCtl by comparing address to the MSHRs
 
   // io.c.ready := !isRelease || !first || !full || !hasData && io.toReqArb.ready
   io.c.ready := Mux(

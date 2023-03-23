@@ -33,11 +33,9 @@ class MSHRBufRead(implicit p: Parameters) extends L2Bundle {
 
 // write with beat granularity
 class MSHRBufWrite(implicit p: Parameters) extends L2Bundle {
-  val valid = Input(Bool())
-  val beat_sel = Input(UInt(beatSize.W))
-  val data = Input(new DSBlock)
-  val id = Input(UInt(mshrBits.W))
-  val ready = Output(Bool())
+  val beat_sel = UInt(beatSize.W)
+  val data = new DSBlock
+  val id = UInt(mshrBits.W)
 }
 
 // TODO: should it have both r/w port?
@@ -45,7 +43,7 @@ class MSHRBufWrite(implicit p: Parameters) extends L2Bundle {
 class MSHRBuffer(wPorts: Int = 1)(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val r = new MSHRBufRead()
-    val w = Vec(wPorts, new MSHRBufWrite)
+    val w = Vec(wPorts, Flipped(DecoupledIO(new MSHRBufWrite)))
   })
 
   val buffer = Module(new SRAMTemplate(new DSBeat(), set = mshrsAll, way = beatSize, singlePort = false))
@@ -53,7 +51,7 @@ class MSHRBuffer(wPorts: Int = 1)(implicit p: Parameters) extends L2Module {
     VecInit(Seq.fill(beatSize)(false.B))
   }))
 
-  val w = ParallelMux(io.w.map(_.valid), io.w)
+  val w = ParallelMux(io.w.map(_.valid), io.w.map(_.bits))
   val w_valid = Cat(io.w.map(_.valid)).orR
 
   when (w_valid) {

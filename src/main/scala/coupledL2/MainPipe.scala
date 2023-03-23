@@ -80,10 +80,10 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     val tagWReq = ValidIO(new TagWrite)
 
     /* read DS and write data into ReleaseBuf when the task needs to replace */
-    val releaseBufWrite = Flipped(new MSHRBufWrite()) // s5 & s6
+    val releaseBufWrite = DecoupledIO(new MSHRBufWrite()) // s5 & s6
 
     /* read DS and write data into RefillBuf when Acquire toT hits on B */
-    val refillBufWrite = Flipped(new MSHRBufWrite())
+    val refillBufWrite = DecoupledIO(new MSHRBufWrite())
 
     val nestedwb = Output(new NestedWriteback)
     val nestedwbData = Output(new DSBlock)
@@ -445,15 +445,15 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val chnl_fire_s5 = c_s5.fire() || d_s5.fire()
 
   io.releaseBufWrite.valid      := task_s5.valid && need_write_releaseBuf_s5
-  io.releaseBufWrite.beat_sel   := Fill(beatSize, 1.U(1.W))
-  io.releaseBufWrite.data.data  := merged_data_s5
-  io.releaseBufWrite.id         := task_s5.bits.mshrId
+  io.releaseBufWrite.bits.beat_sel   := Fill(beatSize, 1.U(1.W))
+  io.releaseBufWrite.bits.data.data  := merged_data_s5
+  io.releaseBufWrite.bits.id         := task_s5.bits.mshrId
   assert(!(io.releaseBufWrite.valid && !io.releaseBufWrite.ready), "releaseBuf should be ready when given valid")
 
   io.refillBufWrite.valid     := task_s5.valid && need_write_refillBuf_s5
-  io.refillBufWrite.beat_sel  := Fill(beatSize, 1.U(1.W))
-  io.refillBufWrite.data.data := merged_data_s5
-  io.refillBufWrite.id        := task_s5.bits.mshrId
+  io.refillBufWrite.bits.beat_sel  := Fill(beatSize, 1.U(1.W))
+  io.refillBufWrite.bits.data.data := merged_data_s5
+  io.refillBufWrite.bits.id        := task_s5.bits.mshrId
   assert(!(io.refillBufWrite.valid && !io.refillBufWrite.ready), "releaseBuf should be ready when given valid")
 
   c_s5.valid := task_s5.valid && isC_s5 && !need_write_releaseBuf_s5 && !need_write_refillBuf_s5

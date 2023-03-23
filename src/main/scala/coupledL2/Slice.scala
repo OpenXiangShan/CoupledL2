@@ -94,11 +94,11 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   // TODO: merge write port 0 and 1
   releaseBuf.io.w(0) <> mainPipe.io.releaseBufWrite
   releaseBuf.io.w(1).valid := RegNext(RegNext(mshrCtl.io.nestedwbDataId.valid))
-  releaseBuf.io.w(1).beat_sel := RegNext(RegNext(Fill(beatSize, 1.U(1.W))))
-  releaseBuf.io.w(1).data := RegNext(RegNext(mainPipe.io.nestedwbData))
-  releaseBuf.io.w(1).id := RegNext(RegNext(mshrCtl.io.nestedwbDataId.bits))
+  releaseBuf.io.w(1).bits.beat_sel := RegNext(RegNext(Fill(beatSize, 1.U(1.W))))
+  releaseBuf.io.w(1).bits.data := RegNext(RegNext(mainPipe.io.nestedwbData))
+  releaseBuf.io.w(1).bits.id := RegNext(RegNext(mshrCtl.io.nestedwbDataId.bits))
   releaseBuf.io.w(2) <> sinkC.io.releaseBufWrite
-  releaseBuf.io.w(2).id := mshrCtl.io.releaseBufWriteId
+  releaseBuf.io.w(2).bits.id := mshrCtl.io.releaseBufWriteId
   assert(!(releaseBuf.io.w(0).valid && releaseBuf.io.w(1).valid))
 
   refillBuf.io.w(0) <> mainPipe.io.refillBufWrite
