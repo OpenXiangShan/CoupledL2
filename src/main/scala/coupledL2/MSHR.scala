@@ -62,6 +62,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val dirResult = RegInit(0.U.asTypeOf(new DirResult()))
   val gotT = RegInit(false.B) // TODO: L3 might return T even though L2 wants B
   val gotDirty = RegInit(false.B)
+  val gotGrantData = RegInit(false.B)
   val probeDirty = RegInit(false.B)
   val probeGotN = RegInit(false.B)
 
@@ -90,6 +91,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     status_reg.bits.fromL2pft.foreach(_ := ms_task.fromL2pft.get)
     gotT := false.B
     gotDirty := false.B
+    gotGrantData := false.B
     probeDirty := false.B
     probeGotN := false.B
     timer := 1.U
@@ -103,6 +105,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
 
   val req_needT = needT(req.opcode, req.param)
   val req_acquire = req.opcode === AcquireBlock && req.fromA || req.opcode === AcquirePerm // AcquireBlock and Probe share the same opcode
+  val req_acquirePerm = req.opcode === AcquirePerm
   val req_put = req.opcode === PutFullData || req.opcode === PutPartialData
   val req_get = req.opcode === Get
   val req_prefetch = req.opcode === Hint
@@ -125,7 +128,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   oa.off := req.off
   oa.source := io.id
   oa.opcode := Mux(
-    req_put,
+    req_put || req_acquirePerm,
     req.opcode,
     Mux(dirResult.hit, AcquirePerm, AcquireBlock)
   )
@@ -285,7 +288,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   )
   mp_grant.metaWen := !req_put
   mp_grant.tagWen := !dirResult.hit && !req_put
-  mp_grant.dsWen := !dirResult.hit && !req_put || probeDirty && (req_get || req.aliasTask.getOrElse(false.B))
+  mp_grant.dsWen := !dirResult.hit && !req_put && gotGrantData || probeDirty && (req_get || req.aliasTask.getOrElse(false.B))
   mp_grant.fromL2pft.foreach(_ := req.fromL2pft.get)
   mp_grant.needHint.foreach(_ := false.B)
 
@@ -358,6 +361,9 @@ class MSHR(implicit p: Parameters) extends L2Module {
     when(d_resp.bits.opcode === Grant || d_resp.bits.opcode === GrantData) {
       gotT := d_resp.bits.param === toT
       gotDirty := gotDirty || d_resp.bits.dirty
+    }
+    when(d_resp.bits.opcode === GrantData) {
+      gotGrantData := true.B
     }
     when(d_resp.bits.opcode === ReleaseAck) {
       state.w_releaseack := true.B
