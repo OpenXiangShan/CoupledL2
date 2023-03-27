@@ -87,7 +87,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   val occWays = io.mshrStatus.foldLeft(0.U(cacheParams.ways.W)) {
     case (ways, s) =>
       Mux(
-        s.valid && sameSet(issueArb.io.out.bits, s.bits),
+        s.valid && sameSet(io.out.bits, s.bits),
         ways | UIntToOH(s.bits.way),
         ways
       )
