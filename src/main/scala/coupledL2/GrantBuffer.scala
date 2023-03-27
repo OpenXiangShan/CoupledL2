@@ -72,7 +72,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   when (io.d_task.fire() && io.d_task.bits.task.opcode(2, 1) === Grant(2, 1)) {
     // choose an empty entry
     val valids = VecInit(inflight_grant.map(_.valid)).asUInt
-    val insertIdx = PriorityEncoder(~valids)
+    val insertIdx = io.d_task.bits.task.sourceId
     val entry = inflight_grant(insertIdx)
     entry.valid := true.B
     entry.set := io.d_task.bits.task.set
