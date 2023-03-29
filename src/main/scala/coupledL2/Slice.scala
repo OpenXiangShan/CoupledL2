@@ -103,6 +103,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   refillBuf.io.w(1) <> mainPipe.io.refillBufWrite
 
   sourceC.io.in <> mainPipe.io.toSourceC
+  mshrCtl.io.grantStatus := grantBuf.io.grantStatus
 
   grantBuf.io.d_task <> mainPipe.io.toSourceD
   grantBuf.io.fromReqArb.status_s1 := reqArb.io.status_s1

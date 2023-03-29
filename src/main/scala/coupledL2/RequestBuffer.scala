@@ -44,7 +44,6 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     s.valid && sameAddr(io.in.bits, s.bits) && !s.bits.will_free
   )
   val conflict   = Cat(conflictMask).orR
-  val stall      = conflict
   val noReadyEntry = Wire(Bool())
 
   // TODO: remove depMatrix
@@ -83,6 +82,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   // TODO: add an output_pipe for timing consideration?
   noReadyEntry := !issueArb.io.out.valid
 
+  /* ======== Waymask Info ======== */
   // ways in the set of issued-A-req that are occupied by unfinished MSHR task
   val occWays = io.mshrStatus.foldLeft(0.U(cacheParams.ways.W)) {
     case (ways, s) =>
@@ -93,7 +93,6 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       )
   }
   val noFreeWay = !Cat(~occWays).orR
-
 
   /* ======== Update rdy and masks ======== */
   for (e <- buffer) {

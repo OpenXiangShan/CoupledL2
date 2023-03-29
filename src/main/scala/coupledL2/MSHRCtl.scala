@@ -61,6 +61,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     val sourceA = DecoupledIO(new TLBundleA(edgeOut.bundle))
     val sourceB = DecoupledIO(new TLBundleB(edgeIn.bundle))
     // val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain))
+    val grantStatus = Input(Vec(sourceIdAll, new GrantStatus))
 
     /* receive resps */
     val resps = Input(new Bundle() {
@@ -146,6 +147,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   /* Probe upwards */
   val sourceB = Module(new SourceB())
   fastArb(mshrs.map(_.io.tasks.source_b), sourceB.io.task, Some("source_b"))
+  sourceB.io.grantStatus := io.grantStatus
   io.sourceB <> sourceB.io.sourceB
 
   /* Arbitrate MSHR task to RequestArbiter */
