@@ -71,6 +71,8 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   val selectOH = ParallelPriorityMux(~block_valids, (0 until mshrsAll).map(i => (1 << i).U))
 
   // sourceIdAll (= L1 Ids) entries
+  // Caution: blocks choose an empty entry to insert, which has #mshrsAll entries
+  // while inflight_grant use sourceId as index, which has #sourceIdAll entries
   val inflight_grant = Reg(Vec(sourceIdAll, new InflightGrantEntry))
   io.grantStatus zip inflight_grant foreach {
     case (g, i) =>
@@ -81,7 +83,6 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
 
   when (io.d_task.fire() && io.d_task.bits.task.opcode(2, 1) === Grant(2, 1)) {
     // choose an empty entry
-    val valids = VecInit(inflight_grant.map(_.valid)).asUInt
     val insertIdx = io.d_task.bits.task.sourceId
     val entry = inflight_grant(insertIdx)
     entry.valid := true.B
@@ -163,7 +164,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
       val hasData = out.bits.opcode(0)
 
       when (out.fire()) {
-        inflight_grant(i).sent := true.B
+        inflight_grant(taskAll(i).sourceId).sent := true.B
         when (hasData) {
           beat_valids(i) := VecInit(next_beatsOH.asBools)
         }.otherwise {
