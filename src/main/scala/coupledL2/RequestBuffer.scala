@@ -39,24 +39,26 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   def sameAddr(a: TaskBundle, b: MSHRStatus): Bool = Cat(a.tag, a.set) === Cat(b.tag, b.set)
   def sameSet (a: TaskBundle, b: MSHRStatus): Bool = a.set === b.set
 
-  val full = Cat(buffer.map(_.valid)).andR
+  val full         = Cat(buffer.map(_.valid)).andR
   val conflictMask = io.mshrStatus.map(s =>
     s.valid && sameAddr(io.in.bits, s.bits) && !s.bits.will_free
   )
-  val conflict   = Cat(conflictMask).orR
+  val conflict     = Cat(conflictMask).orR
   val noReadyEntry = Wire(Bool())
+  val noFreeWay    = Wire(Bool())
+  val canFlow      = flow.B && noReadyEntry
+  val doFlow       = canFlow && io.out.ready && !noFreeWay
 
   // TODO: remove depMatrix
-  // If need to
   val depMask    = buffer.map(e => e.valid && sameAddr(io.in.bits, e.task))
   val isPrefetch = io.in.bits.fromA && io.in.bits.opcode === Hint
   val dup        = io.in.valid && isPrefetch && Cat(depMask).orR // duplicate prefetch
 
   /* ======== Alloc ======== */
-  io.in.ready   := !full
+  io.in.ready   := !full || doFlow
 
   val insertIdx = PriorityEncoder(buffer.map(!_.valid))
-  val alloc = !full && io.in.valid && !(flow.B && noReadyEntry && io.out.ready) && !dup
+  val alloc = !full && io.in.valid && !doFlow && !dup
   when(alloc){
     val entry = buffer(insertIdx)
     entry.valid   := true.B
@@ -73,13 +75,13 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     issueArb.io.in(i).valid := buffer(i).valid && buffer(i).rdy
     issueArb.io.in(i).bits  := buffer(i).task
 
-    // ! Maybe clear this when alloc MSHR fire or source fire?
-    when(issueArb.io.in(i).fire){
+    // ! clear this when io.out fire
+    // cuz may be blocked by noFreeWay
+    when(issueArb.io.in(i).fire && io.out.fire) {
       buffer(i).valid := false.B
     }
   }
   issueArb.io.out.ready := io.out.ready
-  // TODO: add an output_pipe for timing consideration?
   noReadyEntry := !issueArb.io.out.valid
 
   /* ======== Waymask Info ======== */
@@ -92,7 +94,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
         ways
       )
   }
-  val noFreeWay = !Cat(~occWays).orR
+  noFreeWay := !Cat(~occWays).orR
 
   /* ======== Update rdy and masks ======== */
   for (e <- buffer) {
@@ -117,9 +119,8 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   }
 
   /* ======== Output ======== */
-  io.out.valid := (flow.B && noReadyEntry && io.in.valid && !full) || // TODO: flow new request even buffer is full
-    (issueArb.io.out.valid && !noFreeWay)
-  io.out.bits  := Mux(flow.B && noReadyEntry, io.in.bits, issueArb.io.out.bits)
+  io.out.valid := (issueArb.io.out.valid && !noFreeWay) || (io.in.valid && canFlow)
+  io.out.bits  := Mux(canFlow, io.in.bits, issueArb.io.out.bits)
   // for Dir to choose a way not occupied by some unfinished MSHR task
   io.out.bits.wayMask := ~occWays
 }
