@@ -109,10 +109,11 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     s.valid && s.bits.fromA
   }).asUInt, block_valids)) >= mshrsAll.U
 
-  io.toReqArb.blockSinkReqEntrance.blockA_s1 := Cat(inflight_grant.map(g => g.valid &&
-    g.set === io.fromReqArb.status_s1.a_set && g.tag === io.fromReqArb.status_s1.a_tag)).orR || noSpaceForSinkReq
+  io.toReqArb.blockSinkReqEntrance.blockA_s1 := noSpaceForSinkReq
   io.toReqArb.blockSinkReqEntrance.blockB_s1 := Cat(inflight_grant.map(g => g.valid &&
     g.set === io.fromReqArb.status_s1.b_set && g.tag === io.fromReqArb.status_s1.b_tag)).orR
+  //TODO: or should we still Stall B req?
+  // A-replace related rprobe is handled in SourceB
   io.toReqArb.blockSinkReqEntrance.blockC_s1 := noSpaceForSinkReq
   io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq
 
