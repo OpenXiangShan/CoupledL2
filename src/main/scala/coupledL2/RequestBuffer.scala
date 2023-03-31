@@ -119,7 +119,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   }
 
   /* ======== Output ======== */
-  io.out.valid := (issueArb.io.out.valid && !noFreeWay) || (io.in.valid && canFlow)
+  io.out.valid := !noFreeWay && (issueArb.io.out.valid || (io.in.valid && canFlow))
   io.out.bits  := Mux(canFlow, io.in.bits, issueArb.io.out.bits)
   // for Dir to choose a way not occupied by some unfinished MSHR task
   io.out.bits.wayMask := ~occWays
