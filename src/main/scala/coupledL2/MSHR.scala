@@ -323,6 +323,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
       state.s_refill := true.B
     }.elsewhen (mp_release_valid) {
       state.s_release := true.B
+      meta.state := INVALID
     }.elsewhen (mp_probeack_valid) {
       state.s_probeack := true.B
     }
