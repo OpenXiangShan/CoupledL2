@@ -84,7 +84,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     /* status of s2 and s3 */
     val pipeStatusVec = Flipped(Vec(2, ValidIO(new PipeStatus)))
 
-    /* to ReqBuffer, to solve set conflict */
+    /* to ReqBuffer, to solve conflict */
     val mshr_status = Vec(mshrsAll, ValidIO(new MSHRStatus))
   })
 
@@ -126,7 +126,6 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       io.mshr_status(i) := m.io.status
   }
 
-  // io.mshrFull := mshrFull
   val setMatchVec_a = mshrs.map(m => m.io.status.valid &&
     m.io.status.bits.tag === io.fromReqArb.status_s1.a_tag &&
     m.io.status.bits.set === io.fromReqArb.status_s1.a_set
