@@ -35,6 +35,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   val buffer = RegInit(VecInit(Seq.fill(entries)(0.U.asTypeOf(reqEntry))))
 
   /* ======== Enchantment ======== */
+  val NWay = cacheParams.ways
   def sameAddr(a: TaskBundle, b: TaskBundle): Bool = Cat(a.tag, a.set) === Cat(b.tag, b.set)
   def sameAddr(a: TaskBundle, b: MSHRStatus): Bool = Cat(a.tag, a.set) === Cat(b.tag, b.set)
   def sameSet (a: TaskBundle, b: MSHRStatus): Bool = a.set === b.set
@@ -86,14 +87,15 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
   /* ======== Waymask Info ======== */
   // ways in the set of issued-A-req that are occupied by unfinished MSHR task
-  val occWays = io.mshrStatus.foldLeft(0.U(cacheParams.ways.W)) {
-    case (ways, s) =>
+  val occWays =
+    VecInit(io.mshrStatus.map(s =>
       Mux(
-        s.valid && sameSet(io.out.bits, s.bits),
-        ways | UIntToOH(s.bits.way),
-        ways
+        s.valid && !s.bits.will_free && sameSet(io.out.bits, s.bits),
+        UIntToOH(s.bits.way, NWay),
+        0.U(NWay.W)
       )
-  }
+    )).reduceTree(_ | _)
+
   noFreeWay := !Cat(~occWays).orR
 
   /* ======== Update rdy and masks ======== */
