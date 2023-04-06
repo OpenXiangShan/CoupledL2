@@ -88,7 +88,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   )
   val conflict     = Cat(conflictMask).orR
 
-  val canFlow      = flow.B && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(io.in.bits)
+  val canFlow      = flow.B && !conflict && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(io.in.bits)
   val doFlow       = canFlow && io.out.ready
 
   // TODO: remove depMatrix cuz not important
