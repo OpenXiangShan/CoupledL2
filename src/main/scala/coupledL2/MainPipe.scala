@@ -47,7 +47,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     val status_vec = Vec(3, ValidIO(new PipeStatus))
 
     /* get dir result at stage 3 */
-    val dirResp_s3 = Flipped(ValidIO(new DirResult))
+    val dirResp_s3 = Input(new DirResult)
 
     /* send task to MSHRCtl at stage 3 */
     val toMSHRCtl = new Bundle() {
@@ -125,7 +125,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   }
 
   // ======== Enchantment ======== //
-  val dirResult_s3    = io.dirResp_s3.bits
+  val dirResult_s3    = io.dirResp_s3
   val meta_s3         = dirResult_s3.meta
   val req_s3          = task_s3.bits
 

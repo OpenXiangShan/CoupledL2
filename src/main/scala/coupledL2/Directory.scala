@@ -89,7 +89,7 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
 
   val io = IO(new Bundle() {
     val read = Flipped(DecoupledIO(new DirRead))
-    val resp = ValidIO(new DirResult)
+    val resp = Output(new DirResult)
     val metaWReq = Flipped(ValidIO(new MetaWrite))
     val tagWReq = Flipped(ValidIO(new TagWrite))
   })
@@ -236,7 +236,6 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   hit_s2 := Cat(hitVec).orR
   way_s2 := Mux(hit_s2, hitWay, finalWay)
 
-  val reqValid_s3 = reqValidReg
   val hit_s3 = RegEnable(hit_s2, false.B, reqValidReg)
   val way_s3 = RegEnable(way_s2, 0.U, reqValidReg)
   val metaAll_s3 = RegEnable(metaRead, reqValidReg)
@@ -245,13 +244,12 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   val tag_s3 = tagAll_s3(way_s3)
   val set_s3 = RegEnable(reqReg.set, reqValidReg)
 
-  io.resp.valid      := reqValid_s3
-  io.resp.bits.hit   := hit_s3
-  io.resp.bits.way   := way_s3
-  io.resp.bits.meta  := meta_s3
-  io.resp.bits.tag   := tag_s3
-  io.resp.bits.set   := set_s3
-  io.resp.bits.error := false.B  // depends on ECC
+  io.resp.hit   := hit_s3
+  io.resp.way   := way_s3
+  io.resp.meta  := meta_s3
+  io.resp.tag   := tag_s3
+  io.resp.set   := set_s3
+  io.resp.error := false.B  // depends on ECC
 
   dontTouch(io)
   dontTouch(metaArray.io)
@@ -275,4 +273,6 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
     resetIdx := resetIdx - 1.U
   }
 
+  XSPerfAccumulate(cacheParams, "dirRead_cnt", reqValidReg)
+  XSPerfAccumulate(cacheParams, "choose_busy_way", reqValidReg && !reqReg.wayMask(chosenWay))
 }
