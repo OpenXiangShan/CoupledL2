@@ -7,6 +7,37 @@ import chisel3.util._
 import coupledL2.utils._
 import utility._
 
+class ReqEntry(entries: Int = 4)(implicit p: Parameters) extends L2Bundle() {
+  val valid    = Bool()
+  val rdy      = Bool()
+  val task     = new TaskBundle()
+
+  /* blocked by MainPipe
+  * [3] by stage1, a same-set entry just fired
+  * [2] by stage2
+  * [1] by stage3
+  * [0] block release flag
+  */
+  val waitMP  = UInt(4.W)
+
+  /* which MSHR the entry is waiting for */
+  val waitMS  = UInt(mshrsAll.W)
+
+  /* buffer_dep_mask[i][j] => entry i should wait entry j
+  *   this is used to make sure that same set requests will be sent
+  *   to MSHR in order
+  */
+  val depMask = Vec(entries, Bool())
+
+  /* ways in the set that are occupied by unfinished MSHR task */
+  val occWays = UInt(cacheParams.ways.W)
+}
+
+class ChosenQBundle(idWIdth: Int = 2)(implicit p: Parameters) extends L2Bundle {
+  val bits = new ReqEntry()
+  val id = UInt(idWIdth.W)
+}
+
 class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Parameters) extends L2Module {
 
   val io = IO(new Bundle() {
@@ -20,36 +51,15 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   })
 
   /* ======== Data Structure ======== */
-  val reqEntry = new L2Bundle(){
-    val valid    = Bool()
-    val rdy      = Bool()
-    val task     = new TaskBundle()
-
-    /* blocked by MainPipe
-    * [3] by stage1, a same-set entry just fired
-    * [2] by stage2
-    * [1] by stage3
-    * [0] block release flag
-    */
-    val waitMP  = UInt(4.W)
-
-    /* which MSHR the entry is waiting for */
-    val waitMS  = UInt(mshrsAll.W)
-
-    /* buffer_dep_mask[i][j] => entry i should wait entry j
-    *   this is used to make sure that same set requests will be sent
-    *   to MSHR in order
-    */
-    val depMask = Vec(entries, Bool())
-
-    /* ways in the set that are occupied by unfinished MSHR task */
-    val occWays = UInt(cacheParams.ways.W)
-  }
 
   io.ATag := io.in.bits.tag
   io.ASet := io.in.bits.set
 
-  val buffer = RegInit(VecInit(Seq.fill(entries)(0.U.asTypeOf(reqEntry))))
+  val buffer = RegInit(VecInit(Seq.fill(entries)(0.U.asTypeOf(new ReqEntry))))
+  val issueArb = Module(new FastArbiter(new ReqEntry, entries))
+//  val chosenQ = Queue(issueArb.io.out, entries = 1, pipe = true, flow = false)
+  val chosenQ = Module(new Queue(new ChosenQBundle(log2Ceil(entries)), entries = 1, pipe = true, flow = false))
+  val chosenQValid = chosenQ.io.deq.valid
 
   /* ======== Enchantment ======== */
   val NWay = cacheParams.ways
@@ -77,10 +87,9 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     s.valid && sameAddr(io.in.bits, s.bits) && !s.bits.will_free
   )
   val conflict     = Cat(conflictMask).orR
-  val noReadyEntry = Wire(Bool()) // TODO:rename
 
-  val canFlow      = flow.B && noReadyEntry
-  val doFlow       = canFlow && io.out.ready && !noFreeWay(io.in.bits)
+  val canFlow      = flow.B && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(io.in.bits)
+  val doFlow       = canFlow && io.out.ready
 
   // TODO: remove depMatrix cuz not important
   val depMask    = buffer.map(e => e.valid && sameAddr(io.in.bits, e.task))
@@ -95,12 +104,14 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   when(alloc){
     val entry = buffer(insertIdx)
     val mpBlock = Cat(io.mainPipeBlock).orR
+//    val pipeBlockIn = issueArb.io.out.valid && sameSet(io.in.bits, issueArb.io.out.bits.task)
+    val pipeBlockOut = io.out.valid && sameSet(io.in.bits, io.out.bits)
     entry.valid   := true.B
     // when Addr-Conflict / Same-Addr-Dependent / MainPipe-Block / noFreeWay-in-Set, entry not ready
-    entry.rdy     := !conflict && !Cat(depMask).orR && !mpBlock && !noFreeWay(io.in.bits)
+    entry.rdy     := !conflict && !Cat(depMask).orR && !mpBlock && !noFreeWay(io.in.bits) && !pipeBlockOut
     entry.task    := io.in.bits
     entry.waitMP  := Cat(
-      io.out.valid && sameSet(io.in.bits, io.out.bits),
+      pipeBlockOut,
       io.mainPipeBlock(0),
       io.mainPipeBlock(1),
       0.U(1.W))
@@ -111,23 +122,23 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     assert(PopCount(conflictMask) <= 2.U)
   }
 
+  /* ======== chosenQ enq ======== */
+  chosenQ.io.enq.valid := issueArb.io.out.valid
+  chosenQ.io.enq.bits.bits := issueArb.io.out.bits
+  chosenQ.io.enq.bits.id := issueArb.io.chosen
+  issueArb.io.out.ready := chosenQ.io.enq.ready
+
   // for in-out-related depMask bug, consider add a cleaner to check it every few cycles
   // low power consuming
   // flow 的请求可能会越过 alloc 的项，即使它们是同 set 的？
-  /* ======== Issue ======== */
-  val issueArb = Module(new FastArbiter(reqEntry, entries))
+
   // once fired at issueArb, it is ok to enter MainPipe without conflict
   // however, it may be blocked for other reasons such as high-prior reqs or MSHRFull
   // in such case, we need a place to save it
-  val outPipe = Queue(issueArb.io.out, entries = 1, pipe = true, flow = false)
 
   for (i <- 0 until entries) {
     issueArb.io.in(i).valid := buffer(i).valid && buffer(i).rdy
     issueArb.io.in(i).bits  := buffer(i)
-
-    when(issueArb.io.in(i).fire) {
-      buffer(i).valid := false.B
-    }
   }
 
   //TODO: if i use occWays when update,
@@ -167,22 +178,28 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       }
 
       // update info
+      val pipeBlockOut = io.out.valid && sameSet(e.task, io.out.bits)
       e.waitMS  := waitMSUpdate
       e.depMask := depMaskUpdate
       e.occWays := occWaysUpdate
-      e.rdy     := !waitMSUpdate.orR && !Cat(depMaskUpdate).orR && !e.waitMP && !noFreeWay(occWaysUpdate)
+      e.rdy     := !waitMSUpdate.orR && !Cat(depMaskUpdate).orR && !e.waitMP && !noFreeWay(occWaysUpdate) && !pipeBlockOut
     }
   }
 
   /* ======== Output ======== */
-  outPipe.ready := io.out.ready
-  noReadyEntry := !outPipe.valid
 
-  io.out.valid := outPipe.valid || io.in.valid && canFlow
-  io.out.bits  := Mux(canFlow, io.in.bits, outPipe.bits.task)
+  val cancel = (canFlow && sameSet(chosenQ.io.deq.bits.bits.task, io.in.bits)) || !buffer(chosenQ.io.deq.bits.id).rdy
+
+  chosenQ.io.deq.ready := io.out.ready || cancel
+  io.out.valid := chosenQValid && !cancel || io.in.valid && canFlow
+  io.out.bits  := Mux(canFlow, io.in.bits, chosenQ.io.deq.bits.bits.task)
+
+  when(chosenQ.io.deq.fire && !cancel) {
+    buffer(chosenQ.io.deq.bits.id).valid := false.B
+  }
 
   // for Dir to choose a way not occupied by some unfinished MSHR task
-  io.out.bits.wayMask := Mux(canFlow, ~occWays(io.in.bits), ~outPipe.bits.occWays)
+  io.out.bits.wayMask := Mux(canFlow, ~occWays(io.in.bits), ~chosenQ.io.deq.bits.bits.occWays)
 
 
   // TODO: add a XSPerf to see see the timecounter of cycles the req is held in Buffer
