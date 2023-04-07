@@ -104,7 +104,7 @@ case class L2Param
   outerBuf: TLBufferParams = TLBufferParams(
     a = BufferParams.default,
     b = BufferParams.default,
-    c = BufferParams.default,
+    c = BufferParams.none,
     d = BufferParams.default,
     e = BufferParams.default
   ),
