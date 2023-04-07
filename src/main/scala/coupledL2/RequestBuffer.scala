@@ -55,6 +55,12 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
     val ATag        = Output(UInt(tagBits.W))
     val ASet        = Output(UInt(setBits.W))
+
+    // when Probe enters MainPipe, we need also to block
+    val probeEntrance = Flipped(ValidIO(new L2Bundle {
+      val tag = UInt(tagBits.W)
+      val set = UInt(setBits.W)
+    }))
   })
 
   /* ======== Data Structure ======== */
@@ -116,12 +122,15 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     val entry = buffer(insertIdx)
     val mpBlock = Cat(io.mainPipeBlock).orR
     val pipeBlockOut = io.out.valid && sameSet(in, io.out.bits)
+    val probeBlock   = io.probeEntrance.valid && io.probeEntrance.bits.set === in.set
+    val s1Block      = pipeBlockOut || probeBlock
+
     entry.valid   := true.B
     // when Addr-Conflict / Same-Addr-Dependent / MainPipe-Block / noFreeWay-in-Set, entry not ready
-    entry.rdy     := !conflict(in) && !Cat(depMask).orR && !mpBlock && !noFreeWay(in) && !pipeBlockOut
+    entry.rdy     := !conflict(in) && !Cat(depMask).orR && !mpBlock && !noFreeWay(in) && !s1Block
     entry.task    := io.in.bits
     entry.waitMP  := Cat(
-      pipeBlockOut,
+      s1Block,
       io.mainPipeBlock(0),
       io.mainPipeBlock(1),
       0.U(1.W))
@@ -181,7 +190,10 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
         depMaskUpdate(chosenQ.io.deq.bits.id) := false.B
       }
       // if io.out is the same set, we also need to set waitMP
-      when(io.out.fire && sameSet(e.task, io.out.bits)) {
+      when(
+        io.out.fire && sameSet(e.task, io.out.bits) || //TODO: maybe io.out.valid is sufficient, like when(alloc)
+        io.probeEntrance.valid && io.probeEntrance.bits.set === e.task.set // wait for same-set probe to enter MSHR
+      ) {
         e.waitMP := e.waitMP | "b1000".U
       }
 
@@ -218,6 +230,10 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
         when(e.valid) { t := t + 1.U }
         when(RegNext(e.valid) && !e.valid) { t := 0.U }
         assert(t < 10000.U, "ReqBuf Leak")
+
+        val enable = RegNext(e.valid) && !e.valid
+        XSPerfHistogram(cacheParams, "reqBuf_timer", t, enable, 0, 400, 20)
+        XSPerfMax(cacheParams, "max_reqBuf_timer", t, enable)
     }
   }
 }
