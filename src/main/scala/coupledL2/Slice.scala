@@ -24,6 +24,7 @@ import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.util.leftOR
 import chipsalliance.rocketchip.config.Parameters
 import coupledL2.utils._
+import coupledL2.debug._
 import coupledL2.prefetch.PrefetchIO
 
 class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
@@ -162,5 +163,12 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
     XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 20, 300, 10, true, true)
     XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 300, 500, 20, true, true)
     XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 500, 1000, 100, true, false)
+  }
+
+  if (cacheParams.enableMonitor) {
+    val monitor = Module(new Monitor())
+    mainPipe.io.toMonitor <> monitor.io.fromMainPipe
+  } else {
+    mainPipe.io.toMonitor <> DontCare
   }
 }

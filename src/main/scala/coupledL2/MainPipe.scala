@@ -25,7 +25,8 @@ import chipsalliance.rocketchip.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
-import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram}
+import coupledL2.utils._
+import coupledL2.debug._
 import coupledL2.prefetch.PrefetchTrain
 
 class MainPipe(implicit p: Parameters) extends L2Module {
@@ -94,6 +95,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
     /* send prefetchTrain to Prefetch to trigger a prefetch req */
     val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain))
+
+    val toMonitor = Output(new MainpipeMoni())
   })
 
   val resetFinish = RegInit(false.B)
@@ -124,7 +127,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     task_s3.bits := task_s2.bits
   }
 
-  // ======== Enchantment ======== //
+  /* ======== Enchantment ======== */
   val dirResult_s3    = io.dirResp_s3
   val meta_s3         = dirResult_s3.meta
   val req_s3          = task_s3.bits
@@ -159,7 +162,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val cache_alias           = (req_acquire_s3 || req_get_s3) && dirResult_s3.hit && meta_s3.clients(0) &&
                               meta_s3.alias.getOrElse(0.U) =/= req_s3.alias.getOrElse(0.U)
 
-  // ======== Interact with MSHR ======== //
+  /* ======== Interact with MSHR ======== */
   val acquire_on_miss_s3  = req_acquire_s3 || req_prefetch_s3 || req_get_s3 // TODO: remove this cause always acquire on miss?
   val acquire_on_hit_s3   = meta_s3.state === BRANCH && req_needT_s3
   // For channel A reqs, alloc mshr when: acquire downwards is needed || alias
@@ -208,7 +211,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   ms_task.needHint.foreach(_  := req_s3.needHint.get)
   ms_task.way              := dirResult_s3.way
 
-  // ======== Resps to SinkA/B/C Reqs ======== //
+  /* ======== Resps to SinkA/B/C Reqs ======== */
   val sink_resp_s3 = WireInit(0.U.asTypeOf(Valid(new TaskBundle))) // resp for sinkA/B/C request that does not need to alloc mshr
   val mainpipe_release = a_need_replacement && !meta_has_clients_s3
   val sink_resp_s3_a_promoteT = dirResult_s3.hit && isT(meta_s3.state)
@@ -263,7 +266,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val source_req_s3 = Wire(new TaskBundle)
   source_req_s3 := Mux(sink_resp_s3.valid, sink_resp_s3.bits, req_s3)
 
-  // ======== Interact with DS ======== //
+  /* ======== Interact with DS ======== */
   val data_s3 = Mux(io.refillBufResp_s3.valid, io.refillBufResp_s3.bits.data, io.releaseBufResp_s3.bits.data)
   val hasData_s3 = source_req_s3.opcode(0)
   assert(!(io.refillBufResp_s3.valid && io.releaseBufResp_s3.valid), "can not read both refillBuf and releaseBuf at the same time")
@@ -293,7 +296,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     )
   )
 
-  // ======== Read DS and store data in Buffer ======== //
+  /* ======== Read DS and store data in Buffer ======== */
   // A: need_write_releaseBuf indicates that DS should be read and the data will be written into ReleaseBuffer
   //    need_write_releaseBuf is assigned true when:
   //    inner clients' data is needed, but whether the client will ack data is uncertain, so DS data is also needed, or
@@ -303,9 +306,10 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     need_data_b && need_mshr_s3_b
   // B: need_write_refillBuf when L1 AcquireBlock BtoT
   //    L2 sends AcquirePerm to L3, so GrantData to L1 needs to read DS ahead of time and store in RefillBuffer
+  // TODO: how about AcquirePerm BtoT interaction with refill buffer?
   val need_write_refillBuf = sinkA_req_s3 && req_needT_s3 && dirResult_s3.hit && meta_s3.state === BRANCH && !req_put_s3 && !req_prefetch_s3
 
-  // ======== Write Directory ======== //
+  /* ======== Write Directory ======== */
   val metaW_valid_s3_a    = sinkA_req_s3 && !need_mshr_s3_a && !req_get_s3 && !req_prefetch_s3 // get & prefetch that hit will not write meta
   val metaW_valid_s3_b    = sinkB_req_s3 && !need_mshr_s3_b && dirResult_s3.hit && (meta_s3.state === TIP || meta_s3.state === BRANCH && req_s3.param === toN)
   val metaW_valid_s3_c    = sinkC_req_s3
@@ -350,11 +354,11 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.tagWReq.bits.way  := req_s3.way
   io.tagWReq.bits.wtag := req_s3.tag
 
-  // ======== Interact with Channels (C & D) ======== //
+  /* ======== Interact with Channels (C & D) ======== */
   val task_ready_s3 = !hasData_s3 || req_s3.fromC || (need_mshr_s3 && !a_need_replacement) || mshr_req_s3
   // do not need s4 & s5
-  val mshr_fire_s3  = !mshr_req_s3 && need_mshr_s3 && !need_write_releaseBuf && !need_write_refillBuf && !mainpipe_release
-  val chnl_fire_s3  = task_ready_s3 && (c_s3.fire() || d_s3.fire())
+  val req_drop_s3 = (!mshr_req_s3 && need_mshr_s3 && !need_write_releaseBuf && !need_write_refillBuf && !mainpipe_release) ||
+    (task_ready_s3 && (c_s3.fire || d_s3.fire))
 
   //[Alias] TODO: may change this to ren?
   val data_unready_s3 = hasData_s3 && !mshr_req_s3
@@ -373,7 +377,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   d_s3.bits.task      := source_req_s3
   d_s3.bits.data.data := data_s3
 
-  // ======== nested & prefetch ======== //
+  /* ======== nested & prefetch ======== */
   io.nestedwb.set := req_s3.set
   io.nestedwb.tag := req_s3.tag
   io.nestedwb.b_toN := task_s3.valid && metaW_valid_s3_b && req_s3.param === toN
@@ -401,8 +405,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val ren_s4 = RegInit(false.B)
   val need_write_releaseBuf_s4 = Reg(Bool())
   val need_write_refillBuf_s4 = Reg(Bool())
-  task_s4.valid := task_s3.valid && !mshr_fire_s3 && !chnl_fire_s3
-  when (task_s3.valid && !mshr_fire_s3 && !chnl_fire_s3) {
+  task_s4.valid := task_s3.valid && !req_drop_s3
+  when (task_s3.valid && !req_drop_s3) {
     task_s4.bits := source_req_s3
     task_s4.bits.mshrId := Mux(!task_s3.bits.mshrTask && need_mshr_s3, io.fromMSHRCtl.mshr_alloc_ptr, source_req_s3.mshrId)
     data_unready_s4 := data_unready_s3
@@ -467,7 +471,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   d_s5.bits.task := task_s5.bits
   d_s5.bits.data.data := merged_data_s5
 
-  // ======== BlockInfo ======== //
+  /* ======== BlockInfo ======== */
   def pipelineBlock(chn: Char, s: TaskBundle, allTask: Boolean = false, tag: Boolean = false): Bool = {
     val s1 = io.fromReqArb.status_s1
     val s1_tag = if(chn == 'a') s1.a_tag else s1.b_tag
@@ -491,7 +495,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.toReqBuf(0) := task_s2.valid && pipelineBlock('a', task_s2.bits, allTask = true)
   io.toReqBuf(1) := task_s3.valid && pipelineBlock('a', task_s3.bits)
 
-  // ======== Pipeline Status ======== //
+  /* ======== Pipeline Status ======== */
   require(io.status_vec.size == 3)
   io.status_vec(0).valid := task_s3.valid && Mux(
     mshr_req_s3,
@@ -569,7 +573,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.toSourceC <> c_arb.io.out
   io.toSourceD <> d_arb.io.out
 
-  // Performance counters
+  /* ===== Performance counters ===== */
   // num of mshr req
   XSPerfAccumulate(cacheParams, "mshr_grant_req", task_s3.valid && mshr_grant_s3)
   XSPerfAccumulate(cacheParams, "mshr_grantdata_req", task_s3.valid && mshr_grantdata_s3)
@@ -634,4 +638,11 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       XSPerfAccumulate(cacheParams, "get_trigger_prefetch_on_miss", io.prefetchTrain.get.fire() && req_get_s3 && !dirResult_s3.hit)
       XSPerfAccumulate(cacheParams, "get_trigger_prefetch_on_hit_pft", io.prefetchTrain.get.fire() && req_get_s3 && dirResult_s3.hit && meta_s3.prefetch.get)
   }
+
+  /* ===== Monitor ===== */
+  io.toMonitor.task_s2 := task_s2
+  io.toMonitor.task_s3 := task_s3
+  io.toMonitor.task_s4 := task_s4
+  io.toMonitor.task_s5 := task_s5
+  io.toMonitor.dirResult_s3 := dirResult_s3
 }

@@ -86,10 +86,11 @@ case class L2Param
   replacement: String = "plru",
   mshrs: Int = 16,
   releaseData: Int = 3,
-  // 0 for dirty alone
-  // 1 for dirty and accessed
-  // 2 for all except prefetch & !accessed
-  // 3 for all
+  /* 0 for dirty alone
+   * 1 for dirty and accessed
+   * 2 for all except prefetch & !accessed
+   * 3 for all
+   */
 
   // Client
   echoField: Seq[BundleFieldBase] = Nil,
@@ -110,9 +111,11 @@ case class L2Param
 
   // Prefetch
   prefetch: Option[PrefetchParameters] = None,
-
   // Performance analysis
-  enablePerf: Boolean = true
+  enablePerf: Boolean = true,
+  // Monitor
+  enableMonitor: Boolean = true
+
 ) {
   def toCacheParams: CacheParameters = CacheParameters(
     name = name,
