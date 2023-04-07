@@ -511,6 +511,12 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.status_vec(2).valid        := d_s5.valid
   io.status_vec(2).bits.channel := task_s5.bits.channel
 
+  // make sure we don't send two reqs continuously with the same set
+  assert(!(task_s2.bits.set === task_s3.bits.set &&
+    task_s2.valid && !task_s2.bits.mshrTask && task_s2.bits.fromA &&
+    task_s3.valid && !task_s3.bits.mshrTask && task_s3.bits.fromA),
+    "s2 and s3 task same set, failed in blocking")
+
   /* ======== Other Signals Assignment ======== */
   // Initial state assignment
   // ! Caution: s_ and w_ are false-as-valid

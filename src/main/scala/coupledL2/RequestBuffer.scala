@@ -216,5 +216,14 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   // for Dir to choose a way not occupied by some unfinished MSHR task
   io.out.bits.wayMask := Mux(canFlow, ~occWays(io.in.bits), ~chosenQ.io.deq.bits.bits.occWays)
 
-
+  // add XSPerf to see how many cycles the req is held in Buffer
+  if(cacheParams.enablePerf) {
+    val bufferTimer = RegInit(VecInit(Seq.fill(entries)(0.U(16.W))))
+    buffer zip bufferTimer map {
+      case (e, t) =>
+        when(e.valid) { t := t + 1.U }
+        when(RegNext(e.valid) && !e.valid) { t := 0.U }
+        assert(t < 10000.U, "ReqBuf Leak")
+    }
+  }
 }
