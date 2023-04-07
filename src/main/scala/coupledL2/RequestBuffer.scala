@@ -64,7 +64,6 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
   val buffer = RegInit(VecInit(Seq.fill(entries)(0.U.asTypeOf(new ReqEntry))))
   val issueArb = Module(new FastArbiter(new ReqEntry, entries))
-//  val chosenQ = Queue(issueArb.io.out, entries = 1, pipe = true, flow = false)
   val chosenQ = Module(new Queue(new ChosenQBundle(log2Ceil(entries)), entries = 1, pipe = true, flow = false))
   val chosenQValid = chosenQ.io.deq.valid
 
@@ -116,7 +115,6 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   when(alloc){
     val entry = buffer(insertIdx)
     val mpBlock = Cat(io.mainPipeBlock).orR
-//    val pipeBlockIn = issueArb.io.out.valid && sameSet(io.in.bits, issueArb.io.out.bits.task)
     val pipeBlockOut = io.out.valid && sameSet(in, io.out.bits)
     entry.valid   := true.B
     // when Addr-Conflict / Same-Addr-Dependent / MainPipe-Block / noFreeWay-in-Set, entry not ready
@@ -139,10 +137,6 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   chosenQ.io.enq.bits.bits := issueArb.io.out.bits
   chosenQ.io.enq.bits.id := issueArb.io.chosen
   issueArb.io.out.ready := chosenQ.io.enq.ready
-
-  // for in-out-related depMask bug, consider add a cleaner to check it every few cycles
-  // low power consuming
-  // flow 的请求可能会越过 alloc 的项，即使它们是同 set 的？
 
   // once fired at issueArb, it is ok to enter MainPipe without conflict
   // however, it may be blocked for other reasons such as high-prior reqs or MSHRFull
