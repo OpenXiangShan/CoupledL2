@@ -168,9 +168,9 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
         occWaysUpdate := occWays(e.task)
       }
 
-      // when issue fire, clear it in other reqs' depMask
-      when(issueArb.io.out.fire) {
-        depMaskUpdate(issueArb.io.chosen) := false.B
+      // when request is sent, clear it in other reqs' depMask
+      when(io.out.fire && !canFlow) {
+        depMaskUpdate(chosenQ.io.deq.bits.id) := false.B
       }
       // if io.out is the same set, we also need to set waitMP
       when(io.out.fire && sameSet(e.task, io.out.bits)) {
