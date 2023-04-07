@@ -516,6 +516,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     // need replacement
     when(a_need_replacement) {
       alloc_state.w_releaseack := false.B
+      alloc_state.w_release_sent := false.B
       // need rprobe for release
       when(meta_has_clients_s3) {
         alloc_state.s_release := false.B // release when rprobe is sent in MSHR
