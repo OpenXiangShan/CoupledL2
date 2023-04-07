@@ -34,7 +34,7 @@ class ReqEntry(entries: Int = 4)(implicit p: Parameters) extends L2Bundle() {
   *   this is used to make sure that same set requests will be sent
   *   to MSHR in order
   */
-  val depMask = Vec(entries, Bool())
+//  val depMask = Vec(entries, Bool())
 
   /* ways in the set that are occupied by unfinished MSHR task */
   val occWays = UInt(cacheParams.ways.W)
@@ -109,9 +109,10 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   val doFlow  = canFlow && io.out.ready
 
   // TODO: remove depMatrix cuz not important
-  val depMask    = buffer.map(e => e.valid && sameAddr(io.in.bits, e.task))
+//  val depMask    = buffer.map(e => e.valid && sameAddr(io.in.bits, e.task))
   val isPrefetch = io.in.bits.fromA && io.in.bits.opcode === Hint
-  val dup        = io.in.valid && isPrefetch && Cat(depMask).orR // duplicate prefetch
+  val dup        = io.in.valid && isPrefetch //&& Cat(depMask).orR // duplicate prefetch
+  //!! TODO: we can also remove those that duplicate with mainPipe or MSHR! very important!!
 
   /* ======== Alloc ======== */
   io.in.ready   := !full || doFlow
@@ -127,7 +128,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
     entry.valid   := true.B
     // when Addr-Conflict / Same-Addr-Dependent / MainPipe-Block / noFreeWay-in-Set, entry not ready
-    entry.rdy     := !conflict(in) && !Cat(depMask).orR && !mpBlock && !noFreeWay(in) && !s1Block
+    entry.rdy     := !conflict(in) && !mpBlock && !noFreeWay(in) && !s1Block // && !Cat(depMask).orR
     entry.task    := io.in.bits
     entry.waitMP  := Cat(
       s1Block,
@@ -137,7 +138,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     entry.waitMS  := conflictMask(in)
     entry.occWays := Mux(mpBlock, 0.U, occWays(in))
 
-    entry.depMask := depMask //TODO
+//    entry.depMask := depMask
     assert(PopCount(conflictMask(in)) <= 2.U)
   }
 
@@ -164,7 +165,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   for (e <- buffer) {
     when(e.valid) {
       val waitMSUpdate  = WireInit(e.waitMS)
-      val depMaskUpdate = WireInit(e.depMask)
+//      val depMaskUpdate = WireInit(e.depMask)
       val occWaysUpdate = WireInit(e.occWays)
 
       // when mshr will_free, clear it in other reqs' waitMS and occWays
@@ -186,9 +187,9 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       }
 
       // when request is sent, clear it in other reqs' depMask
-      when(io.out.fire && !canFlow) {
-        depMaskUpdate(chosenQ.io.deq.bits.id) := false.B
-      }
+//      when(io.out.fire && !canFlow) {
+//        depMaskUpdate(chosenQ.io.deq.bits.id) := false.B
+//      }
       // if io.out is the same set, we also need to set waitMP
       when(
         io.out.fire && sameSet(e.task, io.out.bits) || //TODO: maybe io.out.valid is sufficient, like when(alloc)
@@ -200,9 +201,9 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       // update info
       val pipeBlockOut = io.out.valid && sameSet(e.task, io.out.bits)
       e.waitMS  := waitMSUpdate
-      e.depMask := depMaskUpdate
+//      e.depMask := depMaskUpdate
       e.occWays := occWaysUpdate
-      e.rdy     := !waitMSUpdate.orR && !Cat(depMaskUpdate).orR && !e.waitMP && !noFreeWay(occWaysUpdate) && !pipeBlockOut
+      e.rdy     := !waitMSUpdate.orR && !e.waitMP && !noFreeWay(occWaysUpdate) && !pipeBlockOut // && !Cat(depMaskUpdate).orR
     }
   }
 
