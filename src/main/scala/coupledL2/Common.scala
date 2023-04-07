@@ -98,6 +98,7 @@ class PipeEntranceStatus(implicit p: Parameters) extends L2Bundle {
   def a_set = sets(2)
 }
 
+// MSHR exposes signals to MSHRCtl
 class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val set = UInt(setBits.W)
   val tag = UInt(tagBits.W)
@@ -125,6 +126,18 @@ class MSHRRequest(implicit p: Parameters) extends L2Bundle {
   val dirResult = new DirResult()
   val state = new FSMState()
   val task = new TaskBundle()
+}
+
+// MSHR to ReqBuf for block info
+class MSHRBlockAInfo(implicit p: Parameters) extends L2Bundle {
+  val set = UInt(setBits.W)
+  val way = UInt(wayBits.W)
+  val reqTag = UInt(tagBits.W)
+  val willFree = Bool()
+
+  // to block Acquire for data about to be replaced until Release done
+  val needRelease = Bool()
+  val metaTag = UInt(tagBits.W)
 }
 
 class RespInfoBundle(implicit p: Parameters) extends L2Bundle {

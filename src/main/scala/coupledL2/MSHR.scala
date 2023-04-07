@@ -49,6 +49,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val id = Input(UInt(mshrBits.W))
     val status = ValidIO(new MSHRStatus)
+    val toReqBuf = ValidIO(new MSHRBlockAInfo)
     val alloc = Flipped(ValidIO(new MSHRRequest))
     val tasks = new MSHRTasks()
     val resps = new MSHRResps()
@@ -400,6 +401,15 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.status.bits.w_d_resp := !state.w_grantlast || !state.w_grant || !state.w_releaseack
   io.status.bits.w_e_resp := !state.w_grantack
   io.status.bits.will_free := will_free
+
+  io.toReqBuf.valid := status_reg.valid
+  io.toReqBuf.bits.set := req.set
+  io.toReqBuf.bits.way := req.way
+  io.toReqBuf.bits.reqTag := req.tag
+  io.toReqBuf.bits.needRelease := !state.w_release_sent
+  io.toReqBuf.bits.metaTag := dirResult.tag
+  io.toReqBuf.bits.willFree := will_free
+
   assert(!(c_resp.valid && !io.status.bits.w_c_resp))
   assert(!(d_resp.valid && !io.status.bits.w_d_resp))
   assert(!(e_resp.valid && !io.status.bits.w_e_resp))

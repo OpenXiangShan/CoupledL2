@@ -52,7 +52,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   prbq.io <> DontCare // @XiaBin TODO
 
   a_reqBuf.io.in <> sinkA.io.toReqArb
-  a_reqBuf.io.mshrStatus := mshrCtl.io.mshr_status
+  a_reqBuf.io.mshrStatus := mshrCtl.io.toReqBuf
   a_reqBuf.io.mainPipeBlock := mainPipe.io.toReqBuf
 
   reqArb.io.sinkA <> a_reqBuf.io.out

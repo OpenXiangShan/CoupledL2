@@ -85,7 +85,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     val pipeStatusVec = Flipped(Vec(2, ValidIO(new PipeStatus)))
 
     /* to ReqBuffer, to solve conflict */
-    val mshr_status = Vec(mshrsAll, ValidIO(new MSHRStatus))
+    val toReqBuf = Vec(mshrsAll, ValidIO(new MSHRBlockAInfo))
   })
 
   val mshrs = Seq.fill(mshrsAll) { Module(new MSHR()) }
@@ -123,7 +123,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       
       m.io.nestedwb := io.nestedwb
 
-      io.mshr_status(i) := m.io.status
+      io.toReqBuf(i) := m.io.toReqBuf
   }
 
 //  val addrMatchVec_a = mshrs.map(m => m.io.status.valid &&

@@ -20,7 +20,14 @@ class ReqEntry(entries: Int = 4)(implicit p: Parameters) extends L2Bundle() {
   */
   val waitMP  = UInt(4.W)
 
-  /* which MSHR the entry is waiting for */
+  /* which MSHR the entry is waiting for
+  * We need to compare req.tag AND dirResult.tag (if replacement)
+  *
+  * There are three occasions that we need to update it
+  * (1) when new MSHR is allocated
+  * (2) when MSHR finishes replacement(TODO)
+  * (3) when MSHR is free
+  * */
   val waitMS  = UInt(mshrsAll.W)
 
   /* buffer_dep_mask[i][j] => entry i should wait entry j
@@ -43,7 +50,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   val io = IO(new Bundle() {
     val in          = Flipped(DecoupledIO(new TaskBundle))
     val out         = DecoupledIO(new TaskBundle)
-    val mshrStatus  = Vec(mshrsAll, Flipped(ValidIO(new MSHRStatus)))
+    val mshrStatus  = Vec(mshrsAll, Flipped(ValidIO(new MSHRBlockAInfo)))
     val mainPipeBlock = Input(Vec(2, Bool()))
 
     val ATag        = Output(UInt(tagBits.W))
@@ -63,11 +70,19 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
   /* ======== Enchantment ======== */
   val NWay = cacheParams.ways
-  def sameAddr(a: TaskBundle, b: TaskBundle): Bool = Cat(a.tag, a.set) === Cat(b.tag, b.set)
-  def sameAddr(a: TaskBundle, b: MSHRStatus): Bool = Cat(a.tag, a.set) === Cat(b.tag, b.set)
-  def sameSet (a: TaskBundle, b: TaskBundle): Bool = a.set === b.set
-  def sameSet (a: TaskBundle, b: MSHRStatus): Bool = a.set === b.set
-  def countWaysOH(cond: (MSHRStatus => Bool)): UInt = {
+  // count conflict
+  def sameAddr(a: TaskBundle, b: TaskBundle):     Bool = Cat(a.tag, a.set) === Cat(b.tag, b.set)
+  def sameSet (a: TaskBundle, b: TaskBundle):     Bool = a.set === b.set
+  def sameSet (a: TaskBundle, b: MSHRBlockAInfo): Bool = a.set === b.set
+  def addrConflict(a: TaskBundle, s: MSHRBlockAInfo): Bool = {
+    a.set === s.set && (a.tag === s.reqTag || a.tag === s.metaTag && s.needRelease)
+  }
+  def conflictMask(a: TaskBundle): UInt = VecInit(io.mshrStatus.map(s =>
+    s.valid && addrConflict(a, s.bits) && !s.bits.willFree)).asUInt
+  def conflict(a: TaskBundle): Bool = conflictMask(a).orR
+
+  // count ways
+  def countWaysOH(cond: (MSHRBlockAInfo => Bool)): UInt = {
     VecInit(io.mshrStatus.map(s =>
       Mux(
         s.valid && cond(s.bits),
@@ -76,20 +91,17 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       )
     )).reduceTree(_ | _)
   }
-  def occWays     (a: TaskBundle): UInt = countWaysOH(s => !s.will_free && sameSet(a, s))
-  def willFreeWays(a: TaskBundle): UInt = countWaysOH(s =>  s.will_free && sameSet(a, s))
+  def occWays     (a: TaskBundle): UInt = countWaysOH(s => !s.willFree && sameSet(a, s))
+  def willFreeWays(a: TaskBundle): UInt = countWaysOH(s =>  s.willFree && sameSet(a, s))
 
   def noFreeWay(a: TaskBundle): Bool = !Cat(~occWays(a)).orR
   def noFreeWay(occWays: UInt): Bool = !Cat(~occWays).orR
 
-  val full         = Cat(buffer.map(_.valid)).andR
-  val conflictMask = io.mshrStatus.map(s =>
-    s.valid && sameAddr(io.in.bits, s.bits) && !s.bits.will_free
-  )
-  val conflict     = Cat(conflictMask).orR
-
-  val canFlow      = flow.B && !conflict && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(io.in.bits)
-  val doFlow       = canFlow && io.out.ready
+  // other flags
+  val in      = io.in.bits
+  val full    = Cat(buffer.map(_.valid)).andR
+  val canFlow = flow.B && !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(in)
+  val doFlow  = canFlow && io.out.ready
 
   // TODO: remove depMatrix cuz not important
   val depMask    = buffer.map(e => e.valid && sameAddr(io.in.bits, e.task))
@@ -105,21 +117,21 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     val entry = buffer(insertIdx)
     val mpBlock = Cat(io.mainPipeBlock).orR
 //    val pipeBlockIn = issueArb.io.out.valid && sameSet(io.in.bits, issueArb.io.out.bits.task)
-    val pipeBlockOut = io.out.valid && sameSet(io.in.bits, io.out.bits)
+    val pipeBlockOut = io.out.valid && sameSet(in, io.out.bits)
     entry.valid   := true.B
     // when Addr-Conflict / Same-Addr-Dependent / MainPipe-Block / noFreeWay-in-Set, entry not ready
-    entry.rdy     := !conflict && !Cat(depMask).orR && !mpBlock && !noFreeWay(io.in.bits) && !pipeBlockOut
+    entry.rdy     := !conflict(in) && !Cat(depMask).orR && !mpBlock && !noFreeWay(in) && !pipeBlockOut
     entry.task    := io.in.bits
     entry.waitMP  := Cat(
       pipeBlockOut,
       io.mainPipeBlock(0),
       io.mainPipeBlock(1),
       0.U(1.W))
-    entry.waitMS  := VecInit(conflictMask).asUInt
-    entry.occWays := Mux(mpBlock, 0.U, occWays(io.in.bits))
+    entry.waitMS  := conflictMask(in)
+    entry.occWays := Mux(mpBlock, 0.U, occWays(in))
 
     entry.depMask := depMask //TODO
-    assert(PopCount(conflictMask) <= 2.U)
+    assert(PopCount(conflictMask(in)) <= 2.U)
   }
 
   /* ======== chosenQ enq ======== */
@@ -153,7 +165,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       val occWaysUpdate = WireInit(e.occWays)
 
       // when mshr will_free, clear it in other reqs' waitMS and occWays
-      val willFreeMask = VecInit(io.mshrStatus.map(s => s.valid && s.bits.will_free)).asUInt
+      val willFreeMask = VecInit(io.mshrStatus.map(s => s.valid && s.bits.willFree)).asUInt
       waitMSUpdate  := e.waitMS  & (~willFreeMask).asUInt
       occWaysUpdate := e.occWays & (~willFreeWays(e.task)).asUInt
 
@@ -161,10 +173,12 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       //    waitMP(2) = s2 blocking, wait 2 cycles
       //    waitMP(1) = s3 blocking, wait 1 cycle
       // Now that we shift right waitMP every cycle
-      //    so when waitMP(1) is 0 and waitMP(0) is 1, reach desired cycleCnt
-      //    we recalculate occWays to take new allocated MSHR into account
+      //    so when waitMP(1) is 0 and waitMP(0) is 1, desired cycleCnt reached
+      //    we recalculate waitMS and occWays, overriding old mask
+      //    to take new allocated MSHR into account
       e.waitMP := e.waitMP >> 1.U
       when(e.waitMP(1) === 0.U && e.waitMP(0) === 1.U) {
+        waitMSUpdate  := conflictMask(e.task)
         occWaysUpdate := occWays(e.task)
       }
 
@@ -187,7 +201,8 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   }
 
   /* ======== Output ======== */
-
+  // when entry.rdy is no longer true,
+  // we cancel chosenQ req, but the entry is still held in buffer to issue later
   val cancel = (canFlow && sameSet(chosenQ.io.deq.bits.bits.task, io.in.bits)) || !buffer(chosenQ.io.deq.bits.id).rdy
 
   chosenQ.io.deq.ready := io.out.ready || cancel
@@ -201,7 +216,5 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   // for Dir to choose a way not occupied by some unfinished MSHR task
   io.out.bits.wayMask := Mux(canFlow, ~occWays(io.in.bits), ~chosenQ.io.deq.bits.bits.occWays)
 
-
-  // TODO: add a XSPerf to see see the timecounter of cycles the req is held in Buffer
 
 }
