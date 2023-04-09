@@ -23,23 +23,109 @@ import chisel3.util._
 import coupledL2.utils._
 import freechips.rocketchip.tilelink._
 import chipsalliance.rocketchip.config.Parameters
+import utility._
 
+class GrantStatus(implicit p: Parameters) extends L2Bundle {
+  val unsent  = Bool()
+  val set     = UInt(setBits.W)
+  val tag     = UInt(tagBits.W)
+}
+
+class ProbeEntry(implicit p: Parameters) extends L2Bundle {
+  val valid = Bool()
+  val rdy   = Bool()
+  val waitG = UInt(sourceIdBits.W) // grantEntry probe is waiting for, sourceId as Idx
+  val task  = new SourceBReq()
+}
+
+// send B reqs to upper level cache
+// Attention! We stall Probes if there is same-addr Grant not sent
+// L1 will help stall same-addr Probes until Grant is handled
+// so we only need to make sure L2 sends Probe after Grant
 class SourceB(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val sourceB = DecoupledIO(new TLBundleB(edgeIn.bundle))
     val task = Flipped(DecoupledIO(new SourceBReq))
+    val grantStatus = Input(Vec(sourceIdAll, new GrantStatus))
   })
 
-  val b = io.sourceB
-  io.task.ready := b.ready
+  def toTLBundleB(task: SourceBReq) = {
+    val b = Wire(new TLBundleB(edgeIn.bundle))
+    b.opcode  := task.opcode
+    b.param   := task.param
+    b.size    := offsetBits.U
+    b.source  := 0.U // make sure there are only 1 client
+    b.address := Cat(task.tag, task.set, 0.U(offsetBits.W))
+    b.mask    := Fill(beatBytes, 1.U(1.W))
+    b.data    := Cat(task.alias.getOrElse(0.U), 0.U(1.W)) // this is the same as HuanCun
+    b.corrupt := false.B
+    b
+  }
 
-  b.valid := io.task.valid
-  b.bits.opcode := io.task.bits.opcode
-  b.bits.param := io.task.bits.param
-  b.bits.size := offsetBits.U
-  b.bits.source := 0.U // make sure there are only 1 client
-  b.bits.address := Cat(io.task.bits.tag, io.task.bits.set, 0.U(offsetBits.W))
-  b.bits.mask := Fill(beatBytes, 1.U(1.W))
-  b.bits.data := Cat(io.task.bits.alias.getOrElse(0.U), 0.U(1.W)) // TODO: this is the same as HuanCun
-  b.bits.corrupt := false.B
+  /* ======== Data Structure ======== */
+  // TODO: check XSPerf whether 4 entries is enough
+  val entries = 4
+  val probes  = RegInit(VecInit(
+    Seq.fill(entries)(0.U.asTypeOf(new ProbeEntry))
+  ))
+
+  /* ======== Enchantment ======== */
+  val full  = Cat(probes.map(_.valid)).andR
+
+  // comparing with #sourceIdAll entries might have timing issues
+  // but worry not, we can delay cycles cuz not critical
+  val conflictMask = io.grantStatus.map(s =>
+    s.unsent && s.set === io.task.bits.set && s.tag === io.task.bits.tag
+  )
+  val conflict     = Cat(conflictMask).orR
+
+  val noReadyEntry = Wire(Bool())
+  val canFlow      = noReadyEntry && !conflict
+  val flow         = canFlow && io.sourceB.ready
+
+  /* ======== Alloc ======== */
+  io.task.ready   := !full || flow
+
+  val insertIdx = PriorityEncoder(probes.map(!_.valid))
+  val alloc     = !full && io.task.valid && !flow
+  when(alloc) {
+    val p = probes(insertIdx)
+    p.valid := true.B
+    p.rdy   := !conflict
+    p.waitG := OHToUInt(conflictMask)
+    p.task  := io.task.bits
+    assert(PopCount(conflictMask) <= 1.U)
+  }
+
+  /* ======== Issue ======== */
+  val issueArb = Module(new FastArbiter(new SourceBReq, entries))
+  issueArb.io.in zip probes foreach{
+    case (i, p) =>
+      i.valid := p.valid && p.rdy
+      i.bits  := p.task
+      when(i.fire) {
+        p.valid := false.B
+      }
+  }
+  issueArb.io.out.ready := io.sourceB.ready
+  noReadyEntry := !issueArb.io.out.valid
+
+  /* ======== Update rdy ======== */
+  probes foreach { p =>
+    when(p.valid && !io.grantStatus(p.waitG).unsent) {
+      p.rdy := RegNext(true.B) // cuz GrantData has 2 beats, can move RegNext elsewhere
+    }
+  }
+
+  /* ======== Output ======== */
+  io.sourceB.valid := issueArb.io.out.valid || (io.task.valid && canFlow)
+  io.sourceB.bits  := toTLBundleB(
+    Mux(canFlow, io.task.bits, issueArb.io.out.bits)
+  )
+
+  /* ======== Perf ======== */
+  for(i <- 0 until entries){
+    val update = PopCount(probes.map(_.valid)) === i.U
+    XSPerfAccumulate(cacheParams, s"probe_buffer_util_$i", update)
+  }
 }

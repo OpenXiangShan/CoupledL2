@@ -26,9 +26,18 @@ import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.prefetch.PrefetchResp
 import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram}
 
+// used to block Probe upwards
+class InflightGrantEntry(implicit p: Parameters) extends L2Bundle {
+  val sent  = Bool()
+  val set   = UInt(setBits.W)
+  val tag   = UInt(tagBits.W)
+  val sink  = UInt(mshrBits.W)
+}
+
 // Communicate with L1
 // Send out Grant/GrantData/ReleaseAck from d and
 // receive GrantAck through e
+// ** L1 is non-blocking for Grant
 class GrantBuffer(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val d_task = Flipped(DecoupledIO(new Bundle() {
@@ -48,6 +57,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
       val blockMSHRReqEntrance = Bool()
     })
     val prefetchResp = prefetchOpt.map(_ => DecoupledIO(new PrefetchResp))
+    val grantStatus  = Output(Vec(sourceIdAll, new GrantStatus))
   })
 
   val beat_valids = RegInit(VecInit(Seq.fill(mshrsAll) {
@@ -59,29 +69,32 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   val full = block_valids.andR
   val selectOH = ParallelPriorityMux(~block_valids, (0 until mshrsAll).map(i => (1 << i).U))
 
-  // used to block Probe upwards
-  val inflight_grant_entry = new L2Bundle(){
-    val valid = Bool()
-    val set = UInt(setBits.W)
-    val tag = UInt(tagBits.W)
-    val sink = UInt(mshrBits.W)
-  }
   // sourceIdAll (= L1 Ids) entries
-  val inflight_grant = RegInit(VecInit(Seq.fill(sourceIdAll)(0.U.asTypeOf(inflight_grant_entry))))
+  // Caution: blocks choose an empty entry to insert, which has #mshrsAll entries
+  // while inflight_grant use sourceId as index, which has #sourceIdAll entries
+  val inflight_grant = RegInit(VecInit(Seq.fill(sourceIdAll){
+    0.U.asTypeOf(Valid(new InflightGrantEntry))
+  }))
+  io.grantStatus zip inflight_grant foreach {
+    case (g, i) =>
+      g.unsent := i.valid && !i.bits.sent
+      g.tag    := i.bits.tag
+      g.set    := i.bits.set
+  }
 
-  when (io.d_task.fire() && io.d_task.bits.task.opcode(2, 1) === Grant(2, 1)) {
+  when (io.d_task.fire && io.d_task.bits.task.opcode(2, 1) === Grant(2, 1)) {
     // choose an empty entry
-    val valids = VecInit(inflight_grant.map(_.valid)).asUInt
-    val insertIdx = PriorityEncoder(~valids)
+    val insertIdx = io.d_task.bits.task.sourceId
     val entry = inflight_grant(insertIdx)
     entry.valid := true.B
-    entry.set := io.d_task.bits.task.set
-    entry.tag := io.d_task.bits.task.tag
-    entry.sink := io.d_task.bits.task.mshrId
+    entry.bits.sent  := false.B
+    entry.bits.set   := io.d_task.bits.task.set
+    entry.bits.tag   := io.d_task.bits.task.tag
+    entry.bits.sink  := io.d_task.bits.task.mshrId
   }
   when (io.e.fire) {
     // compare sink to clear buffer
-    val sinkMatchVec = inflight_grant.map(g => g.valid && g.sink === io.e.bits.sink)
+    val sinkMatchVec = inflight_grant.map(g => g.valid && g.bits.sink === io.e.bits.sink)
     assert(PopCount(sinkMatchVec) === 1.U, "GrantBuf: there must be one and only one match")
     val bufIdx = OHToUInt(sinkMatchVec)
     inflight_grant(bufIdx).valid := false.B
@@ -97,10 +110,11 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     s.valid && s.bits.fromA
   }).asUInt, block_valids)) >= mshrsAll.U
 
-  io.toReqArb.blockSinkReqEntrance.blockA_s1 := Cat(inflight_grant.map(g => g.valid &&
-    g.set === io.fromReqArb.status_s1.a_set)).orR || noSpaceForSinkReq
+  io.toReqArb.blockSinkReqEntrance.blockA_s1 := noSpaceForSinkReq
   io.toReqArb.blockSinkReqEntrance.blockB_s1 := Cat(inflight_grant.map(g => g.valid &&
-    g.set === io.fromReqArb.status_s1.b_set && g.tag === io.fromReqArb.status_s1.b_tag)).orR
+    g.bits.set === io.fromReqArb.status_s1.b_set && g.bits.tag === io.fromReqArb.status_s1.b_tag)).orR
+  //TODO: or should we still Stall B req?
+  // A-replace related rprobe is handled in SourceB
   io.toReqArb.blockSinkReqEntrance.blockC_s1 := noSpaceForSinkReq
   io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq
 
@@ -152,6 +166,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
       val hasData = out.bits.opcode(0)
 
       when (out.fire()) {
+        inflight_grant(taskAll(i).sourceId).bits.sent := true.B
         when (hasData) {
           beat_valids(i) := VecInit(next_beatsOH.asBools)
         }.otherwise {

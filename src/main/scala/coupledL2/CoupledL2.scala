@@ -80,7 +80,6 @@ trait HasCoupledL2Parameters {
   lazy val fullAddressBits = edgeOut.bundle.addressBits
   lazy val fullTagBits = fullAddressBits - setBits - offsetBits
   // width params without bank idx (used in slice)
-  // TODO: consider bankbits
   lazy val addressBits = fullAddressBits - bankBits
   lazy val tagBits = fullTagBits - bankBits
 
