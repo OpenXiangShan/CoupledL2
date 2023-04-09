@@ -138,6 +138,9 @@ class MSHRBlockAInfo(implicit p: Parameters) extends L2Bundle {
   // to block Acquire for data about to be replaced until Release done
   val needRelease = Bool()
   val metaTag = UInt(tagBits.W)
+
+  // to drop duplicate prefetch reqs
+  val isAcqOrPrefetch = Bool()
 }
 
 class RespInfoBundle(implicit p: Parameters) extends L2Bundle {

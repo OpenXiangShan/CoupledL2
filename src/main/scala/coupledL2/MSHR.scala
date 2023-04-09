@@ -422,6 +422,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.toReqBuf.bits.needRelease := !state.w_release_sent
   io.toReqBuf.bits.metaTag := dirResult.tag
   io.toReqBuf.bits.willFree := will_free
+  io.toReqBuf.bits.isAcqOrPrefetch := req_acquire || req_prefetch
 
   assert(!(c_resp.valid && !io.status.bits.w_c_resp))
   assert(!(d_resp.valid && !io.status.bits.w_d_resp))

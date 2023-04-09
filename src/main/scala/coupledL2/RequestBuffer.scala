@@ -77,6 +77,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   val NWay = cacheParams.ways
   // count conflict
   def sameAddr(a: TaskBundle, b: TaskBundle):     Bool = Cat(a.tag, a.set) === Cat(b.tag, b.set)
+  def sameAddr(a: TaskBundle, b: MSHRBlockAInfo): Bool = Cat(a.tag, a.set) === Cat(b.reqTag, b.set)
   def sameSet (a: TaskBundle, b: TaskBundle):     Bool = a.set === b.set
   def sameSet (a: TaskBundle, b: MSHRBlockAInfo): Bool = a.set === b.set
   def addrConflict(a: TaskBundle, s: MSHRBlockAInfo): Bool = {
@@ -108,11 +109,19 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   val canFlow = flow.B && !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(in)
   val doFlow  = canFlow && io.out.ready
 
-  // TODO: remove depMatrix cuz not important
-//  val depMask    = buffer.map(e => e.valid && sameAddr(io.in.bits, e.task))
-  val isPrefetch = io.in.bits.fromA && io.in.bits.opcode === Hint
-  val dup        = io.in.valid && isPrefetch //&& Cat(depMask).orR // duplicate prefetch
-  //!! TODO: we can also remove those that duplicate with mainPipe or MSHR! very important!!
+  //  val depMask    = buffer.map(e => e.valid && sameAddr(io.in.bits, e.task))
+  // remove duplicate prefetch if same-addr A req in MSHR or ReqBuf
+  val isPrefetch = in.fromA && in.opcode === Hint
+  val dupMask    = VecInit(
+    io.mshrStatus.map(s =>
+      s.valid && s.bits.isAcqOrPrefetch && sameAddr(in, s.bits)) ++
+    buffer.map(e =>
+      e.valid && sameAddr(in, e.task)
+    )
+  ).asUInt
+  val dup        = io.in.valid && isPrefetch && dupMask.orR
+
+  //!! TODO: we can also remove those that duplicate with mainPipe
 
   /* ======== Alloc ======== */
   io.in.ready   := !full || doFlow
