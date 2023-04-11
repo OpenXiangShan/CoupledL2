@@ -234,16 +234,31 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
   // add XSPerf to see how many cycles the req is held in Buffer
   if(cacheParams.enablePerf) {
+    XSPerfAccumulate(cacheParams, "drop_prefetch", dup)
+    if(flow){
+      XSPerfAccumulate(cacheParams, "req_buffer_flow", doFlow)
+    }
+    XSPerfAccumulate(cacheParams, "req_buffer_alloc", alloc)
+    XSPerfAccumulate(cacheParams, "req_buffer_full", full)
+    XSPerfAccumulate(cacheParams, "recv_prefetch", io.in.fire && isPrefetch)
+    XSPerfAccumulate(cacheParams, "recv_normal", io.in.fire && !isPrefetch)
+
+    for(i <- 0 until entries){
+      val cntEnable = PopCount(buffer.map(_.valid)) === i.U
+      XSPerfAccumulate(cacheParams, s"req_buffer_util_$i", cntEnable)
+    }
     val bufferTimer = RegInit(VecInit(Seq.fill(entries)(0.U(16.W))))
     buffer zip bufferTimer map {
       case (e, t) =>
         when(e.valid) { t := t + 1.U }
-        when(RegNext(e.valid) && !e.valid) { t := 0.U }
+        when(RegNext(RegNext(e.valid) && !e.valid)) { t := 0.U }
         assert(t < 10000.U, "ReqBuf Leak")
 
         val enable = RegNext(e.valid) && !e.valid
         XSPerfHistogram(cacheParams, "reqBuf_timer", t, enable, 0, 400, 20)
         XSPerfMax(cacheParams, "max_reqBuf_timer", t, enable)
+
+        // assert !(all entries occupied for 100 cycles)
     }
   }
 }
