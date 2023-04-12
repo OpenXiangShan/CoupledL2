@@ -208,7 +208,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       }
 
       // update info
-      val pipeBlockOut = io.out.valid && sameSet(e.task, io.out.bits)
+      val pipeBlockOut = io.out.fire && sameSet(e.task, io.out.bits)
       e.waitMS  := waitMSUpdate
 //      e.depMask := depMaskUpdate
       e.occWays := occWaysUpdate
