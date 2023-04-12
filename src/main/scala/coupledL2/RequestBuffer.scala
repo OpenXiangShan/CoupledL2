@@ -131,8 +131,8 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   when(alloc){
     val entry = buffer(insertIdx)
     val mpBlock = Cat(io.mainPipeBlock).orR
-    val pipeBlockOut = io.out.valid && sameSet(in, io.out.bits)
-    val probeBlock   = io.probeEntrance.valid && io.probeEntrance.bits.set === in.set
+    val pipeBlockOut = io.out.valid && sameSet(in, io.out.bits) // valid is enough
+    val probeBlock   = io.probeEntrance.valid && io.probeEntrance.bits.set === in.set // wait for same-set probe to enter MSHR
     val s1Block      = pipeBlockOut || probeBlock
 
     entry.valid   := true.B
@@ -199,16 +199,15 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 //      when(io.out.fire && !canFlow) {
 //        depMaskUpdate(chosenQ.io.deq.bits.id) := false.B
 //      }
-      // if io.out is the same set, we also need to set waitMP
-      when(
-        io.out.fire && sameSet(e.task, io.out.bits) || //TODO: maybe io.out.valid is sufficient, like when(alloc)
-        io.probeEntrance.valid && io.probeEntrance.bits.set === e.task.set // wait for same-set probe to enter MSHR
-      ) {
-        e.waitMP := e.waitMP | "b1000".U
+
+      // set waitMP if fired-s1-req is the same set
+      val pipeBlockOut = io.out.fire && sameSet(e.task, io.out.bits) ||
+        io.probeEntrance.valid && io.probeEntrance.bits.set === e.task.set
+      when(pipeBlockOut) {
+        e.waitMP := e.waitMP | "b0100".U // fired-req at s2 next cycle
       }
 
       // update info
-      val pipeBlockOut = io.out.fire && sameSet(e.task, io.out.bits)
       e.waitMS  := waitMSUpdate
 //      e.depMask := depMaskUpdate
       e.occWays := occWaysUpdate
@@ -218,8 +217,9 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
   /* ======== Output ======== */
   // when entry.rdy is no longer true,
-  // we cancel chosenQ req, but the entry is still held in buffer to issue later
-  val cancel = (canFlow && sameSet(chosenQ.io.deq.bits.bits.task, io.in.bits)) || !buffer(chosenQ.io.deq.bits.id).rdy
+  // we cancel req in chosenQ, with the entry still held in buffer to issue later
+//  val cancel = (canFlow && sameSet(chosenQ.io.deq.bits.bits.task, io.in.bits)) || !buffer(chosenQ.io.deq.bits.id).rdy
+  val cancel = !buffer(chosenQ.io.deq.bits.id).rdy
 
   chosenQ.io.deq.ready := io.out.ready || cancel
   io.out.valid := chosenQValid && !cancel || io.in.valid && canFlow
@@ -242,7 +242,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     XSPerfAccumulate(cacheParams, "req_buffer_full", full)
     XSPerfAccumulate(cacheParams, "recv_prefetch", io.in.fire && isPrefetch)
     XSPerfAccumulate(cacheParams, "recv_normal", io.in.fire && !isPrefetch)
-
+    XSPerfAccumulate(cacheParams, "chosenQ_cancel", chosenQValid && cancel)
     for(i <- 0 until entries){
       val cntEnable = PopCount(buffer.map(_.valid)) === i.U
       XSPerfAccumulate(cacheParams, s"req_buffer_util_$i", cntEnable)
