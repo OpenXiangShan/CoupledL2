@@ -106,7 +106,9 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   // other flags
   val in      = io.in.bits
   val full    = Cat(buffer.map(_.valid)).andR
-  val canFlow = flow.B && !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(in)
+  // flow not allowed when full, or entries might starve
+  val canFlow = flow.B && !full &&
+    !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(in)
   val doFlow  = canFlow && io.out.ready
 
   //  val depMask    = buffer.map(e => e.valid && sameAddr(io.in.bits, e.task))
@@ -151,24 +153,27 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     assert(PopCount(conflictMask(in)) <= 2.U)
   }
 
+  /* ======== Issue ======== */
+  issueArb.io.in zip buffer foreach {
+    case(in, e) =>
+      // when io.out.valid, we temporarily stall all entries of the same set
+      val pipeBlockOut = io.out.valid && sameSet(e.task, io.out.bits)
+
+      in.valid := e.valid && e.rdy && !pipeBlockOut
+      in.bits  := e
+  }
+
   /* ======== chosenQ enq ======== */
+  // once fired at issueArb, it is ok to enter MainPipe without conflict
+  // however, it may be blocked for other reasons such as high-prior reqs or MSHRFull
+  // in such case, we need a place to save it
   chosenQ.io.enq.valid := issueArb.io.out.valid
   chosenQ.io.enq.bits.bits := issueArb.io.out.bits
   chosenQ.io.enq.bits.id := issueArb.io.chosen
   issueArb.io.out.ready := chosenQ.io.enq.ready
 
-  // once fired at issueArb, it is ok to enter MainPipe without conflict
-  // however, it may be blocked for other reasons such as high-prior reqs or MSHRFull
-  // in such case, we need a place to save it
-
-  for (i <- 0 until entries) {
-    issueArb.io.in(i).valid := buffer(i).valid && buffer(i).rdy
-    issueArb.io.in(i).bits  := buffer(i)
-  }
-
   //TODO: if i use occWays when update,
   // does this mean that every entry has occWays logic?
-  // !TODO: do it for now, later consider using Queue2
 
   /* ======== Update rdy and masks ======== */
   for (e <- buffer) {
@@ -201,9 +206,10 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 //      }
 
       // set waitMP if fired-s1-req is the same set
-      val pipeBlockOut = io.out.fire && sameSet(e.task, io.out.bits) ||
-        io.probeEntrance.valid && io.probeEntrance.bits.set === e.task.set
-      when(pipeBlockOut) {
+      val s1A_Block = io.out.fire && sameSet(e.task, io.out.bits)
+      val s1B_Block = io.probeEntrance.valid && io.probeEntrance.bits.set === e.task.set
+      val s1_Block  = s1A_Block || s1B_Block
+      when(s1_Block) {
         e.waitMP := e.waitMP | "b0100".U // fired-req at s2 next cycle
       }
 
@@ -211,7 +217,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       e.waitMS  := waitMSUpdate
 //      e.depMask := depMaskUpdate
       e.occWays := occWaysUpdate
-      e.rdy     := !waitMSUpdate.orR && !e.waitMP && !noFreeWay(occWaysUpdate) && !pipeBlockOut // && !Cat(depMaskUpdate).orR
+      e.rdy     := !waitMSUpdate.orR && !e.waitMP && !noFreeWay(occWaysUpdate) && !s1_Block
     }
   }
 
