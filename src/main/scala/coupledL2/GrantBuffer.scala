@@ -24,7 +24,7 @@ import chipsalliance.rocketchip.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.prefetch.PrefetchResp
-import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram}
+import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram, XSPerfMax}
 
 // used to block Probe upwards
 class InflightGrantEntry(implicit p: Parameters) extends L2Bundle {
@@ -206,25 +206,19 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   io.e_resp.respInfo.opcode := GrantAck
   io.e_resp.respInfo.last := true.B
 
-  XSPerfAccumulate(cacheParams, "grant_buffer_full", full)
-
   if (cacheParams.enablePerf) {
+    XSPerfAccumulate(cacheParams, "grant_buffer_full", full)
+
     val timers = Reg(Vec(sourceIdAll, UInt(64.W)))
-    when (io.d_task.fire() && io.d_task.bits.task.opcode(2, 1) === Grant(2, 1)) {
-      val id = io.d_task.bits.task.mshrId(sourceIdBits-1, 0)
-      timers(id) := 1.U
+    inflight_grant zip timers map {
+      case (e, t) =>
+        when(e.valid) { t := t + 1.U }
+        when(RegNext(e.valid) && !e.valid) { t := 0.U }
+        assert(t < 10000.U, "Inflight Grant Leak")
+
+        val enable = RegNext(e.valid) && !e.valid
+        XSPerfHistogram(cacheParams, "grant_grantack_period", t, enable, 0, 12, 1)
+        XSPerfMax(cacheParams, "max_grant_grantack_period", t, enable)
     }
-    timers.zipWithIndex.foreach {
-      case (timer, i) =>
-        when (inflight_grant(i).valid) { timer := timer + 1.U }
-    }
-    val t = WireInit(0.U(64.W))
-    when (io.e.fire()) {
-      val id = io.e.bits.sink(sourceIdBits-1, 0)
-      timers(id) := 0.U
-      t := timers(id)
-    }
-    XSPerfHistogram(cacheParams, "grant_grantack_period", t, io.e.fire(),
-      0, 10, 1)
   }
 }
