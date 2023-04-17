@@ -216,7 +216,7 @@ class NestedWriteback(implicit p: Parameters) extends L2Bundle {
   val tag = UInt(tagBits.W)
   val b_toN = Bool()
   val b_toB = Bool()
-  val b_clr_dirty = Bool()
+  val b_toT = Bool()
   val c_set_dirty = Bool()
 }
 

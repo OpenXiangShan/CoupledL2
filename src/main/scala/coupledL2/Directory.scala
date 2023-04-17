@@ -26,7 +26,6 @@ import chipsalliance.rocketchip.config.Parameters
 import freechips.rocketchip.tilelink.TLMessages
 
 class MetaEntry(implicit p: Parameters) extends L2Bundle {
-  val dirty = Bool()
   val state = UInt(stateBits.W)
   val clients = UInt(clientBits.W)  // valid-bit of clients
   // TODO: record specific state of clients instead of just 1-bit
@@ -44,10 +43,9 @@ object MetaEntry {
     val init = WireInit(0.U.asTypeOf(new MetaEntry))
     init
   }
-  def apply(dirty: Bool, state: UInt, clients: UInt, alias: Option[UInt],
+  def apply(state: UInt, clients: UInt, alias: Option[UInt],
             prefetch: Bool = false.B, accessed: Bool = false.B)(implicit p: Parameters) = {
     val entry = Wire(new MetaEntry)
-    entry.dirty := dirty
     entry.state := state
     entry.clients := clients
     entry.alias.foreach(_ := alias.getOrElse(0.U))
@@ -95,7 +93,7 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   })
 
   def invalid_way_sel(metaVec: Seq[MetaEntry], repl: UInt) = {
-    val invalid_vec = metaVec.map(_.state === MetaData.INVALID)
+    val invalid_vec = metaVec.map(_.state === MetaData.STATE_I)
     val has_invalid_way = Cat(invalid_vec).orR
     val way = ParallelPriorityMux(invalid_vec.zipWithIndex.map(x => x._1 -> x._2.U(wayBits.W)))
     (has_invalid_way, way)
@@ -220,7 +218,7 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   }
 
   val tagMatchVec = tagRead.map(_ (tagBits - 1, 0) === reqReg.tag)
-  val metaValidVec = metaRead.map(_.state =/= MetaData.INVALID)
+  val metaValidVec = metaRead.map(_.state =/= MetaData.STATE_I)
   val hitVec = tagMatchVec.zip(metaValidVec).map(x => x._1 && x._2)
   val hitWay = OHToUInt(hitVec)
   val replaceWay = repl.get_replace_way(repl_state)

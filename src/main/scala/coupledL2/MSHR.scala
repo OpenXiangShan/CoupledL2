@@ -102,15 +102,18 @@ class MSHR(implicit p: Parameters) extends L2Module {
 
   /* ======== Enchantment ======== */
   val meta_pft = meta.prefetch.getOrElse(false.B)
-  val meta_no_client = !meta.clients.orR
+  val meta_has_client =  meta.clients.orR
+  val meta_no_client  = !meta.clients.orR
+  val meta_dirty      =  meta.state === STATE_UD
 
-  val req_needT = needT(req.opcode, req.param)
+  val req_needU = needUnique(req.opcode, req.param)
   val req_acquire = req.opcode === AcquireBlock && req.fromA || req.opcode === AcquirePerm // AcquireBlock and Probe share the same opcode
   val req_acquirePerm = req.opcode === AcquirePerm
   val req_put = req.opcode === PutFullData || req.opcode === PutPartialData
   val req_get = req.opcode === Get
   val req_prefetch = req.opcode === Hint
-  val req_promoteT = (req_acquire || req_get || req_prefetch) && Mux(dirResult.hit, meta_no_client && meta.state === TIP, gotT)
+  // Grant T to L1
+  val req_promoteT = (req_acquire || req_get || req_prefetch) && Mux(dirResult.hit, meta_no_client && isUnique(meta.state), gotT)
 
   /* ======== Task allocation ======== */
   // Theoretically, data to be released is saved in ReleaseBuffer, so Acquire can be sent as soon as req enters mshr
@@ -137,7 +140,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     oa.param := Mux(
       req_put,
       req.param,
-      Mux(req_needT, Mux(dirResult.hit, BtoT, NtoT), NtoB)
+      Mux(req_needU, Mux(dirResult.hit, BtoT, NtoT), NtoB)
     )
     oa.size := req.size
     oa.pbIdx := req.pbIdx
@@ -155,9 +158,9 @@ class MSHR(implicit p: Parameters) extends L2Module {
     ob.param := Mux(
       !state.s_pprobe,
       req.param,
-      Mux(
-        req_get && dirResult.hit && meta.state === TRUNK,
-        toB,
+      Mux( // rprobe
+        req_get && dirResult.hit && meta_has_client,
+        toB, // probe L1D toB when get
         toN
       )
     )
@@ -177,19 +180,19 @@ class MSHR(implicit p: Parameters) extends L2Module {
     // [Access] TODO: consider use a counter
     mp_release.opcode := {
       cacheParams.releaseData match {
-        case 0 => Mux(meta.dirty && meta.state =/= INVALID || probeDirty, ReleaseData, Release)
-        case 1 => Mux(meta.dirty && meta.state =/= INVALID || probeDirty || meta.accessed, ReleaseData, Release)
-        case 2 => Mux(meta.prefetch.getOrElse(false.B) && !meta.accessed, Release, ReleaseData) //TODO: has problem with this
+        case 0 => Mux(meta_dirty || probeDirty, ReleaseData, Release)
+        case 1 => Mux(meta_dirty || probeDirty || meta.accessed, ReleaseData, Release)
+        case 2 => Mux(meta.prefetch.getOrElse(false.B) && !meta.accessed, Release, ReleaseData) //TODO: may have problem with this
         case 3 => ReleaseData // best performance with HuanCun-L3
       }
     }
-    mp_release.param := Mux(isT(meta.state), TtoN, BtoN)
+    mp_release.param := Mux(isUnique(meta.state), TtoN, BtoN)
     mp_release.mshrTask := true.B
     mp_release.mshrId := io.id
     mp_release.aliasTask.foreach(_ := false.B)
     mp_release.useProbeData := true.B // read ReleaseBuf when useProbeData && opcode(0) is true
     mp_release.way := req.way
-    mp_release.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
+    mp_release.dirty := meta_dirty || probeDirty
     mp_release.metaWen := true.B
     mp_release.meta := MetaEntry()
     mp_release.tagWen := false.B
@@ -204,12 +207,12 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_probeack.set := req.set
     mp_probeack.off := req.off
     mp_probeack.opcode := Mux(
-      meta.dirty && isT(meta.state) || probeDirty || req.needProbeAckData,
+      meta_dirty || probeDirty || req.needProbeAckData,
       ProbeAckData,
       ProbeAck
     )
     mp_probeack.param := ParallelLookUp(
-      Cat(isT(meta.state), req.param(bdWidth - 1, 0)),
+      Cat(isUnique(meta.state), req.param(bdWidth - 1, 0)),
       Seq(
         Cat(false.B, toN) -> BtoN,
         Cat(false.B, toB) -> BtoB, // TODO: make sure that this req will not enter mshr in this situation
@@ -223,14 +226,13 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_probeack.useProbeData := true.B // read ReleaseBuf when useProbeData && opcode(0) is true
     mp_probeack.way := req.way
     mp_probeack.meta := MetaEntry(
-      dirty = false.B,
       state = Mux(
         req.param === toN,
-        INVALID,
+        STATE_I,
         Mux(
           req.param === toB,
-          BRANCH,
-          meta.state
+          STATE_SC,
+          STATE_UC
         )
       ),
       clients = Fill(clientBits, !probeGotN),
@@ -274,19 +276,13 @@ class MSHR(implicit p: Parameters) extends L2Module {
     // but not replacement-cased Probe
     mp_grant.useProbeData := dirResult.hit && req_get || req.aliasTask.getOrElse(false.B)
 
+    val dirty = gotDirty || dirResult.hit && (meta_dirty || probeDirty)
     mp_grant.meta := MetaEntry(
-      dirty = gotDirty || dirResult.hit && (meta.dirty || probeDirty),
-      state = Mux(
-        req_get,
+      state = Mux(dirty, STATE_UD,
         Mux(
-          dirResult.hit,
-          Mux(isT(meta.state), TIP, BRANCH),
-          Mux(req_promoteT, TIP, BRANCH)
-        ),
-        Mux(
-          req_promoteT || req_needT,
-          Mux(req_prefetch, TIP, TRUNK),
-          BRANCH
+          isUnique(meta.state) || req_needU || gotT,
+          STATE_UC,
+          STATE_SC
         )
       ),
       clients = Mux(
@@ -334,7 +330,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
       state.s_refill := true.B
     }.elsewhen (mp_release_valid) {
       state.s_release := true.B
-      meta.state := INVALID
+      meta.state := STATE_I
     }.elsewhen (mp_probeack_valid) {
       state.s_probeack := true.B
     }
@@ -375,6 +371,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     when(d_resp.bits.opcode === Grant || d_resp.bits.opcode === GrantData) {
       gotT := d_resp.bits.param === toT
       gotDirty := gotDirty || d_resp.bits.dirty
+      assert(!(d_resp.bits.param === toB && d_resp.bits.dirty), "L3 Grant toB and dirty")
     }
     when(d_resp.bits.opcode === GrantData) {
       gotGrantData := true.B
@@ -428,7 +425,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   assert(!(d_resp.valid && !io.status.bits.w_d_resp))
   assert(!(e_resp.valid && !io.status.bits.w_e_resp))
 
-  val nestedwb_match = status_reg.valid && meta.state =/= INVALID &&
+  val nestedwb_match = status_reg.valid && meta.state =/= STATE_I &&
     dirResult.set === io.nestedwb.set &&
     dirResult.tag === io.nestedwb.tag
   when (nestedwb_match) {
@@ -436,13 +433,13 @@ class MSHR(implicit p: Parameters) extends L2Module {
       dirResult.hit := false.B
     }
     when (io.nestedwb.b_toB) {
-      meta.state := BRANCH
+      meta.state := STATE_SC
     }
-    when (io.nestedwb.b_clr_dirty) {
-      meta.dirty := false.B
+    when (io.nestedwb.b_toT) {
+      meta.state := STATE_UC
     }
     when (io.nestedwb.c_set_dirty) {
-      meta.dirty := true.B
+      meta.state := STATE_UD
     }
   }
 

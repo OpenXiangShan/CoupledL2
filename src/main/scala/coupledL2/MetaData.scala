@@ -24,6 +24,35 @@ import chisel3.util._
 import freechips.rocketchip.tilelink._
 
 object MetaData {
+  val stateBits = 3
+
+  def STATE_I:  UInt = "b000".U(stateBits.W) // invalid
+  def STATE_SC: UInt = "b011".U(stateBits.W) // shared clean
+  def STATE_UC: UInt = "b001".U(stateBits.W) // unique clean
+  def STATE_UD: UInt = "b101".U(stateBits.W) // unique dirty
+
+  def isValid (state: UInt): Bool =             state(0)
+  def isShared(state: UInt): Bool =  state(1) & state(0)
+  def isUnique(state: UInt): Bool = !state(1) & state(0)
+  // TODO: whether the highest bit reserved for P/E ?
+
+  /* used for TileLink transactions */
+  // Does a request need Unique to be handled
+  def needUnique(TLopcode: UInt, param: UInt): Bool = {
+    !TLopcode(2) || // PutFull/PutPartial/Arithmetic/Logical
+    (TLopcode === TLMessages.Hint && param === TLHints.PREFETCH_WRITE) ||
+    ((TLopcode === TLMessages.AcquireBlock || TLopcode === TLMessages.AcquirePerm) && param =/= TLPermissions.NtoB)
+  }
+  def isParamFromT(param: UInt): Bool = {
+    param === TLPermissions.TtoN || param === TLPermissions.TtoB || param === TLPermissions.TtoT
+  }
+  def isToN(param: UInt): Bool = {
+    param === TLPermissions.TtoN || param === TLPermissions.BtoN || param === TLPermissions.NtoN
+  }
+
+}
+
+object LegacyMetaData {
   val stateBits = 2
   def INVALID: UInt = 0.U(stateBits.W) // way is empty
   def BRANCH:  UInt = 1.U(stateBits.W) // outer slave cache is trunk
