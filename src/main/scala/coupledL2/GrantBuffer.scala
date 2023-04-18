@@ -209,7 +209,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   if (cacheParams.enablePerf) {
     XSPerfAccumulate(cacheParams, "grant_buffer_full", full)
 
-    val timers = Reg(Vec(sourceIdAll, UInt(64.W)))
+    val timers = RegInit(VecInit(Seq.fill(sourceIdAll){0.U(64.W)}))
     inflight_grant zip timers map {
       case (e, t) =>
         when(e.valid) { t := t + 1.U }
