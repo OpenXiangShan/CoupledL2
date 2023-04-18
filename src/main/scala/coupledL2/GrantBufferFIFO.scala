@@ -106,6 +106,8 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
   }
 
   // sourceIdAll (= L1 Ids) entries
+  // Caution: blocks choose an empty entry to insert, which has #mshrsAll entries
+  // while inflight_grant use sourceId as index, which has #sourceIdAll entries
   val inflight_grant = Reg(Vec(sourceIdAll, new InflightGrantEntry))
 
   io.grantStatus zip inflight_grant foreach {
@@ -117,7 +119,6 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
 
   when (io.d_task.fire() && io.d_task.bits.task.opcode(2, 1) === Grant(2, 1)) {
     // choose an empty entry
-    val valids = VecInit(inflight_grant.map(_.valid)).asUInt
     val insertIdx = io.d_task.bits.task.sourceId
     val entry = inflight_grant(insertIdx)
     entry.valid := true.B
@@ -198,7 +199,7 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
       val hasData = io.d.bits.opcode(0)
 
       when (io.d.fire()) {
-        inflight_grant(i).sent := true.B
+        inflight_grant(taskAll(i).sourceId).sent := true.B
         when (hasData) {
           beat_valids(idx) := VecInit(next_beatsOH.asBools)
           // only when all beats fire, inc deqPtrExt
