@@ -140,7 +140,7 @@ class SourceC(implicit p: Parameters) extends L2Module {
     c.address := Cat(task.tag, task.set, task.off)
     c.data := data
     c.corrupt := false.B
-    c.echo.lift(DirtyKey).foreach(_ := task.opcode(0))
+    c.echo.lift(DirtyKey).foreach(_ := task.dirty)
     c
   }
 
@@ -178,6 +178,7 @@ class SourceC(implicit p: Parameters) extends L2Module {
   TLArbiter.lowest(edgeIn, io.out, out_bundles:_*)
 
   io.in.ready := !full
+  assert(!full, "SourceC should never be full")
 
   val (first, last, done, count) = edgeOut.count(io.out)
   val isRelease = io.out.bits.opcode === TLMessages.Release

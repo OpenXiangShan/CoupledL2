@@ -67,6 +67,9 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
                                           // If true, MSHR should send an ack to L2 prefetcher.
   val needHint = prefetchOpt.map(_ => Bool())
 
+  // For DirtyKey in Release
+  val dirty = Bool()
+
   // if this is an mshr task and it needs to write dir
   val way = UInt(wayBits.W)
   val meta = new MetaEntry()
@@ -74,20 +77,28 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val tagWen = Bool()
   val dsWen = Bool()
 
+  // for Dir to choose a way not occupied by some unfinished MSHR task
+  val wayMask = UInt(cacheParams.ways.W)
+
   def hasData = opcode(0)
 }
 
 class PipeStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits
 
 class PipeEntranceStatus(implicit p: Parameters) extends L2Bundle {
+  val tags = Vec(3, UInt(tagBits.W))
   val sets = Vec(3, UInt(setBits.W))
-  val b_tag = UInt(tagBits.W)
+
+  def c_tag = tags(0)
+  def b_tag = tags(1)
+  def a_tag = tags(2)
 
   def c_set = sets(0)
   def b_set = sets(1)
   def a_set = sets(2)
 }
 
+// MSHR exposes signals to MSHRCtl
 class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val set = UInt(setBits.W)
   val tag = UInt(tagBits.W)
@@ -115,6 +126,21 @@ class MSHRRequest(implicit p: Parameters) extends L2Bundle {
   val dirResult = new DirResult()
   val state = new FSMState()
   val task = new TaskBundle()
+}
+
+// MSHR to ReqBuf for block info
+class MSHRBlockAInfo(implicit p: Parameters) extends L2Bundle {
+  val set = UInt(setBits.W)
+  val way = UInt(wayBits.W)
+  val reqTag = UInt(tagBits.W)
+  val willFree = Bool()
+
+  // to block Acquire for data about to be replaced until Release done
+  val needRelease = Bool()
+  val metaTag = UInt(tagBits.W)
+
+  // to drop duplicate prefetch reqs
+  val isAcqOrPrefetch = Bool()
 }
 
 class RespInfoBundle(implicit p: Parameters) extends L2Bundle {

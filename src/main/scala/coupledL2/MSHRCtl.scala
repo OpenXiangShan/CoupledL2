@@ -61,6 +61,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     val sourceA = DecoupledIO(new TLBundleA(edgeOut.bundle))
     val sourceB = DecoupledIO(new TLBundleB(edgeIn.bundle))
     // val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain))
+    val grantStatus = Input(Vec(sourceIdAll, new GrantStatus))
 
     /* receive resps */
     val resps = Input(new Bundle() {
@@ -83,8 +84,8 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     /* status of s2 and s3 */
     val pipeStatusVec = Flipped(Vec(2, ValidIO(new PipeStatus)))
 
-    /* to ReqBuffer, to solve set conflict */
-    val mshr_status = Vec(mshrsAll, ValidIO(new MSHRStatus))
+    /* to ReqBuffer, to solve conflict */
+    val toReqBuf = Vec(mshrsAll, ValidIO(new MSHRBlockAInfo))
   })
 
   val mshrs = Seq.fill(mshrsAll) { Module(new MSHR()) }
@@ -122,16 +123,14 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       
       m.io.nestedwb := io.nestedwb
 
-      io.mshr_status(i) := m.io.status
+      io.toReqBuf(i) := m.io.toReqBuf
   }
 
-  // io.mshrFull := mshrFull
-  val setMatchVec_a = mshrs.map(m => m.io.status.valid && m.io.status.bits.set === io.fromReqArb.status_s1.sets(2))
-  val setMatchVec_b = mshrs.map(m => m.io.status.valid && m.io.status.bits.set === io.fromReqArb.status_s1.sets(1))
+  val setMatchVec_b = mshrs.map(m => m.io.status.valid && m.io.status.bits.set === io.fromReqArb.status_s1.b_set)
   val setConflictVec_b = (setMatchVec_b zip mshrs.map(_.io.status.bits.nestB)).map(x => x._1 && !x._2)
   io.toReqArb.blockC_s1 := false.B
   io.toReqArb.blockB_s1 := mshrFull || Cat(setConflictVec_b).orR
-  io.toReqArb.blockA_s1 := a_mshrFull || Cat(setMatchVec_a).orR
+  io.toReqArb.blockA_s1 := a_mshrFull // conflict logic moved to ReqBuf
 
   /* Acquire downwards */
   val acquireUnit = Module(new AcquireUnit())
@@ -143,6 +142,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   /* Probe upwards */
   val sourceB = Module(new SourceB())
   fastArb(mshrs.map(_.io.tasks.source_b), sourceB.io.task, Some("source_b"))
+  sourceB.io.grantStatus := io.grantStatus
   io.sourceB <> sourceB.io.sourceB
 
   /* Arbitrate MSHR task to RequestArbiter */
@@ -166,7 +166,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   // Performance counters
   XSPerfAccumulate(cacheParams, "capacity_conflict_to_sinkA", a_mshrFull)
   XSPerfAccumulate(cacheParams, "capacity_conflict_to_sinkB", mshrFull)
-  XSPerfAccumulate(cacheParams, "set_conflict_to_sinkA", Cat(setMatchVec_a).orR)
+  //  XSPerfAccumulate(cacheParams, "set_conflict_to_sinkA", Cat(setMatchVec_a).orR) //TODO: move this to ReqBuf
   XSPerfAccumulate(cacheParams, "set_conflict_to_sinkB", Cat(setConflictVec_b).orR)
   XSPerfHistogram(cacheParams, "mshr_alloc", io.toMainPipe.mshr_alloc_ptr,
     enable = io.fromMainPipe.mshr_alloc_s3.valid,

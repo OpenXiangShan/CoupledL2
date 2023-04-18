@@ -20,9 +20,11 @@ package coupledL2
 import chisel3._
 import chisel3.util._
 import freechips.rocketchip.tilelink._
+import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.util.leftOR
 import chipsalliance.rocketchip.config.Parameters
 import coupledL2.utils._
+import coupledL2.debug._
 import coupledL2.prefetch.PrefetchIO
 
 class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
@@ -50,7 +52,15 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val prbq = Module(new ProbeQueue())
   prbq.io <> DontCare // @XiaBin TODO
 
+  a_reqBuf.io.in <> sinkA.io.toReqArb
+  a_reqBuf.io.mshrStatus := mshrCtl.io.toReqBuf
+  a_reqBuf.io.mainPipeBlock := mainPipe.io.toReqBuf
+  a_reqBuf.io.probeEntrance := reqArb.io.probeEntrance
+
   reqArb.io.sinkA <> a_reqBuf.io.out
+  reqArb.io.ATag := a_reqBuf.io.ATag
+  reqArb.io.ASet := a_reqBuf.io.ASet
+
   reqArb.io.sinkC <> sinkC.io.toReqArb
   reqArb.io.dirRead_s1 <> directory.io.read
   reqArb.io.taskToPipe_s2 <> mainPipe.io.taskFromArb_s2
@@ -60,9 +70,6 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   reqArb.io.fromMSHRCtl := mshrCtl.io.toReqArb
   reqArb.io.fromMainPipe := mainPipe.io.toReqArb
   reqArb.io.fromGrantBuffer := grantBuf.io.toReqArb
-
-  a_reqBuf.io.in <> sinkA.io.toReqArb
-  a_reqBuf.io.mshr_status := mshrCtl.io.mshr_status
 
   mshrCtl.io.fromReqArb.status_s1 := reqArb.io.status_s1
   mshrCtl.io.resps.sinkC := sinkC.io.resp
@@ -109,6 +116,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   
   io.l1Hint.valid := mainPipe.io.l1Hint.valid
   io.l1Hint.bits := mainPipe.io.l1Hint.bits
+  mshrCtl.io.grantStatus := grantBuf.io.grantStatus
 
   grantBuf.io.d_task <> mainPipe.io.toSourceD
   grantBuf.io.fromReqArb.status_s1 := reqArb.io.status_s1
@@ -158,10 +166,17 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
     val d_source = grantBuf.io.d.bits.source
     val delay = timer - a_begin_times(d_source)
     val (first, _, _, _) = edgeIn.count(grantBuf.io.d)
-    val delay_sample = grantBuf.io.d.fire() && first
+    val delay_sample = grantBuf.io.d.fire && grantBuf.io.d.bits.opcode =/= ReleaseAck && first
     XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 0, 20, 1, true, true)
-    XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 20, 300, 10, true, false)
-    XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 300, 500, 20, true, false)
+    XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 20, 300, 10, true, true)
+    XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 300, 500, 20, true, true)
     XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 500, 1000, 100, true, false)
+  }
+
+  if (cacheParams.enableMonitor) {
+    val monitor = Module(new Monitor())
+    mainPipe.io.toMonitor <> monitor.io.fromMainPipe
+  } else {
+    mainPipe.io.toMonitor <> DontCare
   }
 }

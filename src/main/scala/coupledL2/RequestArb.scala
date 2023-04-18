@@ -28,14 +28,20 @@ import coupledL2.utils.XSPerfAccumulate
 class RequestArb(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     /* receive incoming tasks */
-    val sinkA = Flipped(DecoupledIO(new TaskBundle))
-    val sinkB = Flipped(DecoupledIO(new TLBundleB(edgeOut.bundle)))
-    val sinkC = Flipped(DecoupledIO(new TaskBundle)) // sinkC is TaskBundle
+    val sinkA    = Flipped(DecoupledIO(new TaskBundle))
+    val ATag     = Input(UInt(tagBits.W)) // !TODO: very dirty, consider optimize structure
+    val ASet     = Input(UInt(setBits.W)) // To pass A entrance status to MP for blockA-info of ReqBuf
+    val probeEntrance = ValidIO(new L2Bundle {
+      val tag = UInt(tagBits.W)
+      val set = UInt(setBits.W)
+    })
+
+    val sinkB    = Flipped(DecoupledIO(new TLBundleB(edgeOut.bundle)))
+    val sinkC    = Flipped(DecoupledIO(new TaskBundle))
     val mshrTask = Flipped(DecoupledIO(new TaskBundle))
 
     /* read/write directory */
     val dirRead_s1 = DecoupledIO(new DirRead())  // To directory, read meta/tag
-    // val metaWrite_s1 = ValidIO(new MetaWrite())
 
     /* send task to mainpipe */
     val taskToPipe_s2 = ValidIO(new TaskBundle())
@@ -46,9 +52,6 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     val refillBufRead_s2 = Flipped(new MSHRBufRead)
     val releaseBufRead_s2 = Flipped(new MSHRBufRead)
 
-    /* mshr full, from MSHRCtrl */
-    // val mshrFull = Input(Bool())
-
     /* status of each pipeline stage */
     val status_s1 = Output(new PipeEntranceStatus) // set & tag of entrance status
     val status_vec = Vec(2, ValidIO(new PipeStatus)) // whether this stage will flow into SourceD
@@ -56,7 +59,6 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     /* handle set conflict, capacity conflict and nestB */
     val fromMSHRCtl = Input(new BlockInfo())
     val fromMainPipe = Input(new BlockInfo())
-    // val fromGrantBuffer = Input(new BlockInfo())
     val fromGrantBuffer = Input(new Bundle() {
       val blockSinkReqEntrance = new BlockInfo()
       val blockMSHRReqEntrance = Bool()
@@ -98,6 +100,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     task.mshrTask := false.B
     task.fromL2pft.foreach(_ := false.B)
     task.needHint.foreach(_ := false.B)
+    task.wayMask := Fill(cacheParams.ways, "b1".U)
     task
   }
 
@@ -142,9 +145,14 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   io.dirRead_s1.valid := chnl_task_s1.valid && !mshr_task_s1.valid
   io.dirRead_s1.bits.set := task_s1.bits.set
   io.dirRead_s1.bits.tag := task_s1.bits.tag
-  io.dirRead_s1.bits.source := task_s1.bits.sourceId
+  io.dirRead_s1.bits.wayMask := task_s1.bits.wayMask
   io.dirRead_s1.bits.replacerInfo.opcode := task_s1.bits.opcode
   io.dirRead_s1.bits.replacerInfo.channel := task_s1.bits.channel
+
+  // probe block same-set A req for s2/s3
+  io.probeEntrance.valid := io.sinkB.fire
+  io.probeEntrance.bits.tag  := B_task.tag
+  io.probeEntrance.bits.set  := B_task.set
 
   /* ========  Stage 2 ======== */
   val task_s2 = RegInit(0.U.asTypeOf(task_s1))
@@ -175,8 +183,8 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   require(beatSize == 2)
 
   /* status of each pipeline stage */
-  io.status_s1.sets := VecInit(Seq(C_task.set, B_task.set, A_task.set))
-  io.status_s1.b_tag := B_task.tag
+  io.status_s1.sets := VecInit(Seq(C_task.set, B_task.set, io.ASet))
+  io.status_s1.tags := VecInit(Seq(C_task.tag, B_task.tag, io.ATag))
   require(io.status_vec.size == 2)
   io.status_vec.zip(Seq(task_s1, task_s2)).foreach {
     case (status, task) =>

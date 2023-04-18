@@ -31,7 +31,8 @@ class MetaEntry(implicit p: Parameters) extends L2Bundle {
   val clients = UInt(clientBits.W)  // valid-bit of clients
   // TODO: record specific state of clients instead of just 1-bit
   val alias = aliasBitsOpt.map(width => UInt(width.W)) // alias bits of client
-  val prefetch = if (hasPrefetchBit) Some(Bool()) else None
+  val prefetch = if (hasPrefetchBit) Some(Bool()) else None // whether block is prefetched
+  val accessed = Bool()
 
   def =/=(entry: MetaEntry): Bool = {
     this.asUInt =/= entry.asUInt
@@ -43,22 +44,15 @@ object MetaEntry {
     val init = WireInit(0.U.asTypeOf(new MetaEntry))
     init
   }
-  def apply(dirty: Bool, state: UInt, clients: UInt, alias: Option[UInt])(implicit p: Parameters) = {
-    val entry = Wire(new MetaEntry)
-    entry.dirty := dirty
-    entry.state := state
-    entry.clients := clients
-    entry.alias.foreach(_ := alias.getOrElse(0.U))
-    entry.prefetch.foreach(_ := false.B)
-    entry
-  }
-  def apply(dirty: Bool, state: UInt, clients: UInt, alias: Option[UInt], prefetch: Bool)(implicit p: Parameters) = {
+  def apply(dirty: Bool, state: UInt, clients: UInt, alias: Option[UInt],
+            prefetch: Bool = false.B, accessed: Bool = false.B)(implicit p: Parameters) = {
     val entry = Wire(new MetaEntry)
     entry.dirty := dirty
     entry.state := state
     entry.clients := clients
     entry.alias.foreach(_ := alias.getOrElse(0.U))
     entry.prefetch.foreach(_ := prefetch)
+    entry.accessed := accessed
     entry
   }
 }
@@ -66,7 +60,7 @@ object MetaEntry {
 class DirRead(implicit p: Parameters) extends L2Bundle {
   val tag = UInt(tagBits.W)
   val set = UInt(setBits.W)
-  val source = UInt(sourceIdBits.W)
+  val wayMask = UInt(cacheParams.ways.W)
   val replacerInfo = new ReplacerInfo()
 }
 
@@ -95,7 +89,7 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
 
   val io = IO(new Bundle() {
     val read = Flipped(DecoupledIO(new DirRead))
-    val resp = ValidIO(new DirResult)
+    val resp = Output(new DirResult)
     val metaWReq = Flipped(ValidIO(new MetaWrite))
     val tagWReq = Flipped(ValidIO(new TagWrite))
   })
@@ -121,6 +115,8 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   val metaRead = Wire(Vec(ways, new MetaEntry()))
 
   val reqValidReg = RegNext(io.read.fire, false.B)
+  val resetFinish = RegInit(false.B)
+  val resetIdx = RegInit((sets - 1).U)
 
   tagArray.io.r <> DontCare
   tagArray.io.w <> DontCare
@@ -166,6 +162,54 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
       repl.miss
     }
     0.U
+  } else if(cacheParams.replacement == "srrip"){
+    val repl_sram_r = replacer_sram_opt.get.io.r(io.read.fire(), io.read.bits.set).resp.data(0)
+    val repl_state_hold = WireInit(0.U(repl.nBits.W))
+    repl_state_hold := HoldUnless(repl_sram_r, RegNext(io.read.fire(), false.B))
+    val next_state = repl.get_next_state(repl_state_hold, way_s2, hit_s2)
+    val repl_init = Wire(Vec(ways, UInt(2.W)))
+    repl_init.foreach(_ := 2.U(2.W))
+    replacer_sram_opt.get.io.w(
+      !resetFinish || replacerWen,
+      Mux(resetFinish, RegNext(next_state), repl_init.asUInt),
+      Mux(resetFinish, RegNext(reqReg.set), resetIdx),
+      1.U
+    )
+
+    repl_state_hold
+  } else if(cacheParams.replacement == "drrip"){
+    //Set Dueling
+    val PSEL = RegInit(512.U(10.W)) //32-monitor sets, 10-bits psel
+    // track monitor sets' hit rate for each policy: srrip-0,128...3968;brrip-64,192...4032
+    when(reqValidReg && (reqReg.set(6,0)===0.U) && !hit_s2){  //SDMs_srrip miss
+      PSEL := PSEL + 1.U
+    } .elsewhen(reqValidReg && (reqReg.set(6,0)===64.U) && !hit_s2){ //SDMs_brrip miss
+      PSEL := PSEL - 1.U
+    }
+
+    val repl_sram_r = replacer_sram_opt.get.io.r(io.read.fire(), io.read.bits.set).resp.data(0)
+    val repl_state_hold = WireInit(0.U(repl.nBits.W))
+    repl_state_hold := HoldUnless(repl_sram_r, RegNext(io.read.fire(), false.B))
+    // decide use which policy by policy selection counter, for insertion
+    /*if set -> SDMs: use fix policy
+      else if PSEL(MSB)==0: use srrip
+      else if PSEL(MSB)==1: use brrip*/
+    val repl_type = WireInit(false.B)
+    repl_type := Mux(reqReg.set(6,0)===0.U, false.B, 
+                    Mux(reqReg.set(6,0)===64.U, true.B,
+                      Mux(PSEL(9)===0.U, false.B, true.B)))    // false.B - srrip, true.B - brrip
+    val next_state = repl.get_next_state(repl_state_hold, way_s2, hit_s2, repl_type)
+
+    val repl_init = Wire(Vec(ways, UInt(2.W)))
+    repl_init.foreach(_ := 2.U(2.W))
+    replacer_sram_opt.get.io.w(
+      !resetFinish || replacerWen,
+      Mux(resetFinish, RegNext(next_state), repl_init.asUInt),
+      Mux(resetFinish, RegNext(reqReg.set), resetIdx),
+      1.U
+    )
+
+    repl_state_hold
   } else {
     val repl_sram_r = replacer_sram_opt.get.io.r(io.read.fire, io.read.bits.set).resp.data(0)
     val repl_state_hold = WireInit(0.U(repl.nBits.W))
@@ -182,11 +226,16 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   val replaceWay = repl.get_replace_way(repl_state)
   val (inv, invalidWay) = invalid_way_sel(metaRead, replaceWay)
   val chosenWay = Mux(inv, invalidWay, replaceWay)
+  // if chosenWay not in wayMask, then choose a way in wayMask
+  val finalWay = Mux(
+    reqReg.wayMask(chosenWay),
+    chosenWay,
+    PriorityEncoder(reqReg.wayMask)
+  )
 
   hit_s2 := Cat(hitVec).orR
-  way_s2 := Mux(hit_s2, hitWay, chosenWay)
+  way_s2 := Mux(hit_s2, hitWay, finalWay)
 
-  val reqValid_s3 = reqValidReg
   val hit_s3 = RegEnable(hit_s2, false.B, reqValidReg)
   val way_s3 = RegEnable(way_s2, 0.U, reqValidReg)
   val metaAll_s3 = RegEnable(metaRead, reqValidReg)
@@ -195,13 +244,12 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   val tag_s3 = tagAll_s3(way_s3)
   val set_s3 = RegEnable(reqReg.set, reqValidReg)
 
-  io.resp.valid      := reqValid_s3
-  io.resp.bits.hit   := hit_s3
-  io.resp.bits.way   := way_s3
-  io.resp.bits.meta  := meta_s3
-  io.resp.bits.tag   := tag_s3
-  io.resp.bits.set   := set_s3
-  io.resp.bits.error := false.B  // depends on ECC
+  io.resp.hit   := hit_s3
+  io.resp.way   := way_s3
+  io.resp.meta  := meta_s3
+  io.resp.tag   := tag_s3
+  io.resp.set   := set_s3
+  io.resp.error := false.B  // depends on ECC
 
   dontTouch(io)
   dontTouch(metaArray.io)
@@ -218,4 +266,13 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
     replacerWen := false.B
   }
 
+  when(resetIdx === 0.U) {
+    resetFinish := true.B
+  }
+  when(!resetFinish) {
+    resetIdx := resetIdx - 1.U
+  }
+
+  XSPerfAccumulate(cacheParams, "dirRead_cnt", reqValidReg)
+  XSPerfAccumulate(cacheParams, "choose_busy_way", reqValidReg && !reqReg.wayMask(chosenWay))
 }
