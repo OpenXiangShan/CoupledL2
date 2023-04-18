@@ -29,7 +29,6 @@ import utility._
 
 // used to block Probe upwards
 class InflightGrantEntry(implicit p: Parameters) extends L2Bundle {
-  val valid = Bool()
   val sent  = Bool()
   val set   = UInt(setBits.W)
   val tag   = UInt(tagBits.W)
@@ -108,28 +107,30 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
   // sourceIdAll (= L1 Ids) entries
   // Caution: blocks choose an empty entry to insert, which has #mshrsAll entries
   // while inflight_grant use sourceId as index, which has #sourceIdAll entries
-  val inflight_grant = Reg(Vec(sourceIdAll, new InflightGrantEntry))
+  val inflight_grant = RegInit(VecInit(Seq.fill(sourceIdAll){
+    0.U.asTypeOf(Valid(new InflightGrantEntry))
+  }))
 
   io.grantStatus zip inflight_grant foreach {
     case (g, i) =>
-      g.unsent := i.valid && !i.sent
-      g.tag    := i.tag
-      g.set    := i.set
+      g.unsent := i.valid && !i.bits.sent
+      g.tag    := i.bits.tag
+      g.set    := i.bits.set
   }
 
-  when (io.d_task.fire() && io.d_task.bits.task.opcode(2, 1) === Grant(2, 1)) {
+  when (io.d_task.fire && io.d_task.bits.task.opcode(2, 1) === Grant(2, 1)) {
     // choose an empty entry
     val insertIdx = io.d_task.bits.task.sourceId
     val entry = inflight_grant(insertIdx)
     entry.valid := true.B
-    entry.sent  := false.B
-    entry.set   := io.d_task.bits.task.set
-    entry.tag   := io.d_task.bits.task.tag
-    entry.sink  := io.d_task.bits.task.mshrId
+    entry.bits.sent  := false.B
+    entry.bits.set   := io.d_task.bits.task.set
+    entry.bits.tag   := io.d_task.bits.task.tag
+    entry.bits.sink  := io.d_task.bits.task.mshrId
   }
   when (io.e.fire) {
     // compare sink to clear buffer
-    val sinkMatchVec = inflight_grant.map(g => g.valid && g.sink === io.e.bits.sink)
+    val sinkMatchVec = inflight_grant.map(g => g.valid && g.bits.sink === io.e.bits.sink)
     assert(PopCount(sinkMatchVec) === 1.U, "GrantBuf: there must be one and only one match")
     val bufIdx = OHToUInt(sinkMatchVec)
     inflight_grant(bufIdx).valid := false.B
@@ -147,7 +148,7 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
 
   io.toReqArb.blockSinkReqEntrance.blockA_s1 := noSpaceForSinkReq
   io.toReqArb.blockSinkReqEntrance.blockB_s1 := Cat(inflight_grant.map(g => g.valid &&
-    g.set === io.fromReqArb.status_s1.b_set && g.tag === io.fromReqArb.status_s1.b_tag)).orR
+    g.bits.set === io.fromReqArb.status_s1.b_set && g.bits.tag === io.fromReqArb.status_s1.b_tag)).orR
   //TODO: or should we still Stall B req?
   // A-replace related rprobe is handled in SourceB
   io.toReqArb.blockSinkReqEntrance.blockC_s1 := noSpaceForSinkReq
@@ -200,7 +201,7 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
       val hasData = io.d.bits.opcode(0)
 
       when (io.d.fire()) {
-        inflight_grant(taskAll(i).sourceId).sent := true.B
+        inflight_grant(taskAll(i).sourceId).bits.sent := true.B
         when (hasData) {
           beat_valids(idx) := VecInit(next_beatsOH.asBools)
           // only when all beats fire, inc deqPtrExt
