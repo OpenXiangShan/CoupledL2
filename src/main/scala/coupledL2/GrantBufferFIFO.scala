@@ -27,14 +27,6 @@ import coupledL2.prefetch.PrefetchResp
 import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram, XSPerfMax}
 import utility._
 
-// used to block Probe upwards
-class InflightGrantEntry(implicit p: Parameters) extends L2Bundle {
-  val sent  = Bool()
-  val set   = UInt(setBits.W)
-  val tag   = UInt(tagBits.W)
-  val sink  = UInt(mshrBits.W)
-}
-
 // Communicate with L1
 // Send out Grant/GrantData/ReleaseAck from d and
 // receive GrantAck through e
@@ -96,7 +88,7 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
 
   io.l1Hint.valid := VecInit(hint_valid_vec).asUInt.orR
   io.l1Hint.bits.sourceId := ParallelMux(hint_valid_vec zip sourceid_vec)
-  // assert(PopCount(VecInit(hint_valid_vec)) <= 1.U)
+  assert(PopCount(VecInit(hint_valid_vec)) <= 1.U)
 
   beat_counters.foreach {
     case (counter) => {
@@ -201,7 +193,7 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
       val hasData = io.d.bits.opcode(0)
 
       when (io.d.fire()) {
-        inflight_grant(taskAll(i).sourceId).bits.sent := true.B
+        inflight_grant(tasks(idx).sourceId).bits.sent := true.B
         when (hasData) {
           beat_valids(idx) := VecInit(next_beatsOH.asBools)
           // only when all beats fire, inc deqPtrExt
