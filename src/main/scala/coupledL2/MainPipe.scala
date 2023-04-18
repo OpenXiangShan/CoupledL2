@@ -32,6 +32,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     /* receive task from arbiter at stage 2 */
     val taskFromArb_s2 = Flipped(ValidIO(new TaskBundle()))
+    /* status from arbiter at stage1  */
+    val taskInfo_s1 = Flipped(ValidIO(new TaskBundle()))
 
     /* handle set conflict in req arb */
     val fromReqArb = Input(new Bundle() {
@@ -107,7 +109,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   val c_s3, c_s4, c_s5 = Wire(io.toSourceC.cloneType)
   val d_s3, d_s4, d_s5 = Wire(io.toSourceD.cloneType)
-  val hint_s4, hint_s5 = Wire(io.l1Hint.cloneType)
+  val hint_s1, hint_s2, hint_s3, hint_s4, hint_s5 = Wire(io.l1Hint.cloneType)
 
   /* ======== Stage 2 ======== */
   // send out MSHR task if data is not needed
@@ -372,13 +374,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   d_s4.bits.task := task_s4.bits
   d_s4.bits.data.data := data_s4
 
-  // l1 acquire and l2 hit situation
-  val validHint_s4 = task_s4.valid && task_s4.bits.opcode === GrantData && task_s4.bits.fromA && !task_s4.bits.mshrTask && ((io.globalCounter + 2.U) === hintCycleAhead.U)
-  // l1 acquire and l2 miss situation
-  val validHintMiss_s4 = task_s4.valid && task_s4.bits.opcode === GrantData && task_s4.bits.fromA && task_s4.bits.mshrTask && Mux(d_s5.valid, ((io.globalCounter + 2.U) === hintCycleAhead.U), ((io.globalCounter + 1.U) === hintCycleAhead.U))
-  hint_s4.valid := validHint_s4 || validHintMiss_s4
-  hint_s4.bits.sourceId := task_s4.bits.sourceId
-
   /* ======== Stage 5 ======== */
   val task_s5 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
   val ren_s5 = RegInit(false.B)
@@ -400,12 +395,144 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val merged_data_s5 = Mux(ren_s5, rdata_s5, data_s5)
   val chnl_fire_s5 = c_s5.fire() || d_s5.fire()
 
-  // l1 acquire and l2 hit situation
-  val validHint_s5 = task_s5.valid && task_s5.bits.opcode === GrantData && task_s5.bits.fromA && !task_s5.bits.mshrTask && ((io.globalCounter + 1.U) === hintCycleAhead.U)
-  // l1 acquire and l2 miss situation
-  val validHintMiss_s5 = task_s5.valid && task_s5.bits.opcode === GrantData && task_s5.bits.fromA && task_s5.bits.mshrTask && ((io.globalCounter + 1.U) === hintCycleAhead.U)
+
+  // grantData hint interface
+  // use this interface to give a hint to l1 before actually sending a GrantData
+  // l2 hit: the GrantData task is from sinkA rather than mshr, and this request dose not need mshr or writing refillBuffer
+  // l2 refill: the GrantData task is from mshr rather than sinkA
+  // priority: s3, s4, s5 might generate request to grantBuffer, but only one will be accepted, priority is s5 > s4 > s3
+  // NOTE: l2's hardware prefetcher should not generate a hint
+  // NOTE: if l2 hit, it will always send a request to grantBuffer in s5. if l2 refill, sending requests to grantBuffer might happen in s3, s4, s5
+
+  val s3_l2_hit_grant_data = task_s3.valid && !mshr_req_s3 && !need_mshr_s3 && req_s3.fromA && task_s3.bits.opcode === AcquireBlock && !task_s3.bits.fromL2pft.getOrElse(false.B)
+  //  req_grantbuffer_next_cycle_s4: this **hit** req will request grantBuffer in S5
+  val req_grantbuffer_next_cycle_s4 = !need_write_releaseBuf_s4 && !need_write_refillBuf_s4
+  val s4_l2_hit_grant_data = task_s4.valid && req_grantbuffer_next_cycle_s4 && task_s4.bits.opcode === GrantData && task_s4.bits.fromA && !task_s4.bits.mshrTask && !task_s4.bits.fromL2pft.getOrElse(false.B)
+  
+  // S1 hint
+  //    * l1 acquire and l2 miss situation, **no hit situation**
+  val task_s1 = io.taskInfo_s1
+  val s1_l2_miss_refill_grant_data = task_s1.valid && task_s1.bits.fromA && task_s1.bits.opcode === GrantData
+  val s1_l2_miss_refill_counter_match = Wire(Bool())
+
+  // TODO: generalization, for now, only fit hintCycleAhead == 3
+  s1_l2_miss_refill_counter_match := PopCount(Seq(d_s3.valid, d_s4.valid, d_s5.valid, s3_l2_hit_grant_data, s4_l2_hit_grant_data, task_s2.valid && task_s2.bits.fromA)) === 0.U && io.globalCounter <= 2.U
+
+  hint_s1.valid := s1_l2_miss_refill_grant_data && s1_l2_miss_refill_counter_match
+  hint_s1.bits.sourceId := task_s1.bits.sourceId
+
+  // S2 hint
+  //    * l1 acquire and l2 miss situation, **no hit situation**
+  val s2_l2_miss_refill_grant_data = task_s2.valid && task_s2.bits.fromA && task_s2.bits.opcode === GrantData && task_s2.bits.mshrTask
+  val s2_l2_miss_refill_counter_match = Wire(Bool())
+
+  // TODO: generalization, for now, only fit hintCycleAhead == 2
+  //  s2_l2_miss_refill_counter_match := PopCount(Seq(d_s3.valid, d_s4.valid, d_s5.valid, s3_l2_hit_grant_data, s4_l2_hit_grant_data)) === 0.U && io.globalCounter === 0.U
+
+  s2_l2_miss_refill_counter_match := MuxLookup(Cat(d_s3.valid, d_s4.valid, d_s5.valid), false.B, Seq(
+    Cat(true.B, true.B, true.B) -> ((io.globalCounter + 4.U + task_s5.bits.opcode(0) + task_s4.bits.opcode(0) + task_s3.bits.opcode(0)) === hintCycleAhead.U),
+    Cat(true.B, true.B, false.B) -> ((io.globalCounter + 3.U + task_s4.bits.opcode(0) + task_s3.bits.opcode(0)) === hintCycleAhead.U),
+    Cat(true.B, false.B, true.B) -> Mux(s4_l2_hit_grant_data, (io.globalCounter + 4.U + task_s5.bits.opcode(0) + task_s4.bits.opcode(0) + task_s3.bits.opcode(0)) === hintCycleAhead.U,
+                                                                (io.globalCounter + 3.U + task_s5.bits.opcode(0) + task_s3.bits.opcode(0)) === hintCycleAhead.U),
+    Cat(false.B, true.B, true.B) -> Mux(s3_l2_hit_grant_data, (io.globalCounter + 4.U + task_s5.bits.opcode(0) + task_s4.bits.opcode(0) + task_s3.bits.opcode(0)) === hintCycleAhead.U,
+                                                                (io.globalCounter + 3.U + task_s5.bits.opcode(0) + task_s4.bits.opcode(0)) === hintCycleAhead.U),
+    Cat(true.B, false.B, false.B) -> Mux(s4_l2_hit_grant_data, (io.globalCounter + 3.U + task_s4.bits.opcode(0) + task_s3.bits.opcode(0)) === hintCycleAhead.U,
+      (io.globalCounter + 2.U + task_s3.bits.opcode(0)) === hintCycleAhead.U),
+    Cat(false.B, true.B, false.B) -> ((io.globalCounter + 2.U + task_s4.bits.opcode(0)) === hintCycleAhead.U),
+    Cat(false.B, false.B, true.B) -> Mux(s4_l2_hit_grant_data,
+                                          Mux(s3_l2_hit_grant_data, (io.globalCounter + 4.U + task_s5.bits.opcode(0) + task_s4.bits.opcode(0) + task_s3.bits.opcode(0)) === hintCycleAhead.U,
+                                            (io.globalCounter + 3.U + task_s5.bits.opcode(0) + task_s4.bits.opcode(0)) === hintCycleAhead.U),
+                                              (io.globalCounter + 2.U + task_s5.bits.opcode(0)) === hintCycleAhead.U),
+    Cat(false.B, false.B, false.B)-> Mux(s4_l2_hit_grant_data,
+                                          Mux(s3_l2_hit_grant_data, (io.globalCounter + 4.U + task_s4.bits.opcode(0) + task_s3.bits.opcode(0)) === hintCycleAhead.U,
+                                            (io.globalCounter + 3.U + task_s4.bits.opcode(0)) === hintCycleAhead.U),
+                                              (io.globalCounter + 2.U) === hintCycleAhead.U)
+  ))
+
+  hint_s2.valid := s2_l2_miss_refill_grant_data && s2_l2_miss_refill_counter_match
+  hint_s2.bits.sourceId := task_s2.bits.sourceId
+
+  // S3 hint
+  //    * l1 acquire and l2 hit situation
+  val s3_l2_hit_counter_match = Wire(Bool())
+  when(d_s5.valid && d_s4.valid) {
+    s3_l2_hit_counter_match := (io.globalCounter + 3.U + task_s5.bits.opcode(0) + task_s4.bits.opcode(0)) === hintCycleAhead.U
+  }.elsewhen(d_s4.valid) {
+    s3_l2_hit_counter_match := (io.globalCounter + 3.U + task_s4.bits.opcode(0)) === hintCycleAhead.U
+  }.elsewhen(d_s5.valid) {
+    // NOTE: if s4 is a hit grantData, it will not request grantBuffer in s4, but in s5
+    when(s4_l2_hit_grant_data) {
+      s3_l2_hit_counter_match := (io.globalCounter + 3.U + task_s5.bits.opcode(0) + task_s4.bits.opcode(0)) === hintCycleAhead.U
+    }.otherwise {
+      s3_l2_hit_counter_match := (io.globalCounter + 3.U + task_s5.bits.opcode(0)) === hintCycleAhead.U
+    }
+  }.otherwise {
+    when(s4_l2_hit_grant_data) {
+      s3_l2_hit_counter_match := (io.globalCounter + 3.U + task_s4.bits.opcode(0)) === hintCycleAhead.U
+    }.otherwise {
+      s3_l2_hit_counter_match :=  io.globalCounter + 3.U === hintCycleAhead.U
+    }
+  }
+  val validHint_s3 = s3_l2_hit_grant_data && s3_l2_hit_counter_match
+
+  // S3 hint
+  //    * l1 acquire and l2 miss situation
+  val s3_l2_miss_refill_grant_data = d_s3.valid && mshr_req_s3 && req_s3.fromA && task_s3.bits.opcode === GrantData && !task_s3.bits.fromL2pft.getOrElse(false.B)
+  val s3_l2_miss_refill_counter_match = Wire(Bool())
+  when(d_s5.valid && d_s4.valid) {
+    s3_l2_miss_refill_counter_match := (io.globalCounter + 3.U + task_s5.bits.opcode(0) + task_s4.bits.opcode(0)) === hintCycleAhead.U
+  }.elsewhen(d_s4.valid) {
+    s3_l2_miss_refill_counter_match := (io.globalCounter + 2.U + task_s4.bits.opcode(0)) === hintCycleAhead.U
+  }.elsewhen(d_s5.valid) {
+    when(s4_l2_hit_grant_data) {
+      s3_l2_miss_refill_counter_match := (io.globalCounter + 3.U + task_s5.bits.opcode(0) + task_s4.bits.opcode(0)) === hintCycleAhead.U
+    }.otherwise {
+      s3_l2_miss_refill_counter_match := (io.globalCounter + 2.U + task_s5.bits.opcode(0)) === hintCycleAhead.U
+    }
+  }.otherwise {
+    s3_l2_miss_refill_counter_match :=  io.globalCounter + 1.U === hintCycleAhead.U
+  }
+  val validHintMiss_s3 = s3_l2_miss_refill_grant_data && s3_l2_miss_refill_counter_match
+  hint_s3.valid := validHint_s3 || validHintMiss_s3
+  hint_s3.bits.sourceId := task_s3.bits.sourceId
+
+  // S4 hint
+  //    * l1 acquire and l2 hit situation
+  val s4_l2_hit_counter_match = Mux(d_s5.valid && task_s5.bits.opcode(0), (io.globalCounter + 3.U) === hintCycleAhead.U,
+                                      (io.globalCounter + 2.U) === hintCycleAhead.U )
+  val validHint_s4 = s4_l2_hit_grant_data && s4_l2_hit_counter_match
+  // S4 hint
+  //    * l1 acquire and l2 miss situation
+  val s4_l2_miss_refill_grant_data = d_s4.valid && task_s4.bits.opcode === GrantData && task_s4.bits.fromA && task_s4.bits.mshrTask && !task_s4.bits.fromL2pft.getOrElse(false.B)
+  val s4_l2_miss_refill_counter_match = Mux(d_s5.valid && task_s5.bits.opcode(0), (io.globalCounter + 3.U) === hintCycleAhead.U, 
+                                            Mux(d_s5.valid && !task_s5.bits.opcode(0), (io.globalCounter + 2.U) === hintCycleAhead.U, 
+                                                (io.globalCounter + 1.U) === hintCycleAhead.U ))
+  val validHintMiss_s4 = s4_l2_miss_refill_grant_data && s4_l2_miss_refill_counter_match
+  hint_s4.valid := validHint_s4 || validHintMiss_s4
+  hint_s4.bits.sourceId := task_s4.bits.sourceId
+
+  // S5 hint
+  //    * l1 acquire and l2 hit situation
+  val validHint_s5 = d_s5.valid && task_s5.bits.opcode === GrantData && task_s5.bits.fromA && !task_s5.bits.mshrTask && ((io.globalCounter + 1.U) === hintCycleAhead.U) && !task_s5.bits.fromL2pft.getOrElse(false.B)
+  // S5 hint
+  //    * l1 acquire and l2 miss situation
+  val validHintMiss_s5 = d_s5.valid && task_s5.bits.opcode === GrantData && task_s5.bits.fromA && task_s5.bits.mshrTask && ((io.globalCounter + 1.U) === hintCycleAhead.U) && !task_s5.bits.fromL2pft.getOrElse(false.B)
   hint_s5.valid := validHint_s5 || validHintMiss_s5
   hint_s5.bits.sourceId := task_s5.bits.sourceId
+
+  val hint_valid = Seq(io.grantBufferHint.valid, hint_s1.valid, hint_s2.valid, hint_s3.valid, hint_s4.valid, hint_s5.valid)
+  val hint_sourceId = Seq(io.grantBufferHint.bits.sourceId, hint_s1.bits.sourceId, hint_s2.bits.sourceId, hint_s3.bits.sourceId, hint_s4.bits.sourceId, hint_s5.bits.sourceId)
+
+  io.l1Hint.valid := VecInit(hint_valid).asUInt.orR
+  io.l1Hint.bits.sourceId := ParallelMux(hint_valid zip hint_sourceId)
+  // assert(PopCount(VecInit(hint_valid)) <= 1.U)
+
+  XSPerfAccumulate(cacheParams, "hint_grantBufferHint_valid", io.grantBufferHint.valid)
+  XSPerfAccumulate(cacheParams, "hint_s1_valid", hint_s1.valid)
+  XSPerfAccumulate(cacheParams, "hint_s2_valid", hint_s2.valid)
+  XSPerfAccumulate(cacheParams, "hint_s3_valid", hint_s3.valid)
+  XSPerfAccumulate(cacheParams, "hint_s4_valid", hint_s4.valid)
+  XSPerfAccumulate(cacheParams, "hint_s5_valid", hint_s5.valid)
 
   io.releaseBufWrite.valid := task_s5.valid && need_write_releaseBuf_s5
   io.releaseBufWrite.beat_sel := Fill(beatSize, 1.U(1.W))
@@ -510,19 +637,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val d_arb = Module(new Arbiter(io.toSourceD.bits.cloneType, d.size))
   c_arb.io.in <> c
   d_arb.io.in <> d
-
-  val hint_valid = Seq(io.grantBufferHint.valid, hint_s4.valid, hint_s5.valid)
-  val hint_sourceId = Seq(io.grantBufferHint.bits.sourceId, hint_s4.bits.sourceId, hint_s5.bits.sourceId)
-
-  io.l1Hint.valid := VecInit(hint_valid).asUInt.orR
-  io.l1Hint.bits.sourceId := ParallelMux(hint_valid zip hint_sourceId)
-  assert(PopCount(VecInit(hint_valid)) <= 1.U)
-
-  // val timer = RegInit(0.U(64.W))
-  // timer := timer + 1.U
-  // when(io.l1Hint.valid) {
-  //   printf("hint at %x, sourceId is %x\n", timer, io.l1Hint.bits.sourceId)
-  // }
 
   io.toSourceC <> c_arb.io.out
   io.toSourceD <> d_arb.io.out
