@@ -27,9 +27,20 @@ import coupledL2.prefetch.PrefetchResp
 import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram}
 import utility._
 
-// Send out Grant/GrantData/ReleaseAck through d and
+// used to block Probe upwards
+class InflightGrantEntry(implicit p: Parameters) extends L2Bundle {
+  val valid = Bool()
+  val sent  = Bool()
+  val set   = UInt(setBits.W)
+  val tag   = UInt(tagBits.W)
+  val sink  = UInt(mshrBits.W)
+}
+
+// Communicate with L1
+// Send out Grant/GrantData/ReleaseAck from d and
 // receive GrantAck through e
-// FIFO version of GrantBuffer
+// ** L1 is non-blocking for Grant
+// ** FIFO version of GrantBuffer
 class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCircularQueuePtrHelper{
 
   class GrantBufferPtr(implicit p: Parameters) extends CircularQueuePtr[GrantBufferPtr](mshrsAll){ }
@@ -94,15 +105,15 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
     }
   }
 
-  // used to block Probe upwards
-  val inflight_grant_entry = new L2Bundle(){
-    val valid = Bool()
-    val set = UInt(setBits.W)
-    val tag = UInt(tagBits.W)
-    val sink = UInt(mshrBits.W)
-  }
   // sourceIdAll (= L1 Ids) entries
-  val inflight_grant = RegInit(VecInit(Seq.fill(sourceIdAll)(0.U.asTypeOf(inflight_grant_entry))))
+  val inflight_grant = Reg(Vec(sourceIdAll, new InflightGrantEntry))
+
+  io.grantStatus zip inflight_grant foreach {
+    case (g, i) =>
+      g.unsent := i.valid && !i.sent
+      g.tag    := i.tag
+      g.set    := i.set
+  }
 
   when (io.d_task.fire() && io.d_task.bits.task.opcode(2, 1) === Grant(2, 1)) {
     // choose an empty entry
@@ -110,9 +121,10 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
     val insertIdx = io.d_task.bits.task.sourceId
     val entry = inflight_grant(insertIdx)
     entry.valid := true.B
-    entry.set := io.d_task.bits.task.set
-    entry.tag := io.d_task.bits.task.tag
-    entry.sink := io.d_task.bits.task.mshrId
+    entry.sent  := false.B
+    entry.set   := io.d_task.bits.task.set
+    entry.tag   := io.d_task.bits.task.tag
+    entry.sink  := io.d_task.bits.task.mshrId
   }
   when (io.e.fire) {
     // compare sink to clear buffer
@@ -186,6 +198,7 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
       val hasData = io.d.bits.opcode(0)
 
       when (io.d.fire()) {
+        inflight_grant(i).sent := true.B
         when (hasData) {
           beat_valids(idx) := VecInit(next_beatsOH.asBools)
           // only when all beats fire, inc deqPtrExt
