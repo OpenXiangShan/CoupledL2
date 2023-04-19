@@ -64,7 +64,7 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
     false.B
   }))
 
-  // hint interface: l2 will send hint to l1 before sending grantData (2 cycle ahead)
+  // hint interface: l2 will send hint to l1 before sending grantData (3 cycle ahead)
   val globalCounter = RegInit(0.U(log2Ceil(mshrsAll).W))
   val beat_counters = RegInit(VecInit(Seq.fill(mshrsAll) {
     0.U(log2Ceil(mshrsAll).W)
