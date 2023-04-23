@@ -31,6 +31,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val io = IO(new Bundle {
     val in = Flipped(TLBundle(edgeIn.bundle))
     val out = TLBundle(edgeOut.bundle)
+    val l1Hint = Decoupled(new L2ToL1Hint())
     val prefetch = prefetchOpt.map(_ => Flipped(new PrefetchIO))
   })
 
@@ -44,7 +45,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val sinkA = Module(new SinkA)
   val sinkC = Module(new SinkC) // or ReleaseUnit?
   val sourceC = Module(new SourceC)
-  val grantBuf = Module(new GrantBuffer)
+  val grantBuf = if (!useFIFOGrantBuffer) Module(new GrantBuffer) else Module(new GrantBufferFIFO)
   val refillBuf = Module(new MSHRBuffer(wPorts = 2))
   val releaseBuf = Module(new MSHRBuffer(wPorts = 3))
 
@@ -96,6 +97,9 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   mainPipe.io.releaseBufResp_s3.valid := RegNext(releaseBuf.io.r.valid && releaseBuf.io.r.ready)
   mainPipe.io.releaseBufResp_s3.bits := releaseBuf.io.r.data
   mainPipe.io.fromReqArb.status_s1 := reqArb.io.status_s1
+  mainPipe.io.grantBufferHint := grantBuf.io.l1Hint
+  mainPipe.io.globalCounter := grantBuf.io.globalCounter
+  mainPipe.io.taskInfo_s1 <> reqArb.io.taskInfo_s1
 
   releaseBuf.io.w(0) <> sinkC.io.releaseBufWrite
   releaseBuf.io.w(0).id := mshrCtl.io.releaseBufWriteId
@@ -109,6 +113,9 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   refillBuf.io.w(1) <> mainPipe.io.refillBufWrite
 
   sourceC.io.in <> mainPipe.io.toSourceC
+  
+  io.l1Hint.valid := mainPipe.io.l1Hint.valid
+  io.l1Hint.bits := mainPipe.io.l1Hint.bits
   mshrCtl.io.grantStatus := grantBuf.io.grantStatus
 
   grantBuf.io.d_task <> mainPipe.io.toSourceD
