@@ -212,6 +212,6 @@ class PrefetchRecv extends Bundle {
 }
 
 // custom l2 - l1 interface
-class L2ToL1Hint(implicit p: Parameters) extends L2Bundle {
-  val sourceId = UInt(sourceIdBits.W)    // tilelink sourceID
+class L2ToL1Hint(implicit p: Parameters) extends Bundle {
+  val sourceId = UInt(32.W)    // tilelink sourceID
 }

@@ -29,6 +29,7 @@ import freechips.rocketchip.util._
 import chipsalliance.rocketchip.config.Parameters
 import scala.math.max
 import coupledL2.prefetch._
+import coupledL2.utils.XSPerfAccumulate
 
 trait HasCoupledL2Parameters {
   val p: Parameters
@@ -62,7 +63,7 @@ trait HasCoupledL2Parameters {
 
   val useFIFOGrantBuffer = true
 
-  val hintCycleAhead = 2 // how many cycles the hint will send before grantData
+  val hintCycleAhead = 3 // how many cycles the hint will send before grantData
 
   lazy val edgeIn = p(EdgeInKey)
   lazy val edgeOut = p(EdgeOutKey)
@@ -340,11 +341,24 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     }
     val l1Hint_arb = Module(new Arbiter(new L2ToL1Hint(), slices.size))
     val slices_l1Hint = slices.zipWithIndex.map {
-      case (s, i) => Pipeline(s.io.l1Hint, depth = 2, pipe = false, name = Some(s"l1Hint_buffer_$i"))
+      case (s, i) => Pipeline(s.io.l1Hint, depth = 3, pipe = false, name = Some(s"l1Hint_buffer_$i"))
     }
+    val (client_sourceId_match_oh, client_sourceId_start) = node.in.head._2.client.clients
+                                                          .map(c => {
+                                                                (c.sourceId.contains(l1Hint_arb.io.out.bits.sourceId).asInstanceOf[Bool], c.sourceId.start.U)
+                                                              })
+                                                          .unzip
     l1Hint_arb.io.in <> VecInit(slices_l1Hint)
     io.l2_hint.valid := l1Hint_arb.io.out.fire()
-    io.l2_hint.bits := l1Hint_arb.io.out.bits.sourceId
+    io.l2_hint.bits := l1Hint_arb.io.out.bits.sourceId - Mux1H(client_sourceId_match_oh, client_sourceId_start)
+    // always ready for grant hint
+    l1Hint_arb.io.out.ready := true.B
+    XSPerfAccumulate(cacheParams, "hint_fire", io.l2_hint.valid)
+    val grant_fire = slices.map{ slice => {
+                        val (_, _, grant_fire_last, _) = node.in.head._2.count(slice.io.in.d)
+                        slice.io.in.d.fire() && grant_fire_last && slice.io.in.d.bits.opcode === GrantData
+                      }}
+    XSPerfAccumulate(cacheParams, "grant_data_fire", PopCount(VecInit(grant_fire)))
   }
 
 }

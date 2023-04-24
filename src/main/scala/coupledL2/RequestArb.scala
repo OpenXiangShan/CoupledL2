@@ -39,6 +39,8 @@ class RequestArb(implicit p: Parameters) extends L2Module {
 
     /* send task to mainpipe */
     val taskToPipe_s2 = ValidIO(new TaskBundle())
+    /* send s1 task info to mainpipe to help hint */
+    val taskInfo_s1 = ValidIO(new TaskBundle())
 
     /* send mshrBuf read request */
     val refillBufRead_s2 = Flipped(new MSHRBufRead)
@@ -132,6 +134,8 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   // mshr_task_s1 is s1_[reg]
   // task_s1 is [wire] to s2_reg
   val task_s1 = Mux(mshr_task_s1.valid, mshr_task_s1, chnl_task_s1)
+
+  io.taskInfo_s1 := mshr_task_s1
 
   /* Meta read request */
   // ^ only sinkA/B/C tasks need to read directory

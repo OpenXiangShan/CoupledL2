@@ -23,7 +23,9 @@ import coupledL2.utils._
 import chipsalliance.rocketchip.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
-import util._
+import coupledL2.prefetch.PrefetchResp
+import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram}
+import utility._
 
 // Send out Grant/GrantData/ReleaseAck through d and
 // receive GrantAck through e
@@ -55,6 +57,11 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
   val datas = Reg(Vec(mshrsAll, new DSBlock))
   val full = block_valids.andR
 
+  // used by prefetch, update deqPtrExt
+  val flush = RegInit(VecInit(Seq.fill(mshrsAll) {
+    false.B
+  }))
+
   // hint interface: l2 will send hint to l1 before sending grantData (2 cycle ahead)
   val globalCounter = RegInit(0.U(log2Ceil(mshrsAll).W))
   val beat_counters = RegInit(VecInit(Seq.fill(mshrsAll) {
@@ -74,7 +81,7 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
   }
 
   // GrantData
-  val hint_valid_vec = beat_counters.zip(tasks).map{case (counter, task) => { counter === hintCycleAhead.U && task.opcode(0) }}
+  val hint_valid_vec = beat_counters.zip(tasks).map{case (counter, task) => { counter === hintCycleAhead.U && task.opcode === GrantData && !task.fromL2pft.getOrElse(false.B) }}
   val sourceid_vec = tasks.map{case task => task.sourceId}
 
   io.l1Hint.valid := VecInit(hint_valid_vec).asUInt.orR
@@ -88,20 +95,31 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
   }
 
   // used to block Probe upwards
-  val inflight_grant_set = Reg(Vec(sourceIdAll, UInt(setBits.W)))
-  val inflight_grant_tag = Reg(Vec(sourceIdAll, UInt(tagBits.W)))
-  val inflight_grant_valid = RegInit(VecInit(Seq.fill(sourceIdAll)(false.B)))
-  val inflight_grant = inflight_grant_valid zip (inflight_grant_set zip inflight_grant_tag)
+  val inflight_grant_entry = new L2Bundle(){
+    val valid = Bool()
+    val set = UInt(setBits.W)
+    val tag = UInt(tagBits.W)
+    val sink = UInt(mshrBits.W)
+  }
+  // sourceIdAll (= L1 Ids) entries
+  val inflight_grant = RegInit(VecInit(Seq.fill(sourceIdAll)(0.U.asTypeOf(inflight_grant_entry))))
 
   when (io.d_task.fire() && io.d_task.bits.task.opcode(2, 1) === Grant(2, 1)) {
-    val id = io.d_task.bits.task.mshrId(sourceIdBits-1, 0)
-    inflight_grant_set(id) := io.d_task.bits.task.set
-    inflight_grant_tag(id) := io.d_task.bits.task.tag
-    inflight_grant_valid(id) := true.B
+    // choose an empty entry
+    val valids = VecInit(inflight_grant.map(_.valid)).asUInt
+    val insertIdx = PriorityEncoder(~valids)
+    val entry = inflight_grant(insertIdx)
+    entry.valid := true.B
+    entry.set := io.d_task.bits.task.set
+    entry.tag := io.d_task.bits.task.tag
+    entry.sink := io.d_task.bits.task.mshrId
   }
   when (io.e.fire) {
-    val id = io.e.bits.sink(sourceIdBits-1, 0)
-    inflight_grant_valid(id) := false.B
+    // compare sink to clear buffer
+    val sinkMatchVec = inflight_grant.map(g => g.valid && g.sink === io.e.bits.sink)
+    assert(PopCount(sinkMatchVec) === 1.U, "GrantBuf: there must be one and only one match")
+    val bufIdx = OHToUInt(sinkMatchVec)
+    inflight_grant(bufIdx).valid := false.B
   }
 
   // handle capacity conflict
@@ -112,22 +130,22 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
     s.valid && s.bits.fromA
   }).asUInt, block_valids)) >= mshrsAll.U
 
-  io.toReqArb.blockSinkReqEntrance.blockA_s1 := Cat(inflight_grant.map { case (v, (set, _)) =>
-    v && set === io.fromReqArb.status_s1.a_set
-  }).orR || noSpaceForSinkReq
-  io.toReqArb.blockSinkReqEntrance.blockB_s1 := Cat(inflight_grant.map { case (v, (set, tag)) =>
-    v && set === io.fromReqArb.status_s1.b_set && tag === io.fromReqArb.status_s1.b_tag
-  }).orR
+  io.toReqArb.blockSinkReqEntrance.blockA_s1 := Cat(inflight_grant.map(g => g.valid &&
+    g.set === io.fromReqArb.status_s1.a_set)).orR || noSpaceForSinkReq
+  io.toReqArb.blockSinkReqEntrance.blockB_s1 := Cat(inflight_grant.map(g => g.valid &&
+    g.set === io.fromReqArb.status_s1.b_set && g.tag === io.fromReqArb.status_s1.b_tag)).orR
   io.toReqArb.blockSinkReqEntrance.blockC_s1 := noSpaceForSinkReq
   io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq
 
-  when(io.d_task.fire()) {
+  when(io.d_task.fire() && !(io.d_task.bits.task.opcode === HintAck && !io.d_task.bits.task.fromL2pft.getOrElse(false.B))) {
     beat_valids(enqPtr).foreach(_ := true.B)
     tasks(enqPtr) := io.d_task.bits.task
     datas(enqPtr) := io.d_task.bits.data
     beat_counters(enqPtr) := globalCounter
     enqPtrExt := enqPtrExt + 1.U
   }
+  // If no prefetch, there never should be HintAck
+  assert(prefetchOpt.nonEmpty.B || !io.d_task.valid || io.d_task.bits.task.opcode =/= HintAck)
 
   def toTLBundleD(task: TaskBundle, data: UInt = 0.U) = {
     val d = Wire(new TLBundleD(edgeIn.bundle))
@@ -158,7 +176,7 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
   io.d := DontCare
   for(idx <- (0 until mshrsAll)) {
     when(deqPtr === idx.U) {
-      io.d.valid := block_valids(idx)
+      io.d.valid := block_valids(idx) && tasks(idx).opcode =/= HintAck // L1 does not need HintAck (for now)
       val data = datas(idx).data
       val beatsOH = beat_valids(idx).asUInt
       val (beat, next_beatsOH) = getBeat(data, beatsOH)
@@ -180,11 +198,32 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
     }
   }
 
+  val pft_resps = prefetchOpt.map(_ => Wire(Vec(mshrsAll, DecoupledIO(new PrefetchResp))))
+  io.prefetchResp.zip(pft_resps).foreach {
+    case (out, ins) =>
+      ins.zipWithIndex.foreach {
+        case (in, i) =>
+          in.valid := block_valids(i) && tasks(i).opcode === HintAck
+          in.bits.tag := tasks(i).tag
+          in.bits.set := tasks(i).set
+          when (in.fire()) {
+            beat_valids(i).foreach(_ := false.B)
+            flush(i) := true.B
+          }
+      }
+      fastArb(ins, out, Some("pft_resp_arb"))
+  }
+
   io.d_task.ready := !full
 
   // GrantBuf should always be ready.
   // If not, block reqs at the entrance of the pipeline when GrantBuf is about to be full.
   assert(!io.d_task.valid || io.d_task.ready) 
+
+  when(flush(deqPtr)) {
+    flush(deqPtr) := false.B
+    deqPtrExt := deqPtrExt + 1.U
+  }
 
   io.e.ready := true.B
   io.e_resp := DontCare
@@ -194,4 +233,24 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
   io.e_resp.respInfo.opcode := GrantAck
   io.e_resp.respInfo.last := true.B
 
+  XSPerfAccumulate(cacheParams, "grant_buffer_full", full)
+  if (cacheParams.enablePerf) {
+    val timers = Reg(Vec(sourceIdAll, UInt(64.W)))
+    when (io.d_task.fire() && io.d_task.bits.task.opcode(2, 1) === Grant(2, 1)) {
+      val id = io.d_task.bits.task.mshrId(sourceIdBits-1, 0)
+      timers(id) := 1.U
+    }
+    timers.zipWithIndex.foreach {
+      case (timer, i) =>
+        when (inflight_grant(i).valid) { timer := timer + 1.U }
+    }
+    val t = WireInit(0.U(64.W))
+    when (io.e.fire()) {
+      val id = io.e.bits.sink(sourceIdBits-1, 0)
+      timers(id) := 0.U
+      t := timers(id)
+    }
+    XSPerfHistogram(cacheParams, "grant_grantack_period", t, io.e.fire(),
+      0, 10, 1)
+  }
 }
