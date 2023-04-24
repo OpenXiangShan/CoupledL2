@@ -160,7 +160,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   assert(!(sinkC_req_s3 && !dirResult_s3.hit), "C Release should always hit, Tag %x Set %x", req_s3.tag, req_s3.set)
 
   //[Alias] TODO: consider 1 client for now
-  val cache_alias           = (req_acquire_s3 || req_get_s3) && dirResult_s3.hit && meta_s3.clients(0) &&
+  val cache_alias           = req_acquire_s3 && dirResult_s3.hit && meta_s3.clients(0) &&
                               meta_s3.alias.getOrElse(0.U) =/= req_s3.alias.getOrElse(0.U)
 
   /* ======== Interact with MSHR ======== */
