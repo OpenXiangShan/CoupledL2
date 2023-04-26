@@ -268,7 +268,10 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_grant.mshrTask := true.B
     mp_grant.mshrId := io.id
     mp_grant.way := req.way
-    mp_grant.alias.foreach(_ := req.alias.getOrElse(0.U))
+    // if it is a Get, then we must keep alias bits unchanged
+    // in case future probes gets the wrong alias bits
+    val aliasFinal = Mux(req_get, meta.alias.getOrElse(0.U), req.alias.getOrElse(0.U))
+    mp_grant.alias.foreach(_ := aliasFinal)
     mp_grant.aliasTask.foreach(_ := req.aliasTask.getOrElse(false.B))
     // [Alias] write probeData into DS for alias-caused Probe,
     // but not replacement-cased Probe
@@ -294,7 +297,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
         Mux(dirResult.hit, meta.clients, Fill(clientBits, false.B)),
         Fill(clientBits, !(req_get && (!dirResult.hit || meta_no_client || probeGotN)))
       ),
-      alias = req.alias,
+      alias = Some(aliasFinal),
       prefetch = req_prefetch || dirResult.hit && meta_pft,
       accessed = req_acquire || req_get || req_put //[Access] TODO: check
     )
