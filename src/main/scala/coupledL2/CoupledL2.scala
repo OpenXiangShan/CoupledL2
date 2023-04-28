@@ -61,7 +61,7 @@ trait HasCoupledL2Parameters {
   val prefetchOpt = cacheParams.prefetch
   val hasPrefetchBit = prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchBit
 
-  val useFIFOGrantBuffer = true
+  val useFIFOGrantBuffer = false
 
   val hintCycleAhead = 3 // how many cycles the hint will send before grantData
 
