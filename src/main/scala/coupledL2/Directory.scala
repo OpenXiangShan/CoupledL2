@@ -216,9 +216,9 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
     repl_state_hold := HoldUnless(repl_sram_r, RegNext(io.read.fire, false.B))
     val next_state = repl.get_next_state(repl_state_hold, way_s2)
     replacer_sram_opt.get.io.w(
-      replacerWen,
-      RegNext(next_state, 0.U.asTypeOf(next_state)),
-      RegNext(reqReg.set, 0.U.asTypeOf(reqReg.set)),
+      !resetFinish || replacerWen,
+      Mux(resetFinish, RegNext(next_state, 0.U.asTypeOf(next_state)), 0.U),
+      Mux(resetFinish, RegNext(reqReg.set, 0.U.asTypeOf(reqReg.set)), resetIdx),
       1.U
     )
     repl_state_hold
