@@ -456,9 +456,9 @@ class MSHR(implicit p: Parameters) extends L2Module {
   /* ======== Performance counters ======== */
   // time stamp
   // if (cacheParams.enablePerf) {
-    val acquire_ts = RegEnable(timer, io.tasks.source_a.fire())
-    val probe_ts = RegEnable(timer, io.tasks.source_b.fire())
-    val release_ts = RegEnable(timer, !mp_grant_valid && mp_release_valid && io.tasks.mainpipe.ready)
+    val acquire_ts = RegEnable(timer, false.B, io.tasks.source_a.fire)
+    val probe_ts = RegEnable(timer, false.B, io.tasks.source_b.fire)
+    val release_ts = RegEnable(timer, false.B, !mp_grant_valid && mp_release_valid && io.tasks.mainpipe.ready)
     val acquire_period = IO(Output(UInt(64.W)))
     val probe_period = IO(Output(UInt(64.W)))
     val release_period = IO(Output(UInt(64.W)))

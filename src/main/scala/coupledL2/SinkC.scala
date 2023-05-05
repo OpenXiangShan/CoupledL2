@@ -63,7 +63,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
   val full = bufValids.andR
   val noSpace = full && hasData
   val nextPtr = PriorityEncoder(~bufValids)
-  val nextPtrReg = RegEnable(nextPtr, io.c.fire() && isRelease && first && hasData)
+  val nextPtrReg = RegEnable(nextPtr, 0.U.asTypeOf(nextPtr), io.c.fire() && isRelease && first && hasData)
 
   def toTaskBundle(c: TLBundleC): TaskBundle = {
     val task = Wire(new TaskBundle)

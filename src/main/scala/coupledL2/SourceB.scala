@@ -72,6 +72,10 @@ class SourceB(implicit p: Parameters) extends L2Module {
   /* ======== Enchantment ======== */
   val full  = Cat(probes.map(_.valid)).andR
 
+  // !! Warning, it may not be enough to check only Grant in GrantBuffer
+  // !! s5 may also need to be checked
+  // !! need precise check on stages
+
   // comparing with #sourceIdAll entries might have timing issues
   // but worry not, we can delay cycles cuz not critical
   val conflictMask = io.grantStatus.map(s =>

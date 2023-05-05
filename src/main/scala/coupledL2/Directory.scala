@@ -147,7 +147,7 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
      stage 3: output latched hit/way and chosen meta/tag by way
   */
   // TODO: how about moving hit/way calculation to stage 2? Cuz SRAM latency can be high under high frequency
-  val reqReg = RegEnable(io.read.bits, enable = io.read.fire)
+  val reqReg = RegEnable(io.read.bits, 0.U.asTypeOf(io.read.bits), enable = io.read.fire)
   val hit_s2 = Wire(Bool())
   val way_s2 = Wire(UInt(wayBits.W))
 
@@ -171,8 +171,8 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
     repl_init.foreach(_ := 2.U(2.W))
     replacer_sram_opt.get.io.w(
       !resetFinish || replacerWen,
-      Mux(resetFinish, RegNext(next_state), repl_init.asUInt),
-      Mux(resetFinish, RegNext(reqReg.set), resetIdx),
+      Mux(resetFinish, RegNext(next_state, 0.U.asTypeOf(next_state)), repl_init.asUInt),
+      Mux(resetFinish, RegNext(reqReg.set, 0.U.asTypeOf(reqReg.set)), resetIdx),
       1.U
     )
 
@@ -204,8 +204,8 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
     repl_init.foreach(_ := 2.U(2.W))
     replacer_sram_opt.get.io.w(
       !resetFinish || replacerWen,
-      Mux(resetFinish, RegNext(next_state), repl_init.asUInt),
-      Mux(resetFinish, RegNext(reqReg.set), resetIdx),
+      Mux(resetFinish, RegNext(next_state, 0.U.asTypeOf(next_state)), repl_init.asUInt),
+      Mux(resetFinish, RegNext(reqReg.set, 0.U.asTypeOf(reqReg.set)), resetIdx),
       1.U
     )
 
@@ -215,7 +215,12 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
     val repl_state_hold = WireInit(0.U(repl.nBits.W))
     repl_state_hold := HoldUnless(repl_sram_r, RegNext(io.read.fire, false.B))
     val next_state = repl.get_next_state(repl_state_hold, way_s2)
-    replacer_sram_opt.get.io.w(replacerWen, RegNext(next_state), RegNext(reqReg.set), 1.U)
+    replacer_sram_opt.get.io.w(
+      replacerWen,
+      RegNext(next_state, 0.U.asTypeOf(next_state)),
+      RegNext(reqReg.set, 0.U.asTypeOf(reqReg.set)),
+      1.U
+    )
     repl_state_hold
   }
 
@@ -238,8 +243,8 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
 
   val hit_s3 = RegEnable(hit_s2, false.B, reqValidReg)
   val way_s3 = RegEnable(way_s2, 0.U, reqValidReg)
-  val metaAll_s3 = RegEnable(metaRead, reqValidReg)
-  val tagAll_s3 = RegEnable(tagRead, reqValidReg)
+  val metaAll_s3 = RegEnable(metaRead, 0.U.asTypeOf(metaRead), reqValidReg)
+  val tagAll_s3 = RegEnable(tagRead, 0.U.asTypeOf(tagRead), reqValidReg)
   val meta_s3 = metaAll_s3(way_s3)
   val tag_s3 = tagAll_s3(way_s3)
   val set_s3 = RegEnable(reqReg.set, reqValidReg)
