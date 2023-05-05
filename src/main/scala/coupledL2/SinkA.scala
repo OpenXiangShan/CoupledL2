@@ -43,7 +43,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
   val full = valids.andR()
   val noSpace = full && hasData
   val insertIdx = PriorityEncoder(~valids)
-  val insertIdxReg = RegEnable(insertIdx, io.a.fire() && first)
+  val insertIdxReg = RegEnable(insertIdx, 0.U.asTypeOf(insertIdx), io.a.fire() && first)
 
   when (io.a.fire() && hasData) {
     when (first) {
@@ -120,7 +120,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
   io.pbRead.ready := beatValids(io.pbRead.bits.idx)(io.pbRead.bits.count)
   assert(!io.pbRead.valid || io.pbRead.ready)
 
-  io.pbResp.valid := RegNext(io.pbRead.fire())
+  io.pbResp.valid := RegNext(io.pbRead.fire(), false.B)
   io.pbResp.bits := RegEnable(putBuffer(io.pbRead.bits.idx)(io.pbRead.bits.count), io.pbRead.fire())
 
   // Performance counters

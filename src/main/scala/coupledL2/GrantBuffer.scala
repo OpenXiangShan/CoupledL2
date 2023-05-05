@@ -28,7 +28,7 @@ import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram, XSPerfMax}
 
 // used to block Probe upwards
 class InflightGrantEntry(implicit p: Parameters) extends L2Bundle {
-  val sent  = Bool()
+  val sent  = Bool()  // the first beat sent
   val set   = UInt(setBits.W)
   val tag   = UInt(tagBits.W)
   val sink  = UInt(mshrBits.W)

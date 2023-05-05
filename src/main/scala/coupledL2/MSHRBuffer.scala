@@ -99,7 +99,7 @@ class MSHRBuffer(wPorts: Int = 1)(implicit p: Parameters) extends L2Module {
   io.r.ready := true.B
   io.w.foreach(_.ready := true.B)
 
-  val ridReg = RegNext(io.r.id)
+  val ridReg = RegNext(io.r.id, 0.U.asTypeOf(io.r.id))
   io.r.data.data := VecInit(buffer.map {
     case block => VecInit(block.map(_.io.r.resp.data.asUInt)).asUInt
   })(ridReg)

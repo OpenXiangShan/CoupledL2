@@ -92,9 +92,9 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   mainPipe.io.bufRead <> sinkC.io.bufRead
   mainPipe.io.bufResp <> sinkC.io.bufResp
   mainPipe.io.toDS.rdata_s5 := dataStorage.io.rdata
-  mainPipe.io.refillBufResp_s3.valid := RegNext(refillBuf.io.r.valid && refillBuf.io.r.ready)
+  mainPipe.io.refillBufResp_s3.valid := RegNext(refillBuf.io.r.valid && refillBuf.io.r.ready, false.B)
   mainPipe.io.refillBufResp_s3.bits := refillBuf.io.r.data
-  mainPipe.io.releaseBufResp_s3.valid := RegNext(releaseBuf.io.r.valid && releaseBuf.io.r.ready)
+  mainPipe.io.releaseBufResp_s3.valid := RegNext(releaseBuf.io.r.valid && releaseBuf.io.r.ready, false.B)
   mainPipe.io.releaseBufResp_s3.bits := releaseBuf.io.r.data
   mainPipe.io.fromReqArb.status_s1 := reqArb.io.status_s1
   mainPipe.io.grantBufferHint := grantBuf.io.l1Hint

@@ -405,11 +405,11 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   /* ======== Stage 4 ======== */
   val task_s4 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
-  val data_unready_s4 = Reg(Bool())
+  val data_unready_s4 = RegInit(false.B)
   val data_s4 = Reg(UInt((blockBytes * 8).W))
   val ren_s4 = RegInit(false.B)
-  val need_write_releaseBuf_s4 = Reg(Bool())
-  val need_write_refillBuf_s4 = Reg(Bool())
+  val need_write_releaseBuf_s4 = RegInit(false.B)
+  val need_write_refillBuf_s4 = RegInit(false.B)
   task_s4.valid := task_s3.valid && !req_drop_s3
   when (task_s3.valid && !req_drop_s3) {
     task_s4.bits := source_req_s3
@@ -440,9 +440,9 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val task_s5 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
   val ren_s5 = RegInit(false.B)
   val data_s5 = Reg(UInt((blockBytes * 8).W))
-  val need_write_releaseBuf_s5 = Reg(Bool())
-  val need_write_refillBuf_s5 = Reg(Bool())
-  val isC_s5, isD_s5 = Reg(Bool())
+  val need_write_releaseBuf_s5 = RegInit(false.B)
+  val need_write_refillBuf_s5 = RegInit(false.B)
+  val isC_s5, isD_s5 = RegInit(false.B)
   task_s5.valid := task_s4.valid && !chnl_fire_s4
   when (task_s4.valid && !chnl_fire_s4) {
     task_s5.bits := task_s4.bits
@@ -504,7 +504,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     val s1_tag = if(chn == 'a') s1.a_tag else s1.b_tag
     val s1_set = if(chn == 'a') s1.a_set else s1.b_set
 
-    // allTask false: block only !mshrTask at Entrance
+    // allTask false: only !mshrTask (SinkReq) blocks Entrance
+    // allTask true : all tasks with the same set at s2 block Entrance
     // tag true: compare tag+set
     s.set === s1_set && (if(allTask) true.B else !s.mshrTask) && (if(tag) s.tag === s1_tag else true.B)
   }
