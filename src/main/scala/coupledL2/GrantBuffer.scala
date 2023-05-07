@@ -28,7 +28,6 @@ import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram, XSPerfMax}
 
 // used to block Probe upwards
 class InflightGrantEntry(implicit p: Parameters) extends L2Bundle {
-  val sent  = Bool()  // the first beat sent
   val set   = UInt(setBits.W)
   val tag   = UInt(tagBits.W)
   val sink  = UInt(mshrBits.W)
@@ -86,7 +85,7 @@ class GrantBuffer(implicit p: Parameters) extends BaseGrantBuffer {
   }))
   io.grantStatus zip inflight_grant foreach {
     case (g, i) =>
-      g.unsent := i.valid && !i.bits.sent
+      g.valid := i.valid
       g.tag    := i.bits.tag
       g.set    := i.bits.set
   }
@@ -96,7 +95,6 @@ class GrantBuffer(implicit p: Parameters) extends BaseGrantBuffer {
     val insertIdx = io.d_task.bits.task.sourceId
     val entry = inflight_grant(insertIdx)
     entry.valid := true.B
-    entry.bits.sent  := false.B
     entry.bits.set   := io.d_task.bits.task.set
     entry.bits.tag   := io.d_task.bits.task.tag
     entry.bits.sink  := io.d_task.bits.task.mshrId
@@ -175,7 +173,6 @@ class GrantBuffer(implicit p: Parameters) extends BaseGrantBuffer {
       val hasData = out.bits.opcode(0)
 
       when (out.fire()) {
-        inflight_grant(taskAll(i).sourceId).bits.sent := true.B
         when (hasData) {
           beat_valids(i) := VecInit(next_beatsOH.asBools)
         }.otherwise {

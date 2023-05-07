@@ -506,7 +506,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
     // allTask false: only !mshrTask (SinkReq) blocks Entrance
     // allTask true : all tasks with the same set at s2 block Entrance
-    // tag true: compare tag+set
+    // tag true : compare tag+set
+    // tag false: compare set alone
     s.set === s1_set && (if(allTask) true.B else !s.mshrTask) && (if(tag) s.tag === s1_tag else true.B)
   }
 
