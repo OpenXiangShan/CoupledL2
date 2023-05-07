@@ -105,7 +105,7 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
 
   io.grantStatus zip inflight_grant foreach {
     case (g, i) =>
-      g.unsent := i.valid && !i.bits.sent
+      g.valid := i.valid
       g.tag    := i.bits.tag
       g.set    := i.bits.set
   }
@@ -115,7 +115,6 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
     val insertIdx = io.d_task.bits.task.sourceId
     val entry = inflight_grant(insertIdx)
     entry.valid := true.B
-    entry.bits.sent  := false.B
     entry.bits.set   := io.d_task.bits.task.set
     entry.bits.tag   := io.d_task.bits.task.tag
     entry.bits.sink  := io.d_task.bits.task.mshrId
@@ -193,7 +192,6 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
       val hasData = io.d.bits.opcode(0)
 
       when (io.d.fire()) {
-        inflight_grant(tasks(idx).sourceId).bits.sent := true.B
         when (hasData) {
           beat_valids(idx) := VecInit(next_beatsOH.asBools)
           // only when all beats fire, inc deqPtrExt

@@ -26,7 +26,7 @@ import chipsalliance.rocketchip.config.Parameters
 import utility._
 
 class GrantStatus(implicit p: Parameters) extends L2Bundle {
-  val unsent  = Bool()
+  val valid  = Bool()
   val set     = UInt(setBits.W)
   val tag     = UInt(tagBits.W)
 }
@@ -39,9 +39,7 @@ class ProbeEntry(implicit p: Parameters) extends L2Bundle {
 }
 
 // send B reqs to upper level cache
-// Attention! We stall Probes if there is same-addr Grant not sent
-// L1 will help stall same-addr Probes until Grant is handled
-// so we only need to make sure L2 sends Probe after Grant
+// Attention! We stall Probes if there is same-addr Grant not received GrantAck
 class SourceB(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val sourceB = DecoupledIO(new TLBundleB(edgeIn.bundle))
@@ -72,14 +70,10 @@ class SourceB(implicit p: Parameters) extends L2Module {
   /* ======== Enchantment ======== */
   val full  = Cat(probes.map(_.valid)).andR
 
-  // !! Warning, it may not be enough to check only Grant in GrantBuffer
-  // !! s5 may also need to be checked
-  // !! need precise check on stages
-
   // comparing with #sourceIdAll entries might have timing issues
   // but worry not, we can delay cycles cuz not critical
   val conflictMask = io.grantStatus.map(s =>
-    s.unsent && s.set === io.task.bits.set && s.tag === io.task.bits.tag
+    s.valid && s.set === io.task.bits.set && s.tag === io.task.bits.tag
   )
   val conflict     = Cat(conflictMask).orR
 
@@ -116,7 +110,7 @@ class SourceB(implicit p: Parameters) extends L2Module {
 
   /* ======== Update rdy ======== */
   probes foreach { p =>
-    when(p.valid && !io.grantStatus(p.waitG).unsent) {
+    when(p.valid && !io.grantStatus(p.waitG).valid) {
       p.rdy := RegNext(true.B) // cuz GrantData has 2 beats, can move RegNext elsewhere
     }
   }
