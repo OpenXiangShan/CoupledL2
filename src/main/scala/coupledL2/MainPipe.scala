@@ -511,6 +511,9 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     s.set === s1_set && (if(allTask) true.B else !s.mshrTask) && (if(tag) s.tag === s1_tag else true.B)
   }
 
+  io.toReqBuf(0) := task_s2.valid && pipelineBlock('a', task_s2.bits, allTask = true)
+  io.toReqBuf(1) := task_s3.valid && pipelineBlock('a', task_s3.bits)
+
   io.toReqArb.blockC_s1 :=
     task_s2.valid && task_s2.bits.set === io.fromReqArb.status_s1.c_set ||
     io.toMSHRCtl.mshr_alloc_s3.valid && task_s3.bits.set === io.fromReqArb.status_s1.c_set
@@ -519,10 +522,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     task_s3.valid && pipelineBlock('b', task_s3.bits)                 ||
     task_s4.valid && pipelineBlock('b', task_s4.bits, tag = true)     ||
     task_s5.valid && pipelineBlock('b', task_s5.bits, tag = true)
-  io.toReqArb.blockA_s1 := false.B // logic moved to ReqBuffer
-
-  io.toReqBuf(0) := task_s2.valid && pipelineBlock('a', task_s2.bits, allTask = true)
-  io.toReqBuf(1) := task_s3.valid && pipelineBlock('a', task_s3.bits)
+  io.toReqArb.blockA_s1 := io.toReqBuf(0) || io.toReqBuf(1)
 
   /* ======== Pipeline Status ======== */
   require(io.status_vec.size == 3)
