@@ -133,7 +133,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   when(alloc){
     val entry = buffer(insertIdx)
     val mpBlock = Cat(io.mainPipeBlock).orR
-    val pipeBlockOut = io.out.valid && sameSet(in, io.out.bits) // valid is enough
+    val pipeBlockOut = io.out.fire && sameSet(in, io.out.bits)
     val probeBlock   = io.probeEntrance.valid && io.probeEntrance.bits.set === in.set // wait for same-set probe to enter MSHR
     val s1Block      = pipeBlockOut || probeBlock
 
@@ -261,7 +261,8 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
         assert(t < 10000.U, "ReqBuf Leak")
 
         val enable = RegNext(e.valid) && !e.valid
-        XSPerfHistogram(cacheParams, "reqBuf_timer", t, enable, 0, 400, 20)
+        XSPerfHistogram(cacheParams, "reqBuf_timer", t, enable, 0, 20, 1, right_strict = true)
+        XSPerfHistogram(cacheParams, "reqBuf_timer", t, enable, 20, 400, 20, left_strict = true)
         XSPerfMax(cacheParams, "max_reqBuf_timer", t, enable)
 
         // assert !(all entries occupied for 100 cycles)
