@@ -31,7 +31,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     val sinkA    = Flipped(DecoupledIO(new TaskBundle))
     val ATag     = Input(UInt(tagBits.W)) // !TODO: very dirty, consider optimize structure
     val ASet     = Input(UInt(setBits.W)) // To pass A entrance status to MP for blockA-info of ReqBuf
-    val probeEntrance = ValidIO(new L2Bundle {
+    val sinkEntrance = ValidIO(new L2Bundle {
       val tag = UInt(tagBits.W)
       val set = UInt(setBits.W)
     })
@@ -150,9 +150,9 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   io.dirRead_s1.bits.replacerInfo.channel := task_s1.bits.channel
 
   // probe block same-set A req for s2/s3
-  io.probeEntrance.valid := io.sinkB.fire
-  io.probeEntrance.bits.tag  := B_task.tag
-  io.probeEntrance.bits.set  := B_task.set
+  io.sinkEntrance.valid := io.sinkB.fire || io.sinkC.fire
+  io.sinkEntrance.bits.tag  := Mux(io.sinkC.fire, C_task.tag, B_task.tag)
+  io.sinkEntrance.bits.set  := Mux(io.sinkC.fire, C_task.set, B_task.set)
 
   /* ========  Stage 2 ======== */
   val task_s2 = RegInit(0.U.asTypeOf(task_s1))

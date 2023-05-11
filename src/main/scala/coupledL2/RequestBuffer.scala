@@ -56,8 +56,8 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     val ATag        = Output(UInt(tagBits.W))
     val ASet        = Output(UInt(setBits.W))
 
-    // when Probe enters MainPipe, we need also to block
-    val probeEntrance = Flipped(ValidIO(new L2Bundle {
+    // when Probe/Release enters MainPipe, we need also to block A req
+    val sinkEntrance = Flipped(ValidIO(new L2Bundle {
       val tag = UInt(tagBits.W)
       val set = UInt(setBits.W)
     }))
@@ -134,7 +134,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     val entry = buffer(insertIdx)
     val mpBlock = Cat(io.mainPipeBlock).orR
     val pipeBlockOut = io.out.fire && sameSet(in, io.out.bits)
-    val probeBlock   = io.probeEntrance.valid && io.probeEntrance.bits.set === in.set // wait for same-set probe to enter MSHR
+    val probeBlock   = io.sinkEntrance.valid && io.sinkEntrance.bits.set === in.set // wait for same-addr req to enter MSHR
     val s1Block      = pipeBlockOut || probeBlock
 
     entry.valid   := true.B
@@ -207,7 +207,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
       // set waitMP if fired-s1-req is the same set
       val s1A_Block = io.out.fire && sameSet(e.task, io.out.bits)
-      val s1B_Block = io.probeEntrance.valid && io.probeEntrance.bits.set === e.task.set
+      val s1B_Block = io.sinkEntrance.valid && io.sinkEntrance.bits.set === e.task.set
       val s1_Block  = s1A_Block || s1B_Block
       when(s1_Block) {
         e.waitMP := e.waitMP | "b0100".U // fired-req at s2 next cycle
