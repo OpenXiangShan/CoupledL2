@@ -326,7 +326,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     meta_s3.dirty,
     Mux(req_needT_s3 || sink_resp_s3_a_promoteT, TRUNK, meta_s3.state),
     Fill(clientBits, true.B),
-    req_s3.alias,
+    Mux(req_get_s3 || req_prefetch_s3, meta_s3.alias, req_s3.alias), // Get and Prefetch should not change alias bit
     accessed = true.B
   )
   val metaW_s3_b = Mux(req_s3.param === toN, MetaEntry(),
