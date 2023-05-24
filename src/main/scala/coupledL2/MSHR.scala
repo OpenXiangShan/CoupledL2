@@ -222,6 +222,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_probeack.aliasTask.foreach(_ := false.B)
     mp_probeack.useProbeData := true.B // read ReleaseBuf when useProbeData && opcode(0) is true
     mp_probeack.way := req.way
+    mp_probeack.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
     mp_probeack.meta := MetaEntry(
       dirty = false.B,
       state = Mux(
