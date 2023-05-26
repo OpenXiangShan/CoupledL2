@@ -25,6 +25,7 @@ import freechips.rocketchip.util._
 import chipsalliance.rocketchip.config.Field
 import huancun.CacheParameters
 import coupledL2.prefetch._
+import MemReqSource._
 
 // General parameter key of CoupledL2
 case object L2ParamKey extends Field[L2Param](L2Param())
@@ -50,6 +51,17 @@ case class AliasField(width: Int) extends BundleField(AliasKey) {
   override def data: UInt = Output(UInt(width.W))
   override def default(x: UInt): Unit = {
     x := 0.U(width.W)
+  }
+}
+
+// Used to indicate the source of the req (L1I/L1D/PTW)
+case object ReqSourceKey extends ControlKey[UInt]("reqSource")
+
+case class ReqSourceField() extends BundleField(ReqSourceKey) {
+  override def data: UInt = Output(UInt(reqSourceBits.W))
+
+  override def default(x: UInt): Unit = {
+    x := NoWhere.id.U(reqSourceBits.W)
   }
 }
 
@@ -109,13 +121,15 @@ case class L2Param
     e = BufferParams.default
   ),
 
+  hartIds: Seq[Int] = Seq[Int](),
   // Prefetch
   prefetch: Option[PrefetchParameters] = None,
   // Performance analysis
   enablePerf: Boolean = true,
   // Monitor
-  enableMonitor: Boolean = true
-
+  enableMonitor: Boolean = true,
+  // TopDown
+  elaboratedTopDown: Boolean = true
 ) {
   def toCacheParams: CacheParameters = CacheParameters(
     name = name,

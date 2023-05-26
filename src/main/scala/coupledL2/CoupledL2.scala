@@ -60,6 +60,7 @@ trait HasCoupledL2Parameters {
   // Prefetch
   val prefetchOpt = cacheParams.prefetch
   val hasPrefetchBit = prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchBit
+  val topDownOpt = if(cacheParams.elaboratedTopDown) Some(true) else None
 
   val useFIFOGrantBuffer = false
 
@@ -354,6 +355,23 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     io.l2_hint.bits := l1Hint_arb.io.out.bits.sourceId - Mux1H(client_sourceId_match_oh, client_sourceId_start)
     // always ready for grant hint
     l1Hint_arb.io.out.ready := true.B
+
+    val topDown = topDownOpt.map(_ => Module(new TopDownMonitor()(p.alterPartial {
+      case EdgeInKey => node.in.head._2
+      case EdgeOutKey => node.out.head._2
+      case BankBitsKey => bankBits
+    })))
+    topDownOpt.foreach {
+      _ => {
+        topDown.get.io.msStatus.zip(slices).foreach {
+          case (in, s) => in := s.io.msStatus.get
+        }
+        topDown.get.io.dirResult.zip(slices).foreach {
+          case (res, s) => res := s.io.dirResult.get
+        }
+      }
+    }
+
     XSPerfAccumulate(cacheParams, "hint_fire", io.l2_hint.valid)
     val grant_fire = slices.map{ slice => {
                         val (_, _, grant_fire_last, _) = node.in.head._2.count(slice.io.in.d)
