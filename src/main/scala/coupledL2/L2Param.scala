@@ -104,12 +104,12 @@ case class L2Param
    * 3 for all
    */
 
-  // Client
+  // Client (these are set in Configs.scala in XiangShan)
   echoField: Seq[BundleFieldBase] = Nil,
   reqField: Seq[BundleFieldBase] = Nil, 
   respKey: Seq[BundleKeyBase] = Nil,
   // Manager
-  reqKey: Seq[BundleKeyBase] = Seq(AliasKey, PrefetchKey),
+  reqKey: Seq[BundleKeyBase] = Seq(AliasKey, PrefetchKey, ReqSourceKey),
   respField: Seq[BundleFieldBase] = Nil,
 
   innerBuf: TLBufferParams = TLBufferParams(),
