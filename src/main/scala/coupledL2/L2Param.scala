@@ -55,7 +55,7 @@ case class AliasField(width: Int) extends BundleField(AliasKey) {
 }
 
 // Used to indicate the source of the req (L1I/L1D/PTW)
-case object ReqSourceKey extends ControlKey[UInt]("reqSource")
+case object ReqSourceKey extends ControlKey[UInt]("reqSource2")
 
 case class ReqSourceField() extends BundleField(ReqSourceKey) {
   override def data: UInt = Output(UInt(reqSourceBits.W))
