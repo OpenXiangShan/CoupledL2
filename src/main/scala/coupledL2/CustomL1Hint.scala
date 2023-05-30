@@ -90,8 +90,9 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
 
   // TODO: generalization, for now, only fit hintCycleAhead == 3
   s1_l2_miss_refill_counter_match := PopCount(Seq(d_s3, d_s4, d_s5, s3_l2_hit_grant_data, s4_l2_hit_grant_data, task_s2.valid && task_s2.bits.fromA)) === 0.U && globalCounter <= 2.U
+  val dummy_s1_valid = if(hintCycleAhead == 3) s1_l2_miss_refill_grant_data && s1_l2_miss_refill_counter_match else false.B
 
-  hint_s1.valid         := s1_l2_miss_refill_grant_data && s1_l2_miss_refill_counter_match
+  hint_s1.valid         := dummy_s1_valid
   hint_s1.bits.sourceId := task_s1.bits.sourceId
 
   // S2 hint
