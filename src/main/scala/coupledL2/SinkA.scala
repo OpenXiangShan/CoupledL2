@@ -84,7 +84,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.pbIdx := insertIdx
     task.fromL2pft.foreach(_ := false.B)
     task.needHint.foreach(_ := a.user.lift(PrefetchKey).getOrElse(false.B))
-    task.reqSource := a.user.lift(ReqSourceKey).getOrElse(MemReqSource.NoWhere.id.U)
+    task.reqSource := a.user.lift(utility.ReqSourceKey).getOrElse(MemReqSource.NoWhere.id.U)
     task
   }
   def fromPrefetchReqtoTaskBundle(req: PrefetchReq): TaskBundle = {
