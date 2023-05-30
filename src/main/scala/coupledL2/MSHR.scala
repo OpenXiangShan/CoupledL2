@@ -318,6 +318,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
       mp_probeack_valid -> mp_probeack
     )
   )
+  io.tasks.mainpipe.bits.reqSource := req.reqSource
 
   // io.tasks.prefetchTrain.foreach {
   //   train =>
