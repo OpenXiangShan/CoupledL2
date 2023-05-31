@@ -132,7 +132,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
     oa.opcode := Mux(
       req_put || req_acquirePerm,
       req.opcode,
-      Mux(dirResult.hit, AcquirePerm, AcquireBlock)
+      // Get or AcquireBlock
+      AcquireBlock
     )
     oa.param := Mux(
       req_put,
