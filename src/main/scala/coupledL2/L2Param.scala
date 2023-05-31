@@ -25,6 +25,8 @@ import freechips.rocketchip.util._
 import chipsalliance.rocketchip.config.Field
 import huancun.CacheParameters
 import coupledL2.prefetch._
+import MemReqSource._
+import utility.ReqSourceKey
 
 // General parameter key of CoupledL2
 case object L2ParamKey extends Field[L2Param](L2Param())
@@ -92,12 +94,12 @@ case class L2Param
    * 3 for all
    */
 
-  // Client
+  // Client (these are set in Configs.scala in XiangShan)
   echoField: Seq[BundleFieldBase] = Nil,
   reqField: Seq[BundleFieldBase] = Nil, 
   respKey: Seq[BundleKeyBase] = Nil,
   // Manager
-  reqKey: Seq[BundleKeyBase] = Seq(AliasKey, PrefetchKey),
+  reqKey: Seq[BundleKeyBase] = Seq(AliasKey, PrefetchKey, ReqSourceKey),
   respField: Seq[BundleFieldBase] = Nil,
 
   innerBuf: TLBufferParams = TLBufferParams(),
@@ -109,13 +111,15 @@ case class L2Param
     e = BufferParams.default
   ),
 
+  hartIds: Seq[Int] = Seq[Int](),
   // Prefetch
   prefetch: Option[PrefetchParameters] = None,
   // Performance analysis
   enablePerf: Boolean = true,
   // Monitor
-  enableMonitor: Boolean = true
-
+  enableMonitor: Boolean = true,
+  // TopDown
+  elaboratedTopDown: Boolean = true
 ) {
   def toCacheParams: CacheParameters = CacheParameters(
     name = name,

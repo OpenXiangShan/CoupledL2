@@ -101,6 +101,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     task.fromL2pft.foreach(_ := false.B)
     task.needHint.foreach(_ := false.B)
     task.wayMask := Fill(cacheParams.ways, "b1".U)
+    task.reqSource := MemReqSource.NoWhere.id.U // Ignore
     task
   }
 
@@ -148,6 +149,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   io.dirRead_s1.bits.wayMask := task_s1.bits.wayMask
   io.dirRead_s1.bits.replacerInfo.opcode := task_s1.bits.opcode
   io.dirRead_s1.bits.replacerInfo.channel := task_s1.bits.channel
+  io.dirRead_s1.bits.replacerInfo.reqSource := task_s1.bits.reqSource
 
   // probe block same-set A req for s2/s3
   io.sinkEntrance.valid := io.sinkB.fire || io.sinkC.fire

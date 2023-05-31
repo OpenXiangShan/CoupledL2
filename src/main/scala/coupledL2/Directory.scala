@@ -71,6 +71,7 @@ class DirResult(implicit p: Parameters) extends L2Bundle {
   val way = UInt(wayBits.W)  // hit way or victim way
   val meta = new MetaEntry()
   val error = Bool()
+  val replacerInfo = new ReplacerInfo() // for TopDown usage
 }
 
 class MetaWrite(implicit p: Parameters) extends L2Bundle {
