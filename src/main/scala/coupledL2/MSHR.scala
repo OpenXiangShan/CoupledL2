@@ -93,6 +93,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     req.aliasTask.foreach(_ := msTask.aliasTask.getOrElse(false.B))
     req.pbIdx   := msTask.pbIdx
     req.fromL2pft.foreach(_ := msTask.fromL2pft.get)
+    req.reqSource := msTask.reqSource
     gotT        := false.B
     gotDirty    := false.B
     probeDirty  := false.B
@@ -142,6 +143,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     )
     oa.size := req.size
     oa.pbIdx := req.pbIdx
+    oa.reqSource := req.reqSource
     oa
   }
 
@@ -317,6 +319,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
       mp_probeack_valid -> mp_probeack
     )
   )
+  io.tasks.mainpipe.bits.reqSource := req.reqSource
 
   // io.tasks.prefetchTrain.foreach {
   //   train =>
@@ -419,6 +422,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.status.bits.w_d_resp := !state.w_grantlast || !state.w_grant || !state.w_releaseack
   io.status.bits.w_e_resp := !state.w_grantack
   io.status.bits.will_free := will_free
+  io.status.bits.is_miss := !dirResult.hit
+  io.status.bits.is_prefetch := req_prefetch
 
   io.toReqBuf.valid := status_reg.valid
   io.toReqBuf.bits.set := req.set

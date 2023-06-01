@@ -26,6 +26,7 @@ import chipsalliance.rocketchip.config.Parameters
 import coupledL2.utils._
 import coupledL2.debug._
 import coupledL2.prefetch.PrefetchIO
+import utility.RegNextN
 
 class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val io = IO(new Bundle {
@@ -33,6 +34,8 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
     val out = TLBundle(edgeOut.bundle)
     val l1Hint = Decoupled(new L2ToL1Hint())
     val prefetch = prefetchOpt.map(_ => Flipped(new PrefetchIO))
+    val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
+    val dirResult = topDownOpt.map(_ => ValidIO(new DirResult))
   })
 
   val reqArb = Module(new RequestArb())
@@ -152,6 +155,14 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
 
   dontTouch(io.in)
   dontTouch(io.out)
+
+  topDownOpt.foreach (
+    _ => {
+      io.msStatus.get        := mshrCtl.io.msStatus.get
+      io.dirResult.get.valid := RegNextN(directory.io.read.fire, 2, Some(false.B)) // manually generate dirResult.valid
+      io.dirResult.get.bits  := directory.io.resp
+    }
+  )
 
   if (cacheParams.enablePerf) {
     val a_begin_times = RegInit(VecInit(Seq.fill(sourceIdAll)(0.U(64.W))))
