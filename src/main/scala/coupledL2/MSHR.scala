@@ -114,9 +114,9 @@ class MSHR(implicit p: Parameters) extends L2Module {
 
   /* ======== Task allocation ======== */
   // Theoretically, data to be released is saved in ReleaseBuffer, so Acquire can be sent as soon as req enters mshr
-  io.tasks.source_a.valid := !state.s_acquire && state.s_release && state.w_release_sent
+  io.tasks.source_a.valid := !state.s_acquire
   io.tasks.source_b.valid := !state.s_pprobe || !state.s_rprobe
-  val mp_release_valid = !state.s_release && state.w_rprobeacklast
+  val mp_release_valid = !state.s_release && state.w_rprobeacklast && state.s_acquire && state.w_grantlast // release after Grant received
   val mp_probeack_valid = !state.s_probeack && state.w_pprobeacklast
   val mp_grant_valid = !state.s_refill && state.w_grantlast && state.w_rprobeacklast && state.s_release // [Alias] grant after rprobe done
   io.tasks.mainpipe.valid := mp_release_valid || mp_probeack_valid || mp_grant_valid
@@ -392,10 +392,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
     state.w_grantack := true.B
   }
 
-  when (io.resps.source_c.valid) {
-    state.w_release_sent := true.B
-  }
-
   when (status_reg.valid) {
     timer := timer + 1.U
   }
@@ -411,7 +407,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.status.valid := status_reg.valid
   io.status.bits <> status_reg.bits
   // For A reqs, we only concern about the tag to be replaced
-  io.status.bits.tag := Mux(state.w_release_sent, req.tag, dirResult.tag) // s_release is low-as-valid
+  io.status.bits.tag := Mux(state.s_release, req.tag, dirResult.tag) // s_release is low-as-valid
   io.status.bits.nestB := status_reg.valid && state.w_releaseack && state.w_rprobeacklast && state.w_pprobeacklast && !state.w_grantfirst
   // wait for resps, high as valid
   io.status.bits.w_c_resp := !state.w_rprobeacklast || !state.w_pprobeacklast || !state.w_pprobeack
@@ -423,7 +419,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.toReqBuf.bits.set := req.set
   io.toReqBuf.bits.way := req.way
   io.toReqBuf.bits.reqTag := req.tag
-  io.toReqBuf.bits.needRelease := !state.w_release_sent
+  io.toReqBuf.bits.needRelease := !state.s_release
   io.toReqBuf.bits.metaTag := dirResult.tag
   io.toReqBuf.bits.willFree := will_free
   io.toReqBuf.bits.isAcqOrPrefetch := req_acquire || req_prefetch

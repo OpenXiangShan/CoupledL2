@@ -542,16 +542,12 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     when(a_need_replacement) {
       alloc_state.s_release := false.B
       alloc_state.w_releaseack := false.B
-      alloc_state.w_release_sent := false.B
       // need rprobe for release
       when(meta_has_clients_s3) {
         alloc_state.s_rprobe := false.B
         alloc_state.w_rprobeackfirst := false.B
         alloc_state.w_rprobeacklast := false.B
       }
-    }.otherwise {
-      alloc_state.w_release_sent := alloc_state.s_acquire || alloc_state.s_release
-      assert(alloc_state.s_acquire || alloc_state.s_release)
     }
     // need Acquire downwards
     when(need_acquire_s3_a || req_put_s3) {
