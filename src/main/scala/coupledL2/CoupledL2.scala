@@ -62,9 +62,9 @@ trait HasCoupledL2Parameters {
   val hasPrefetchBit = prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchBit
   val topDownOpt = if(cacheParams.elaboratedTopDown) Some(true) else None
 
-  val useFIFOGrantBuffer = false
+  val useFIFOGrantBuffer = true
 
-  val hintCycleAhead = 3 // how many cycles the hint will send before grantData
+  val hintCycleAhead = 2 // how many cycles the hint will send before grantData
 
   lazy val edgeIn = p(EdgeInKey)
   lazy val edgeOut = p(EdgeOutKey)
@@ -343,7 +343,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     }
     val l1Hint_arb = Module(new Arbiter(new L2ToL1Hint(), slices.size))
     val slices_l1Hint = slices.zipWithIndex.map {
-      case (s, i) => Pipeline(s.io.l1Hint, depth = 3, pipe = false, name = Some(s"l1Hint_buffer_$i"))
+      case (s, i) => Pipeline(s.io.l1Hint, depth = 1, pipe = false, name = Some(s"l1Hint_buffer_$i"))
     }
     val (client_sourceId_match_oh, client_sourceId_start) = node.in.head._2.client.clients
                                                           .map(c => {
