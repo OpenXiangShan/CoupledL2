@@ -57,10 +57,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
     val nestedwbData = Output(Bool())
   })
 
-  val initState = Wire(new FSMState())
-  val state = RegInit(new FSMState(), initState)
-  initState.elements.foreach(_._2 := true.B)
-  val dirResult = RegInit(0.U.asTypeOf(new DirResult()))
   val gotT = RegInit(false.B) // TODO: L3 might return T even though L2 wants B
   val gotDirty = RegInit(false.B)
   val gotGrantData = RegInit(false.B)
@@ -70,29 +66,19 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val timer = RegInit(0.U(64.W)) // for performance analysis
 
   /* MSHR Allocation */
-  val status_reg = RegInit(0.U.asTypeOf(Valid(new MSHRStatus())))
-  val req        = status_reg.bits
-  val meta       = dirResult.meta
+  val req_valid = RegInit(false.B)
+  val req       = RegInit(0.U.asTypeOf(new TaskBundle()))
+  val dirResult = RegInit(0.U.asTypeOf(new DirResult()))
+  val meta      = dirResult.meta
+  val initState = Wire(new FSMState())
+  initState.elements.foreach(_._2 := true.B)
+  val state     = RegInit(new FSMState(), initState)
 
   when(io.alloc.valid) {
-    status_reg.valid := true.B
-    state       := io.alloc.bits.state
-    dirResult   := io.alloc.bits.dirResult
-    val msTask   = io.alloc.bits.task
-    req.channel := msTask.channel
-    req.tag     := msTask.tag
-    req.set     := msTask.set
-    req.off     := msTask.off
-    req.way     := msTask.way
-    req.opcode  := msTask.opcode
-    req.param   := msTask.param
-    req.size    := msTask.size
-    req.source  := msTask.sourceId
-    req.needProbeAckData := msTask.needProbeAckData
-    req.alias.foreach(_  := msTask.alias.getOrElse(0.U))
-    req.aliasTask.foreach(_ := msTask.aliasTask.getOrElse(false.B))
-    req.pbIdx   := msTask.pbIdx
-    req.fromL2pft.foreach(_ := msTask.fromL2pft.get)
+    req_valid := true.B
+    state     := io.alloc.bits.state
+    dirResult := io.alloc.bits.dirResult
+    req       := io.alloc.bits.task
     gotT        := false.B
     gotDirty    := false.B
     probeDirty  := false.B
@@ -251,7 +237,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_grant.tag := req.tag
     mp_grant.set := req.set
     mp_grant.off := req.off
-    mp_grant.sourceId := req.source
+    mp_grant.sourceId := req.sourceId
     mp_grant.opcode := odOpGen(req.opcode)
     mp_grant.param := Mux(
       req_get || req_put || req_prefetch,
@@ -392,30 +378,32 @@ class MSHR(implicit p: Parameters) extends L2Module {
     state.w_grantack := true.B
   }
 
-  when (status_reg.valid) {
+  when (req_valid) {
     timer := timer + 1.U
   }
   
   val no_schedule = state.s_refill && state.s_probeack// && state.s_triggerprefetch.getOrElse(true.B)
   val no_wait = state.w_rprobeacklast && state.w_pprobeacklast && state.w_grantlast && state.w_releaseack && state.w_grantack
   val will_free = no_schedule && no_wait
-  when (will_free && status_reg.valid) {
-    status_reg.valid := false.B
+  when (will_free && req_valid) {
+    req_valid := false.B
     timer := 0.U
   }
 
-  io.status.valid := status_reg.valid
-  io.status.bits <> status_reg.bits
-  // For A reqs, we only concern about the tag to be replaced
-  io.status.bits.tag := Mux(state.s_release, req.tag, dirResult.tag) // s_release is low-as-valid
-  io.status.bits.nestB := status_reg.valid && state.w_releaseack && state.w_rprobeacklast && state.w_pprobeacklast && !state.w_grantfirst
+  io.status.valid := req_valid
+  io.status.bits.channel := req.channel
+  io.status.bits.set := req.set
+  io.status.bits.reqTag := req.tag
+  io.status.bits.metaTag := dirResult.tag
+  io.status.bits.needRelease := !state.s_release
+  io.status.bits.nestB := req_valid && state.w_releaseack && state.w_rprobeacklast && state.w_pprobeacklast && !state.w_grantfirst
   // wait for resps, high as valid
   io.status.bits.w_c_resp := !state.w_rprobeacklast || !state.w_pprobeacklast || !state.w_pprobeack
   io.status.bits.w_d_resp := !state.w_grantlast || !state.w_grant || !state.w_releaseack
   io.status.bits.w_e_resp := !state.w_grantack
   io.status.bits.will_free := will_free
 
-  io.toReqBuf.valid := status_reg.valid
+  io.toReqBuf.valid := req_valid
   io.toReqBuf.bits.set := req.set
   io.toReqBuf.bits.way := req.way
   io.toReqBuf.bits.reqTag := req.tag
@@ -428,7 +416,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   assert(!(d_resp.valid && !io.status.bits.w_d_resp))
   assert(!(e_resp.valid && !io.status.bits.w_e_resp))
 
-  val nestedwb_match = status_reg.valid && meta.state =/= INVALID &&
+  val nestedwb_match = req_valid && meta.state =/= INVALID &&
     dirResult.set === io.nestedwb.set &&
     dirResult.tag === io.nestedwb.tag
   when (nestedwb_match) {

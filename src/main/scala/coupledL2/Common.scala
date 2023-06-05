@@ -100,25 +100,28 @@ class PipeEntranceStatus(implicit p: Parameters) extends L2Bundle {
 
 // MSHR exposes signals to MSHRCtl
 class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits {
-  val set = UInt(setBits.W)
-  val tag = UInt(tagBits.W)
-  val way = UInt(wayBits.W)
-  val off = UInt(offsetBits.W)
-  val opcode = UInt(3.W)
-  val param = UInt(3.W)
-  val size = UInt(msgSizeBits.W)
-  val source = UInt(sourceIdBits.W)
-  val alias = aliasBitsOpt.map(_ => UInt(aliasBitsOpt.get.W))
-  val aliasTask = aliasBitsOpt.map(_ => Bool())
-  val nestB = Bool()
-  val needProbeAckData = Bool() // only for B reqs
-  val pbIdx = UInt(mshrBits.W)
+  val set         = UInt(setBits.W)
+  val reqTag      = UInt(tagBits.W)
+  val metaTag     = UInt(tagBits.W)
+  val needRelease = Bool()
   val w_c_resp = Bool()
   val w_d_resp = Bool()
   val w_e_resp = Bool()
-  val fromL2pft = prefetchOpt.map(_ => Bool())
-  val needHint = prefetchOpt.map(_ => Bool())
   val will_free = Bool()
+  val nestB = Bool() // can allow some B-req to nest this MSHR req
+
+  //  val way = UInt(wayBits.W)
+//  val off = UInt(offsetBits.W)
+//  val opcode = UInt(3.W)
+//  val param = UInt(3.W)
+//  val size = UInt(msgSizeBits.W)
+//  val source = UInt(sourceIdBits.W)
+//  val alias = aliasBitsOpt.map(_ => UInt(aliasBitsOpt.get.W))
+//  val aliasTask = aliasBitsOpt.map(_ => Bool())
+//  val needProbeAckData = Bool() // only for B reqs
+//  val pbIdx = UInt(mshrBits.W)
+//  val fromL2pft = prefetchOpt.map(_ => Bool())
+//  val needHint = prefetchOpt.map(_ => Bool())
 }
 
 // MSHR Task that MainPipe sends to MSHRCtl
