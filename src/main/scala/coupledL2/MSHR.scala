@@ -390,13 +390,14 @@ class MSHR(implicit p: Parameters) extends L2Module {
     timer := 0.U
   }
 
+  val nestB = req_valid && state.w_rprobeacklast && !state.s_release
   io.status.valid := req_valid
   io.status.bits.channel := req.channel
   io.status.bits.set := req.set
   io.status.bits.reqTag := req.tag
   io.status.bits.metaTag := dirResult.tag
   io.status.bits.needRelease := !state.s_release
-  io.status.bits.nestB := req_valid && state.w_releaseack && state.w_rprobeacklast && state.w_pprobeacklast && !state.w_grantfirst
+  io.status.bits.nestB := nestB
   // wait for resps, high as valid
   io.status.bits.w_c_resp := !state.w_rprobeacklast || !state.w_pprobeacklast || !state.w_pprobeack
   io.status.bits.w_d_resp := !state.w_grantlast || !state.w_grant || !state.w_releaseack
@@ -410,7 +411,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.msInfo.bits.needRelease := !state.s_release
   io.msInfo.bits.metaTag := dirResult.tag
   io.msInfo.bits.willFree := will_free
-  io.msInfo.bits.nestB := req_valid && state.w_rprobeacklast && !state.s_release
+  io.msInfo.bits.nestB := nestB
   io.msInfo.bits.isAcqOrPrefetch := req_acquire || req_prefetch
 
   assert(!(c_resp.valid && !io.status.bits.w_c_resp))

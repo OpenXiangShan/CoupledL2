@@ -129,11 +129,9 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       io.msInfo(i) := m.io.msInfo
   }
 
-  val setMatchVec_b = mshrs.map(m => m.io.status.valid && m.io.status.bits.set === io.fromReqArb.status_s1.b_set)
-  val setConflictVec_b = (setMatchVec_b zip mshrs.map(_.io.status.bits.nestB)).map(x => x._1 && !x._2)
   io.toReqArb.blockC_s1 := false.B
-  io.toReqArb.blockB_s1 := mshrFull || Cat(setConflictVec_b).orR
-  io.toReqArb.blockA_s1 := a_mshrFull // conflict logic moved to ReqBuf
+  io.toReqArb.blockB_s1 := mshrFull   // conflict logic in SinkB
+  io.toReqArb.blockA_s1 := a_mshrFull // conflict logic in ReqBuf
 
   /* Acquire downwards */
   val acquireUnit = Module(new AcquireUnit())
@@ -169,7 +167,6 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   // Performance counters
   XSPerfAccumulate(cacheParams, "capacity_conflict_to_sinkA", a_mshrFull)
   XSPerfAccumulate(cacheParams, "capacity_conflict_to_sinkB", mshrFull)
-  XSPerfAccumulate(cacheParams, "set_conflict_to_sinkB", Cat(setConflictVec_b).orR)
   XSPerfHistogram(cacheParams, "mshr_alloc", io.toMainPipe.mshr_alloc_ptr,
     enable = io.fromMainPipe.mshr_alloc_s3.valid,
     start = 0, stop = mshrsAll, step = 1)

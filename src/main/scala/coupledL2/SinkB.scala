@@ -55,15 +55,34 @@ class SinkB(implicit p: Parameters) extends L2Module {
     task.wayMask := Fill(cacheParams.ways, "b1".U)
     task
   }
-
-  /* ======== Merge Nested-B req ======== */
   val task = fromTLBtoTaskBundle(io.b.bits)
 
-  io.task.valid := io.b.valid
-  io.task.bits  := task
-  io.b.ready := io.task.ready
+  /* ======== Merge Nested-B req ======== */
+  // unable to accept incoming B req
+  def addrConflict(b: TaskBundle, s: MSHRInfo): Bool = {
+    b.set === s.set && (b.tag === s.reqTag || b.tag === s.metaTag && !s.nestB)
+  }
+  val conflict = VecInit(io.msInfo.map(s =>
+    s.valid && addrConflict(task, s.bits) && !s.bits.willFree
+  )).asUInt.orR
 
-  io.bMergeTask.valid := false.B
-  io.bMergeTask.bits.id := 0.U
+  val nestBMask = VecInit(io.msInfo.map(s =>
+    s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && s.bits.nestB
+  )).asUInt
+
+  val nestB = nestBMask.orR
+  val nestBId = OHToUInt(nestBMask)
+
+  // when conflict, we block B req from entering SinkB
+  // when !conflict and nestB , we merge B req to MSHR
+  // when !conflict and !nestB, we let B req enter MainPipe
+  io.task.valid := io.b.valid && !conflict && !nestB
+  io.task.bits  := task
+  io.b.ready := io.task.ready && !conflict
+
+  io.bMergeTask.valid := io.b.valid && nestB
+  io.bMergeTask.bits.id := nestBId
   io.bMergeTask.bits.task := task
+
+  // TODO: add conflict XSPerf counter
 }

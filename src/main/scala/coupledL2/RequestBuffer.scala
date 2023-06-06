@@ -249,6 +249,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     XSPerfAccumulate(cacheParams, "recv_prefetch", io.in.fire && isPrefetch)
     XSPerfAccumulate(cacheParams, "recv_normal", io.in.fire && !isPrefetch)
     XSPerfAccumulate(cacheParams, "chosenQ_cancel", chosenQValid && cancel)
+    // TODO: count conflict
     for(i <- 0 until entries){
       val cntEnable = PopCount(buffer.map(_.valid)) === i.U
       XSPerfAccumulate(cacheParams, s"req_buffer_util_$i", cntEnable)
