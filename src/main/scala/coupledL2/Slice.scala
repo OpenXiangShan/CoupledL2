@@ -43,7 +43,8 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val dataStorage = Module(new DataStorage())
   val refillUnit = Module(new RefillUnit())
   val sinkA = Module(new SinkA)
-  val sinkC = Module(new SinkC) // or ReleaseUnit?
+  val sinkB = Module(new SinkB)
+  val sinkC = Module(new SinkC)
   val sourceC = Module(new SourceC)
   val grantBuf = if (!useFIFOGrantBuffer) Module(new GrantBuffer) else Module(new GrantBufferFIFO)
   val refillBuf = Module(new MSHRBuffer(wPorts = 2))
@@ -52,7 +53,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val prbq = Module(new ProbeQueue())
   prbq.io <> DontCare // @XiaBin TODO
 
-  a_reqBuf.io.in <> sinkA.io.toReqArb
+  a_reqBuf.io.in <> sinkA.io.task
   a_reqBuf.io.mshrStatus := mshrCtl.io.toReqBuf
   a_reqBuf.io.mainPipeBlock := mainPipe.io.toReqBuf
   a_reqBuf.io.sinkEntrance := reqArb.io.sinkEntrance
@@ -61,7 +62,8 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   reqArb.io.ATag := a_reqBuf.io.ATag
   reqArb.io.ASet := a_reqBuf.io.ASet
 
-  reqArb.io.sinkC <> sinkC.io.toReqArb
+  reqArb.io.sinkB <> sinkB.io.task
+  reqArb.io.sinkC <> sinkC.io.task
   reqArb.io.dirRead_s1 <> directory.io.read
   reqArb.io.taskToPipe_s2 <> mainPipe.io.taskFromArb_s2
   reqArb.io.mshrTask <> mshrCtl.io.mshrTask
@@ -145,7 +147,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
 
   /* connect downward channels */
   io.out.a <> outBuf.a(mshrCtl.io.sourceA)
-  reqArb.io.sinkB <> outBuf.b(io.out.b)
+  sinkB.io.b <> outBuf.b(io.out.b)
   io.out.c <> outBuf.c(sourceC.io.out)
   refillUnit.io.sinkD <> outBuf.d(io.out.d)
   io.out.e <> outBuf.e(refillUnit.io.sourceE)

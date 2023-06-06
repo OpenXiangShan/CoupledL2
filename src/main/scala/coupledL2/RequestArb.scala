@@ -36,7 +36,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
       val set = UInt(setBits.W)
     })
 
-    val sinkB    = Flipped(DecoupledIO(new TLBundleB(edgeOut.bundle)))
+    val sinkB    = Flipped(DecoupledIO(new TaskBundle))
     val sinkC    = Flipped(DecoupledIO(new TaskBundle))
     val mshrTask = Flipped(DecoupledIO(new TaskBundle))
 
@@ -84,26 +84,6 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   mshr_task_s0.bits := io.mshrTask.bits
 
   /* ======== Stage 1 ======== */
-  /* Task generation and pipelining */
-  def fromTLBtoTaskBundle(b: TLBundleB): TaskBundle = {
-    val task = Wire(new TaskBundle)
-    task := DontCare
-    task.channel := "b010".U
-    task.tag := parseAddress(b.address)._1
-    task.set := parseAddress(b.address)._2
-    task.off := parseAddress(b.address)._3
-    task.alias.foreach(_ := 0.U)
-    task.opcode := b.opcode
-    task.param := b.param
-    task.size := b.size
-    task.needProbeAckData := b.data(0) // TODO: parameterize this
-    task.mshrTask := false.B
-    task.fromL2pft.foreach(_ := false.B)
-    task.needHint.foreach(_ := false.B)
-    task.wayMask := Fill(cacheParams.ways, "b1".U)
-    task
-  }
-
   /* latch mshr_task from s0 to s1 */
   val mshr_task_s1 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
   mshr_task_s1.valid := mshr_task_s0.valid
@@ -113,7 +93,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
 
   /* Channel interaction from s1 */
   val A_task = io.sinkA.bits
-  val B_task = fromTLBtoTaskBundle(io.sinkB.bits)
+  val B_task = io.sinkB.bits
   val C_task = io.sinkC.bits
   val block_A = io.fromMSHRCtl.blockA_s1 || io.fromMainPipe.blockA_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockA_s1
   val block_B = io.fromMSHRCtl.blockB_s1 || io.fromMainPipe.blockB_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockB_s1
