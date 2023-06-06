@@ -84,8 +84,11 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     /* status of s2 and s3 */
     val pipeStatusVec = Flipped(Vec(2, ValidIO(new PipeStatus)))
 
-    /* to ReqBuffer, to solve conflict */
-    val toReqBuf = Vec(mshrsAll, ValidIO(new MSHRBlockAInfo))
+    /* MSHR info to Sinks */
+    /* to ReqBuffer, to calculate conflict */
+    /* to SinkB, to merge nested B req */
+    val msInfo = Vec(mshrsAll, ValidIO(new MSHRInfo))
+    val bMergeTask = Flipped(ValidIO(new BMergeTask))
   })
 
   val mshrs = Seq.fill(mshrsAll) { Module(new MSHR()) }
@@ -123,7 +126,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       
       m.io.nestedwb := io.nestedwb
 
-      io.toReqBuf(i) := m.io.toReqBuf
+      io.msInfo(i) := m.io.msInfo
   }
 
   val setMatchVec_b = mshrs.map(m => m.io.status.valid && m.io.status.bits.set === io.fromReqArb.status_s1.b_set)
@@ -166,7 +169,6 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   // Performance counters
   XSPerfAccumulate(cacheParams, "capacity_conflict_to_sinkA", a_mshrFull)
   XSPerfAccumulate(cacheParams, "capacity_conflict_to_sinkB", mshrFull)
-  //  XSPerfAccumulate(cacheParams, "set_conflict_to_sinkA", Cat(setMatchVec_a).orR) //TODO: move this to ReqBuf
   XSPerfAccumulate(cacheParams, "set_conflict_to_sinkB", Cat(setConflictVec_b).orR)
   XSPerfHistogram(cacheParams, "mshr_alloc", io.toMainPipe.mshr_alloc_ptr,
     enable = io.fromMainPipe.mshr_alloc_s3.valid,

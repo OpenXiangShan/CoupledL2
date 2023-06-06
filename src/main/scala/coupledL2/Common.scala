@@ -131,16 +131,19 @@ class MSHRRequest(implicit p: Parameters) extends L2Bundle {
   val task = new TaskBundle()
 }
 
-// MSHR to ReqBuf for block info
-class MSHRBlockAInfo(implicit p: Parameters) extends L2Bundle {
+// MSHR info to ReqBuf and SinkB
+class MSHRInfo(implicit p: Parameters) extends L2Bundle {
   val set = UInt(setBits.W)
   val way = UInt(wayBits.W)
   val reqTag = UInt(tagBits.W)
   val willFree = Bool()
 
-  // to block Acquire for data about to be replaced until Release done
+  // to block Acquire for to-be-replaced data until Release done
   val needRelease = Bool()
   val metaTag = UInt(tagBits.W)
+
+  // decide whether can nest B
+  val nestB = Bool()
 
   // to drop duplicate prefetch reqs
   val isAcqOrPrefetch = Bool()

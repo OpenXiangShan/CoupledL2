@@ -49,7 +49,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val id = Input(UInt(mshrBits.W))
     val status = ValidIO(new MSHRStatus)
-    val toReqBuf = ValidIO(new MSHRBlockAInfo)
+    val msInfo = ValidIO(new MSHRInfo)
     val alloc = Flipped(ValidIO(new MSHRRequest))
     val tasks = new MSHRTasks()
     val resps = new MSHRResps()
@@ -403,14 +403,15 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.status.bits.w_e_resp := !state.w_grantack
   io.status.bits.will_free := will_free
 
-  io.toReqBuf.valid := req_valid
-  io.toReqBuf.bits.set := req.set
-  io.toReqBuf.bits.way := req.way
-  io.toReqBuf.bits.reqTag := req.tag
-  io.toReqBuf.bits.needRelease := !state.s_release
-  io.toReqBuf.bits.metaTag := dirResult.tag
-  io.toReqBuf.bits.willFree := will_free
-  io.toReqBuf.bits.isAcqOrPrefetch := req_acquire || req_prefetch
+  io.msInfo.valid := req_valid
+  io.msInfo.bits.set := req.set
+  io.msInfo.bits.way := req.way
+  io.msInfo.bits.reqTag := req.tag
+  io.msInfo.bits.needRelease := !state.s_release
+  io.msInfo.bits.metaTag := dirResult.tag
+  io.msInfo.bits.willFree := will_free
+  io.msInfo.bits.nestB := req_valid && state.w_rprobeacklast && !state.s_release
+  io.msInfo.bits.isAcqOrPrefetch := req_acquire || req_prefetch
 
   assert(!(c_resp.valid && !io.status.bits.w_c_resp))
   assert(!(d_resp.valid && !io.status.bits.w_d_resp))

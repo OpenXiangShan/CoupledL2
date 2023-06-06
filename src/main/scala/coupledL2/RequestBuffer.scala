@@ -50,7 +50,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   val io = IO(new Bundle() {
     val in          = Flipped(DecoupledIO(new TaskBundle))
     val out         = DecoupledIO(new TaskBundle)
-    val mshrStatus  = Vec(mshrsAll, Flipped(ValidIO(new MSHRBlockAInfo)))
+    val mshrInfo  = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo)))
     val mainPipeBlock = Input(Vec(2, Bool()))
 
     val ATag        = Output(UInt(tagBits.W))
@@ -77,19 +77,19 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   val NWay = cacheParams.ways
   // count conflict
   def sameAddr(a: TaskBundle, b: TaskBundle):     Bool = Cat(a.tag, a.set) === Cat(b.tag, b.set)
-  def sameAddr(a: TaskBundle, b: MSHRBlockAInfo): Bool = Cat(a.tag, a.set) === Cat(b.reqTag, b.set)
+  def sameAddr(a: TaskBundle, b: MSHRInfo): Bool = Cat(a.tag, a.set) === Cat(b.reqTag, b.set)
   def sameSet (a: TaskBundle, b: TaskBundle):     Bool = a.set === b.set
-  def sameSet (a: TaskBundle, b: MSHRBlockAInfo): Bool = a.set === b.set
-  def addrConflict(a: TaskBundle, s: MSHRBlockAInfo): Bool = {
+  def sameSet (a: TaskBundle, b: MSHRInfo): Bool = a.set === b.set
+  def addrConflict(a: TaskBundle, s: MSHRInfo): Bool = {
     a.set === s.set && (a.tag === s.reqTag || a.tag === s.metaTag && s.needRelease)
   }
-  def conflictMask(a: TaskBundle): UInt = VecInit(io.mshrStatus.map(s =>
+  def conflictMask(a: TaskBundle): UInt = VecInit(io.mshrInfo.map(s =>
     s.valid && addrConflict(a, s.bits) && !s.bits.willFree)).asUInt
   def conflict(a: TaskBundle): Bool = conflictMask(a).orR
 
   // count ways
-  def countWaysOH(cond: (MSHRBlockAInfo => Bool)): UInt = {
-    VecInit(io.mshrStatus.map(s =>
+  def countWaysOH(cond: (MSHRInfo => Bool)): UInt = {
+    VecInit(io.mshrInfo.map(s =>
       Mux(
         s.valid && cond(s.bits),
         UIntToOH(s.bits.way, NWay),
@@ -115,7 +115,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   // remove duplicate prefetch if same-addr A req in MSHR or ReqBuf
   val isPrefetch = in.fromA && in.opcode === Hint
   val dupMask    = VecInit(
-    io.mshrStatus.map(s =>
+    io.mshrInfo.map(s =>
       s.valid && s.bits.isAcqOrPrefetch && sameAddr(in, s.bits)) ++
     buffer.map(e =>
       e.valid && sameAddr(in, e.task)
@@ -183,7 +183,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       val occWaysUpdate = WireInit(e.occWays)
 
       // when mshr will_free, clear it in other reqs' waitMS and occWays
-      val willFreeMask = VecInit(io.mshrStatus.map(s => s.valid && s.bits.willFree)).asUInt
+      val willFreeMask = VecInit(io.mshrInfo.map(s => s.valid && s.bits.willFree)).asUInt
       waitMSUpdate  := e.waitMS  & (~willFreeMask).asUInt
       occWaysUpdate := e.occWays & (~willFreeWays(e.task)).asUInt
 

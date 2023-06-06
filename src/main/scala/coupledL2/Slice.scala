@@ -54,9 +54,10 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   prbq.io <> DontCare // @XiaBin TODO
 
   a_reqBuf.io.in <> sinkA.io.task
-  a_reqBuf.io.mshrStatus := mshrCtl.io.toReqBuf
+  a_reqBuf.io.mshrInfo := mshrCtl.io.msInfo
   a_reqBuf.io.mainPipeBlock := mainPipe.io.toReqBuf
   a_reqBuf.io.sinkEntrance := reqArb.io.sinkEntrance
+  sinkB.io.msInfo := mshrCtl.io.msInfo
 
   reqArb.io.sinkA <> a_reqBuf.io.out
   reqArb.io.ATag := a_reqBuf.io.ATag
@@ -79,6 +80,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   mshrCtl.io.resps.sinkE := grantBuf.io.e_resp
   mshrCtl.io.resps.sourceC := sourceC.io.resp
   mshrCtl.io.nestedwb := mainPipe.io.nestedwb
+  mshrCtl.io.bMergeTask := sinkB.io.bMergeTask
   mshrCtl.io.pbRead <> sinkA.io.pbRead
   mshrCtl.io.pbResp <> sinkA.io.pbResp
 

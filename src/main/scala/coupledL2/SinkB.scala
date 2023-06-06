@@ -24,10 +24,17 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.utils.XSPerfAccumulate
 
+class BMergeTask(implicit p: Parameters) extends L2Bundle {
+  val id = UInt(mshrBits.W)
+  val task = new TaskBundle()
+}
+
 class SinkB(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val b = Flipped(DecoupledIO(new TLBundleB(edgeIn.bundle)))
     val task = DecoupledIO(new TaskBundle)
+    val msInfo = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo)))
+    val bMergeTask = ValidIO(new BMergeTask)
   })
 
   def fromTLBtoTaskBundle(b: TLBundleB): TaskBundle = {
@@ -49,7 +56,14 @@ class SinkB(implicit p: Parameters) extends L2Module {
     task
   }
 
+  /* ======== Merge Nested-B req ======== */
+  val task = fromTLBtoTaskBundle(io.b.bits)
+
   io.task.valid := io.b.valid
-  io.task.bits  := fromTLBtoTaskBundle(io.b.bits)
+  io.task.bits  := task
   io.b.ready := io.task.ready
+
+  io.bMergeTask.valid := false.B
+  io.bMergeTask.bits.id := 0.U
+  io.bMergeTask.bits.task := task
 }
