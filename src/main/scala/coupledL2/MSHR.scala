@@ -176,7 +176,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_release.useProbeData := true.B // read ReleaseBuf when useProbeData && opcode(0) is true
     mp_release.way := req.way
     mp_release.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
-    mp_release.metaWen := true.B
+    mp_release.metaWen := false.B
     mp_release.meta := MetaEntry()
     mp_release.tagWen := false.B
     mp_release.dsWen := false.B
