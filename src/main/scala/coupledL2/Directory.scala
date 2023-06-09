@@ -146,7 +146,7 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
      stage 2: get Tag/Meta, calculate hit/way
      stage 3: output latched hit/way and chosen meta/tag by way
   */
-  // TODO: how about moving hit/way calculation to stage 2? Cuz SRAM latency can be high under high frequency
+  // TODO: how about moving hit/way calculation to stage 3? Cuz SRAM latency can be high under high frequency
   val reqReg = RegEnable(io.read.bits, 0.U.asTypeOf(io.read.bits), enable = io.read.fire)
   val hit_s2 = Wire(Bool())
   val way_s2 = Wire(UInt(wayBits.W))

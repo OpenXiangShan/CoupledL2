@@ -58,17 +58,24 @@ class SinkB(implicit p: Parameters) extends L2Module {
   val task = fromTLBtoTaskBundle(io.b.bits)
 
   /* ======== Merge Nested-B req ======== */
-  // unable to accept incoming B req
-  def addrConflict(b: TaskBundle, s: MSHRInfo): Bool = {
-    b.set === s.set && (b.tag === s.reqTag || b.tag === s.metaTag && !s.nestB)
-  }
-  val conflict = VecInit(io.msInfo.map(s =>
-    s.valid && addrConflict(task, s.bits) && !s.bits.willFree
+  // unable to accept incoming B req because same-addr as some MSHR REQ
+  val addrConflict = VecInit(io.msInfo.map(s =>
+    s.valid && s.bits.set === task.set && s.bits.reqTag === task.tag && !s.bits.willFree
   )).asUInt.orR
 
+  // unable to accept incoming B req because same-addr as some MSHR replaced block and cannot nest
+  val replaceConflictMask = VecInit(io.msInfo.map(s =>
+    s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && !s.bits.nestB
+  )).asUInt
+  val replaceConflict = replaceConflictMask.orR
+
+  // incoming B is nested with some MSHR replaced block and able to be accepted
   val nestBMask = VecInit(io.msInfo.map(s =>
     s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && s.bits.nestB
   )).asUInt
+
+  assert(PopCount(replaceConflictMask) <= 1.U)
+  assert(PopCount(nestBMask) <= 1.U)
 
   val nestB = nestBMask.orR
   val nestBId = OHToUInt(nestBMask)
@@ -76,9 +83,9 @@ class SinkB(implicit p: Parameters) extends L2Module {
   // when conflict, we block B req from entering SinkB
   // when !conflict and nestB , we merge B req to MSHR
   // when !conflict and !nestB, we let B req enter MainPipe
-  io.task.valid := io.b.valid && !conflict && !nestB
+  io.task.valid := io.b.valid && !addrConflict && !replaceConflict && !nestB
   io.task.bits  := task
-  io.b.ready := io.task.ready && !conflict
+  io.b.ready :=  nestB || (io.task.ready && !addrConflict && !replaceConflict)
 
   io.bMergeTask.valid := io.b.valid && nestB
   io.bMergeTask.bits.id := nestBId

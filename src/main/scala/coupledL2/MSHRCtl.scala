@@ -123,10 +123,11 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       m.io.resps.sink_e.bits := io.resps.sinkE.respInfo
       m.io.resps.source_c.valid := m.io.status.valid && io.resps.sourceC.valid && io.resps.sourceC.mshrId === i.U
       m.io.resps.source_c.bits := io.resps.sourceC.respInfo
-      
-      m.io.nestedwb := io.nestedwb
 
       io.msInfo(i) := m.io.msInfo
+      m.io.nestedwb := io.nestedwb
+      m.io.bMergeTask.valid := io.bMergeTask.valid && io.bMergeTask.bits.id === i.U
+      m.io.bMergeTask.bits := io.bMergeTask.bits
   }
 
   io.toReqArb.blockC_s1 := false.B

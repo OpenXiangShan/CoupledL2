@@ -172,8 +172,8 @@ class FSMState(implicit p: Parameters) extends L2Bundle {
   val s_release = Bool()  // release downwards
   val s_probeack = Bool() // respond probeack downwards
   val s_refill = Bool()   // respond grant upwards
-  // val s_grantack = Bool() // respond grantack downwards
-  // val s_writeback = Bool()// writeback tag/dir
+  val s_merge_probeack = Bool() // respond probeack downwards, Probe merge into A-replacement-Release
+  // val s_grantack = Bool() // respond grantack downwards, moved to GrantBuf
   // val s_triggerprefetch = prefetchOpt.map(_ => Bool())
 
   // wait
@@ -219,9 +219,6 @@ class BlockInfo(implicit p: Parameters) extends L2Bundle {
 class NestedWriteback(implicit p: Parameters) extends L2Bundle {
   val set = UInt(setBits.W)
   val tag = UInt(tagBits.W)
-  val b_toN = Bool()
-  val b_toB = Bool()
-  val b_clr_dirty = Bool()
   val c_set_dirty = Bool()
 }
 
