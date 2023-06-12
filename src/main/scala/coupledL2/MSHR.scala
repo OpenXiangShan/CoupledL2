@@ -444,12 +444,13 @@ class MSHR(implicit p: Parameters) extends L2Module {
   }
 
   val nestB = req_valid && !state.s_release // remove `&& state.w_rprobeacklast`
+  val needRelease = !state.s_release || !state.s_merge_probeack || io.bMergeTask.valid
   io.status.valid := req_valid
   io.status.bits.channel := req.channel
   io.status.bits.set := req.set
   io.status.bits.reqTag := req.tag
   io.status.bits.metaTag := dirResult.tag
-  io.status.bits.needRelease := !state.s_release
+  io.status.bits.needRelease := needRelease
   io.status.bits.nestB := nestB
   // wait for resps, high as valid
   io.status.bits.w_c_resp := !state.w_rprobeacklast || !state.w_pprobeacklast || !state.w_pprobeack
@@ -461,7 +462,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.msInfo.bits.set := req.set
   io.msInfo.bits.way := req.way
   io.msInfo.bits.reqTag := req.tag
-  io.msInfo.bits.needRelease := !state.s_release
+  io.msInfo.bits.needRelease := needRelease
   io.msInfo.bits.metaTag := dirResult.tag
   io.msInfo.bits.willFree := will_free
   io.msInfo.bits.nestB := nestB
