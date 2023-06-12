@@ -64,7 +64,7 @@ trait HasCoupledL2Parameters {
 
   val useFIFOGrantBuffer = true
 
-  val hintCycleAhead = 2 // how many cycles the hint will send before grantData
+  val hintCycleAhead = 3 // how many cycles the hint will send before grantData
 
   lazy val edgeIn = p(EdgeInKey)
   lazy val edgeOut = p(EdgeOutKey)
