@@ -21,7 +21,7 @@ import chisel3._
 import chisel3.util._
 import freechips.rocketchip.util.SetAssocLRU
 import coupledL2.utils._
-import utility.ParallelPriorityMux
+import utility.{ParallelPriorityMux, RegNextN}
 import chipsalliance.rocketchip.config.Parameters
 import freechips.rocketchip.tilelink.TLMessages
 
@@ -130,7 +130,6 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   val tagRead = Wire(Vec(ways, UInt(tagBits.W)))
   val metaRead = Wire(Vec(ways, new MetaEntry()))
 
-  val reqValidReg = RegNext(io.read.fire, false.B)
   val resetFinish = RegInit(false.B)
   val resetIdx = RegInit((sets - 1).U)
 
@@ -157,23 +156,74 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
     io.metaWReq.bits.wayOH
   )
 
-  // Generate response signals
-  /* stage 1: io.read.fire, access Tag/Meta
-     stage 2: get Tag/Meta, calculate hit/way
-     stage 3: output latched hit/way and chosen meta/tag by way
-  */
-  // TODO: how about moving hit/way calculation to stage 3? Cuz SRAM latency can be high under high frequency
-  val reqReg = RegEnable(io.read.bits, 0.U.asTypeOf(io.read.bits), enable = io.read.fire)
-  val hit_s2 = Wire(Bool())
-  val way_s2 = Wire(UInt(wayBits.W))
-
   // Replacer
   val repl = ReplacementPolicy.fromString(cacheParams.replacement, ways)
   val random_repl = cacheParams.replacement == "random"
   val replacer_sram_opt = if(random_repl) None else
     Some(Module(new BankedSRAM(UInt(repl.nBits.W), sets, 1, banks, singlePort = true, shouldReset = true)))
+  val repl_state = UInt(repl.nBits.W)
 
-  val repl_state = if(random_repl){
+  // Generate response signals
+  // hit/way calculation in stage 3, Cuz SRAM latency is high under high frequency
+  /* stage 1: io.read.fire, access Tag/Meta
+     stage 2: get Tag/Meta, latch
+     stage 3: calculate hit/way and chosen meta/tag by way
+  */
+  val reqValid_s2 = RegNext(io.read.fire, false.B)
+  val req_s2 = RegEnable(io.read.bits, 0.U.asTypeOf(io.read.bits), enable = io.read.fire)//TODO: maybe useless
+  val reqValid_s3 = RegNext(reqValid_s2, false.B) //TODO: maybe useless
+  val req_s3 = RegEnable(req_s2, 0.U.asTypeOf(req_s2), enable = reqValid_s2)
+
+  val metaAll_s3 = RegEnable(metaRead, 0.U.asTypeOf(metaRead), reqValid_s2)
+  val tagAll_s3 = RegEnable(tagRead, 0.U.asTypeOf(tagRead), reqValid_s2)
+
+  val tagMatchVec = tagAll_s3.map(_ (tagBits - 1, 0) === req_s3.tag)
+  val metaValidVec = metaAll_s3.map(_.state =/= MetaData.INVALID)
+  val hitVec = tagMatchVec.zip(metaValidVec).map(x => x._1 && x._2)
+
+  val hitWay = OHToUInt(hitVec)
+  val replaceWay = repl.get_replace_way(repl_state) //TODO:timing of this
+  val (inv, invalidWay) = invalid_way_sel(metaAll_s3, replaceWay)
+  val chosenWay = Mux(inv, invalidWay, replaceWay)
+  // if chosenWay not in wayMask, then choose a way in wayMask
+  val finalWay = Mux(
+    req_s3.wayMask(chosenWay),
+    chosenWay,
+    PriorityEncoder(req_s3.wayMask)
+  )
+
+  val hit_s3 = Cat(hitVec).orR
+  val way_s3 = Mux(hit_s3, hitWay, finalWay)
+  val meta_s3 = metaAll_s3(way_s3)
+  val tag_s3 = tagAll_s3(way_s3)
+  val set_s3 = req_s3.set
+  val replacerInfo_s3 = req_s3.replacerInfo
+
+  io.resp.hit   := hit_s3
+  io.resp.way   := way_s3
+  io.resp.meta  := meta_s3
+  io.resp.tag   := tag_s3
+  io.resp.set   := set_s3
+  io.resp.error := false.B  // depends on ECC
+  io.resp.replacerInfo := replacerInfo_s3
+
+  dontTouch(io)
+  dontTouch(metaArray.io)
+  dontTouch(tagArray.io)
+
+//  io.read.ready := !io.metaWReq.valid && !io.tagWReq.valid && !replacerWen
+  val replacerRready = if(cacheParams.replacement == "random") true.B else replacer_sram_opt.get.io.r.req.ready
+  io.read.ready := tagArray.io.r.req.ready && metaArray.io.r.req.ready && replacerRready
+
+  // Replacement logic
+  val update = reqReg.replacerInfo.channel(0) && (reqReg.replacerInfo.opcode === TLMessages.AcquirePerm || reqReg.replacerInfo.opcode === TLMessages.AcquireBlock)
+  when(reqValidReg && update) {
+    replacerWen := true.B
+  }.otherwise {
+    replacerWen := false.B
+  }
+
+  repl_state := if(random_repl){
     when(io.tagWReq.fire){
       repl.miss
     }
@@ -211,9 +261,9 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
       else if PSEL(MSB)==0: use srrip
       else if PSEL(MSB)==1: use brrip*/
     val repl_type = WireInit(false.B)
-    repl_type := Mux(reqReg.set(6,0)===0.U, false.B, 
-                    Mux(reqReg.set(6,0)===64.U, true.B,
-                      Mux(PSEL(9)===0.U, false.B, true.B)))    // false.B - srrip, true.B - brrip
+    repl_type := Mux(reqReg.set(6,0)===0.U, false.B,
+      Mux(reqReg.set(6,0)===64.U, true.B,
+        Mux(PSEL(9)===0.U, false.B, true.B)))    // false.B - srrip, true.B - brrip
     val next_state = repl.get_next_state(repl_state_hold, way_s2, hit_s2, repl_type)
 
     val repl_init = Wire(Vec(ways, UInt(2.W)))
@@ -240,55 +290,6 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
     repl_state_hold
   }
 
-  val tagMatchVec = tagRead.map(_ (tagBits - 1, 0) === reqReg.tag)
-  val metaValidVec = metaRead.map(_.state =/= MetaData.INVALID)
-  val hitVec = tagMatchVec.zip(metaValidVec).map(x => x._1 && x._2)
-  val hitWay = OHToUInt(hitVec)
-  val replaceWay = repl.get_replace_way(repl_state)
-  val (inv, invalidWay) = invalid_way_sel(metaRead, replaceWay)
-  val chosenWay = Mux(inv, invalidWay, replaceWay)
-  // if chosenWay not in wayMask, then choose a way in wayMask
-  val finalWay = Mux(
-    reqReg.wayMask(chosenWay),
-    chosenWay,
-    PriorityEncoder(reqReg.wayMask)
-  )
-
-  hit_s2 := Cat(hitVec).orR
-  way_s2 := Mux(hit_s2, hitWay, finalWay)
-
-  val hit_s3 = RegEnable(hit_s2, false.B, reqValidReg)
-  val way_s3 = RegEnable(way_s2, 0.U, reqValidReg)
-  val metaAll_s3 = RegEnable(metaRead, 0.U.asTypeOf(metaRead), reqValidReg)
-  val tagAll_s3 = RegEnable(tagRead, 0.U.asTypeOf(tagRead), reqValidReg)
-  val meta_s3 = metaAll_s3(way_s3)
-  val tag_s3 = tagAll_s3(way_s3)
-  val set_s3 = RegEnable(reqReg.set, reqValidReg)
-  val replacerInfo_s3 = RegEnable(reqReg.replacerInfo, reqValidReg)
-
-  io.resp.hit   := hit_s3
-  io.resp.way   := way_s3
-  io.resp.meta  := meta_s3
-  io.resp.tag   := tag_s3
-  io.resp.set   := set_s3
-  io.resp.error := false.B  // depends on ECC
-  io.resp.replacerInfo := replacerInfo_s3
-
-  dontTouch(io)
-  dontTouch(metaArray.io)
-  dontTouch(tagArray.io)
-
-  io.read.ready := !io.metaWReq.valid && !io.tagWReq.valid && !replacerWen
-  val replacerRready = if(cacheParams.replacement == "random") true.B else replacer_sram_opt.get.io.r.req.ready
-  io.read.ready := tagArray.io.r.req.ready && metaArray.io.r.req.ready && replacerRready
-
-  val update = reqReg.replacerInfo.channel(0) && (reqReg.replacerInfo.opcode === TLMessages.AcquirePerm || reqReg.replacerInfo.opcode === TLMessages.AcquireBlock)
-  when(reqValidReg && update) {
-    replacerWen := true.B
-  }.otherwise {
-    replacerWen := false.B
-  }
-
   when(resetIdx === 0.U) {
     resetFinish := true.B
   }
@@ -297,5 +298,5 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   }
 
   XSPerfAccumulate(cacheParams, "dirRead_cnt", reqValidReg)
-  XSPerfAccumulate(cacheParams, "choose_busy_way", reqValidReg && !reqReg.wayMask(chosenWay))
+  XSPerfAccumulate(cacheParams, "choose_busy_way", reqValidReg && !req_s3.wayMask(chosenWay))
 }
