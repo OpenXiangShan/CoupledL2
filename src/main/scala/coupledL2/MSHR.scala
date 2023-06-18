@@ -56,6 +56,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
     val nestedwb = Input(new NestedWriteback)
     val nestedwbData = Output(Bool())
     val bMergeTask = Flipped(ValidIO(new BMergeTask))
+    val dirReadRefill = DecoupledIO(new ReplacerRead)
+    val dirResp = Flipped(ValidIO(new ReplacerResult))
   })
 
   val gotT = RegInit(false.B) // TODO: L3 might return T even though L2 wants B

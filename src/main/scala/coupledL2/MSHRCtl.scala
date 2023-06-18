@@ -89,6 +89,10 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     /* to SinkB, to merge nested B req */
     val msInfo = Vec(mshrsAll, ValidIO(new MSHRInfo))
     val bMergeTask = Flipped(ValidIO(new BMergeTask))
+
+    /* for refill to read dir */
+    val dirReadRefill = DecoupledIO(new ReplacerRead)
+    val dirResp = Flipped(ValidIO(new ReplacerResult))
   })
 
   val mshrs = Seq.fill(mshrsAll) { Module(new MSHR()) }
@@ -123,6 +127,8 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       m.io.resps.sink_e.bits := io.resps.sinkE.respInfo
       m.io.resps.source_c.valid := m.io.status.valid && io.resps.sourceC.valid && io.resps.sourceC.mshrId === i.U
       m.io.resps.source_c.bits := io.resps.sourceC.respInfo
+      m.io.dirResp.valid := io.dirResp.valid && io.dirResp.bits.mshrId === i.U
+      m.io.dirResp.bits := io.dirResp.bits
 
       io.msInfo(i) := m.io.msInfo
       m.io.nestedwb := io.nestedwb
@@ -149,6 +155,9 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
 
   /* Arbitrate MSHR task to RequestArbiter */
   fastArb(mshrs.map(_.io.tasks.mainpipe), io.mshrTask, Some("mshr_task"))
+
+  /* Arbitrate refill dirRead to Directory */
+  fastArb(mshrs.map(_.io.dirReadRefill), io.dirReadRefill, Some("dirReadRefill_task"))
 
   /* Arbitrate prefetchTrains to Prefetcher */
   // prefetchOpt.foreach {

@@ -73,6 +73,19 @@ class DirResult(implicit p: Parameters) extends L2Bundle {
   val error = Bool()
 }
 
+class ReplacerRead(implicit p: Parameters) extends L2Bundle {
+  val set = UInt(setBits.W)
+  val mshrId = UInt(mshrBits.W)
+}
+
+class ReplacerResult(implicit p: Parameters) extends L2Bundle {
+  val tag = UInt(tagBits.W)
+  val set = UInt(setBits.W)
+  val way = UInt(wayBits.W)
+  val meta = new MetaEntry()
+  val mshrId = UInt(mshrBits.W)
+}
+
 class MetaWrite(implicit p: Parameters) extends L2Bundle {
   val set = UInt(setBits.W)
   val wayOH = UInt(cacheParams.ways.W)
@@ -92,6 +105,8 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
     val resp = Output(new DirResult)
     val metaWReq = Flipped(ValidIO(new MetaWrite))
     val tagWReq = Flipped(ValidIO(new TagWrite))
+    val replRead = Flipped(DecoupledIO(new ReplacerRead))
+    val replResp = ValidIO(new ReplacerResult)
   })
 
   def invalid_way_sel(metaVec: Seq[MetaEntry], repl: UInt) = {
