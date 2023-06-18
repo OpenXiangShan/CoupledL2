@@ -435,7 +435,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     timer := timer + 1.U
   }
   
-  val no_schedule = state.s_refill && state.s_probeack// && state.s_triggerprefetch.getOrElse(true.B)
+  val no_schedule = state.s_refill && state.s_probeack && state.s_merge_probeack // && state.s_triggerprefetch.getOrElse(true.B)
   val no_wait = state.w_rprobeacklast && state.w_pprobeacklast && state.w_grantlast && state.w_releaseack && state.w_grantack
   val will_free = no_schedule && no_wait
   when (will_free && req_valid) {
