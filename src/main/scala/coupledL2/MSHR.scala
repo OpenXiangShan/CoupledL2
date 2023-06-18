@@ -112,6 +112,10 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.tasks.mainpipe.valid := mp_release_valid || mp_probeack_valid || mp_merge_probeack_valid || mp_grant_valid
   // io.tasks.prefetchTrain.foreach(t => t.valid := !state.s_triggerprefetch.getOrElse(true.B))
 
+  io.dirReadRefill.valid := !state.s_replRead
+  io.dirReadRefill.bits.set := dirResult.set
+  io.dirReadRefill.bits.mshrId := io.id
+
   val a_task = {
     val oa = io.tasks.source_a.bits
     oa := DontCare
@@ -416,6 +420,9 @@ class MSHR(implicit p: Parameters) extends L2Module {
       state.w_grantfirst := true.B
       state.w_grantlast := d_resp.bits.last
       state.w_grant := req.off === 0.U || d_resp.bits.last  // TODO? why offset?
+      val need_replRead = !state.s_release && !io.bMergeTask.valid
+      state.s_replRead := need_replRead
+      state.w_replResp := need_replRead
     }
     when(d_resp.bits.opcode === Grant || d_resp.bits.opcode === GrantData) {
       gotT := d_resp.bits.param === toT

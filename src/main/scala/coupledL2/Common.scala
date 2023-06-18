@@ -172,6 +172,7 @@ class FSMState(implicit p: Parameters) extends L2Bundle {
   val s_probeack = Bool() // respond probeack downwards
   val s_refill = Bool()   // respond grant upwards
   val s_merge_probeack = Bool() // respond probeack downwards, Probe merge into A-replacement-Release
+  val s_replRead = Bool() // read replacer again when refill
   // val s_grantack = Bool() // respond grantack downwards, moved to GrantBuf
   // val s_triggerprefetch = prefetchOpt.map(_ => Bool())
 
@@ -186,6 +187,7 @@ class FSMState(implicit p: Parameters) extends L2Bundle {
   val w_grant = Bool()
   val w_releaseack = Bool()
   val w_grantack = Bool()
+  val w_replResp = Bool()
 }
 
 class SourceAReq(implicit p: Parameters) extends L2Bundle {
