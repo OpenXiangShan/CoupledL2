@@ -93,6 +93,9 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     /* for refill to read dir */
     val dirReadRefill = DecoupledIO(new ReplacerRead)
     val dirResp = Flipped(ValidIO(new ReplacerResult))
+
+    /* for TopDown Monitor */
+    val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
   })
 
   val mshrs = Seq.fill(mshrsAll) { Module(new MSHR()) }
@@ -174,6 +177,11 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
 
   dontTouch(io.sourceA)
 
+  topDownOpt.foreach (_ =>
+    io.msStatus.get.zip(mshrs).foreach {
+      case (in, s) => in := s.io.status
+    }
+  )
   // Performance counters
   XSPerfAccumulate(cacheParams, "capacity_conflict_to_sinkA", a_mshrFull)
   XSPerfAccumulate(cacheParams, "capacity_conflict_to_sinkB", mshrFull)

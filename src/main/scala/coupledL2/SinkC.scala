@@ -79,6 +79,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
     task.sourceId := c.source
     task.mshrTask := false.B
     task.wayMask := Fill(cacheParams.ways, "b1".U)
+    task.reqSource := MemReqSource.NoWhere.id.U // Ignore
     task
   }
 

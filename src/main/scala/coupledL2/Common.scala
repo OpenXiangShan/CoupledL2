@@ -29,6 +29,7 @@ abstract class L2Bundle(implicit val p: Parameters) extends Bundle with HasCoupl
 class ReplacerInfo(implicit p: Parameters) extends L2Bundle {
   val channel = UInt(3.W)
   val opcode = UInt(3.W)
+  val reqSource = UInt(MemReqSource.reqSourceBits.W)
 }
 
 trait HasChannelBits { this: Bundle =>
@@ -79,6 +80,8 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   // for Dir to choose a way not occupied by some unfinished MSHR task
   val wayMask = UInt(cacheParams.ways.W)
 
+  val reqSource = UInt(MemReqSource.reqSourceBits.W)
+
   def hasData = opcode(0)
 }
 
@@ -121,6 +124,11 @@ class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits {
 //  val pbIdx = UInt(mshrBits.W)
 //  val fromL2pft = prefetchOpt.map(_ => Bool())
 //  val needHint = prefetchOpt.map(_ => Bool())
+
+  // for TopDown usage
+  val reqSource = UInt(MemReqSource.reqSourceBits.W)
+  val is_miss = Bool()
+  val is_prefetch = Bool()
 }
 
 // MSHR Task that MainPipe sends to MSHRCtl
@@ -199,6 +207,7 @@ class SourceAReq(implicit p: Parameters) extends L2Bundle {
   val size = UInt(msgSizeBits.W)
   val source = UInt(mshrBits.W)
   val pbIdx = UInt(mshrBits.W)
+  val reqSource = UInt(MemReqSource.reqSourceBits.W)
 }
 
 class SourceBReq(implicit p: Parameters) extends L2Bundle {
@@ -243,4 +252,22 @@ class PrefetchRecv extends Bundle {
 // custom l2 - l1 interface
 class L2ToL1Hint(implicit p: Parameters) extends Bundle {
   val sourceId = UInt(32.W)    // tilelink sourceID
+}
+
+// indicates where the memory access request comes from
+// a dupliacte of this is in Xiangshan.package and HuanCun.common
+object MemReqSource extends Enumeration {
+  val NoWhere = Value("NoWhere")
+
+  val CPUInst = Value("CPUInst")
+  val CPULoadData = Value("CPULoadData")
+  val CPUStoreData = Value("CPUStoreData")
+  val CPUAtomicData = Value("CPUAtomicData")
+  val L1InstPrefetch = Value("L1InstPrefetch")
+  val L1DataPrefetch = Value("L1DataPrefetch")
+  val PTW = Value("PTW")
+  val L2Prefetch = Value("L2Prefetch")
+  val ReqSourceCount = Value("ReqSourceCount")
+
+  val reqSourceBits = log2Ceil(ReqSourceCount.id)
 }
