@@ -273,18 +273,18 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
     //Set Dueling
     val PSEL = RegInit(512.U(10.W)) //32-monitor sets, 10-bits psel
     // track monitor sets' hit rate for each policy: srrip-0,128...3968;brrip-64,192...4032
-    when(reqValid_s3 && (set_s3(6,0)===0.U) && !rrip_hit_s3){  //SDMs_srrip miss
+    when(replReqValid_s3 && (update_set_s3(6,0)===0.U) && !rrip_hit_s3){  //SDMs_srrip miss
       PSEL := PSEL + 1.U
-    } .elsewhen(reqValid_s3 && (set_s3(6,0)===64.U) && !rrip_hit_s3){ //SDMs_brrip miss
+    } .elsewhen(replReqValid_s3 && (update_set_s3(6,0)===64.U) && !rrip_hit_s3){ //SDMs_brrip miss
       PSEL := PSEL - 1.U
     }
     // decide use which policy by policy selection counter, for insertion
-    /*if set -> SDMs: use fix policy
-      else if PSEL(MSB)==0: use srrip
-      else if PSEL(MSB)==1: use brrip*/
+    /* if set -> SDMs: use fix policy
+       else if PSEL(MSB)==0: use srrip
+       else if PSEL(MSB)==1: use brrip */
     val repl_type = WireInit(false.B)
-    repl_type := Mux(set_s3(6,0)===0.U, false.B,
-      Mux(set_s3(6,0)===64.U, true.B,
+    repl_type := Mux(update_set_s3(6,0)===0.U, false.B,
+      Mux(update_set_s3(6,0)===64.U, true.B,
         Mux(PSEL(9)===0.U, false.B, true.B)))    // false.B - srrip, true.B - brrip
     val next_state_s3 = repl.get_next_state(repl_state_s3, touch_way_s3, rrip_hit_s3, repl_type)
 
