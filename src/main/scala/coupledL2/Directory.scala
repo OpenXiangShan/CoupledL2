@@ -62,6 +62,9 @@ class DirRead(implicit p: Parameters) extends L2Bundle {
   val set = UInt(setBits.W)
   val wayMask = UInt(cacheParams.ways.W)
   val replacerInfo = new ReplacerInfo()
+  // only need to choose a replaced way, for MSHR refill
+  val replMode = Bool()
+  val mshrId = UInt(mshrBits.W)
 }
 
 class DirResult(implicit p: Parameters) extends L2Bundle {
@@ -72,11 +75,6 @@ class DirResult(implicit p: Parameters) extends L2Bundle {
   val meta = new MetaEntry()
   val error = Bool()
   val replacerInfo = new ReplacerInfo() // for TopDown usage
-}
-
-class ReplacerRead(implicit p: Parameters) extends L2Bundle {
-  val set = UInt(setBits.W)
-  val mshrId = UInt(mshrBits.W)
 }
 
 class ReplacerResult(implicit p: Parameters) extends L2Bundle {
@@ -106,7 +104,6 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
     val resp = Output(new DirResult)
     val metaWReq = Flipped(ValidIO(new MetaWrite))
     val tagWReq = Flipped(ValidIO(new TagWrite))
-    val replRead = Flipped(DecoupledIO(new ReplacerRead))
     val replResp = ValidIO(new ReplacerResult)
   })
 
@@ -150,19 +147,11 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   val req_s2 = RegEnable(io.read.bits, 0.U.asTypeOf(io.read.bits), io.read.fire)
   val req_s3 = RegEnable(req_s2, 0.U.asTypeOf(req_s2), reqValid_s2)
 
-  val replReqValid_s2 = RegNext(io.replRead.fire, false.B)
+  val replReqValid_s2 = RegNext(io.read.fire && io.read.bits.replMode, false.B)
   val replReqValid_s3 = RegNext(replReqValid_s2, false.B)
-  val replReq_s2 = RegEnable(io.replRead.bits, 0.U.asTypeOf(io.replRead.bits), io.replRead.fire)
-  val replReq_s3 = RegEnable(replReq_s2, 0.U.asTypeOf(replReq_s2), replReqValid_s2)
-
-  val readValid = io.read.fire || io.replRead.fire
-  val readSet = Mux(io.replRead.valid, io.replRead.bits.set, io.read.bits.set)
-  val readValid_s2 = reqValid_s2 || replReqValid_s2
-  val readValid_s3 = reqValid_s3 || replReqValid_s3
-  assert(!(reqValid_s2 && replReqValid_s2), "both read and replRead are valid")
 
   // Tag R/W
-  tagRead := tagArray.io.r(readValid, readSet).resp.data
+  tagRead := tagArray.io.r(io.read.fire, io.read.bits.set).resp.data
   tagArray.io.w(
     tagWen,
     io.tagWReq.bits.wtag,
@@ -171,7 +160,7 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   )
 
   // Meta R/W
-  metaRead := metaArray.io.r(readValid, readSet).resp.data
+  metaRead := metaArray.io.r(io.read.fire, io.read.bits.set).resp.data
   metaArray.io.w(
     metaWen,
     io.metaWReq.bits.wmeta,
@@ -179,8 +168,8 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
     io.metaWReq.bits.wayOH
   )
 
-  val metaAll_s3 = RegEnable(metaRead, 0.U.asTypeOf(metaRead), readValid_s2)
-  val tagAll_s3 = RegEnable(tagRead, 0.U.asTypeOf(tagRead), readValid_s2)
+  val metaAll_s3 = RegEnable(metaRead, 0.U.asTypeOf(metaRead), reqValid_s2)
+  val tagAll_s3 = RegEnable(tagRead, 0.U.asTypeOf(tagRead), reqValid_s2)
 
   val tagMatchVec = tagAll_s3.map(_ (tagBits - 1, 0) === req_s3.tag)
   val metaValidVec = metaAll_s3.map(_.state =/= MetaData.INVALID)
@@ -228,22 +217,19 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
     }
     0.U
   } else {
-    val repl_sram_r = replacer_sram_opt.get.io.r(readValid, readSet).resp.data(0)
-    val repl_state = RegEnable(repl_sram_r, 0.U(repl.nBits.W), readValid_s2)
+    val repl_sram_r = replacer_sram_opt.get.io.r(io.read.fire, io.read.bits.set).resp.data(0)
+    val repl_state = RegEnable(repl_sram_r, 0.U(repl.nBits.W), reqValid_s2)
     repl_state
   }
 
   replaceWay := repl.get_replace_way(repl_state_s3)
 
-  // Handling replRead
-  io.replRead.ready := !io.read.valid && replacerRready // TTODO: add !replacerWen if BankedSRAM is no longer used
-
   io.replResp.valid := replReqValid_s3
   io.replResp.bits.tag := tagAll_s3(replaceWay)
-  io.replResp.bits.set := replReq_s3.set
+  io.replResp.bits.set := req_s3.set
   io.replResp.bits.way := replaceWay
   io.replResp.bits.meta := metaAll_s3(replaceWay)
-  io.replResp.bits.mshrId := replReq_s3.mshrId
+  io.replResp.bits.mshrId := req_s3.mshrId
 
   /* ====== Update ====== */
   // update replacer only when A hit or refill, at stage 3
@@ -252,12 +238,10 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   val updateRefill = replReqValid_s3
   replacerWen := updateHit || updateRefill
 
-  // if io.read, we choose way_s3. if io.replRead, we choose replaceWay
-  val touch_way_s3 = Mux(reqValid_s3, way_s3, replaceWay)
-  val update_set_s3 = Mux(reqValid_s3, set_s3, replReq_s3.set)
   // !!![TODO]!!! check this @CLS
-  // hit-Promotion, miss-Insertion for RRIP, so hit for replRead should be false
-  val rrip_hit_s3 = Mux(reqValid_s3, hit_s3, false.B)
+  // hit-Promotion, miss-Insertion for RRIP, so replMode should hit = false.B
+  val touch_way_s3 = Mux(replReqValid_s3, replaceWay, way_s3)
+  val rrip_hit_s3 = Mux(replReqValid_s3, false.B, hit_s3)
 
   if(cacheParams.replacement == "srrip"){
     val next_state_s3 = repl.get_next_state(repl_state_s3, touch_way_s3, rrip_hit_s3)
@@ -266,16 +250,16 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
     replacer_sram_opt.get.io.w(
       !resetFinish || replacerWen,
       Mux(resetFinish, next_state_s3, repl_init.asUInt),
-      Mux(resetFinish, update_set_s3, resetIdx),
+      Mux(resetFinish, set_s3, resetIdx),
       1.U
     )
   } else if(cacheParams.replacement == "drrip"){
     //Set Dueling
     val PSEL = RegInit(512.U(10.W)) //32-monitor sets, 10-bits psel
     // track monitor sets' hit rate for each policy: srrip-0,128...3968;brrip-64,192...4032
-    when(replReqValid_s3 && (update_set_s3(6,0)===0.U) && !rrip_hit_s3){  //SDMs_srrip miss
+    when(replReqValid_s3 && (set_s3(6,0)===0.U) && !rrip_hit_s3){  //SDMs_srrip miss
       PSEL := PSEL + 1.U
-    } .elsewhen(replReqValid_s3 && (update_set_s3(6,0)===64.U) && !rrip_hit_s3){ //SDMs_brrip miss
+    } .elsewhen(replReqValid_s3 && (set_s3(6,0)===64.U) && !rrip_hit_s3){ //SDMs_brrip miss
       PSEL := PSEL - 1.U
     }
     // decide use which policy by policy selection counter, for insertion
@@ -283,8 +267,8 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
        else if PSEL(MSB)==0: use srrip
        else if PSEL(MSB)==1: use brrip */
     val repl_type = WireInit(false.B)
-    repl_type := Mux(update_set_s3(6,0)===0.U, false.B,
-      Mux(update_set_s3(6,0)===64.U, true.B,
+    repl_type := Mux(set_s3(6,0)===0.U, false.B,
+      Mux(set_s3(6,0)===64.U, true.B,
         Mux(PSEL(9)===0.U, false.B, true.B)))    // false.B - srrip, true.B - brrip
     val next_state_s3 = repl.get_next_state(repl_state_s3, touch_way_s3, rrip_hit_s3, repl_type)
 
@@ -293,7 +277,7 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
     replacer_sram_opt.get.io.w(
       !resetFinish || replacerWen,
       Mux(resetFinish, next_state_s3, repl_init.asUInt),
-      Mux(resetFinish, update_set_s3, resetIdx),
+      Mux(resetFinish, set_s3, resetIdx),
       1.U
     )
   } else {
@@ -301,7 +285,7 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
     replacer_sram_opt.get.io.w(
       !resetFinish || replacerWen,
       Mux(resetFinish, next_state_s3, 0.U),
-      Mux(resetFinish, update_set_s3, resetIdx),
+      Mux(resetFinish, set_s3, resetIdx),
       1.U
     )
   }
