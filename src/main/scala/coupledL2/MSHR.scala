@@ -105,7 +105,10 @@ class MSHR(implicit p: Parameters) extends L2Module {
   // Theoretically, data to be released is saved in ReleaseBuffer, so Acquire can be sent as soon as req enters mshr
   io.tasks.source_a.valid := !state.s_acquire
   io.tasks.source_b.valid := !state.s_pprobe || !state.s_rprobe
-  val mp_release_valid = !state.s_release && state.w_rprobeacklast && state.s_acquire && state.w_grantlast && !io.bMergeTask.valid // release after Grant received
+  val mp_release_valid = !state.s_release && state.w_rprobeacklast && !io.bMergeTask.valid &&
+    state.w_grantlast && // release after Grant received
+    state.w_replResp
+
   val mp_probeack_valid = !state.s_probeack && state.w_pprobeacklast
   val mp_merge_probeack_valid = !state.s_merge_probeack && state.w_rprobeacklast
   val mp_grant_valid = !state.s_refill && state.w_grantlast && state.w_rprobeacklast // [Alias] grant after rprobe done
@@ -147,7 +150,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
     ob.set := dirResult.set
     ob.off := 0.U
     ob.opcode := Probe
-    // ob.param := Mux(!state.s_pprobe, req.param, toN)
     ob.param := Mux(
       !state.s_pprobe,
       req.param,
@@ -392,6 +394,9 @@ class MSHR(implicit p: Parameters) extends L2Module {
       state.s_probeack := true.B
     }
   }
+  when (io.dirReadRefill.fire) {
+    state.s_replRead := true.B
+  }
   // prefetchOpt.foreach {
   //   _ =>
   //     when (io.tasks.prefetchTrain.get.fire()) {
@@ -399,7 +404,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   //     }
   // }
 
-  /* ======== Refill response ======== */
+  /* ======== Handling response ======== */
   val c_resp = io.resps.sink_c
   val d_resp = io.resps.sink_d
   val e_resp = io.resps.sink_e
@@ -444,6 +449,26 @@ class MSHR(implicit p: Parameters) extends L2Module {
     state.w_grantack := true.B
   }
 
+  when (io.dirResp.valid) {
+    state.w_replResp := true.B
+
+    // replacer choosing the same way, just release as normal
+    // replacer choosing another way, we need to release that way
+    val replResp = io.dirResp.bits
+    when (replResp.way =/= dirResult.way) {
+      // update meta (no need to update hit/set/error/replacerInfo of dirResult)
+      dirResult.tag := replResp.tag
+      dirResult.way := replResp.way
+      dirResult.meta := replResp.meta
+      // if new-repl block has client, rprobe first
+      when (replResp.meta.clients.orR) {
+        state.s_rprobe := false.B
+        state.w_rprobeackfirst := false.B
+        state.w_rprobeacklast := false.B
+      }
+    }
+  }
+
   when (req_valid) {
     timer := timer + 1.U
   }
@@ -456,7 +481,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     timer := 0.U
   }
 
-  val nestB = req_valid && !state.s_release // remove `&& state.w_rprobeacklast`
+  val nestB = req_valid && !state.s_release && !state.w_grantfirst // nestB not allowed after refill received
   val needRelease = !state.s_release || !state.s_merge_probeack || io.bMergeTask.valid
   io.status.valid := req_valid
   io.status.bits.channel := req.channel
