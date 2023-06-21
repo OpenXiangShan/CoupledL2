@@ -56,8 +56,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     val nestedwb = Input(new NestedWriteback)
     val nestedwbData = Output(Bool())
     val bMergeTask = Flipped(ValidIO(new BMergeTask))
-    val dirReadRefill = DecoupledIO(new ReplacerRead)
-    val dirResp = Flipped(ValidIO(new ReplacerResult))
+    val replResp = Flipped(ValidIO(new ReplacerResult))
   })
 
   val gotT = RegInit(false.B) // TODO: L3 might return T even though L2 wants B
@@ -101,6 +100,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val req_prefetch = req.opcode === Hint
   val req_promoteT = (req_acquire || req_get || req_prefetch) && Mux(dirResult.hit, meta_no_client && meta.state === TIP, gotT)
 
+  val refill_rreplacer = !state.s_release && !io.bMergeTask.valid // refill read replacer
   /* ======== Task allocation ======== */
   // Theoretically, data to be released is saved in ReleaseBuffer, so Acquire can be sent as soon as req enters mshr
   io.tasks.source_a.valid := !state.s_acquire
@@ -115,9 +115,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.tasks.mainpipe.valid := mp_release_valid || mp_probeack_valid || mp_merge_probeack_valid || mp_grant_valid
   // io.tasks.prefetchTrain.foreach(t => t.valid := !state.s_triggerprefetch.getOrElse(true.B))
 
-  io.dirReadRefill.valid := !state.s_replRead
-  io.dirReadRefill.bits.set := dirResult.set
-  io.dirReadRefill.bits.mshrId := io.id
 
   val a_task = {
     val oa = io.tasks.source_a.bits
@@ -185,13 +182,15 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_release.mshrTask := true.B
     mp_release.mshrId := io.id
     mp_release.aliasTask.foreach(_ := false.B)
-    mp_release.useProbeData := true.B // read ReleaseBuf when useProbeData && opcode(0) is true
-    mp_release.way := req.way
+    // mp_release definitely read releaseBuf and refillBuf at ReqArb
+    // and it needs to write refillData to DS, so useProbeData is set false according to DS.wdata logic
+    mp_release.useProbeData := false.B
+    mp_release.way := dirResult.way
     mp_release.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
     mp_release.metaWen := false.B
     mp_release.meta := MetaEntry()
     mp_release.tagWen := false.B
-    mp_release.dsWen := false.B
+    mp_release.dsWen := true.B
     mp_release
   }
 
@@ -218,7 +217,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_probeack.mshrId := io.id
     mp_probeack.aliasTask.foreach(_ := false.B)
     mp_probeack.useProbeData := true.B // read ReleaseBuf when useProbeData && opcode(0) is true
-    mp_probeack.way := req.way
+    mp_probeack.way := dirResult.way
     mp_probeack.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
     mp_probeack.meta := MetaEntry(
       dirty = false.B,
@@ -289,6 +288,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_merge_probeack.fromL2pft.foreach(_ := false.B)
     mp_merge_probeack.needHint.foreach(_ := false.B)
     mp_merge_probeack.wayMask := 0.U
+    mp_merge_probeack.replRead := false.B
     mp_merge_probeack.reqSource := MemReqSource.NoWhere.id.U
   }
 
@@ -315,7 +315,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     )
     mp_grant.mshrTask := true.B
     mp_grant.mshrId := io.id
-    mp_grant.way := req.way
+    mp_grant.way := dirResult.way
     // if it is a Get or Prefetch, then we must keep alias bits unchanged
     // in case future probes gets the wrong alias bits
     val aliasFinal = Mux(req_get || req_prefetch, meta.alias.getOrElse(0.U), req.alias.getOrElse(0.U))
@@ -354,6 +354,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_grant.dsWen := !dirResult.hit && !req_put && gotGrantData || probeDirty && (req_get || req.aliasTask.getOrElse(false.B))
     mp_grant.fromL2pft.foreach(_ := req.fromL2pft.get)
     mp_grant.needHint.foreach(_ := false.B)
+    mp_grant.replRead := refill_rreplacer
     mp_grant
   }
   io.tasks.mainpipe.bits := ParallelPriorityMux(
@@ -394,9 +395,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
       state.s_probeack := true.B
     }
   }
-  when (io.dirReadRefill.fire) {
-    state.s_replRead := true.B
-  }
   // prefetchOpt.foreach {
   //   _ =>
   //     when (io.tasks.prefetchTrain.get.fire()) {
@@ -429,9 +427,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
       state.w_grantfirst := true.B
       state.w_grantlast := d_resp.bits.last
       state.w_grant := req.off === 0.U || d_resp.bits.last  // TODO? why offset?
-      val need_replRead = !state.s_release && !io.bMergeTask.valid
-      state.s_replRead := need_replRead
-      state.w_replResp := need_replRead
+      state.w_replResp := !refill_rreplacer // w_ false as valid
     }
     when(d_resp.bits.opcode === Grant || d_resp.bits.opcode === GrantData) {
       gotT := d_resp.bits.param === toT
@@ -449,18 +445,19 @@ class MSHR(implicit p: Parameters) extends L2Module {
     state.w_grantack := true.B
   }
 
-  when (io.dirResp.valid) {
+  when (io.replResp.valid) {
     state.w_replResp := true.B
 
-    // replacer choosing the same way, just release as normal
-    // replacer choosing another way, we need to release that way
-    val replResp = io.dirResp.bits
+    // replacer choosing:
+    // 1. the same way, just release as normal
+    // 2. differet way and no client,  we need to release that way
+    // 3. differet way but has client, we need also rprobe then release that way
+    val replResp = io.replResp.bits
     when (replResp.way =/= dirResult.way) {
       // update meta (no need to update hit/set/error/replacerInfo of dirResult)
       dirResult.tag := replResp.tag
       dirResult.way := replResp.way
       dirResult.meta := replResp.meta
-      // if new-repl block has client, rprobe first
       when (replResp.meta.clients.orR) {
         state.s_rprobe := false.B
         state.w_rprobeackfirst := false.B
@@ -501,7 +498,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
 
   io.msInfo.valid := req_valid
   io.msInfo.bits.set := req.set
-  io.msInfo.bits.way := req.way
+  io.msInfo.bits.way := dirResult.way
   io.msInfo.bits.reqTag := req.tag
   io.msInfo.bits.needRelease := needRelease
   io.msInfo.bits.metaTag := dirResult.tag

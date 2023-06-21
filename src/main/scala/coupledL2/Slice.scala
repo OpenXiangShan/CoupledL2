@@ -86,8 +86,8 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   mshrCtl.io.bMergeTask := sinkB.io.bMergeTask
   mshrCtl.io.pbRead <> sinkA.io.pbRead
   mshrCtl.io.pbResp <> sinkA.io.pbResp
-  directory.io.replRead <> mshrCtl.io.dirReadRefill
-  mshrCtl.io.dirResp <> directory.io.replResp
+  mshrCtl.io.replResp <> directory.io.replResp
+  mainPipe.io.replResp <> directory.io.replResp
 
   directory.io.resp <> mainPipe.io.dirResp_s3
   directory.io.metaWReq <> mainPipe.io.metaWReq

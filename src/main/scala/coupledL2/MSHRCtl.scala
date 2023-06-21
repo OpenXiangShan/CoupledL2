@@ -90,9 +90,8 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     val msInfo = Vec(mshrsAll, ValidIO(new MSHRInfo))
     val bMergeTask = Flipped(ValidIO(new BMergeTask))
 
-    /* for refill to read dir */
-    val dirReadRefill = DecoupledIO(new ReplacerRead)
-    val dirResp = Flipped(ValidIO(new ReplacerResult))
+    /* refill read replacer result */
+    val replResp = Flipped(ValidIO(new ReplacerResult))
 
     /* for TopDown Monitor */
     val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
@@ -130,8 +129,8 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       m.io.resps.sink_e.bits := io.resps.sinkE.respInfo
       m.io.resps.source_c.valid := m.io.status.valid && io.resps.sourceC.valid && io.resps.sourceC.mshrId === i.U
       m.io.resps.source_c.bits := io.resps.sourceC.respInfo
-      m.io.dirResp.valid := io.dirResp.valid && io.dirResp.bits.mshrId === i.U
-      m.io.dirResp.bits := io.dirResp.bits
+      m.io.replResp.valid := io.replResp.valid && io.replResp.bits.mshrId === i.U
+      m.io.replResp.bits := io.replResp.bits
 
       io.msInfo(i) := m.io.msInfo
       m.io.nestedwb := io.nestedwb
@@ -158,9 +157,6 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
 
   /* Arbitrate MSHR task to RequestArbiter */
   fastArb(mshrs.map(_.io.tasks.mainpipe), io.mshrTask, Some("mshr_task"))
-
-  /* Arbitrate refill dirRead to Directory */
-  fastArb(mshrs.map(_.io.dirReadRefill), io.dirReadRefill, Some("dirReadRefill_task"))
 
   /* Arbitrate prefetchTrains to Prefetcher */
   // prefetchOpt.foreach {

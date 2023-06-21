@@ -122,13 +122,15 @@ class RequestArb(implicit p: Parameters) extends L2Module {
 
   /* Meta read request */
   // ^ only sinkA/B/C tasks need to read directory
-  io.dirRead_s1.valid := chnl_task_s1.valid && !mshr_task_s1.valid
+  io.dirRead_s1.valid := chnl_task_s1.valid && !mshr_task_s1.valid || mshr_task_s1.valid && mshr_task_s1.bits.replRead
   io.dirRead_s1.bits.set := task_s1.bits.set
   io.dirRead_s1.bits.tag := task_s1.bits.tag
   io.dirRead_s1.bits.wayMask := task_s1.bits.wayMask
   io.dirRead_s1.bits.replacerInfo.opcode := task_s1.bits.opcode
   io.dirRead_s1.bits.replacerInfo.channel := task_s1.bits.channel
   io.dirRead_s1.bits.replacerInfo.reqSource := task_s1.bits.reqSource
+  io.dirRead_s1.bits.replMode := task_s1.bits.replRead
+  io.dirRead_s1.bits.mshrId := task_s1.bits.mshrId
 
   // probe block same-set A req for s2/s3
   io.sinkEntrance.valid := io.sinkB.fire || io.sinkC.fire
@@ -149,14 +151,18 @@ class RequestArb(implicit p: Parameters) extends L2Module {
       task_s2.bits.opcode === AccessAckData || task_s2.bits.opcode === HintAck && task_s2.bits.dsWen)
   // For GrantData, read refillBuffer
   // Caution: GrantData-alias may read DataStorage or ReleaseBuf instead
-  io.refillBufRead_s2.valid := mshrTask_s2 && !task_s2.bits.useProbeData && mshrTask_s2_a_upwards
+  // Release also read refillBuf and then write to DS
+  io.refillBufRead_s2.valid := mshrTask_s2 && (
+    task_s2.bits.opcode(2, 1) === Release(2, 1) ||
+    mshrTask_s2_a_upwards && !task_s2.bits.useProbeData)
   io.refillBufRead_s2.id := task_s2.bits.mshrId
-  // For ReleaseData or ProbeAckData, read releaseBuffer
+
+  // ReleaseData and ProbeAckData read releaseBuffer
   // channel is used to differentiate GrantData and ProbeAckData
   io.releaseBufRead_s2.valid := mshrTask_s2 && (
     task_s2.bits.opcode === ReleaseData ||
     task_s2.bits.fromB && task_s2.bits.opcode === ProbeAckData ||
-    task_s2.bits.fromA && task_s2.bits.useProbeData && mshrTask_s2_a_upwards)
+    mshrTask_s2_a_upwards && task_s2.bits.useProbeData)
   io.releaseBufRead_s2.id := task_s2.bits.mshrId
   assert(!io.refillBufRead_s2.valid || io.refillBufRead_s2.ready)
   assert(!io.releaseBufRead_s2.valid || io.releaseBufRead_s2.ready)

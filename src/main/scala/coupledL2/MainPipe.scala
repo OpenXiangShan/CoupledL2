@@ -51,6 +51,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
     /* get dir result at stage 3 */
     val dirResp_s3 = Input(new DirResult)
+    val replResp = Flipped(ValidIO(new ReplacerResult))
 
     /* send task to MSHRCtl at stage 3 */
     val toMSHRCtl = new Bundle() {
@@ -214,7 +215,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   ms_task.pbIdx            := req_s3.pbIdx
   ms_task.fromL2pft.foreach(_ := req_s3.fromL2pft.get)
   ms_task.needHint.foreach(_  := req_s3.needHint.get)
-  ms_task.way              := dirResult_s3.way
+  ms_task.way              := req_s3.way
   ms_task.reqSource        := req_s3.reqSource
 
   /* ======== Resps to SinkA/B/C Reqs ======== */
@@ -255,28 +256,32 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   source_req_s3 := Mux(sink_resp_s3.valid, sink_resp_s3.bits, req_s3)
 
   /* ======== Interact with DS ======== */
-  val data_s3 = Mux(io.refillBufResp_s3.valid, io.refillBufResp_s3.bits.data, io.releaseBufResp_s3.bits.data)
+  val data_s3 = Mux(io.releaseBufResp_s3.valid, io.releaseBufResp_s3.bits.data, io.refillBufResp_s3.bits.data) // releaseBuf prior
+  val c_releaseData_s3 = RegNext(io.bufResp.data.asUInt)
   val hasData_s3 = source_req_s3.opcode(0)
   assert(!(io.refillBufResp_s3.valid && io.releaseBufResp_s3.valid), "can not read both refillBuf and releaseBuf at the same time")
 
-  val wen_c = sinkC_req_s3 && isParamFromT(req_s3.param) && req_s3.opcode(0)
-  val wen   = wen_c || req_s3.dsWen && (mshr_grant_s3 || mshr_accessackdata_s3 || mshr_probeack_s3 || mshr_hintack_s3)
+  // when miss, read data ahead of time to prepare for ReleaseData later
+  val need_data_a  = Mux(dirResult_s3.hit, req_get_s3 || req_acquireBlock_s3, a_need_replacement)
+  val need_data_b  = sinkB_req_s3 && dirResult_s3.hit &&
+                       (meta_s3.state === TRUNK || meta_s3.state === TIP && meta_s3.dirty || req_s3.needProbeAckData)
+  val need_data_mshr_repl = req_s3.replRead && (io.replResp.bits.way =/= req_s3.way) // replacer choosing a different way
+  val ren                 = need_data_a || need_data_b || need_data_mshr_repl
 
-  val need_data_on_hit_a  = req_get_s3 || req_acquireBlock_s3
-  val need_data_on_miss_a = a_need_replacement // read data ahead of time to prepare for ReleaseData later
-  val need_data_b         = sinkB_req_s3 && dirResult_s3.hit &&
-                              (meta_s3.state === TRUNK || meta_s3.state === TIP && meta_s3.dirty || req_s3.needProbeAckData)
-  val ren                 = Mux(dirResult_s3.hit, need_data_on_hit_a, need_data_on_miss_a) || need_data_b
-  val bufResp_s3          = RegNext(io.bufResp.data.asUInt) // for Release from C-channel
+  val wen_c = sinkC_req_s3 && isParamFromT(req_s3.param) && req_s3.opcode(0)
+  val wen_mshr = req_s3.dsWen && !req_s3.replRead && (
+    mshr_grant_s3 || mshr_accessackdata_s3 ||
+    mshr_probeack_s3 || mshr_hintack_s3 || mshr_release_s3)
+  val wen   = wen_c || wen_mshr
 
   io.toDS.req_s3.valid    := task_s3.valid && (ren || wen)
-  io.toDS.req_s3.bits.way := Mux(mshr_req_s3, req_s3.way, dirResult_s3.way)
+  io.toDS.req_s3.bits.way := Mux(req_s3.replRead, io.replResp.bits.way,
+    Mux(mshr_req_s3, req_s3.way, dirResult_s3.way))
   io.toDS.req_s3.bits.set := Mux(mshr_req_s3, req_s3.set, dirResult_s3.set)
   io.toDS.req_s3.bits.wen := wen
-  //[Alias] TODO: may change this according to four || signals of wen, use ParallelPriorityMux
   io.toDS.wdata_s3.data := Mux(
     !mshr_req_s3,
-    bufResp_s3,
+    c_releaseData_s3, // Among all sinkTasks, only C-Release writes DS
     Mux(
       req_s3.useProbeData,
       io.releaseBufResp_s3.bits.data,
@@ -291,10 +296,12 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val need_write_releaseBuf = need_probe_s3_a ||
     cache_alias ||
     a_need_replacement ||
-    need_data_b && need_mshr_s3_b
+    need_data_b && need_mshr_s3_b ||
+    need_data_mshr_repl
   // B: need_write_refillBuf when L1 AcquireBlock BtoT
   //    L2 sends AcquirePerm to L3, so GrantData to L1 needs to read DS ahead of time and store in RefillBuffer
   // TODO: how about AcquirePerm BtoT interaction with refill buffer?
+  // !!TODO June 22th: this is no longer useful, cuz we always send AcquireBlock downwards (see MSHR)
   val need_write_refillBuf = sinkA_req_s3 && req_needT_s3 && dirResult_s3.hit && meta_s3.state === BRANCH && !req_put_s3 && !req_prefetch_s3
 
   /* ======== Write Directory ======== */
@@ -375,7 +382,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   // c_set_dirty is true iff Release has Data
   io.nestedwb.c_set_dirty := task_s3.valid && metaW_valid_s3_c && wen_c
 
-  io.nestedwbData := bufResp_s3.asTypeOf(new DSBlock)
+  io.nestedwbData := c_releaseData_s3.asTypeOf(new DSBlock)
 
   io.prefetchTrain.foreach {
     train =>

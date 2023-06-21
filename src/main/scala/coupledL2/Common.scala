@@ -77,9 +77,14 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val tagWen = Bool()
   val dsWen = Bool()
 
-  // for Dir to choose a way not occupied by some unfinished MSHR task
+  // for Dir to choose a way not occupied by some unfinished MSHR task (# remove set blocking)
   val wayMask = UInt(cacheParams.ways.W)
 
+  // for refill to read replacer to choose a replaced way
+  // PS: none will set replRead except Grant (with replacement)
+  val replRead = Bool()
+
+  // for TopDown Monitor (# TopDown)
   val reqSource = UInt(MemReqSource.reqSourceBits.W)
 
   def hasData = opcode(0)
@@ -180,7 +185,6 @@ class FSMState(implicit p: Parameters) extends L2Bundle {
   val s_probeack = Bool() // respond probeack downwards
   val s_refill = Bool()   // respond grant upwards
   val s_merge_probeack = Bool() // respond probeack downwards, Probe merge into A-replacement-Release
-  val s_replRead = Bool() // read replacer again when refill
   // val s_grantack = Bool() // respond grantack downwards, moved to GrantBuf
   // val s_triggerprefetch = prefetchOpt.map(_ => Bool())
 
