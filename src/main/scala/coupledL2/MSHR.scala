@@ -61,7 +61,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val state = RegInit(new FSMState(), initState)
   initState.elements.foreach(_._2 := true.B)
   val dirResult = RegInit(0.U.asTypeOf(new DirResult()))
-  val gotT = RegInit(false.B) // TODO: L3 might return T even though L2 wants B
+  val gotT = RegInit(false.B) // L3 might return T even though L2 wants B / probe L1 gotT when alias
   val gotDirty = RegInit(false.B)
   val gotGrantData = RegInit(false.B)
   val probeDirty = RegInit(false.B)
@@ -368,6 +368,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     }
     when (c_resp.bits.opcode === ProbeAckData) {
       probeDirty := true.B
+      gotT := isParamFromT(c_resp.bits.param)
     }
     when (isToN(c_resp.bits.param)) {
       probeGotN := true.B
