@@ -251,7 +251,7 @@ class L2ToL1Hint(implicit p: Parameters) extends Bundle {
 }
 
 // indicates where the memory access request comes from
-// a dupliacte of this is in Xiangshan.package and HuanCun.common
+// a dupliacte of this is in xiangShan/package.scala utility/TLUtils/BusKeyField.scala
 object MemReqSource extends Enumeration {
   val NoWhere = Value("NoWhere")
 
