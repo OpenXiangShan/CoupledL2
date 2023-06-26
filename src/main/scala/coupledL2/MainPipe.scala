@@ -516,7 +516,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   io.toReqArb.blockC_s1 :=
     task_s2.valid && task_s2.bits.set === io.fromReqArb.status_s1.c_set ||
-    io.toMSHRCtl.mshr_alloc_s3.valid && task_s3.bits.set === io.fromReqArb.status_s1.c_set
+    task_s3.valid && task_s3.bits.set === io.fromReqArb.status_s1.c_set
   io.toReqArb.blockB_s1 :=
     task_s2.valid && pipelineBlock('b', task_s2.bits, allTask = true) ||
     task_s3.valid && pipelineBlock('b', task_s3.bits)                 ||
