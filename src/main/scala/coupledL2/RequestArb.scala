@@ -75,19 +75,23 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   when(resetIdx === 0.U) {
     resetFinish := true.B
   }
-  // val valids = RegInit(0.U(8.W))  // 7 stages
+
+  val mshr_task_s0 = Wire(Valid(new TaskBundle()))
+  val mshr_task_s1 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
 
   /* ======== Stage 0 ======== */
-  io.mshrTask.ready := !io.fromGrantBuffer.blockMSHRReqEntrance
-  val mshr_task_s0 = Wire(Valid(new TaskBundle()))
+  // if mshr_task_s1 is replRead, it might stall and wait for dirRead.ready, so we block new mshrTask from entering
+  // TODO: will cause msTask path vacant for one-cycle after replRead, since not use Flow so as to avoid ready propagation
+  io.mshrTask.ready := !io.fromGrantBuffer.blockMSHRReqEntrance && !(mshr_task_s1.valid && mshr_task_s1.bits.replRead)
   mshr_task_s0.valid := io.mshrTask.fire()
   mshr_task_s0.bits := io.mshrTask.bits
 
   /* ======== Stage 1 ======== */
   /* latch mshr_task from s0 to s1 */
-  val mshr_task_s1 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
-  mshr_task_s1.valid := mshr_task_s0.valid
-  when(mshr_task_s0.valid) {
+  val mshr_replRead_stall = mshr_task_s1.valid && mshr_task_s1.bits.replRead && !io.dirRead_s1.ready
+
+  mshr_task_s1.valid := mshr_task_s0.valid || mshr_replRead_stall
+  when(mshr_task_s0.valid && !mshr_replRead_stall) {
     mshr_task_s1.bits := mshr_task_s0.bits
   }
 
@@ -139,8 +143,8 @@ class RequestArb(implicit p: Parameters) extends L2Module {
 
   /* ========  Stage 2 ======== */
   val task_s2 = RegInit(0.U.asTypeOf(task_s1))
-  task_s2.valid := task_s1.valid
-  when(task_s1.valid) { task_s2.bits := task_s1.bits }
+  task_s2.valid := task_s1.valid && !mshr_replRead_stall
+  when(task_s1.valid && !mshr_replRead_stall) { task_s2.bits := task_s1.bits }
   
   io.taskToPipe_s2 := task_s2
 

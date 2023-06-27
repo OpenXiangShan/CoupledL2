@@ -259,7 +259,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val data_s3 = Mux(io.releaseBufResp_s3.valid, io.releaseBufResp_s3.bits.data, io.refillBufResp_s3.bits.data) // releaseBuf prior
   val c_releaseData_s3 = RegNext(io.bufResp.data.asUInt)
   val hasData_s3 = source_req_s3.opcode(0)
-  assert(!(io.refillBufResp_s3.valid && io.releaseBufResp_s3.valid), "can not read both refillBuf and releaseBuf at the same time")
 
   // when miss, read data ahead of time to prepare for ReleaseData later
   val need_data_a  = Mux(dirResult_s3.hit, req_get_s3 || req_acquireBlock_s3, a_need_replacement)
