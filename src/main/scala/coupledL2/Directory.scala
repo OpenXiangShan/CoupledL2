@@ -225,10 +225,10 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   replaceWay := repl.get_replace_way(repl_state_s3)
 
   io.replResp.valid := replReqValid_s3
-  io.replResp.bits.tag := tagAll_s3(replaceWay)
+  io.replResp.bits.tag := tagAll_s3(chosenWay)
   io.replResp.bits.set := req_s3.set
-  io.replResp.bits.way := replaceWay
-  io.replResp.bits.meta := metaAll_s3(replaceWay)
+  io.replResp.bits.way := chosenWay
+  io.replResp.bits.meta := metaAll_s3(chosenWay)
   io.replResp.bits.mshrId := req_s3.mshrId
 
   /* ====== Update ====== */
