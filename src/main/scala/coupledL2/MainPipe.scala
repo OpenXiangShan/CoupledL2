@@ -168,6 +168,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val cache_alias           = req_acquire_s3 && dirResult_s3.hit && meta_s3.clients(0) &&
                               meta_s3.alias.getOrElse(0.U) =/= req_s3.alias.getOrElse(0.U)
 
+  val repl_new_way = io.replResp.bits.way =/= req_s3.way && io.replResp.bits.meta.state =/= INVALID
+
   /* ======== Interact with MSHR ======== */
   val acquire_on_miss_s3  = req_acquire_s3 || req_prefetch_s3 || req_get_s3 // TODO: remove this cause always acquire on miss?
   val acquire_on_hit_s3   = meta_s3.state === BRANCH && req_needT_s3
@@ -264,17 +266,16 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val need_data_a  = Mux(dirResult_s3.hit, req_get_s3 || req_acquireBlock_s3, a_need_replacement)
   val need_data_b  = sinkB_req_s3 && dirResult_s3.hit &&
                        (meta_s3.state === TRUNK || meta_s3.state === TIP && meta_s3.dirty || req_s3.needProbeAckData)
-  val need_data_mshr_repl = req_s3.replRead && (io.replResp.bits.way =/= req_s3.way) // replacer choosing a different way
+  val need_data_mshr_repl = mshr_grant_s3 && req_s3.replTask && repl_new_way // replacer choosing a different way
   val ren                 = need_data_a || need_data_b || need_data_mshr_repl
 
   val wen_c = sinkC_req_s3 && isParamFromT(req_s3.param) && req_s3.opcode(0)
-  val wen_mshr = req_s3.dsWen && !req_s3.replRead && (
-    mshr_grant_s3 || mshr_accessackdata_s3 ||
-    mshr_probeack_s3 || mshr_hintack_s3 || mshr_release_s3)
+  val wen_mshr = req_s3.dsWen && (mshr_grant_s3 || mshr_accessackdata_s3 ||
+    mshr_probeack_s3 || mshr_hintack_s3 || mshr_release_s3 && req_s3.replTask)
   val wen   = wen_c || wen_mshr
 
   io.toDS.req_s3.valid    := task_s3.valid && (ren || wen)
-  io.toDS.req_s3.bits.way := Mux(req_s3.replRead, io.replResp.bits.way,
+  io.toDS.req_s3.bits.way := Mux(mshr_grant_s3 && req_s3.replTask, io.replResp.bits.way,
     Mux(mshr_req_s3, req_s3.way, dirResult_s3.way))
   io.toDS.req_s3.bits.set := Mux(mshr_req_s3, req_s3.set, dirResult_s3.set)
   io.toDS.req_s3.bits.wen := wen

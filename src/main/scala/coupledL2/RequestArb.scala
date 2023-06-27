@@ -79,16 +79,17 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val mshr_task_s0 = Wire(Valid(new TaskBundle()))
   val mshr_task_s1 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
 
+  val s1_needs_replRead = mshr_task_s1.valid && mshr_task_s1.bits.replTask && mshr_task_s1.bits.opcode(2, 1) === Grant(2, 1)
   /* ======== Stage 0 ======== */
   // if mshr_task_s1 is replRead, it might stall and wait for dirRead.ready, so we block new mshrTask from entering
   // TODO: will cause msTask path vacant for one-cycle after replRead, since not use Flow so as to avoid ready propagation
-  io.mshrTask.ready := !io.fromGrantBuffer.blockMSHRReqEntrance && !(mshr_task_s1.valid && mshr_task_s1.bits.replRead)
+  io.mshrTask.ready := !io.fromGrantBuffer.blockMSHRReqEntrance && !s1_needs_replRead
   mshr_task_s0.valid := io.mshrTask.fire()
   mshr_task_s0.bits := io.mshrTask.bits
 
   /* ======== Stage 1 ======== */
   /* latch mshr_task from s0 to s1 */
-  val mshr_replRead_stall = mshr_task_s1.valid && mshr_task_s1.bits.replRead && !io.dirRead_s1.ready
+  val mshr_replRead_stall = mshr_task_s1.valid && s1_needs_replRead && !io.dirRead_s1.ready
 
   mshr_task_s1.valid := mshr_task_s0.valid || mshr_replRead_stall
   when(mshr_task_s0.valid && !mshr_replRead_stall) {
@@ -126,14 +127,14 @@ class RequestArb(implicit p: Parameters) extends L2Module {
 
   /* Meta read request */
   // ^ only sinkA/B/C tasks need to read directory
-  io.dirRead_s1.valid := chnl_task_s1.valid && !mshr_task_s1.valid || mshr_task_s1.valid && mshr_task_s1.bits.replRead
+  io.dirRead_s1.valid := chnl_task_s1.valid && !mshr_task_s1.valid || s1_needs_replRead
   io.dirRead_s1.bits.set := task_s1.bits.set
   io.dirRead_s1.bits.tag := task_s1.bits.tag
   io.dirRead_s1.bits.wayMask := task_s1.bits.wayMask
   io.dirRead_s1.bits.replacerInfo.opcode := task_s1.bits.opcode
   io.dirRead_s1.bits.replacerInfo.channel := task_s1.bits.channel
   io.dirRead_s1.bits.replacerInfo.reqSource := task_s1.bits.reqSource
-  io.dirRead_s1.bits.replMode := task_s1.bits.replRead
+  io.dirRead_s1.bits.replMode := task_s1.bits.replTask
   io.dirRead_s1.bits.mshrId := task_s1.bits.mshrId
 
   // probe block same-set A req for s2/s3
@@ -145,7 +146,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val task_s2 = RegInit(0.U.asTypeOf(task_s1))
   task_s2.valid := task_s1.valid && !mshr_replRead_stall
   when(task_s1.valid && !mshr_replRead_stall) { task_s2.bits := task_s1.bits }
-  
+
   io.taskToPipe_s2 := task_s2
 
   // MSHR task
@@ -155,9 +156,9 @@ class RequestArb(implicit p: Parameters) extends L2Module {
       task_s2.bits.opcode === AccessAckData || task_s2.bits.opcode === HintAck && task_s2.bits.dsWen)
   // For GrantData, read refillBuffer
   // Caution: GrantData-alias may read DataStorage or ReleaseBuf instead
-  // Release also read refillBuf and then write to DS
+  // Release-replTask also read refillBuf and then write to DS
   io.refillBufRead_s2.valid := mshrTask_s2 && (
-    task_s2.bits.opcode(2, 1) === Release(2, 1) ||
+    task_s2.bits.opcode(2, 1) === Release(2, 1) && task_s2.bits.replTask ||
     mshrTask_s2_a_upwards && !task_s2.bits.useProbeData)
   io.refillBufRead_s2.id := task_s2.bits.mshrId
 

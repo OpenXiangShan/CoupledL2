@@ -80,9 +80,9 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   // for Dir to choose a way not occupied by some unfinished MSHR task (# remove set blocking)
   val wayMask = UInt(cacheParams.ways.W)
 
-  // for refill to read replacer to choose a replaced way
-  // PS: none will set replRead except Grant (with replacement)
-  val replRead = Bool()
+  // for Grant to read replacer to choose a replaced way
+  // for Release to read refillBuf and write to DS
+  val replTask = Bool()
 
   // for TopDown Monitor (# TopDown)
   val reqSource = UInt(MemReqSource.reqSourceBits.W)

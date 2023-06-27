@@ -106,8 +106,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.tasks.source_a.valid := !state.s_acquire
   io.tasks.source_b.valid := !state.s_pprobe || !state.s_rprobe
   val mp_release_valid = !state.s_release && state.w_rprobeacklast && !io.bMergeTask.valid &&
-    state.w_grantlast && // release after Grant received
-    state.w_replResp
+    state.w_grantlast &&
+    state.w_replResp // release after Grant to L1 sent and replRead returns
 
   val mp_probeack_valid = !state.s_probeack && state.w_pprobeacklast
   val mp_merge_probeack_valid = !state.s_merge_probeack && state.w_rprobeacklast
@@ -288,7 +288,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_merge_probeack.fromL2pft.foreach(_ := false.B)
     mp_merge_probeack.needHint.foreach(_ := false.B)
     mp_merge_probeack.wayMask := 0.U
-    mp_merge_probeack.replRead := false.B
+    mp_merge_probeack.replTask := false.B
     mp_merge_probeack.reqSource := MemReqSource.NoWhere.id.U
   }
 
@@ -354,7 +354,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_grant.dsWen := !dirResult.hit && !req_put && gotGrantData || probeDirty && (req_get || req.aliasTask.getOrElse(false.B))
     mp_grant.fromL2pft.foreach(_ := req.fromL2pft.get)
     mp_grant.needHint.foreach(_ := false.B)
-    mp_grant.replRead := refill_rreplacer
+    mp_grant.replTask := refill_rreplacer
     mp_grant
   }
   io.tasks.mainpipe.bits := ParallelPriorityMux(
@@ -447,13 +447,17 @@ class MSHR(implicit p: Parameters) extends L2Module {
 
   when (io.replResp.valid) {
     state.w_replResp := true.B
+    val replResp = io.replResp.bits
 
     // replacer choosing:
-    // 1. the same way, just release as normal
+    // 1. an invalid way, release no longer needed
+    // 2. the same way, just release as normal
     // 2. differet way and no client,  we need to release that way
     // 3. differet way but has client, we need also rprobe then release that way
-    val replResp = io.replResp.bits
-    when (replResp.way =/= dirResult.way) {
+    when (replResp.meta.state === INVALID) {
+      state.s_release := true.B
+      state.w_releaseack := true.B
+    }.elsewhen (replResp.way =/= dirResult.way) {
       // update meta (no need to update hit/set/error/replacerInfo of dirResult)
       dirResult.tag := replResp.tag
       dirResult.way := replResp.way
