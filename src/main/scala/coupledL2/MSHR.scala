@@ -64,6 +64,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val gotGrantData = RegInit(false.B)
   val probeDirty = RegInit(false.B)
   val probeGotN = RegInit(false.B)
+  val replAnotherWay = RegInit(false.B)
 
   val timer = RegInit(0.U(64.W)) // for performance analysis
 
@@ -85,6 +86,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     gotDirty    := false.B
     probeDirty  := false.B
     probeGotN   := false.B
+    replAnotherWay := false.B
     timer       := 1.U
   }
 
@@ -100,7 +102,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val req_prefetch = req.opcode === Hint
   val req_promoteT = (req_acquire || req_get || req_prefetch) && Mux(dirResult.hit, meta_no_client && meta.state === TIP, gotT)
 
-  val refill_rreplacer = !state.s_release && !io.bMergeTask.valid // refill read replacer
   /* ======== Task allocation ======== */
   // Theoretically, data to be released is saved in ReleaseBuffer, so Acquire can be sent as soon as req enters mshr
   io.tasks.source_a.valid := !state.s_acquire
@@ -190,7 +191,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_release.metaWen := false.B
     mp_release.meta := MetaEntry()
     mp_release.tagWen := false.B
-    mp_release.dsWen := true.B
+    mp_release.dsWen := replAnotherWay
+    mp_release.replTask := replAnotherWay
     mp_release
   }
 
@@ -354,7 +356,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_grant.dsWen := !dirResult.hit && !req_put && gotGrantData || probeDirty && (req_get || req.aliasTask.getOrElse(false.B))
     mp_grant.fromL2pft.foreach(_ := req.fromL2pft.get)
     mp_grant.needHint.foreach(_ := false.B)
-    mp_grant.replTask := refill_rreplacer
+    mp_grant.replTask := true.B
     mp_grant
   }
   io.tasks.mainpipe.bits := ParallelPriorityMux(
@@ -427,7 +429,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
       state.w_grantfirst := true.B
       state.w_grantlast := d_resp.bits.last
       state.w_grant := req.off === 0.U || d_resp.bits.last  // TODO? why offset?
-      state.w_replResp := !refill_rreplacer // w_ false as valid
     }
     when(d_resp.bits.opcode === Grant || d_resp.bits.opcode === GrantData) {
       gotT := d_resp.bits.param === toT
@@ -458,10 +459,17 @@ class MSHR(implicit p: Parameters) extends L2Module {
       state.s_release := true.B
       state.w_releaseack := true.B
     }.elsewhen (replResp.way =/= dirResult.way) {
+      // set release flags, in case these are not set when allocating MSHR
+      state.s_release := false.B
+      state.w_releaseack := false.B
+
       // update meta (no need to update hit/set/error/replacerInfo of dirResult)
       dirResult.tag := replResp.tag
       dirResult.way := replResp.way
       dirResult.meta := replResp.meta
+      replAnotherWay := true.B
+
+      // rprobe clients if any
       when (replResp.meta.clients.orR) {
         state.s_rprobe := false.B
         state.w_rprobeackfirst := false.B

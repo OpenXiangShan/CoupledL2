@@ -266,16 +266,18 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val need_data_a  = Mux(dirResult_s3.hit, req_get_s3 || req_acquireBlock_s3, a_need_replacement)
   val need_data_b  = sinkB_req_s3 && dirResult_s3.hit &&
                        (meta_s3.state === TRUNK || meta_s3.state === TIP && meta_s3.dirty || req_s3.needProbeAckData)
-  val need_data_mshr_repl = mshr_grant_s3 && req_s3.replTask && repl_new_way // replacer choosing a different way
+  val need_data_mshr_repl = mshr_grant_s3 && repl_new_way // replacer choosing a different way
   val ren                 = need_data_a || need_data_b || need_data_mshr_repl
 
   val wen_c = sinkC_req_s3 && isParamFromT(req_s3.param) && req_s3.opcode(0)
-  val wen_mshr = req_s3.dsWen && (mshr_grant_s3 || mshr_accessackdata_s3 ||
-    mshr_probeack_s3 || mshr_hintack_s3 || mshr_release_s3 && req_s3.replTask)
+  val wen_mshr = req_s3.dsWen && (
+      mshr_accessackdata_s3 || mshr_probeack_s3 || mshr_hintack_s3 ||
+      mshr_grant_s3 && !repl_new_way || mshr_release_s3
+    )
   val wen   = wen_c || wen_mshr
 
   io.toDS.req_s3.valid    := task_s3.valid && (ren || wen)
-  io.toDS.req_s3.bits.way := Mux(mshr_grant_s3 && req_s3.replTask, io.replResp.bits.way,
+  io.toDS.req_s3.bits.way := Mux(mshr_grant_s3, io.replResp.bits.way,
     Mux(mshr_req_s3, req_s3.way, dirResult_s3.way))
   io.toDS.req_s3.bits.set := Mux(mshr_req_s3, req_s3.set, dirResult_s3.set)
   io.toDS.req_s3.bits.wen := wen
@@ -336,9 +338,12 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   )
   val metaW_s3_mshr = req_s3.meta
 
+  val metaW_way = Mux(mshr_grant_s3, io.replResp.bits.way, // grant always use replResp way
+    Mux(mshr_req_s3, req_s3.way, dirResult_s3.way))
+
   io.metaWReq.valid      := !resetFinish || task_s3.valid && (metaW_valid_s3_a || metaW_valid_s3_b || metaW_valid_s3_c || metaW_valid_s3_mshr)
   io.metaWReq.bits.set   := Mux(resetFinish, req_s3.set, resetIdx)
-  io.metaWReq.bits.wayOH := Mux(resetFinish, UIntToOH(Mux(mshr_req_s3, req_s3.way, dirResult_s3.way)), Fill(cacheParams.ways, true.B))
+  io.metaWReq.bits.wayOH := Mux(resetFinish, UIntToOH(metaW_way), Fill(cacheParams.ways, true.B))
   io.metaWReq.bits.wmeta := Mux(
     resetFinish,
     ParallelPriorityMux(
@@ -350,7 +355,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   io.tagWReq.valid     := task_s3.valid && (mshr_grant_s3 || mshr_accessack_s3 || mshr_accessackdata_s3 || mshr_hintack_s3) && req_s3.tagWen
   io.tagWReq.bits.set  := req_s3.set
-  io.tagWReq.bits.way  := req_s3.way
+  io.tagWReq.bits.way  := Mux(mshr_grant_s3, io.replResp.bits.way, req_s3.way)
   io.tagWReq.bits.wtag := req_s3.tag
 
   /* ======== Interact with Channels (C & D) ======== */
@@ -543,6 +548,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   when(req_s3.fromA) {
     alloc_state.s_refill := false.B
     alloc_state.w_grantack := req_prefetch_s3 || req_get_s3 || req_put_s3
+    alloc_state.w_replResp := false.B
     // need replacement
     when(a_need_replacement) {
       alloc_state.s_release := false.B
