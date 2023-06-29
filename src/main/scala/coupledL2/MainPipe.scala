@@ -677,4 +677,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.toMonitor.task_s4 := task_s4
   io.toMonitor.task_s5 := task_s5
   io.toMonitor.dirResult_s3 := dirResult_s3
+  io.toMonitor.allocMSHR_s3.valid := io.toMSHRCtl.mshr_alloc_s3.valid
+  io.toMonitor.allocMSHR_s3.bits  := io.fromMSHRCtl.mshr_alloc_ptr
+  io.toMonitor.metaW_s3 := io.metaWReq
 }

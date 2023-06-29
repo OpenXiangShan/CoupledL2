@@ -32,6 +32,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val io = IO(new Bundle {
     val in = Flipped(TLBundle(edgeIn.bundle))
     val out = TLBundle(edgeOut.bundle)
+    val sliceId = Input(UInt(bankBits.W))
     val l1Hint = Decoupled(new L2ToL1Hint())
     val prefetch = prefetchOpt.map(_ => Flipped(new PrefetchIO))
     val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
@@ -187,6 +188,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   if (cacheParams.enableMonitor) {
     val monitor = Module(new Monitor())
     mainPipe.io.toMonitor <> monitor.io.fromMainPipe
+    monitor.io.sliceId := io.sliceId
   } else {
     mainPipe.io.toMonitor <> DontCare
   }
