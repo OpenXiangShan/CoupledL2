@@ -453,24 +453,24 @@ class MSHR(implicit p: Parameters) extends L2Module {
     // replacer choosing:
     // 1. an invalid way, release no longer needed
     // 2. the same way, just release as normal
-    // 2. differet way and no client,  we need to release that way
-    // 3. differet way but has client, we need also rprobe then release that way
+    // 3. differet way, we need to update meta and release that way
+    // if meta has client, rprobe client
     when (replResp.meta.state === INVALID) {
       state.s_release := true.B
       state.w_releaseack := true.B
-    }.elsewhen (replResp.way =/= dirResult.way) {
-      // set release flags, in case these are not set when allocating MSHR
+    }.otherwise {
+      // set release flags
       state.s_release := false.B
       state.w_releaseack := false.B
-
-      // update meta (no need to update hit/set/error/replacerInfo of dirResult)
-      dirResult.tag := replResp.tag
-      dirResult.way := replResp.way
-      dirResult.meta := replResp.meta
-      replAnotherWay := true.B
-
+      when (replResp.way =/= dirResult.way) {
+        // update meta (no need to update hit/set/error/replacerInfo of dirResult)
+        dirResult.tag := replResp.tag
+        dirResult.way := replResp.way
+        dirResult.meta := replResp.meta
+        replAnotherWay := true.B
+      }
       // rprobe clients if any
-      when (replResp.meta.clients.orR) {
+      when(replResp.meta.clients.orR) {
         state.s_rprobe := false.B
         state.w_rprobeackfirst := false.B
         state.w_rprobeacklast := false.B
@@ -527,6 +527,11 @@ class MSHR(implicit p: Parameters) extends L2Module {
     state.s_merge_probeack := false.B
     state.s_release := true.B
     state.w_releaseack := true.B
+    when (meta.clients.orR) {
+      state.s_rprobe := false.B
+      state.w_rprobeackfirst := false.B
+      state.w_rprobeacklast := false.B
+    }
   }
 
   /* ======== Handling Nested C ======== */

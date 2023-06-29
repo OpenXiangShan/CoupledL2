@@ -549,16 +549,16 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     alloc_state.s_refill := false.B
     alloc_state.w_grantack := req_prefetch_s3 || req_get_s3 || req_put_s3
     alloc_state.w_replResp := false.B
-    // need replacement
+    // need replacement, MSHR is responsible for the first chosen replaced block (bMergeTask)
     when(a_need_replacement) {
       alloc_state.s_release := false.B
       alloc_state.w_releaseack := false.B
-      // need rprobe for release
-      when(meta_has_clients_s3) {
-        alloc_state.s_rprobe := false.B
-        alloc_state.w_rprobeackfirst := false.B
-        alloc_state.w_rprobeacklast := false.B
-      }
+//      // need rprobe for release
+//      when(meta_has_clients_s3) {
+//        alloc_state.s_rprobe := false.B
+//        alloc_state.w_rprobeackfirst := false.B
+//        alloc_state.w_rprobeacklast := false.B
+//      }
     }
     // need Acquire downwards
     when(need_acquire_s3_a || req_put_s3) {
