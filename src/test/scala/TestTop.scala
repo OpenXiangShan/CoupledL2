@@ -8,6 +8,7 @@ import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import huancun._
 import coupledL2.prefetch._
+import utility.{ChiselDB, FileRegisters}
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -65,6 +66,10 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
         node.makeIOs()(ValName(s"master_port_$i"))
     }
   }
+
+  ChiselDB.init(cacheParams.enableMonitor)
+  ChiselDB.addToFileRegisters
+  FileRegisters.write("./build")
 }
 
 class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
@@ -163,6 +168,10 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
         node.makeIOs()(ValName(s"master_port_$i"))
     }
   }
+
+  ChiselDB.init(cacheParams.enableMonitor)
+  ChiselDB.addToFileRegisters
+  FileRegisters.write("./build")
 }
 
 class TestTop_L2_Standalone()(implicit p: Parameters) extends LazyModule {
@@ -243,6 +252,10 @@ class TestTop_L2_Standalone()(implicit p: Parameters) extends LazyModule {
     }
     l3.makeIOs()(ValName(s"slave_port"))
   }
+
+  ChiselDB.init(cacheParams.enableMonitor)
+  ChiselDB.addToFileRegisters
+  FileRegisters.write("./build")
 }
 
 class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
@@ -336,6 +349,9 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
         node.makeIOs()(ValName(s"master_port_$i"))
     }
   }
+  ChiselDB.init(cacheParams.enableMonitor)
+  ChiselDB.addToFileRegisters
+  FileRegisters.write("./build")
 }
 
 class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
@@ -442,6 +458,9 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
         node.makeIOs()(ValName(s"master_port_$i"))
     }
   }
+  ChiselDB.init(cacheParams.enableMonitor)
+  ChiselDB.addToFileRegisters
+  FileRegisters.write("./build")
 }
 
 object TestTop_L2 extends App {
