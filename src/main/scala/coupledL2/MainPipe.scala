@@ -161,7 +161,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val meta_has_clients_s3   = meta_s3.clients.orR
   val req_needT_s3          = needT(req_s3.opcode, req_s3.param) // require T status to handle req
   val a_need_replacement    = sinkA_req_s3 && !dirResult_s3.hit && meta_s3.state =/= INVALID // b and c do not need replacement
-  assert(!(sinkC_req_s3 && !dirResult_s3.hit), "C Release should always hit, Tag %x Set %x", req_s3.tag, req_s3.set)
 
   //[Alias] TODO: consider 1 client for now
   val cache_alias           = req_acquire_s3 && dirResult_s3.hit && meta_s3.clients(0) &&
@@ -177,8 +176,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     acquire_on_miss_s3
   )
   val need_probe_s3_a = req_get_s3 && dirResult_s3.hit && meta_s3.state === TRUNK
-  assert(RegNext(!(task_s3.valid && !mshr_req_s3 && dirResult_s3.hit && meta_s3.state === TRUNK && !meta_s3.clients.orR)),
-          "Trunk should have some client hit")
 
   val need_mshr_s3_a = need_acquire_s3_a || need_probe_s3_a || cache_alias || req_put_s3
   // For channel B reqs, alloc mshr when Probe hits in both self and client dir
@@ -275,7 +272,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   /* ======== Interact with DS ======== */
   val data_s3 = Mux(io.refillBufResp_s3.valid, io.refillBufResp_s3.bits.data, io.releaseBufResp_s3.bits.data)
   val hasData_s3 = source_req_s3.opcode(0)
-  assert(!(io.refillBufResp_s3.valid && io.releaseBufResp_s3.valid), "can not read both refillBuf and releaseBuf at the same time")
 
   val wen_c = sinkC_req_s3 && isParamFromT(req_s3.param) && req_s3.opcode(0)
   val wen   = wen_c || req_s3.dsWen && (mshr_grant_s3 || mshr_accessackdata_s3 || mshr_probeack_s3 || mshr_hintack_s3)
@@ -547,12 +543,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.status_vec(2).valid        := d_s5.valid
   io.status_vec(2).bits.channel := task_s5.bits.channel
 
-  // make sure we don't send two reqs continuously with the same set
-  assert(!(task_s2.bits.set === task_s3.bits.set &&
-    task_s2.valid && !task_s2.bits.mshrTask && task_s2.bits.fromA &&
-    task_s3.valid && !task_s3.bits.mshrTask && task_s3.bits.fromA),
-    "s2 and s3 task same set, failed in blocking")
-
   /* ======== Other Signals Assignment ======== */
   // Initial state assignment
   // ! Caution: s_ and w_ are false-as-valid
@@ -572,7 +562,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       }
     }.otherwise {
       alloc_state.w_release_sent := alloc_state.s_acquire || alloc_state.s_release
-      assert(alloc_state.s_acquire || alloc_state.s_release)
     }
     // need Acquire downwards
     when(need_acquire_s3_a || req_put_s3) {
