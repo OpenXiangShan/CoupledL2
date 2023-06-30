@@ -26,7 +26,7 @@ class CPL2S3Info(implicit p: Parameters) extends L2Bundle {
   val channel = UInt(3.W)
   val opcode = UInt(3.W)
   val tag = UInt(tagBits.W)
-  val set = UInt(setBits.W)
+  val sset = UInt(setBits.W) // set is C++ common word
 
   val dirHit = Bool()
   val dirWay = UInt(wayBits.W)
@@ -41,7 +41,6 @@ class CPL2S3Info(implicit p: Parameters) extends L2Bundle {
 class Monitor(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val fromMainPipe = Input(new MainpipeMoni())
-    val sliceId = Input(UInt(bankBits.W))
   })
 
   val mp            = io.fromMainPipe
@@ -74,14 +73,14 @@ class Monitor(implicit p: Parameters) extends L2Module {
   /* ======== ChiselDB ======== */
 //  assert(cacheParams.hartIds.length == 1, "private L2 should have one and only one hardId")
 
-  val hartId = if(cacheParams.hartIds.length == 1) cacheParams.hartIds(0) else 0
-  val table = ChiselDB.createTable(s"CPL2MainPipe", new CPL2S3Info)
+  val hartId = if(cacheParams.hartIds.length == 1) cacheParams.hartIds.head else 0
+  val table = ChiselDB.createTable(s"L2MP", new CPL2S3Info, basicDB = true)
   val s3Info = Wire(new CPL2S3Info)
   s3Info.mshrTask := req_s3.mshrTask
   s3Info.channel := req_s3.channel
   s3Info.opcode := req_s3.opcode
   s3Info.tag := req_s3.tag
-  s3Info.set := req_s3.set
+  s3Info.sset := req_s3.set
   s3Info.dirHit := dirResult_s3.hit
   s3Info.dirWay := dirResult_s3.way
   s3Info.allocValid := mp.allocMSHR_s3.valid
@@ -90,5 +89,5 @@ class Monitor(implicit p: Parameters) extends L2Module {
   s3Info.metaWvalid := mp.metaW_s3.valid
   s3Info.metaWway := OHToUInt(mp.metaW_s3.bits.wayOH)
 
-  table.log(s3Info, s3_valid, s"L2${hartId}_${io.sliceId}", clock, reset)
+  table.log(s3Info, s3_valid, s"L2${hartId}_${p(SliceIdKey)}", clock, reset)
 }

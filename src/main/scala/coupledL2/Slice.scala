@@ -188,7 +188,6 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   if (cacheParams.enableMonitor) {
     val monitor = Module(new Monitor())
     mainPipe.io.toMonitor <> monitor.io.fromMainPipe
-    monitor.io.sliceId := io.sliceId
   } else {
     mainPipe.io.toMonitor <> DontCare
   }

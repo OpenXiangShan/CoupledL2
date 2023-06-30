@@ -305,6 +305,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
             case EdgeInKey  => edgeIn
             case EdgeOutKey => edgeOut
             case BankBitsKey => bankBits
+            case SliceIdKey => i
           })) 
         }
         slice.io.in <> in
