@@ -50,10 +50,10 @@ jobs:
 
       - name: Unit test
         run: |
-            git clone https://github.com/OpenXiangShan/tl-test -b coupledL2
-            make test-top-l2
+            git clone https://github.com/OpenXiangShan/tl-test -b coupledL2-huancun
+            make test-top-l2l3l2
             cd ./tl-test
             mkdir build && cd build
-            cmake .. -DDUT_DIR=../../build
+            cmake .. -DDUT_DIR=../../build -DCHISELDB=1
             make
             ./tlc_test -s $RANDOM
