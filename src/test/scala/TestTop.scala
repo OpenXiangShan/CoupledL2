@@ -8,6 +8,7 @@ import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import huancun._
 import coupledL2.prefetch._
+import utility.{ChiselDB, FileRegisters}
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -65,6 +66,7 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
         node.makeIOs()(ValName(s"master_port_$i"))
     }
   }
+
 }
 
 class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
@@ -148,7 +150,7 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
   xbar := TLBuffer() := l1i
   xbar := TLBuffer() := l1d
 
-  ram.node := 
+  ram.node :=
     TLXbar() :=*
     TLFragmenter(32, 64) :=*
     TLCacheCork() :=*
@@ -156,13 +158,14 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
     l3.node :=*
     TLBuffer() :=
     l2 :=* xbar
-  
+
   lazy val module = new LazyModuleImp(this) {
     master_nodes.zipWithIndex.foreach {
       case (node, i) =>
         node.makeIOs()(ValName(s"master_port_$i"))
     }
   }
+
 }
 
 class TestTop_L2_Standalone()(implicit p: Parameters) extends LazyModule {
@@ -243,6 +246,7 @@ class TestTop_L2_Standalone()(implicit p: Parameters) extends LazyModule {
     }
     l3.makeIOs()(ValName(s"slave_port"))
   }
+
 }
 
 class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
@@ -456,6 +460,10 @@ object TestTop_L2 extends App {
   (new ChiselStage).execute(args, Seq(
     ChiselGeneratorAnnotation(() => top.module)
   ))
+
+  ChiselDB.init(false)
+  ChiselDB.addToFileRegisters
+  FileRegisters.write("./build")
 }
 
 object TestTop_L2_Standalone extends App {
@@ -470,6 +478,10 @@ object TestTop_L2_Standalone extends App {
   (new ChiselStage).execute(args, Seq(
     ChiselGeneratorAnnotation(() => top.module)
   ))
+
+  ChiselDB.init(false)
+  ChiselDB.addToFileRegisters
+  FileRegisters.write("./build")
 }
 
 object TestTop_L2L3 extends App {
@@ -487,6 +499,10 @@ object TestTop_L2L3 extends App {
   (new ChiselStage).execute(args, Seq(
     ChiselGeneratorAnnotation(() => top.module)
   ))
+
+  ChiselDB.init(false)
+  ChiselDB.addToFileRegisters
+  FileRegisters.write("./build")
 }
 
 object TestTop_L2L3L2 extends App {
@@ -504,6 +520,10 @@ object TestTop_L2L3L2 extends App {
   (new ChiselStage).execute(args, Seq(
     ChiselGeneratorAnnotation(() => top.module)
   ))
+
+  ChiselDB.init(false)
+  ChiselDB.addToFileRegisters
+  FileRegisters.write("./build")
 }
 
 object TestTop_fullSys extends App {
@@ -521,4 +541,8 @@ object TestTop_fullSys extends App {
   (new ChiselStage).execute(args, Seq(
     ChiselGeneratorAnnotation(() => top.module)
   ))
+
+  ChiselDB.init(false)
+  ChiselDB.addToFileRegisters
+  FileRegisters.write("./build")
 }
