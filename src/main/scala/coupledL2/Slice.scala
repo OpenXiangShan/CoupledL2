@@ -60,7 +60,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   a_reqBuf.io.in <> sinkA.io.task
   a_reqBuf.io.mshrInfo := mshrCtl.io.msInfo
   a_reqBuf.io.mainPipeBlock := mainPipe.io.toReqBuf
-  a_reqBuf.io.sinkEntrance := reqArb.io.sinkEntrance
+  a_reqBuf.io.s1Entrance := reqArb.io.s1Entrance
   sinkB.io.msInfo := mshrCtl.io.msInfo
 
   reqArb.io.sinkA <> a_reqBuf.io.out

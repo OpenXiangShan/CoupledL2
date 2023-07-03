@@ -72,6 +72,9 @@ class Monitor(implicit p: Parameters) extends L2Module {
     s2_valid && !req_s2.mshrTask && RegNext(s3_valid))),
     "chosen-chnTask-s1 and s3 task same set, failed in blocking")
 
+  // TODO: whether mshrGrant also need such blocking, since it reads dir as well
+
+
   /* ======== ChiselDB ======== */
 //  assert(cacheParams.hartIds.length == 1, "private L2 should have one and only one hardId")
 
