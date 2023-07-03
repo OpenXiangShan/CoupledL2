@@ -300,7 +300,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   // B: need_write_refillBuf when L1 AcquireBlock BtoT
   //    L2 sends AcquirePerm to L3, so GrantData to L1 needs to read DS ahead of time and store in RefillBuffer
   // TODO: how about AcquirePerm BtoT interaction with refill buffer?
-  // !!TODO June 22th: this is no longer useful, cuz we always send AcquireBlock downwards (see MSHR)
+  // !!TODO June 22th: this is no longer useful, cuz we only AcquirePerm when L1 AcquirePerm (see MSHR)
   val need_write_refillBuf = sinkA_req_s3 && req_needT_s3 && dirResult_s3.hit && meta_s3.state === BRANCH && !req_put_s3 && !req_prefetch_s3
 
   /* ======== Write Directory ======== */

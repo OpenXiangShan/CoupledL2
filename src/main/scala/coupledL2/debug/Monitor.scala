@@ -44,6 +44,8 @@ class Monitor(implicit p: Parameters) extends L2Module {
   })
 
   val mp            = io.fromMainPipe
+  val s2_valid      = mp.task_s2.valid
+  val req_s2        = mp.task_s2.bits
   val s3_valid      = mp.task_s3.valid
   val req_s3        = mp.task_s3.bits
   val mshr_req_s3   = req_s3.mshrTask
@@ -60,15 +62,15 @@ class Monitor(implicit p: Parameters) extends L2Module {
     "Trunk should have some client hit")
 
   // assertion for set blocking
-  // make sure we don't send two reqs continuously with the same set
-  assert(!(mp.task_s2.bits.set === mp.task_s3.bits.set &&
-    mp.task_s2.valid && !mp.task_s2.bits.mshrTask && mp.task_s2.bits.fromA &&
-    mp.task_s3.valid && !mp.task_s3.bits.mshrTask && mp.task_s3.bits.fromA),
-    "s2 and s3 task same set, failed in blocking")
+  // A channel task @s1 never have same-set task @s2/s3
+  // to ensure that meta written can be read by chnTask
+  assert(RegNext(!(mp.task_s2.bits.set === mp.task_s3.bits.set &&
+    s2_valid && !req_s2.mshrTask && s3_valid)),
+    "chnTask-s2 and s3 same set, failed in blocking")
 
-  assert(!(mp.task_s2.bits.set === mp.task_s4.bits.set &&
-    mp.task_s2.valid && !mp.task_s2.bits.mshrTask && mp.task_s2.bits.fromA &&
-    mp.task_s4.valid && !mp.task_s4.bits.mshrTask && mp.task_s4.bits.fromA))
+  assert(RegNext(!(mp.task_s2.bits.set === RegNext(mp.task_s3.bits.set) &&
+    s2_valid && !req_s2.mshrTask && RegNext(s3_valid))),
+    "chosen-chnTask-s1 and s3 task same set, failed in blocking")
 
   /* ======== ChiselDB ======== */
 //  assert(cacheParams.hartIds.length == 1, "private L2 should have one and only one hardId")

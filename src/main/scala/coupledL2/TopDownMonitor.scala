@@ -38,6 +38,7 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
 
     XSPerfAccumulate(cacheParams, perfName, addrMatch)
     ExcitingUtils.addSource(addrMatch, perfName, ExcitingUtils.Perf)
+    ExcitingUtils.addSink(WireDefault(addrMatch), perfName, ExcitingUtils.Perf)
   }
 
   /* ====== PART TWO ======
