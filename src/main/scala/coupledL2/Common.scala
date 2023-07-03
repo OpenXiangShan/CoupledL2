@@ -155,6 +155,7 @@ class RespInfoBundle(implicit p: Parameters) extends L2Bundle {
   val param = UInt(3.W)
   val last = Bool() // last beat
   val dirty = Bool() // only used for sinkD resps
+  val isHit = Bool() // only used for sinkD resps
 }
 
 class RespBundle(implicit p: Parameters) extends L2Bundle {
