@@ -452,13 +452,10 @@ class MSHR(implicit p: Parameters) extends L2Module {
 
     // replacer choosing:
     // 1. an invalid way, release no longer needed
-    // 2. the same way, just release as normal
+    // 2. the same way, just release as normal (only now we set s_release)
     // 3. differet way, we need to update meta and release that way
     // if meta has client, rprobe client
-    when (replResp.meta.state === INVALID) {
-      state.s_release := true.B
-      state.w_releaseack := true.B
-    }.otherwise {
+    when (replResp.meta.state =/= INVALID) {
       // set release flags
       state.s_release := false.B
       state.w_releaseack := false.B
@@ -490,7 +487,11 @@ class MSHR(implicit p: Parameters) extends L2Module {
     timer := 0.U
   }
 
-  val nestB = req_valid && !state.s_release && !state.w_grantfirst // nestB not allowed after refill received
+  // when refill not received, it is free to accept any B and C
+  //  AND `B/C informing this MSHR to update dirResult` is not necessary
+  // when refill received, nestB is only allowed when release not sent
+  //(TODO: or we could just blockB since Release will be out very shortly)
+  val nestB = req_valid && (!state.s_release || !state.w_grantfirst)
   val needRelease = !state.s_release || !state.s_merge_probeack || io.bMergeTask.valid
   io.status.valid := req_valid
   io.status.bits.channel := req.channel
