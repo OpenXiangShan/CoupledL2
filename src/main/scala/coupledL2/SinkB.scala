@@ -65,7 +65,7 @@ class SinkB(implicit p: Parameters) extends L2Module {
 
   // unable to accept incoming B req because same-addr as some MSHR replaced block and cannot nest
   val replaceConflictMask = VecInit(io.msInfo.map(s =>
-    s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && !s.bits.nestB
+    s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && s.bits.needRelease && !s.bits.nestB
   )).asUInt
   val replaceConflict = replaceConflictMask.orR
 

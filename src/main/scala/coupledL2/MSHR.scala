@@ -491,7 +491,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   //  AND `B/C informing this MSHR to update dirResult` is not necessary
   // when refill received, nestB is only allowed when release not sent
   //(TODO: or we could just blockB since Release will be out very shortly)
-  val nestB = req_valid && (!state.s_release || !state.w_grantfirst)
+  val nestB = !state.s_release
   val needRelease = !state.s_release || !state.s_merge_probeack || io.bMergeTask.valid
   io.status.valid := req_valid
   io.status.bits.channel := req.channel
@@ -538,7 +538,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
   /* ======== Handling Nested C ======== */
   val nestedwb_match = req_valid && meta.state =/= INVALID &&
     dirResult.set === io.nestedwb.set &&
-    dirResult.tag === io.nestedwb.tag
+    dirResult.tag === io.nestedwb.tag &&
+    state.w_replResp // for A miss, only when replResp do we finally choose a way
   when (nestedwb_match) {
     when (io.nestedwb.c_set_dirty) {
       meta.dirty := true.B

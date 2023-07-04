@@ -170,6 +170,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   io.nestedwbDataId.bits := ParallelPriorityMux(mshrs.zipWithIndex.map {
     case (mshr, i) => (mshr.io.nestedwbData, i.U)
   })
+  assert(RegNext(PopCount(mshrs.map(_.io.nestedwbData)) <= 1.U), "should only be one nestedwbData")
 
   dontTouch(io.sourceA)
 
