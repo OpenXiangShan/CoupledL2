@@ -53,7 +53,7 @@ class Monitor(implicit p: Parameters) extends L2Module {
   val meta_s3       = mp.dirResult_s3.meta
 
   /* ======== MainPipe Assertions ======== */
-  assert(!(s3_valid && req_s3.fromC && !dirResult_s3.hit),
+  assert(RegNext(!(s3_valid && req_s3.fromC && !dirResult_s3.hit)),
     "C Release should always hit, Tag %x Set %x",
     req_s3.tag, req_s3.set)
 

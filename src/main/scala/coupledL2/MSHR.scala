@@ -541,16 +541,20 @@ class MSHR(implicit p: Parameters) extends L2Module {
   }
 
   /* ======== Handling Nested C ======== */
+  // for A miss, only when replResp do we finally choose a way, allowing nested C
+  // for A-alias, always allowing nested C (state.w_replResp === true.B)
   val nestedwb_match = req_valid && meta.state =/= INVALID &&
     dirResult.set === io.nestedwb.set &&
     dirResult.tag === io.nestedwb.tag &&
-    state.w_replResp // for A miss, only when replResp do we finally choose a way
+    state.w_replResp
+
   when (nestedwb_match) {
     when (io.nestedwb.c_set_dirty) {
       meta.dirty := true.B
     }
   }
   // let nested C write ReleaseData to the MSHRBuffer entry of this MSHR id
+  // This is the VALID signal for releaseBuf.io.w(2)
   io.nestedwbData := nestedwb_match && io.nestedwb.c_set_dirty
 
   dontTouch(state)

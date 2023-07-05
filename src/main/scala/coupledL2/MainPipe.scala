@@ -274,7 +274,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val wen   = wen_c || wen_mshr
 
   io.toDS.req_s3.valid    := task_s3.valid && (ren || wen)
-  io.toDS.req_s3.bits.way := Mux(mshr_grant_s3 && !req_s3.replTask, io.replResp.bits.way,
+  io.toDS.req_s3.bits.way := Mux(mshr_grant_s3 && req_s3.replTask, io.replResp.bits.way,
     Mux(mshr_req_s3, req_s3.way, dirResult_s3.way))
   io.toDS.req_s3.bits.set := Mux(mshr_req_s3, req_s3.set, dirResult_s3.set)
   io.toDS.req_s3.bits.wen := wen
@@ -335,7 +335,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   )
   val metaW_s3_mshr = req_s3.meta
 
-  val metaW_way = Mux(mshr_grant_s3 && !req_s3.replTask, io.replResp.bits.way, // grant always use replResp way
+  val metaW_way = Mux(mshr_grant_s3 && req_s3.replTask, io.replResp.bits.way, // grant always use replResp way
     Mux(mshr_req_s3, req_s3.way, dirResult_s3.way))
 
   io.metaWReq.valid      := !resetFinish || task_s3.valid && (metaW_valid_s3_a || metaW_valid_s3_b || metaW_valid_s3_c || metaW_valid_s3_mshr)
@@ -352,7 +352,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   io.tagWReq.valid     := task_s3.valid && (mshr_grant_s3 || mshr_accessack_s3 || mshr_accessackdata_s3 || mshr_hintack_s3) && req_s3.tagWen
   io.tagWReq.bits.set  := req_s3.set
-  io.tagWReq.bits.way  := Mux(mshr_grant_s3 && !req_s3.replTask, io.replResp.bits.way, req_s3.way)
+  io.tagWReq.bits.way  := Mux(mshr_grant_s3 && req_s3.replTask, io.replResp.bits.way, req_s3.way)
   io.tagWReq.bits.wtag := req_s3.tag
 
   /* ======== Interact with Channels (C & D) ======== */
@@ -539,7 +539,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   when(req_s3.fromA) {
     alloc_state.s_refill := false.B
     alloc_state.w_grantack := req_prefetch_s3 || req_get_s3 || req_put_s3
-    alloc_state.w_replResp := false.B
+    alloc_state.w_replResp := cache_alias // need replRead when NOT cache_alias
     // need Acquire downwards
     when(need_acquire_s3_a || req_put_s3) {
       alloc_state.s_acquire := false.B
