@@ -64,6 +64,16 @@ case class PrefetchField() extends BundleField(PrefetchKey) {
   }
 }
 
+case object IsHitKey extends ControlKey[Bool](name = "isHitInL3")
+
+case class IsHitField() extends BundleField(IsHitKey) {
+  override def data: Bool = Output(Bool())
+
+  override def default(x: Bool): Unit = {
+    x := true.B
+  }
+}
+
 // Indicate whether this block is dirty or not (only used in handle Release/ReleaseData)
 // Now it only works for non-inclusive cache (ignored in inclusive cache)
 case object DirtyKey extends ControlKey[Bool](name = "blockisdirty")
@@ -74,6 +84,26 @@ case class DirtyField() extends BundleField(DirtyKey) {
     x := true.B
   }
 }
+
+// indicate where this granted-block is from(only used in handle Grant/GrantData)
+// now it only works for non-inclusive cache (ignored in inclusive cache) 
+  // 0：default
+  // 1：isHitinL3
+  // 2：isHitinAnotherCore
+  // 3: isHitinMem
+  // 4：isHitinCork
+case object HitLevelL3toL2Key extends ControlKey[UInt]("HitLevelL3toL2") 
+
+case class HitLevelL3toL2Field() extends BundleField(HitLevelL3toL2Key) {
+  override def data: UInt = Output(UInt(3.W))
+
+  override def default(x: UInt): Unit = {
+    x := 0.U(3.W)
+  }
+}
+
+
+
 
 case class L2Param
 (
@@ -97,7 +127,7 @@ case class L2Param
   // Client (these are set in Configs.scala in XiangShan)
   echoField: Seq[BundleFieldBase] = Nil,
   reqField: Seq[BundleFieldBase] = Nil, 
-  respKey: Seq[BundleKeyBase] = Nil,
+  respKey: Seq[BundleKeyBase] = Seq(IsHitKey, HitLevelL3toL2Key),
   // Manager
   reqKey: Seq[BundleKeyBase] = Seq(AliasKey, PrefetchKey, ReqSourceKey),
   respField: Seq[BundleFieldBase] = Nil,
