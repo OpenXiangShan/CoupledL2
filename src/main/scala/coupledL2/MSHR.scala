@@ -59,7 +59,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     val replResp = Flipped(ValidIO(new ReplacerResult))
   })
 
-  val gotT = RegInit(false.B) // TODO: L3 might return T even though L2 wants B
+  val gotT = RegInit(false.B) // L3 might return T even though L2 wants B
   val gotDirty = RegInit(false.B)
   val gotGrantData = RegInit(false.B)
   val probeDirty = RegInit(false.B)
@@ -100,7 +100,12 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val req_put = req.opcode === PutFullData || req.opcode === PutPartialData
   val req_get = req.opcode === Get
   val req_prefetch = req.opcode === Hint
-  val req_promoteT = (req_acquire || req_get || req_prefetch) && Mux(dirResult.hit, meta_no_client && meta.state === TIP, gotT)
+
+  val promoteT_normal =  dirResult.hit && meta_no_client && meta.state === TIP
+  val promoteT_L3     = !dirResult.hit && gotT
+  val promoteT_alias  =  dirResult.hit && req.aliasTask.getOrElse(false.B) && meta.state === TRUNK
+  // under above circumstances, we grant T to L1 even if it wants B
+  val req_promoteT = (req_acquire || req_get || req_prefetch) && (promoteT_normal || promoteT_L3 || promoteT_alias)
 
   /* ======== Task allocation ======== */
   // Theoretically, data to be released is saved in ReleaseBuffer, so Acquire can be sent as soon as req enters mshr
@@ -331,12 +336,12 @@ class MSHR(implicit p: Parameters) extends L2Module {
       dirty = gotDirty || dirResult.hit && (meta.dirty || probeDirty),
       state = Mux(
         req_get,
-        Mux(
+        Mux( // Get
           dirResult.hit,
           Mux(isT(meta.state), TIP, BRANCH),
           Mux(req_promoteT, TIP, BRANCH)
         ),
-        Mux(
+        Mux( // Acquire
           req_promoteT || req_needT,
           Mux(req_prefetch, TIP, TRUNK),
           BRANCH

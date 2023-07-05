@@ -10,6 +10,7 @@ import huancun._
 import coupledL2.prefetch._
 import utility.{ChiselDB, FileRegisters, TLLogger}
 
+
 import scala.collection.mutable.ArrayBuffer
 
 class TestTop_L2()(implicit p: Parameters) extends LazyModule {
