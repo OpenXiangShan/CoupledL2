@@ -167,7 +167,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val cache_alias           = req_acquire_s3 && dirResult_s3.hit && meta_s3.clients(0) &&
                               meta_s3.alias.getOrElse(0.U) =/= req_s3.alias.getOrElse(0.U)
 
-  val repl_new_way = io.replResp.bits.way =/= req_s3.way && io.replResp.bits.meta.state =/= INVALID && !req_s3.replTask
+  val repl_new_way = io.replResp.bits.way =/= req_s3.way && io.replResp.bits.meta.state =/= INVALID && req_s3.replTask
 
   /* ======== Interact with MSHR ======== */
   val acquire_on_miss_s3  = req_acquire_s3 || req_prefetch_s3 || req_get_s3 // TODO: remove this cause always acquire on miss?

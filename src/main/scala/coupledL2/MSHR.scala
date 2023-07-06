@@ -361,7 +361,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_grant.dsWen := !dirResult.hit && !req_put && gotGrantData || probeDirty && (req_get || req.aliasTask.getOrElse(false.B))
     mp_grant.fromL2pft.foreach(_ := req.fromL2pft.get)
     mp_grant.needHint.foreach(_ := false.B)
-    mp_grant.replTask := !req.aliasTask.getOrElse(false.B)
+    mp_grant.replTask := !dirResult.hit // Get and Alias are hit that does not need replacement
     mp_grant
   }
   io.tasks.mainpipe.bits := ParallelPriorityMux(
