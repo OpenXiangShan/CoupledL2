@@ -361,7 +361,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val req_drop_s3 = (!mshr_req_s3 && need_mshr_s3 && !need_write_releaseBuf && !need_write_refillBuf) ||
     (task_ready_s3 && (c_s3.fire || d_s3.fire))
 
-  //[Alias] TODO: may change this to ren?
   val data_unready_s3 = hasData_s3 && !mshr_req_s3
   c_s3.valid := task_s3.valid && Mux(
     mshr_req_s3,
@@ -422,8 +421,14 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   val chnl_fire_s4 = c_s4.fire() || d_s4.fire()
 
-  c_s4.valid := task_s4.valid && !data_unready_s4 && isC_s4 && !need_write_releaseBuf_s4 && !need_write_refillBuf_s4
-  d_s4.valid := task_s4.valid && !data_unready_s4 && isD_s4 && !need_write_releaseBuf_s4 && !need_write_refillBuf_s4
+  // for reqs that CANNOT give response in MainPipe, but needs to write releaseBuf/refillBuf
+  // we cannot drop them at s3, we must let them go to s4/s5
+  // so we use !need_write_ to avoid them sending C/D response
+  // -- but MSHR reqs are always ready to send C/D
+  val c_d_valid_s4 = task_s4.valid && !data_unready_s4 &&
+    (!need_write_releaseBuf_s4 && !need_write_refillBuf_s4 || task_s4.bits.mshrTask)
+  c_s4.valid := c_d_valid_s4 && isC_s4
+  d_s4.valid := c_d_valid_s4 && isD_s4
   c_s4.bits.task := task_s4.bits
   c_s4.bits.data.data := data_s4
   d_s4.bits.task := task_s4.bits
@@ -484,8 +489,9 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.refillBufWrite.id        := task_s5.bits.mshrId
   assert(!(io.refillBufWrite.valid && !io.refillBufWrite.ready), "refillBuf should be ready when given valid")
 
-  c_s5.valid := task_s5.valid && isC_s5 && !need_write_releaseBuf_s5 && !need_write_refillBuf_s5
-  d_s5.valid := task_s5.valid && isD_s5 && !need_write_releaseBuf_s5 && !need_write_refillBuf_s5
+  val c_d_valid_s5 = task_s5.valid && (!need_write_releaseBuf_s5 && !need_write_refillBuf_s5 || task_s5.bits.mshrTask)
+  c_s5.valid := c_d_valid_s5 && isC_s5
+  d_s5.valid := c_d_valid_s5 && isD_s5
   c_s5.bits.task := task_s5.bits
   c_s5.bits.data.data := merged_data_s5
   d_s5.bits.task := task_s5.bits
