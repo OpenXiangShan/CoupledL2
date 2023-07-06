@@ -455,6 +455,14 @@ class MSHR(implicit p: Parameters) extends L2Module {
     state.w_replResp := true.B
     val replResp = io.replResp.bits
 
+    when (replResp.way =/= dirResult.way) {
+      // update meta (no need to update hit/set/error/replacerInfo of dirResult)
+      dirResult.tag := replResp.tag
+      dirResult.way := replResp.way
+      dirResult.meta := replResp.meta
+      replAnotherWay := true.B
+    }
+
     // replacer choosing:
     // 1. an invalid way, release no longer needed
     // 2. the same way, just release as normal (only now we set s_release)
@@ -464,13 +472,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
       // set release flags
       state.s_release := false.B
       state.w_releaseack := false.B
-      when (replResp.way =/= dirResult.way) {
-        // update meta (no need to update hit/set/error/replacerInfo of dirResult)
-        dirResult.tag := replResp.tag
-        dirResult.way := replResp.way
-        dirResult.meta := replResp.meta
-        replAnotherWay := true.B
-      }
       // rprobe clients if any
       when(replResp.meta.clients.orR) {
         state.s_rprobe := false.B

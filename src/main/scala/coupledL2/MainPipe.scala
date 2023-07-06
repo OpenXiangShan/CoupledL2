@@ -380,6 +380,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   /* ======== nested & prefetch ======== */
   io.nestedwb.set := req_s3.set
   io.nestedwb.tag := req_s3.tag
+  // This serves as VALID signal
   // c_set_dirty is true iff Release has Data
   io.nestedwb.c_set_dirty := task_s3.valid && metaW_valid_s3_c && wen_c
 
