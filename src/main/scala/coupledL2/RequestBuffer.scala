@@ -96,8 +96,8 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       )
     )).reduceTree(_ | _)
   }
-  def occWays     (a: TaskBundle): UInt = countWaysOH(s => !s.willFree && sameSet(a, s))
-  def willFreeWays(a: TaskBundle): UInt = countWaysOH(s =>  s.willFree && sameSet(a, s))
+  def occWays     (a: TaskBundle): UInt = countWaysOH(s => !s.willFree && sameSet(a, s) && s.needRelease)
+  def willFreeWays(a: TaskBundle): UInt = countWaysOH(s =>  s.willFree && sameSet(a, s) && s.needRelease)
 
   def noFreeWay(a: TaskBundle): Bool = !Cat(~occWays(a)).orR
   def noFreeWay(occWays: UInt): Bool = !Cat(~occWays).orR
