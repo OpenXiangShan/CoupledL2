@@ -123,6 +123,7 @@ class GrantBuffer(implicit p: Parameters) extends BaseGrantBuffer {
   //TODO: or should we still Stall B req?
   // A-replace related rprobe is handled in SourceB
   io.toReqArb.blockSinkReqEntrance.blockC_s1 := noSpaceForSinkReq
+  io.toReqArb.blockSinkReqEntrance.blockG_s1 := false.B
   io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq
 
   selectOH.asBools.zipWithIndex.foreach {

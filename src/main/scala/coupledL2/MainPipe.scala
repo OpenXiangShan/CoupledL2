@@ -499,31 +499,40 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   d_s5.bits.data.data := merged_data_s5
 
   /* ======== BlockInfo ======== */
-  def pipelineBlock(chn: Char, s: TaskBundle, allTask: Boolean = false, tag: Boolean = false): Bool = {
+  // if s2/s3 might write Dir, we must block s1 sink entrance
+  // TODO:[Check] it seems that s3 Dir write will naturally block all s1 by dirRead.ready
+  //        (an even stronger blocking than set blocking)
+  //         so we might not need s3 blocking here
+  def s2Block(chn: Char, s: TaskBundle): Bool = {
     val s1 = io.fromReqArb.status_s1
-    val s1_tag = if(chn == 'a') s1.a_tag else s1.b_tag
-    val s1_set = if(chn == 'a') s1.a_set else s1.b_set
-
-    // allTask false: only !mshrTask (SinkReq) blocks Entrance
-    // allTask true : all tasks with the same set at s2 block Entrance
-    // tag true : compare tag+set
-    // tag false: compare set alone
-    s.set === s1_set && (if(allTask) true.B else !s.mshrTask) && (if(tag) s.tag === s1_tag else true.B)
+    val s1_set = chn match {
+      case 'a' => s1.a_set
+      case 'b' => s1.b_set
+      case 'c' => s1.c_set
+      case 'g' => s1.g_set
+    }
+    s.set === s1_set && !(s.mshrTask && s.metaWen)
+  }
+  def bBlock(s: TaskBundle, tag: Boolean = false): Bool = {
+    val s1 = io.fromReqArb.status_s1
+    // tag true: compare tag + set
+    s.set === s1.b_set && (if(tag) s.tag === s1.b_tag else true.B)
   }
 
-  io.toReqBuf(0) := task_s2.valid && pipelineBlock('a', task_s2.bits, allTask = true)
-  io.toReqBuf(1) := task_s3.valid && pipelineBlock('a', task_s3.bits)
+  io.toReqBuf(0) := task_s2.valid && s2Block('a', task_s2.bits)
+  io.toReqBuf(1) := false.B // no longer needed
 
-  io.toReqArb.blockC_s1 :=
-    task_s2.valid && task_s2.bits.set === io.fromReqArb.status_s1.c_set ||
-    task_s3.valid && task_s3.bits.set === io.fromReqArb.status_s1.c_set
+  io.toReqArb.blockC_s1 := task_s2.valid && s2Block('c', task_s2.bits)
+
   io.toReqArb.blockB_s1 :=
-    task_s2.valid && pipelineBlock('b', task_s2.bits, allTask = true) ||
-    task_s3.valid && pipelineBlock('b', task_s3.bits)                 ||
-    task_s4.valid && pipelineBlock('b', task_s4.bits, tag = true)     ||
-    task_s5.valid && pipelineBlock('b', task_s5.bits, tag = true)
+    task_s2.valid && bBlock(task_s2.bits) ||
+    task_s3.valid && bBlock(task_s3.bits) ||
+    task_s4.valid && bBlock(task_s4.bits, tag = true) ||
+    task_s5.valid && bBlock(task_s5.bits, tag = true)
+
   io.toReqArb.blockA_s1 := io.toReqBuf(0) || io.toReqBuf(1)
 
+  io.toReqArb.blockG_s1 := task_s2.valid && s2Block('g', task_s2.bits)
   /* ======== Pipeline Status ======== */
   require(io.status_vec.size == 3)
   io.status_vec(0).valid := task_s3.valid && Mux(

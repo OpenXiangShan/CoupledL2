@@ -294,7 +294,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_merge_probeack.pbIdx := 0.U
     mp_merge_probeack.fromL2pft.foreach(_ := false.B)
     mp_merge_probeack.needHint.foreach(_ := false.B)
-    mp_merge_probeack.wayMask := 0.U
+    mp_merge_probeack.wayMask := Fill(cacheParams.ways, "b1".U)
     mp_merge_probeack.replTask := false.B
     mp_merge_probeack.reqSource := MemReqSource.NoWhere.id.U
   }

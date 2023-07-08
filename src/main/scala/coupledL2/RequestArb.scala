@@ -89,7 +89,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
 
   /* ======== Stage 1 ======== */
   /* latch mshr_task from s0 to s1 */
-  val mshr_replRead_stall = mshr_task_s1.valid && s1_needs_replRead && !io.dirRead_s1.ready
+  val mshr_replRead_stall = mshr_task_s1.valid && s1_needs_replRead && (!io.dirRead_s1.ready || io.fromMainPipe.blockG_s1)
 
   mshr_task_s1.valid := mshr_task_s0.valid || mshr_replRead_stall
   when(mshr_task_s0.valid && !mshr_replRead_stall) {
@@ -130,7 +130,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   io.dirRead_s1.valid := chnl_task_s1.valid && !mshr_task_s1.valid || s1_needs_replRead
   io.dirRead_s1.bits.set := task_s1.bits.set
   io.dirRead_s1.bits.tag := task_s1.bits.tag
-  io.dirRead_s1.bits.wayMask := task_s1.bits.wayMask
+  io.dirRead_s1.bits.wayMask := Fill(cacheParams.ways, "b1".U) //[deprecated]
   io.dirRead_s1.bits.replacerInfo.opcode := task_s1.bits.opcode
   io.dirRead_s1.bits.replacerInfo.channel := task_s1.bits.channel
   io.dirRead_s1.bits.replacerInfo.reqSource := task_s1.bits.reqSource
@@ -178,8 +178,8 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   require(beatSize == 2)
 
   /* status of each pipeline stage */
-  io.status_s1.sets := VecInit(Seq(C_task.set, B_task.set, io.ASet))
-  io.status_s1.tags := VecInit(Seq(C_task.tag, B_task.tag, io.ATag))
+  io.status_s1.sets := VecInit(Seq(C_task.set, B_task.set, io.ASet, mshr_task_s1.bits.set))
+  io.status_s1.tags := VecInit(Seq(C_task.tag, B_task.tag, io.ATag, mshr_task_s1.bits.tag))
   require(io.status_vec.size == 2)
   io.status_vec.zip(Seq(task_s1, task_s2)).foreach {
     case (status, task) =>

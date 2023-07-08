@@ -143,6 +143,7 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
   //TODO: or should we still Stall B req?
   // A-replace related rprobe is handled in SourceB
   io.toReqArb.blockSinkReqEntrance.blockC_s1 := noSpaceForSinkReq
+  io.toReqArb.blockSinkReqEntrance.blockG_s1 := false.B
   io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq
 
   when(io.d_task.fire() && !(io.d_task.bits.task.opcode === HintAck && !io.d_task.bits.task.fromL2pft.getOrElse(false.B))) {

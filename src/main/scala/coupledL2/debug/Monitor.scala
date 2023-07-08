@@ -68,15 +68,15 @@ class Monitor(implicit p: Parameters) extends L2Module {
   // assertion for set blocking
   // A channel task @s1 never have same-set task @s2/s3
   // to ensure that meta written can be read by chnTask
-  assert(RegNext(!(mp.task_s2.bits.set === mp.task_s3.bits.set &&
-    s2_valid && !req_s2.mshrTask && s3_valid)),
-    "chnTask-s2 and s3 same set, failed in blocking")
+//  assert(RegNext(!(mp.task_s2.bits.set === mp.task_s3.bits.set &&
+//    s2_valid && !req_s2.mshrTask && s3_valid)),
+//    "chnTask-s2 and s3 same set, failed in blocking")
+//
+//  assert(RegNext(!(mp.task_s2.bits.set === RegNext(mp.task_s3.bits.set) &&
+//    s2_valid && !req_s2.mshrTask && RegNext(s3_valid))),
+//    "chosen-chnTask-s1 and s3 task same set, failed in blocking")
 
-  assert(RegNext(!(mp.task_s2.bits.set === RegNext(mp.task_s3.bits.set) &&
-    s2_valid && !req_s2.mshrTask && RegNext(s3_valid))),
-    "chosen-chnTask-s1 and s3 task same set, failed in blocking")
-
-  // TODO: whether mshrGrant also need such blocking, since it reads dir as well
+//   TODO: whether mshrGrant also need such blocking, since it reads dir as well
 
 
   /* ======== ChiselDB ======== */

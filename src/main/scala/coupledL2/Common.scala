@@ -77,7 +77,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val tagWen = Bool()
   val dsWen = Bool()
 
-  // for Dir to choose a way not occupied by some unfinished MSHR task (# remove set blocking)
+  // for Dir to choose a way inside wayMask
   val wayMask = UInt(cacheParams.ways.W)
 
   // for Grant to read replacer to choose a replaced way
@@ -93,16 +93,18 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
 class PipeStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits
 
 class PipeEntranceStatus(implicit p: Parameters) extends L2Bundle {
-  val tags = Vec(3, UInt(tagBits.W))
-  val sets = Vec(3, UInt(setBits.W))
+  val tags = Vec(4, UInt(tagBits.W))
+  val sets = Vec(4, UInt(setBits.W))
 
   def c_tag = tags(0)
   def b_tag = tags(1)
   def a_tag = tags(2)
+  def g_tag = tags(3) // replRead-Grant
 
   def c_set = sets(0)
   def b_set = sets(1)
   def a_set = sets(2)
+  def g_set = sets(3)
 }
 
 // MSHR exposes signals to MSHRCtl
@@ -224,6 +226,7 @@ class SourceBReq(implicit p: Parameters) extends L2Bundle {
 }
 
 class BlockInfo(implicit p: Parameters) extends L2Bundle {
+  val blockG_s1 = Bool()
   val blockA_s1 = Bool()
   val blockB_s1 = Bool()
   val blockC_s1 = Bool()

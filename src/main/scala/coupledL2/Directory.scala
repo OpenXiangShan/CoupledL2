@@ -60,6 +60,7 @@ object MetaEntry {
 class DirRead(implicit p: Parameters) extends L2Bundle {
   val tag = UInt(tagBits.W)
   val set = UInt(setBits.W)
+  // dirResult.way must only be in the wayMask
   val wayMask = UInt(cacheParams.ways.W)
   val replacerInfo = new ReplacerInfo()
   // only need to choose a replaced way, for MSHR refill
@@ -183,7 +184,7 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   val finalWay = Mux(
     req_s3.wayMask(chosenWay),
     chosenWay,
-    PriorityEncoder(req_s3.wayMask)
+    PriorityEncoder(req_s3.wayMask) // can be optimized
   )
 
   val hit_s3 = Cat(hitVec).orR
@@ -225,10 +226,10 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   replaceWay := repl.get_replace_way(repl_state_s3)
 
   io.replResp.valid := replReqValid_s3
-  io.replResp.bits.tag := tagAll_s3(chosenWay)
+  io.replResp.bits.tag := tagAll_s3(finalWay)
   io.replResp.bits.set := req_s3.set
-  io.replResp.bits.way := chosenWay
-  io.replResp.bits.meta := metaAll_s3(chosenWay)
+  io.replResp.bits.way := finalWay
+  io.replResp.bits.meta := metaAll_s3(finalWay)
   io.replResp.bits.mshrId := req_s3.mshrId
 
   /* ====== Update ====== */

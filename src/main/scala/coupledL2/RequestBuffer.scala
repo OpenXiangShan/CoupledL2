@@ -36,8 +36,6 @@ class ReqEntry(entries: Int = 4)(implicit p: Parameters) extends L2Bundle() {
   */
 //  val depMask = Vec(entries, Bool())
 
-  /* ways in the set that are occupied by unfinished MSHR task */
-  val occWays = UInt(cacheParams.ways.W)
 }
 
 class ChosenQBundle(idWIdth: Int = 2)(implicit p: Parameters) extends L2Bundle {
@@ -87,27 +85,21 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   def conflict(a: TaskBundle): Bool = conflictMask(a).orR
 
   // count ways
-  def countWaysOH(cond: (MSHRInfo => Bool)): UInt = {
-    VecInit(io.mshrInfo.map(s =>
-      Mux(
-        s.valid && cond(s.bits),
-        UIntToOH(s.bits.way, NWay),
-        0.U(NWay.W)
-      )
-    )).reduceTree(_ | _)
-  }
-  def occWays     (a: TaskBundle): UInt = countWaysOH(s => !s.willFree && sameSet(a, s) && s.needRelease)
-  def willFreeWays(a: TaskBundle): UInt = countWaysOH(s =>  s.willFree && sameSet(a, s) && s.needRelease)
-
-  def noFreeWay(a: TaskBundle): Bool = !Cat(~occWays(a)).orR
-  def noFreeWay(occWays: UInt): Bool = !Cat(~occWays).orR
+//  def countWaysOH(cond: (MSHRInfo => Bool)): UInt = {
+//    VecInit(io.mshrInfo.map(s =>
+//      Mux(
+//        s.valid && cond(s.bits),
+//        UIntToOH(s.bits.way, NWay),
+//        0.U(NWay.W)
+//      )
+//    )).reduceTree(_ | _)
+//  }
 
   // other flags
   val in      = io.in.bits
   val full    = Cat(buffer.map(_.valid)).andR
   // flow not allowed when full, or entries might starve
-  val canFlow = flow.B && !full &&
-    !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(in)
+  val canFlow = flow.B && !full && !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR
   val doFlow  = canFlow && io.out.ready
 
   //  val depMask    = buffer.map(e => e.valid && sameAddr(io.in.bits, e.task))
@@ -138,7 +130,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
     entry.valid   := true.B
     // when Addr-Conflict / Same-Addr-Dependent / MainPipe-Block / noFreeWay-in-Set, entry not ready
-    entry.rdy     := !conflict(in) && !mpBlock && !noFreeWay(in) && !s1Block // && !Cat(depMask).orR
+    entry.rdy     := !conflict(in) && !mpBlock && !s1Block // && !Cat(depMask).orR
     entry.task    := io.in.bits
     entry.waitMP  := Cat(
       s1Block,
@@ -146,7 +138,6 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       io.mainPipeBlock(1),
       0.U(1.W))
     entry.waitMS  := conflictMask(in)
-    entry.occWays := Mux(mpBlock, 0.U, occWays(in))
 
 //    entry.depMask := depMask
     assert(PopCount(conflictMask(in)) <= 2.U)
@@ -171,20 +162,15 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   chosenQ.io.enq.bits.id := issueArb.io.chosen
   issueArb.io.out.ready := chosenQ.io.enq.ready
 
-  //TODO: if i use occWays when update,
-  // does this mean that every entry has occWays logic?
-
   /* ======== Update rdy and masks ======== */
   for (e <- buffer) {
     when(e.valid) {
       val waitMSUpdate  = WireInit(e.waitMS)
 //      val depMaskUpdate = WireInit(e.depMask)
-      val occWaysUpdate = WireInit(e.occWays)
 
-      // when mshr will_free, clear it in other reqs' waitMS and occWays
+      // when mshr will_free, clear it in other reqs' waitMS
       val willFreeMask = VecInit(io.mshrInfo.map(s => s.valid && s.bits.willFree)).asUInt
       waitMSUpdate  := e.waitMS  & (~willFreeMask).asUInt
-      occWaysUpdate := e.occWays & (~willFreeWays(e.task)).asUInt
 
       // Initially,
       //    waitMP(2) = s2 blocking, wait 2 cycles
@@ -196,7 +182,6 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       e.waitMP := e.waitMP >> 1.U
       when(e.waitMP(1) === 0.U && e.waitMP(0) === 1.U) {
         waitMSUpdate  := conflictMask(e.task)
-        occWaysUpdate := occWays(e.task)
       }
 
       // when request is sent, clear it in other reqs' depMask
@@ -215,8 +200,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       // update info
       e.waitMS  := waitMSUpdate
 //      e.depMask := depMaskUpdate
-      e.occWays := occWaysUpdate
-      e.rdy     := !waitMSUpdate.orR && !e.waitMP && !noFreeWay(occWaysUpdate) && !s1_Block
+      e.rdy     := !waitMSUpdate.orR && !e.waitMP && !s1_Block
     }
   }
 
@@ -234,8 +218,8 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     buffer(chosenQ.io.deq.bits.id).valid := false.B
   }
 
-  // for Dir to choose a way not occupied by some unfinished MSHR task
-  io.out.bits.wayMask := Mux(canFlow, ~occWays(io.in.bits), ~chosenQ.io.deq.bits.bits.occWays)
+  // for Dir to choose a free way
+  io.out.bits.wayMask := Fill(cacheParams.ways, 1.U(1.W))
 
   // add XSPerf to see how many cycles the req is held in Buffer
   if(cacheParams.enablePerf) {
