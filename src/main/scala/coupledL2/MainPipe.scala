@@ -161,13 +161,13 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   val meta_has_clients_s3   = meta_s3.clients.orR
   val req_needT_s3          = needT(req_s3.opcode, req_s3.param) // require T status to handle req
-  val a_need_replacement    = sinkA_req_s3 && !dirResult_s3.hit && meta_s3.state =/= INVALID // b and c do not need replacement
+//  val a_need_replacement    = sinkA_req_s3 && !dirResult_s3.hit && meta_s3.state =/= INVALID // b and c do not need replacement
 
   //[Alias] TODO: consider 1 client for now
   val cache_alias           = req_acquire_s3 && dirResult_s3.hit && meta_s3.clients(0) &&
                               meta_s3.alias.getOrElse(0.U) =/= req_s3.alias.getOrElse(0.U)
 
-  val repl_new_way = io.replResp.bits.way =/= req_s3.way && io.replResp.bits.meta.state =/= INVALID && req_s3.replTask
+  val need_repl = io.replResp.bits.meta.state =/= INVALID && req_s3.replTask // Grant needs replacement
 
   /* ======== Interact with MSHR ======== */
   val acquire_on_miss_s3  = req_acquire_s3 || req_prefetch_s3 || req_get_s3 // TODO: remove this cause always acquire on miss?
@@ -259,17 +259,16 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val c_releaseData_s3 = RegNext(io.bufResp.data.asUInt)
   val hasData_s3 = source_req_s3.opcode(0)
 
-  // when miss, read data ahead of time to prepare for ReleaseData later
-  val need_data_a  = Mux(dirResult_s3.hit, req_get_s3 || req_acquireBlock_s3, a_need_replacement)
+  val need_data_a  = dirResult_s3.hit && (req_get_s3 || req_acquireBlock_s3)
   val need_data_b  = sinkB_req_s3 && dirResult_s3.hit &&
                        (meta_s3.state === TRUNK || meta_s3.state === TIP && meta_s3.dirty || req_s3.needProbeAckData)
-  val need_data_mshr_repl = mshr_grant_s3 && repl_new_way // replacer choosing a different way
+  val need_data_mshr_repl = mshr_grant_s3 && need_repl
   val ren                 = need_data_a || need_data_b || need_data_mshr_repl
 
   val wen_c = sinkC_req_s3 && isParamFromT(req_s3.param) && req_s3.opcode(0)
   val wen_mshr = req_s3.dsWen && (
       mshr_accessackdata_s3 || mshr_probeack_s3 || mshr_hintack_s3 ||
-      mshr_grant_s3 && !repl_new_way || mshr_release_s3
+      mshr_grant_s3 && !need_repl || mshr_release_s3
     )
   val wen   = wen_c || wen_mshr
 
@@ -294,7 +293,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   //    inner clients' data is needed, but whether the client will ack data is uncertain, so DS data is also needed, or
   val need_write_releaseBuf = need_probe_s3_a ||
     cache_alias ||
-    a_need_replacement ||
     need_data_b && need_mshr_s3_b ||
     need_data_mshr_repl
   // B: need_write_refillBuf when L1 AcquireBlock BtoT
@@ -356,10 +354,11 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.tagWReq.bits.wtag := req_s3.tag
 
   /* ======== Interact with Channels (C & D) ======== */
-  val task_ready_s3 = !hasData_s3 || req_s3.fromC || (need_mshr_s3 && !a_need_replacement) || mshr_req_s3
   // do not need s4 & s5
-  val req_drop_s3 = (!mshr_req_s3 && need_mshr_s3 && !need_write_releaseBuf && !need_write_refillBuf) ||
-    (task_ready_s3 && (c_s3.fire || d_s3.fire))
+  val chnl_fire_s3 = c_s3.fire || d_s3.fire
+  val req_drop_s3 = !need_write_releaseBuf && !need_write_refillBuf && (
+    !mshr_req_s3 && need_mshr_s3 || chnl_fire_s3
+  )
 
   val data_unready_s3 = hasData_s3 && !mshr_req_s3
   c_s3.valid := task_s3.valid && Mux(
@@ -420,14 +419,17 @@ class MainPipe(implicit p: Parameters) extends L2Module {
                 task_s4.bits.opcode(2, 1) === AccessAck(2, 1) ||
                 task_s4.bits.opcode === HintAck)
 
-  val chnl_fire_s4 = c_s4.fire() || d_s4.fire()
-
   // for reqs that CANNOT give response in MainPipe, but needs to write releaseBuf/refillBuf
   // we cannot drop them at s3, we must let them go to s4/s5
-  // so we use !need_write_ to avoid them sending C/D response
-  // -- but MSHR reqs are always ready to send C/D
-  val c_d_valid_s4 = task_s4.valid && !data_unready_s4 &&
-    (!need_write_releaseBuf_s4 && !need_write_refillBuf_s4 || task_s4.bits.mshrTask)
+  val chnl_fire_s4 = c_s4.fire() || d_s4.fire()
+  val req_drop_s4 = !need_write_releaseBuf_s4 && !need_write_refillBuf_s4 && chnl_fire_s4
+
+  // MSHR reqs are always ready to send C/D, expect that they already fired
+  val c_d_valid_s4 = task_s4.valid && !RegNext(chnl_fire_s3, false.B) && (
+    !task_s4.bits.mshrTask && !data_unready_s4 ||    // chnl task ok to fire
+     task_s4.bits.mshrTask                           // mshr task ok to fire
+  )
+
   c_s4.valid := c_d_valid_s4 && isC_s4
   d_s4.valid := c_d_valid_s4 && isD_s4
   c_s4.bits.task := task_s4.bits
@@ -442,8 +444,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val need_write_releaseBuf_s5 = RegInit(false.B)
   val need_write_refillBuf_s5 = RegInit(false.B)
   val isC_s5, isD_s5 = RegInit(false.B)
-  task_s5.valid := task_s4.valid && !chnl_fire_s4
-  when (task_s4.valid && !chnl_fire_s4) {
+  task_s5.valid := task_s4.valid && !req_drop_s4
+  when (task_s4.valid && !req_drop_s4) {
     task_s5.bits := task_s4.bits
     ren_s5 := ren_s4
     data_s5 := data_s4
@@ -490,7 +492,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.refillBufWrite.id        := task_s5.bits.mshrId
   assert(!(io.refillBufWrite.valid && !io.refillBufWrite.ready), "refillBuf should be ready when given valid")
 
-  val c_d_valid_s5 = task_s5.valid && (!need_write_releaseBuf_s5 && !need_write_refillBuf_s5 || task_s5.bits.mshrTask)
+  val c_d_valid_s5 = task_s5.valid && !RegNext(chnl_fire_s4, false.B) && !RegNextN(chnl_fire_s3, 2, Some(false.B))
   c_s5.valid := c_d_valid_s5 && isC_s5
   d_s5.valid := c_d_valid_s5 && isD_s5
   c_s5.bits.task := task_s5.bits
