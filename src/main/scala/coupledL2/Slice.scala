@@ -133,7 +133,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
       p.train <> mainPipe.io.prefetchTrain.get
       sinkA.io.prefetchReq.get <> p.req
       p.resp <> grantBuf.io.prefetchResp.get
-      p.recv_addr := DontCare
+      p.recv_addr := 0.U.asTypeOf(ValidIO(UInt(64.W)))
   }
 
   /* input & output signals */

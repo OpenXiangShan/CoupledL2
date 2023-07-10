@@ -129,8 +129,6 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       val bop_en = RegNextN(io_l2_pf_en, 2, Some(true.B))
       // l1 prefetch
       l1_pf.io.recv_addr := ValidIODelay(io.recv_addr, 2)
-      l1_pf.io.train <> DontCare
-      l1_pf.io.resp <> DontCare
       // l2 prefetch
       bop.io.train <> io.train
       bop.io.resp <> io.resp

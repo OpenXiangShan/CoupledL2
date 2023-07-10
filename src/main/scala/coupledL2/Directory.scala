@@ -119,11 +119,6 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   val resetFinish = RegInit(false.B)
   val resetIdx = RegInit((sets - 1).U)
 
-  tagArray.io.r <> DontCare
-  tagArray.io.w <> DontCare
-  metaArray.io.r <> DontCare
-  metaArray.io.w <> DontCare
-
   // Tag R/W
   tagRead := tagArray.io.r(io.read.fire, io.read.bits.set).resp.data
   tagArray.io.w(

@@ -53,9 +53,6 @@ class DataStorage(implicit p: Parameters) extends L2Module with DontCareInnerLog
     singlePort = true 
   ))
 
-  array.io.r <> DontCare
-  array.io.w <> DontCare
-
   val arrayIdx = Cat(io.req.bits.way, io.req.bits.set)
   val wen = io.req.valid && io.req.bits.wen
   val ren = io.req.valid && !io.req.bits.wen

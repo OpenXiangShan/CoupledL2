@@ -58,9 +58,6 @@ abstract class BaseGrantBuffer(implicit p: Parameters) extends L2Module {
     val prefetchResp = prefetchOpt.map(_ => DecoupledIO(new PrefetchResp))
     val grantStatus  = Output(Vec(sourceIdAll, new GrantStatus))
   })
-
-  io.l1Hint := DontCare
-  io.globalCounter := DontCare
 }
 
 // Communicate with L1
@@ -138,7 +135,6 @@ class GrantBuffer(implicit p: Parameters) extends BaseGrantBuffer {
 
   def toTLBundleD(task: TaskBundle, data: UInt = 0.U) = {
     val d = Wire(new TLBundleD(edgeIn.bundle))
-    d := DontCare
     d.opcode := task.opcode
     d.param := task.param
     d.size := offsetBits.U
@@ -205,12 +201,13 @@ class GrantBuffer(implicit p: Parameters) extends BaseGrantBuffer {
   assert(!io.d_task.valid || io.d_task.ready) 
 
   io.e.ready := true.B
-  io.e_resp := DontCare
   io.e_resp.valid := io.e.valid
   io.e_resp.mshrId := io.e.bits.sink
-  io.e_resp.respInfo := DontCare
   io.e_resp.respInfo.opcode := GrantAck
+  io.e_resp.respInfo.param := 0.U(3.W)
   io.e_resp.respInfo.last := true.B
+  io.e_resp.respInfo.dirty := false.B
+  io.e_resp.respInfo.isHit := false.B
 
   if (cacheParams.enablePerf) {
     XSPerfAccumulate(cacheParams, "grant_buffer_full", full)
