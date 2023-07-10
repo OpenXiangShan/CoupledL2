@@ -64,7 +64,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val gotGrantData = RegInit(false.B)
   val probeDirty = RegInit(false.B)
   val probeGotN = RegInit(false.B)
-  val replAnotherWay = RegInit(false.B)
 
   val timer = RegInit(0.U(64.W)) // for performance analysis
 
@@ -86,7 +85,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
     gotDirty    := false.B
     probeDirty  := false.B
     probeGotN   := false.B
-    replAnotherWay := false.B
     timer       := 1.U
   }
 
@@ -196,8 +194,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_release.metaWen := false.B
     mp_release.meta := MetaEntry()
     mp_release.tagWen := false.B
-    mp_release.dsWen := replAnotherWay
-    mp_release.replTask := replAnotherWay
+    mp_release.dsWen := true.B
+    mp_release.replTask := true.B
     mp_release
   }
 
@@ -455,13 +453,10 @@ class MSHR(implicit p: Parameters) extends L2Module {
     state.w_replResp := true.B
     val replResp = io.replResp.bits
 
-    when (replResp.way =/= dirResult.way) {
-      // update meta (no need to update hit/set/error/replacerInfo of dirResult)
-      dirResult.tag := replResp.tag
-      dirResult.way := replResp.way
-      dirResult.meta := replResp.meta
-      replAnotherWay := true.B
-    }
+    // update meta (no need to update hit/set/error/replacerInfo of dirResult)
+    dirResult.tag := replResp.tag
+    dirResult.way := replResp.way
+    dirResult.meta := replResp.meta
 
     // replacer choosing:
     // 1. an invalid way, release no longer needed
