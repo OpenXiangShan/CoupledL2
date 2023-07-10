@@ -513,7 +513,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       case 'c' => s1.c_set
       case 'g' => s1.g_set
     }
-    s.set === s1_set && !(s.mshrTask && s.metaWen)
+    s.set === s1_set && !(s.mshrTask && !s.metaWen) // if guaranteed not to write meta, no blocking needed
   }
   def bBlock(s: TaskBundle, tag: Boolean = false): Bool = {
     val s1 = io.fromReqArb.status_s1
