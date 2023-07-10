@@ -63,8 +63,8 @@ class DirRead(implicit p: Parameters) extends L2Bundle {
   // dirResult.way must only be in the wayMask
   val wayMask = UInt(cacheParams.ways.W)
   val replacerInfo = new ReplacerInfo()
-  // only need to choose a replaced way, for MSHR refill
-  val replMode = Bool()
+  // dirRead when refill
+  val refill = Bool()
   val mshrId = UInt(mshrBits.W)
 }
 
@@ -148,8 +148,8 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   val req_s2 = RegEnable(io.read.bits, 0.U.asTypeOf(io.read.bits), io.read.fire)
   val req_s3 = RegEnable(req_s2, 0.U.asTypeOf(req_s2), reqValid_s2)
 
-  val replReqValid_s2 = RegNext(io.read.fire && io.read.bits.replMode, false.B)
-  val replReqValid_s3 = RegNext(replReqValid_s2, false.B)
+  val refillReqValid_s2 = RegNext(io.read.fire && io.read.bits.refill, false.B)
+  val refillReqValid_s3 = RegNext(refillReqValid_s2, false.B)
 
   // Tag R/W
   tagRead := tagArray.io.r(io.read.fire, io.read.bits.set).resp.data
@@ -225,7 +225,7 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
 
   replaceWay := repl.get_replace_way(repl_state_s3)
 
-  io.replResp.valid := replReqValid_s3
+  io.replResp.valid := refillReqValid_s3
   io.replResp.bits.tag := tagAll_s3(finalWay)
   io.replResp.bits.set := req_s3.set
   io.replResp.bits.way := finalWay
@@ -236,13 +236,13 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   // update replacer only when A hit or refill, at stage 3
   val updateHit = reqValid_s3 && hit_s3 && req_s3.replacerInfo.channel(0) &&
     (req_s3.replacerInfo.opcode === AcquirePerm || req_s3.replacerInfo.opcode === AcquireBlock)
-  val updateRefill = replReqValid_s3
+  val updateRefill = refillReqValid_s3
   replacerWen := updateHit || updateRefill
 
   // !!![TODO]!!! check this @CLS
-  // hit-Promotion, miss-Insertion for RRIP, so replMode should hit = false.B
-  val touch_way_s3 = Mux(replReqValid_s3, replaceWay, way_s3)
-  val rrip_hit_s3 = Mux(replReqValid_s3, false.B, hit_s3)
+  // hit-Promotion, miss-Insertion for RRIP, so refill should hit = false.B
+  val touch_way_s3 = Mux(refillReqValid_s3, replaceWay, way_s3)
+  val rrip_hit_s3 = Mux(refillReqValid_s3, false.B, hit_s3)
 
   if(cacheParams.replacement == "srrip"){
     val next_state_s3 = repl.get_next_state(repl_state_s3, touch_way_s3, rrip_hit_s3)
@@ -258,9 +258,9 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
     //Set Dueling
     val PSEL = RegInit(512.U(10.W)) //32-monitor sets, 10-bits psel
     // track monitor sets' hit rate for each policy: srrip-0,128...3968;brrip-64,192...4032
-    when(replReqValid_s3 && (set_s3(6,0)===0.U) && !rrip_hit_s3){  //SDMs_srrip miss
+    when(refillReqValid_s3 && (set_s3(6,0)===0.U) && !rrip_hit_s3){  //SDMs_srrip miss
       PSEL := PSEL + 1.U
-    } .elsewhen(replReqValid_s3 && (set_s3(6,0)===64.U) && !rrip_hit_s3){ //SDMs_brrip miss
+    } .elsewhen(refillReqValid_s3 && (set_s3(6,0)===64.U) && !rrip_hit_s3){ //SDMs_brrip miss
       PSEL := PSEL - 1.U
     }
     // decide use which policy by policy selection counter, for insertion
