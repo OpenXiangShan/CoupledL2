@@ -111,13 +111,15 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   mainPipe.io.globalCounter := grantBuf.io.globalCounter
   mainPipe.io.taskInfo_s1 <> reqArb.io.taskInfo_s1
 
-  releaseBuf.io.w(0) <> sinkC.io.releaseBufWrite
-  releaseBuf.io.w(0).id := mshrCtl.io.releaseBufWriteId
-  releaseBuf.io.w(1) <> mainPipe.io.releaseBufWrite
-  releaseBuf.io.w(2).valid := mshrCtl.io.nestedwbDataId.valid
-  releaseBuf.io.w(2).beat_sel := Fill(beatSize, 1.U(1.W))
-  releaseBuf.io.w(2).data := mainPipe.io.nestedwbData
-  releaseBuf.io.w(2).id := mshrCtl.io.nestedwbDataId.bits
+  // priority: nested-ReleaseData / probeAckData [NEW] > mainPipe DS rdata [OLD]
+  // 0/1 might happen at the same cycle with 2
+  releaseBuf.io.w(0).valid := mshrCtl.io.nestedwbDataId.valid
+  releaseBuf.io.w(0).beat_sel := Fill(beatSize, 1.U(1.W))
+  releaseBuf.io.w(0).data := mainPipe.io.nestedwbData
+  releaseBuf.io.w(0).id := mshrCtl.io.nestedwbDataId.bits
+  releaseBuf.io.w(1) <> sinkC.io.releaseBufWrite
+  releaseBuf.io.w(1).id := mshrCtl.io.releaseBufWriteId
+  releaseBuf.io.w(2) <> mainPipe.io.releaseBufWrite
 
   refillBuf.io.w(0) <> refillUnit.io.refillBufWrite
   refillBuf.io.w(1) <> mainPipe.io.refillBufWrite
