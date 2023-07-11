@@ -488,11 +488,12 @@ class MSHR(implicit p: Parameters) extends L2Module {
     timer := 0.U
   }
 
-  // when refill not received, it is free to accept any B and C
-  //  AND `B/C informing this MSHR to update dirResult` is not necessary
-  // when refill received, nestB is only allowed when release not sent
-  //(TODO: or we could just blockB since Release will be out very shortly)
-  val nestB = !state.s_release
+  // when grant not received, B can nest A
+  val nestB = !state.w_grantfirst
+
+  // mergeB is only allowed when release not sent
+  //(TODO: or we could just blockB, since Release will be sent to MP very shortly and have no deadlock problem)
+  val mergeB = !state.s_release
   val needRelease = !state.s_release || !state.s_merge_probeack || io.bMergeTask.valid
   io.status.valid := req_valid
   io.status.bits.channel := req.channel
@@ -500,7 +501,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.status.bits.reqTag := req.tag
   io.status.bits.metaTag := dirResult.tag
   io.status.bits.needRelease := needRelease
-  io.status.bits.nestB := nestB
   // wait for resps, high as valid
   io.status.bits.w_c_resp := !state.w_rprobeacklast || !state.w_pprobeacklast || !state.w_pprobeack
   io.status.bits.w_d_resp := !state.w_grantlast || !state.w_grant || !state.w_releaseack
@@ -518,6 +518,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.msInfo.bits.metaTag := dirResult.tag
   io.msInfo.bits.willFree := will_free
   io.msInfo.bits.nestB := nestB
+  io.msInfo.bits.mergeB := mergeB
   io.msInfo.bits.isAcqOrPrefetch := req_acquire || req_prefetch
 
   assert(!(c_resp.valid && !io.status.bits.w_c_resp))

@@ -117,7 +117,6 @@ class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val w_d_resp = Bool()
   val w_e_resp = Bool()
   val will_free = Bool()
-  val nestB = Bool() // can allow some B-req to nest this MSHR req
 
   //  val way = UInt(wayBits.W)
 //  val off = UInt(offsetBits.W)
@@ -156,8 +155,9 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle {
   val needRelease = Bool()
   val metaTag = UInt(tagBits.W)
 
-  // decide whether can nest B
+  // decide whether can nest B (req same-addr) or merge B with release (meta same-addr)
   val nestB = Bool()
+  val mergeB = Bool()
 
   // to drop duplicate prefetch reqs
   val isAcqOrPrefetch = Bool()

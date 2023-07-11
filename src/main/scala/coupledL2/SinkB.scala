@@ -60,35 +60,34 @@ class SinkB(implicit p: Parameters) extends L2Module {
   /* ======== Merge Nested-B req ======== */
   // unable to accept incoming B req because same-addr as some MSHR REQ
   val addrConflict = VecInit(io.msInfo.map(s =>
-    s.valid && s.bits.set === task.set && s.bits.reqTag === task.tag && !s.bits.willFree
+    s.valid && s.bits.set === task.set && s.bits.reqTag === task.tag && !s.bits.willFree && !s.bits.nestB
   )).asUInt.orR
 
   // unable to accept incoming B req because same-addr as some MSHR replaced block and cannot nest
   val replaceConflictMask = VecInit(io.msInfo.map(s =>
-    s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && s.bits.needRelease && !s.bits.nestB
+    s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && s.bits.needRelease && !s.bits.mergeB
   )).asUInt
   val replaceConflict = replaceConflictMask.orR
 
-  // incoming B is nested with some MSHR replaced block and able to be accepted
-  val nestBMask = VecInit(io.msInfo.map(s =>
-    s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && s.bits.nestB
+  // incoming B can be merged with some MSHR replaced block and able to be accepted
+  val mergeBMask = VecInit(io.msInfo.map(s =>
+    s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && s.bits.mergeB
   )).asUInt
 
   assert(PopCount(replaceConflictMask) <= 1.U)
-  assert(PopCount(nestBMask) <= 1.U)
+  assert(PopCount(mergeBMask) <= 1.U)
 
-  val nestB = nestBMask.orR
-  val nestBId = OHToUInt(nestBMask)
+  val mergeB = mergeBMask.orR
+  val mergeBId = OHToUInt(mergeBMask)
 
   // when conflict, we block B req from entering SinkB
-  // when !conflict and nestB , we merge B req to MSHR
-  // when !conflict and !nestB, we let B req enter MainPipe
-  io.task.valid := io.b.valid && !addrConflict && !replaceConflict && !nestB
+  // when !conflict and mergeB , we merge B req to MSHR
+  io.task.valid := io.b.valid && !addrConflict && !replaceConflict && !mergeB
   io.task.bits  := task
-  io.b.ready :=  nestB || (io.task.ready && !addrConflict && !replaceConflict)
+  io.b.ready :=  mergeB || (io.task.ready && !addrConflict && !replaceConflict)
 
-  io.bMergeTask.valid := io.b.valid && nestB
-  io.bMergeTask.bits.id := nestBId
+  io.bMergeTask.valid := io.b.valid && mergeB
+  io.bMergeTask.bits.id := mergeBId
   io.bMergeTask.bits.task := task
 
   // TODO: add conflict XSPerf counter
