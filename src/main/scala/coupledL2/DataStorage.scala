@@ -37,7 +37,7 @@ class DSBlock(implicit p: Parameters) extends L2Bundle {
   val data = UInt((blockBytes * 8).W)
 }
 
-class DataStorage(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
+class DataStorage(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     // there is only 1 read or write request in the same cycle,
     // so only 1 req port is necessary

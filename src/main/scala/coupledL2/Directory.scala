@@ -86,7 +86,7 @@ class TagWrite(implicit p: Parameters) extends L2Bundle {
   val wtag = UInt(tagBits.W)
 }
 
-class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
+class Directory(implicit p: Parameters) extends L2Module {
 
   val io = IO(new Bundle() {
     val read = Flipped(DecoupledIO(new DirRead))

@@ -152,14 +152,6 @@ trait HasCoupledL2Parameters {
   }
 }
 
-trait DontCareInnerLogic { this: Module =>
-  override def IO[T <: Data](iodef: T): T = {
-    val p = chisel3.experimental.IO.apply(iodef)
-    p <> DontCare
-    p
-  }
-}
-
 class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Parameters {
 
   val xfer = TransferSizes(blockBytes, blockBytes)
