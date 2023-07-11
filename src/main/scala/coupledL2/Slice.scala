@@ -193,7 +193,8 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
 
   if (cacheParams.enableMonitor) {
     val monitor = Module(new Monitor())
-    mainPipe.io.toMonitor <> monitor.io.fromMainPipe
+    monitor.io.fromMainPipe <> mainPipe.io.toMonitor
+    monitor.io.nestedWBValid := mshrCtl.io.nestedwbDataId.valid
   } else {
     mainPipe.io.toMonitor <> DontCare
   }

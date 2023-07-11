@@ -41,6 +41,7 @@ class CPL2S3Info(implicit p: Parameters) extends L2Bundle {
 class Monitor(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val fromMainPipe = Input(new MainpipeMoni())
+    val nestedWBValid = Input(Bool())
   })
 
   val mp            = io.fromMainPipe
@@ -53,8 +54,10 @@ class Monitor(implicit p: Parameters) extends L2Module {
   val meta_s3       = mp.dirResult_s3.meta
 
   /* ======== MainPipe Assertions ======== */
-  assert(RegNext(!(s3_valid && req_s3.fromC && !dirResult_s3.hit)),
-    "C Release should always hit, Tag %x Set %x",
+  val c_notHit = s3_valid && req_s3.fromC && !dirResult_s3.hit
+  val c_noNested = !io.nestedWBValid
+  assert(RegNext(!(c_notHit && c_noNested)),
+    "C Release should always hit or have some MSHR meta nested, Tag %x Set %x",
     req_s3.tag, req_s3.set)
 
   assert(RegNext(!(s3_valid && !mshr_req_s3 && dirResult_s3.hit &&

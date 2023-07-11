@@ -265,7 +265,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val need_data_mshr_repl = mshr_grant_s3 && need_repl
   val ren                 = need_data_a || need_data_b || need_data_mshr_repl
 
-  val wen_c = sinkC_req_s3 && isParamFromT(req_s3.param) && req_s3.opcode(0)
+  val wen_c = sinkC_req_s3 && isParamFromT(req_s3.param) && req_s3.opcode(0) && dirResult_s3.hit
   val wen_mshr = req_s3.dsWen && (
       mshr_accessackdata_s3 || mshr_probeack_s3 || mshr_hintack_s3 ||
       mshr_grant_s3 && !need_repl || mshr_release_s3
@@ -304,7 +304,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   /* ======== Write Directory ======== */
   val metaW_valid_s3_a    = sinkA_req_s3 && !need_mshr_s3_a && !req_get_s3 && !req_prefetch_s3 // get & prefetch that hit will not write meta
   val metaW_valid_s3_b    = sinkB_req_s3 && !need_mshr_s3_b && dirResult_s3.hit && (meta_s3.state === TIP || meta_s3.state === BRANCH && req_s3.param === toN)
-  val metaW_valid_s3_c    = sinkC_req_s3
+  val metaW_valid_s3_c    = sinkC_req_s3 && dirResult_s3.hit
   val metaW_valid_s3_mshr = mshr_req_s3 && req_s3.metaWen
   require(clientBits == 1)
 
@@ -381,7 +381,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.nestedwb.tag := req_s3.tag
   // This serves as VALID signal
   // c_set_dirty is true iff Release has Data
-  io.nestedwb.c_set_dirty := task_s3.valid && metaW_valid_s3_c && wen_c
+  io.nestedwb.c_set_dirty := task_s3.valid && task_s3.bits.opcode === ReleaseData
 
   io.nestedwbData := c_releaseData_s3.asTypeOf(new DSBlock)
 
