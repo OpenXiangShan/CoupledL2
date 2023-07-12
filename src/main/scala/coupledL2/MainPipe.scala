@@ -153,7 +153,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val mshr_grant_s3         = mshr_req_s3 && req_s3.fromA && req_s3.opcode(2, 1) === Grant(2, 1) // Grant or GrantData from mshr
   val mshr_grantdata_s3     = mshr_req_s3 && req_s3.fromA && req_s3.opcode === GrantData
   val mshr_accessackdata_s3 = mshr_req_s3 && req_s3.fromA && req_s3.opcode === AccessAckData
-  val mshr_accessack_s3     = mshr_req_s3 && req_s3.fromA && req_s3.opcode === AccessAck
+  val mshr_accessack_s3     = mshr_req_s3 && req_s3.fromA && req_s3.opcode === AccessAck // response for Put, unused
   val mshr_hintack_s3       = mshr_req_s3 && req_s3.fromA && req_s3.opcode === HintAck
   val mshr_probeack_s3      = mshr_req_s3 && req_s3.fromB && req_s3.opcode(2, 1) === ProbeAck(2, 1) // ProbeAck or ProbeAckData from mshr
   val mshr_probeackdata_s3  = mshr_req_s3 && req_s3.fromB && req_s3.opcode === ProbeAckData
@@ -167,6 +167,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val cache_alias           = req_acquire_s3 && dirResult_s3.hit && meta_s3.clients(0) &&
                               meta_s3.alias.getOrElse(0.U) =/= req_s3.alias.getOrElse(0.U)
 
+  val mshr_refill_s3 = (mshr_accessackdata_s3 ||  mshr_hintack_s3 || mshr_grant_s3) // needs refill to L2 DS
+  val retry = io.replResp.bits.retry
   val need_repl = io.replResp.bits.meta.state =/= INVALID && req_s3.replTask // Grant needs replacement
 
   /* ======== Interact with MSHR ======== */
@@ -262,18 +264,18 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val need_data_a  = dirResult_s3.hit && (req_get_s3 || req_acquireBlock_s3)
   val need_data_b  = sinkB_req_s3 && dirResult_s3.hit &&
                        (meta_s3.state === TRUNK || meta_s3.state === TIP && meta_s3.dirty || req_s3.needProbeAckData)
-  val need_data_mshr_repl = mshr_grant_s3 && need_repl
+  val need_data_mshr_repl = mshr_refill_s3 && need_repl && !retry
   val ren                 = need_data_a || need_data_b || need_data_mshr_repl
 
   val wen_c = sinkC_req_s3 && isParamFromT(req_s3.param) && req_s3.opcode(0) && dirResult_s3.hit
   val wen_mshr = req_s3.dsWen && (
-      mshr_accessackdata_s3 || mshr_probeack_s3 || mshr_hintack_s3 ||
-      mshr_grant_s3 && !need_repl || mshr_release_s3
-    )
+    mshr_probeack_s3 || mshr_release_s3 ||
+    mshr_refill_s3 && !need_repl && !retry
+  )
   val wen   = wen_c || wen_mshr
 
   io.toDS.req_s3.valid    := task_s3.valid && (ren || wen)
-  io.toDS.req_s3.bits.way := Mux(mshr_grant_s3 && req_s3.replTask, io.replResp.bits.way,
+  io.toDS.req_s3.bits.way := Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.way,
     Mux(mshr_req_s3, req_s3.way, dirResult_s3.way))
   io.toDS.req_s3.bits.set := Mux(mshr_req_s3, req_s3.set, dirResult_s3.set)
   io.toDS.req_s3.bits.wen := wen
@@ -305,7 +307,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val metaW_valid_s3_a    = sinkA_req_s3 && !need_mshr_s3_a && !req_get_s3 && !req_prefetch_s3 // get & prefetch that hit will not write meta
   val metaW_valid_s3_b    = sinkB_req_s3 && !need_mshr_s3_b && dirResult_s3.hit && (meta_s3.state === TIP || meta_s3.state === BRANCH && req_s3.param === toN)
   val metaW_valid_s3_c    = sinkC_req_s3 && dirResult_s3.hit
-  val metaW_valid_s3_mshr = mshr_req_s3 && req_s3.metaWen
+  val metaW_valid_s3_mshr = mshr_req_s3 && req_s3.metaWen && !(mshr_refill_s3 && retry)
   require(clientBits == 1)
 
   // Get and Prefetch should not change alias bit
@@ -333,7 +335,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   )
   val metaW_s3_mshr = req_s3.meta
 
-  val metaW_way = Mux(mshr_grant_s3 && req_s3.replTask, io.replResp.bits.way, // grant always use replResp way
+  val metaW_way = Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.way, // grant always use replResp way
     Mux(mshr_req_s3, req_s3.way, dirResult_s3.way))
 
   io.metaWReq.valid      := !resetFinish || task_s3.valid && (metaW_valid_s3_a || metaW_valid_s3_b || metaW_valid_s3_c || metaW_valid_s3_mshr)
@@ -348,7 +350,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     MetaEntry()
   )
 
-  io.tagWReq.valid     := task_s3.valid && (mshr_grant_s3 || mshr_accessack_s3 || mshr_accessackdata_s3 || mshr_hintack_s3) && req_s3.tagWen
+  io.tagWReq.valid     := task_s3.valid && req_s3.tagWen && mshr_refill_s3 && !retry
   io.tagWReq.bits.set  := req_s3.set
   io.tagWReq.bits.way  := Mux(mshr_grant_s3 && req_s3.replTask, io.replResp.bits.way, req_s3.way)
   io.tagWReq.bits.wtag := req_s3.tag
@@ -358,7 +360,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val chnl_fire_s3 = c_s3.fire || d_s3.fire
   val req_drop_s3 = !need_write_releaseBuf && !need_write_refillBuf && (
     !mshr_req_s3 && need_mshr_s3 || chnl_fire_s3
-  )
+  ) || (mshr_refill_s3 && retry)
 
   val data_unready_s3 = hasData_s3 && !mshr_req_s3
   c_s3.valid := task_s3.valid && Mux(
@@ -368,7 +370,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   )
   d_s3.valid := task_s3.valid && Mux(
     mshr_req_s3,
-    mshr_grant_s3 || mshr_accessackdata_s3 || mshr_accessack_s3 || mshr_hintack_s3,
+    mshr_refill_s3 && !retry,
     req_s3.fromC || req_s3.fromA && !need_mshr_s3 && !data_unready_s3
   )
   c_s3.bits.task      := source_req_s3
@@ -539,7 +541,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   require(io.status_vec.size == 3)
   io.status_vec(0).valid := task_s3.valid && Mux(
     mshr_req_s3,
-    mshr_grant_s3 || mshr_accessackdata_s3 || mshr_accessack_s3,
+    mshr_refill_s3 && !retry,
     true.B
     // TODO: To consider grantBuffer capacity conflict,
     // only " req_s3.fromC || req_s3.fromA && !need_mshr_s3 " is needed
@@ -601,11 +603,11 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   /* ===== Performance counters ===== */
   // num of mshr req
-  XSPerfAccumulate(cacheParams, "mshr_grant_req", task_s3.valid && mshr_grant_s3)
-  XSPerfAccumulate(cacheParams, "mshr_grantdata_req", task_s3.valid && mshr_grantdata_s3)
-  XSPerfAccumulate(cacheParams, "mshr_accessackdata_req", task_s3.valid && mshr_accessackdata_s3)
-  XSPerfAccumulate(cacheParams, "mshr_accessack_req", task_s3.valid && mshr_accessack_s3)
-  XSPerfAccumulate(cacheParams, "mshr_hintack_req", task_s3.valid && mshr_hintack_s3)
+  XSPerfAccumulate(cacheParams, "mshr_grant_req", task_s3.valid && mshr_grant_s3 && !retry)
+  XSPerfAccumulate(cacheParams, "mshr_grantdata_req", task_s3.valid && mshr_grantdata_s3 && !retry)
+  XSPerfAccumulate(cacheParams, "mshr_accessackdata_req", task_s3.valid && mshr_accessackdata_s3 && !retry)
+  XSPerfAccumulate(cacheParams, "mshr_accessack_req", task_s3.valid && mshr_accessack_s3 && !retry)
+  XSPerfAccumulate(cacheParams, "mshr_hintack_req", task_s3.valid && mshr_hintack_s3 && !retry)
   XSPerfAccumulate(cacheParams, "mshr_probeack_req", task_s3.valid && mshr_probeack_s3)
   XSPerfAccumulate(cacheParams, "mshr_probeackdata_req", task_s3.valid && mshr_probeackdata_s3)
   XSPerfAccumulate(cacheParams, "mshr_release_req", task_s3.valid && mshr_release_s3)

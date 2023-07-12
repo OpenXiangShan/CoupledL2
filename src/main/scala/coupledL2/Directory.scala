@@ -84,6 +84,7 @@ class ReplacerResult(implicit p: Parameters) extends L2Bundle {
   val way = UInt(wayBits.W)
   val meta = new MetaEntry()
   val mshrId = UInt(mshrBits.W)
+  val retry = Bool()
 }
 
 class MetaWrite(implicit p: Parameters) extends L2Bundle {
@@ -106,6 +107,8 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
     val metaWReq = Flipped(ValidIO(new MetaWrite))
     val tagWReq = Flipped(ValidIO(new TagWrite))
     val replResp = ValidIO(new ReplacerResult)
+    // used to count occWays for Grant to retry
+    val msInfo = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo)))
   })
 
   def invalid_way_sel(metaVec: Seq[MetaEntry], repl: UInt) = {
@@ -181,6 +184,7 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   val (inv, invalidWay) = invalid_way_sel(metaAll_s3, replaceWay)
   val chosenWay = Mux(inv, invalidWay, replaceWay)
   // if chosenWay not in wayMask, then choose a way in wayMask
+  // TODO: consider remove this is not used for better timing
   val finalWay = Mux(
     req_s3.wayMask(chosenWay),
     chosenWay,
@@ -210,6 +214,15 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   val replacerRready = if(cacheParams.replacement == "random") true.B else replacer_sram_opt.get.io.r.req.ready
   io.read.ready := tagArray.io.r.req.ready && metaArray.io.r.req.ready && replacerRready
 
+  /* ====== refill retry ====== */
+  // if refill chooses a way that has not finished writing its refillData back to DS (in MSHR Release),
+  // we cancel the Grant and let it retry
+  // TODO: timing?
+  val wayConflictMask = VecInit(io.msInfo.map(s =>
+    s.bits.set === req_s3.set && s.bits.needRelease && s.bits.way === finalWay
+  )).asUInt
+  val refillRetry = wayConflictMask.orR
+
   /* ======!! Replacement logic !!====== */
   /* ====== Read, choose replaceWay ====== */
   val repl_state_s3 = if(random_repl) {
@@ -231,12 +244,13 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   io.replResp.bits.way := finalWay
   io.replResp.bits.meta := metaAll_s3(finalWay)
   io.replResp.bits.mshrId := req_s3.mshrId
+  io.replResp.bits.retry := refillRetry
 
   /* ====== Update ====== */
   // update replacer only when A hit or refill, at stage 3
   val updateHit = reqValid_s3 && hit_s3 && req_s3.replacerInfo.channel(0) &&
     (req_s3.replacerInfo.opcode === AcquirePerm || req_s3.replacerInfo.opcode === AcquireBlock)
-  val updateRefill = refillReqValid_s3
+  val updateRefill = refillReqValid_s3 && !refillRetry
   replacerWen := updateHit || updateRefill
 
   // !!![TODO]!!! check this @CLS

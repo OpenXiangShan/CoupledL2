@@ -93,6 +93,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   directory.io.resp <> mainPipe.io.dirResp_s3
   directory.io.metaWReq <> mainPipe.io.metaWReq
   directory.io.tagWReq <> mainPipe.io.tagWReq
+  directory.io.msInfo <> mshrCtl.io.msInfo
 
   dataStorage.io.req <> mainPipe.io.toDS.req_s3
   dataStorage.io.wdata := mainPipe.io.toDS.wdata_s3

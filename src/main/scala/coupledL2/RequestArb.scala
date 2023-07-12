@@ -161,6 +161,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   // Caution: GrantData-alias may read DataStorage or ReleaseBuf instead
   // Release-replTask also read refillBuf and then write to DS
   io.refillBufRead_s2.valid := mshrTask_s2 && (
+    task_s2.bits.fromB && task_s2.bits.opcode(2, 1) === ProbeAck(2, 1) && task_s2.bits.replTask ||
     task_s2.bits.opcode(2, 1) === Release(2, 1) && task_s2.bits.replTask ||
     mshrTask_s2_a_upwards && !task_s2.bits.useProbeData)
   io.refillBufRead_s2.id := task_s2.bits.mshrId

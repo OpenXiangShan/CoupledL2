@@ -221,7 +221,9 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_probeack.mshrTask := true.B
     mp_probeack.mshrId := io.id
     mp_probeack.aliasTask.foreach(_ := false.B)
-    mp_probeack.useProbeData := true.B // read ReleaseBuf when useProbeData && opcode(0) is true
+    // mp_merge_probeack definitely read releaseBuf and refillBuf at ReqArb
+    // and it needs to write refillData to DS, so useProbeData is set false according to DS.wdata logic
+    mp_probeack.useProbeData := false.B
     mp_probeack.way := dirResult.way
     mp_probeack.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
     mp_probeack.meta := MetaEntry(
@@ -293,7 +295,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_merge_probeack.fromL2pft.foreach(_ := false.B)
     mp_merge_probeack.needHint.foreach(_ := false.B)
     mp_merge_probeack.wayMask := Fill(cacheParams.ways, "b1".U)
-    mp_merge_probeack.replTask := false.B
+    mp_merge_probeack.replTask := true.B
     mp_merge_probeack.reqSource := MemReqSource.NoWhere.id.U
   }
 
@@ -474,13 +476,17 @@ class MSHR(implicit p: Parameters) extends L2Module {
         state.w_rprobeacklast := false.B
       }
     }
+
+    when (replResp.retry) {
+      state.s_refill := false.B
+    }
   }
 
   when (req_valid) {
     timer := timer + 1.U
   }
   
-  val no_schedule = state.s_refill && state.s_probeack && state.s_merge_probeack // && state.s_triggerprefetch.getOrElse(true.B)
+  val no_schedule = state.s_refill && state.s_probeack && state.s_merge_probeack && state.s_release // && state.s_triggerprefetch.getOrElse(true.B)
   val no_wait = state.w_rprobeacklast && state.w_pprobeacklast && state.w_grantlast && state.w_releaseack && state.w_grantack
   val will_free = no_schedule && no_wait
   when (will_free && req_valid) {
