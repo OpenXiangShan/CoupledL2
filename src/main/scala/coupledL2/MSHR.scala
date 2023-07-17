@@ -451,9 +451,12 @@ class MSHR(implicit p: Parameters) extends L2Module {
     state.w_grantack := true.B
   }
 
-  when (io.replResp.valid) {
+  val replResp = io.replResp.bits
+  when (io.replResp.valid && replResp.retry) {
+    state.s_refill := false.B
+  }
+  when (io.replResp.valid && !replResp.retry) {
     state.w_replResp := true.B
-    val replResp = io.replResp.bits
 
     // update meta (no need to update hit/set/error/replacerInfo of dirResult)
     dirResult.tag := replResp.tag
@@ -475,10 +478,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
         state.w_rprobeackfirst := false.B
         state.w_rprobeacklast := false.B
       }
-    }
-
-    when (replResp.retry) {
-      state.s_refill := false.B
     }
   }
 
