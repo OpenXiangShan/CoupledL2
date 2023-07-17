@@ -112,7 +112,7 @@ class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val set         = UInt(setBits.W)
   val reqTag      = UInt(tagBits.W)
   val metaTag     = UInt(tagBits.W)
-  val needRelease = Bool()
+  val needsRepl = Bool()
   val w_c_resp = Bool()
   val w_d_resp = Bool()
   val w_e_resp = Bool()
@@ -151,8 +151,12 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle {
   val reqTag = UInt(tagBits.W)
   val willFree = Bool()
 
-  // to block Acquire for to-be-replaced data until Release done
+  // to block Acquire for to-be-replaced data until Release done (indicated by ReleaseAck received)
   val needRelease = Bool()
+  // MSHR needs to send ReleaseTask but has not yet sent it
+  // PS: ReleaseTask is also responsible for writing refillData to DS when A miss
+  val releaseNotSent = Bool()
+
   val metaTag = UInt(tagBits.W)
   val aliasTask = aliasBitsOpt.map(_ => Bool())
 
