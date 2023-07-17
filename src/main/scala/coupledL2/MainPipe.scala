@@ -458,7 +458,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     isD_s5 := isD_s4
   }
   val rdata_s5 = io.toDS.rdata_s5.data
-  val merged_data_s5 = Mux(ren_s5, rdata_s5, data_s5)
+  val out_data_s5 = Mux(!task_s5.bits.mshrTask, rdata_s5, data_s5)
   val chnl_fire_s5 = c_s5.fire() || d_s5.fire()
 
   val customL1Hint = Module(new CustomL1Hint)
@@ -485,13 +485,13 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   io.releaseBufWrite.valid      := task_s5.valid && need_write_releaseBuf_s5
   io.releaseBufWrite.beat_sel   := Fill(beatSize, 1.U(1.W))
-  io.releaseBufWrite.data.data  := merged_data_s5
+  io.releaseBufWrite.data.data  := rdata_s5
   io.releaseBufWrite.id         := task_s5.bits.mshrId
   assert(!(io.releaseBufWrite.valid && !io.releaseBufWrite.ready), "releaseBuf should be ready when given valid")
 
   io.refillBufWrite.valid     := task_s5.valid && need_write_refillBuf_s5
   io.refillBufWrite.beat_sel  := Fill(beatSize, 1.U(1.W))
-  io.refillBufWrite.data.data := merged_data_s5
+  io.refillBufWrite.data.data := rdata_s5
   io.refillBufWrite.id        := task_s5.bits.mshrId
   assert(!(io.refillBufWrite.valid && !io.refillBufWrite.ready), "refillBuf should be ready when given valid")
 
@@ -499,9 +499,9 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   c_s5.valid := c_d_valid_s5 && isC_s5
   d_s5.valid := c_d_valid_s5 && isD_s5
   c_s5.bits.task := task_s5.bits
-  c_s5.bits.data.data := merged_data_s5
+  c_s5.bits.data.data := out_data_s5
   d_s5.bits.task := task_s5.bits
-  d_s5.bits.data.data := merged_data_s5
+  d_s5.bits.data.data := out_data_s5
 
   /* ======== BlockInfo ======== */
   // if s2/s3 might write Dir, we must block s1 sink entrance
