@@ -500,7 +500,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   //(TODO: or we could just blockB, since Release will be sent to MP very shortly and have no deadlock problem)
   val mergeB = !state.s_release
   // alias: should protect meta from being accessed or occupied
-  val needRelease = !state.s_release || !state.s_merge_probeack || io.bMergeTask.valid || req.aliasTask.getOrElse(false.B)
+  val needRelease = !state.s_release || !state.s_merge_probeack || io.bMergeTask.valid
   io.status.valid := req_valid
   io.status.bits.channel := req.channel
   io.status.bits.set := req.set
@@ -521,6 +521,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.msInfo.bits.way := dirResult.way
   io.msInfo.bits.reqTag := req.tag
   io.msInfo.bits.needRelease := needRelease
+  io.msInfo.bits.aliasTask.foreach(_ := req.aliasTask.getOrElse(false.B))
   io.msInfo.bits.metaTag := dirResult.tag
   io.msInfo.bits.willFree := will_free
   io.msInfo.bits.nestB := nestB

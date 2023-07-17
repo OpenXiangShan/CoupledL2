@@ -154,6 +154,7 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle {
   // to block Acquire for to-be-replaced data until Release done
   val needRelease = Bool()
   val metaTag = UInt(tagBits.W)
+  val aliasTask = aliasBitsOpt.map(_ => Bool())
 
   // decide whether can nest B (req same-addr) or merge B with release (meta same-addr)
   val nestB = Bool()
