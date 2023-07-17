@@ -414,7 +414,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     need_write_releaseBuf_s4 := need_write_releaseBuf
     need_write_refillBuf_s4 := need_write_refillBuf
   }
-  val isC_s4 = task_s4.bits.opcode(2, 1) === Release(2, 1) && task_s4.bits.fromA ||
+  // A-alias-Acquire should send neither C nor D
+  val isC_s4 = task_s4.bits.opcode(2, 1) === Release(2, 1) && task_s4.bits.fromA && !RegNext(cache_alias, false.B) ||
                task_s4.bits.opcode(2, 1) === ProbeAck(2, 1) && task_s4.bits.fromB
   val isD_s4 = task_s4.bits.fromC || task_s4.bits.fromA && (
                 task_s4.bits.opcode(2, 1) === Grant(2, 1) ||
@@ -619,6 +620,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   XSPerfAccumulate(cacheParams, "acquire_hit", hit_s3 && req_s3.fromA &&
     (req_s3.opcode === AcquireBlock || req_s3.opcode === AcquirePerm))
   XSPerfAccumulate(cacheParams, "get_hit", hit_s3 && req_s3.fromA && req_s3.opcode === Get)
+  XSPerfAccumulate(cacheParams, "retry", mshr_refill_s3 && retry)
 
   XSPerfAccumulate(cacheParams, "a_req_miss", miss_s3 && req_s3.fromA)
   XSPerfAccumulate(cacheParams, "acquire_miss", miss_s3 && req_s3.fromA &&
