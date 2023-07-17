@@ -51,7 +51,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val sinkC = Module(new SinkC)
   val sourceC = Module(new SourceC)
   val grantBuf = if (!useFIFOGrantBuffer) Module(new GrantBuffer) else Module(new GrantBufferFIFO)
-  val refillBuf = Module(new MSHRBuffer(wPorts = 2))
+  val refillBuf = Module(new MSHRBuffer(wPorts = 3))
   val releaseBuf = Module(new MSHRBuffer(wPorts = 3))
 
   val prbq = Module(new ProbeQueue())
@@ -62,6 +62,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   a_reqBuf.io.mainPipeBlock := mainPipe.io.toReqBuf
   a_reqBuf.io.s1Entrance := reqArb.io.s1Entrance
   sinkB.io.msInfo := mshrCtl.io.msInfo
+  sinkC.io.msInfo := mshrCtl.io.msInfo
 
   reqArb.io.sinkA <> a_reqBuf.io.out
   reqArb.io.ATag := a_reqBuf.io.ATag
@@ -123,7 +124,8 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   releaseBuf.io.w(2) <> mainPipe.io.releaseBufWrite
 
   refillBuf.io.w(0) <> refillUnit.io.refillBufWrite
-  refillBuf.io.w(1) <> mainPipe.io.refillBufWrite
+  refillBuf.io.w(1) <> sinkC.io.refillBufWrite
+  refillBuf.io.w(2) <> mainPipe.io.refillBufWrite
 
   sourceC.io.in <> mainPipe.io.toSourceC
   

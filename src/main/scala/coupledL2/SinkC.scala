@@ -44,6 +44,8 @@ class SinkC(implicit p: Parameters) extends L2Module {
     val releaseBufWrite = Flipped(new MSHRBufWrite)
     val bufRead = Input(ValidIO(new PipeBufferRead))
     val bufResp = Output(new PipeBufferResp)
+    val refillBufWrite = Flipped(new MSHRBufWrite)
+    val msInfo = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo)))
   })
   
   val (first, last, _, beat) = edgeIn.count(io.c)
@@ -141,7 +143,15 @@ class SinkC(implicit p: Parameters) extends L2Module {
   io.releaseBufWrite.data.data := Fill(beatSize, io.c.bits.data)
   io.releaseBufWrite.id := DontCare // id is given by MSHRCtl by comparing address to the MSHRs
 
-  // io.c.ready := !first || !noSpace && !(isRelease && !io.task.ready)
+  // C-Release writing new data to refillBuffer, for repl-Release to write to DS
+  val newdataMask = VecInit(io.msInfo.map(s =>
+    s.valid && s.bits.set === io.task.bits.set && s.bits.reqTag === io.task.bits.tag && s.bits.needRelease
+  )).asUInt
+  io.refillBufWrite.valid := newdataMask.orR
+  io.refillBufWrite.beat_sel := Fill(beatSize, 1.U(1.W))
+  io.refillBufWrite.id := OHToUInt(newdataMask)
+  io.refillBufWrite.data.data := dataBuf(io.task.bits.bufIdx).asUInt
+
   io.c.ready := !isRelease || !first || !full || !hasData && io.task.ready
 
   io.bufResp.data := dataBuf(io.bufRead.bits.bufIdx)
