@@ -508,7 +508,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   // TODO:[Check] it seems that s3 Dir write will naturally block all s1 by dirRead.ready
   //        (an even stronger blocking than set blocking)
   //         so we might not need s3 blocking here
-  def s2Block(chn: Char, s: TaskBundle): Bool = {
+  def s23Block(chn: Char, s: TaskBundle): Bool = {
     val s1 = io.fromReqArb.status_s1
     val s1_set = chn match {
       case 'a' => s1.a_set
@@ -524,10 +524,10 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     s.set === s1.b_set && (if(tag) s.tag === s1.b_tag else true.B)
   }
 
-  io.toReqBuf(0) := task_s2.valid && s2Block('a', task_s2.bits)
-  io.toReqBuf(1) := false.B // no longer needed
+  io.toReqBuf(0) := task_s2.valid && s23Block('a', task_s2.bits)
+  io.toReqBuf(1) := task_s3.valid && s23Block('a', task_s3.bits)
 
-  io.toReqArb.blockC_s1 := task_s2.valid && s2Block('c', task_s2.bits)
+  io.toReqArb.blockC_s1 := task_s2.valid && s23Block('c', task_s2.bits)
 
   io.toReqArb.blockB_s1 :=
     task_s2.valid && bBlock(task_s2.bits) ||
@@ -537,7 +537,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   io.toReqArb.blockA_s1 := io.toReqBuf(0) || io.toReqBuf(1)
 
-  io.toReqArb.blockG_s1 := task_s2.valid && s2Block('g', task_s2.bits)
+  io.toReqArb.blockG_s1 := task_s2.valid && s23Block('g', task_s2.bits)
   /* ======== Pipeline Status ======== */
   require(io.status_vec.size == 3)
   io.status_vec(0).valid := task_s3.valid && Mux(

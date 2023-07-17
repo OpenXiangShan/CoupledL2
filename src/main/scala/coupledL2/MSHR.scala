@@ -500,7 +500,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
   // mergeB is only allowed when release not sent
   //(TODO: or we could just blockB, since Release will be sent to MP very shortly and have no deadlock problem)
   val mergeB = !state.s_release
-  val needRelease = !state.s_release || !state.s_merge_probeack || io.bMergeTask.valid
+  // alias: should protect meta from being accessed or occupied
+  val needRelease = !state.s_release || !state.s_merge_probeack || io.bMergeTask.valid || req.aliasTask.getOrElse(false.B)
   io.status.valid := req_valid
   io.status.bits.channel := req.channel
   io.status.bits.set := req.set
