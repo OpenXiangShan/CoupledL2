@@ -157,7 +157,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
   io.refillBufWrite.valid := RegNext(io.task.fire && newdataMask.orR, false.B)
   io.refillBufWrite.beat_sel := Fill(beatSize, 1.U(1.W))
   io.refillBufWrite.id := RegNext(OHToUInt(newdataMask))
-  io.refillBufWrite.data.data := dataBuf(io.task.bits.bufIdx).asUInt
+  io.refillBufWrite.data.data := dataBuf(RegNext(io.task.bits.bufIdx)).asUInt
 
   io.c.ready := !isRelease || !first || !full || !hasData && io.task.ready
 
