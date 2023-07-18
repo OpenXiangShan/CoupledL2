@@ -175,7 +175,7 @@ class SourceC(implicit p: Parameters) extends L2Module {
       }
   }
 
-  TLArbiter.lowest(edgeIn, io.out, out_bundles:_*)
+  TLArbiter.robin(edgeIn, io.out, out_bundles:_*)
 
   io.in.ready := !full
   assert(!full, "SourceC should never be full")
