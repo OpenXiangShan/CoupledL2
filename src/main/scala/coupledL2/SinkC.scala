@@ -147,9 +147,16 @@ class SinkC(implicit p: Parameters) extends L2Module {
   val newdataMask = VecInit(io.msInfo.map(s =>
     s.valid && s.bits.set === io.task.bits.set && s.bits.reqTag === io.task.bits.tag && s.bits.releaseNotSent
   )).asUInt
-  io.refillBufWrite.valid := newdataMask.orR
+
+  // we must wait until 2nd beat written into databuf(idx) before we can read it
+  // So we use RegNext
+  // //Or we can use Cat(databuf(idx)(0), io.c.bits.data)
+
+  // since what we are trying to prevent is that C-Release comes first and MSHR-Release comes later
+  // we can make sure this refillBufWrite can be read by MSHR-Release
+  io.refillBufWrite.valid := RegNext(io.task.fire && newdataMask.orR, false.B)
   io.refillBufWrite.beat_sel := Fill(beatSize, 1.U(1.W))
-  io.refillBufWrite.id := OHToUInt(newdataMask)
+  io.refillBufWrite.id := RegNext(OHToUInt(newdataMask))
   io.refillBufWrite.data.data := dataBuf(io.task.bits.bufIdx).asUInt
 
   io.c.ready := !isRelease || !first || !full || !hasData && io.task.ready
