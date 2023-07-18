@@ -167,7 +167,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val cache_alias           = req_acquire_s3 && dirResult_s3.hit && meta_s3.clients(0) &&
                               meta_s3.alias.getOrElse(0.U) =/= req_s3.alias.getOrElse(0.U)
 
-  val mshr_refill_s3 = (mshr_accessackdata_s3 ||  mshr_hintack_s3 || mshr_grant_s3) // needs refill to L2 DS
+  val mshr_refill_s3 = (mshr_accessackdata_s3 || mshr_hintack_s3 || mshr_grant_s3) // needs refill to L2 DS
   val retry = io.replResp.bits.retry && !task_s3.bits.aliasTask.getOrElse(false.B) // alias-Grant need not retry
   val need_repl = io.replResp.bits.meta.state =/= INVALID && req_s3.replTask // Grant needs replacement
 
@@ -352,7 +352,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   io.tagWReq.valid     := task_s3.valid && req_s3.tagWen && mshr_refill_s3 && !retry
   io.tagWReq.bits.set  := req_s3.set
-  io.tagWReq.bits.way  := Mux(mshr_grant_s3 && req_s3.replTask, io.replResp.bits.way, req_s3.way)
+  io.tagWReq.bits.way  := Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.way, req_s3.way)
   io.tagWReq.bits.wtag := req_s3.tag
 
   /* ======== Interact with Channels (C & D) ======== */
