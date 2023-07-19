@@ -158,7 +158,7 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle {
   val releaseNotSent = Bool()
 
   val metaTag = UInt(tagBits.W)
-  val aliasTask = aliasBitsOpt.map(_ => Bool())
+  val dirHit = Bool()
 
   // decide whether can nest B (req same-addr) or merge B with release (meta same-addr)
   val nestB = Bool()

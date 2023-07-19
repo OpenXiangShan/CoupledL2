@@ -522,7 +522,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.msInfo.bits.reqTag := req.tag
   io.msInfo.bits.needRelease := !state.w_releaseack
   io.msInfo.bits.releaseNotSent := releaseNotSent
-  io.msInfo.bits.aliasTask.foreach(_ := req.aliasTask.getOrElse(false.B))
+  io.msInfo.bits.dirHit := dirResult.hit
   io.msInfo.bits.metaTag := dirResult.tag
   io.msInfo.bits.willFree := will_free
   io.msInfo.bits.nestB := nestB
