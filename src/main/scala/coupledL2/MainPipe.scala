@@ -363,16 +363,18 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   ) || (mshr_refill_s3 && retry)
 
   val data_unready_s3 = hasData_s3 && !mshr_req_s3
-  c_s3.valid := task_s3.valid && Mux(
+  val isC_s3 = Mux(
     mshr_req_s3,
     mshr_release_s3 || mshr_probeack_s3,
     req_s3.fromB && !need_mshr_s3 && !data_unready_s3
   )
-  d_s3.valid := task_s3.valid && Mux(
+  val isD_s3 = Mux(
     mshr_req_s3,
     mshr_refill_s3 && !retry,
     req_s3.fromC || req_s3.fromA && !need_mshr_s3 && !data_unready_s3
   )
+  c_s3.valid := task_s3.valid && isC_s3
+  d_s3.valid := task_s3.valid && isD_s3
   c_s3.bits.task      := source_req_s3
   c_s3.bits.data.data := data_s3
   d_s3.bits.task      := source_req_s3
@@ -404,6 +406,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val ren_s4 = RegInit(false.B)
   val need_write_releaseBuf_s4 = RegInit(false.B)
   val need_write_refillBuf_s4 = RegInit(false.B)
+  val isC_s4, isD_s4 = RegInit(false.B)
   task_s4.valid := task_s3.valid && !req_drop_s3
   when (task_s3.valid && !req_drop_s3) {
     task_s4.bits := source_req_s3
@@ -413,26 +416,24 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     ren_s4 := ren
     need_write_releaseBuf_s4 := need_write_releaseBuf
     need_write_refillBuf_s4 := need_write_refillBuf
+    isC_s4 := isC_s3
+    isD_s4 := isD_s3
   }
+
   // A-alias-Acquire should send neither C nor D
-  val isC_s4 = task_s4.bits.opcode(2, 1) === Release(2, 1) && task_s4.bits.fromA && !RegNext(cache_alias, false.B) ||
-               task_s4.bits.opcode(2, 1) === ProbeAck(2, 1) && task_s4.bits.fromB
-  val isD_s4 = task_s4.bits.fromC || task_s4.bits.fromA && (
-                task_s4.bits.opcode(2, 1) === Grant(2, 1) ||
-                task_s4.bits.opcode(2, 1) === AccessAck(2, 1) ||
-                task_s4.bits.opcode === HintAck)
+//  val isC_s4 = task_s4.bits.opcode(2, 1) === Release(2, 1) && task_s4.bits.fromA && !RegNext(cache_alias, false.B) ||
+//               task_s4.bits.opcode(2, 1) === ProbeAck(2, 1) && task_s4.bits.fromB
+//  val isD_s4 = task_s4.bits.fromC || task_s4.bits.fromA && (
+//                task_s4.bits.opcode(2, 1) === Grant(2, 1) ||
+//                task_s4.bits.opcode(2, 1) === AccessAck(2, 1) ||
+//                task_s4.bits.opcode === HintAck)
 
   // for reqs that CANNOT give response in MainPipe, but needs to write releaseBuf/refillBuf
   // we cannot drop them at s3, we must let them go to s4/s5
   val chnl_fire_s4 = c_s4.fire() || d_s4.fire()
   val req_drop_s4 = !need_write_releaseBuf_s4 && !need_write_refillBuf_s4 && chnl_fire_s4
 
-  // MSHR reqs are always ready to send C/D, expect that they already fired
-  val c_d_valid_s4 = task_s4.valid && !RegNext(chnl_fire_s3, false.B) && (
-    !task_s4.bits.mshrTask && !data_unready_s4 ||    // chnl task ok to fire
-     task_s4.bits.mshrTask                           // mshr task ok to fire
-  )
-
+  val c_d_valid_s4 = task_s4.valid && !RegNext(chnl_fire_s3, false.B)
   c_s4.valid := c_d_valid_s4 && isC_s4
   d_s4.valid := c_d_valid_s4 && isD_s4
   c_s4.bits.task := task_s4.bits
@@ -454,8 +455,9 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     data_s5 := data_s4
     need_write_releaseBuf_s5 := need_write_releaseBuf_s4
     need_write_refillBuf_s5 := need_write_refillBuf_s4
-    isC_s5 := isC_s4
-    isD_s5 := isD_s4
+    isC_s5 := isC_s4 || task_s4.bits.fromB && !task_s4.bits.mshrTask && task_s4.bits.opcode === ProbeAckData
+    isD_s5 := isD_s4 || task_s4.bits.fromA && !task_s4.bits.mshrTask &&
+      (task_s4.bits.opcode === GrantData || task_s4.bits.opcode === AccessAckData)
   }
   val rdata_s5 = io.toDS.rdata_s5.data
   val out_data_s5 = Mux(!task_s5.bits.mshrTask, rdata_s5, data_s5)
