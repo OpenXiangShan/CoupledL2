@@ -168,8 +168,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
                               meta_s3.alias.getOrElse(0.U) =/= req_s3.alias.getOrElse(0.U)
 
   val mshr_refill_s3 = (mshr_accessackdata_s3 || mshr_hintack_s3 || mshr_grant_s3) // needs refill to L2 DS
-  val retry = io.replResp.bits.retry && !task_s3.bits.aliasTask.getOrElse(false.B) // alias-Grant need not retry
-  val need_repl = io.replResp.bits.meta.state =/= INVALID && req_s3.replTask // Grant needs replacement
+  val retry = io.replResp.valid && io.replResp.bits.retry
+  val need_repl = io.replResp.valid && io.replResp.bits.meta.state =/= INVALID && req_s3.replTask // Grant needs replacement
 
   /* ======== Interact with MSHR ======== */
   val acquire_on_miss_s3  = req_acquire_s3 || req_prefetch_s3 || req_get_s3 // TODO: remove this cause always acquire on miss?
