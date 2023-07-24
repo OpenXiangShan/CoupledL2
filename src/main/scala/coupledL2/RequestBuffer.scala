@@ -267,5 +267,6 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
         // assert !(all entries occupied for 100 cycles)
     }
+    XSPerfAccumulate(cacheParams, "late_prefetch", io.in.valid && conflict(in))
   }
 }

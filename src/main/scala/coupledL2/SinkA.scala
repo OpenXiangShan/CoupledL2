@@ -157,7 +157,12 @@ class SinkA(implicit p: Parameters) extends L2Module {
     (io.toReqArb.bits.opcode === PutFullData || io.toReqArb.bits.opcode === PutPartialData))
   XSPerfAccumulate(cacheParams, "sinkA_put_beat", io.a.fire() &&
     (io.a.bits.opcode === PutFullData || io.a.bits.opcode === PutPartialData))
-  prefetchOpt.foreach { _ => XSPerfAccumulate(cacheParams, "sinkA_prefetch_req", io.prefetchReq.get.fire()) }
+  prefetchOpt.foreach {
+    _ =>
+      XSPerfAccumulate(cacheParams, "sinkA_prefetch_req", io.prefetchReq.get.fire)
+      XSPerfAccumulate(cacheParams, "sinkA_prefetch_from_l2", io.prefetchReq.get.bits.isBOP && io.prefetchReq.get.fire)
+      XSPerfAccumulate(cacheParams, "sinkA_prefetch_from_l1", !io.prefetchReq.get.bits.isBOP && io.prefetchReq.get.fire)
+  }
 
   // cycels stalled by mainpipe
   val stall = io.toReqArb.valid && !io.toReqArb.ready

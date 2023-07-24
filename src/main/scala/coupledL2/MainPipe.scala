@@ -679,6 +679,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       XSPerfAccumulate(cacheParams, "get_trigger_prefetch_on_hit_pft", io.prefetchTrain.get.fire() && req_get_s3 && dirResult_s3.hit && meta_s3.prefetch.get)
   }
 
+  XSPerfAccumulate(cacheParams, "early_prefetch", meta_s3.prefetch.getOrElse(false.B) && !meta_s3.accessed && !dirResult_s3.hit && task_s3.valid)
+
   /* ===== Monitor ===== */
   io.toMonitor.task_s2 := task_s2
   io.toMonitor.task_s3 := task_s3

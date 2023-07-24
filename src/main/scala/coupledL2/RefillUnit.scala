@@ -22,6 +22,7 @@ import chisel3.util._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import chipsalliance.rocketchip.config.Parameters
+import coupledL2.utils.XSPerfAccumulate
 
 class grantAckQEntry(implicit p: Parameters) extends L2Bundle {
   val source = UInt(sourceIdBits.W)
@@ -70,4 +71,14 @@ class RefillUnit(implicit p: Parameters) extends L2Module {
   dontTouch(io.resp.respInfo.isHit)
 
   io.sinkD.ready := true.B
+
+  val zero = RegInit(true.B)
+  when (io.refillBufWrite.valid) {
+    when (beat === beatSize.U) {
+      zero := true.B
+    } .otherwise {
+      zero := zero & io.sinkD.bits.data === 0.U
+    }
+  }
+  XSPerfAccumulate(cacheParams, "from_L3_zero", io.refillBufWrite.valid && beat === beatSize.U && zero && io.sinkD.bits.data === 0.U)
 }
