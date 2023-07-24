@@ -139,6 +139,7 @@ class SourceC(implicit p: Parameters) extends L2Module {
     c.address := Cat(task.tag, task.set, task.off)
     c.data := data
     c.corrupt := false.B
+    c.user.lift(utility.ReqSourceKey).foreach(_ := task.reqSource)
     c.echo.lift(DirtyKey).foreach(_ := task.dirty)
     c
   }
