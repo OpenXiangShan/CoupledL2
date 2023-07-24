@@ -130,9 +130,9 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       // l1 prefetch
       l1_pf.io.recv_addr := ValidIODelay(io.recv_addr, 2)
       l1_pf.io.train.valid := false.B
-      l1_pf.io.train.bits := 0.U
+      l1_pf.io.train.bits := 0.U.asTypeOf(new PrefetchTrain)
       l1_pf.io.resp.valid := false.B
-      l1_pf.io.resp.bits := 0.U
+      l1_pf.io.resp.bits := 0.U.asTypeOf(new PrefetchResp)
       // l2 prefetch
       bop.io.train <> io.train
       bop.io.resp <> io.resp
