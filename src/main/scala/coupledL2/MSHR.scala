@@ -96,6 +96,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     req.reqSource := msTask.reqSource
     gotT        := false.B
     gotDirty    := false.B
+    gotGrantData := false.B
     probeDirty  := false.B
     probeGotN   := false.B
     timer       := 1.U
