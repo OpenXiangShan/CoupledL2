@@ -258,7 +258,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   dontTouch(metaArray.io)
   dontTouch(tagArray.io)
 
-  io.read.ready := !io.metaWReq.valid && !io.tagWReq.valid && !replacerWen
+  // io.read.ready := !io.metaWReq.valid && !io.tagWReq.valid && !replacerWen
   val replacerRready = if(cacheParams.replacement == "random") true.B else replacer_sram_opt.get.io.r.req.ready
   io.read.ready := tagArray.io.r.req.ready && metaArray.io.r.req.ready && replacerRready
 
