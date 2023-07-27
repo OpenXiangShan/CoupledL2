@@ -135,7 +135,6 @@ class SinkC(implicit p: Parameters) extends L2Module {
   io.resp.respInfo.param := io.c.bits.param
   io.resp.respInfo.last := last
   io.resp.respInfo.dirty := io.c.bits.opcode(0)
-  io.resp.respInfo.isHit := io.c.bits.opcode(0) // ignored
   io.resp.respInfo.hitLevelL3toL2 := 0.U // ignored
 
   io.releaseBufWrite.valid := io.c.valid && io.c.bits.opcode === ProbeAckData
