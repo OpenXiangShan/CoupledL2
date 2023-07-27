@@ -80,7 +80,7 @@ class AcquireUnit(implicit p: Parameters) extends L2Module {
   a_acquire.bits.source := task.source
   a_acquire.bits.address := Cat(task.tag, task.set, 0.U(offsetBits.W))
   a_acquire.bits.mask := Fill(edgeOut.manager.beatBytes, 1.U(1.W))
-  a_acquire.bits.data := DontCare
+  a_acquire.bits.data := 0.U((edgeOut.manager.beatBytes * 8).W)
   a_acquire.bits.echo.lift(DirtyKey).foreach(_ := true.B)
   a_acquire.bits.user.lift(PreferCacheKey).foreach(_ := false.B)
   a_acquire.bits.user.lift(utility.ReqSourceKey).foreach(_ := task.reqSource)

@@ -70,7 +70,6 @@ class SinkA(implicit p: Parameters) extends L2Module {
 
   def fromTLAtoTaskBundle(a: TLBundleA): TaskBundle = {
     val task = Wire(new TaskBundle)
-    task := DontCare
     task.channel := "b001".U
     task.tag := parseAddress(a.address)._1
     task.set := parseAddress(a.address)._2
@@ -80,17 +79,28 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.param := a.param
     task.size := a.size
     task.sourceId := a.source
+    task.bufIdx := 0.U(bufIdxBits.W)
+    task.needProbeAckData := false.B
     task.mshrTask := false.B
+    task.mshrId := 0.U(mshrBits.W)
+    task.aliasTask.foreach(_ := false.B)
+    task.useProbeData := false.B
     task.pbIdx := insertIdx
     task.fromL2pft.foreach(_ := false.B)
     task.needHint.foreach(_ := a.user.lift(PrefetchKey).getOrElse(false.B))
+    task.dirty := false.B
+    task.way := 0.U(wayBits.W)
+    task.meta := 0.U.asTypeOf(new MetaEntry)
+    task.metaWen := false.B
+    task.tagWen := false.B
+    task.dsWen := false.B
+    task.wayMask := 0.U(cacheParams.ways.W)
     task.reqSource := a.user.lift(utility.ReqSourceKey).getOrElse(MemReqSource.NoWhere.id.U)
     task
   }
   def fromPrefetchReqtoTaskBundle(req: PrefetchReq): TaskBundle = {
     val task = Wire(new TaskBundle)
     val fullAddr = Cat(req.tag, req.set, 0.U(offsetBits.W))
-    task := DontCare
     task.channel := "b001".U
     task.tag := parseAddress(fullAddr)._1
     task.set := parseAddress(fullAddr)._2
@@ -100,11 +110,22 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.param := Mux(req.needT, PREFETCH_WRITE, PREFETCH_READ)
     task.size := offsetBits.U
     task.sourceId := req.source
+    task.bufIdx := 0.U(bufIdxBits.W)
     task.needProbeAckData := false.B
     task.mshrTask := false.B
+    task.mshrId := 0.U(mshrBits.W)
     task.aliasTask.foreach(_ := false.B)
+    task.useProbeData := false.B
+    task.pbIdx := 0.U(mshrBits.W)
     task.fromL2pft.foreach(_ := req.isBOP)
     task.needHint.foreach(_ := false.B)
+    task.dirty := false.B
+    task.way := 0.U(wayBits.W)
+    task.meta := 0.U.asTypeOf(new MetaEntry)
+    task.metaWen := false.B
+    task.tagWen := false.B
+    task.dsWen := false.B
+    task.wayMask := 0.U(cacheParams.ways.W)
     task.reqSource := MemReqSource.L2Prefetch.id.U
     task
   }

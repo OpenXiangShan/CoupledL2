@@ -157,7 +157,6 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
 
   def toTLBundleD(task: TaskBundle, data: UInt = 0.U) = {
     val d = Wire(new TLBundleD(edgeIn.bundle))
-    d := DontCare
     d.opcode := task.opcode
     d.param := task.param
     d.size := offsetBits.U
@@ -181,7 +180,8 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
     (next_beat, next_beatsOH)
   }
 
-  io.d := DontCare
+  io.d.valid := false.B
+  io.d.bits := 0.U.asTypeOf(io.d.bits)
   for(idx <- (0 until mshrsAll)) {
     when(deqPtr === idx.U) {
       io.d.valid := block_valids(idx) && tasks(idx).opcode =/= HintAck // L1 does not need HintAck (for now)
@@ -234,12 +234,15 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
   }
 
   io.e.ready := true.B
-  io.e_resp := DontCare
   io.e_resp.valid := io.e.valid
   io.e_resp.mshrId := io.e.bits.sink
-  io.e_resp.respInfo := DontCare
+  io.e_resp.set := 0.U(setBits.W)
+  io.e_resp.tag := 0.U(tagBits.W)
   io.e_resp.respInfo.opcode := GrantAck
+  io.e_resp.respInfo.param := 0.U(3.W)
   io.e_resp.respInfo.last := true.B
+  io.e_resp.respInfo.dirty := false.B
+  io.e_resp.respInfo.hitLevelL3toL2 := 0.U
 
   if (cacheParams.enablePerf) {
     XSPerfAccumulate(cacheParams, "grant_buffer_full", full)
