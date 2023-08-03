@@ -19,7 +19,11 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     val perfName = s"${cacheParams.name}MissMatch_${hartId}"
 
     val pAddr = WireInit(0.U.asTypeOf(Valid(UInt(36.W)))) // TODO: hand written to match PAddrBits in SoC.scala
-    ExcitingUtils.addSink(pAddr, s"rob_head_paddr_${hartId}", ExcitingUtils.Perf)
+    if (topDownOpt.nonEmpty) {
+      ExcitingUtils.addSink(pAddr, s"rob_head_paddr_${hartId}", ExcitingUtils.Perf)
+    } else {
+      pAddr := DontCare
+    }
 
     val addrMatchVec = io.msStatus.zipWithIndex.map {
       case(slice, i) =>
