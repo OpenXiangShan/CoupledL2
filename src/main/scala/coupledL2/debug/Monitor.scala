@@ -54,11 +54,13 @@ class Monitor(implicit p: Parameters) extends L2Module {
   val meta_s3       = mp.dirResult_s3.meta
 
   /* ======== MainPipe Assertions ======== */
-  val c_notHit = s3_valid && req_s3.fromC && !dirResult_s3.hit
-  val c_noNested = !io.nestedWBValid
-  assert(RegNext(!(c_notHit && c_noNested)),
-    "C Release should always hit or have some MSHR meta nested, Tag %x Set %x",
-    req_s3.tag, req_s3.set)
+  // ! Release w/o data will not trigger nestedWBValid, either
+  // ! consider using mshrs.map(_.io.nestedwb_match) and passes to Monitor, if necessary
+//  val c_notHit = s3_valid && req_s3.fromC && !dirResult_s3.hit
+//  val c_noNested = !io.nestedWBValid
+//  assert(RegNext(!(c_notHit && c_noNested)),
+//    "C Release should always hit or have some MSHR meta nested, Tag %x Set %x",
+//    req_s3.tag, req_s3.set)
 
   assert(RegNext(!(s3_valid && !mshr_req_s3 && dirResult_s3.hit &&
     meta_s3.state === TRUNK && !meta_s3.clients.orR)),
