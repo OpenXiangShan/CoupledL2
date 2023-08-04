@@ -27,6 +27,7 @@ import utility.Pipeline
 // TODO: PrefetchReceiver is temporarily used since L1&L2 do not support Hint.
 // TODO: Delete this after Hint is accomplished.
 
+// TODO: n set to 64
 case class PrefetchReceiverParams(n: Int = 32) extends PrefetchParameters {
   override val hasPrefetchBit: Boolean = true
   override val inflightEntries: Int = n

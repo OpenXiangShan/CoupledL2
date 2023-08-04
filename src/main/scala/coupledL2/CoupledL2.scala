@@ -222,6 +222,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     val banks = node.in.size
     val bankBits = if (banks == 1) 0 else log2Up(banks)
     val io = IO(new Bundle {
+      val pfq_busy = Output(Bool())
       val l2_hint = Valid(UInt(32.W))
     })
 
@@ -357,6 +358,8 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     io.l2_hint.bits := l1Hint_arb.io.out.bits.sourceId - Mux1H(client_sourceId_match_oh, client_sourceId_start)
     // always ready for grant hint
     l1Hint_arb.io.out.ready := true.B
+
+    io.pfq_busy := prefetcher.get.io_pfq_busy
 
     val topDown = topDownOpt.map(_ => Module(new TopDownMonitor()(p.alterPartial {
       case EdgeInKey => node.in.head._2

@@ -117,7 +117,7 @@ case class L2Param
   // Performance analysis
   enablePerf: Boolean = true,
   // Monitor
-  enableMonitor: Boolean = true,
+  enableMonitor: Boolean = false,
   // TopDown
   elaboratedTopDown: Boolean = true
 ) {

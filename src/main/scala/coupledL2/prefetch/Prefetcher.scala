@@ -61,6 +61,7 @@ class PrefetchIO(implicit p: Parameters) extends PrefetchBundle {
 
 class PrefetchQueue(implicit p: Parameters) extends PrefetchModule {
   val io = IO(new Bundle {
+    val busy = Output(Bool())
     val enq = Flipped(DecoupledIO(new PrefetchReq))
     val deq = DecoupledIO(new PrefetchReq)
   })
@@ -93,6 +94,7 @@ class PrefetchQueue(implicit p: Parameters) extends PrefetchModule {
   io.enq.ready := true.B
   io.deq.valid := !empty || io.enq.valid
   io.deq.bits := Mux(empty, io.enq.bits, queue(head))
+  io.busy := full
 
   // The reqs that are discarded = enq - deq
   XSPerfAccumulate(cacheParams, "prefetch_queue_enq", io.enq.fire())
@@ -100,7 +102,7 @@ class PrefetchQueue(implicit p: Parameters) extends PrefetchModule {
   XSPerfAccumulate(cacheParams, "prefetch_queue_fromL2_enq", io.enq.fire() && io.enq.bits.isBOP)
   XSPerfAccumulate(cacheParams, "prefetch_queue_deq", io.deq.fire())
   XSPerfAccumulate(cacheParams, "prefetch_queue_fromL1_deq", io.deq.fire() && !io.enq.bits.isBOP)
-  XSPerfAccumulate(cacheParams, "prefetch_queue_fromL2_enq", io.deq.fire() && io.enq.bits.isBOP)
+  XSPerfAccumulate(cacheParams, "prefetch_queue_fromL2_deq", io.deq.fire() && io.enq.bits.isBOP)
   XSPerfHistogram(cacheParams, "prefetch_queue_entry", PopCount(valids.asUInt),
     true.B, 0, inflightEntries, 1)
 }
@@ -108,6 +110,7 @@ class PrefetchQueue(implicit p: Parameters) extends PrefetchModule {
 class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val io = IO(new PrefetchIO)
   val io_l2_pf_en = IO(Input(Bool()))
+  val io_pfq_busy = IO(Output(Bool()))
 
   prefetchOpt.get match {
     case bop: BOPParameters =>
@@ -131,6 +134,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       l1_pf.io.recv_addr := ValidIODelay(io.recv_addr, 2)
       l1_pf.io.train <> DontCare
       l1_pf.io.resp <> DontCare
+      io_pfq_busy := RegNextN(pftQueue.io.busy, 2, Some(true.B))
       // l2 prefetch
       bop.io.train <> io.train
       bop.io.resp <> io.resp
