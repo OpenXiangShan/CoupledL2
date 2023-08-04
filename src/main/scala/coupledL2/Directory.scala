@@ -154,6 +154,12 @@ class Directory(implicit p: Parameters) extends L2Module {
   val random_repl = cacheParams.replacement == "random"
   val replacer_sram_opt = if(random_repl) None else
     Some(Module(new BankedSRAM(UInt(repl.nBits.W), sets, 1, banks, singlePort = true, shouldReset = true)))
+  // origin-bit marks whether the data_block is reused
+  val origin_bit_opt = if(random_repl) None else
+    Some(Module(new BankedSRAM(Bool(), sets, ways, banks, singlePort = true)))
+  val origin_bits_r = origin_bit_opt.get.io.r(io.read.fire(), io.read.bits.set).resp.data
+  val origin_bits_hold = Wire(Vec(ways, Bool()))
+  origin_bits_hold := HoldUnless(origin_bits_r, RegNext(io.read.fire(), false.B))
 
   val repl_state = if(random_repl){
     when(io.tagWReq.fire){
@@ -181,27 +187,38 @@ class Directory(implicit p: Parameters) extends L2Module {
 
     repl_state_hold
   } else if(cacheParams.replacement == "drrip"){
-    //Set Dueling
-    val PSEL = RegInit(512.U(10.W)) //32-monitor sets, 10-bits psel
-    // track monitor sets' hit rate for each policy: srrip-0,128...3968;brrip-64,192...4032
-    when(reqValidReg && (reqReg.set(6,0)===0.U) && !hit_s2){  //SDMs_srrip miss
-      PSEL := PSEL + 1.U
-    } .elsewhen(reqValidReg && (reqReg.set(6,0)===64.U) && !hit_s2){ //SDMs_brrip miss
-      PSEL := PSEL - 1.U
-    }
-
     val repl_sram_r = replacer_sram_opt.get.io.r(io.read.fire(), io.read.bits.set).resp.data(0)
     val repl_state_hold = WireInit(0.U(repl.nBits.W))
     repl_state_hold := HoldUnless(repl_sram_r, RegNext(io.read.fire(), false.B))
+
+    // req_type[2]: 0-firstuse, 1-reuse; req_type[1]: 0-acquire, 1-release; req_type[0]: 0-non-prefetch, 1-prefetch
+    val req_type = WireInit(0.U(3.W))
+    req_type := Cat(origin_bits_hold(way_s2), reqReg.replacerInfo.channel(2), 
+                    (reqReg.replacerInfo.channel(0) && reqReg.replacerInfo.opcode === TLMessages.Hint) || (reqReg.replacerInfo.channel(2) && metaRead(way_s2).prefetch.getOrElse(false.B)))
+    
+    // Set Dueling
+    val PSEL = RegInit(512.U(10.W)) //32-monitor sets, 10-bits psel
+    // basic SDMs complement-selection policy: srrip--set_idx[group-:]==set_idx[group_offset-:]; brrip--set_idx[group-:]==!set_idx[group_offset-:]
+    val setBits = log2Ceil(sets)
+    val half_setBits = setBits >> 1
+    val match_a = reqReg.set(setBits-1,setBits-half_setBits-1)===reqReg.set(setBits-half_setBits-1,0)  // 512 sets [8:4][4:0]
+    val match_b = reqReg.set(setBits-1,setBits-half_setBits-1)===(~reqReg.set(setBits-half_setBits-1,0))
+    when(replacerWen && RegNext(match_a,false.B) && !RegNext(hit_s2) && (PSEL=/=1023.U)){  //SDMs_srrip miss
+      PSEL := PSEL + 1.U
+    } .elsewhen(replacerWen && RegNext(match_b,false.B) && !RegNext(hit_s2) && (PSEL=/=0.U)){ //SDMs_brrip miss
+      PSEL := PSEL - 1.U
+    }
     // decide use which policy by policy selection counter, for insertion
-    /*if set -> SDMs: use fix policy
-      else if PSEL(MSB)==0: use srrip
-      else if PSEL(MSB)==1: use brrip*/
+    // repl_type: false.B - srrip, true.B - brrip
+    /* if set -> SDMs: use fix policy
+       else if PSEL(MSB)==0: use srrip
+       else if PSEL(MSB)==1: use brrip */
     val repl_type = WireInit(false.B)
-    repl_type := Mux(reqReg.set(6,0)===0.U, false.B, 
-                    Mux(reqReg.set(6,0)===64.U, true.B,
-                      Mux(PSEL(9)===0.U, false.B, true.B)))    // false.B - srrip, true.B - brrip
-    val next_state = repl.get_next_state(repl_state_hold, way_s2, hit_s2, repl_type)
+    repl_type := Mux(match_a, false.B, 
+                    Mux(match_b, true.B,
+                      Mux(PSEL(9)===0.U, false.B, true.B)))    
+    
+    val next_state = repl.get_next_state(repl_state_hold, way_s2, hit_s2, repl_type, req_type)
 
     val repl_init = Wire(Vec(ways, UInt(2.W)))
     repl_init.foreach(_ := 2.U(2.W))
@@ -269,7 +286,9 @@ class Directory(implicit p: Parameters) extends L2Module {
   val replacerRready = if(cacheParams.replacement == "random") true.B else replacer_sram_opt.get.io.r.req.ready
   io.read.ready := tagArray.io.r.req.ready && metaArray.io.r.req.ready && replacerRready
 
-  val update = reqReg.replacerInfo.channel(0) && (reqReg.replacerInfo.opcode === TLMessages.AcquirePerm || reqReg.replacerInfo.opcode === TLMessages.AcquireBlock)
+  val update = (reqReg.replacerInfo.channel(0) && (reqReg.replacerInfo.opcode === TLMessages.AcquirePerm || reqReg.replacerInfo.opcode === TLMessages.AcquireBlock || reqReg.replacerInfo.opcode === TLMessages.Hint)) ||
+               (reqReg.replacerInfo.channel(2) && (reqReg.replacerInfo.opcode === TLMessages.Release || reqReg.replacerInfo.opcode === TLMessages.ReleaseData))
+              //reqReg.replacerInfo.channel(0) && (reqReg.replacerInfo.opcode === TLMessages.AcquirePerm || reqReg.replacerInfo.opcode === TLMessages.AcquireBlock)
   when(reqValidReg && update) {
     replacerWen := true.B
   }.otherwise {
