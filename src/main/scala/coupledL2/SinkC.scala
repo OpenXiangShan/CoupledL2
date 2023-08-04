@@ -67,7 +67,6 @@ class SinkC(implicit p: Parameters) extends L2Module {
 
   def toTaskBundle(c: TLBundleC): TaskBundle = {
     val task = Wire(new TaskBundle)
-    task := DontCare
     task.channel := "b100".U
     task.tag := parseAddress(c.address)._1
     task.set := parseAddress(c.address)._2
@@ -77,7 +76,21 @@ class SinkC(implicit p: Parameters) extends L2Module {
     task.param := c.param
     task.size := c.size
     task.sourceId := c.source
+    task.bufIdx := 0.U(bufIdxBits.W)
+    task.needProbeAckData := false.B
     task.mshrTask := false.B
+    task.mshrId := 0.U(mshrBits.W)
+    task.aliasTask.foreach(_ := false.B)
+    task.useProbeData := false.B
+    task.pbIdx := 0.U(mshrBits.W)
+    task.fromL2pft.foreach(_ := false.B)
+    task.needHint.foreach(_ := false.B)
+    task.dirty := false.B
+    task.way := 0.U(wayBits.W)
+    task.meta := 0.U.asTypeOf(new MetaEntry)
+    task.metaWen := false.B
+    task.tagWen := false.B
+    task.dsWen := false.B
     task.wayMask := Fill(cacheParams.ways, "b1".U)
     task.reqSource := MemReqSource.NoWhere.id.U // Ignore
     task
@@ -135,11 +148,12 @@ class SinkC(implicit p: Parameters) extends L2Module {
   io.resp.respInfo.param := io.c.bits.param
   io.resp.respInfo.last := last
   io.resp.respInfo.dirty := io.c.bits.opcode(0)
+  io.resp.respInfo.isHit := io.c.bits.opcode(0)
 
   io.releaseBufWrite.valid := io.c.valid && io.c.bits.opcode === ProbeAckData
   io.releaseBufWrite.beat_sel := UIntToOH(beat)
   io.releaseBufWrite.data.data := Fill(beatSize, io.c.bits.data)
-  io.releaseBufWrite.id := DontCare // id is given by MSHRCtl by comparing address to the MSHRs
+  io.releaseBufWrite.id := 0.U(mshrBits.W) // id is given by MSHRCtl by comparing address to the MSHRs
 
   // io.c.ready := !first || !noSpace && !(isRelease && !io.toReqArb.ready)
   io.c.ready := !isRelease || !first || !full || !hasData && io.toReqArb.ready

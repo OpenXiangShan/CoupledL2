@@ -132,7 +132,6 @@ class SourceC(implicit p: Parameters) extends L2Module {
 
   def toTLBundleC(task: TaskBundle, data: UInt = 0.U) = {
     val c = Wire(new TLBundleC(edgeOut.bundle))
-    c := DontCare
     c.opcode := task.opcode
     c.param := task.param
     c.size := offsetBits.U
@@ -140,6 +139,7 @@ class SourceC(implicit p: Parameters) extends L2Module {
     c.address := Cat(task.tag, task.set, task.off)
     c.data := data
     c.corrupt := false.B
+    c.user.lift(utility.ReqSourceKey).foreach(_ := task.reqSource)
     c.echo.lift(DirtyKey).foreach(_ := task.dirty)
     c
   }
@@ -187,7 +187,7 @@ class SourceC(implicit p: Parameters) extends L2Module {
   io.resp.mshrId := io.out.bits.source
   io.resp.set := parseFullAddress(io.out.bits.address)._2
   io.resp.tag := parseFullAddress(io.out.bits.address)._1
-  io.resp.respInfo := DontCare
+  io.resp.respInfo := 0.U.asTypeOf(new RespInfoBundle)
 
   XSPerfAccumulate(cacheParams, "sourceC_full", full)
 }

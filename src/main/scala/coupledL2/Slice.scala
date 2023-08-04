@@ -28,7 +28,7 @@ import coupledL2.debug._
 import coupledL2.prefetch.PrefetchIO
 import utility.RegNextN
 
-class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
+class Slice()(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle {
     val slice_id = Input(UInt(2.W)) // cls_test
     val in = Flipped(TLBundle(edgeIn.bundle))
@@ -53,9 +53,6 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val grantBuf = if (!useFIFOGrantBuffer) Module(new GrantBuffer) else Module(new GrantBufferFIFO)
   val refillBuf = Module(new MSHRBuffer(wPorts = 2))
   val releaseBuf = Module(new MSHRBuffer(wPorts = 3))
-
-  val prbq = Module(new ProbeQueue())
-  prbq.io <> DontCare // @XiaBin TODO
 
   a_reqBuf.io.in <> sinkA.io.toReqArb
   a_reqBuf.io.mshrStatus := mshrCtl.io.toReqBuf
@@ -135,7 +132,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
       p.train <> mainPipe.io.prefetchTrain.get
       sinkA.io.prefetchReq.get <> p.req
       p.resp <> grantBuf.io.prefetchResp.get
-      p.recv_addr := DontCare
+      p.recv_addr := 0.U.asTypeOf(ValidIO(UInt(64.W)))
   }
 
   /* input & output signals */
@@ -190,7 +187,5 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   if (cacheParams.enableMonitor) {
     val monitor = Module(new Monitor())
     mainPipe.io.toMonitor <> monitor.io.fromMainPipe
-  } else {
-    mainPipe.io.toMonitor <> DontCare
   }
 }

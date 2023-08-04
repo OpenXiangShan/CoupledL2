@@ -97,7 +97,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
     val l1Hint = ValidIO(new L2ToL1Hint())
     val grantBufferHint = Flipped(ValidIO(new L2ToL1Hint()))
-    val globalCounter = Input(UInt(log2Ceil(mshrsAll).W))
+    val globalCounter = Input(UInt((log2Ceil(mshrsAll) + 1).W))
     /* send prefetchTrain to Prefetch to trigger a prefetch req */
     val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain))
 
@@ -190,7 +190,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   // Allocation of MSHR: new request only
   val alloc_state = WireInit(0.U.asTypeOf(new FSMState()))
   alloc_state.elements.foreach(_._2 := true.B)
-  io.toMSHRCtl.mshr_alloc_s3 := DontCare
   io.toMSHRCtl.mshr_alloc_s3.valid := task_s3.valid && !mshr_req_s3 && need_mshr_s3
   io.toMSHRCtl.mshr_alloc_s3.bits.dirResult := dirResult_s3
   io.toMSHRCtl.mshr_alloc_s3.bits.state := alloc_state
@@ -205,13 +204,22 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   ms_task.param            := req_s3.param
   ms_task.size             := req_s3.size
   ms_task.sourceId         := req_s3.sourceId
+  ms_task.bufIdx           := 0.U(bufIdxBits.W)
   ms_task.needProbeAckData := req_s3.needProbeAckData
+  ms_task.mshrTask         := false.B
+  ms_task.mshrId           := 0.U(mshrBits.W)
   ms_task.aliasTask.foreach(_ := cache_alias)
   ms_task.useProbeData     := false.B
   ms_task.pbIdx            := req_s3.pbIdx
   ms_task.fromL2pft.foreach(_ := req_s3.fromL2pft.get)
   ms_task.needHint.foreach(_  := req_s3.needHint.get)
+  ms_task.dirty            := false.B
   ms_task.way              := dirResult_s3.way
+  ms_task.meta             := 0.U.asTypeOf(new MetaEntry)
+  ms_task.metaWen          := false.B
+  ms_task.tagWen           := false.B
+  ms_task.dsWen            := false.B
+  ms_task.wayMask          := 0.U(cacheParams.ways.W)
   ms_task.reqSource        := req_s3.reqSource
 
   /* ======== Resps to SinkA/B/C Reqs ======== */
@@ -391,7 +399,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.nestedwb.set := req_s3.set
   io.nestedwb.tag := req_s3.tag
   io.nestedwb.b_toN := task_s3.valid && metaW_valid_s3_b && req_s3.param === toN
-  io.nestedwb.b_toB := task_s3.valid && metaW_valid_s3_b && req_s3.param =/= toB // assume L3 won't send Probe toT
+  io.nestedwb.b_toB := task_s3.valid && metaW_valid_s3_b && req_s3.param === toB // assume L3 won't send Probe toT
   io.nestedwb.b_clr_dirty := task_s3.valid && metaW_valid_s3_b && meta_s3.dirty
   // c_set_dirty is true iff Release has Data
   io.nestedwb.c_set_dirty := task_s3.valid && metaW_valid_s3_c && wen_c

@@ -64,6 +64,16 @@ case class PrefetchField() extends BundleField(PrefetchKey) {
   }
 }
 
+case object IsHitKey extends ControlKey[Bool](name = "isHitInL3")
+
+case class IsHitField() extends BundleField(IsHitKey) {
+  override def data: Bool = Output(Bool())
+
+  override def default(x: Bool): Unit = {
+    x := true.B
+  }
+}
+
 // Indicate whether this block is dirty or not (only used in handle Release/ReleaseData)
 // Now it only works for non-inclusive cache (ignored in inclusive cache)
 case object DirtyKey extends ControlKey[Bool](name = "blockisdirty")
@@ -97,7 +107,7 @@ case class L2Param
   // Client (these are set in Configs.scala in XiangShan)
   echoField: Seq[BundleFieldBase] = Nil,
   reqField: Seq[BundleFieldBase] = Nil, 
-  respKey: Seq[BundleKeyBase] = Nil,
+  respKey: Seq[BundleKeyBase] = Seq(IsHitKey),
   // Manager
   reqKey: Seq[BundleKeyBase] = Seq(AliasKey, PrefetchKey, ReqSourceKey),
   respField: Seq[BundleFieldBase] = Nil,

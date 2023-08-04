@@ -87,7 +87,7 @@ class TagWrite(implicit p: Parameters) extends L2Bundle {
   val wtag = UInt(tagBits.W)
 }
 
-class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
+class Directory(implicit p: Parameters) extends L2Module {
 
   val io = IO(new Bundle() {
     val slice_id = Input(UInt(2.W)) // cls_test
@@ -120,11 +120,6 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   val reqValidReg = RegNext(io.read.fire, false.B)
   val resetFinish = RegInit(false.B)
   val resetIdx = RegInit((sets - 1).U)
-
-  tagArray.io.r <> DontCare
-  tagArray.io.w <> DontCare
-  metaArray.io.r <> DontCare
-  metaArray.io.w <> DontCare
 
   // Tag R/W
   tagRead := tagArray.io.r(io.read.fire, io.read.bits.set).resp.data
@@ -270,7 +265,7 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   dontTouch(metaArray.io)
   dontTouch(tagArray.io)
 
-  io.read.ready := !io.metaWReq.valid && !io.tagWReq.valid && !replacerWen
+  // io.read.ready := !io.metaWReq.valid && !io.tagWReq.valid && !replacerWen
   val replacerRready = if(cacheParams.replacement == "random") true.B else replacer_sram_opt.get.io.r.req.ready
   io.read.ready := tagArray.io.r.req.ready && metaArray.io.r.req.ready && replacerRready
 

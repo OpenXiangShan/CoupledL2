@@ -60,12 +60,14 @@ class RefillUnit(implicit p: Parameters) extends L2Module {
 
   io.resp.valid := (first || last) && io.sinkD.valid
   io.resp.mshrId := io.sinkD.bits.source
-  io.resp.set := DontCare
-  io.resp.tag := DontCare
+  io.resp.set := 0.U(setBits.W)
+  io.resp.tag := 0.U(tagBits.W)
   io.resp.respInfo.opcode := io.sinkD.bits.opcode
   io.resp.respInfo.param := io.sinkD.bits.param
   io.resp.respInfo.last := last
   io.resp.respInfo.dirty := io.sinkD.bits.echo.lift(DirtyKey).getOrElse(false.B)
+  io.resp.respInfo.isHit := io.sinkD.bits.user.lift(IsHitKey).getOrElse(true.B)
+  dontTouch(io.resp.respInfo.isHit)
 
   io.sinkD.ready := true.B
 }
