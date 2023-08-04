@@ -169,7 +169,12 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
     val repl_sram_r = replacer_sram_opt.get.io.r(io.read.fire(), io.read.bits.set).resp.data(0)
     val repl_state_hold = WireInit(0.U(repl.nBits.W))
     repl_state_hold := HoldUnless(repl_sram_r, RegNext(io.read.fire(), false.B))
-    val next_state = repl.get_next_state(repl_state_hold, way_s2, hit_s2)
+    // req_type[2]: 0-firstuse, 1-reuse; req_type[1]: 0-acquire, 1-release; req_type[0]: 0-non-prefetch, 1-prefetch
+    val req_type = WireInit(0.U(3.W))
+    req_type := Cat(origin_bits_hold(way_s2), reqReg.replacerInfo.channel(2), 
+                   (reqReg.replacerInfo.channel(0) && reqReg.replacerInfo.opcode === TLMessages.Hint) || (reqReg.replacerInfo.channel(2) && metaRead(way_s2).prefetch.getOrElse(false.B)))
+    
+    val next_state = repl.get_next_state(repl_state_hold, way_s2, hit_s2, req_type)
     val repl_init = Wire(Vec(ways, UInt(2.W)))
     repl_init.foreach(_ := 2.U(2.W))
     replacer_sram_opt.get.io.w(
