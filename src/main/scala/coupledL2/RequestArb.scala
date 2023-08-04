@@ -161,6 +161,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   io.dirRead_s1.bits.replacerInfo.opcode := task_s1.bits.opcode
   io.dirRead_s1.bits.replacerInfo.channel := task_s1.bits.channel
   io.dirRead_s1.bits.replacerInfo.reqSource := task_s1.bits.reqSource
+  io.dirRead_s1.bits.replacerInfo.fromL2pft.foreach(_ := task_s1.bits.fromL2pft.get)
 
   // probe block same-set A req for s2/s3
   io.sinkEntrance.valid := io.sinkB.fire || io.sinkC.fire

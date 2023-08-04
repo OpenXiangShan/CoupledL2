@@ -300,6 +300,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
             case SliceIdKey => i
           })) 
         }
+        slice.io.slice_id := i.U // cls_test
         slice.io.in <> in
         in.b.bits.address := restoreAddress(slice.io.in.b.bits.address, i)
         out <> slice.io.out
