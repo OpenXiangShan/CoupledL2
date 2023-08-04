@@ -30,6 +30,7 @@ class ReplacerInfo(implicit p: Parameters) extends L2Bundle {
   val channel = UInt(3.W)
   val opcode = UInt(3.W)
   val reqSource = UInt(MemReqSource.reqSourceBits.W)
+  val fromL2pft = prefetchOpt.map(_ => Bool())
 }
 
 trait HasChannelBits { this: Bundle =>

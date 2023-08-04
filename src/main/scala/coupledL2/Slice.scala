@@ -30,6 +30,7 @@ import utility.RegNextN
 
 class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val io = IO(new Bundle {
+    val slice_id = Input(UInt(2.W)) // cls_test
     val in = Flipped(TLBundle(edgeIn.bundle))
     val out = TLBundle(edgeOut.bundle)
     val sliceId = Input(UInt(bankBits.W))
@@ -87,6 +88,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   directory.io.resp <> mainPipe.io.dirResp_s3
   directory.io.metaWReq <> mainPipe.io.metaWReq
   directory.io.tagWReq <> mainPipe.io.tagWReq
+  directory.io.slice_id := io.slice_id // cls_test
 
   dataStorage.io.req <> mainPipe.io.toDS.req_s3
   dataStorage.io.wdata := mainPipe.io.toDS.wdata_s3

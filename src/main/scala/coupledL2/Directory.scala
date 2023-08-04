@@ -24,6 +24,7 @@ import coupledL2.utils._
 import utility.ParallelPriorityMux
 import chipsalliance.rocketchip.config.Parameters
 import freechips.rocketchip.tilelink.TLMessages
+import coupledL2.debug.DirectoryLogger
 
 class MetaEntry(implicit p: Parameters) extends L2Bundle {
   val dirty = Bool()
@@ -89,6 +90,7 @@ class TagWrite(implicit p: Parameters) extends L2Bundle {
 class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
 
   val io = IO(new Bundle() {
+    val slice_id = Input(UInt(2.W)) // cls_test
     val read = Flipped(DecoupledIO(new DirRead))
     val resp = Output(new DirResult)
     val metaWReq = Flipped(ValidIO(new MetaWrite))
@@ -280,6 +282,28 @@ class Directory(implicit p: Parameters) extends L2Module with DontCareInnerLogic
   when(!resetFinish) {
     resetIdx := resetIdx - 1.U
   }
+
+  // cls_test: dump repl_pref_footprint
+  DirectoryLogger(cacheParams.name)(
+    Cat(tag_s3, set_s3, io.slice_id, 0.U(offsetBits.W)),
+    set_s3,
+    way_s3,
+    hit_s3,
+    Cat(replacerInfo_s3.channel(0) && (replacerInfo_s3.opcode===TLMessages.AcquirePerm || replacerInfo_s3.opcode===TLMessages.AcquireBlock), 
+        replacerInfo_s3.channel(2) && (replacerInfo_s3.opcode===TLMessages.Release || replacerInfo_s3.opcode===TLMessages.ReleaseData),
+        replacerInfo_s3.channel(0) && (replacerInfo_s3.opcode === TLMessages.Hint) && replacerInfo_s3.fromL2pft.getOrElse(false.B),
+        replacerInfo_s3.channel(0) && (replacerInfo_s3.opcode === TLMessages.Hint) && !replacerInfo_s3.fromL2pft.getOrElse(false.B)),      //acquire/release/l2_pf/l1_pf
+    replacerWen
+  )
+
+  // count num of blocks prefetched but not used
+  origin_bit_opt.get.io.w(
+    RegNext(reqValidReg, false.B),
+    hit_s3,
+    set_s3,
+    UIntToOH(way_s3)
+  )
+  XSPerfAccumulate(cacheParams, "victim_pfnotuse", !hit_s3 && meta_s3.prefetch.getOrElse(false.B) && !origin_bits_hold(way_s3))
 
   XSPerfAccumulate(cacheParams, "dirRead_cnt", reqValidReg)
   XSPerfAccumulate(cacheParams, "choose_busy_way", reqValidReg && !reqReg.wayMask(chosenWay))
