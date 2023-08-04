@@ -95,7 +95,7 @@ case class L2Param
   pageBytes: Int = 4096,
   channelBytes: TLChannelBeatBytes = TLChannelBeatBytes(32),
   clientCaches: Seq[L1Param] = Nil,
-  replacement: String = "plru",
+  replacement: String = "plru", //"drrip",
   mshrs: Int = 16,
   releaseData: Int = 3,
   /* 0 for dirty alone
