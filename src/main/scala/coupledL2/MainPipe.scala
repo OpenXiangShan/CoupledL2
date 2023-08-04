@@ -97,7 +97,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
     val l1Hint = ValidIO(new L2ToL1Hint())
     val grantBufferHint = Flipped(ValidIO(new L2ToL1Hint()))
-    val globalCounter = Input(UInt(log2Ceil(mshrsAll).W))
+    val globalCounter = Input(UInt((log2Ceil(mshrsAll) + 1).W))
     /* send prefetchTrain to Prefetch to trigger a prefetch req */
     val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain))
 
