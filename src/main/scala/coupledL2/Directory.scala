@@ -171,16 +171,6 @@ class Directory(implicit p: Parameters) extends L2Module {
     val repl_state_hold = WireInit(0.U(repl.nBits.W))
     repl_state_hold := HoldUnless(repl_sram_r, RegNext(io.read.fire(), false.B))
     
-    // origin-bit marks whether the data_block is reused
-    val origin_bits_r = origin_bit_opt.get.io.r(io.read.fire(), io.read.bits.set).resp.data
-    val origin_bits_hold = Wire(Vec(ways, Bool()))
-    origin_bits_hold := HoldUnless(origin_bits_r, RegNext(io.read.fire(), false.B))
-    origin_bit_opt.get.io.w(
-      replacerWen,
-      RegNext(hit_s2, false.B),
-      RegNext(reqReg.set, 0.U.asTypeOf(reqReg.set)),
-      UIntToOH(RegNext(way_s2, 0.U.asTypeOf(way_s2)))
-    )
     // req_type[2]: 0-firstuse, 1-reuse; req_type[1]: 0-acquire, 1-release; req_type[0]: 0-non-prefetch, 1-prefetch
     val req_type = WireInit(0.U(3.W))
     req_type := Cat(origin_bits_hold(way_s2), reqReg.replacerInfo.channel(2), 
