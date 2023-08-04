@@ -330,17 +330,19 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     Mux(req_needT_s3 || sink_resp_s3_a_promoteT, TRUNK, meta_s3.state),
     Fill(clientBits, true.B),
     Some(metaW_s3_a_alias),
-    accessed = true.B
+    accessed = true.B,
+    prefetch = meta_s3.prefetch
   )
   val metaW_s3_b = Mux(req_s3.param === toN, MetaEntry(),
-    MetaEntry(false.B, BRANCH, meta_s3.clients, meta_s3.alias, accessed = meta_s3.accessed))
+    MetaEntry(false.B, BRANCH, meta_s3.clients, meta_s3.alias, accessed = meta_s3.accessed, prefetch = meta_s3.prefetch))
 
   val metaW_s3_c = MetaEntry(
     meta_s3.dirty || wen_c,
     Mux(isParamFromT(req_s3.param), TIP, meta_s3.state),
     Fill(clientBits, !isToN(req_s3.param)),
     meta_s3.alias,
-    accessed = meta_s3.accessed
+    accessed = meta_s3.accessed,
+    prefetch = meta_s3.prefetch
   )
   val metaW_s3_repl = MetaEntry()
   val metaW_s3_mshr = req_s3.meta
