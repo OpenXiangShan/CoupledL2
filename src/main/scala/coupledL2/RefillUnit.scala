@@ -34,7 +34,7 @@ class grantAckQEntry(implicit p: Parameters) extends L2Bundle {
 class RefillUnit(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val sinkD = Flipped(DecoupledIO(new TLBundleD(edgeOut.bundle)))
-    val sourceE = DecoupledIO(new TLBundleE(edgeIn.bundle))
+    val sourceE = DecoupledIO(new TLBundleE(edgeOut.bundle))
     val refillBufWrite = Flipped(new MSHRBufWrite)
     val resp = Output(new RespBundle)
   })
