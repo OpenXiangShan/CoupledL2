@@ -328,6 +328,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
         out.a.bits.address := restoreAddress(slice.io.out.a.bits.address, i)
         out.c.bits.address := restoreAddress(slice.io.out.c.bits.address, i)
         slice.io.sliceId := i.U
+        slice.io.slice_id := i.U
 
         slice.io.prefetch.zip(prefetcher).foreach {
           case (s, p) =>
