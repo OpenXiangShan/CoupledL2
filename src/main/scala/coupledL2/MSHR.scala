@@ -221,9 +221,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_probeack.mshrTask := true.B
     mp_probeack.mshrId := io.id
     mp_probeack.aliasTask.foreach(_ := false.B)
-    // mp_merge_probeack definitely read releaseBuf and refillBuf at ReqArb
-    // and it needs to write refillData to DS, so useProbeData is set false according to DS.wdata logic
-    mp_probeack.useProbeData := false.B
+    mp_probeack.useProbeData := true.B // write [probeAckData] to DS, if not probed toN
     mp_probeack.way := dirResult.way
     mp_probeack.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
     mp_probeack.meta := MetaEntry(
@@ -269,7 +267,9 @@ class MSHR(implicit p: Parameters) extends L2Module {
     )
     mp_merge_probeack.mshrTask := true.B
     mp_merge_probeack.mshrId := io.id
-    mp_merge_probeack.useProbeData := true.B
+    // mp_merge_probeack definitely read releaseBuf and refillBuf at ReqArb
+    // and it needs to write refillData to DS, so useProbeData is set false according to DS.wdata logic
+    mp_merge_probeack.useProbeData := false.B
     mp_merge_probeack.way := dirResult.way
     mp_merge_probeack.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
     mp_merge_probeack.meta := MetaEntry(
