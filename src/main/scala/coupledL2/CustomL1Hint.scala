@@ -43,7 +43,7 @@ class CustomL1HintIOBundle(implicit p: Parameters) extends L2Bundle {
       val task = Flipped(ValidIO(new TaskBundle()))
       val d    = Input(Bool())
   }
-  val globalCounter   = Input(UInt(log2Ceil(mshrsAll).W))
+  val globalCounter   = Input(UInt((log2Ceil(mshrsAll) + 1).W))
   val grantBufferHint = Flipped(ValidIO(new L2ToL1Hint()))
 
   // output hint
@@ -66,8 +66,14 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   val d_s4 = io.s4.d
   val d_s5 = io.s5.d
 
-  val globalCounter   = io.globalCounter
+  require(hintCycleAhead <= 3)
+
+  // only use lower 2 bits of io.globalCounter to make timing happy
+  // as main pipeline will not trigger hint if io.globalCounter >= hintCycleAhead
+  val globalCounter   = io.globalCounter(1, 0)
   val grantBufferHint = io.grantBufferHint
+
+  val impossible_pipe_hint = io.globalCounter >= hintCycleAhead.U
 
   val mshr_req_s3  = task_s3.bits.mshrTask
   val need_mshr_s3 = io.s3.need_mshr
@@ -92,7 +98,7 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   s1_l2_miss_refill_counter_match := PopCount(Seq(d_s3, d_s4, d_s5, s3_l2_hit_grant_data, s4_l2_hit_grant_data, task_s2.valid && task_s2.bits.fromA)) === 0.U && globalCounter <= 2.U
   val dummy_s1_valid = if(hintCycleAhead == 3) s1_l2_miss_refill_grant_data && s1_l2_miss_refill_counter_match else false.B
 
-  hint_s1.valid         := dummy_s1_valid
+  hint_s1.valid         := dummy_s1_valid && !impossible_pipe_hint
   hint_s1.bits.sourceId := task_s1.bits.sourceId
 
   // S2 hint
@@ -123,7 +129,7 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
                                                     (globalCounter + 2.U) === hintCycleAhead.U)
   ))
 
-  hint_s2.valid         := s2_l2_miss_refill_grant_data && s2_l2_miss_refill_counter_match
+  hint_s2.valid         := s2_l2_miss_refill_grant_data && s2_l2_miss_refill_counter_match && !impossible_pipe_hint
   hint_s2.bits.sourceId := task_s2.bits.sourceId
 
   // S3 hint
@@ -168,7 +174,7 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   }
   val validHintMiss_s3 = s3_l2_miss_refill_grant_data && s3_l2_miss_refill_counter_match
 
-  hint_s3.valid         := validHint_s3 || validHintMiss_s3
+  hint_s3.valid         := (validHint_s3 || validHintMiss_s3) && !impossible_pipe_hint
   hint_s3.bits.sourceId := task_s3.bits.sourceId
 
   // S4 hint
@@ -184,7 +190,7 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
                                                 (globalCounter + 1.U) === hintCycleAhead.U ))
   val validHintMiss_s4 = s4_l2_miss_refill_grant_data && s4_l2_miss_refill_counter_match
 
-  hint_s4.valid         := validHint_s4 || validHintMiss_s4
+  hint_s4.valid         := (validHint_s4 || validHintMiss_s4) && !impossible_pipe_hint
   hint_s4.bits.sourceId := task_s4.bits.sourceId
 
   // S5 hint
@@ -194,7 +200,7 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   //    * l1 acquire and l2 miss situation
   val validHintMiss_s5 = d_s5 && task_s5.bits.opcode === GrantData && task_s5.bits.fromA && task_s5.bits.mshrTask && ((globalCounter + 1.U) === hintCycleAhead.U) && !task_s5.bits.fromL2pft.getOrElse(false.B)
 
-  hint_s5.valid         := validHint_s5 || validHintMiss_s5
+  hint_s5.valid         := (validHint_s5 || validHintMiss_s5) && !impossible_pipe_hint
   hint_s5.bits.sourceId := task_s5.bits.sourceId
 
   val hint_valid    = Seq(grantBufferHint.valid,         hint_s1.valid,         hint_s2.valid,         hint_s3.valid,         hint_s4.valid,         hint_s5.valid)
@@ -211,5 +217,6 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   XSPerfAccumulate(cacheParams, "hint_s3_valid", hint_s3.valid)
   XSPerfAccumulate(cacheParams, "hint_s4_valid", hint_s4.valid)
   XSPerfAccumulate(cacheParams, "hint_s5_valid", hint_s5.valid)
+  XSPerfAccumulate(cacheParams, "incorrect_hint", PopCount(VecInit(hint_valid)) > 1.U)
 
 }

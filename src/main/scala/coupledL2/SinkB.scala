@@ -39,7 +39,6 @@ class SinkB(implicit p: Parameters) extends L2Module {
 
   def fromTLBtoTaskBundle(b: TLBundleB): TaskBundle = {
     val task = Wire(new TaskBundle)
-    task := DontCare
     task.channel := "b010".U
     task.tag := parseAddress(b.address)._1
     task.set := parseAddress(b.address)._2
@@ -48,11 +47,25 @@ class SinkB(implicit p: Parameters) extends L2Module {
     task.opcode := b.opcode
     task.param := b.param
     task.size := b.size
+    task.sourceId := 0.U(sourceIdBits.W)
+    task.bufIdx := 0.U(bufIdxBits.W)
     task.needProbeAckData := b.data(0) // TODO: parameterize this
     task.mshrTask := false.B
+    task.mshrId := 0.U(mshrBits.W)
+    task.aliasTask.foreach(_ := false.B)
+    task.useProbeData := false.B
+    task.pbIdx := 0.U(mshrBits.W)
     task.fromL2pft.foreach(_ := false.B)
     task.needHint.foreach(_ := false.B)
+    task.dirty := false.B
+    task.way := 0.U(wayBits.W)
+    task.meta := 0.U.asTypeOf(new MetaEntry)
+    task.metaWen := false.B
+    task.tagWen := false.B
+    task.dsWen := false.B
     task.wayMask := Fill(cacheParams.ways, "b1".U)
+    task.reqSource := MemReqSource.NoWhere.id.U // Ignore
+    task.replTask := false.B
     task
   }
   val task = fromTLBtoTaskBundle(io.b.bits)

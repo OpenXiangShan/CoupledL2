@@ -41,7 +41,7 @@ class CPL2S3Info(implicit p: Parameters) extends L2Bundle {
 class Monitor(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val fromMainPipe = Input(new MainpipeMoni())
-    val nestedWBValid = Input(Bool())
+//  val nestedWBValid = Input(Bool())
   })
 
   val mp            = io.fromMainPipe
