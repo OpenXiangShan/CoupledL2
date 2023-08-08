@@ -136,7 +136,7 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
         CacheParameters(
           name = s"l2",
           sets = 128,
-          ways = 4,
+          ways = 4 + 2,
           blockGranularity = log2Ceil(128)
         ),
       ),
@@ -309,7 +309,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
         CacheParameters(
           name = s"l2",
           sets = 128,
-          ways = 4,
+          ways = 4 + 2,
           blockGranularity = log2Ceil(128)
         ),
       ),
@@ -426,7 +426,7 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
         CacheParameters(
           name = s"l2",
           sets = 128,
-          ways = 4,
+          ways = 4 + 2,
           blockGranularity = log2Ceil(128)
         ),
       ),
