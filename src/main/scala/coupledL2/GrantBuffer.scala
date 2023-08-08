@@ -20,7 +20,7 @@ package coupledL2
 import chisel3._
 import chisel3.util._
 import utility._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.prefetch.PrefetchResp
@@ -127,7 +127,7 @@ class GrantBuffer(implicit p: Parameters) extends BaseGrantBuffer {
 
   selectOH.asBools.zipWithIndex.foreach {
     case (sel, i) =>
-      when (sel && io.d_task.fire() && !(io.d_task.bits.task.opcode === HintAck && !io.d_task.bits.task.fromL2pft.getOrElse(false.B))) {
+      when (sel && io.d_task.fire && !(io.d_task.bits.task.opcode === HintAck && !io.d_task.bits.task.fromL2pft.getOrElse(false.B))) {
         beat_valids(i).foreach(_ := true.B)
         taskAll(i) := io.d_task.bits.task
         dataAll(i) := io.d_task.bits.data
@@ -172,7 +172,7 @@ class GrantBuffer(implicit p: Parameters) extends BaseGrantBuffer {
       out.bits := toTLBundleD(taskAll(i), beat)
       val hasData = out.bits.opcode(0)
 
-      when (out.fire()) {
+      when (out.fire) {
         when (hasData) {
           beat_valids(i) := VecInit(next_beatsOH.asBools)
         }.otherwise {
@@ -189,7 +189,7 @@ class GrantBuffer(implicit p: Parameters) extends BaseGrantBuffer {
           in.valid := block_valids(i) && taskAll(i).opcode === HintAck
           in.bits.tag := taskAll(i).tag
           in.bits.set := taskAll(i).set
-          when (in.fire()) {
+          when (in.fire) {
             beat_valids(i).foreach(_ := false.B)
           }
       }

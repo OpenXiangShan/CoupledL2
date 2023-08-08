@@ -21,7 +21,7 @@ import chisel3._
 import chisel3.util._
 import utility._
 import coupledL2.MetaData._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
@@ -434,7 +434,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
                 task_s4.bits.opcode(2, 1) === AccessAck(2, 1) ||
                 task_s4.bits.opcode === HintAck)
 
-  val chnl_fire_s4 = c_s4.fire() || d_s4.fire()
+  val chnl_fire_s4 = c_s4.fire || d_s4.fire
 
   c_s4.valid := task_s4.valid && !data_unready_s4 && isC_s4 && !need_write_releaseBuf_s4 && !need_write_refillBuf_s4
   d_s4.valid := task_s4.valid && !data_unready_s4 && isD_s4 && !need_write_releaseBuf_s4 && !need_write_refillBuf_s4
@@ -462,7 +462,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   }
   val rdata_s5 = io.toDS.rdata_s5.data
   val merged_data_s5 = Mux(ren_s5, rdata_s5, data_s5)
-  val chnl_fire_s5 = c_s5.fire() || d_s5.fire()
+  val chnl_fire_s5 = c_s5.fire || d_s5.fire
 
   val customL1Hint = Module(new CustomL1Hint)
 
@@ -654,32 +654,32 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   // pipeline stages for sourceC and sourceD reqs
   val sourceC_pipe_len = ParallelMux(Seq(
-    c_s5.fire() -> 5.U,
-    c_s4.fire() -> 4.U,
-    c_s3.fire() -> 3.U
+    c_s5.fire -> 5.U,
+    c_s4.fire -> 4.U,
+    c_s3.fire -> 3.U
   ))
   val sourceD_pipe_len = ParallelMux(Seq(
-    d_s5.fire() -> 5.U,
-    d_s4.fire() -> 4.U,
-    d_s3.fire() -> 3.U
+    d_s5.fire -> 5.U,
+    d_s4.fire -> 4.U,
+    d_s3.fire -> 3.U
   ))
   XSPerfHistogram(cacheParams, "sourceC_pipeline_stages", sourceC_pipe_len,
-    enable = io.toSourceC.fire(), start = 3, stop = 5+1, step = 1)
+    enable = io.toSourceC.fire, start = 3, stop = 5+1, step = 1)
   XSPerfHistogram(cacheParams, "sourceD_pipeline_stages", sourceD_pipe_len,
-    enable = io.toSourceD.fire(), start = 3, stop = 5+1, step = 1)
+    enable = io.toSourceD.fire, start = 3, stop = 5+1, step = 1)
 
   // XSPerfAccumulate(cacheParams, "a_req_tigger_prefetch", io.prefetchTrain.)
   prefetchOpt.foreach {
     _ =>
-      XSPerfAccumulate(cacheParams, "a_req_trigger_prefetch", io.prefetchTrain.get.fire())
+      XSPerfAccumulate(cacheParams, "a_req_trigger_prefetch", io.prefetchTrain.get.fire)
       XSPerfAccumulate(cacheParams, "a_req_trigger_prefetch_not_ready", io.prefetchTrain.get.valid && !io.prefetchTrain.get.ready)
-      XSPerfAccumulate(cacheParams, "acquire_trigger_prefetch_on_miss", io.prefetchTrain.get.fire() && req_acquire_s3 && !dirResult_s3.hit)
-      XSPerfAccumulate(cacheParams, "acquire_trigger_prefetch_on_hit_pft", io.prefetchTrain.get.fire() && req_acquire_s3 && dirResult_s3.hit && meta_s3.prefetch.get)
+      XSPerfAccumulate(cacheParams, "acquire_trigger_prefetch_on_miss", io.prefetchTrain.get.fire && req_acquire_s3 && !dirResult_s3.hit)
+      XSPerfAccumulate(cacheParams, "acquire_trigger_prefetch_on_hit_pft", io.prefetchTrain.get.fire && req_acquire_s3 && dirResult_s3.hit && meta_s3.prefetch.get)
       XSPerfAccumulate(cacheParams, "release_all", mshr_release_s3)
       XSPerfAccumulate(cacheParams, "release_prefetch_accessed", mshr_release_s3 && meta_s3.prefetch.get && meta_s3.accessed)
       XSPerfAccumulate(cacheParams, "release_prefetch_not_accessed", mshr_release_s3 && meta_s3.prefetch.get && !meta_s3.accessed)
-      XSPerfAccumulate(cacheParams, "get_trigger_prefetch_on_miss", io.prefetchTrain.get.fire() && req_get_s3 && !dirResult_s3.hit)
-      XSPerfAccumulate(cacheParams, "get_trigger_prefetch_on_hit_pft", io.prefetchTrain.get.fire() && req_get_s3 && dirResult_s3.hit && meta_s3.prefetch.get)
+      XSPerfAccumulate(cacheParams, "get_trigger_prefetch_on_miss", io.prefetchTrain.get.fire && req_get_s3 && !dirResult_s3.hit)
+      XSPerfAccumulate(cacheParams, "get_trigger_prefetch_on_hit_pft", io.prefetchTrain.get.fire && req_get_s3 && dirResult_s3.hit && meta_s3.prefetch.get)
   }
 
   /* ===== Monitor ===== */

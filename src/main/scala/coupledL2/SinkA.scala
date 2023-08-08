@@ -19,7 +19,7 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLHints._
@@ -36,16 +36,16 @@ class SinkA(implicit p: Parameters) extends L2Module {
   })
   val putBuffer = Reg(Vec(mshrsAll, Vec(beatSize, new PutBufferEntry)))
   val beatValids = RegInit(VecInit(Seq.fill(mshrsAll)(VecInit(Seq.fill(beatSize)(false.B)))))
-  val valids = VecInit(beatValids.map(_.asUInt.orR())).asUInt
+  val valids = VecInit(beatValids.map(_.asUInt.orR)).asUInt
   
   val (first, last, done, count) = edgeIn.count(io.a)
   val hasData = edgeIn.hasData(io.a.bits)
-  val full = valids.andR()
+  val full = valids.andR
   val noSpace = full && hasData
   val insertIdx = PriorityEncoder(~valids)
-  val insertIdxReg = RegEnable(insertIdx, 0.U.asTypeOf(insertIdx), io.a.fire() && first)
+  val insertIdxReg = RegEnable(insertIdx, 0.U.asTypeOf(insertIdx), io.a.fire && first)
 
-  when (io.a.fire() && hasData) {
+  when (io.a.fire && hasData) {
     when (first) {
       putBuffer(insertIdx)(count).data.data := io.a.bits.data
       putBuffer(insertIdx)(count).mask := io.a.bits.mask
@@ -59,7 +59,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
 
   // val rIdx = io.pbRead.bits.idx
   // val res = putBuffer(rIdx)
-  when (io.pbRead.fire()) {
+  when (io.pbRead.fire) {
     beatValids(io.pbRead.bits.idx)(io.pbRead.bits.count) := false.B
   }
 
@@ -122,21 +122,21 @@ class SinkA(implicit p: Parameters) extends L2Module {
   io.pbRead.ready := beatValids(io.pbRead.bits.idx)(io.pbRead.bits.count)
   assert(!io.pbRead.valid || io.pbRead.ready)
 
-  io.pbResp.valid := RegNext(io.pbRead.fire(), false.B)
-  io.pbResp.bits := RegEnable(putBuffer(io.pbRead.bits.idx)(io.pbRead.bits.count), io.pbRead.fire())
+  io.pbResp.valid := RegNext(io.pbRead.fire, false.B)
+  io.pbResp.bits := RegEnable(putBuffer(io.pbRead.bits.idx)(io.pbRead.bits.count), io.pbRead.fire)
 
   // Performance counters
   // num of reqs
-  XSPerfAccumulate(cacheParams, "sinkA_req", io.toReqArb.fire())
-  XSPerfAccumulate(cacheParams, "sinkA_acquire_req", io.a.fire() && io.a.bits.opcode(2, 1) === AcquireBlock(2, 1))
-  XSPerfAccumulate(cacheParams, "sinkA_acquireblock_req", io.a.fire() && io.a.bits.opcode === AcquireBlock)
-  XSPerfAccumulate(cacheParams, "sinkA_acquireperm_req", io.a.fire() && io.a.bits.opcode === AcquirePerm)
-  XSPerfAccumulate(cacheParams, "sinkA_get_req", io.a.fire() && io.a.bits.opcode === Get)
-  XSPerfAccumulate(cacheParams, "sinkA_put_req", io.toReqArb.fire() &&
+  XSPerfAccumulate(cacheParams, "sinkA_req", io.toReqArb.fire)
+  XSPerfAccumulate(cacheParams, "sinkA_acquire_req", io.a.fire && io.a.bits.opcode(2, 1) === AcquireBlock(2, 1))
+  XSPerfAccumulate(cacheParams, "sinkA_acquireblock_req", io.a.fire && io.a.bits.opcode === AcquireBlock)
+  XSPerfAccumulate(cacheParams, "sinkA_acquireperm_req", io.a.fire && io.a.bits.opcode === AcquirePerm)
+  XSPerfAccumulate(cacheParams, "sinkA_get_req", io.a.fire && io.a.bits.opcode === Get)
+  XSPerfAccumulate(cacheParams, "sinkA_put_req", io.toReqArb.fire &&
     (io.toReqArb.bits.opcode === PutFullData || io.toReqArb.bits.opcode === PutPartialData))
-  XSPerfAccumulate(cacheParams, "sinkA_put_beat", io.a.fire() &&
+  XSPerfAccumulate(cacheParams, "sinkA_put_beat", io.a.fire &&
     (io.a.bits.opcode === PutFullData || io.a.bits.opcode === PutPartialData))
-  prefetchOpt.foreach { _ => XSPerfAccumulate(cacheParams, "sinkA_prefetch_req", io.prefetchReq.get.fire()) }
+  prefetchOpt.foreach { _ => XSPerfAccumulate(cacheParams, "sinkA_prefetch_req", io.prefetchReq.get.fire) }
 
   // cycels stalled by mainpipe
   val stall = io.toReqArb.valid && !io.toReqArb.ready

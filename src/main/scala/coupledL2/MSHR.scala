@@ -24,7 +24,7 @@ import utility.{ParallelLookUp, ParallelPriorityMux}
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import coupledL2.prefetch.PrefetchTrain
 import coupledL2.utils.XSPerfAccumulate
 
@@ -354,7 +354,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   }
   // prefetchOpt.foreach {
   //   _ =>
-  //     when (io.tasks.prefetchTrain.get.fire()) {
+  //     when (io.tasks.prefetchTrain.get.fire) {
   //       state.s_triggerprefetch.get := true.B
   //     }
   // }

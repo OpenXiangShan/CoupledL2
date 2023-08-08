@@ -26,7 +26,7 @@ import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.util._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import scala.math.max
 import coupledL2.prefetch._
 import coupledL2.utils.XSPerfAccumulate
@@ -154,7 +154,7 @@ trait HasCoupledL2Parameters {
 }
 
 trait DontCareInnerLogic { this: Module =>
-  override def IO[T <: Data](iodef: T): T = {
+  def IO[T <: Data](iodef: T): T = {
     val p = chisel3.experimental.IO.apply(iodef)
     p <> DontCare
     p
@@ -219,7 +219,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     case _ => None
   }
 
-  lazy val module = new LazyModuleImp(this) {
+  class CoupledL2Imp(wrapper: LazyModule) extends LazyModuleImp(wrapper) {
     val banks = node.in.size
     val bankBits = if (banks == 1) 0 else log2Up(banks)
     val io = IO(new Bundle {
@@ -372,7 +372,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
                                                               })
                                                           .unzip
     l1Hint_arb.io.in <> VecInit(slices_l1Hint)
-    io.l2_hint.valid := l1Hint_arb.io.out.fire()
+    io.l2_hint.valid := l1Hint_arb.io.out.fire
     io.l2_hint.bits := l1Hint_arb.io.out.bits.sourceId - Mux1H(client_sourceId_match_oh, client_sourceId_start)
     // always ready for grant hint
     l1Hint_arb.io.out.ready := true.B
@@ -399,9 +399,10 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     XSPerfAccumulate(cacheParams, "hint_fire", io.l2_hint.valid)
     val grant_fire = slices.map{ slice => {
                         val (_, _, grant_fire_last, _) = node.in.head._2.count(slice.io.in.d)
-                        slice.io.in.d.fire() && grant_fire_last && slice.io.in.d.bits.opcode === GrantData
+                        slice.io.in.d.fire && grant_fire_last && slice.io.in.d.bits.opcode === GrantData
                       }}
     XSPerfAccumulate(cacheParams, "grant_data_fire", PopCount(VecInit(grant_fire)))
   }
 
+  lazy val module = new CoupledL2Imp(this)
 }

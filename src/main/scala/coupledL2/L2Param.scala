@@ -22,7 +22,7 @@ import chisel3.util.log2Ceil
 import freechips.rocketchip.diplomacy.BufferParams
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util._
-import chipsalliance.rocketchip.config.Field
+import org.chipsalliance.cde.config.Field
 import huancun.CacheParameters
 import coupledL2.prefetch._
 import MemReqSource._

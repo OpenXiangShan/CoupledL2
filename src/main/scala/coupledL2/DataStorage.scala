@@ -21,7 +21,7 @@ import chisel3._
 import chisel3.util._
 import coupledL2.utils.SRAMTemplate
 import utility.RegNextN
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 
 class DSRequest(implicit p: Parameters) extends L2Bundle {
   val way = UInt(wayBits.W)

@@ -20,7 +20,7 @@ package coupledL2.prefetch
 import chisel3._
 import chisel3.util._
 import utility._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import coupledL2._
 import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram}
@@ -95,12 +95,12 @@ class PrefetchQueue(implicit p: Parameters) extends PrefetchModule {
   io.deq.bits := Mux(empty, io.enq.bits, queue(head))
 
   // The reqs that are discarded = enq - deq
-  XSPerfAccumulate(cacheParams, "prefetch_queue_enq", io.enq.fire())
-  XSPerfAccumulate(cacheParams, "prefetch_queue_fromL1_enq", io.enq.fire() && !io.enq.bits.isBOP)
-  XSPerfAccumulate(cacheParams, "prefetch_queue_fromL2_enq", io.enq.fire() && io.enq.bits.isBOP)
-  XSPerfAccumulate(cacheParams, "prefetch_queue_deq", io.deq.fire())
-  XSPerfAccumulate(cacheParams, "prefetch_queue_fromL1_deq", io.deq.fire() && !io.enq.bits.isBOP)
-  XSPerfAccumulate(cacheParams, "prefetch_queue_fromL2_enq", io.deq.fire() && io.enq.bits.isBOP)
+  XSPerfAccumulate(cacheParams, "prefetch_queue_enq", io.enq.fire)
+  XSPerfAccumulate(cacheParams, "prefetch_queue_fromL1_enq", io.enq.fire && !io.enq.bits.isBOP)
+  XSPerfAccumulate(cacheParams, "prefetch_queue_fromL2_enq", io.enq.fire && io.enq.bits.isBOP)
+  XSPerfAccumulate(cacheParams, "prefetch_queue_deq", io.deq.fire)
+  XSPerfAccumulate(cacheParams, "prefetch_queue_fromL1_deq", io.deq.fire && !io.enq.bits.isBOP)
+  XSPerfAccumulate(cacheParams, "prefetch_queue_fromL2_enq", io.deq.fire && io.enq.bits.isBOP)
   XSPerfHistogram(cacheParams, "prefetch_queue_entry", PopCount(valids.asUInt),
     true.B, 0, inflightEntries, 1)
 }

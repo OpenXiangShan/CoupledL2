@@ -22,7 +22,7 @@ import chisel3.util._
 import utility._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import huancun.{PreferCacheKey}
 
 class AcquireUnit(implicit p: Parameters) extends L2Module {
@@ -41,7 +41,7 @@ class AcquireUnit(implicit p: Parameters) extends L2Module {
   val put = task.opcode === PutFullData || task.opcode === PutPartialData
   val busy = RegInit(false.B)
 
-  when (io.task.fire() && put) {
+  when (io.task.fire && put) {
     busy := true.B
   }
 
@@ -49,12 +49,12 @@ class AcquireUnit(implicit p: Parameters) extends L2Module {
   val s1_valid = RegInit(false.B)
 
   // S0: read putBuffer
-  val s0_task = RegEnable(task, 0.U.asTypeOf(task), io.task.fire() && put)
+  val s0_task = RegEnable(task, 0.U.asTypeOf(task), io.task.fire && put)
   val s0_count = RegInit(0.U(beatBits.W))
   val s0_last = s0_count === Mux(s0_task.size === log2Ceil(blockBytes).U, (beatSize-1).U, 0.U) // TODO
-  val s0_valid = io.pbRead.fire()
+  val s0_valid = io.pbRead.fire
 
-  when(io.pbRead.fire()) {
+  when(io.pbRead.fire) {
     s0_count := s0_count + 1.U
     when (s0_last) {
       busy := false.B

@@ -19,11 +19,11 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 
 import freechips.rocketchip.tilelink.TLPermissions._
 
-abstract class L2Module(implicit val p: Parameters) extends MultiIOModule with HasCoupledL2Parameters
+abstract class L2Module(implicit val p: Parameters) extends Module with HasCoupledL2Parameters
 abstract class L2Bundle(implicit val p: Parameters) extends Bundle with HasCoupledL2Parameters
 
 class ReplacerInfo(implicit p: Parameters) extends L2Bundle {

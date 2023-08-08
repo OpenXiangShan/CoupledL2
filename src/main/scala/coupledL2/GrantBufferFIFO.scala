@@ -20,7 +20,7 @@ package coupledL2
 import chisel3._
 import chisel3.util._
 import coupledL2.utils._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.prefetch.PrefetchResp
@@ -71,7 +71,7 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
   }))
   io.globalCounter := globalCounter
 
-  when(io.d_task.fire()) {
+  when(io.d_task.fire) {
     val hasData = io.d_task.bits.task.opcode(0)
     when(hasData) {
       globalCounter := globalCounter + 1.U // counter = counter + 2 - 1
@@ -145,7 +145,7 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
   io.toReqArb.blockSinkReqEntrance.blockC_s1 := noSpaceForSinkReq
   io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq
 
-  when(io.d_task.fire() && !(io.d_task.bits.task.opcode === HintAck && !io.d_task.bits.task.fromL2pft.getOrElse(false.B))) {
+  when(io.d_task.fire && !(io.d_task.bits.task.opcode === HintAck && !io.d_task.bits.task.fromL2pft.getOrElse(false.B))) {
     beat_valids(enqPtr).foreach(_ := true.B)
     tasks(enqPtr) := io.d_task.bits.task
     datas(enqPtr) := io.d_task.bits.data
@@ -191,7 +191,7 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
       io.d.bits := toTLBundleD(tasks(idx), beat)
       val hasData = io.d.bits.opcode(0)
 
-      when (io.d.fire()) {
+      when (io.d.fire) {
         when (hasData) {
           beat_valids(idx) := VecInit(next_beatsOH.asBools)
           // only when all beats fire, inc deqPtrExt
@@ -214,7 +214,7 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
           in.valid := block_valids(i) && tasks(i).opcode === HintAck
           in.bits.tag := tasks(i).tag
           in.bits.set := tasks(i).set
-          when (in.fire()) {
+          when (in.fire) {
             beat_valids(i).foreach(_ := false.B)
             flush(i) := true.B
           }
