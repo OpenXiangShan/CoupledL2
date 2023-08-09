@@ -638,9 +638,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     (req_s3.opcode === AcquireBlock || req_s3.opcode === AcquirePerm))
   XSPerfAccumulate(cacheParams, "get_miss", miss_s3 && req_s3.fromA && req_s3.opcode === Get)
 
-  XSPerfAccumulate(cacheParams, "a_req_need_replacement",
-    io.toMSHRCtl.mshr_alloc_s3.valid && !alloc_state.s_release)
-
   XSPerfAccumulate(cacheParams, "b_req_hit", hit_s3 && req_s3.fromB)
   XSPerfAccumulate(cacheParams, "b_req_miss", miss_s3 && req_s3.fromB)
 
@@ -680,6 +677,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       XSPerfAccumulate(cacheParams, "get_trigger_prefetch_on_miss", io.prefetchTrain.get.fire() && req_get_s3 && !dirResult_s3.hit)
       XSPerfAccumulate(cacheParams, "get_trigger_prefetch_on_hit_pft", io.prefetchTrain.get.fire() && req_get_s3 && dirResult_s3.hit && meta_s3.prefetch.get)
   }
+
+  XSPerfAccumulate(cacheParams, "early_prefetch", meta_s3.prefetch.getOrElse(false.B) && !meta_s3.accessed && !dirResult_s3.hit && task_s3.valid)
 
   /* ===== Monitor ===== */
   io.toMonitor.task_s2 := task_s2
