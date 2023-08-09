@@ -49,11 +49,8 @@ trait HasCoupledL2Parameters {
                   else cacheParams.clientCaches.head.aliasBitsOpt
   val pageOffsetBits = log2Ceil(cacheParams.pageBytes)
 
-  val bufBlocks = 8 // hold data that flows in MainPipe
+  val bufBlocks = 4 // hold data that flows in MainPipe
   val bufIdxBits = log2Up(bufBlocks)
-
-  // 1 cycle for sram read, and latch for another cycle
-  val sramLatency = 2
 
   val releaseBufWPorts = 3 // sinkC and mainpipe s5, s6
   

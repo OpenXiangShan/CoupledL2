@@ -175,7 +175,7 @@ class SourceC(implicit p: Parameters) extends L2Module {
       }
   }
 
-  TLArbiter.lowest(edgeIn, io.out, out_bundles:_*)
+  TLArbiter.robin(edgeIn, io.out, out_bundles:_*)
 
   io.in.ready := !full
   assert(!full, "SourceC should never be full")
@@ -183,6 +183,7 @@ class SourceC(implicit p: Parameters) extends L2Module {
   val (first, last, done, count) = edgeOut.count(io.out)
   val isRelease = io.out.bits.opcode === TLMessages.Release
   val isReleaseData = io.out.bits.opcode === TLMessages.ReleaseData
+  // [LRelease] TODO: resp from SourceC indicating w_release_sent may be deprecated
   io.resp.valid := io.out.fire() && first && (isRelease || isReleaseData)
   io.resp.mshrId := io.out.bits.source
   io.resp.set := parseFullAddress(io.out.bits.address)._2
