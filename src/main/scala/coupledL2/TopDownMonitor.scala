@@ -25,8 +25,8 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
       case(slice, i) =>
         slice.map {
           ms =>
-            val msBlockAddr = if(bankBits == 0) Cat(ms.bits.tag, ms.bits.set)
-            else Cat(ms.bits.tag, ms.bits.set, i.U(bankBits-1, 0))
+            val msBlockAddr = if(bankBits == 0) Cat(ms.bits.reqTag, ms.bits.set)
+            else Cat(ms.bits.reqTag, ms.bits.set, i.U(bankBits-1, 0))
             val pBlockAddr  = (pAddr.bits >> 6.U).asUInt
 
             val isMiss   = ms.valid && ms.bits.is_miss
@@ -38,6 +38,7 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
 
     XSPerfAccumulate(cacheParams, perfName, addrMatch)
     ExcitingUtils.addSource(addrMatch, perfName, ExcitingUtils.Perf)
+    ExcitingUtils.addSink(WireDefault(addrMatch), perfName, ExcitingUtils.Perf)
   }
 
   /* ====== PART TWO ======

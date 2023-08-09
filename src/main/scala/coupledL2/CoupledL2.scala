@@ -49,11 +49,8 @@ trait HasCoupledL2Parameters {
                   else cacheParams.clientCaches.head.aliasBitsOpt
   val pageOffsetBits = log2Ceil(cacheParams.pageBytes)
 
-  val bufBlocks = 8 // hold data that flows in MainPipe
+  val bufBlocks = 4 // hold data that flows in MainPipe
   val bufIdxBits = log2Up(bufBlocks)
-
-  // 1 cycle for sram read, and latch for another cycle
-  val sramLatency = 2
 
   val releaseBufWPorts = 3 // sinkC and mainpipe s5, s6
   
@@ -63,6 +60,7 @@ trait HasCoupledL2Parameters {
   val topDownOpt = if(cacheParams.elaboratedTopDown) Some(true) else None
 
   val useFIFOGrantBuffer = true
+  val enableHintGuidedGrant = true
 
   val hintCycleAhead = 3 // how many cycles the hint will send before grantData
 
@@ -288,6 +286,17 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
       if(bankBits == 0) true.B else set(bankBits - 1, 0) === bankId.U
     }
 
+    def RegNextN[T <: Data](data: T, n: Int): T = {
+      if(n == 1)
+        RegNext(data)
+      else
+        RegNextN(data, n - 1)
+    }
+
+    val hint_chosen = Wire(UInt(node.in.size.W))
+    val hint_fire = Wire(Bool())
+    val release_sourceD_condition = Wire(Vec(node.in.size, Bool()))
+
     val slices = node.in.zip(node.out).zipWithIndex.map {
       case (((in, edgeIn), (out, edgeOut)), i) =>
         require(in.params.dataBits == out.params.dataBits)
@@ -300,7 +309,16 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
             case SliceIdKey => i
           })) 
         }
+        val sourceD_can_go = RegNextN(!hint_fire || i.U === OHToUInt(hint_chosen), hintCycleAhead - 1)
+        release_sourceD_condition(i) := sourceD_can_go && !slice.io.in.d.valid
         slice.io.in <> in
+        if(enableHintGuidedGrant) {
+          // If the hint of slice X is selected in T cycle, then in T + 3 cycle we will try our best to select the grant of slice X.
+          // If slice X has no grant in T + 3 cycle, it means that the hint of T cycle is wrong, so relax the restriction on grant selection.
+          // Timing will be worse if enabled
+          in.d.valid := slice.io.in.d.valid && (sourceD_can_go || Cat(release_sourceD_condition).orR)
+          slice.io.in.d.ready := in.d.ready && (sourceD_can_go || Cat(release_sourceD_condition).orR)
+        }
         in.b.bits.address := restoreAddress(slice.io.in.b.bits.address, i)
         out <> slice.io.out
         out.a.bits.address := restoreAddress(slice.io.out.a.bits.address, i)
@@ -349,6 +367,9 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     io.l2_hint.bits := l1Hint_arb.io.out.bits.sourceId - Mux1H(client_sourceId_match_oh, client_sourceId_start)
     // always ready for grant hint
     l1Hint_arb.io.out.ready := true.B
+
+    hint_chosen := l1Hint_arb.io.chosen
+    hint_fire := io.l2_hint.valid
 
     val topDown = topDownOpt.map(_ => Module(new TopDownMonitor()(p.alterPartial {
       case EdgeInKey => node.in.head._2

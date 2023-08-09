@@ -65,9 +65,9 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
   }))
 
   // hint interface: l2 will send hint to l1 before sending grantData (3 cycle ahead)
-  val globalCounter = RegInit(0.U(log2Ceil(mshrsAll).W))
+  val globalCounter = RegInit(0.U((log2Ceil(mshrsAll) + 1).W))
   val beat_counters = RegInit(VecInit(Seq.fill(mshrsAll) {
-    0.U(log2Ceil(mshrsAll).W)
+    0.U((log2Ceil(mshrsAll) + 1).W)
   }))
   io.globalCounter := globalCounter
 
@@ -143,6 +143,7 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
   //TODO: or should we still Stall B req?
   // A-replace related rprobe is handled in SourceB
   io.toReqArb.blockSinkReqEntrance.blockC_s1 := noSpaceForSinkReq
+  io.toReqArb.blockSinkReqEntrance.blockG_s1 := false.B
   io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq
 
   when(io.d_task.fire() && !(io.d_task.bits.task.opcode === HintAck && !io.d_task.bits.task.fromL2pft.getOrElse(false.B))) {
