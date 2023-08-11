@@ -326,20 +326,27 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     req_s3.alias.getOrElse(0.U)
   )
   val metaW_s3_a = MetaEntry(
-    meta_s3.dirty,
-    Mux(req_needT_s3 || sink_resp_s3_a_promoteT, TRUNK, meta_s3.state),
-    Fill(clientBits, true.B),
-    Some(metaW_s3_a_alias),
+    dirty = meta_s3.dirty,
+    state = Mux(req_needT_s3 || sink_resp_s3_a_promoteT, TRUNK, meta_s3.state),
+    clients = Fill(clientBits, true.B),
+    alias = Some(metaW_s3_a_alias),
     accessed = true.B
   )
   val metaW_s3_b = Mux(req_s3.param === toN, MetaEntry(),
-    MetaEntry(false.B, BRANCH, meta_s3.clients, meta_s3.alias, accessed = meta_s3.accessed))
+    MetaEntry(
+      dirty = false.B,
+      state = BRANCH,
+      clients = meta_s3.clients,
+      alias = meta_s3.alias,
+      accessed = meta_s3.accessed
+    )
+  )
 
   val metaW_s3_c = MetaEntry(
-    meta_s3.dirty || wen_c,
-    Mux(isParamFromT(req_s3.param), TIP, meta_s3.state),
-    Fill(clientBits, !isToN(req_s3.param)),
-    meta_s3.alias,
+    dirty = meta_s3.dirty || wen_c,
+    state = Mux(isParamFromT(req_s3.param), TIP, meta_s3.state),
+    clients = Fill(clientBits, !isToN(req_s3.param)),
+    alias = meta_s3.alias,
     accessed = meta_s3.accessed
   )
   val metaW_s3_mshr = req_s3.meta

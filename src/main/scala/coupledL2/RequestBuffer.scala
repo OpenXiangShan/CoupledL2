@@ -58,6 +58,8 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     val s1Entrance = Flipped(ValidIO(new L2Bundle {
       val set = UInt(setBits.W)
     }))
+
+    val hasLatePF = Output(Bool())
   })
 
   /* ======== Data Structure ======== */
@@ -84,6 +86,11 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     s.valid && addrConflict(a, s.bits) && !s.bits.willFree)).asUInt
   def conflict(a: TaskBundle): Bool = conflictMask(a).orR
 
+  def latePrefetch(a: TaskBundle): Bool = VecInit(io.mshrInfo.map(s =>
+    s.valid && s.bits.isPrefetch && sameAddr(a, s.bits) && !s.bits.willFree &&
+    a.fromA && (a.opcode === AcquireBlock || a.opcode === AcquirePerm)
+  )).asUInt.orR
+
   // count ways
 //  def countWaysOH(cond: (MSHRInfo => Bool)): UInt = {
 //    VecInit(io.mshrInfo.map(s =>
@@ -101,6 +108,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   // flow not allowed when full, or entries might starve
   val canFlow = flow.B && !full && !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR
   val doFlow  = canFlow && io.out.ready
+  io.hasLatePF := latePrefetch(in) && io.in.valid && !sameAddr(in, RegNext(in))
 
   //  val depMask    = buffer.map(e => e.valid && sameAddr(io.in.bits, e.task))
   // remove duplicate prefetch if same-addr A req in MSHR or ReqBuf
