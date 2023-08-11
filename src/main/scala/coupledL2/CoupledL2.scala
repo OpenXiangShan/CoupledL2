@@ -47,6 +47,8 @@ trait HasCoupledL2Parameters {
   val stateBits = MetaData.stateBits
   val aliasBitsOpt = if(cacheParams.clientCaches.isEmpty) None
                   else cacheParams.clientCaches.head.aliasBitsOpt
+  val vaddrBitsOpt = if(cacheParams.clientCaches.isEmpty) None
+                  else cacheParams.clientCaches.head.vaddrBitsOpt
   val pageOffsetBits = log2Ceil(cacheParams.pageBytes)
 
   val bufBlocks = 4 // hold data that flows in MainPipe
