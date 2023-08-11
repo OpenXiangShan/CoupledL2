@@ -48,7 +48,7 @@ abstract class BaseGrantBuffer(implicit p: Parameters) extends L2Module {
     })
 
     val l1Hint = ValidIO(new L2ToL1Hint())
-    val globalCounter = Output(UInt(log2Ceil(mshrsAll).W))
+    val globalCounter = Output(UInt((log2Ceil(mshrsAll) + 1).W))
 
     val pipeStatusVec = Flipped(Vec(5, ValidIO(new PipeStatus)))
     val toReqArb = Output(new Bundle() {
@@ -120,6 +120,7 @@ class GrantBuffer(implicit p: Parameters) extends BaseGrantBuffer {
   //TODO: or should we still Stall B req?
   // A-replace related rprobe is handled in SourceB
   io.toReqArb.blockSinkReqEntrance.blockC_s1 := noSpaceForSinkReq
+  io.toReqArb.blockSinkReqEntrance.blockG_s1 := false.B
   io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq
 
   selectOH.asBools.zipWithIndex.foreach {

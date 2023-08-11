@@ -46,6 +46,7 @@ class PrefetchTrain(implicit p: Parameters) extends PrefetchBundle {
   val set = UInt(setBits.W)
   val needT = Bool()
   val source = UInt(sourceIdBits.W)
+  val vaddr = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W))
   // prefetch only when L2 receives a miss or prefetched hit req
   // val miss = Bool()
   // val prefetched = Bool()

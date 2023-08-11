@@ -84,8 +84,14 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     /* status of s2 and s3 */
     val pipeStatusVec = Flipped(Vec(2, ValidIO(new PipeStatus)))
 
-    /* to ReqBuffer, to solve conflict */
-    val toReqBuf = Vec(mshrsAll, ValidIO(new MSHRBlockAInfo))
+    /* MSHR info to Sinks */
+    /* to ReqBuffer, to calculate conflict */
+    /* to SinkB, to merge nested B req */
+    val msInfo = Vec(mshrsAll, ValidIO(new MSHRInfo))
+    val bMergeTask = Flipped(ValidIO(new BMergeTask))
+
+    /* refill read replacer result */
+    val replResp = Flipped(ValidIO(new ReplacerResult))
 
     /* for TopDown Monitor */
     val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
@@ -103,11 +109,11 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   val selectedMSHROH = mshrSelector.io.out.bits
   io.toMainPipe.mshr_alloc_ptr := OHToUInt(selectedMSHROH)
 
-  val resp_sinkC_match_vec = mshrs.map(mshr =>
-    mshr.io.status.valid && mshr.io.status.bits.w_c_resp &&
-    io.resps.sinkC.set === mshr.io.status.bits.set &&
-    io.resps.sinkC.tag === mshr.io.status.bits.tag
-  )
+  val resp_sinkC_match_vec = mshrs.map { mshr =>
+    val status = mshr.io.status.bits
+    val tag = Mux(status.needsRepl, status.metaTag, status.reqTag)
+    mshr.io.status.valid && status.w_c_resp && io.resps.sinkC.set === status.set && io.resps.sinkC.tag === tag
+  }
 
   mshrs.zipWithIndex.foreach {
     case (m, i) =>
@@ -123,17 +129,19 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       m.io.resps.sink_e.bits := io.resps.sinkE.respInfo
       m.io.resps.source_c.valid := m.io.status.valid && io.resps.sourceC.valid && io.resps.sourceC.mshrId === i.U
       m.io.resps.source_c.bits := io.resps.sourceC.respInfo
-      
-      m.io.nestedwb := io.nestedwb
+      m.io.replResp.valid := io.replResp.valid && io.replResp.bits.mshrId === i.U
+      m.io.replResp.bits := io.replResp.bits
 
-      io.toReqBuf(i) := m.io.toReqBuf
+      io.msInfo(i) := m.io.msInfo
+      m.io.nestedwb := io.nestedwb
+      m.io.bMergeTask.valid := io.bMergeTask.valid && io.bMergeTask.bits.id === i.U
+      m.io.bMergeTask.bits := io.bMergeTask.bits
   }
 
-  val setMatchVec_b = mshrs.map(m => m.io.status.valid && m.io.status.bits.set === io.fromReqArb.status_s1.b_set)
-  val setConflictVec_b = (setMatchVec_b zip mshrs.map(_.io.status.bits.nestB)).map(x => x._1 && !x._2)
   io.toReqArb.blockC_s1 := false.B
-  io.toReqArb.blockB_s1 := mshrFull || Cat(setConflictVec_b).orR
-  io.toReqArb.blockA_s1 := a_mshrFull // conflict logic moved to ReqBuf
+  io.toReqArb.blockB_s1 := mshrFull   // conflict logic in SinkB
+  io.toReqArb.blockA_s1 := a_mshrFull // conflict logic in ReqBuf
+  io.toReqArb.blockG_s1 := false.B
 
   /* Acquire downwards */
   val acquireUnit = Module(new AcquireUnit())
@@ -163,6 +171,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   io.nestedwbDataId.bits := ParallelPriorityMux(mshrs.zipWithIndex.map {
     case (mshr, i) => (mshr.io.nestedwbData, i.U)
   })
+  assert(RegNext(PopCount(mshrs.map(_.io.nestedwbData)) <= 1.U), "should only be one nestedwbData")
 
   dontTouch(io.sourceA)
 
@@ -174,8 +183,6 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   // Performance counters
   XSPerfAccumulate(cacheParams, "capacity_conflict_to_sinkA", a_mshrFull)
   XSPerfAccumulate(cacheParams, "capacity_conflict_to_sinkB", mshrFull)
-  //  XSPerfAccumulate(cacheParams, "set_conflict_to_sinkA", Cat(setMatchVec_a).orR) //TODO: move this to ReqBuf
-  XSPerfAccumulate(cacheParams, "set_conflict_to_sinkB", Cat(setConflictVec_b).orR)
   XSPerfHistogram(cacheParams, "mshr_alloc", io.toMainPipe.mshr_alloc_ptr,
     enable = io.fromMainPipe.mshr_alloc_s3.valid,
     start = 0, stop = mshrsAll, step = 1)
