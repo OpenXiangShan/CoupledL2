@@ -407,12 +407,14 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   io.prefetchTrain.foreach {
     train =>
+      // train on request(with needHint flag) miss or hit on prefetched block
       train.valid := task_s3.valid && (req_acquire_s3 || req_get_s3) && req_s3.needHint.getOrElse(false.B) &&
         (!dirResult_s3.hit || meta_s3.prefetch.get)
       train.bits.tag := req_s3.tag
       train.bits.set := req_s3.set
       train.bits.needT := req_needT_s3
       train.bits.source := req_s3.sourceId
+      train.bits.vaddr.foreach(_ := req_s3.vaddr.getOrElse(0.U))
   }
 
   /* ======== Stage 4 ======== */
