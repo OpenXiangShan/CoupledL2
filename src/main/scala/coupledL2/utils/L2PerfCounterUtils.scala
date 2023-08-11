@@ -1,8 +1,26 @@
+/** *************************************************************************************
+  * Copyright (c) 2020-2021 Institute of Computing Technology, Chinese Academy of Sciences
+  * Copyright (c) 2020-2021 Peng Cheng Laboratory
+  *
+  * XiangShan is licensed under Mulan PSL v2.
+  * You can use this software according to the terms and conditions of the Mulan PSL v2.
+  * You may obtain a copy of Mulan PSL v2 at:
+  *          http://license.coscl.org.cn/MulanPSL2
+  *
+  * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+  * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+  *
+  * See the Mulan PSL v2 for more details.
+  * *************************************************************************************
+  */
+
 package coupledL2.utils
 
 import chisel3._
 import chisel3.util.experimental.BoringUtils
 import coupledL2.L2Param
+import utility.ChiselDB
 
 object XSPerfAccumulate {
   def apply(params: L2Param, perfName: String, perfCnt: UInt) = {
@@ -102,6 +120,94 @@ object XSPerfMax {
       when(perfDump) {
         XSPerfPrint(p"${perfName}_max, $next_max\n")
       }
+    }
+  }
+}
+
+object XSPerfRolling {
+
+  class RollingEntry() extends Bundle {
+    val xAxisPt = UInt(64.W)
+    val yAxisPt = UInt(64.W)
+
+    def apply(xAxisPt: UInt, yAxisPt: UInt): RollingEntry = {
+      val e = Wire(new RollingEntry())
+      e.xAxisPt := xAxisPt
+      e.yAxisPt := yAxisPt
+      e
+    }
+  }
+
+  def apply(
+    params: L2Param,
+    perfName: String,
+    perfCnt: UInt,
+    granularity: Int,
+    clock: Clock,
+    reset: Reset
+  ): Unit = {
+    if (params.enablePerf) {
+      val tableName = perfName + "_rolling_0"  // TODO: support naming hart id
+      val rollingTable = ChiselDB.createTable(tableName, new RollingEntry(), basicDB=true)
+      val logTimestamp = WireInit(0.U(64.W))
+      val perfClean = WireInit(false.B)
+      val perfDump = WireInit(false.B)
+      ExcitingUtils.addSink(logTimestamp, "logTimestamp")
+      ExcitingUtils.addSink(perfClean, "XSPERF_CLEAN")
+      ExcitingUtils.addSink(perfDump, "XSPERF_DUMP")
+
+      val xAxisCnt = RegInit(0.U(64.W))
+      val yAxisCnt = RegInit(0.U(64.W))
+      val xAxisPt = RegInit(0.U(64.W))
+      xAxisCnt := xAxisCnt + 1.U(64.W)  // increment per cycle
+      yAxisCnt := yAxisCnt + perfCnt
+
+      val triggerDB = xAxisCnt === granularity.U
+      when(triggerDB) {
+        xAxisCnt := 1.U(64.W)
+        yAxisCnt := perfCnt
+        xAxisPt := xAxisPt + granularity.U
+      }
+      val rollingPt = new RollingEntry().apply(xAxisPt, yAxisCnt)
+      rollingTable.log(rollingPt, triggerDB, "", clock, reset)
+    }
+  }
+
+  def apply(
+    params: L2Param,
+    perfName: String,
+    perfCnt: UInt,
+    eventTrigger: UInt,
+    granularity: Int,
+    clock: Clock,
+    reset: Reset
+  ): Unit = {
+    if (params.enablePerf) {
+      val tableName = perfName + "_rolling_0"  // TODO: support naming hart id
+      val rollingTable = ChiselDB.createTable(tableName, new RollingEntry(), basicDB=true)
+      val logTimestamp = WireInit(0.U(64.W))
+      val perfClean = WireInit(false.B)
+      val perfDump = WireInit(false.B)
+      ExcitingUtils.addSink(logTimestamp, "logTimestamp")
+      ExcitingUtils.addSink(perfClean, "XSPERF_CLEAN")
+      ExcitingUtils.addSink(perfDump, "XSPERF_DUMP")
+
+      val xAxisCnt = RegInit(0.U(64.W))
+      val yAxisCnt = RegInit(0.U(64.W))
+      val xAxisPtReg = RegInit(0.U(64.W))
+      val xAxisPt = WireInit(0.U(64.W))
+      xAxisCnt := xAxisCnt + eventTrigger // increment when event triggers
+      yAxisCnt := yAxisCnt + perfCnt
+
+      val triggerDB = xAxisCnt >= granularity.U
+      when(triggerDB) {
+        xAxisCnt := xAxisCnt - granularity.U + eventTrigger
+        yAxisCnt := perfCnt
+        xAxisPtReg := xAxisPtReg + xAxisCnt
+        xAxisPt := xAxisPtReg + xAxisCnt
+      }
+      val rollingPt = new RollingEntry().apply(xAxisPt, yAxisCnt)
+      rollingTable.log(rollingPt, triggerDB, "", clock, reset)
     }
   }
 }

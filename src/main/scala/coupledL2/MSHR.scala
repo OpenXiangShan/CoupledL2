@@ -553,6 +553,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.msInfo.bits.nestB := nestB
   io.msInfo.bits.mergeB := mergeB
   io.msInfo.bits.isAcqOrPrefetch := req_acquire || req_prefetch
+  io.msInfo.bits.isPrefetch := req_prefetch
 
   assert(!(c_resp.valid && !io.status.bits.w_c_resp))
   assert(!(d_resp.valid && !io.status.bits.w_d_resp))

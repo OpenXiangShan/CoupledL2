@@ -166,6 +166,7 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle {
 
   // to drop duplicate prefetch reqs
   val isAcqOrPrefetch = Bool()
+  val isPrefetch = Bool()
 }
 
 class RespInfoBundle(implicit p: Parameters) extends L2Bundle {
