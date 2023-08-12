@@ -205,6 +205,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   ms_task.tag              := req_s3.tag
   ms_task.off              := req_s3.off
   ms_task.alias.foreach(_  := req_s3.alias.getOrElse(0.U))
+  ms_task.vaddr.foreach(_  := req_s3.vaddr.getOrElse(0.U))
   ms_task.opcode           := req_s3.opcode
   ms_task.param            := req_s3.param
   ms_task.size             := req_s3.size
