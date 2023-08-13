@@ -35,6 +35,7 @@ trait HasCoupledL2Parameters {
   val p: Parameters
   val cacheParams = p(L2ParamKey)
 
+  val XLEN = 64
   val blocks = cacheParams.sets * cacheParams.ways
   val blockBytes = cacheParams.blockBytes
   val beatBytes = cacheParams.channelBytes.d.get
@@ -47,8 +48,10 @@ trait HasCoupledL2Parameters {
   val stateBits = MetaData.stateBits
   val aliasBitsOpt = if(cacheParams.clientCaches.isEmpty) None
                   else cacheParams.clientCaches.head.aliasBitsOpt
+  // vaddr without offset bits
   val vaddrBitsOpt = if(cacheParams.clientCaches.isEmpty) None
                   else cacheParams.clientCaches.head.vaddrBitsOpt
+  val vaddrBits = vaddrBitsOpt.getOrElse(0)
   val pageOffsetBits = log2Ceil(cacheParams.pageBytes)
 
   val bufBlocks = 4 // hold data that flows in MainPipe
@@ -213,8 +216,14 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
   lazy val module = new LazyModuleImp(this) {
     val banks = node.in.size
     val bankBits = if (banks == 1) 0 else log2Up(banks)
+    val l2TlbParams: Parameters = p.alterPartial {
+      case EdgeInKey => node.in.head._2
+      case EdgeOutKey => node.out.head._2
+      case BankBitsKey => bankBits
+    }
     val io = IO(new Bundle {
       val l2_hint = Valid(UInt(32.W))
+      val l2_tlb_req = new L2ToL1TlbIO(nRespDups = 1)(l2TlbParams)
     })
 
     // Display info
@@ -261,6 +270,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
         fastArb(prefetchTrains.get, prefetcher.get.io.train, Some("prefetch_train"))
         prefetcher.get.io.req.ready := Cat(prefetchReqsReady).orR
         fastArb(prefetchResps.get, prefetcher.get.io.resp, Some("prefetch_resp"))
+        prefetcher.get.io.tlb_req <> io.l2_tlb_req
     }
     pf_recv_node match {
       case Some(x) =>

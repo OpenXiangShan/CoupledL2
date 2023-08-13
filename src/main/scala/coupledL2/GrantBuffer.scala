@@ -186,6 +186,7 @@ class GrantBuffer(implicit p: Parameters) extends BaseGrantBuffer {
           in.valid := block_valids(i) && taskAll(i).opcode === HintAck
           in.bits.tag := taskAll(i).tag
           in.bits.set := taskAll(i).set
+          in.bits.vaddr.foreach(_ := taskAll(i).vaddr.getOrElse(0.U))
           when (in.fire()) {
             beat_valids(i).foreach(_ := false.B)
           }

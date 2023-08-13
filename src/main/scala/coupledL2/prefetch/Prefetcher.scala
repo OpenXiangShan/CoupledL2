@@ -37,6 +37,7 @@ class PrefetchResp(implicit p: Parameters) extends PrefetchBundle {
   // val id = UInt(sourceIdBits.W)
   val tag = UInt(fullTagBits.W)
   val set = UInt(setBits.W)
+  val vaddr = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W))
   def addr = Cat(tag, set, 0.U(offsetBits.W))
 }
 
@@ -55,6 +56,7 @@ class PrefetchTrain(implicit p: Parameters) extends PrefetchBundle {
 
 class PrefetchIO(implicit p: Parameters) extends PrefetchBundle {
   val train = Flipped(DecoupledIO(new PrefetchTrain))
+  val tlb_req = new L2ToL1TlbIO(nRespDups= 1)
   val req = DecoupledIO(new PrefetchReq)
   val resp = Flipped(DecoupledIO(new PrefetchResp))
   val recv_addr = Flipped(ValidIO(UInt(64.W)))
@@ -117,6 +119,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
       pft.io.train <> io.train
       pft.io.resp <> io.resp
+      pft.io.tlb_req <> io.tlb_req
       pftQueue.io.enq <> pft.io.req
       pipe.io.in <> pftQueue.io.deq
       io.req <> pipe.io.out
@@ -137,6 +140,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       // l2 prefetch
       bop.io.train <> io.train
       bop.io.resp <> io.resp
+      bop.io.tlb_req <> io.tlb_req
       // send to prq
       pftQueue.io.enq.valid := l1_pf.io.req.valid || (bop_en && bop.io.req.valid)
       pftQueue.io.enq.bits := Mux(l1_pf.io.req.valid,
