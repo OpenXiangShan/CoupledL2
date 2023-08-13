@@ -158,7 +158,8 @@ object XSPerfRolling {
 
       val xAxisCnt = RegInit(0.U(64.W))
       val yAxisCnt = RegInit(0.U(64.W))
-      val xAxisPt = RegInit(0.U(64.W))
+      val xAxisPtReg = RegInit(0.U(64.W))
+      val xAxisPt = WireInit(0.U(64.W))
       xAxisCnt := xAxisCnt + 1.U(64.W)  // increment per cycle
       yAxisCnt := yAxisCnt + perfCnt
 
@@ -166,7 +167,8 @@ object XSPerfRolling {
       when(triggerDB) {
         xAxisCnt := 1.U(64.W)
         yAxisCnt := perfCnt
-        xAxisPt := xAxisPt + granularity.U
+        xAxisPtReg := xAxisPtReg + granularity.U
+        xAxisPt := xAxisPtReg + granularity.U
       }
       val rollingPt = new RollingEntry().apply(xAxisPt, yAxisCnt)
       rollingTable.log(rollingPt, triggerDB, "", clock, reset)
