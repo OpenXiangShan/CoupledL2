@@ -137,6 +137,9 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       l1_pf.io.train.bits := 0.U.asTypeOf(new PrefetchTrain)
       l1_pf.io.resp.valid := false.B
       l1_pf.io.resp.bits := 0.U.asTypeOf(new PrefetchResp)
+      l1_pf.io.tlb_req.req.ready := true.B
+      l1_pf.io.tlb_req.resp.valid := false.B
+      l1_pf.io.tlb_req.resp.bits := DontCare
       // l2 prefetch
       bop.io.train <> io.train
       bop.io.resp <> io.resp

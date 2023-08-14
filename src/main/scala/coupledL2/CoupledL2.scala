@@ -361,6 +361,10 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
               prefetchResps.get(i).bits.tag := resp_tag
               prefetchResps.get(i).bits.set := resp_set
             }
+            s.tlb_req.req.valid := false.B
+            s.tlb_req.req.bits := DontCare
+            s.tlb_req.req_kill := DontCare
+            s.tlb_req.resp.ready := true.B
         }
 
         slice
