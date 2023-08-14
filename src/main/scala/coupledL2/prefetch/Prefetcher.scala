@@ -125,9 +125,12 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       val bop = Module(new BestOffsetPrefetch()(p.alterPartial({
         case L2ParamKey => p(L2ParamKey).copy(prefetch = Some(BOPParameters()))
       })))
+      val tp = Module(new TemporalPrefetch()(p.alterPartial({
+        case L2ParamKey => p(L2ParamKey).copy(prefetch = Some(TPParameters()))
+      })))
       val pftQueue = Module(new PrefetchQueue)
       val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
-      val bop_en = RegNextN(io_l2_pf_en, 2, Some(true.B))
+      val l2_pf_en = RegNextN(io_l2_pf_en, 2, Some(true.B))
       // l1 prefetch
       l1_pf.io.recv_addr := ValidIODelay(io.recv_addr, 2)
       l1_pf.io.train.valid := false.B
@@ -137,19 +140,27 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       // l2 prefetch
       bop.io.train <> io.train
       bop.io.resp <> io.resp
+      // l2 temporal prefetch
+      tp.io.train <> io.train
+      tp.io.resp <> io.resp
       // send to prq
-      pftQueue.io.enq.valid := l1_pf.io.req.valid || (bop_en && bop.io.req.valid)
+      pftQueue.io.enq.valid := l1_pf.io.req.valid || (l2_pf_en && (bop.io.req.valid || tp.io.req.valid))
       pftQueue.io.enq.bits := Mux(l1_pf.io.req.valid,
         l1_pf.io.req.bits,
-        bop.io.req.bits
+        Mux(bop.io.req.valid,
+          bop.io.req.bits,
+          tp.io.req.bits
+        )
       )
       l1_pf.io.req.ready := true.B
       bop.io.req.ready := true.B
+      tp.io.req.ready := true.B
       pipe.io.in <> pftQueue.io.deq
       io.req <> pipe.io.out
       XSPerfAccumulate(cacheParams, "prefetch_req_fromL1", l1_pf.io.req.valid)
-      XSPerfAccumulate(cacheParams, "prefetch_req_fromL2", bop_en && bop.io.req.valid)
-      XSPerfAccumulate(cacheParams, "prefetch_req_L1L2_overlapped", l1_pf.io.req.valid && bop_en && bop.io.req.valid)
+      XSPerfAccumulate(cacheParams, "prefetch_req_fromL2", l2_pf_en && (bop.io.req.valid || tp.io.req.valid))
+      XSPerfAccumulate(cacheParams, "prefetch_req_L1L2_overlapped",
+        l1_pf.io.req.valid && l2_pf_en && (bop.io.req.valid || tp.io.req.valid))
     case _ => assert(cond = false, "Unknown prefetcher")
   }
 }
