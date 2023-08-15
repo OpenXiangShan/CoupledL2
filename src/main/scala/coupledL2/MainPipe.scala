@@ -625,7 +625,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   XSPerfAccumulate(cacheParams, "mshr_grant_req", task_s3.valid && mshr_grant_s3 && !retry)
   XSPerfAccumulate(cacheParams, "mshr_grantdata_req", task_s3.valid && mshr_grantdata_s3 && !retry)
   XSPerfAccumulate(cacheParams, "mshr_accessackdata_req", task_s3.valid && mshr_accessackdata_s3 && !retry)
-  XSPerfAccumulate(cacheParams, "mshr_accessack_req", task_s3.valid && mshr_accessack_s3 && !retry)
   XSPerfAccumulate(cacheParams, "mshr_hintack_req", task_s3.valid && mshr_hintack_s3 && !retry)
   XSPerfAccumulate(cacheParams, "mshr_probeack_req", task_s3.valid && mshr_probeack_s3)
   XSPerfAccumulate(cacheParams, "mshr_probeackdata_req", task_s3.valid && mshr_probeackdata_s3)
