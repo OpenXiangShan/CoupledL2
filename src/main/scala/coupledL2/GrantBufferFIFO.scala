@@ -34,7 +34,7 @@ import utility._
 // ** FIFO version of GrantBuffer
 class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCircularQueuePtrHelper{
 
-  class GrantBufferPtr(implicit p: Parameters) extends CircularQueuePtr[GrantBufferPtr](mshrsAll){ }
+  class GrantBufferPtr(implicit p: Parameters) extends CircularQueuePtr[GrantBufferPtr](grantBufSize){ }
 
   object GrantBufferPtr {
     def apply(f: Bool, v: UInt)(implicit p: Parameters): GrantBufferPtr = {
@@ -51,15 +51,15 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
   val deqPtr = deqPtrExt.value
 
   // used by prefetch, update deqPtrExt
-  val flush = RegInit(VecInit(Seq.fill(mshrsAll) {
+  val flush = RegInit(VecInit(Seq.fill(grantBufSize) {
     false.B
   }))
 
   // =========== Counting Hint Cycles ===========
   // hint interface: l2 will send hint to l1 before sending grantData (3 cycle ahead)
-  val globalCounter = RegInit(0.U((log2Ceil(mshrsAll) + 1).W))
-  val beat_counters = RegInit(VecInit(Seq.fill(mshrsAll) {
-    0.U((log2Ceil(mshrsAll) + 1).W)
+  val globalCounter = RegInit(0.U((log2Ceil(grantBufSize) + 1).W))
+  val beat_counters = RegInit(VecInit(Seq.fill(grantBufSize) {
+    0.U((log2Ceil(grantBufSize) + 1).W)
   }))
   io.globalCounter := globalCounter
 
@@ -100,7 +100,7 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
   // =========== fire at D channel ===========
   io.d.valid := false.B
   io.d.bits := 0.U.asTypeOf(io.d.bits)
-  for(idx <- (0 until mshrsAll)) {
+  for(idx <- (0 until grantBufSize)) {
     when(deqPtr === idx.U) {
       io.d.valid := block_valids(idx) && taskAll(idx).opcode =/= HintAck // L1 does not need HintAck (for now)
       val data = dataAll(idx).data

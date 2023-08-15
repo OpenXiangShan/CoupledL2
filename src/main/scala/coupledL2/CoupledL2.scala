@@ -54,8 +54,10 @@ trait HasCoupledL2Parameters {
   val bufBlocks = 4 // hold data that flows in MainPipe
   val bufIdxBits = log2Up(bufBlocks)
 
-  val releaseBufWPorts = 3 // sinkC and mainpipe s5, s6
-  
+  val releaseBufWPorts = 3 // sinkC & mainPipe s5 & mainPipe s3 (nested)
+  val grantBufSize = mshrsAll
+  val grantBufInflightSize = sourceIdAll
+
   // Prefetch
   val prefetchOpt = cacheParams.prefetch
   val hasPrefetchBit = prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchBit

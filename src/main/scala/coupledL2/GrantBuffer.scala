@@ -56,7 +56,7 @@ abstract class BaseGrantBuffer(implicit p: Parameters) extends L2Module {
       val blockMSHRReqEntrance = Bool()
     })
     val prefetchResp = prefetchOpt.map(_ => DecoupledIO(new PrefetchResp))
-    val grantStatus  = Output(Vec(sourceIdAll, new GrantStatus))
+    val grantStatus  = Output(Vec(grantBufInflightSize, new GrantStatus))
   })
   // The following is organized in the order of data flow
   // =========== save d_task in entries, waiting to fire ===========
@@ -111,8 +111,8 @@ abstract class BaseGrantBuffer(implicit p: Parameters) extends L2Module {
   // =========== record unreceived GrantAck ===========
   // sourceIdAll (= L1 Ids) entries
   // Caution: blocks choose an empty entry to insert, which has #mshrsAll entries
-  // while inflight_grant use sourceId as index, which has #sourceIdAll entries
-  val inflight_grant = RegInit(VecInit(Seq.fill(sourceIdAll){
+  // while inflight_grant use sourceId as index, which has #grantBufInflightSize=sourceIdAll entries
+  val inflight_grant = RegInit(VecInit(Seq.fill(grantBufInflightSize){
     0.U.asTypeOf(Valid(new InflightGrantEntry))
   }))
   io.grantStatus zip inflight_grant foreach {
@@ -174,7 +174,7 @@ abstract class BaseGrantBuffer(implicit p: Parameters) extends L2Module {
   if (cacheParams.enablePerf) {
     XSPerfAccumulate(cacheParams, "grant_buffer_full", full)
 
-    val timers = RegInit(VecInit(Seq.fill(sourceIdAll){0.U(64.W)}))
+    val timers = RegInit(VecInit(Seq.fill(grantBufInflightSize){0.U(64.W)}))
     inflight_grant zip timers map {
       case (e, t) =>
         when(e.valid) { t := t + 1.U }
