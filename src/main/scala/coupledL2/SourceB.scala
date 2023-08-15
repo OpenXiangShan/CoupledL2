@@ -78,14 +78,12 @@ class SourceB(implicit p: Parameters) extends L2Module {
   val conflict     = Cat(conflictMask).orR
 
   val noReadyEntry = Wire(Bool())
-  val canFlow      = noReadyEntry && !conflict
-  val flow         = canFlow && io.sourceB.ready
 
   /* ======== Alloc ======== */
-  io.task.ready   := !full || flow
+  io.task.ready   := !full
 
   val insertIdx = PriorityEncoder(probes.map(!_.valid))
-  val alloc     = !full && io.task.valid && !flow
+  val alloc     = !full && io.task.valid
   when(alloc) {
     val p = probes(insertIdx)
     p.valid := true.B
@@ -116,10 +114,8 @@ class SourceB(implicit p: Parameters) extends L2Module {
   }
 
   /* ======== Output ======== */
-  io.sourceB.valid := issueArb.io.out.valid || (io.task.valid && canFlow)
-  io.sourceB.bits  := toTLBundleB(
-    Mux(canFlow, io.task.bits, issueArb.io.out.bits)
-  )
+  io.sourceB.valid := issueArb.io.out.valid
+  io.sourceB.bits  := toTLBundleB(issueArb.io.out.bits)
 
   /* ======== Perf ======== */
   for(i <- 0 until entries){
