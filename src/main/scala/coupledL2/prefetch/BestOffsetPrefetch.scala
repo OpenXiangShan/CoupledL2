@@ -31,15 +31,20 @@ case class BOPParameters(
   roundMax:       Int = 50,
   badScore:       Int = 1,
   offsetList: Seq[Int] = Seq(
-    -32, -30, -27, -25, -24, -20, -18, -16, -15,
-    -12, -10,  -9,  -8,  -6,  -5,  -4,  -3,  -2,  -1,
-      1,   2,   3,   4,   5,   6,   8,   9,  10,
-     12,  15,  16,  18,  20,  24,  25,  27,  30//,
-    /*32,  36,
-     40,  45,  48,  50,  54,  60,  64,  72,  75,  80,
-     81,  90,  96, 100, 108, 120, 125, 128, 135, 144,
-    150, 160, 162, 180, 192, 200, 216, 225, 240, 243,
-    250, 256*/
+    -256, -250, -243, -240, -225, -216, -200,
+    -192, -180, -162, -160, -150, -144, -135, -128,
+    -125, -120, -108, -100, -96, -90, -81, -80,
+    -75, -72, -64, -60, -54, -50, -48, -45,
+    -40, -36, -32, -30, -27, -25, -24, -20,
+    -18, -16, -15, -12, -10, -9, -8, -6,
+    -5, -4, -3, -2, -1,
+    1, 2, 3, 4, 5, 6, 8,
+    9, 10, 12, 15, 16, 18, 20, 24,
+    25, 27, 30, 32, 36, 40, 45, 48,
+    50, 54, 60, 64, 72, 75, 80, 81,
+    90, 96, 100, 108, 120, 125, 128, 135,
+    144, 150, 160, 162, 180, 192, 200, 216,
+    225, 240, 243, 250, 256
   ))
     extends PrefetchParameters {
   override val hasPrefetchBit:  Boolean = true
@@ -67,7 +72,7 @@ trait HasBOPParams extends HasCoupledL2Parameters {
   val inflightEntries = bopParams.inflightEntries
 
   val scores = offsetList.length
-  val offsetWidth = log2Up(-offsetList(0)) + 1 // -32 <= offset <= 31
+  val offsetWidth = log2Up(offsetList.max) + 2 // -32 <= offset <= 31
   val roundBits = log2Up(roundMax)
   val scoreMax = (1 << scoreBits) - 1
   val scoreTableIdxBits = log2Up(scores)
@@ -270,54 +275,79 @@ class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   val rrTable = Module(new RecentRequestTable)
   val scoreTable = Module(new OffsetScoreTable)
 
+  val s0_fire = scoreTable.io.req.fire
+  val s1_fire = WireInit(false.B)
+  val s0_ready, s1_ready = WireInit(false.B)
+
+  /* s0 train */
   val prefetchOffset = scoreTable.io.prefetchOffset
   // NOTE: vaddr from l1 to l2 has no offset bits
-  val oldAddr = if(virtualTrain) Cat(io.train.bits.vaddr.getOrElse(0.U), 0.U(offsetBits.W)) else io.train.bits.addr
-  val newAddr = oldAddr + signedExtend((prefetchOffset << offsetBits), addrBits)
+  val s0_oldAddr = if(virtualTrain) Cat(io.train.bits.vaddr.getOrElse(0.U), 0.U(offsetBits.W)) else io.train.bits.addr
+  val s0_newAddr = s0_oldAddr + signedExtend((prefetchOffset << offsetBits), addrBits)
+  val s0_crossPage = getPPN(s0_newAddr) =/= getPPN(s0_oldAddr) // unequal tags
   val respAddr = if(virtualTrain) Cat(io.resp.bits.vaddr.getOrElse(0.U), 0.U(offsetBits.W)) else io.resp.bits.addr
 
   rrTable.io.r <> scoreTable.io.test
   rrTable.io.w.valid := io.resp.valid
   rrTable.io.w.bits := respAddr + signedExtend((prefetchOffset << offsetBits), addrBits)
   scoreTable.io.req.valid := io.train.valid
-  scoreTable.io.req.bits := oldAddr
+  scoreTable.io.req.bits := s0_oldAddr
 
-  /* s0 get scoreTable req */
-  val s0_req_valid = RegInit(false.B)
-  val crossPage = getPPN(newAddr) =/= getPPN(oldAddr) // unequal tags
-  when(io.req.fire()) {
-    s0_req_valid := false.B
-  }
-  when(scoreTable.io.req.fire()) {
-    if(virtualTrain) s0_req_valid := true.B
-    else s0_req_valid := !crossPage // stop prefetch when prefetch req crosses pages
-  }
-
-  /* out */
+  /* s1 get or send req */
+  val s1_req_valid = RegInit(false.B)
+  val s1_needT = RegEnable(io.train.bits.needT, s0_fire)
+  val s1_source = RegEnable(io.train.bits.source, s0_fire)
+  val s1_newAddr = RegEnable(s0_newAddr, s0_fire)
   val out_drop_req = io.tlb_req.resp.valid && (io.tlb_req.resp.bits.miss || io.tlb_req.resp.bits.excp.head.pf.ld || io.tlb_req.resp.bits.excp.head.af.ld)
-  val out_req = Reg(new PrefetchReq)
+  val out_req = Wire(new PrefetchReq)
+  val out_req_valid = Wire(Bool())
+
+  // pipeline control signal
+  when(s0_fire) {
+    if(virtualTrain) s1_req_valid := true.B
+    else s1_req_valid := !s0_crossPage // stop prefetch when prefetch req crosses pages
+  }.elsewhen(s1_fire){
+    s1_req_valid := false.B
+  }
+
+  if (virtualTrain) {
+    s0_ready := io.tlb_req.req.ready && s1_ready || !s1_req_valid
+    s1_ready := io.req.ready || !io.req.valid
+    s1_fire := s1_ready && s1_req_valid
+  } else {
+    s0_ready := io.req.ready || !io.req.valid
+    s1_ready := io.req.ready
+    s1_fire := io.req.fire
+  }
+
+  // out value
+  io.req.valid := out_req_valid
   io.req.bits := out_req
-  io.train.ready := scoreTable.io.req.ready && (!io.req.valid || io.req.ready)
+  io.train.ready := scoreTable.io.req.ready && s0_ready
   io.resp.ready := rrTable.io.w.ready
   io.tlb_req.resp.ready := true.B
 
+  // different situation
   if(virtualTrain){
-    /* s0 send tlb req */
-    io.tlb_req.req.valid := s0_req_valid
-    io.tlb_req.req.bits.vaddr := newAddr
-    io.tlb_req.req.bits.cmd := TlbCmd.read
+    /* s1 send tlb req */
+    io.tlb_req.req.valid := s1_req_valid
+    io.tlb_req.req.bits.vaddr := s1_newAddr
+    when(s1_needT){
+      io.tlb_req.req.bits.cmd := TlbCmd.exec
+    }.otherwise{
+      io.tlb_req.req.bits.cmd := TlbCmd.read
+    }
     io.tlb_req.req.bits.size := 3.U
     io.tlb_req.req.bits.kill := false.B
     io.tlb_req.req.bits.no_translate := false.B
     io.tlb_req.req_kill := false.B
 
-    /* s1 get tlb resp and send prefetch req */
-    val out_req_valid = RegNext(s0_req_valid)
-    io.req.valid := out_req_valid && io.tlb_req.resp.valid && !out_drop_req
+    /* s2 get tlb resp and send prefetch req */
+    out_req_valid := RegNext(s1_req_valid) && io.tlb_req.resp.valid && !out_drop_req
     out_req.tag := parseFullAddress(io.tlb_req.resp.bits.paddr.head)._1
     out_req.set := parseFullAddress(io.tlb_req.resp.bits.paddr.head)._2
-    out_req.needT := RegNext(io.train.bits.needT)
-    out_req.source := RegNext(io.train.bits.source)
+    out_req.needT := RegNext(s1_needT)
+    out_req.source := RegNext(s1_source)
     out_req.isBOP := true.B
 
   } else {
@@ -325,14 +355,13 @@ class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     io.tlb_req.req.bits := DontCare
     io.tlb_req.req_kill := false.B
 
-    io.req.valid := s0_req_valid
-    when(scoreTable.io.req.fire()){
-      out_req.tag := parseFullAddress(newAddr)._1
-      out_req.set := parseFullAddress(newAddr)._2
-      out_req.needT := io.train.bits.needT
-      out_req.source := io.train.bits.source
-      out_req.isBOP := true.B
-    }
+    /* s1 send prefetch req */
+    out_req_valid := s1_req_valid
+    out_req.tag := parseFullAddress(s1_newAddr)._1
+    out_req.set := parseFullAddress(s1_newAddr)._2
+    out_req.needT := s1_needT
+    out_req.source := s1_source
+    out_req.isBOP := true.B
   }
 
   for (off <- offsetList) {
@@ -347,6 +376,6 @@ class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   XSPerfAccumulate(cacheParams, "bop_train", io.train.fire())
   XSPerfAccumulate(cacheParams, "bop_train_stall_for_st_not_ready", io.train.valid && !scoreTable.io.req.ready)
   if(!virtualTrain){
-    XSPerfAccumulate(cacheParams, "bop_cross_page", scoreTable.io.req.fire() && crossPage)
+    XSPerfAccumulate(cacheParams, "bop_cross_page", scoreTable.io.req.fire() && s0_crossPage)
   }
 }
