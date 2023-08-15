@@ -61,7 +61,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     val sourceA = DecoupledIO(new TLBundleA(edgeOut.bundle))
     val sourceB = DecoupledIO(new TLBundleB(edgeIn.bundle))
     // val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain))
-    val grantStatus = Input(Vec(sourceIdAll, new GrantStatus))
+    val grantStatus = Input(Vec(grantBufInflightSize, new GrantStatus))
 
     /* receive resps */
     val resps = Input(new Bundle() {

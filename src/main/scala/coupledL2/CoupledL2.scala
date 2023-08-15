@@ -55,8 +55,6 @@ trait HasCoupledL2Parameters {
   val bufIdxBits = log2Up(bufBlocks)
 
   val releaseBufWPorts = 3 // sinkC & mainPipe s5 & mainPipe s3 (nested)
-  val grantBufSize = mshrsAll
-  val grantBufInflightSize = sourceIdAll
 
   // Prefetch
   val prefetchOpt = cacheParams.prefetch
@@ -83,6 +81,9 @@ trait HasCoupledL2Parameters {
   // id of 0XXXX refers to mshrId
   // id of 1XXXX refers to reqs that do not enter mshr
   // require(isPow2(idsAll))
+
+  val grantBufSize = mshrsAll
+  val grantBufInflightSize = mshrsAll //TODO: lack or excessive? !! WARNING
 
   // width params with bank idx (used in prefetcher / ctrl unit)
   lazy val fullAddressBits = edgeOut.bundle.addressBits

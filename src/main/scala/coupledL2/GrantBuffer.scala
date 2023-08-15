@@ -109,27 +109,30 @@ abstract class BaseGrantBuffer(implicit p: Parameters) extends L2Module {
   val pft_resps = prefetchOpt.map(_ => Wire(Vec(mshrsAll, DecoupledIO(new PrefetchResp))))
 
   // =========== record unreceived GrantAck ===========
-  // sourceIdAll (= L1 Ids) entries
-  // Caution: blocks choose an empty entry to insert, which has #mshrsAll entries
-  // while inflight_grant use sourceId as index, which has #grantBufInflightSize=sourceIdAll entries
+  // Addrs with Grant sent and GrantAck not received
   val inflight_grant = RegInit(VecInit(Seq.fill(grantBufInflightSize){
     0.U.asTypeOf(Valid(new InflightGrantEntry))
   }))
-  io.grantStatus zip inflight_grant foreach {
-    case (g, i) =>
-      g.valid := i.valid
-      g.tag   := i.bits.tag
-      g.set   := i.bits.set
-  }
   when (io.d_task.fire && io.d_task.bits.task.opcode(2, 1) === Grant(2, 1)) {
     // choose an empty entry
-    val insertIdx = io.d_task.bits.task.sourceId
+    val insertIdx = PriorityEncoder(inflight_grant.map(!_.valid))
     val entry = inflight_grant(insertIdx)
     entry.valid := true.B
     entry.bits.set    := io.d_task.bits.task.set
     entry.bits.tag    := io.d_task.bits.task.tag
     entry.bits.sink   := io.d_task.bits.task.mshrId
   }
+  val inflight_full = Cat(inflight_grant.map(_.valid)).andR
+  assert(!inflight_full, "inflight_grant entries should not be full")
+
+  // report status to SourceB to block same-addr Probe
+  io.grantStatus zip inflight_grant foreach {
+    case (g, i) =>
+      g.valid := i.valid
+      g.tag   := i.bits.tag
+      g.set   := i.bits.set
+  }
+
   when (io.e.fire) {
     // compare sink to clear buffer
     val sinkMatchVec = inflight_grant.map(g => g.valid && g.bits.sink === io.e.bits.sink)
