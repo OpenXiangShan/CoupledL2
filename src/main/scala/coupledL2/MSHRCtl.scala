@@ -77,10 +77,6 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     val nestedwb = Input(new NestedWriteback)
     val nestedwbDataId = Output(ValidIO(UInt(mshrBits.W)))
 
-    /* read putBuffer */
-    val pbRead = DecoupledIO(new PutBufferRead)
-    val pbResp = Flipped(ValidIO(new PutBufferEntry))
-
     /* status of s2 and s3 */
     val pipeStatusVec = Flipped(Vec(2, ValidIO(new PipeStatus)))
 
@@ -147,8 +143,6 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   val acquireUnit = Module(new AcquireUnit())
   fastArb(mshrs.map(_.io.tasks.source_a), acquireUnit.io.task, Some("source_a"))
   io.sourceA <> acquireUnit.io.sourceA
-  io.pbRead <> acquireUnit.io.pbRead
-  io.pbResp <> acquireUnit.io.pbResp
 
   /* Probe upwards */
   val sourceB = Module(new SourceB())
