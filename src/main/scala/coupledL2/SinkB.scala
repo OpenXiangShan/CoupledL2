@@ -23,6 +23,7 @@ import chipsalliance.rocketchip.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.utils.XSPerfAccumulate
+import utility.MemReqSource
 
 class BMergeTask(implicit p: Parameters) extends L2Bundle {
   val id = UInt(mshrBits.W)
