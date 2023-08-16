@@ -176,7 +176,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
   io.refillBufWrite.id := RegNext(OHToUInt(newdataMask))
   io.refillBufWrite.data.data := dataBuf(RegNext(io.task.bits.bufIdx)).asUInt
 
-  io.c.ready := !isRelease || !first || !full || !hasData && io.task.ready
+  io.c.ready := !isRelease || !first || !full || !hasData && io.task.ready && !taskArb.io.out.valid
 
   io.bufResp.data := dataBuf(io.bufRead.bits.bufIdx)
 
