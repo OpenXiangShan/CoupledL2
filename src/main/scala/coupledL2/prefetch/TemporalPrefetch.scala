@@ -25,7 +25,7 @@ import coupledL2.HasCoupledL2Parameters
 import coupledL2.utils.{ReplacementPolicy, XSPerfAccumulate}
 
 case class TPParameters(
-    tpTableEntries: Int = 1024,
+    tpTableEntries: Int = 16384,
     tpTableAssoc: Int = 16,
     vaddrBits: Int = 39,
     blockOffBits: Int = 6,
@@ -74,6 +74,10 @@ class trainBundle(implicit p: Parameters) extends TPBundle {
   val vaddr = UInt(vaddrBits.W)
   val paddr = UInt(fullAddressBits.W)
   val hit = Bool()
+}
+
+class sendBundle(implicit p: Parameters) extends TPBundle {
+  val paddr = UInt(fullAddressBits.W)
 }
 
 /* VIVT, Physical Data */
@@ -225,10 +229,10 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   tpDataQueue.io.deq.ready := tpDataQFull || !do_sending
   when(tpDataQueue.io.deq.fire) {
     sending_data := tpDataQueue.io.deq.bits.rawData
-    sending_idx := 0.U
+    sending_idx := 1.U  // TODO: dismiss the first addr because it is the trigger
     do_sending := true.B
   }
-  when(((do_sending && !tpDataQFull) || sending_throttle =/= 0.U) && !sending_throttle === tpThrottleCycles.U) {
+  when(((do_sending && !tpDataQFull) || sending_throttle =/= 0.U) && (sending_throttle =/= tpThrottleCycles.U)) {
     sending_throttle := sending_throttle + 1.U
   }
   when(io.req.fire) {
@@ -260,6 +264,11 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   trainPt.paddr := train_s2.addr
   trainPt.hit := hit_s2
 
+  val sendDB = ChiselDB.createTable("tpsend", new sendBundle())
+  val sendPt = Wire(new sendBundle())
+  sendPt.paddr := sending_data(sending_idx)
+
   triggerDB.log(triggerPt, tpTable_w_valid, "", clock, reset)
   trainDB.log(trainPt, s2_valid, "", clock, reset)
+  sendDB.log(sendPt, io.req.fire, "", clock, reset)
 }
