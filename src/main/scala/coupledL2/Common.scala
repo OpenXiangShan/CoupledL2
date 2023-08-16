@@ -20,8 +20,8 @@ package coupledL2
 import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config.Parameters
-
 import freechips.rocketchip.tilelink.TLPermissions._
+import utility.MemReqSource
 
 abstract class L2Module(implicit val p: Parameters) extends MultiIOModule with HasCoupledL2Parameters
 abstract class L2Bundle(implicit val p: Parameters) extends Bundle with HasCoupledL2Parameters
@@ -251,22 +251,4 @@ class PrefetchRecv extends Bundle {
 // custom l2 - l1 interface
 class L2ToL1Hint(implicit p: Parameters) extends Bundle {
   val sourceId = UInt(32.W)    // tilelink sourceID
-}
-
-// indicates where the memory access request comes from
-// a dupliacte of this is in xiangShan/package.scala utility/TLUtils/BusKeyField.scala
-object MemReqSource extends Enumeration {
-  val NoWhere = Value("NoWhere")
-
-  val CPUInst = Value("CPUInst")
-  val CPULoadData = Value("CPULoadData")
-  val CPUStoreData = Value("CPUStoreData")
-  val CPUAtomicData = Value("CPUAtomicData")
-  val L1InstPrefetch = Value("L1InstPrefetch")
-  val L1DataPrefetch = Value("L1DataPrefetch")
-  val PTW = Value("PTW")
-  val L2Prefetch = Value("L2Prefetch")
-  val ReqSourceCount = Value("ReqSourceCount")
-
-  val reqSourceBits = log2Ceil(ReqSourceCount.id)
 }
