@@ -28,6 +28,7 @@ import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram}
 class PrefetchReq(implicit p: Parameters) extends PrefetchBundle {
   val tag = UInt(fullTagBits.W)
   val set = UInt(setBits.W)
+  val vaddr = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W))
   val needT = Bool()
   val source = UInt(sourceIdBits.W)
   val isBOP = Bool()

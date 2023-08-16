@@ -293,7 +293,7 @@ class TlbExceptionBundle extends Bundle {
   val instr = Output(Bool())
 }
 class L2TlbReq(implicit p: Parameters) extends L2Bundle{
-  val vaddr = Output(UInt(vaddrBits.W))
+  val vaddr = Output(UInt((vaddrBits+offsetBits).W))
   val cmd = Output(TlbCmd())
   val size = Output(UInt(log2Ceil(log2Ceil(XLEN/8) + 1).W))
   val kill = Output(Bool()) // Use for blocked tlb that need sync with other module like icache

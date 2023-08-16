@@ -44,7 +44,7 @@ case class BOPParameters(
     50, 54, 60, 64, 72, 75, 80, 81,
     90, 96, 100, 108, 120, 125, 128, 135,
     144, 150, 160, 162, 180, 192, 200, 216,
-    225, 240, 243, 250, 256
+    225, 240, 243, 250/*, 256*/
   ))
     extends PrefetchParameters {
   override val hasPrefetchBit:  Boolean = true
@@ -282,14 +282,16 @@ class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   /* s0 train */
   val prefetchOffset = scoreTable.io.prefetchOffset
   // NOTE: vaddr from l1 to l2 has no offset bits
+  val s0_reqVaddr = io.train.bits.vaddr.getOrElse(0.U)
   val s0_oldAddr = if(virtualTrain) Cat(io.train.bits.vaddr.getOrElse(0.U), 0.U(offsetBits.W)) else io.train.bits.addr
   val s0_newAddr = s0_oldAddr + signedExtend((prefetchOffset << offsetBits), addrBits)
   val s0_crossPage = getPPN(s0_newAddr) =/= getPPN(s0_oldAddr) // unequal tags
-  val respAddr = if(virtualTrain) Cat(io.resp.bits.vaddr.getOrElse(0.U), 0.U(offsetBits.W)) else io.resp.bits.addr
+  val respAddr = if(virtualTrain) Cat(io.resp.bits.vaddr.getOrElse(0.U), 0.U(offsetBits.W))
+                 else io.resp.bits.addr - signedExtend((prefetchOffset << offsetBits), addrBits)
 
   rrTable.io.r <> scoreTable.io.test
   rrTable.io.w.valid := io.resp.valid
-  rrTable.io.w.bits := respAddr + signedExtend((prefetchOffset << offsetBits), addrBits)
+  rrTable.io.w.bits := respAddr
   scoreTable.io.req.valid := io.train.valid
   scoreTable.io.req.bits := s0_oldAddr
 
@@ -298,9 +300,10 @@ class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   val s1_needT = RegEnable(io.train.bits.needT, s0_fire)
   val s1_source = RegEnable(io.train.bits.source, s0_fire)
   val s1_newAddr = RegEnable(s0_newAddr, s0_fire)
-  val out_drop_req = io.tlb_req.resp.valid && (io.tlb_req.resp.bits.miss || io.tlb_req.resp.bits.excp.head.pf.ld || io.tlb_req.resp.bits.excp.head.af.ld)
+  val s1_reqVaddr = RegEnable(s0_reqVaddr, s0_fire)
   val out_req = Wire(new PrefetchReq)
   val out_req_valid = Wire(Bool())
+  val out_drop_req = Wire(Bool())
 
   // pipeline control signal
   when(s0_fire) {
@@ -311,6 +314,7 @@ class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   }
 
   if (virtualTrain) {
+    // FIXME lyq: it it not correct
     s0_ready := io.tlb_req.req.ready && s1_ready || !s1_req_valid
     s1_ready := io.req.ready || !io.req.valid
     s1_fire := s1_ready && s1_req_valid
@@ -333,7 +337,7 @@ class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     io.tlb_req.req.valid := s1_req_valid
     io.tlb_req.req.bits.vaddr := s1_newAddr
     when(s1_needT){
-      io.tlb_req.req.bits.cmd := TlbCmd.exec
+      io.tlb_req.req.bits.cmd := TlbCmd.write
     }.otherwise{
       io.tlb_req.req.bits.cmd := TlbCmd.read
     }
@@ -346,6 +350,13 @@ class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     out_req_valid := RegNext(s1_req_valid) && io.tlb_req.resp.valid && !out_drop_req
     out_req.tag := parseFullAddress(io.tlb_req.resp.bits.paddr.head)._1
     out_req.set := parseFullAddress(io.tlb_req.resp.bits.paddr.head)._2
+    when(RegNext(s1_needT)){
+      out_drop_req := io.tlb_req.resp.valid && (io.tlb_req.resp.bits.miss || io.tlb_req.resp.bits.excp.head.pf.st || io.tlb_req.resp.bits.excp.head.af.st)
+    }.otherwise{
+      out_drop_req := io.tlb_req.resp.valid && (io.tlb_req.resp.bits.miss || io.tlb_req.resp.bits.excp.head.pf.ld || io.tlb_req.resp.bits.excp.head.af.ld)
+    }
+    // to unify vaddr format, offset needs to be removed here
+    out_req.vaddr.foreach(_ := RegNext(s1_reqVaddr))
     out_req.needT := RegNext(s1_needT)
     out_req.source := RegNext(s1_source)
     out_req.isBOP := true.B
@@ -359,6 +370,7 @@ class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     out_req_valid := s1_req_valid
     out_req.tag := parseFullAddress(s1_newAddr)._1
     out_req.set := parseFullAddress(s1_newAddr)._2
+    out_req.vaddr.foreach(_ := 0.U)
     out_req.needT := s1_needT
     out_req.source := s1_source
     out_req.isBOP := true.B
@@ -372,10 +384,12 @@ class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     }
   }
   XSPerfAccumulate(cacheParams, "bop_req", io.req.fire())
-  XSPerfAccumulate(cacheParams, "bop_req_drop", out_drop_req)
   XSPerfAccumulate(cacheParams, "bop_train", io.train.fire())
   XSPerfAccumulate(cacheParams, "bop_train_stall_for_st_not_ready", io.train.valid && !scoreTable.io.req.ready)
-  if(!virtualTrain){
+  if(virtualTrain){
+    XSPerfAccumulate(cacheParams, "bop_train_stall_for_tlb_not_ready", io.train.valid && !io.tlb_req.req.ready)
+    XSPerfAccumulate(cacheParams, "bop_req_drop", out_drop_req)
+  }else{
     XSPerfAccumulate(cacheParams, "bop_cross_page", scoreTable.io.req.fire() && s0_crossPage)
   }
 }
