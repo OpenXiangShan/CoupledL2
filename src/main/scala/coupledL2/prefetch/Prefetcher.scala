@@ -154,7 +154,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       )
       l1_pf.io.req.ready := true.B
       bop.io.req.ready := true.B
-      tp.io.req.ready := true.B
+      tp.io.req.ready := !l1_pf.io.req.valid && !bop.io.req.valid
       pipe.io.in <> pftQueue.io.deq
       io.req <> pipe.io.out
       XSPerfAccumulate(cacheParams, "prefetch_req_fromL1", l1_pf.io.req.valid)
