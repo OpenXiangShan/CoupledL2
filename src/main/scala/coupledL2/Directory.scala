@@ -134,12 +134,6 @@ class Directory(implicit p: Parameters) extends L2Module {
   val resetFinish = RegInit(false.B)
   val resetIdx = RegInit((sets - 1).U)
 
-  // Replacer
-  val repl = ReplacementPolicy.fromString(cacheParams.replacement, ways)
-  val random_repl = cacheParams.replacement == "random"
-  val replacer_sram_opt = if(random_repl) None else
-    Some(Module(new BankedSRAM(UInt(repl.nBits.W), sets, 1, banks, singlePort = true, shouldReset = true)))
-
   /* ====== Generate response signals ====== */
   // hit/way calculation in stage 3, Cuz SRAM latency is high under high frequency
   /* stage 1: io.read.fire, access Tag/Meta
@@ -210,6 +204,18 @@ class Directory(implicit p: Parameters) extends L2Module {
   dontTouch(metaArray.io)
   dontTouch(tagArray.io)
 
+  // Replacer
+  val repl = ReplacementPolicy.fromString(cacheParams.replacement, ways)
+  val random_repl = cacheParams.replacement == "random"
+  val replacer_sram_opt = if(random_repl) None else
+    Some(Module(new BankedSRAM(UInt(repl.nBits.W), sets, 1, banks, singlePort = true, shouldReset = true)))
+  // origin-bit marks whether the data_block is reused
+  val origin_bit_opt = if(random_repl) None else
+    Some(Module(new BankedSRAM(Bool(), sets, ways, banks, singlePort = true)))
+  val origin_bits_r = origin_bit_opt.get.io.r(io.read.fire, io.read.bits.set).resp.data
+  val origin_bits_hold = Wire(Vec(ways, Bool()))
+  origin_bits_hold := HoldUnless(origin_bits_r, RegNext(io.read.fire, false.B))
+
   //[deprecated] io.read.ready := !io.metaWReq.valid && !io.tagWReq.valid && !replacerWen
   val replacerRready = if(cacheParams.replacement == "random") true.B else replacer_sram_opt.get.io.r.req.ready
   io.read.ready := tagArray.io.r.req.ready && metaArray.io.r.req.ready && replacerRready
@@ -248,9 +254,10 @@ class Directory(implicit p: Parameters) extends L2Module {
   io.replResp.bits.retry := refillRetry
 
   /* ====== Update ====== */
-  // update replacer only when A hit or refill, at stage 3
-  val updateHit = reqValid_s3 && hit_s3 && req_s3.replacerInfo.channel(0) &&
-    (req_s3.replacerInfo.opcode === AcquirePerm || req_s3.replacerInfo.opcode === AcquireBlock)
+  // update replacer only when Acquire hit or Release hit or Refill, at stage 3
+  val updateHit = reqValid_s3 && hit_s3 && ((replacerInfo_s3.channel(0) &&
+       (replacerInfo_s3.opcode === AcquirePerm || replacerInfo_s3.opcode === AcquireBlock || replacerInfo_s3.opcode === Get))
+    || (replacerInfo_s3.channel(2) && (replacerInfo_s3.opcode === Release || replacerInfo_s3.opcode === ReleaseData)))
   val updateRefill = refillReqValid_s3 && !refillRetry
   replacerWen := updateHit || updateRefill
 
@@ -260,7 +267,19 @@ class Directory(implicit p: Parameters) extends L2Module {
   val rrip_hit_s3 = Mux(refillReqValid_s3, false.B, hit_s3)
 
   if(cacheParams.replacement == "srrip"){
-    val next_state_s3 = repl.get_next_state(repl_state_s3, touch_way_s3, rrip_hit_s3)
+    // req_type[0]=1: Acquire hit; Acquire refill; Release hit non-pref reuse;
+    // req_type[1]=1: Hint Refill;
+    // req_typr[2]=1: Release hit non-pref firstuse; Release hit pref;
+    val req_type = WireInit(0.U(3.W))
+    val reuse = origin_bits_hold(way_s3)
+    req_type := Cat(replacerInfo_s3.channel(2) && (meta_s3.prefetch.getOrElse(false.B) || (!meta_s3.prefetch.getOrElse(false.B) && !reuse)),
+                    replacerInfo_s3.channel(0) && (replacerInfo_s3.opcode === HintAck || replacerInfo_s3.opcode === AccessAckData),
+                    (replacerInfo_s3.channel(0) && (replacerInfo_s3.opcode === AcquirePerm || replacerInfo_s3.opcode === AcquireBlock || replacerInfo_s3.opcode === Get
+                                                || replacerInfo_s3.opcode === Grant || replacerInfo_s3.opcode === GrantData)) ||
+                    (replacerInfo_s3.channel(2) && !meta_s3.prefetch.getOrElse(false.B) && reuse)
+                )
+    val next_state_s3 = repl.get_next_state(repl_state_s3, touch_way_s3, req_type, rrip_hit_s3)
+    
     val repl_init = Wire(Vec(ways, UInt(2.W)))
     repl_init.foreach(_ := 2.U(2.W))
     replacer_sram_opt.get.io.w(
@@ -270,24 +289,41 @@ class Directory(implicit p: Parameters) extends L2Module {
       1.U
     )
   } else if(cacheParams.replacement == "drrip"){
-    //Set Dueling
+    // Set Dueling
     val PSEL = RegInit(512.U(10.W)) //32-monitor sets, 10-bits psel
-    // track monitor sets' hit rate for each policy: srrip-0,128...3968;brrip-64,192...4032
-    when(refillReqValid_s3 && (set_s3(6,0)===0.U) && !rrip_hit_s3){  //SDMs_srrip miss
+    // basic SDMs complement-selection policy: srrip--set_idx[group-:]==set_idx[group_offset-:]; brrip--set_idx[group-:]==!set_idx[group_offset-:]
+    val setBits = log2Ceil(sets)
+    val half_setBits = setBits >> 1
+    val match_a = set_s3(setBits-1,setBits-half_setBits-1)===set_s3(setBits-half_setBits-1,0)  // 512 sets [8:4][4:0]
+    val match_b = set_s3(setBits-1,setBits-half_setBits-1)===(~set_s3(setBits-half_setBits-1,0))
+    when(refillReqValid_s3 && match_a && (PSEL=/=1023.U)){  //SDMs_srrip miss
       PSEL := PSEL + 1.U
-    } .elsewhen(refillReqValid_s3 && (set_s3(6,0)===64.U) && !rrip_hit_s3){ //SDMs_brrip miss
+    } .elsewhen(refillReqValid_s3 && match_b && (PSEL=/=0.U)){ //SDMs_brrip miss
       PSEL := PSEL - 1.U
     }
     // decide use which policy by policy selection counter, for insertion
+    // repl_type: false.B - srrip, true.B - brrip
     /* if set -> SDMs: use fix policy
        else if PSEL(MSB)==0: use srrip
        else if PSEL(MSB)==1: use brrip */
     val repl_type = WireInit(false.B)
-    repl_type := Mux(set_s3(6,0)===0.U, false.B,
-      Mux(set_s3(6,0)===64.U, true.B,
-        Mux(PSEL(9)===0.U, false.B, true.B)))    // false.B - srrip, true.B - brrip
-    val next_state_s3 = repl.get_next_state(repl_state_s3, touch_way_s3, rrip_hit_s3, repl_type)
+    repl_type := Mux(match_a, false.B, 
+                    Mux(match_b, true.B,
+                      Mux(PSEL(9)===0.U, false.B, true.B)))
 
+    // req_type[0]=1: Acquire hit; Acquire refill; Release hit non-pref reuse;
+    // req_type[1]=1: Hint Refill;
+    // req_typr[2]=1: Release hit non-pref firstuse; Release hit pref;
+    val req_type = WireInit(0.U(3.W))
+    val reuse = origin_bits_hold(way_s3)
+    req_type := Cat(replacerInfo_s3.channel(2) && (meta_s3.prefetch.getOrElse(false.B) || (!meta_s3.prefetch.getOrElse(false.B) && !reuse)),
+                    replacerInfo_s3.channel(0) && (replacerInfo_s3.opcode === HintAck || replacerInfo_s3.opcode === AccessAckData),
+                    (replacerInfo_s3.channel(0) && (replacerInfo_s3.opcode === AcquirePerm || replacerInfo_s3.opcode === AcquireBlock || replacerInfo_s3.opcode === Get
+                                                || replacerInfo_s3.opcode === Grant || replacerInfo_s3.opcode === GrantData)) ||
+                    (replacerInfo_s3.channel(2) && !meta_s3.prefetch.getOrElse(false.B) && reuse)
+                )
+    val next_state_s3 = repl.get_next_state(repl_state_s3, touch_way_s3, req_type, rrip_hit_s3, repl_type)
+    
     val repl_init = Wire(Vec(ways, UInt(2.W)))
     repl_init.foreach(_ := 2.U(2.W))
     replacer_sram_opt.get.io.w(
@@ -313,6 +349,32 @@ class Directory(implicit p: Parameters) extends L2Module {
   when(!resetFinish) {
     resetIdx := resetIdx - 1.U
   }
+
+  // count num of blocks prefetched but not used
+  origin_bit_opt.get.io.w(
+    replacerWen,
+    hit_s3,
+    set_s3,
+    UIntToOH(way_s3)
+  )
+
+  /* TODO: insert pf_block in low priority if pf_accuracy is low
+  // we calculate at the point when directory returns result (dirResult.valid)
+  // we add reqSource in replacerInfo, set in dirRead in ReqArb, pass it through Directory and get it in DirResult
+  // to help us distinguish whether it is an A-channel req
+  def dirResultMatch(cond: DirResult => Bool): Bool = {
+    reqValid_s3 && replacerInfo_s3.channel === 1.U && cond(io.resp)
+  }
+  // prefetch accuracy calculation
+  val l2prefetchSent = dirResultMatch(
+    r => (r.replacerInfo.reqSource === MemReqSource.L2Prefetch.id.U) && !r.hit
+  )
+  val l2prefetchUseful = dirResultMatch(
+    r => (r.replacerInfo.reqSource === MemReqSource.CPULoadData.id.U
+      || r.replacerInfo.reqSource === MemReqSource.CPUStoreData.id.U) &&
+      r.hit &&
+      r.meta.prefetch.getOrElse(false.B)
+  )*/
 
   XSPerfAccumulate(cacheParams, "dirRead_cnt", io.read.fire)
   XSPerfAccumulate(cacheParams, "choose_busy_way", reqValid_s3 && !req_s3.wayMask(chosenWay))
