@@ -24,7 +24,7 @@ import utility.ChiselDB
 
 object XSPerfAccumulate {
   def apply(params: L2Param, perfName: String, perfCnt: UInt) = {
-    if (params.enablePerf) {
+    if (params.enablePerf && params.FPGAPlatform) {
       val logTimestamp = WireInit(0.U(64.W))
       val perfClean = WireInit(false.B)
       val perfDump = WireInit(false.B)
@@ -57,7 +57,7 @@ object XSPerfHistogram {
     left_strict: Boolean = false,
     right_strict: Boolean = false
   ) = {
-    if (params.enablePerf) {
+    if (params.enablePerf && params.FPGAPlatform) {
       val logTimestamp = WireInit(0.U(64.W))
       val perfClean = WireInit(false.B)
       val perfDump = WireInit(false.B)
@@ -105,7 +105,7 @@ object XSPerfHistogram {
 
 object XSPerfMax {
   def apply(params: L2Param, perfName: String, perfCnt: UInt, enable: Bool) = {
-    if (params.enablePerf) {
+    if (params.enablePerf && params.FPGAPlatform) {
       val logTimestamp = WireInit(0.U(64.W))
       val perfClean = WireInit(false.B)
       val perfDump = WireInit(false.B)
@@ -146,7 +146,7 @@ object XSPerfRolling {
     clock: Clock,
     reset: Reset
   ): Unit = {
-    if (params.enablePerf) {
+    if (params.enablePerf && params.FPGAPlatform) {
       val tableName = perfName + "_rolling_0"  // TODO: support naming hart id
       val rollingTable = ChiselDB.createTable(tableName, new RollingEntry(), basicDB=true)
       val logTimestamp = WireInit(0.U(64.W))
@@ -184,7 +184,7 @@ object XSPerfRolling {
     clock: Clock,
     reset: Reset
   ): Unit = {
-    if (params.enablePerf) {
+    if (params.enablePerf && params.FPGAPlatform) {
       val tableName = perfName + "_rolling_0"  // TODO: support naming hart id
       val rollingTable = ChiselDB.createTable(tableName, new RollingEntry(), basicDB=true)
       val logTimestamp = WireInit(0.U(64.W))
