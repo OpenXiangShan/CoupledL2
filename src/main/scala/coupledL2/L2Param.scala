@@ -138,7 +138,9 @@ case class L2Param
   // Monitor
   enableMonitor: Boolean = true,
   // TopDown
-  elaboratedTopDown: Boolean = true
+  elaboratedTopDown: Boolean = true,
+  // env
+  FPGAPlatform: Boolean = false
 ) {
   def toCacheParams: CacheParameters = CacheParameters(
     name = name,
