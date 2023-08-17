@@ -188,7 +188,7 @@ class SourceC(implicit p: Parameters) extends L2Module {
     }
   }
 
-  assert(io.in.ready, "SourceC should never be full")
+  assert(io.in.ready, "SourceC should never be full") // WARNING
 
   // ========== Misc ============
   val (first, last, done, count) = edgeOut.count(io.out)

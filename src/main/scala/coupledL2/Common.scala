@@ -20,8 +20,8 @@ package coupledL2
 import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config.Parameters
-
 import freechips.rocketchip.tilelink.TLPermissions._
+import utility.MemReqSource
 
 abstract class L2Module(implicit val p: Parameters) extends MultiIOModule with HasCoupledL2Parameters
 abstract class L2Bundle(implicit val p: Parameters) extends Bundle with HasCoupledL2Parameters
@@ -59,9 +59,6 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val mshrId = UInt(mshrBits.W)           // mshr entry index (used only in mshr-task)
   val aliasTask = aliasBitsOpt.map(_ => Bool()) // Anti-alias
   val useProbeData = Bool()               // data source, true for ReleaseBuf and false for RefillBuf
-
-  // For Put
-  val pbIdx = UInt(mshrBits.W)
 
   // For Intent
   val fromL2pft = prefetchOpt.map(_ => Bool()) // Is the prefetch req from L2(BOP) or from L1 prefetch?
@@ -128,7 +125,6 @@ class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits {
 //  val alias = aliasBitsOpt.map(_ => UInt(aliasBitsOpt.get.W))
 //  val aliasTask = aliasBitsOpt.map(_ => Bool())
 //  val needProbeAckData = Bool() // only for B reqs
-//  val pbIdx = UInt(mshrBits.W)
 //  val fromL2pft = prefetchOpt.map(_ => Bool())
 //  val needHint = prefetchOpt.map(_ => Bool())
 
@@ -220,7 +216,6 @@ class SourceAReq(implicit p: Parameters) extends L2Bundle {
   val param = UInt(aWidth.W)
   val size = UInt(msgSizeBits.W)
   val source = UInt(mshrBits.W)
-  val pbIdx = UInt(mshrBits.W)
   val reqSource = UInt(MemReqSource.reqSourceBits.W)
 }
 
@@ -247,17 +242,6 @@ class NestedWriteback(implicit p: Parameters) extends L2Bundle {
   val c_set_dirty = Bool()
 }
 
-// Put Buffer
-class PutBufferRead(implicit p: Parameters) extends L2Bundle {
-  val idx = UInt(mshrBits.W)
-  val count = UInt(beatBits.W)
-}
-
-class PutBufferEntry(implicit p: Parameters) extends L2Bundle {
-  val data = new DSBeat
-  val mask = UInt(beatBytes.W)
-}
-
 class PrefetchRecv extends Bundle {
   val addr = UInt(64.W)
   val addr_valid = Bool()
@@ -267,22 +251,4 @@ class PrefetchRecv extends Bundle {
 // custom l2 - l1 interface
 class L2ToL1Hint(implicit p: Parameters) extends Bundle {
   val sourceId = UInt(32.W)    // tilelink sourceID
-}
-
-// indicates where the memory access request comes from
-// a dupliacte of this is in xiangShan/package.scala utility/TLUtils/BusKeyField.scala
-object MemReqSource extends Enumeration {
-  val NoWhere = Value("NoWhere")
-
-  val CPUInst = Value("CPUInst")
-  val CPULoadData = Value("CPULoadData")
-  val CPUStoreData = Value("CPUStoreData")
-  val CPUAtomicData = Value("CPUAtomicData")
-  val L1InstPrefetch = Value("L1InstPrefetch")
-  val L1DataPrefetch = Value("L1DataPrefetch")
-  val PTW = Value("PTW")
-  val L2Prefetch = Value("L2Prefetch")
-  val ReqSourceCount = Value("ReqSourceCount")
-
-  val reqSourceBits = log2Ceil(ReqSourceCount.id)
 }
