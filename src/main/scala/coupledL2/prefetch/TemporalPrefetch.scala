@@ -20,7 +20,7 @@ package coupledL2.prefetch
 import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config.Parameters
-import utility.{ChiselDB, SRAMTemplate}
+import utility.{ChiselDB, MemReqSource, SRAMTemplate}
 import coupledL2.HasCoupledL2Parameters
 import coupledL2.utils.{ReplacementPolicy, XSPerfAccumulate}
 
@@ -249,7 +249,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   io.req.bits.set := sendingSet
   io.req.bits.needT := true.B
   io.req.bits.source := 0.U // TODO: ensure source 0 is dcache
-  io.req.bits.isBOP := false.B
+  io.req.bits.pfSource := MemReqSource.Prefetch2L2TP.id.U
 
   io.resp.ready := true.B
   io.train.ready := resetFinish

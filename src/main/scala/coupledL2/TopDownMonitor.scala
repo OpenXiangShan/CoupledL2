@@ -110,7 +110,10 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
    */
   // prefetch accuracy calculation
   val l2prefetchSent = dirResultMatchVec(
-    r => (r.replacerInfo.reqSource === MemReqSource.L2Prefetch.id.U) && !r.hit
+    r =>  !r.hit &&
+      (r.replacerInfo.reqSource === MemReqSource.Prefetch2L2BOP.id.U ||
+       r.replacerInfo.reqSource === MemReqSource.Prefetch2L2SMS.id.U ||
+       r.replacerInfo.reqSource === MemReqSource.Prefetch2L2TP.id.U)
   )
   val l2prefetchUseful = dirResultMatchVec(
     r => (r.replacerInfo.reqSource === MemReqSource.CPULoadData.id.U

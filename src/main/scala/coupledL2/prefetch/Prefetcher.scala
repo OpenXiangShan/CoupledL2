@@ -30,7 +30,15 @@ class PrefetchReq(implicit p: Parameters) extends PrefetchBundle {
   val set = UInt(setBits.W)
   val needT = Bool()
   val source = UInt(sourceIdBits.W)
-  val isBOP = Bool()
+  val pfSource = UInt(MemReqSource.reqSourceBits.W)
+
+  def isBOP:Bool = pfSource === MemReqSource.Prefetch2L2BOP.id.U
+  def isSMS:Bool = pfSource === MemReqSource.Prefetch2L2SMS.id.U
+  def isTP:Bool = pfSource === MemReqSource.Prefetch2L2TP.id.U
+  def fromL2:Bool =
+    pfSource === MemReqSource.Prefetch2L2BOP.id.U ||
+    pfSource === MemReqSource.Prefetch2L2SMS.id.U ||
+    pfSource === MemReqSource.Prefetch2L2TP.id.U
 }
 
 class PrefetchResp(implicit p: Parameters) extends PrefetchBundle {
@@ -57,7 +65,10 @@ class PrefetchIO(implicit p: Parameters) extends PrefetchBundle {
   val train = Flipped(DecoupledIO(new PrefetchTrain))
   val req = DecoupledIO(new PrefetchReq)
   val resp = Flipped(DecoupledIO(new PrefetchResp))
-  val recv_addr = Flipped(ValidIO(UInt(64.W)))
+  val recv_addr = Flipped(ValidIO(new Bundle() {
+    val addr = UInt(64.W)
+    val pfSource = UInt(MemReqSource.reqSourceBits.W)
+  }))
 }
 
 class PrefetchQueue(implicit p: Parameters) extends PrefetchModule {
@@ -96,18 +107,26 @@ class PrefetchQueue(implicit p: Parameters) extends PrefetchModule {
   io.deq.bits := Mux(empty, io.enq.bits, queue(head))
 
   // The reqs that are discarded = enq - deq
-  XSPerfAccumulate(cacheParams, "prefetch_queue_enq", io.enq.fire())
-  XSPerfAccumulate(cacheParams, "prefetch_queue_fromL1_enq", io.enq.fire() && !io.enq.bits.isBOP)
-  XSPerfAccumulate(cacheParams, "prefetch_queue_fromL2_enq", io.enq.fire() && io.enq.bits.isBOP)
-  XSPerfAccumulate(cacheParams, "prefetch_queue_deq", io.deq.fire())
-  XSPerfAccumulate(cacheParams, "prefetch_queue_fromL1_deq", io.deq.fire() && !io.enq.bits.isBOP)
-  XSPerfAccumulate(cacheParams, "prefetch_queue_fromL2_enq", io.deq.fire() && io.enq.bits.isBOP)
+  XSPerfAccumulate(cacheParams, "prefetch_queue_enq",         io.enq.fire)
+  XSPerfAccumulate(cacheParams, "prefetch_queue_enq_fromBOP", io.enq.fire && io.enq.bits.isBOP)
+  XSPerfAccumulate(cacheParams, "prefetch_queue_enq_fromSMS", io.enq.fire && io.enq.bits.isSMS)
+  XSPerfAccumulate(cacheParams, "prefetch_queue_enq_fromTP",  io.enq.fire && io.enq.bits.isTP)
+
+  XSPerfAccumulate(cacheParams, "prefetch_queue_deq",         io.deq.fire)
+  XSPerfAccumulate(cacheParams, "prefetch_queue_deq_fromBOP", io.deq.fire && io.deq.bits.isBOP)
+  XSPerfAccumulate(cacheParams, "prefetch_queue_deq_fromSMS", io.deq.fire && io.deq.bits.isSMS)
+  XSPerfAccumulate(cacheParams, "prefetch_queue_deq_fromTP",  io.deq.fire && io.deq.bits.isTP)
+
   XSPerfHistogram(cacheParams, "prefetch_queue_entry", PopCount(valids.asUInt),
     true.B, 0, inflightEntries, 1)
 }
 
 class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val io = IO(new PrefetchIO)
+  /* io_l2_pf_en:
+   * chicken bits for whether L2 prefetchers are enabled
+   * it will control BOP and TP prefetchers
+   */
   val io_l2_pf_en = IO(Input(Bool()))
 
   prefetchOpt.get match {
@@ -121,7 +140,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       pipe.io.in <> pftQueue.io.deq
       io.req <> pipe.io.out
     case receiver: PrefetchReceiverParams =>
-      val l1_pf = Module(new PrefetchReceiver())
+      val pfRcv = Module(new PrefetchReceiver())
       val bop = Module(new BestOffsetPrefetch()(p.alterPartial({
         case L2ParamKey => p(L2ParamKey).copy(prefetch = Some(BOPParameters()))
       })))
@@ -131,36 +150,41 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       val pftQueue = Module(new PrefetchQueue)
       val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
       val l2_pf_en = RegNextN(io_l2_pf_en, 2, Some(true.B))
-      // l1 prefetch
-      l1_pf.io.recv_addr := ValidIODelay(io.recv_addr, 2)
-      l1_pf.io.train.valid := false.B
-      l1_pf.io.train.bits := 0.U.asTypeOf(new PrefetchTrain)
-      l1_pf.io.resp.valid := false.B
-      l1_pf.io.resp.bits := 0.U.asTypeOf(new PrefetchResp)
-      // l2 prefetch
+
+      // prefetch from upper level
+      pfRcv.io.recv_addr := ValidIODelay(io.recv_addr, 2)
+      pfRcv.io.train.valid := false.B
+      pfRcv.io.train.bits := 0.U.asTypeOf(new PrefetchTrain)
+      pfRcv.io.resp.valid := false.B
+      pfRcv.io.resp.bits := 0.U.asTypeOf(new PrefetchResp)
+      assert(!pfRcv.io.req.valid || pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2SMS.id.U)
+
+      // prefetch from local prefetchers: BOP & TP
       bop.io.train <> io.train
       bop.io.resp <> io.resp
-      // l2 temporal prefetch
       tp.io.train <> io.train
       tp.io.resp <> io.resp
+
       // send to prq
-      pftQueue.io.enq.valid := l1_pf.io.req.valid || (l2_pf_en && (bop.io.req.valid || tp.io.req.valid))
-      pftQueue.io.enq.bits := Mux(l1_pf.io.req.valid,
-        l1_pf.io.req.bits,
+      pftQueue.io.enq.valid := pfRcv.io.req.valid || (l2_pf_en && (bop.io.req.valid || tp.io.req.valid))
+      pftQueue.io.enq.bits := Mux(pfRcv.io.req.valid,
+        pfRcv.io.req.bits,
         Mux(bop.io.req.valid,
           bop.io.req.bits,
           tp.io.req.bits
         )
       )
-      l1_pf.io.req.ready := true.B
+      pfRcv.io.req.ready := true.B
       bop.io.req.ready := true.B
-      tp.io.req.ready := !l1_pf.io.req.valid && !bop.io.req.valid
+      tp.io.req.ready := !pfRcv.io.req.valid && !bop.io.req.valid
       pipe.io.in <> pftQueue.io.deq
       io.req <> pipe.io.out
-      XSPerfAccumulate(cacheParams, "prefetch_req_fromL1", l1_pf.io.req.valid)
-      XSPerfAccumulate(cacheParams, "prefetch_req_fromL2", l2_pf_en && (bop.io.req.valid || tp.io.req.valid))
-      XSPerfAccumulate(cacheParams, "prefetch_req_L1L2_overlapped",
-        l1_pf.io.req.valid && l2_pf_en && (bop.io.req.valid || tp.io.req.valid))
+
+      XSPerfAccumulate(cacheParams, "prefetch_req_fromSMS", pfRcv.io.req.valid)
+      XSPerfAccumulate(cacheParams, "prefetch_req_fromBOP", l2_pf_en && bop.io.req.valid)
+      XSPerfAccumulate(cacheParams, "prefetch_req_fromTP", l2_pf_en && tp.io.req.valid)
+      XSPerfAccumulate(cacheParams, "prefetch_req_SMS_other_overlapped",
+        pfRcv.io.req.valid && l2_pf_en && (bop.io.req.valid || tp.io.req.valid))
     case _ => assert(cond = false, "Unknown prefetcher")
   }
 }

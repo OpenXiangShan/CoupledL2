@@ -268,7 +268,8 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     pf_recv_node match {
       case Some(x) =>
         prefetcher.get.io.recv_addr.valid := x.in.head._1.addr_valid
-        prefetcher.get.io.recv_addr.bits := x.in.head._1.addr
+        prefetcher.get.io.recv_addr.bits.addr := x.in.head._1.addr
+        prefetcher.get.io.recv_addr.bits.pfSource := x.in.head._1.pf_source
         prefetcher.get.io_l2_pf_en := x.in.head._1.l2_pf_en
       case None =>
         prefetcher.foreach(_.io.recv_addr := 0.U.asTypeOf(ValidIO(UInt(64.W))))
