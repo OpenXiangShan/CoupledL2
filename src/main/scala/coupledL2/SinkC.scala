@@ -23,6 +23,7 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import chipsalliance.rocketchip.config.Parameters
 import coupledL2.utils.XSPerfAccumulate
+import utility.MemReqSource
 
 class PipeBufferRead(implicit p: Parameters) extends L2Bundle {
   val bufIdx = UInt(bufIdxBits.W)
@@ -85,7 +86,6 @@ class SinkC(implicit p: Parameters) extends L2Module {
     task.mshrId := 0.U(mshrBits.W)
     task.aliasTask.foreach(_ := false.B)
     task.useProbeData := false.B
-    task.pbIdx := 0.U(mshrBits.W)
     task.fromL2pft.foreach(_ := false.B)
     task.needHint.foreach(_ := false.B)
     task.dirty := false.B
@@ -170,12 +170,13 @@ class SinkC(implicit p: Parameters) extends L2Module {
 
   // since what we are trying to prevent is that C-Release comes first and MSHR-Release comes later
   // we can make sure this refillBufWrite can be read by MSHR-Release
-  io.refillBufWrite.valid := RegNext(io.task.fire && newdataMask.orR, false.B)
+  // TODO: this is rarely triggered, consider just blocking?
+  io.refillBufWrite.valid := RegNext(io.task.fire && io.task.bits.opcode === ReleaseData && newdataMask.orR, false.B)
   io.refillBufWrite.beat_sel := Fill(beatSize, 1.U(1.W))
   io.refillBufWrite.id := RegNext(OHToUInt(newdataMask))
   io.refillBufWrite.data.data := dataBuf(RegNext(io.task.bits.bufIdx)).asUInt
 
-  io.c.ready := !isRelease || !first || !full || !hasData && io.task.ready
+  io.c.ready := !isRelease || !first || !full || !hasData && io.task.ready && !taskArb.io.out.valid
 
   io.bufResp.data := dataBuf(io.bufRead.bits.bufIdx)
 

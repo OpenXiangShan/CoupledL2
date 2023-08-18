@@ -20,7 +20,7 @@ package coupledL2
 import chisel3._
 import chisel3.util._
 import coupledL2.MetaData._
-import utility.{ParallelLookUp, ParallelPriorityMux}
+import utility.{MemReqSource, ParallelLookUp, ParallelPriorityMux}
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
@@ -96,7 +96,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val req_needT = needT(req.opcode, req.param)
   val req_acquire = req.opcode === AcquireBlock && req.fromA || req.opcode === AcquirePerm // AcquireBlock and Probe share the same opcode
   val req_acquirePerm = req.opcode === AcquirePerm
-  val req_put = req.opcode === PutFullData || req.opcode === PutPartialData
   val req_get = req.opcode === Get
   val req_prefetch = req.opcode === Hint
 
@@ -128,18 +127,17 @@ class MSHR(implicit p: Parameters) extends L2Module {
     oa.off := req.off
     oa.source := io.id
     oa.opcode := Mux(
-      req_put || req_acquirePerm,
+      req_acquirePerm,
       req.opcode,
       // Get or AcquireBlock
       AcquireBlock
     )
     oa.param := Mux(
-      req_put,
-      req.param,
-      Mux(req_needT, Mux(dirResult.hit, BtoT, NtoT), NtoB)
+      req_needT,
+      Mux(dirResult.hit, BtoT, NtoT),
+      NtoB
     )
     oa.size := req.size
-    oa.pbIdx := req.pbIdx
     oa.reqSource := req.reqSource
     oa
   }
@@ -193,7 +191,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
     // and it needs to write refillData to DS, so useProbeData is set false according to DS.wdata logic
     mp_release.useProbeData := false.B
     mp_release.way := dirResult.way
-    mp_release.pbIdx := 0.U(mshrBits.W)
     mp_release.fromL2pft.foreach(_ := false.B)
     mp_release.needHint.foreach(_ := false.B)
     mp_release.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
@@ -236,7 +233,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_probeack.aliasTask.foreach(_ := false.B)
     mp_probeack.useProbeData := true.B // write [probeAckData] to DS, if not probed toN
     mp_probeack.way := dirResult.way
-    mp_probeack.pbIdx := 0.U(mshrBits.W)
     mp_probeack.fromL2pft.foreach(_ := false.B)
     mp_probeack.needHint.foreach(_ := false.B)
     mp_probeack.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
@@ -311,7 +307,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_merge_probeack.sourceId := 0.U
     mp_merge_probeack.bufIdx := 0.U
     mp_merge_probeack.needProbeAckData := false.B
-    mp_merge_probeack.pbIdx := 0.U
     mp_merge_probeack.fromL2pft.foreach(_ := false.B)
     mp_merge_probeack.needHint.foreach(_ := false.B)
     mp_merge_probeack.wayMask := Fill(cacheParams.ways, "b1".U)
@@ -329,8 +324,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_grant.vaddr.foreach(_ := req.vaddr.getOrElse(0.U))
     mp_grant.opcode := odOpGen(req.opcode)
     mp_grant.param := Mux(
-      req_get || req_put || req_prefetch,
-      0.U, // Get/Put -> AccessAckData/AccessAck
+      req_get || req_prefetch,
+      0.U, // Get -> AccessAckData
       MuxLookup( // Acquire -> Grant
         req.param,
         req.param,
@@ -356,7 +351,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
     // [Alias] write probeData into DS for alias-caused Probe,
     // but not replacement-cased Probe
     mp_grant.useProbeData := dirResult.hit && req_get || req.aliasTask.getOrElse(false.B)
-    mp_grant.pbIdx := 0.U(mshrBits.W)
     mp_grant.dirty := false.B
 
     mp_grant.meta := MetaEntry(
@@ -381,11 +375,11 @@ class MSHR(implicit p: Parameters) extends L2Module {
       ),
       alias = Some(aliasFinal),
       prefetch = req_prefetch || dirResult.hit && meta_pft,
-      accessed = req_acquire || req_get || req_put //[Access] TODO: check
+      accessed = req_acquire || req_get
     )
-    mp_grant.metaWen := !req_put
-    mp_grant.tagWen := !dirResult.hit && !req_put
-    mp_grant.dsWen := !dirResult.hit && !req_put && gotGrantData || probeDirty && (req_get || req.aliasTask.getOrElse(false.B))
+    mp_grant.metaWen := true.B
+    mp_grant.tagWen := !dirResult.hit
+    mp_grant.dsWen := !dirResult.hit && gotGrantData || probeDirty && (req_get || req.aliasTask.getOrElse(false.B))
     mp_grant.fromL2pft.foreach(_ := req.fromL2pft.get)
     mp_grant.needHint.foreach(_ := false.B)
     mp_grant.replTask := !dirResult.hit // Get and Alias are hit that does not need replacement

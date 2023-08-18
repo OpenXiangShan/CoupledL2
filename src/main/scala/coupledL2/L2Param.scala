@@ -25,8 +25,7 @@ import freechips.rocketchip.util._
 import chipsalliance.rocketchip.config.Field
 import huancun.CacheParameters
 import coupledL2.prefetch._
-import MemReqSource._
-import utility.ReqSourceKey
+import utility.{MemReqSource, ReqSourceKey}
 
 // General parameter key of CoupledL2
 case object L2ParamKey extends Field[L2Param](L2Param())
@@ -139,7 +138,9 @@ case class L2Param
   // Monitor
   enableMonitor: Boolean = true,
   // TopDown
-  elaboratedTopDown: Boolean = true
+  elaboratedTopDown: Boolean = true,
+  // env
+  FPGAPlatform: Boolean = false
 ) {
   def toCacheParams: CacheParameters = CacheParameters(
     name = name,
