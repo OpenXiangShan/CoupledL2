@@ -500,7 +500,6 @@ class PrefetchReqFilter(implicit p: Parameters) extends BOPModule{
     }
   }
 
-  // FIXME lyq: chisel db / make a wave
   class L2BopEntry(implicit p: Parameters) extends BOPBundle {
     val idx = UInt(REQ_FILTER_SIZE.W)
     val vaddr = UInt(fullVAddrBits.W)
@@ -509,7 +508,7 @@ class PrefetchReqFilter(implicit p: Parameters) extends BOPModule{
     val needT = Bool()
     val source = UInt(sourceIdBits.W)
   }
-  val isWriteL2BOPTable = WireInit(Constantin.createRecord("isWriteL2BOPTable", initValue = 1.U))
+  val isWriteL2BOPTable = WireInit(Constantin.createRecord("isWriteL2BOPTable", initValue = 0.U))
   val l2BOPTable = ChiselDB.createTable("L2BOPTable", new L2BopEntry, basicDB = true)
   for (i <- 0 until REQ_FILTER_SIZE){
     when(pf_fired(i)){
