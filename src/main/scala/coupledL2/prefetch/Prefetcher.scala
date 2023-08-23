@@ -25,6 +25,90 @@ import freechips.rocketchip.tilelink._
 import coupledL2._
 import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram}
 
+/* virtual address */
+trait HasPrefetcherHelper extends HasCircularQueuePtrHelper with HasCoupledL2Parameters {
+  // filter
+  val TRAIN_FILTER_SIZE = 4
+  val REQ_FILTER_SIZE = 16
+
+  // parameters
+  val BLK_ADDR_RAW_WIDTH = 10
+  val REGION_SIZE = 1024
+  val PAGE_OFFSET = pageOffsetBits
+  val VADDR_HASH_WIDTH = 5
+
+  // vaddr:
+  // |       tag               |     index     |    offset    |
+  // |       block addr                        | block offset |
+  // |       region addr       |        region offset         |
+  val BLOCK_OFFSET = offsetBits
+  val REGION_OFFSET = log2Up(REGION_SIZE)
+  val REGION_BLKS = REGION_SIZE / blockBytes
+  val INDEX_BITS = log2Up(REGION_BLKS)
+  val TAG_BITS = fullVAddrBits - REGION_OFFSET
+  val PTAG_BITS = fullAddressBits - REGION_OFFSET
+  val BLOCK_ADDR_BITS = fullVAddrBits - BLOCK_OFFSET
+
+  // hash related
+  val HASH_TAG_WIDTH = VADDR_HASH_WIDTH + BLK_ADDR_RAW_WIDTH
+
+  def get_tag(vaddr: UInt) = {
+    require(vaddr.getWidth == fullVAddrBits)
+    vaddr(vaddr.getWidth - 1, REGION_OFFSET)
+  }
+
+  def get_ptag(vaddr: UInt) = {
+    require(vaddr.getWidth == fullAddressBits)
+    vaddr(vaddr.getWidth - 1, REGION_OFFSET)
+  }
+
+  def get_index(addr: UInt) = {
+    require(addr.getWidth >= REGION_OFFSET)
+    addr(REGION_OFFSET - 1, BLOCK_OFFSET)
+  }
+
+  def get_index_oh(vaddr: UInt): UInt = {
+    UIntToOH(get_index(vaddr))
+  }
+
+  def get_block_addr(vaddr: UInt): UInt = {
+    vaddr(vaddr.getWidth - 1, BLOCK_OFFSET)
+  }
+
+  def _vaddr_hash(x: UInt): UInt = {
+    val width = VADDR_HASH_WIDTH
+    val low = x(width - 1, 0)
+    val mid = x(2 * width - 1, width)
+    val high = x(3 * width - 1, 2 * width)
+    low ^ mid ^ high
+  }
+
+  def block_hash_tag(vaddr: UInt): UInt = {
+    val blk_addr = get_block_addr(vaddr)
+    val low = blk_addr(BLK_ADDR_RAW_WIDTH - 1, 0)
+    val high = blk_addr(BLK_ADDR_RAW_WIDTH - 1 + 3 * VADDR_HASH_WIDTH, BLK_ADDR_RAW_WIDTH)
+    val high_hash = _vaddr_hash(high)
+    Cat(high_hash, low)
+  }
+
+  def region_hash_tag(vaddr: UInt): UInt = {
+    val region_tag = get_tag(vaddr)
+    val low = region_tag(BLK_ADDR_RAW_WIDTH - 1, 0)
+    val high = region_tag(BLK_ADDR_RAW_WIDTH - 1 + 3 * VADDR_HASH_WIDTH, BLK_ADDR_RAW_WIDTH)
+    val high_hash = _vaddr_hash(high)
+    Cat(high_hash, low)
+  }
+
+  def region_to_block_addr(tag: UInt, index: UInt): UInt = {
+    Cat(tag, index)
+  }
+
+  def toBinary(n: Int): String = n match {
+    case 0 | 1 => s"$n"
+    case _ => s"${toBinary(n / 2)}${n % 2}"
+  }
+}
+
 class PrefetchReq(implicit p: Parameters) extends PrefetchBundle {
   val tag = UInt(fullTagBits.W)
   val set = UInt(setBits.W)

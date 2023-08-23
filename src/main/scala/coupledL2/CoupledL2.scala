@@ -51,7 +51,7 @@ trait HasCoupledL2Parameters {
   // vaddr without offset bits
   val vaddrBitsOpt = if(cacheParams.clientCaches.isEmpty) None
                   else cacheParams.clientCaches.head.vaddrBitsOpt
-  val vaddrBits = vaddrBitsOpt.getOrElse(0)
+  val fullVAddrBits = vaddrBitsOpt.getOrElse(0) + offsetBits
   val pageOffsetBits = log2Ceil(cacheParams.pageBytes)
 
   val bufBlocks = 4 // hold data that flows in MainPipe
