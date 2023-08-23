@@ -493,25 +493,31 @@ class PrefetchReqFilter(implicit p: Parameters) extends BOPModule{
   XSPerfAccumulate(cacheParams, "entry_tlb_fire", PopCount(tlb_fired))
   XSPerfAccumulate(cacheParams, "entry_pf_fire", PopCount(pf_fired))
 
-  /*
+  // reset meta to avoid muti-hit problem
+  for(i <- 0 until REQ_FILTER_SIZE) {
+    when(reset.asBool) {
+      entries(i).reset(i.U)
+    }
+  }
+
   // FIXME lyq: chisel db / make a wave
   class L2BopEntry(implicit p: Parameters) extends BOPBundle {
     val idx = UInt(REQ_FILTER_SIZE.W)
     val vaddr = UInt(fullVAddrBits.W)
-    val index = UInt(REGION_BLKS.W)
+    val region_num = UInt(REGION_BLKS.W)
     val region_vaddr = UInt(TAG_BITS.W)
     val needT = Bool()
     val source = UInt(sourceIdBits.W)
   }
   val isWriteL2BOPTable = WireInit(Constantin.createRecord("isWriteL2BOPTable", initValue = 1.U))
-  val l2BOPTable = ChiselDB.createTable("L2BOPTable", new L2BopEntry)
+  val l2BOPTable = ChiselDB.createTable("L2BOPTable", new L2BopEntry, basicDB = true)
   for (i <- 0 until REQ_FILTER_SIZE){
     when(pf_fired(i)){
       val data = Wire(new L2BopEntry)
       val req = entries(i).toPrefetchReq()
       data.idx := i.U
       data.vaddr := req.vaddr.getOrElse(0.U)
-      data.index := req.vaddr.getOrElse(0.U)(INDEX_BITS - 1, 0)
+      data.region_num := req.vaddr.getOrElse(0.U)(INDEX_BITS - 1, 0)
       data.region_vaddr := entries(i).region_vaddr
       data.needT := req.needT
       data.source := req.source
@@ -524,7 +530,6 @@ class PrefetchReqFilter(implicit p: Parameters) extends BOPModule{
       )
     }
   }
-  */
 }
 
 class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
