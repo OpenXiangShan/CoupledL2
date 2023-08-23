@@ -509,7 +509,7 @@ class PrefetchReqFilter(implicit p: Parameters) extends BOPModule{
     val source = UInt(sourceIdBits.W)
   }
   val isWriteL2BOPTable = WireInit(Constantin.createRecord("isWriteL2BOPTable", initValue = 0.U))
-  val l2BOPTable = ChiselDB.createTable("L2BOPTable", new L2BopEntry, basicDB = true)
+  val l2BOPTable = ChiselDB.createTable("L2BOPTable", new L2BopEntry)
   for (i <- 0 until REQ_FILTER_SIZE){
     when(pf_fired(i)){
       val data = Wire(new L2BopEntry)
