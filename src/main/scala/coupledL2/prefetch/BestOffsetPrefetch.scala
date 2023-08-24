@@ -499,7 +499,7 @@ class PrefetchReqFilter(implicit p: Parameters) extends BOPModule{
       entries(i).reset(i.U)
     }
   }
-
+  /*
   class L2BopEntry(implicit p: Parameters) extends BOPBundle {
     val idx = UInt(REQ_FILTER_SIZE.W)
     val vaddr = UInt(fullVAddrBits.W)
@@ -529,6 +529,7 @@ class PrefetchReqFilter(implicit p: Parameters) extends BOPModule{
       )
     }
   }
+  */
 }
 
 class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
