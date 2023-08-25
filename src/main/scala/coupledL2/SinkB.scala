@@ -104,5 +104,6 @@ class SinkB(implicit p: Parameters) extends L2Module {
   io.bMergeTask.bits.id := mergeBId
   io.bMergeTask.bits.task := task
 
-  // TODO: add conflict XSPerf counter
+  XSPerfAccumulate(cacheParams, "mergeBTask", io.bMergeTask.valid)
+  //!!WARNING: TODO: if this is zero, that means fucntion [Probe merge into MSHR-Release] is never tested, and may have flaws
 }
