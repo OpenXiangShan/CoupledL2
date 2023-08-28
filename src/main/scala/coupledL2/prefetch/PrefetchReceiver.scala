@@ -28,7 +28,8 @@ import utility.{MemReqSource, Pipeline}
 // TODO: Delete this after Hint is accomplished.
 
 case class PrefetchReceiverParams(n: Int = 32) extends PrefetchParameters {
-  override val hasPrefetchBit: Boolean = true
+  override val hasPrefetchBit:  Boolean = true
+  override val hasPrefetchSrc:  Boolean = true
   override val inflightEntries: Int = n
 }
 

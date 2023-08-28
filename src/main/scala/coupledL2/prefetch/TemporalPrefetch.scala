@@ -33,7 +33,8 @@ case class TPParameters(
     throttleCycles: Int = 4,
     replacementPolicy: String = "random"
 ) extends PrefetchParameters {
-  override val hasPrefetchBit: Boolean = true
+  override val hasPrefetchBit:  Boolean = true
+  override val hasPrefetchSrc:  Boolean = true
   override val inflightEntries: Int = 34
 }
 

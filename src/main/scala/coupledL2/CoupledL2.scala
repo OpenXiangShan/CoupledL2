@@ -59,6 +59,7 @@ trait HasCoupledL2Parameters {
   // Prefetch
   val prefetchOpt = cacheParams.prefetch
   val hasPrefetchBit = prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchBit
+  val hasPrefetchSrc = prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchSrc
   val topDownOpt = if(cacheParams.elaboratedTopDown) Some(true) else None
 
   val useFIFOGrantBuffer = true
