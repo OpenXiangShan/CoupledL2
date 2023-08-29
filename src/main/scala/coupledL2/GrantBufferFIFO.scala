@@ -63,7 +63,7 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
   }))
   io.globalCounter := globalCounter
 
-  when(io.d_task.fire()) {
+  when(io.d_task.fire) {
     val hasData = io.d_task.bits.task.opcode(0)
     when(hasData) {
       globalCounter := globalCounter + 1.U // counter = counter + 2 - 1
@@ -89,11 +89,82 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
   }
 
   // =========== save d_task in entries, waiting to fire ===========
-  when(io.d_task.fire() && !(io.d_task.bits.task.opcode === HintAck && !io.d_task.bits.task.fromL2pft.getOrElse(false.B))) {
+  when(io.d_task.fire && !io.d_task.bits.task.mergeA && !(io.d_task.bits.task.opcode === HintAck && !io.d_task.bits.task.fromL2pft.getOrElse(false.B))) {
     beat_valids(enqPtr).foreach(_ := true.B)
     taskAll(enqPtr) := io.d_task.bits.task
     dataAll(enqPtr) := io.d_task.bits.data
     beat_counters(enqPtr) := globalCounter
+    enqPtrExt := enqPtrExt + 1.U
+  } .elsewhen(io.d_task.fire && io.d_task.bits.task.mergeA && !(io.d_task.bits.task.opcode === HintAck && !io.d_task.bits.task.fromL2pft.getOrElse(false.B))) {
+    beat_valids(enqPtr).foreach(_ := true.B)
+    taskAll(enqPtr) := io.d_task.bits.task
+    dataAll(enqPtr) := io.d_task.bits.data
+    beat_counters(enqPtr) := globalCounter
+    val merge_enqPtr = (enqPtrExt+1.U).value
+    beat_valids(merge_enqPtr).foreach(_ := true.B)
+    taskAll(merge_enqPtr).off := io.d_task.bits.task.aMergeTask.off
+    taskAll(merge_enqPtr).alias.foreach(_ := io.d_task.bits.task.aMergeTask.alias.getOrElse(0.U))
+    taskAll(merge_enqPtr).opcode := io.d_task.bits.task.aMergeTask.opcode
+    taskAll(merge_enqPtr).param := io.d_task.bits.task.aMergeTask.param
+    taskAll(merge_enqPtr).sourceId := io.d_task.bits.task.aMergeTask.sourceId
+    taskAll(merge_enqPtr).meta := io.d_task.bits.task.aMergeTask.meta
+    taskAll(merge_enqPtr).set := io.d_task.bits.task.set
+    taskAll(merge_enqPtr).tag := io.d_task.bits.task.tag
+    taskAll(merge_enqPtr).vaddr.foreach(_ := io.d_task.bits.task.vaddr.getOrElse(0.U))
+    taskAll(merge_enqPtr).size := io.d_task.bits.task.size
+    taskAll(merge_enqPtr).bufIdx := io.d_task.bits.task.bufIdx
+    taskAll(merge_enqPtr).needProbeAckData := io.d_task.bits.task.needProbeAckData
+    taskAll(merge_enqPtr).mshrTask := io.d_task.bits.task.mshrTask
+    taskAll(merge_enqPtr).mshrId := io.d_task.bits.task.mshrId
+    taskAll(merge_enqPtr).aliasTask.foreach(_ := io.d_task.bits.task.aliasTask.getOrElse(0.U))
+    taskAll(merge_enqPtr).useProbeData := false.B
+    taskAll(merge_enqPtr).fromL2pft.foreach(_ := false.B)
+    taskAll(merge_enqPtr).needHint.foreach(_ := false.B)
+    taskAll(merge_enqPtr).dirty := io.d_task.bits.task.dirty
+    taskAll(merge_enqPtr).way := io.d_task.bits.task.way
+    taskAll(merge_enqPtr).metaWen := io.d_task.bits.task.metaWen
+    taskAll(merge_enqPtr).tagWen := io.d_task.bits.task.tagWen
+    taskAll(merge_enqPtr).dsWen := io.d_task.bits.task.dsWen
+    taskAll(merge_enqPtr).wayMask := io.d_task.bits.task.wayMask
+    taskAll(merge_enqPtr).replTask := io.d_task.bits.task.replTask
+    taskAll(merge_enqPtr).reqSource := io.d_task.bits.task.reqSource
+    taskAll(merge_enqPtr).mergeA := false.B
+    taskAll(merge_enqPtr).aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+    dataAll(merge_enqPtr) := io.d_task.bits.data
+    beat_counters(merge_enqPtr) := globalCounter         //????
+    enqPtrExt := enqPtrExt + 2.U
+  } .elsewhen(io.d_task.fire && io.d_task.bits.task.mergeA && io.d_task.bits.task.opcode === HintAck && !io.d_task.bits.task.fromL2pft.getOrElse(false.B)) {
+    beat_valids(enqPtr).foreach(_ := true.B)
+    taskAll(enqPtr).off := io.d_task.bits.task.aMergeTask.off
+    taskAll(enqPtr).alias.foreach(_ := io.d_task.bits.task.aMergeTask.alias.getOrElse(0.U))
+    taskAll(enqPtr).opcode := io.d_task.bits.task.aMergeTask.opcode
+    taskAll(enqPtr).param := io.d_task.bits.task.aMergeTask.param
+    taskAll(enqPtr).sourceId := io.d_task.bits.task.aMergeTask.sourceId
+    taskAll(enqPtr).meta := io.d_task.bits.task.aMergeTask.meta
+    taskAll(enqPtr).set := io.d_task.bits.task.set
+    taskAll(enqPtr).tag := io.d_task.bits.task.tag
+    taskAll(enqPtr).vaddr.foreach(_ := io.d_task.bits.task.vaddr.getOrElse(0.U))
+    taskAll(enqPtr).size := io.d_task.bits.task.size
+    taskAll(enqPtr).bufIdx := io.d_task.bits.task.bufIdx
+    taskAll(enqPtr).needProbeAckData := io.d_task.bits.task.needProbeAckData
+    taskAll(enqPtr).mshrTask := io.d_task.bits.task.mshrTask
+    taskAll(enqPtr).mshrId := io.d_task.bits.task.mshrId
+    taskAll(enqPtr).aliasTask.foreach(_ := io.d_task.bits.task.aliasTask.getOrElse(0.U))
+    taskAll(enqPtr).useProbeData := false.B
+    taskAll(enqPtr).fromL2pft.foreach(_ := false.B)
+    taskAll(enqPtr).needHint.foreach(_ := false.B)
+    taskAll(enqPtr).dirty := io.d_task.bits.task.dirty
+    taskAll(enqPtr).way := io.d_task.bits.task.way
+    taskAll(enqPtr).metaWen := io.d_task.bits.task.metaWen
+    taskAll(enqPtr).tagWen := io.d_task.bits.task.tagWen
+    taskAll(enqPtr).dsWen := io.d_task.bits.task.dsWen
+    taskAll(enqPtr).wayMask := io.d_task.bits.task.wayMask
+    taskAll(enqPtr).replTask := io.d_task.bits.task.replTask
+    taskAll(enqPtr).reqSource := io.d_task.bits.task.reqSource
+    taskAll(enqPtr).mergeA := false.B
+    taskAll(enqPtr).aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+    dataAll(enqPtr) := io.d_task.bits.data
+    beat_counters(enqPtr) := globalCounter            //???
     enqPtrExt := enqPtrExt + 1.U
   }
 
@@ -109,7 +180,7 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
       io.d.bits := toTLBundleD(taskAll(idx), beat)
       val hasData = io.d.bits.opcode(0)
 
-      when (io.d.fire()) {
+      when (io.d.fire) {
         when (hasData) {
           beat_valids(idx) := VecInit(next_beatsOH.asBools)
           // only when all beats fire, inc deqPtrExt
@@ -131,7 +202,7 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
           in.valid := block_valids(i) && taskAll(i).opcode === HintAck
           in.bits.tag := taskAll(i).tag
           in.bits.set := taskAll(i).set
-          when (in.fire()) {
+          when (in.fire) {
             beat_valids(i).foreach(_ := false.B)
             flush(i) := true.B
           }

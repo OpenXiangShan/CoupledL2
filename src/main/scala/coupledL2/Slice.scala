@@ -86,6 +86,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
   mshrCtl.io.resps.sinkE := grantBuf.io.e_resp
   mshrCtl.io.resps.sourceC := sourceC.io.resp
   mshrCtl.io.nestedwb := mainPipe.io.nestedwb
+  mshrCtl.io.aMergeTask := a_reqBuf.io.aMergeTask
   mshrCtl.io.bMergeTask := sinkB.io.bMergeTask
   mshrCtl.io.replResp <> directory.io.replResp
   mainPipe.io.replResp <> directory.io.replResp
@@ -141,6 +142,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
   io.prefetch.foreach {
     p =>
       p.train <> mainPipe.io.prefetchTrain.get
+      // TODO: trigger train also in a_merge
       sinkA.io.prefetchReq.get <> p.req
       p.resp <> grantBuf.io.prefetchResp.get
       p.recv_addr := 0.U.asTypeOf(ValidIO(UInt(64.W)))

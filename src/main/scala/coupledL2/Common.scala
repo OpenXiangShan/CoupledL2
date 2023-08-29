@@ -39,6 +39,15 @@ trait HasChannelBits { this: Bundle =>
   def fromC = channel(2).asBool
 }
 
+class MergeTaskBundle(implicit p: Parameters) extends L2Bundle {
+  val off = UInt(offsetBits.W)
+  val alias = aliasBitsOpt.map(_ => UInt(aliasBitsOpt.get.W)) // color bits in cache-alias issue
+  val opcode = UInt(3.W) // type of the task operation
+  val param = UInt(3.W)
+  val sourceId = UInt(sourceIdBits.W) // tilelink sourceID
+  val meta = new MetaEntry()
+}
+
 // We generate a Task for every TL request
 // this is the info that flows in Mainpipe
 class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
@@ -86,6 +95,10 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val reqSource = UInt(MemReqSource.reqSourceBits.W)
 
   def hasData = opcode(0)
+
+  // for merged MSHR tasks(Acquire & late Prefetch)
+  val mergeA = Bool()
+  val aMergeTask = new MergeTaskBundle()
 }
 
 class PipeStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits
@@ -164,6 +177,10 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle {
   // to drop duplicate prefetch reqs
   val isAcqOrPrefetch = Bool()
   val isPrefetch = Bool()
+
+  // whether the mshr_task already in mainpipe
+  val s_refill = Bool()
+  val mergeA = Bool() // whether the mshr already merge an acquire(avoid alias merge)
 }
 
 class RespInfoBundle(implicit p: Parameters) extends L2Bundle {

@@ -121,6 +121,14 @@ abstract class BaseGrantBuffer(implicit p: Parameters) extends L2Module {
     entry.bits.set    := io.d_task.bits.task.set
     entry.bits.tag    := io.d_task.bits.task.tag
     entry.bits.sink   := io.d_task.bits.task.mshrId
+  } .elsewhen (io.d_task.fire && io.d_task.bits.task.mergeA) {
+    // if mergeA, alloc an entry for merge grant 
+    val insertIdx = PriorityEncoder(inflight_grant.map(!_.valid))
+    val entry = inflight_grant(insertIdx)
+    entry.valid := true.B
+    entry.bits.set := io.d_task.bits.task.set
+    entry.bits.tag := io.d_task.bits.task.tag
+    entry.bits.sink := io.d_task.bits.task.mshrId
   }
   val inflight_full = Cat(inflight_grant.map(_.valid)).andR
   assert(!inflight_full, "inflight_grant entries should not be full")
@@ -159,10 +167,10 @@ abstract class BaseGrantBuffer(implicit p: Parameters) extends L2Module {
   // so that GrantBuffer will not exceed capacity
   val noSpaceForSinkReq = PopCount(Cat(VecInit(io.pipeStatusVec.tail.map { case s =>
     s.valid && (s.bits.fromA || s.bits.fromC)
-  }).asUInt, block_valids)) >= mshrsAll.U
+  }).asUInt, block_valids)) >= (mshrsAll-1).U
   val noSpaceForMSHRReq = PopCount(Cat(VecInit(io.pipeStatusVec.map { case s =>
     s.valid && s.bits.fromA
-  }).asUInt, block_valids)) >= mshrsAll.U
+  }).asUInt, block_valids)) >= (mshrsAll-1).U
 
   io.toReqArb.blockSinkReqEntrance.blockA_s1 := noSpaceForSinkReq
   io.toReqArb.blockSinkReqEntrance.blockB_s1 := Cat(inflight_grant.map(g => g.valid &&

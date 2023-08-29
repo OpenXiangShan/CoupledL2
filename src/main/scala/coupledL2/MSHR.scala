@@ -55,6 +55,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     val resps = new MSHRResps()
     val nestedwb = Input(new NestedWriteback)
     val nestedwbData = Output(Bool())
+    val aMergeTask = Flipped(ValidIO(new TaskBundle))
     val bMergeTask = Flipped(ValidIO(new BMergeTask))
     val replResp = Flipped(ValidIO(new ReplacerResult))
   })
@@ -201,6 +202,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_release.replTask := true.B
     mp_release.wayMask := 0.U(cacheParams.ways.W)
     mp_release.reqSource := 0.U(MemReqSource.reqSourceBits.W)
+    mp_release.mergeA := false.B
+    mp_release.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
     mp_release
   }
 
@@ -258,6 +261,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_probeack.wayMask := 0.U(cacheParams.ways.W)
     mp_probeack.reqSource := 0.U(MemReqSource.reqSourceBits.W)
     mp_probeack.replTask := false.B
+    mp_probeack.mergeA := false.B
+    mp_probeack.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
     mp_probeack
   }
 
@@ -312,8 +317,17 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_merge_probeack.wayMask := Fill(cacheParams.ways, "b1".U)
     mp_merge_probeack.replTask := true.B
     mp_merge_probeack.reqSource := MemReqSource.NoWhere.id.U
+    mp_merge_probeack.mergeA := false.B
+    mp_merge_probeack.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+    mp_merge_probeack
   }
 
+  val mergeA = RegInit(false.B)
+  when(io.aMergeTask.valid) {
+    mergeA := true.B
+  }.elsewhen(io.alloc.valid) {
+    mergeA := false.B
+  }
   val mp_grant_task    = {
     mp_grant.channel := req.channel
     mp_grant.tag := req.tag
@@ -342,7 +356,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_grant.mshrTask := true.B
     mp_grant.mshrId := io.id
     mp_grant.way := dirResult.way
-    mp_grant.aliasTask.foreach(_ := false.B)
     // if it is a Get or Prefetch, then we must keep alias bits unchanged
     // in case future probes gets the wrong alias bits
     val aliasFinal = Mux(req_get || req_prefetch, meta.alias.getOrElse(0.U), req.alias.getOrElse(0.U))
@@ -385,6 +398,37 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_grant.replTask := !dirResult.hit // Get and Alias are hit that does not need replacement
     mp_grant.wayMask := 0.U(cacheParams.ways.W)
     mp_grant.reqSource := 0.U(MemReqSource.reqSourceBits.W)
+
+    // Add merge grant task for Acquire and late Prefetch
+    mp_grant.mergeA := mergeA || io.aMergeTask.valid
+    val merge_task_r = RegEnable(io.aMergeTask.bits, 0.U.asTypeOf(new TaskBundle), io.aMergeTask.valid)
+    val merge_task = Mux(io.aMergeTask.valid, io.aMergeTask.bits, merge_task_r)
+    mp_grant.aMergeTask.off := merge_task.off
+    mp_grant.aMergeTask.alias.foreach(_ := merge_task.alias.getOrElse(0.U))
+    mp_grant.aMergeTask.opcode := odOpGen(merge_task.opcode)
+    mp_grant.aMergeTask.param := MuxLookup( // Acquire -> Grant
+      merge_task.param,
+      merge_task.param,
+      Seq(
+        NtoB -> Mux(req_promoteT, toT, toB),
+        BtoT -> toT,
+        NtoT -> toT
+      )
+    )
+    mp_grant.aMergeTask.sourceId := merge_task.sourceId
+    mp_grant.aMergeTask.meta := MetaEntry(
+      dirty = gotDirty || dirResult.hit && (meta.dirty || probeDirty),
+      state = Mux( // Acquire
+        req_promoteT || needT(merge_task.opcode, merge_task.param),
+        TRUNK,
+        BRANCH
+      ),
+      clients = Fill(clientBits, true.B),
+      alias = Some(merge_task.alias.getOrElse(0.U)),
+      prefetch = false.B,
+      accessed = true.B
+    )
+
     mp_grant
   }
   io.tasks.mainpipe.bits := ParallelPriorityMux(
@@ -472,6 +516,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
 
   when (e_resp.valid) {
     state.w_grantack := true.B
+  } .elsewhen (io.aMergeTask.valid) {
+    state.w_grantack := false.B
   }
 
   val replResp = io.replResp.bits
@@ -552,6 +598,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.msInfo.bits.mergeB := mergeB
   io.msInfo.bits.isAcqOrPrefetch := req_acquire || req_prefetch
   io.msInfo.bits.isPrefetch := req_prefetch
+  io.msInfo.bits.s_refill := state.s_refill
+  io.msInfo.bits.mergeA := mergeA
 
   assert(!(c_resp.valid && !io.status.bits.w_c_resp))
   assert(!(d_resp.valid && !io.status.bits.w_d_resp))

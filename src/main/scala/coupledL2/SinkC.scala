@@ -97,6 +97,8 @@ class SinkC(implicit p: Parameters) extends L2Module {
     task.wayMask := Fill(cacheParams.ways, "b1".U)
     task.reqSource := MemReqSource.NoWhere.id.U // Ignore
     task.replTask := false.B
+    task.mergeA := false.B
+    task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
     task
   }
 

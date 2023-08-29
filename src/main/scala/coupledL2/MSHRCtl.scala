@@ -84,6 +84,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     /* to ReqBuffer, to calculate conflict */
     /* to SinkB, to merge nested B req */
     val msInfo = Vec(mshrsAll, ValidIO(new MSHRInfo))
+    val aMergeTask = Flipped(ValidIO(new AMergeTask))
     val bMergeTask = Flipped(ValidIO(new BMergeTask))
 
     /* refill read replacer result */
@@ -130,6 +131,8 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
 
       io.msInfo(i) := m.io.msInfo
       m.io.nestedwb := io.nestedwb
+      m.io.aMergeTask.valid := io.aMergeTask.valid && io.aMergeTask.bits.id === i.U
+      m.io.aMergeTask.bits := io.aMergeTask.bits.task
       m.io.bMergeTask.valid := io.bMergeTask.valid && io.bMergeTask.bits.id === i.U
       m.io.bMergeTask.bits := io.bMergeTask.bits
   }

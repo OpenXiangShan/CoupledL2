@@ -43,12 +43,18 @@ class ChosenQBundle(idWIdth: Int = 2)(implicit p: Parameters) extends L2Bundle {
   val id = UInt(idWIdth.W)
 }
 
+class AMergeTask(implicit p: Parameters) extends L2Bundle {
+  val id = UInt(mshrBits.W)
+  val task = new TaskBundle()
+}
+
 class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Parameters) extends L2Module {
 
   val io = IO(new Bundle() {
     val in          = Flipped(DecoupledIO(new TaskBundle))
     val out         = DecoupledIO(new TaskBundle)
     val mshrInfo  = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo)))
+    val aMergeTask = ValidIO(new AMergeTask)
     val mainPipeBlock = Input(Vec(2, Bool()))
 
     val ATag        = Output(UInt(tagBits.W))
@@ -105,6 +111,18 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   // other flags
   val in      = io.in.bits
   val full    = Cat(buffer.map(_.valid)).andR
+
+  // incoming Acquire can be merged with late_pf MSHR block
+  val mergeAMask = VecInit(io.mshrInfo.map(s =>
+    s.valid && s.bits.isPrefetch && sameAddr(in, s.bits) && !s.bits.willFree && !s.bits.dirHit && !s.bits.s_refill &&
+      in.fromA && (in.opcode === AcquireBlock || in.opcode === AcquirePerm) && !s.bits.mergeA
+  )).asUInt
+  val mergeA = mergeAMask.orR
+  val mergeAId = OHToUInt(mergeAMask)
+  io.aMergeTask.valid := io.in.valid && mergeA
+  io.aMergeTask.bits.id := mergeAId
+  io.aMergeTask.bits.task := in
+
   // flow not allowed when full, or entries might starve
   val canFlow = flow.B && !full && !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR
   val doFlow  = canFlow && io.out.ready
@@ -125,10 +143,10 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   //!! TODO: we can also remove those that duplicate with mainPipe
 
   /* ======== Alloc ======== */
-  io.in.ready   := !full || doFlow
+  io.in.ready   := !full || doFlow || mergeA
 
   val insertIdx = PriorityEncoder(buffer.map(!_.valid))
-  val alloc = !full && io.in.valid && !doFlow && !dup
+  val alloc = !full && io.in.valid && !doFlow && !dup && !mergeA
   when(alloc){
     val entry = buffer(insertIdx)
     val mpBlock = Cat(io.mainPipeBlock).orR
