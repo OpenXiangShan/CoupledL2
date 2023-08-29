@@ -188,4 +188,8 @@ class SinkC(implicit p: Parameters) extends L2Module {
   XSPerfAccumulate(cacheParams, "sinkC_c_stall_for_noSpace", stall && hasData && first && full)
   XSPerfAccumulate(cacheParams, "sinkC_toReqArb_stall", io.task.valid && !io.task.ready)
   XSPerfAccumulate(cacheParams, "sinkC_buf_full", full)
+
+  XSPerfAccumulate(cacheParams, "NewDataNestC", io.refillBufWrite.valid)
+  //!!WARNING: TODO: if this is zero, that means fucntion [Release-new-data written into refillBuf]
+  // is never tested, and may have flaws
 }
