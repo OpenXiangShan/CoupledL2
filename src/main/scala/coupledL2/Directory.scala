@@ -207,17 +207,15 @@ class Directory(implicit p: Parameters) extends L2Module {
   val repl = ReplacementPolicy.fromString(cacheParams.replacement, ways)
   val random_repl = cacheParams.replacement == "random"
   val replacer_sram_opt = if(random_repl) None else
-    Some(Module(new BankedSRAM(UInt(repl.nBits.W), sets, 1, banks, singlePort = true, shouldReset = true)))
+    Some(Module(new SRAMTemplate(UInt(repl.nBits.W), sets, 1, singlePort = true, shouldReset = true)))
   // origin-bit marks whether the data_block is reused
   val origin_bit_opt = if(random_repl) None else
-    Some(Module(new BankedSRAM(Bool(), sets, ways, banks, singlePort = true)))
+    Some(Module(new SRAMTemplate(Bool(), sets, ways, singlePort = true)))
   val origin_bits_r = origin_bit_opt.get.io.r(io.read.fire, io.read.bits.set).resp.data
   val origin_bits_hold = Wire(Vec(ways, Bool()))
   origin_bits_hold := HoldUnless(origin_bits_r, RegNext(io.read.fire, false.B))
 
-  //[deprecated] io.read.ready := !io.metaWReq.valid && !io.tagWReq.valid && !replacerWen
-  val replacerRready = if(cacheParams.replacement == "random") true.B else replacer_sram_opt.get.io.r.req.ready
-  io.read.ready := tagArray.io.r.req.ready && metaArray.io.r.req.ready && replacerRready
+  io.read.ready := !io.metaWReq.valid && !io.tagWReq.valid && !replacerWen
 
   /* ====== refill retry ====== */
   // if refill chooses a way that has not finished writing its refillData back to DS (in MSHR Release),
