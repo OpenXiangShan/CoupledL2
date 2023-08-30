@@ -17,7 +17,7 @@
 
 package coupledL2.prefetch
 
-import utility.{ChiselDB, Constantin, RRArbiterInit, SRAMTemplate}
+import utility.{ChiselDB, Constantin, ParallelPriorityMux, RRArbiterInit, SRAMTemplate}
 import chipsalliance.rocketchip.config.Parameters
 import chisel3.DontCare.:=
 import chisel3.{util, _}
@@ -274,7 +274,8 @@ class BopReqBundle(implicit p: Parameters) extends BOPBundle{
   val source = UInt(sourceIdBits.W)
   val isBOP = Bool()
 }
-class BopReqEntry(implicit p: Parameters) extends BOPBundle {
+
+class BopReqFilterEntry(implicit p: Parameters) extends BOPBundle {
   // region as the unit of record can reduce TLB translation times
   val valid = Bool()
   // for tlb req
@@ -285,12 +286,12 @@ class BopReqEntry(implicit p: Parameters) extends BOPBundle {
   val region_paddr = UInt(PTAG_BITS.W)
   // for pf req
   val idx_oh = UInt(REGION_BLKS.W)
-  val idx_sent_oh = UInt(REGION_BLKS.W)
+  val idx_sent_oh = UInt(REGION_BLKS.W) // if without filter then not use it
   val needT_vec = Vec(REGION_BLKS, Bool())
   val source_vec = Vec(REGION_BLKS, UInt(sourceIdBits.W))
 
   // Decide whether to avoid sending requests that have already been sent
-  def filter: Bool = true.B
+  def filter: Bool = false.B
 
   def reset(x: UInt): Unit = {
     valid := false.B
@@ -366,9 +367,16 @@ class BopReqEntry(implicit p: Parameters) extends BOPBundle {
   }
 
   def update_sent(upd_idx_sent_oh: UInt): Unit ={
-    idx_sent_oh := idx_sent_oh | upd_idx_sent_oh
+    val next_idx_oh = Wire(idx_oh.cloneType)
     when(filter){
-      idx_oh := idx_oh & (~(idx_sent_oh | upd_idx_sent_oh))
+      next_idx_oh := idx_oh & (~(idx_sent_oh | upd_idx_sent_oh))
+    }.otherwise{
+      next_idx_oh := idx_oh & (~upd_idx_sent_oh)
+    }
+    idx_oh := next_idx_oh
+    idx_sent_oh := idx_sent_oh | upd_idx_sent_oh
+    when(!next_idx_oh.orR){
+      valid := false.B
     }
   }
 
@@ -377,6 +385,7 @@ class BopReqEntry(implicit p: Parameters) extends BOPBundle {
   }
 
 }
+
 class PrefetchReqFilter(implicit p: Parameters) extends BOPModule{
   val io = IO(new Bundle() {
     val in_req = Flipped(ValidIO(new BopReqBundle))
@@ -384,7 +393,9 @@ class PrefetchReqFilter(implicit p: Parameters) extends BOPModule{
     val out_req = DecoupledIO(new PrefetchReq)
   })
 
-  val entries = Seq.fill(REQ_FILTER_SIZE)(Reg(new BopReqEntry))
+  def wayMap[T <: Data](f: Int => T) = VecInit((0 until REQ_FILTER_SIZE).map(f))
+
+  val entries = Seq.fill(REQ_FILTER_SIZE)(Reg(new BopReqFilterEntry))
   val replacement = ReplacementPolicy.fromString("plru", REQ_FILTER_SIZE)
   val tlb_req_arb = Module(new RRArbiterInit(new L2TlbReq, REQ_FILTER_SIZE))
   val pf_req_arb = Module(new RRArbiterInit(new PrefetchReq, REQ_FILTER_SIZE))
@@ -416,10 +427,15 @@ class PrefetchReqFilter(implicit p: Parameters) extends BOPModule{
   val s0_req_valid = io.in_req.valid && !s0_conflict_prev
   val s0_match = Cat(s0_match_oh).orR
   val s0_hit = s0_req_valid && s0_match
-  val s0_replace_oh = UIntToOH(replacement.way)
+
+  val s0_invalid_vec = wayMap(w => !entries(w).valid)
+  val s0_has_invalid_way = s0_invalid_oh.asUInt.orR
+  val s0_invalid_oh = ParallelPriorityMux(s0_invalid_vec.zipWithIndex.map(x => x._1 -> UIntToOH(x._2.U(REQ_FILTER_SIZE.W))))
+  val s0_replace_oh = Mux(s0_has_invalid_way, s0_invalid_oh, UIntToOH(replacement.way))
+
   val s0_tlb_fire_oh = VecInit(tlb_req_arb.io.in.map(_.fire)).asUInt
   val s0_pf_fire_oh = VecInit(pf_req_arb.io.in.map(_.fire)).asUInt
-  val s0_access_way = Mux(s0_match, OHToUInt(s0_match_oh), replacement.way)
+  val s0_access_way = Mux(s0_match, OHToUInt(s0_match_oh), OHToUInt(s0_replace_oh))
   when(s0_req_valid){
     replacement.access(s0_access_way)
   }
@@ -431,7 +447,7 @@ class PrefetchReqFilter(implicit p: Parameters) extends BOPModule{
   val s1_replace_oh = RegEnable(s0_replace_oh, s0_req_valid && !s0_hit)
   val s1_match_oh = RegEnable(s0_match_oh, s0_req_valid && s0_hit)
   s1_tlb_fire_oh := RegNext(s0_tlb_fire_oh, 0.U)
-  val s1_alloc_entry = Wire(new BopReqEntry)
+  val s1_alloc_entry = Wire(new BopReqFilterEntry)
   s1_alloc_entry.fromBopReqBundle(s1_in_req)
   (0 until REGION_BLKS).map{i => s1_evicted_oh(i) := s1_valid && !s1_hit && s1_replace_oh(i)}
 
