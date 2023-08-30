@@ -22,6 +22,7 @@ import chisel3.util._
 import chipsalliance.rocketchip.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
+import freechips.rocketchip.tilelink.TLPermissions._
 import coupledL2.utils.XSPerfAccumulate
 import utility.MemReqSource
 
@@ -91,7 +92,7 @@ class SinkB(implicit p: Parameters) extends L2Module {
   assert(PopCount(replaceConflictMask) <= 1.U)
   assert(PopCount(mergeBMask) <= 1.U)
 
-  val mergeB = mergeBMask.orR
+  val mergeB = mergeBMask.orR && task.param === toN // only toN can merge with MSHR-Release
   val mergeBId = OHToUInt(mergeBMask)
 
   // when conflict, we block B req from entering SinkB
