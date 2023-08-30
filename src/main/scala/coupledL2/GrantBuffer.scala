@@ -152,12 +152,17 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   // WARNING: this should never overflow (extremely rare though)
   // but a second thought, pftQueue overflow results in no functional correctness bug
   prefetchOpt.map { _ =>
-    val pftRespQueue = Module(new Queue(io.d_task.bits.cloneType, entries = 4, flow = true))
+    val pftRespQueue = Module(new Queue(new TaskWithData(), entries = 4, flow = true))
 
     pftRespQueue.io.enq.valid := io.d_task.valid && dtaskOpcode === HintAck &&
       io.d_task.bits.task.fromL2pft.getOrElse(false.B)
     pftRespQueue.io.enq.bits := io.d_task.bits
-    io.prefetchResp.get <> pftRespQueue.io.deq
+
+    val resp = io.prefetchResp.get
+    resp.valid := pftRespQueue.io.deq.valid
+    resp.bits.tag := pftRespQueue.io.deq.bits.task.tag
+    resp.bits.set := pftRespQueue.io.deq.bits.task.set
+    pftRespQueue.io.deq.ready := resp.ready
 
     assert(pftRespQueue.io.enq.ready, "pftRespQueue should never be full, no back pressure logic")
   }
