@@ -143,7 +143,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
       p.train <> mainPipe.io.prefetchTrain.get
       sinkA.io.prefetchReq.get <> p.req
       p.resp <> grantBuf.io.prefetchResp.get
-      p.recv_addr := 0.U.asTypeOf(ValidIO(UInt(64.W)))
+      p.recv_addr := 0.U.asTypeOf(p.recv_addr)
   }
 
   /* input & output signals */

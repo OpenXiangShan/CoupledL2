@@ -25,7 +25,7 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
 import chipsalliance.rocketchip.config.Parameters
-import coupledL2.prefetch.PrefetchTrain
+import coupledL2.prefetch.{PfSource, PrefetchTrain}
 import coupledL2.utils.XSPerfAccumulate
 
 class MSHRTasks(implicit p: Parameters) extends L2Bundle {
@@ -369,6 +369,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
       ),
       alias = Some(aliasFinal),
       prefetch = req_prefetch || dirResult.hit && meta_pft,
+      pfsrc = PfSource.fromMemReqSource(req.reqSource),
       accessed = req_acquire || req_get
     )
     mp_grant.metaWen := true.B
