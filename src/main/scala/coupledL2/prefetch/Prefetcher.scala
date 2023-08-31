@@ -157,7 +157,11 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       pfRcv.io.train.bits := 0.U.asTypeOf(new PrefetchTrain)
       pfRcv.io.resp.valid := false.B
       pfRcv.io.resp.bits := 0.U.asTypeOf(new PrefetchResp)
-      assert(!pfRcv.io.req.valid || pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2SMS.id.U)
+      assert(!pfRcv.io.req.valid ||
+       pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2SMS.id.U ||
+       pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2Stream.id.U ||
+       pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2Stride.id.U
+      )
 
       // prefetch from local prefetchers: BOP & TP
       bop.io.train <> io.train
