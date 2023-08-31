@@ -392,6 +392,9 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
         topDown.get.io.latePF.zip(slices).foreach {
           case (in, s) => in := s.io.latePF.get
         }
+        topDown.get.io.mergeA.zip(slices).foreach {
+          case (in, s) => in := s.io.mergeA.get
+        }
       }
     }
 

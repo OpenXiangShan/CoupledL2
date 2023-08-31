@@ -66,6 +66,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     }))
 
     val hasLatePF = Output(Bool())
+    val hasMergeA = Output(Bool())
   })
 
   /* ======== Data Structure ======== */
@@ -95,6 +96,10 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   def latePrefetch(a: TaskBundle): Bool = VecInit(io.mshrInfo.map(s =>
     s.valid && s.bits.isPrefetch && sameAddr(a, s.bits) && !s.bits.willFree &&
     a.fromA && (a.opcode === AcquireBlock || a.opcode === AcquirePerm)
+  )).asUInt.orR
+  def mergeA_latepf(a: TaskBundle): Bool = VecInit(io.mshrInfo.map(s =>
+    s.valid && s.bits.isPrefetch && sameAddr(a, s.bits) && !s.bits.willFree && !s.bits.dirHit && !s.bits.s_refill &&
+    a.fromA && (a.opcode === AcquireBlock || a.opcode === AcquirePerm) && !s.bits.mergeA
   )).asUInt.orR
 
   // count ways
@@ -127,6 +132,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   val canFlow = flow.B && !full && !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR
   val doFlow  = canFlow && io.out.ready
   io.hasLatePF := latePrefetch(in) && io.in.valid && !sameAddr(in, RegNext(in))
+  io.hasMergeA := mergeA_latepf(in) && io.in.valid && !sameAddr(in, RegNext(in))
 
   //  val depMask    = buffer.map(e => e.valid && sameAddr(io.in.bits, e.task))
   // remove duplicate prefetch if same-addr A req in MSHR or ReqBuf
@@ -258,6 +264,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     XSPerfAccumulate(cacheParams, "recv_prefetch", io.in.fire && isPrefetch)
     XSPerfAccumulate(cacheParams, "recv_normal", io.in.fire && !isPrefetch)
     XSPerfAccumulate(cacheParams, "chosenQ_cancel", chosenQValid && cancel)
+    XSPerfAccumulate(cacheParams, "req_buffer_mergeA", io.hasMergeA)
     // TODO: count conflict
     for(i <- 0 until entries){
       val cntEnable = PopCount(buffer.map(_.valid)) === i.U

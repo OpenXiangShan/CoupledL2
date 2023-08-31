@@ -28,6 +28,7 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     val dirResult = Vec(banks, Flipped(ValidIO(new DirResult)))
     val msStatus  = Vec(banks, Vec(mshrsAll, Flipped(ValidIO(new MSHRStatus))))
     val latePF    = Vec(banks, Input(Bool()))
+    val mergeA    = Vec(banks, Input(Bool()))
   })
 
   /* ====== PART ONE ======
@@ -123,6 +124,7 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
       || r.replacerInfo.reqSource === MemReqSource.CPUStoreData.id.U)
   )
   val l2prefetchLate = io.latePF
+  val l2mergeA = io.mergeA
 
   XSPerfRolling(
     cacheParams, "L2PrefetchAccuracy",
@@ -137,6 +139,11 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   XSPerfRolling(
     cacheParams, "L2PrefetchCoverage",
     PopCount(l2prefetchUseful), PopCount(l2demandRequest),
+    1000, clock, reset
+  )
+  XSPerfRolling(
+    cacheParams, "L2MergeA",
+    PopCount(l2mergeA), PopCount(l2prefetchUseful),
     1000, clock, reset
   )
 }
