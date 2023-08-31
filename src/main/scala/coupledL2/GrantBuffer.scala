@@ -235,12 +235,12 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq
 
   // =========== generating Hint to L1 ===========
-  val globalCounter = RegInit(0.U((log2Ceil(mshrsAll) + 1).W))
-  val beat_counters = RegInit(VecInit(Seq.fill(mshrsAll) {
-    0.U((log2Ceil(mshrsAll) + 1).W)
-  }))
-  io.globalCounter := globalCounter
-
+  // TODO: the following keeps the exact same logic as before, but it needs serious optimization
+  val hintQueue = Module(new Queue(UInt(sourceIdBits.W), entries = mshrsAll))
+  // Total number of beats left to send in GrantBuf
+  // [This is better]
+  // val globalCounter = (grantQueue.io.count << 1.U).asUInt + grantBufValid.asUInt // entries * 2 + grantBufValid
+  val globalCounter = RegInit(0.U((log2Ceil(grantBufSize) + 1).W))
   when(io.d_task.fire()) {
     val hasData = io.d_task.bits.task.opcode(0)
     when(hasData) {
@@ -252,9 +252,21 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     globalCounter := Mux(globalCounter === 0.U, 0.U, globalCounter - 1.U) // counter = counter - 1
   }
 
-  // WARNING: TTTTTODO: add hint under Queue
-  io.l1Hint.valid := false.B
-  io.l1Hint.bits.sourceId := 0.U
+  // if globalCounter >= 3, it means the hint that should be sent is in GrantBuf
+  when(globalCounter >= 3.U) {
+    hintQueue.io.enq.valid := true.B
+    hintQueue.io.enq.bits := io.d_task.bits.task.sourceId
+  }.otherwise {
+    hintQueue.io.enq.valid := false.B
+    hintQueue.io.enq.bits := 0.U(sourceIdBits.W)
+  }
+  hintQueue.io.deq.ready := true.B
+
+  // tell CustomL1Hint about the delay in GrantBuf
+  io.globalCounter := globalCounter
+
+  io.l1Hint.valid := hintQueue.io.deq.valid
+  io.l1Hint.bits.sourceId := hintQueue.io.deq.bits
 
   // =========== XSPerf ===========
   if (cacheParams.enablePerf) {

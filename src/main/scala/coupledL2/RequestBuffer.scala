@@ -231,7 +231,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
   // add XSPerf to see how many cycles the req is held in Buffer
   if(cacheParams.enablePerf) {
-    XSPerfAccumulate(cacheParams, "drop_prefetch", dup) // this also serves as late prefetch
+    XSPerfAccumulate(cacheParams, "drop_prefetch", dup)
     if(flow){
       XSPerfAccumulate(cacheParams, "req_buffer_flow", doFlow)
     }
