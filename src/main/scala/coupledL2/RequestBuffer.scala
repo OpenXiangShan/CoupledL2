@@ -233,7 +233,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   if(cacheParams.enablePerf) {
     XSPerfAccumulate(cacheParams, "drop_prefetch", dup)
     if(flow){
-      XSPerfAccumulate(cacheParams, "req_buffer_flow", doFlow)
+      XSPerfAccumulate(cacheParams, "req_buffer_flow", io.in.valid && doFlow)
     }
     XSPerfAccumulate(cacheParams, "req_buffer_alloc", alloc)
     XSPerfAccumulate(cacheParams, "req_buffer_full", full)
