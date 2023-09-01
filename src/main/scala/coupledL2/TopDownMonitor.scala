@@ -19,7 +19,8 @@ package coupledL2
 import chipsalliance.rocketchip.config.Parameters
 import chisel3._
 import chisel3.util._
-import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram, XSPerfRolling}
+import coupledL2.prefetch.PfSource
+import coupledL2.utils._
 import utility.MemReqSource
 
 class TopDownMonitor()(implicit p: Parameters) extends L2Module {
@@ -96,6 +97,11 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     }
   }
 
+  def reqFromCPU(r: DirResult): Bool = {
+    r.replacerInfo.reqSource === MemReqSource.CPULoadData.id.U ||
+    r.replacerInfo.reqSource === MemReqSource.CPUStoreData.id.U
+  }
+
   for (i <- 0 until MemReqSource.ReqSourceCount.id) {
     val sourceMatchVec = dirResultMatchVec(r => r.replacerInfo.reqSource === i.U)
     val sourceMatchVecMiss = dirResultMatchVec(r => r.replacerInfo.reqSource === i.U && !r.hit)
@@ -110,23 +116,60 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
    */
   // prefetch accuracy calculation
   val l2prefetchSent = dirResultMatchVec(
-    r => (r.replacerInfo.reqSource === MemReqSource.L2Prefetch.id.U) && !r.hit
+    r =>  !r.hit &&
+      (r.replacerInfo.reqSource === MemReqSource.Prefetch2L2BOP.id.U ||
+       r.replacerInfo.reqSource === MemReqSource.Prefetch2L2SMS.id.U ||
+       r.replacerInfo.reqSource === MemReqSource.Prefetch2L2TP.id.U)
   )
+  val l2prefetchSentBOP = dirResultMatchVec(
+    r => !r.hit && r.replacerInfo.reqSource === MemReqSource.Prefetch2L2BOP.id.U
+  )
+  val l2prefetchSentSMS = dirResultMatchVec(
+    r => !r.hit && r.replacerInfo.reqSource === MemReqSource.Prefetch2L2SMS.id.U
+  )
+  val l2prefetchSentTP = dirResultMatchVec(
+    r => !r.hit && r.replacerInfo.reqSource === MemReqSource.Prefetch2L2TP.id.U
+  )
+
   val l2prefetchUseful = dirResultMatchVec(
-    r => (r.replacerInfo.reqSource === MemReqSource.CPULoadData.id.U
-      || r.replacerInfo.reqSource === MemReqSource.CPUStoreData.id.U) &&
-      r.hit &&
-      r.meta.prefetch.getOrElse(false.B)
+    r => reqFromCPU(r) && r.hit && r.meta.prefetch.getOrElse(false.B)
   )
+  val l2prefetchUsefulBOP = dirResultMatchVec(
+    r => reqFromCPU(r) && r.hit &&
+      r.meta.prefetch.getOrElse(false.B) && r.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) === PfSource.BOP.id.U
+  )
+  val l2prefetchUsefulSMS = dirResultMatchVec(
+    r => reqFromCPU(r) && r.hit &&
+      r.meta.prefetch.getOrElse(false.B) && r.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) === PfSource.SMS.id.U
+  )
+  val l2prefetchUsefulTP = dirResultMatchVec(
+    r => reqFromCPU(r) && r.hit &&
+      r.meta.prefetch.getOrElse(false.B) && r.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) === PfSource.TP.id.U
+  )
+
   val l2demandRequest = dirResultMatchVec(
-    r => (r.replacerInfo.reqSource === MemReqSource.CPULoadData.id.U
-      || r.replacerInfo.reqSource === MemReqSource.CPUStoreData.id.U)
+    r => reqFromCPU(r)
   )
   val l2prefetchLate = io.latePF
 
   XSPerfRolling(
     cacheParams, "L2PrefetchAccuracy",
     PopCount(l2prefetchUseful), PopCount(l2prefetchSent),
+    1000, clock, reset
+  )
+  XSPerfRolling(
+    cacheParams, "L2PrefetchAccuracyBOP",
+    PopCount(l2prefetchUsefulBOP), PopCount(l2prefetchSentBOP),
+    1000, clock, reset
+  )
+  XSPerfRolling(
+    cacheParams, "L2PrefetchAccuracySMS",
+    PopCount(l2prefetchUsefulSMS), PopCount(l2prefetchSentSMS),
+    1000, clock, reset
+  )
+  XSPerfRolling(
+    cacheParams, "L2PrefetchAccuracyTP",
+    PopCount(l2prefetchUsefulTP), PopCount(l2prefetchSentTP),
     1000, clock, reset
   )
   XSPerfRolling(
@@ -137,6 +180,21 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   XSPerfRolling(
     cacheParams, "L2PrefetchCoverage",
     PopCount(l2prefetchUseful), PopCount(l2demandRequest),
+    1000, clock, reset
+  )
+  XSPerfRolling(
+    cacheParams, "L2PrefetchCoverageBOP",
+    PopCount(l2prefetchUsefulBOP), PopCount(l2demandRequest),
+    1000, clock, reset
+  )
+  XSPerfRolling(
+    cacheParams, "L2PrefetchCoverageSMS",
+    PopCount(l2prefetchUsefulSMS), PopCount(l2demandRequest),
+    1000, clock, reset
+  )
+  XSPerfRolling(
+    cacheParams, "L2PrefetchCoverageTP",
+    PopCount(l2prefetchUsefulTP), PopCount(l2demandRequest),
     1000, clock, reset
   )
 }

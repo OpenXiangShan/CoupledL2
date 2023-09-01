@@ -25,7 +25,7 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
 import chipsalliance.rocketchip.config.Parameters
-import coupledL2.prefetch.PrefetchTrain
+import coupledL2.prefetch.{PfSource, PrefetchTrain}
 import coupledL2.utils.XSPerfAccumulate
 
 class MSHRTasks(implicit p: Parameters) extends L2Bundle {
@@ -197,7 +197,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_release.metaWen := false.B
     mp_release.meta := MetaEntry()
     mp_release.tagWen := false.B
-    mp_release.dsWen := true.B
+    mp_release.dsWen := true.B // write refillData to DS
     mp_release.replTask := true.B
     mp_release.wayMask := 0.U(cacheParams.ways.W)
     mp_release.reqSource := 0.U(MemReqSource.reqSourceBits.W)
@@ -261,6 +261,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_probeack
   }
 
+  // merge_probeack also serves the function of MSHR-Release
   val mp_merge_probeack_task = {
     val task = RegEnable(io.bMergeTask.bits.task, 0.U.asTypeOf(new TaskBundle), io.bMergeTask.valid)
     mp_merge_probeack.channel := task.channel
@@ -288,17 +289,10 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_merge_probeack.useProbeData := false.B
     mp_merge_probeack.way := dirResult.way
     mp_merge_probeack.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
-    mp_merge_probeack.meta := MetaEntry(
-      dirty = false.B,
-      state = Mux(task.param === toN, INVALID, Mux(task.param === toB, BRANCH, meta.state)),
-      clients = Fill(clientBits, !probeGotN),
-      alias = meta.alias,
-      prefetch = task.param =/= toN && meta_pft,
-      accessed = task.param =/= toN && meta.accessed
-    )
-    mp_merge_probeack.metaWen := true.B
+    mp_merge_probeack.metaWen := false.B
+    mp_merge_probeack.meta := MetaEntry()
     mp_merge_probeack.tagWen := false.B
-    mp_merge_probeack.dsWen := task.param =/= toN && probeDirty
+    mp_merge_probeack.dsWen :=  true.B // write refillData to DS
 
     // unused, set to default
     mp_merge_probeack.alias.foreach(_ := 0.U)
@@ -375,11 +369,12 @@ class MSHR(implicit p: Parameters) extends L2Module {
       ),
       alias = Some(aliasFinal),
       prefetch = req_prefetch || dirResult.hit && meta_pft,
+      pfsrc = PfSource.fromMemReqSource(req.reqSource),
       accessed = req_acquire || req_get
     )
     mp_grant.metaWen := true.B
     mp_grant.tagWen := !dirResult.hit
-    mp_grant.dsWen := !dirResult.hit && gotGrantData || probeDirty && (req_get || req.aliasTask.getOrElse(false.B))
+    mp_grant.dsWen := (!dirResult.hit || gotDirty) && gotGrantData || probeDirty && (req_get || req.aliasTask.getOrElse(false.B))
     mp_grant.fromL2pft.foreach(_ := req.fromL2pft.get)
     mp_grant.needHint.foreach(_ := false.B)
     mp_grant.replTask := !dirResult.hit // Get and Alias are hit that does not need replacement

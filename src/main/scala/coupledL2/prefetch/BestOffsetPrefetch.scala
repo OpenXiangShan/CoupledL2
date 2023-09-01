@@ -17,7 +17,7 @@
 
 package coupledL2.prefetch
 
-import utility.{ChiselDB, Constantin, ParallelPriorityMux, RRArbiterInit, SRAMTemplate}
+import utility.{ChiselDB, Constantin, ParallelPriorityMux, RRArbiterInit, MemReqSource, SRAMTemplate}
 import chipsalliance.rocketchip.config.Parameters
 import chisel3.DontCare.:=
 import chisel3.{util, _}
@@ -50,6 +50,7 @@ case class BOPParameters(
   ))
     extends PrefetchParameters {
   override val hasPrefetchBit:  Boolean = true
+  override val hasPrefetchSrc:  Boolean = true
   override val inflightEntries: Int = 16
 }
 
@@ -336,6 +337,7 @@ class BopReqFilterEntry(implicit p: Parameters) extends BOPBundle {
     req.vaddr.foreach(_ := get_pf_vaddr())
     req.needT := needT_vec(idx)
     req.source := source_vec(idx)
+    req.source := MemReqSource.Prefetch2L2BOP.id.U
     req.isBOP := true.B
     req
   }
@@ -599,6 +601,7 @@ class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
     req.vaddr.foreach(_ := baseVaddr)
     req.needT := needT
     req.source := source
+    req.pfSource := MemReqSource.Prefetch2L2BOP.id.U
     req.isBOP := true.B
     req
   }
@@ -869,6 +872,7 @@ class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     out_req.vaddr.foreach(_ := RegNext(s1_reqVaddr))
     out_req.needT := RegNext(s1_needT)
     out_req.source := RegNext(s1_source)
+    out_req.pfSource := MemReqSource.Prefetch2L2BOP.id.U
     out_req.isBOP := true.B*/
 
   } else {
@@ -883,6 +887,7 @@ class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     io.req.bits.vaddr.foreach(_ := 0.U)
     io.req.bits.needT := s1_needT
     io.req.bits.source := s1_source
+    io.req.bits.pfSource := MemReqSource.Prefetch2L2BOP.id.U
     io.req.bits.isBOP := true.B
   }
 

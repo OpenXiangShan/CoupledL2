@@ -23,6 +23,7 @@ import freechips.rocketchip.util.SetAssocLRU
 import coupledL2.utils._
 import utility.{ParallelPriorityMux, RegNextN}
 import chipsalliance.rocketchip.config.Parameters
+import coupledL2.prefetch.PfSource
 import freechips.rocketchip.tilelink.TLMessages._
 
 class MetaEntry(implicit p: Parameters) extends L2Bundle {
@@ -32,6 +33,7 @@ class MetaEntry(implicit p: Parameters) extends L2Bundle {
   // TODO: record specific state of clients instead of just 1-bit
   val alias = aliasBitsOpt.map(width => UInt(width.W)) // alias bits of client
   val prefetch = if (hasPrefetchBit) Some(Bool()) else None // whether block is prefetched
+  val prefetchSrc = if (hasPrefetchSrc) Some(UInt(PfSource.pfSourceBits.W)) else None // prefetch source
   val accessed = Bool()
 
   def =/=(entry: MetaEntry): Bool = {
@@ -44,14 +46,16 @@ object MetaEntry {
     val init = WireInit(0.U.asTypeOf(new MetaEntry))
     init
   }
-  def apply(dirty: Bool, state: UInt, clients: UInt, alias: Option[UInt],
-            prefetch: Bool = false.B, accessed: Bool = false.B)(implicit p: Parameters) = {
+  def apply(dirty: Bool, state: UInt, clients: UInt, alias: Option[UInt], prefetch: Bool = false.B,
+            pfsrc: UInt = PfSource.NoWhere.id.U, accessed: Bool = false.B
+  )(implicit p: Parameters) = {
     val entry = Wire(new MetaEntry)
     entry.dirty := dirty
     entry.state := state
     entry.clients := clients
     entry.alias.foreach(_ := alias.getOrElse(0.U))
     entry.prefetch.foreach(_ := prefetch)
+    entry.prefetchSrc.foreach(_ := pfsrc)
     entry.accessed := accessed
     entry
   }
@@ -120,14 +124,13 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   val sets = cacheParams.sets
   val ways = cacheParams.ways
-  val banks = cacheParams.dirNBanks
 
   val tagWen  = io.tagWReq.valid
   val metaWen = io.metaWReq.valid
   val replacerWen = WireInit(false.B)
 
-  val tagArray  = Module(new BankedSRAM(UInt(tagBits.W), sets, ways, banks, singlePort = true))
-  val metaArray = Module(new BankedSRAM(new MetaEntry, sets, ways, banks, singlePort = true))
+  val tagArray  = Module(new SRAMTemplate(UInt(tagBits.W), sets, ways, singlePort = true))
+  val metaArray = Module(new SRAMTemplate(new MetaEntry, sets, ways, singlePort = true))
   val tagRead = Wire(Vec(ways, UInt(tagBits.W)))
   val metaRead = Wire(Vec(ways, new MetaEntry()))
 
@@ -138,7 +141,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   val repl = ReplacementPolicy.fromString(cacheParams.replacement, ways)
   val random_repl = cacheParams.replacement == "random"
   val replacer_sram_opt = if(random_repl) None else
-    Some(Module(new BankedSRAM(UInt(repl.nBits.W), sets, 1, banks, singlePort = true, shouldReset = true)))
+    Some(Module(new SRAMTemplate(UInt(repl.nBits.W), sets, 1, singlePort = true, shouldReset = true)))
 
   /* ====== Generate response signals ====== */
   // hit/way calculation in stage 3, Cuz SRAM latency is high under high frequency
@@ -210,9 +213,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   dontTouch(metaArray.io)
   dontTouch(tagArray.io)
 
-  //[deprecated] io.read.ready := !io.metaWReq.valid && !io.tagWReq.valid && !replacerWen
-  val replacerRready = if(cacheParams.replacement == "random") true.B else replacer_sram_opt.get.io.r.req.ready
-  io.read.ready := tagArray.io.r.req.ready && metaArray.io.r.req.ready && replacerRready
+  io.read.ready := !io.metaWReq.valid && !io.tagWReq.valid && !replacerWen
 
   /* ====== refill retry ====== */
   // if refill chooses a way that has not finished writing its refillData back to DS (in MSHR Release),

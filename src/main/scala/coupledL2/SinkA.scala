@@ -98,7 +98,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.tagWen := false.B
     task.dsWen := false.B
     task.wayMask := 0.U(cacheParams.ways.W)
-    task.reqSource := MemReqSource.L2Prefetch.id.U
+    task.reqSource := req.pfSource
     task.replTask := false.B
     task.vaddr.foreach(_ := req.vaddr.getOrElse(0.U))
     task

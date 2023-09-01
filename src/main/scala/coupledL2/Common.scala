@@ -244,6 +244,7 @@ class NestedWriteback(implicit p: Parameters) extends L2Bundle {
 
 class PrefetchRecv extends Bundle {
   val addr = UInt(64.W)
+  val pf_source = UInt(MemReqSource.reqSourceBits.W)
   val addr_valid = Bool()
   val l2_pf_en = Bool()
 }
@@ -298,22 +299,4 @@ class L2ToL1TlbIO(nRespDups: Int = 1)(implicit p: Parameters) extends L2Bundle{
   val req = DecoupledIO(new L2TlbReq)
   val req_kill = Output(Bool())
   val resp = Flipped(DecoupledIO(new L2TlbResp(nRespDups)))
-}
-
-// indicates where the memory access request comes from
-// a dupliacte of this is in xiangShan/package.scala utility/TLUtils/BusKeyField.scala
-object MemReqSource extends Enumeration {
-  val NoWhere = Value("NoWhere")
-
-  val CPUInst = Value("CPUInst")
-  val CPULoadData = Value("CPULoadData")
-  val CPUStoreData = Value("CPUStoreData")
-  val CPUAtomicData = Value("CPUAtomicData")
-  val L1InstPrefetch = Value("L1InstPrefetch")
-  val L1DataPrefetch = Value("L1DataPrefetch")
-  val PTW = Value("PTW")
-  val L2Prefetch = Value("L2Prefetch")
-  val ReqSourceCount = Value("ReqSourceCount")
-
-  val reqSourceBits = log2Ceil(ReqSourceCount.id)
 }
