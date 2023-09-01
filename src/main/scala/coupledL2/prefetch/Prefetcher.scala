@@ -30,6 +30,7 @@ trait HasPrefetcherHelper extends HasCircularQueuePtrHelper with HasCoupledL2Par
   // filter
   val TRAIN_FILTER_SIZE = 4
   val REQ_FILTER_SIZE = 16
+  val TLB_REPLAY_CNT = 3
 
   // parameters
   val BLK_ADDR_RAW_WIDTH = 10
@@ -71,7 +72,7 @@ trait HasPrefetcherHelper extends HasCircularQueuePtrHelper with HasCoupledL2Par
     UIntToOH(get_index(vaddr))
   }
 
-  def get_block_addr(vaddr: UInt): UInt = {
+  def get_block_vaddr(vaddr: UInt): UInt = {
     vaddr(vaddr.getWidth - 1, BLOCK_OFFSET)
   }
 
@@ -84,7 +85,7 @@ trait HasPrefetcherHelper extends HasCircularQueuePtrHelper with HasCoupledL2Par
   }
 
   def block_hash_tag(vaddr: UInt): UInt = {
-    val blk_addr = get_block_addr(vaddr)
+    val blk_addr = get_block_vaddr(vaddr)
     val low = blk_addr(BLK_ADDR_RAW_WIDTH - 1, 0)
     val high = blk_addr(BLK_ADDR_RAW_WIDTH - 1 + 3 * VADDR_HASH_WIDTH, BLK_ADDR_RAW_WIDTH)
     val high_hash = _vaddr_hash(high)
