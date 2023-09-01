@@ -338,7 +338,6 @@ class BopReqFilterEntry(implicit p: Parameters) extends BOPBundle {
     req.needT := needT_vec(idx)
     req.source := source_vec(idx)
     req.source := MemReqSource.Prefetch2L2BOP.id.U
-    req.isBOP := true.B
     req
   }
 
@@ -602,7 +601,6 @@ class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
     req.needT := needT
     req.source := source
     req.pfSource := MemReqSource.Prefetch2L2BOP.id.U
-    req.isBOP := true.B
     req
   }
 
