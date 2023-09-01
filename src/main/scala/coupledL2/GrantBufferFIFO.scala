@@ -131,6 +131,7 @@ class GrantBufferFIFO(implicit p: Parameters) extends BaseGrantBuffer with HasCi
           in.valid := block_valids(i) && taskAll(i).opcode === HintAck
           in.bits.tag := taskAll(i).tag
           in.bits.set := taskAll(i).set
+          in.bits.vaddr.foreach(_ := taskAll(i).vaddr.getOrElse(0.U))
           when (in.fire()) {
             beat_valids(i).foreach(_ := false.B)
             flush(i) := true.B
