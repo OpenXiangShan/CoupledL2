@@ -40,7 +40,7 @@ class TaskWithData(implicit p: Parameters) extends L2Bundle {
 }
 
 // 1. Communicate with L1
-//   1.1 Send Grant/GrantData/ReleaseAck from d and
+//   1.1 Send Grant/GrantData/ReleaseAck/AccessAckData from d and
 //   1.2 Receive GrantAck through e
 // 2. Send response to Prefetcher
 // 3. Block MainPipe enterance when there is not enough space
@@ -108,7 +108,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   // The following is organized in the order of data flow
   // =========== save d_task in queue[FIFO] ===========
   val grantQueue = Module(new Queue(new TaskWithData(), entries = mshrsAll))
-  grantQueue.io.enq.valid := io.d_task.valid && (dtaskOpcode(2, 1) === Grant(2, 1) || dtaskOpcode === ReleaseAck)
+  grantQueue.io.enq.valid := io.d_task.valid && dtaskOpcode =/= HintAck
   grantQueue.io.enq.bits := io.d_task.bits
   io.d_task.ready := true.B // GrantBuf should always be ready
 
@@ -131,8 +131,8 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
 
   grantQueue.io.deq.ready := io.d.ready && !grantBufValid
 
-  when(deqValid && io.d.ready && !grantBufValid && deqTask.opcode === GrantData) {
-    // save the remaining beat
+  // if deqTask has data, send the first beat directly and save the remaining beat in grantBuf
+  when(deqValid && io.d.ready && !grantBufValid && deqTask.opcode(0)) {
     grantBufValid := true.B
     grantBuf.task := deqTask
     grantBuf.data := deqData(1)
