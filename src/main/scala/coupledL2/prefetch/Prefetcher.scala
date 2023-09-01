@@ -30,7 +30,7 @@ trait HasPrefetcherHelper extends HasCircularQueuePtrHelper with HasCoupledL2Par
   // filter
   val TRAIN_FILTER_SIZE = 4
   val REQ_FILTER_SIZE = 16
-  val TLB_REPLAY_CNT = 3
+  val TLB_REPLAY_CNT = 10
 
   // parameters
   val BLK_ADDR_RAW_WIDTH = 10

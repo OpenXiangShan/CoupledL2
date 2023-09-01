@@ -557,6 +557,7 @@ class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
   val vaddrNoOffset = UInt((fullVAddrBits-offsetBits).W)
   val baseVaddr = UInt((fullVAddrBits-offsetBits).W)
   val paddrNoOffset = UInt(fullVAddrBits.W)
+  val replayEn = Bool()
   val replayCnt = UInt(4.W)
   // for pf req
   val needT = Bool()
@@ -568,6 +569,7 @@ class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
     vaddrNoOffset := 0.U
     baseVaddr := 0.U
     paddrNoOffset := 0.U
+    replayEn := false.B
     replayCnt := 0.U
     needT := false.B
     source := 0.U
@@ -578,6 +580,7 @@ class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
     paddrValid := false.B
     vaddrNoOffset := get_block_vaddr(req.full_vaddr)
     baseVaddr := req.base_vaddr
+    replayEn := false.B
     replayCnt := 0.U
     paddrNoOffset := 0.U
     needT := req.needT
@@ -619,6 +622,8 @@ class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
   def update_paddr(paddr: UInt) = {
     paddrValid := true.B
     paddrNoOffset := paddr(paddr.getWidth-1, offsetBits)
+    replayEn := false.B
+    replayCnt := 0.U
   }
 
   def update_sent(): Unit ={
@@ -695,6 +700,7 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
 
   /* entry update */
   val alloc = Wire(Vec(REQ_FILTER_SIZE, Bool()))
+  val miss_drop = Wire(Vec(REQ_FILTER_SIZE, Bool()))
   val pf_fired = Wire(Vec(REQ_FILTER_SIZE, Bool()))
   val tlb_fired = Wire(Vec(REQ_FILTER_SIZE, Bool()))
   for ((e, i) <- entries.zipWithIndex){
@@ -705,9 +711,10 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
       (!e.needT && (io.tlb_req.resp.bits.excp.head.pf.ld || io.tlb_req.resp.bits.excp.head.af.ld)))
     val miss = s1_tlb_fire_oh(i) && io.tlb_req.resp.valid && io.tlb_req.resp.bits.miss
     tlb_fired(i) := s1_tlb_fire_oh(i) && io.tlb_req.resp.valid && !io.tlb_req.resp.bits.miss && !exp
-
+    miss_drop(i) := miss && e.replayEn
+    
     // old data: update replayCnt
-    when(!alloc(i) && e.replayCnt.orR) {
+    when(e.valid && e.replayCnt.orR) {
       e.replayCnt := e.replayCnt - 1.U
     }
     // recent data: update tlb resp
@@ -715,8 +722,12 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
       e.update_paddr(io.tlb_req.resp.bits.paddr.head)
     }.elsewhen(exp){
       e.update_excp()
-    }.otherwise{ // miss
-      e.replayCnt := TLB_REPLAY_CNT.U
+    }.elsewhen(miss){ // miss
+      when(e.replayEn){ e.reset(i.U) }
+      .otherwise{ 
+        e.replayCnt := TLB_REPLAY_CNT.U 
+        e.replayEn := true.B
+      }
     }
     // issue data: update pf
     when(pf_fired(i)){
@@ -761,9 +772,25 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
       io.tlb_req.resp.bits.excp.head.pf.ld || io.tlb_req.resp.bits.excp.head.af.ld
   ))
   XSPerfAccumulate(cacheParams, "entry_alloc", PopCount(alloc))
+  XSPerfAccumulate(cacheParams, "entry_miss_drop", PopCount(miss_drop))
   XSPerfAccumulate(cacheParams, "entry_merge", io.in_req.valid && s0_match)
-  XSPerfAccumulate(cacheParams, "entry_tlb_fire", PopCount(tlb_fired))
   XSPerfAccumulate(cacheParams, "entry_pf_fire", PopCount(pf_fired))
+  
+  /*
+  val enTalbe = Constantin.createRecord("isWriteL2BopTable", 1.U)
+  val l2BOPTable = ChiselDB. createTable("L2BOPTable", new BopReqBufferEntry, basicDB = true)
+  for (i <- 0 until REQ_FILTER_SIZE){
+    when(alloc(i)){
+      l2BOPTable.log(
+        data = entries(i),
+        en = enTalbe.orR && pf_fired(i),
+        site = "L2BOPTable",
+        clock = clock,
+        reset = reset
+      )
+    }
+  }
+  */
 }
 
 class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
