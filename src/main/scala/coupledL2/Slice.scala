@@ -51,7 +51,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
   val sinkB = Module(new SinkB)
   val sinkC = Module(new SinkC)
   val sourceC = Module(new SourceC)
-  val grantBuf = if (!useFIFOGrantBuffer) Module(new GrantBuffer) else Module(new GrantBufferFIFO)
+  val grantBuf = Module(new GrantBuffer)
   val refillBuf = Module(new MSHRBuffer(wPorts = 3))
   val releaseBuf = Module(new MSHRBuffer(wPorts = 3))
 
@@ -97,7 +97,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
 
   dataStorage.io.req <> mainPipe.io.toDS.req_s3
   dataStorage.io.wdata := mainPipe.io.toDS.wdata_s3
-  
+
   mainPipe.io.toMSHRCtl <> mshrCtl.io.fromMainPipe
   mainPipe.io.fromMSHRCtl <> mshrCtl.io.toMainPipe
   mainPipe.io.bufRead <> sinkC.io.bufRead
@@ -127,7 +127,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
   refillBuf.io.w(2) <> mainPipe.io.refillBufWrite
 
   sourceC.io.in <> mainPipe.io.toSourceC
-  
+
   io.l1Hint.valid := mainPipe.io.l1Hint.valid
   io.l1Hint.bits := mainPipe.io.l1Hint.bits
   mshrCtl.io.grantStatus := grantBuf.io.grantStatus
@@ -149,7 +149,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
   /* input & output signals */
   val inBuf = cacheParams.innerBuf
   val outBuf = cacheParams.outerBuf
-  
+
   /* connect upward channels */
   sinkA.io.a <> inBuf.a(io.in.a)
   io.in.b <> inBuf.b(mshrCtl.io.sourceB)
