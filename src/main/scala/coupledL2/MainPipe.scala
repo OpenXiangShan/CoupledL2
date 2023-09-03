@@ -27,7 +27,7 @@ import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
 import coupledL2.utils._
 import coupledL2.debug._
-import coupledL2.prefetch.PrefetchTrain
+import coupledL2.prefetch.{PfSource, PrefetchTrain}
 
 class MainPipe(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
@@ -413,6 +413,9 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       train.bits.needT := req_needT_s3
       train.bits.source := req_s3.sourceId
       train.bits.vaddr.foreach(_ := req_s3.vaddr.getOrElse(0.U))
+      train.bits.hit := dirResult_s3.hit
+      train.bits.prefetched := meta_s3.prefetch.get(false.B)
+      train.bits.pfsource := meta_s3.prefetchSrc.getOrElse(PfSource.NoWhere.id.U)
   }
 
   /* ======== Stage 4 ======== */

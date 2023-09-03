@@ -49,16 +49,16 @@ class PrefetchResp(implicit p: Parameters) extends PrefetchBundle {
 }
 
 class PrefetchTrain(implicit p: Parameters) extends PrefetchBundle {
-  // val addr = UInt(addressBits.W)
   val tag = UInt(fullTagBits.W)
   val set = UInt(setBits.W)
   val needT = Bool()
   val source = UInt(sourceIdBits.W)
   val vaddr = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W))
-  // prefetch only when L2 receives a miss or prefetched hit req
-  // val miss = Bool()
-  // val prefetched = Bool()
-  def addr = Cat(tag, set, 0.U(offsetBits.W))
+  val hit = Bool()
+  val prefetched = Bool()
+  val pfsource = UInt(PfSource.pfSourceBits.W)
+
+  def addr: UInt = Cat(tag, set, 0.U(offsetBits.W))
 }
 
 class PrefetchIO(implicit p: Parameters) extends PrefetchBundle {

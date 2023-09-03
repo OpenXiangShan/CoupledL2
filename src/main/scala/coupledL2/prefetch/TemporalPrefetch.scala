@@ -77,6 +77,9 @@ class triggerBundle(implicit p: Parameters) extends TPBundle {
 class trainBundle(implicit p: Parameters) extends TPBundle {
   val vaddr = UInt(vaddrBits.W)
   val paddr = UInt(fullAddressBits.W)
+  val hit = Bool()
+  val prefetched = Bool()
+  val pfsource = UInt(PfSource.pfSourceBits.W)
   val metahit = Bool()
 }
 
@@ -276,12 +279,17 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   /* Performance collection */
   val triggerDB = ChiselDB.createTable("tptrigger", new triggerBundle(), basicDB=true)
-  val triggerPt = write_record_trigger
+  val triggerPt = Wire(new triggerBundle())
+  triggerPt.paddr := write_record_trigger.paddr
+  triggerPt.vaddr := recoverVaddr(write_record_trigger.vaddr)
 
   val trainDB = ChiselDB.createTable("tptrain", new trainBundle(), basicDB=true)
   val trainPt = Wire(new trainBundle())
-  trainPt.vaddr := train_s2.vaddr.getOrElse(0.U)
+  trainPt.vaddr := recoverVaddr(train_s2.vaddr.getOrElse(0.U))
   trainPt.paddr := train_s2.addr
+  trainPt.hit := train_s2.hit
+  trainPt.prefetched := train_s2.prefetched
+  trainPt.pfsource := train_s2.pfsource
   trainPt.metahit := hit_s2
 
   val sendDB = ChiselDB.createTable("tpsend", new sendBundle(), basicDB=true)
