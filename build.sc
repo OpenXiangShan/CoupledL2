@@ -32,48 +32,72 @@ trait CommonModule extends ScalaModule {
 
 }
 
-object rocketchip extends `rocket-chip`.common.CommonRocketChip {
+object rocketchip extends RocketChip
 
-  val rcPath = os.pwd / "rocket-chip"
+trait RocketChip
+  extends millbuild.`rocket-chip`.common.RocketChipModule
+    with SbtModule {
+  def scalaVersion: T[String] = T(defaultVersions("scala"))
 
-  override def scalaVersion = defaultVersions("scala")
+  override def millSourcePath = os.pwd / "rocket-chip"
 
-  override def millSourcePath = rcPath
+  def chiselModule = None
 
-  object cdeRocket extends `rocket-chip`.cde.common.CDEModule with PublishModule {
-    override def millSourcePath = rcPath / "cde" / "cde"
+  def chiselPluginJar = None
 
-    override def scalaVersion = T {
-      rocketchip.scalaVersion()
-    }
+  def chiselIvy = Some(getVersion("chisel"))
 
-    override def pomSettings = T {
-      rocketchip.pomSettings()
-    }
+  def chiselPluginIvy = Some(getVersion("chisel-plugin", cross=true))
 
-    override def publishVersion = T {
-      rocketchip.publishVersion()
-    }
+  def macrosModule = macros
+
+  def hardfloatModule = hardfloat
+
+  def cdeModule = cde
+
+  def mainargsIvy = ivy"com.lihaoyi::mainargs:0.5.0"
+
+  def json4sJacksonIvy = ivy"org.json4s::json4s-jackson:4.0.5"
+
+  object macros extends Macros
+
+  trait Macros
+    extends millbuild.`rocket-chip`.common.MacrosModule
+      with SbtModule {
+
+    def scalaVersion: T[String] = T(defaultVersions("scala"))
+
+    def scalaReflectIvy = ivy"org.scala-lang:scala-reflect:${defaultVersions("scala")}"
   }
 
-  object hardfloatRocket extends `rocket-chip`.hardfloat.build.hardfloat {
-    override def millSourcePath = rcPath / "hardfloat"
+  object hardfloat extends Hardfloat
 
-    override def scalaVersion = T {
-      rocketchip.scalaVersion()
-    }
+  trait Hardfloat
+    extends millbuild.`rocket-chip`.hardfloat.common.HardfloatModule {
 
-    def chisel3IvyDeps = if(chisel3Module.isEmpty) Agg(
-      `rocket-chip`.common.getVersion("chisel3")
-    ) else Agg.empty[Dep]
+    def scalaVersion: T[String] = T(defaultVersions("scala"))
 
-    def chisel3PluginIvyDeps = Agg(`rocket-chip`.common.getVersion("chisel3-plugin", cross=true))
+    override def millSourcePath = os.pwd / "rocket-chip" / "hardfloat" / "hardfloat"
+
+    def chiselModule = None
+
+    def chiselPluginJar = None
+
+    def chiselIvy = Some(getVersion("chisel"))
+
+    def chiselPluginIvy = Some(getVersion("chisel-plugin", cross=true))
   }
 
-  def hardfloatModule = hardfloatRocket
+  object cde extends CDE
 
-  def cdeModule = cdeRocket
+  trait CDE
+    extends millbuild.`rocket-chip`.cde.common.CDEModule
+      with ScalaModule {
 
+    def scalaVersion: T[String] = T(defaultVersions("scala"))
+
+    override def millSourcePath = os.pwd / "rocket-chip" / "cde" / "cde"
+  }
 }
 
 object utility extends SbtModule with ScalafmtModule with CommonModule {

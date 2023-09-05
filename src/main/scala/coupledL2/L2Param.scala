@@ -48,32 +48,17 @@ case class L1Param
 
 // Indicate alias bit of upper level cache
 case object AliasKey extends ControlKey[UInt]("alias")
-case class AliasField(width: Int) extends BundleField(AliasKey) {
-  override def data: UInt = Output(UInt(width.W))
-  override def default(x: UInt): Unit = {
-    x := 0.U(width.W)
-  }
-}
+case class AliasField(width: Int) extends BundleField[UInt](AliasKey, Output(UInt(width.W)), _ := 0.U(width.W))
 
 // Indicate whether Hint is needed by upper level cache
 case object PrefetchKey extends ControlKey[Bool](name = "needHint")
-case class PrefetchField() extends BundleField(PrefetchKey) {
-  override def data: Bool = Output(Bool())
-  override def default(x: Bool): Unit = {
-    x := false.B
-  }
-}
+case class PrefetchField() extends BundleField[Bool](PrefetchKey, Output(Bool()), _ := false.B)
 
 // Indicate whether this block is dirty or not (only used in handle Release/ReleaseData)
 // Now it only works for non-inclusive cache (ignored in inclusive cache)
 case object DirtyKey extends ControlKey[Bool](name = "blockisdirty")
 
-case class DirtyField() extends BundleField(DirtyKey) {
-  override def data: Bool = Output(Bool())
-  override def default(x: Bool): Unit = {
-    x := true.B
-  }
-}
+case class DirtyField() extends BundleField[Bool](DirtyKey, Output(Bool()), _ := true.B)
 
 case class L2Param
 (

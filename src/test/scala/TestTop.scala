@@ -1,9 +1,11 @@
 package coupledL2
 
+import circt.stage.{ChiselStage, FirtoolOption}
 import chisel3._
 import chisel3.util._
+import chisel3.util.experimental.BoringUtils
 import org.chipsalliance.cde.config._
-import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
+import chisel3.stage.ChiselGeneratorAnnotation
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import huancun._
@@ -59,7 +61,13 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
       TLDelayer(delayFactor) :=*
       l2.node :=* xbar
 
-  lazy val module = new LazyModuleImp(this){
+  lazy val module = new LazyModuleImp(this) {
+    val clean = WireDefault(false.B)
+    val dump = WireDefault(false.B)
+    val timeStamp = WireDefault(0.U(64.W))
+    BoringUtils.addSource(timeStamp, "logTimestamp")
+    BoringUtils.addSource(clean, "XSPERF_CLEAN")
+    BoringUtils.addSource(dump, "XSPERF_DUMP")
     master_nodes.zipWithIndex.foreach{
       case (node, i) =>
         node.makeIOs()(ValName(s"master_port_$i"))
@@ -158,6 +166,12 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
     l2 :=* xbar
   
   lazy val module = new LazyModuleImp(this) {
+    val clean = WireDefault(false.B)
+    val dump = WireDefault(false.B)
+    val timeStamp = WireDefault(0.U(64.W))
+    BoringUtils.addSource(timeStamp, "logTimestamp")
+    BoringUtils.addSource(clean, "XSPERF_CLEAN")
+    BoringUtils.addSource(dump, "XSPERF_DUMP")
     master_nodes.zipWithIndex.foreach {
       case (node, i) =>
         node.makeIOs()(ValName(s"master_port_$i"))
@@ -237,6 +251,12 @@ class TestTop_L2_Standalone()(implicit p: Parameters) extends LazyModule {
       l2.node :=* xbar
 
   lazy val module = new LazyModuleImp(this){
+    val clean = WireDefault(false.B)
+    val dump = WireDefault(false.B)
+    val timeStamp = WireDefault(0.U(64.W))
+    BoringUtils.addSource(timeStamp, "logTimestamp")
+    BoringUtils.addSource(clean, "XSPERF_CLEAN")
+    BoringUtils.addSource(dump, "XSPERF_DUMP")
     master_nodes.zipWithIndex.foreach{
       case (node, i) =>
         node.makeIOs()(ValName(s"master_port_$i"))
@@ -331,6 +351,12 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
       l3.node :=* xbar
 
   lazy val module = new LazyModuleImp(this) {
+    val clean = WireDefault(false.B)
+    val dump = WireDefault(false.B)
+    val timeStamp = WireDefault(0.U(64.W))
+    BoringUtils.addSource(timeStamp, "logTimestamp")
+    BoringUtils.addSource(clean, "XSPERF_CLEAN")
+    BoringUtils.addSource(dump, "XSPERF_DUMP")
     master_nodes.zipWithIndex.foreach {
       case (node, i) =>
         node.makeIOs()(ValName(s"master_port_$i"))
@@ -437,6 +463,12 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
       l3.node :=* l2xbar
 
   lazy val module = new LazyModuleImp(this) {
+    val clean = WireDefault(false.B)
+    val dump = WireDefault(false.B)
+    val timeStamp = WireDefault(0.U(64.W))
+    BoringUtils.addSource(timeStamp, "logTimestamp")
+    BoringUtils.addSource(clean, "XSPERF_CLEAN")
+    BoringUtils.addSource(dump, "XSPERF_DUMP")
     master_nodes.zipWithIndex.foreach {
       case (node, i) =>
         node.makeIOs()(ValName(s"master_port_$i"))
@@ -453,8 +485,8 @@ object TestTop_L2 extends App {
   })
   val top = DisableMonitors(p => LazyModule(new TestTop_L2()(p)) )(config)
 
-  (new ChiselStage).execute(args, Seq(
-    ChiselGeneratorAnnotation(() => top.module)
+  (new ChiselStage).execute(Array("--target", "verilog") ++ args, Seq(
+    ChiselGeneratorAnnotation(() => top.module), FirtoolOption("--disable-annotation-unknown")
   ))
 }
 
@@ -467,8 +499,8 @@ object TestTop_L2_Standalone extends App {
   })
   val top = DisableMonitors(p => LazyModule(new TestTop_L2_Standalone()(p)) )(config)
 
-  (new ChiselStage).execute(args, Seq(
-    ChiselGeneratorAnnotation(() => top.module)
+  (new ChiselStage).execute(Array("--target", "verilog") ++ args, Seq(
+    ChiselGeneratorAnnotation(() => top.module), FirtoolOption("--disable-annotation-unknown")
   ))
 }
 
@@ -484,8 +516,8 @@ object TestTop_L2L3 extends App {
   })
   val top = DisableMonitors(p => LazyModule(new TestTop_L2L3()(p)) )(config)
 
-  (new ChiselStage).execute(args, Seq(
-    ChiselGeneratorAnnotation(() => top.module)
+  (new ChiselStage).execute(Array("--target", "verilog") ++ args, Seq(
+    ChiselGeneratorAnnotation(() => top.module), FirtoolOption("--disable-annotation-unknown")
   ))
 }
 
@@ -501,8 +533,8 @@ object TestTop_L2L3L2 extends App {
   })
   val top = DisableMonitors(p => LazyModule(new TestTop_L2L3L2()(p)))(config)
 
-  (new ChiselStage).execute(args, Seq(
-    ChiselGeneratorAnnotation(() => top.module)
+  (new ChiselStage).execute(Array("--target", "verilog") ++ args, Seq(
+    ChiselGeneratorAnnotation(() => top.module), FirtoolOption("--disable-annotation-unknown")
   ))
 }
 
@@ -518,7 +550,7 @@ object TestTop_fullSys extends App {
   })
   val top = DisableMonitors(p => LazyModule(new TestTop_fullSys()(p)))(config)
 
-  (new ChiselStage).execute(args, Seq(
-    ChiselGeneratorAnnotation(() => top.module)
+  (new ChiselStage).execute(Array("--target", "verilog") ++ args, Seq(
+    ChiselGeneratorAnnotation(() => top.module), FirtoolOption("--disable-annotation-unknown")
   ))
 }
