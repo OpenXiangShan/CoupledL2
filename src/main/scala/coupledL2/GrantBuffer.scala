@@ -54,9 +54,6 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     val d = DecoupledIO(new TLBundleD(edgeIn.bundle))
     val e = Flipped(DecoupledIO(new TLBundleE(edgeIn.bundle)))
 
-    // response to MSHR
-    val e_resp = Output(new RespBundle)
-
     // for MainPipe entrance blocking
     val fromReqArb = Input(new Bundle() {
       val status_s1 = new PipeEntranceStatus
@@ -240,18 +237,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     val bufIdx = OHToUInt(sinkMatchVec)
     inflight_grant(bufIdx).valid := false.B
   }
-
-  // =========== send e resp to MSHRs ===========
   io.e.ready := true.B
-  io.e_resp.valid := io.e.valid
-  io.e_resp.mshrId := io.e.bits.sink
-  io.e_resp.set := 0.U(setBits.W)
-  io.e_resp.tag := 0.U(tagBits.W)
-  io.e_resp.respInfo.opcode := GrantAck
-  io.e_resp.respInfo.param := 0.U(3.W)
-  io.e_resp.respInfo.last := true.B
-  io.e_resp.respInfo.dirty := false.B
-  io.e_resp.respInfo.isHit := false.B
 
   // =========== handle blocking - capacity conflict ===========
   // count the number of valid blocks + those in pipe that might use GrantBuf

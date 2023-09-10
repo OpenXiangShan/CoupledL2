@@ -126,7 +126,6 @@ class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val needsRepl = Bool()
   val w_c_resp = Bool()
   val w_d_resp = Bool()
-  val w_e_resp = Bool()
   val will_free = Bool()
 
   //  val way = UInt(wayBits.W)
@@ -221,7 +220,6 @@ class FSMState(implicit p: Parameters) extends L2Bundle {
   val w_grantlast = Bool()
   val w_grant = Bool()
   val w_releaseack = Bool()
-  val w_grantack = Bool()
   val w_replResp = Bool()
 }
 

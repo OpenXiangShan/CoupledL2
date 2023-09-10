@@ -67,7 +67,6 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     val resps = Input(new Bundle() {
       val sinkC = new RespBundle
       val sinkD = new RespBundle
-      val sinkE = new RespBundle
       val sourceC = new RespBundle
     })
     
@@ -124,8 +123,6 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       m.io.resps.sink_c.bits := io.resps.sinkC.respInfo
       m.io.resps.sink_d.valid := m.io.status.valid && io.resps.sinkD.valid && io.resps.sinkD.mshrId === i.U
       m.io.resps.sink_d.bits := io.resps.sinkD.respInfo
-      m.io.resps.sink_e.valid := m.io.status.valid && io.resps.sinkE.valid && io.resps.sinkE.mshrId === i.U
-      m.io.resps.sink_e.bits := io.resps.sinkE.respInfo
       m.io.resps.source_c.valid := m.io.status.valid && io.resps.sourceC.valid && io.resps.sourceC.mshrId === i.U
       m.io.resps.source_c.bits := io.resps.sourceC.respInfo
       m.io.replResp.valid := io.replResp.valid && io.replResp.bits.mshrId === i.U
