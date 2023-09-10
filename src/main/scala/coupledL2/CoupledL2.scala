@@ -59,9 +59,9 @@ trait HasCoupledL2Parameters {
   // Prefetch
   val prefetchOpt = cacheParams.prefetch
   val hasPrefetchBit = prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchBit
+  val hasPrefetchSrc = prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchSrc
   val topDownOpt = if(cacheParams.elaboratedTopDown) Some(true) else None
 
-  val useFIFOGrantBuffer = true
   val enableHintGuidedGrant = true
 
   val hintCycleAhead = 3 // how many cycles the hint will send before grantData
@@ -268,7 +268,8 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     pf_recv_node match {
       case Some(x) =>
         prefetcher.get.io.recv_addr.valid := x.in.head._1.addr_valid
-        prefetcher.get.io.recv_addr.bits := x.in.head._1.addr
+        prefetcher.get.io.recv_addr.bits.addr := x.in.head._1.addr
+        prefetcher.get.io.recv_addr.bits.pfSource := x.in.head._1.pf_source
         prefetcher.get.io_l2_pf_en := x.in.head._1.l2_pf_en
       case None =>
         prefetcher.foreach(_.io.recv_addr := 0.U.asTypeOf(ValidIO(UInt(64.W))))
@@ -394,6 +395,15 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
         }
         topDown.get.io.mergeA.zip(slices).foreach {
           case (in, s) => in := s.io.mergeA.get
+        }
+        topDown.get.io.a_reqBuf_full.zip(slices).foreach {
+          case (in, s) => in := s.io.a_reqBuf_full.get
+        }
+        topDown.get.io.a_mshr_full.zip(slices).foreach {
+          case (in, s) => in := s.io.a_mshr_full.get
+        }
+        topDown.get.io.mshrCnt.zip(slices).foreach {
+          case (in, s) => in := s.io.mshrCnt.get
         }
       }
     }

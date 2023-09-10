@@ -17,7 +17,7 @@
 
 package coupledL2.prefetch
 
-import utility.SRAMTemplate
+import utility.{MemReqSource, SRAMTemplate}
 import chipsalliance.rocketchip.config.Parameters
 import chisel3._
 import chisel3.util._
@@ -43,6 +43,7 @@ case class BOPParameters(
   ))
     extends PrefetchParameters {
   override val hasPrefetchBit:  Boolean = true
+  override val hasPrefetchSrc:  Boolean = true
   override val inflightEntries: Int = 16
 }
 
@@ -290,7 +291,7 @@ class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
 
   io.req.valid := req_valid
   io.req.bits := req
-  io.req.bits.isBOP := true.B
+  io.req.bits.pfSource := MemReqSource.Prefetch2L2BOP.id.U
   io.train.ready := scoreTable.io.req.ready && (!req_valid || io.req.ready)
   io.resp.ready := rrTable.io.w.ready
 

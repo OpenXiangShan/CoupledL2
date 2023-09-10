@@ -92,6 +92,8 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
 
     /* for TopDown Monitor */
     val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
+    val a_mshr_full = Output(Bool())
+    val mshr_Cnt = Output(UInt(mshrBits.W))
   })
 
   val mshrs = Seq.fill(mshrsAll) { Module(new MSHR()) }
@@ -177,6 +179,8 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       case (in, s) => in := s.io.status
     }
   )
+  io.a_mshr_full := a_mshrFull
+  io.mshr_Cnt := mshrCount
   // Performance counters
   XSPerfAccumulate(cacheParams, "capacity_conflict_to_sinkA", a_mshrFull)
   XSPerfAccumulate(cacheParams, "capacity_conflict_to_sinkB", mshrFull)

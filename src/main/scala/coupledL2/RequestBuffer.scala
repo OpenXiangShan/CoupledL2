@@ -67,6 +67,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
     val hasLatePF = Output(Bool())
     val hasMergeA = Output(Bool())
+    val a_reqBuf_full = Output(Bool())
   })
 
   /* ======== Data Structure ======== */
@@ -133,6 +134,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   val doFlow  = canFlow && io.out.ready
   io.hasLatePF := latePrefetch(in) && io.in.valid && !sameAddr(in, RegNext(in))
   io.hasMergeA := mergeA_latepf(in) && io.in.valid && !sameAddr(in, RegNext(in))
+  io.a_reqBuf_full := full
 
   //  val depMask    = buffer.map(e => e.valid && sameAddr(io.in.bits, e.task))
   // remove duplicate prefetch if same-addr A req in MSHR or ReqBuf
@@ -255,9 +257,9 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
   // add XSPerf to see how many cycles the req is held in Buffer
   if(cacheParams.enablePerf) {
-    XSPerfAccumulate(cacheParams, "drop_prefetch", dup) // this also serves as late prefetch
+    XSPerfAccumulate(cacheParams, "drop_prefetch", dup)
     if(flow){
-      XSPerfAccumulate(cacheParams, "req_buffer_flow", doFlow)
+      XSPerfAccumulate(cacheParams, "req_buffer_flow", io.in.valid && doFlow)
     }
     XSPerfAccumulate(cacheParams, "req_buffer_alloc", alloc)
     XSPerfAccumulate(cacheParams, "req_buffer_full", full)

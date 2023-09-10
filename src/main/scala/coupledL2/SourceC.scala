@@ -131,17 +131,20 @@ class SourceC(implicit p: Parameters) extends L2Module {
   val queue = Module(new Queue(io.in.bits.cloneType, entries = mshrsAll, flow = true))
   queue.io.enq <> io.in
 
-  val beat_valids = RegInit(VecInit(Seq.fill(beatSize)(false.B)))
-  val taskValid = beat_valids.asUInt.orR
+  // dequeued task, the only, ready to fire
+  // WARNING: !it will reduce Release bandwidth to half! (though it is not critical)
+  // TODO: change it the same way as GrantBuf
+  val beatValids = RegInit(VecInit(Seq.fill(beatSize)(false.B)))
+  val taskValid = beatValids.asUInt.orR
   val taskR = RegInit(0.U.asTypeOf(new Bundle() {
     val task = new TaskBundle()
     val data = new DSBlock()
   }))
 
-  val dequeue_ready = !taskValid
-  queue.io.deq.ready := dequeue_ready
-  when(queue.io.deq.valid && dequeue_ready) {
-    beat_valids.foreach(_ := true.B)
+  val dequeueReady = !taskValid
+  queue.io.deq.ready := dequeueReady
+  when(queue.io.deq.valid && dequeueReady) {
+    beatValids.foreach(_ := true.B)
     taskR.task := queue.io.deq.bits.task
     taskR.data := queue.io.deq.bits.data
   }
@@ -173,7 +176,7 @@ class SourceC(implicit p: Parameters) extends L2Module {
   }
 
   val data = taskR.data.data
-  val beatsOH = beat_valids.asUInt
+  val beatsOH = beatValids.asUInt
   val (beat, next_beatsOH) = getBeat(data, beatsOH)
 
   io.out.valid := taskValid
@@ -182,9 +185,9 @@ class SourceC(implicit p: Parameters) extends L2Module {
   val hasData = io.out.bits.opcode(0)
   when (io.out.fire) {
     when (hasData) {
-      beat_valids := VecInit(next_beatsOH.asBools)
+      beatValids := VecInit(next_beatsOH.asBools)
     }.otherwise {
-      beat_valids.foreach(_ := false.B)
+      beatValids.foreach(_ := false.B)
     }
   }
 
