@@ -149,22 +149,19 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   )
 
   // =========== send response to prefetcher ===========
-  // WARNING: this should never overflow (extremely rare though)
-  // but a second thought, pftQueue overflow results in no functional correctness bug
+  val pftRespQueue = prefetchOpt.map(_ => Module(new Queue(new TaskWithData(), entries = 8, flow = true)))
   prefetchOpt.map { _ =>
-    val pftRespQueue = Module(new Queue(new TaskWithData(), entries = 4, flow = true))
-
-    pftRespQueue.io.enq.valid := io.d_task.valid && dtaskOpcode === HintAck &&
+    pftRespQueue.get.io.enq.valid := io.d_task.valid && dtaskOpcode === HintAck &&
       io.d_task.bits.task.fromL2pft.getOrElse(false.B)
-    pftRespQueue.io.enq.bits := io.d_task.bits
+    pftRespQueue.get.io.enq.bits := io.d_task.bits
 
     val resp = io.prefetchResp.get
-    resp.valid := pftRespQueue.io.deq.valid
-    resp.bits.tag := pftRespQueue.io.deq.bits.task.tag
-    resp.bits.set := pftRespQueue.io.deq.bits.task.set
-    pftRespQueue.io.deq.ready := resp.ready
+    resp.valid := pftRespQueue.get.io.deq.valid
+    resp.bits.tag := pftRespQueue.get.io.deq.bits.task.tag
+    resp.bits.set := pftRespQueue.get.io.deq.bits.task.set
+    pftRespQueue.get.io.deq.ready := resp.ready
 
-    assert(pftRespQueue.io.enq.ready, "pftRespQueue should never be full, no back pressure logic")
+    assert(pftRespQueue.get.io.enq.ready, "pftRespQueue should never be full, no back pressure logic")
   }
   // If no prefetch, there never should be HintAck
   assert(prefetchOpt.nonEmpty.B || !io.d_task.valid || dtaskOpcode =/= HintAck)
@@ -216,23 +213,28 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
 
   // =========== handle blocking - capacity conflict ===========
   // count the number of valid blocks + those in pipe that might use GrantBuf
-  // so that GrantBuffer will not exceed capacity
-  // TODO: we can still allow pft_resps (HintAck) to enter mainpipe
+  // so that GrantBuffer will not exceed capacity [back pressure]
   val noSpaceForSinkReq = PopCount(VecInit(io.pipeStatusVec.tail.map { case s =>
     s.valid && (s.bits.fromA || s.bits.fromC)
   }).asUInt) + grantQueueCnt >= mshrsAll.U
   val noSpaceForMSHRReq = PopCount(VecInit(io.pipeStatusVec.map { case s =>
     s.valid && s.bits.fromA
   }).asUInt) + grantQueueCnt >= mshrsAll.U
+  // pftRespQueue also requires back pressure to ensure that it will not exceed capacity
+  // Ideally, it should only block Prefetch from entering MainPipe
+  // But since it is extremely rare that pftRespQueue of 8 would be full, we just block all Entrance here, simpler logic
+  val noSpaceForPftRsp = prefetchOpt.map(_ => PopCount(VecInit(io.pipeStatusVec.map { case s =>
+    s.valid && s.bits.fromA
+  }).asUInt) + pftRespQueue.get.io.count >= 8.U)
 
-  io.toReqArb.blockSinkReqEntrance.blockA_s1 := noSpaceForSinkReq
+  io.toReqArb.blockSinkReqEntrance.blockA_s1 := noSpaceForSinkReq || noSpaceForPftRsp.getOrElse(false.B)
   io.toReqArb.blockSinkReqEntrance.blockB_s1 := Cat(inflight_grant.map(g => g.valid &&
     g.bits.set === io.fromReqArb.status_s1.b_set && g.bits.tag === io.fromReqArb.status_s1.b_tag)).orR
   //TODO: or should we still Stall B req?
   // A-replace related rprobe is handled in SourceB
   io.toReqArb.blockSinkReqEntrance.blockC_s1 := noSpaceForSinkReq
-  io.toReqArb.blockSinkReqEntrance.blockG_s1 := false.B
-  io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq
+  io.toReqArb.blockSinkReqEntrance.blockG_s1 := false.B // this is not used
+  io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq || noSpaceForPftRsp.getOrElse(false.B)
 
   // =========== generating Hint to L1 ===========
   // TODO: the following keeps the exact same logic as before, but it needs serious optimization
@@ -281,5 +283,8 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
         XSPerfHistogram(cacheParams, "grant_grantack_period", t, enable, 0, 12, 1)
         XSPerfMax(cacheParams, "max_grant_grantack_period", t, enable)
     }
+    // pftRespQueue is about to be full, and using back pressure to block All MainPipe Entrance
+    // which can SERIOUSLY affect performance, should consider less drastic prefetch policy
+    XSPerfAccumulate(cacheParams, "WARNING_pftRespQueue_about_to_full", noSpaceForPftRsp.getOrElse(false.B))
   }
 }
