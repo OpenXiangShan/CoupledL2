@@ -149,16 +149,23 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   )
 
   // =========== send response to prefetcher ===========
-  val pftRespQueue = prefetchOpt.map(_ => Module(new Queue(new TaskWithData(), entries = 8, flow = true)))
+  val pftRespEntry = new Bundle() {
+    val tag = UInt(tagBits.W)
+    val set = UInt(setBits.W)
+  }
+  // TODO: this may not need 10 entries, but this does not take much space
+  val pftQueueLen = 10
+  val pftRespQueue = prefetchOpt.map(_ => Module(new Queue(pftRespEntry, entries = pftQueueLen, flow = true)))
   prefetchOpt.map { _ =>
     pftRespQueue.get.io.enq.valid := io.d_task.valid && dtaskOpcode === HintAck &&
       io.d_task.bits.task.fromL2pft.getOrElse(false.B)
-    pftRespQueue.get.io.enq.bits := io.d_task.bits
+    pftRespQueue.get.io.enq.bits.tag := io.d_task.bits.task.tag
+    pftRespQueue.get.io.enq.bits.set := io.d_task.bits.task.set
 
     val resp = io.prefetchResp.get
     resp.valid := pftRespQueue.get.io.deq.valid
-    resp.bits.tag := pftRespQueue.get.io.deq.bits.task.tag
-    resp.bits.set := pftRespQueue.get.io.deq.bits.task.set
+    resp.bits.tag := pftRespQueue.get.io.deq.bits.tag
+    resp.bits.set := pftRespQueue.get.io.deq.bits.set
     pftRespQueue.get.io.deq.ready := resp.ready
 
     assert(pftRespQueue.get.io.enq.ready, "pftRespQueue should never be full, no back pressure logic")
@@ -222,19 +229,23 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   }).asUInt) + grantQueueCnt >= mshrsAll.U
   // pftRespQueue also requires back pressure to ensure that it will not exceed capacity
   // Ideally, it should only block Prefetch from entering MainPipe
-  // But since it is extremely rare that pftRespQueue of 8 would be full, we just block all Entrance here, simpler logic
-  val noSpaceForPftRsp = prefetchOpt.map(_ => PopCount(VecInit(io.pipeStatusVec.map { case s =>
+  // But since it is extremely rare that pftRespQueue of 10 would be full, we just block all Entrance here, simpler logic
+  // TODO: consider optimize this
+  val noSpaceForSinkPft = prefetchOpt.map(_ => PopCount(VecInit(io.pipeStatusVec.tail.map { case s =>
     s.valid && s.bits.fromA
-  }).asUInt) + pftRespQueue.get.io.count >= 8.U)
+  }).asUInt) + pftRespQueue.get.io.count >= pftQueueLen.U)
+  val noSpaceForMSHRPft = prefetchOpt.map(_ => PopCount(VecInit(io.pipeStatusVec.map { case s =>
+    s.valid && s.bits.fromA
+  }).asUInt) + pftRespQueue.get.io.count >= pftQueueLen.U)
 
-  io.toReqArb.blockSinkReqEntrance.blockA_s1 := noSpaceForSinkReq || noSpaceForPftRsp.getOrElse(false.B)
+  io.toReqArb.blockSinkReqEntrance.blockA_s1 := noSpaceForSinkReq || noSpaceForSinkPft.getOrElse(false.B)
   io.toReqArb.blockSinkReqEntrance.blockB_s1 := Cat(inflight_grant.map(g => g.valid &&
     g.bits.set === io.fromReqArb.status_s1.b_set && g.bits.tag === io.fromReqArb.status_s1.b_tag)).orR
   //TODO: or should we still Stall B req?
   // A-replace related rprobe is handled in SourceB
   io.toReqArb.blockSinkReqEntrance.blockC_s1 := noSpaceForSinkReq
   io.toReqArb.blockSinkReqEntrance.blockG_s1 := false.B // this is not used
-  io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq || noSpaceForPftRsp.getOrElse(false.B)
+  io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq || noSpaceForMSHRPft.getOrElse(false.B)
 
   // =========== generating Hint to L1 ===========
   // TODO: the following keeps the exact same logic as before, but it needs serious optimization
@@ -285,6 +296,6 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     }
     // pftRespQueue is about to be full, and using back pressure to block All MainPipe Entrance
     // which can SERIOUSLY affect performance, should consider less drastic prefetch policy
-    XSPerfAccumulate(cacheParams, "WARNING_pftRespQueue_about_to_full", noSpaceForPftRsp.getOrElse(false.B))
+    XSPerfAccumulate(cacheParams, "WARNING_pftRespQueue_about_to_full", noSpaceForSinkPft.getOrElse(false.B))
   }
 }
