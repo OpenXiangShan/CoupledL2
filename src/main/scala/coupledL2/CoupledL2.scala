@@ -245,7 +245,8 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     node.edges.in.headOption.foreach { n =>
       n.client.clients.zipWithIndex.foreach {
         case (c, i) =>
-          println(s"\t${i} <= ${c.name}")
+          println(s"\t${i} <= ${c.name};" +
+            s"\tsourceRange: ${c.sourceId.start}~${c.sourceId.end}")
       }
     }
 
