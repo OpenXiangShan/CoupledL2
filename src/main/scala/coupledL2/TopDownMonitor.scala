@@ -29,17 +29,16 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     val dirResult = Vec(banks, Flipped(ValidIO(new DirResult)))
     val msStatus  = Vec(banks, Vec(mshrsAll, Flipped(ValidIO(new MSHRStatus))))
     val latePF    = Vec(banks, Input(Bool()))
+    val debugTopDown = new Bundle {
+      val robHeadPaddr = Vec(cacheParams.hartIds.length, Flipped(Valid(UInt(36.W))))
+      val l2MissMatch = Vec(cacheParams.hartIds.length, Output(Bool()))
+    }
   })
 
   /* ====== PART ONE ======
    * Check whether the Addr given by core is a Miss in Cache
    */
-  for (hartId <- cacheParams.hartIds) {
-    val perfName = s"${cacheParams.name}MissMatch_${hartId}"
-
-    val pAddr = WireInit(0.U.asTypeOf(Valid(UInt(36.W)))) // TODO: hand written to match PAddrBits in SoC.scala
-    ExcitingUtils.addSink(pAddr, s"rob_head_paddr_${hartId}", ExcitingUtils.Perf)
-
+  for (((hartId, pAddr), addrMatch) <- cacheParams.hartIds zip io.debugTopDown.robHeadPaddr zip io.debugTopDown.l2MissMatch) {
     val addrMatchVec = io.msStatus.zipWithIndex.map {
       case(slice, i) =>
         slice.map {
@@ -53,11 +52,8 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
         }
     }
 
-    val addrMatch = Cat(addrMatchVec.flatten).orR
-
-    XSPerfAccumulate(cacheParams, perfName, addrMatch)
-    ExcitingUtils.addSource(addrMatch, perfName, ExcitingUtils.Perf)
-    ExcitingUtils.addSink(WireDefault(addrMatch), perfName, ExcitingUtils.Perf)
+    addrMatch := Cat(addrMatchVec.flatten).orR
+    XSPerfAccumulate(cacheParams, s"${cacheParams.name}MissMatch_${hartId}", addrMatch)
   }
 
   /* ====== PART TWO ======
