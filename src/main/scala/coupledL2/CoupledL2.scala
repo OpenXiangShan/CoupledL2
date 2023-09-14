@@ -218,6 +218,10 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     val bankBits = if (banks == 1) 0 else log2Up(banks)
     val io = IO(new Bundle {
       val l2_hint = Valid(UInt(32.W))
+      val debugTopDown = new Bundle {
+        val robHeadPaddr = Vec(cacheParams.hartIds.length, Flipped(Valid(UInt(36.W))))
+        val l2MissMatch = Vec(cacheParams.hartIds.length, Output(Bool()))
+      }
     })
 
     // Display info
@@ -383,18 +387,19 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
       case EdgeOutKey => node.out.head._2
       case BankBitsKey => bankBits
     })))
-    topDownOpt.foreach {
-      _ => {
-        topDown.get.io.msStatus.zip(slices).foreach {
+    topDown match {
+      case Some(t) =>
+        t.io.msStatus.zip(slices).foreach {
           case (in, s) => in := s.io.msStatus.get
         }
-        topDown.get.io.dirResult.zip(slices).foreach {
+        t.io.dirResult.zip(slices).foreach {
           case (res, s) => res := s.io.dirResult.get
         }
-        topDown.get.io.latePF.zip(slices).foreach {
+        t.io.latePF.zip(slices).foreach {
           case (in, s) => in := s.io.latePF.get
         }
-      }
+        t.io.debugTopDown <> io.debugTopDown
+      case None => io.debugTopDown.l2MissMatch.foreach(_ := false.B)
     }
 
     XSPerfAccumulate(cacheParams, "hint_fire", io.l2_hint.valid)
