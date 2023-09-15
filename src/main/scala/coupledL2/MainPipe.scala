@@ -385,8 +385,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val isD_s3 = Mux(
     mshr_req_s3,
     mshr_refill_s3 && !retry,
-    req_s3.fromC || req_s3.fromA && !need_mshr_s3 && !data_unready_s3
-  )
+    req_s3.fromC || req_s3.fromA && !need_mshr_s3 && !data_unready_s3 && req_s3.opcode =/= Hint
+  ) // prefetch-hit will not generate response
   c_s3.valid := task_s3.valid && isC_s3
   d_s3.valid := task_s3.valid && isD_s3
   c_s3.bits.task      := source_req_s3
@@ -471,6 +471,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     data_s5 := data_s4
     need_write_releaseBuf_s5 := need_write_releaseBuf_s4
     need_write_refillBuf_s5 := need_write_refillBuf_s4
+    // except for those ready at s3/s4 (isC/D_s4), sink resps are also ready to fire at s5
     isC_s5 := isC_s4 || task_s4.bits.fromB && !task_s4.bits.mshrTask && task_s4.bits.opcode === ProbeAckData
     isD_s5 := isD_s4 || task_s4.bits.fromA && !task_s4.bits.mshrTask &&
       (task_s4.bits.opcode === GrantData || task_s4.bits.opcode === AccessAckData)
