@@ -78,7 +78,7 @@ class MSHRBuffer(wPorts: Int = 1)(implicit p: Parameters) extends L2Module {
   buffer.zipWithIndex.foreach {
     case (block, i) =>
       val wens = VecInit(io.w.map(w => w.valid && w.id === i.U)).asUInt
-      assert(PopCount(wens) <= 1.U, "multiple write to the same MSHR buffer entry")
+      assert(PopCount(wens) <= 2.U, "triple write to the same MSHR buffer entry")
 
       val w_beat_sel = PriorityMux(wens, io.w.map(_.beat_sel))
       val w_data = PriorityMux(wens, io.w.map(_.data))

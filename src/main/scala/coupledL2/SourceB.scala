@@ -44,15 +44,19 @@ class SourceB(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val sourceB = DecoupledIO(new TLBundleB(edgeIn.bundle))
     val task = Flipped(DecoupledIO(new SourceBReq))
-    val grantStatus = Input(Vec(sourceIdAll, new GrantStatus))
+    val grantStatus = Input(Vec(grantBufInflightSize, new GrantStatus))
   })
+
+  val dcacheSourceIdStart = edgeIn.client.clients
+    .filter(_.supports.probe)
+    .map(c => c.sourceId.start.U).head
 
   def toTLBundleB(task: SourceBReq) = {
     val b = Wire(new TLBundleB(edgeIn.bundle))
     b.opcode  := task.opcode
     b.param   := task.param
     b.size    := offsetBits.U
-    b.source  := 0.U // make sure there are only 1 client
+    b.source  := dcacheSourceIdStart
     b.address := Cat(task.tag, task.set, 0.U(offsetBits.W))
     b.mask    := Fill(beatBytes, 1.U(1.W))
     b.data    := Cat(task.alias.getOrElse(0.U), 0.U(1.W)) // this is the same as HuanCun
@@ -78,14 +82,12 @@ class SourceB(implicit p: Parameters) extends L2Module {
   val conflict     = Cat(conflictMask).orR
 
   val noReadyEntry = Wire(Bool())
-  val canFlow      = noReadyEntry && !conflict
-  val flow         = canFlow && io.sourceB.ready
 
   /* ======== Alloc ======== */
-  io.task.ready   := !full || flow
+  io.task.ready   := !full
 
   val insertIdx = PriorityEncoder(probes.map(!_.valid))
-  val alloc     = !full && io.task.valid && !flow
+  val alloc     = !full && io.task.valid
   when(alloc) {
     val p = probes(insertIdx)
     p.valid := true.B
@@ -116,10 +118,8 @@ class SourceB(implicit p: Parameters) extends L2Module {
   }
 
   /* ======== Output ======== */
-  io.sourceB.valid := issueArb.io.out.valid || (io.task.valid && canFlow)
-  io.sourceB.bits  := toTLBundleB(
-    Mux(canFlow, io.task.bits, issueArb.io.out.bits)
-  )
+  io.sourceB.valid := issueArb.io.out.valid
+  io.sourceB.bits  := toTLBundleB(issueArb.io.out.bits)
 
   /* ======== Perf ======== */
   for(i <- 0 until entries){

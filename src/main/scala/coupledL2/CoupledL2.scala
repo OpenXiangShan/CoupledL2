@@ -47,22 +47,21 @@ trait HasCoupledL2Parameters {
   val stateBits = MetaData.stateBits
   val aliasBitsOpt = if(cacheParams.clientCaches.isEmpty) None
                   else cacheParams.clientCaches.head.aliasBitsOpt
+  val vaddrBitsOpt = if(cacheParams.clientCaches.isEmpty) None
+                  else cacheParams.clientCaches.head.vaddrBitsOpt
   val pageOffsetBits = log2Ceil(cacheParams.pageBytes)
 
-  val bufBlocks = 8 // hold data that flows in MainPipe
+  val bufBlocks = 4 // hold data that flows in MainPipe
   val bufIdxBits = log2Up(bufBlocks)
 
-  // 1 cycle for sram read, and latch for another cycle
-  val sramLatency = 2
+  val releaseBufWPorts = 3 // sinkC & mainPipe s5 & mainPipe s3 (nested)
 
-  val releaseBufWPorts = 3 // sinkC and mainpipe s5, s6
-  
   // Prefetch
   val prefetchOpt = cacheParams.prefetch
   val hasPrefetchBit = prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchBit
+  val hasPrefetchSrc = prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchSrc
   val topDownOpt = if(cacheParams.elaboratedTopDown) Some(true) else None
 
-  val useFIFOGrantBuffer = true
   val enableHintGuidedGrant = true
 
   val hintCycleAhead = 3 // how many cycles the hint will send before grantData
@@ -82,6 +81,9 @@ trait HasCoupledL2Parameters {
   // id of 0XXXX refers to mshrId
   // id of 1XXXX refers to reqs that do not enter mshr
   // require(isPow2(idsAll))
+
+  val grantBufSize = mshrsAll
+  val grantBufInflightSize = mshrsAll //TODO: lack or excessive? !! WARNING
 
   // width params with bank idx (used in prefetcher / ctrl unit)
   lazy val fullAddressBits = edgeOut.bundle.addressBits
@@ -153,14 +155,6 @@ trait HasCoupledL2Parameters {
   }
 }
 
-trait DontCareInnerLogic { this: Module =>
-  def IO[T <: Data](iodef: T): T = {
-    val p = chisel3.IO.apply(iodef)
-    p <> DontCare
-    p
-  }
-}
-
 class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Parameters {
 
   val xfer = TransferSizes(blockBytes, blockBytes)
@@ -224,6 +218,10 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     val bankBits = if (banks == 1) 0 else log2Up(banks)
     val io = IO(new Bundle {
       val l2_hint = Valid(UInt(32.W))
+      val debugTopDown = new Bundle {
+        val robHeadPaddr = Vec(cacheParams.hartIds.length, Flipped(Valid(UInt(36.W))))
+        val l2MissMatch = Vec(cacheParams.hartIds.length, Output(Bool()))
+      }
     })
 
     // Display info
@@ -251,7 +249,8 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     node.edges.in.headOption.foreach { n =>
       n.client.clients.zipWithIndex.foreach {
         case (c, i) =>
-          println(s"\t${i} <= ${c.name}")
+          println(s"\t${i} <= ${c.name};" +
+            s"\tsourceRange: ${c.sourceId.start}~${c.sourceId.end}")
       }
     }
 
@@ -274,11 +273,12 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     pf_recv_node match {
       case Some(x) =>
         prefetcher.get.io.recv_addr.valid := x.in.head._1.addr_valid
-        prefetcher.get.io.recv_addr.bits := x.in.head._1.addr
+        prefetcher.get.io.recv_addr.bits.addr := x.in.head._1.addr
+        prefetcher.get.io.recv_addr.bits.pfSource := x.in.head._1.pf_source
         prefetcher.get.io_l2_pf_en := x.in.head._1.l2_pf_en
       case None =>
-        prefetcher.foreach(_.io.recv_addr := DontCare)
-        prefetcher.foreach(_.io_l2_pf_en := DontCare)
+        prefetcher.foreach(_.io.recv_addr := 0.U.asTypeOf(ValidIO(UInt(64.W))))
+        prefetcher.foreach(_.io_l2_pf_en := false.B)
     }
 
     def restoreAddress(x: UInt, idx: Int) = {
@@ -317,6 +317,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
             case EdgeInKey  => edgeIn
             case EdgeOutKey => edgeOut
             case BankBitsKey => bankBits
+            case SliceIdKey => i
           })) 
         }
         val sourceD_can_go = RegNextN(!hint_fire || i.U === OHToUInt(hint_chosen), hintCycleAhead - 1)
@@ -333,6 +334,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
         out <> slice.io.out
         out.a.bits.address := restoreAddress(slice.io.out.a.bits.address, i)
         out.c.bits.address := restoreAddress(slice.io.out.c.bits.address, i)
+        slice.io.sliceId := i.U
 
         slice.io.prefetch.zip(prefetcher).foreach {
           case (s, p) =>
@@ -385,15 +387,19 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
       case EdgeOutKey => node.out.head._2
       case BankBitsKey => bankBits
     })))
-    topDownOpt.foreach {
-      _ => {
-        topDown.get.io.msStatus.zip(slices).foreach {
+    topDown match {
+      case Some(t) =>
+        t.io.msStatus.zip(slices).foreach {
           case (in, s) => in := s.io.msStatus.get
         }
-        topDown.get.io.dirResult.zip(slices).foreach {
+        t.io.dirResult.zip(slices).foreach {
           case (res, s) => res := s.io.dirResult.get
         }
-      }
+        t.io.latePF.zip(slices).foreach {
+          case (in, s) => in := s.io.latePF.get
+        }
+        t.io.debugTopDown <> io.debugTopDown
+      case None => io.debugTopDown.l2MissMatch.foreach(_ := false.B)
     }
 
     XSPerfAccumulate(cacheParams, "hint_fire", io.l2_hint.valid)

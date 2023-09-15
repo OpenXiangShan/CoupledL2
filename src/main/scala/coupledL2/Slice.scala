@@ -28,14 +28,16 @@ import coupledL2.debug._
 import coupledL2.prefetch.PrefetchIO
 import utility.RegNextN
 
-class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
+class Slice()(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle {
     val in = Flipped(TLBundle(edgeIn.bundle))
     val out = TLBundle(edgeOut.bundle)
+    val sliceId = Input(UInt(bankBits.W))
     val l1Hint = Decoupled(new L2ToL1Hint())
     val prefetch = prefetchOpt.map(_ => Flipped(new PrefetchIO))
     val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
     val dirResult = topDownOpt.map(_ => ValidIO(new DirResult))
+    val latePF = topDownOpt.map(_ => Output(Bool()))
   })
 
   val reqArb = Module(new RequestArb())
@@ -46,25 +48,29 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   val dataStorage = Module(new DataStorage())
   val refillUnit = Module(new RefillUnit())
   val sinkA = Module(new SinkA)
-  val sinkC = Module(new SinkC) // or ReleaseUnit?
+  val sinkB = Module(new SinkB)
+  val sinkC = Module(new SinkC)
   val sourceC = Module(new SourceC)
-  val grantBuf = if (!useFIFOGrantBuffer) Module(new GrantBuffer) else Module(new GrantBufferFIFO)
-  val refillBuf = Module(new MSHRBuffer(wPorts = 2))
+  val grantBuf = Module(new GrantBuffer)
+  val refillBuf = Module(new MSHRBuffer(wPorts = 3))
   val releaseBuf = Module(new MSHRBuffer(wPorts = 3))
 
   val prbq = Module(new ProbeQueue())
   prbq.io <> DontCare // @XiaBin TODO
 
-  a_reqBuf.io.in <> sinkA.io.toReqArb
-  a_reqBuf.io.mshrStatus := mshrCtl.io.toReqBuf
+  a_reqBuf.io.in <> sinkA.io.task
+  a_reqBuf.io.mshrInfo := mshrCtl.io.msInfo
   a_reqBuf.io.mainPipeBlock := mainPipe.io.toReqBuf
-  a_reqBuf.io.sinkEntrance := reqArb.io.sinkEntrance
+  a_reqBuf.io.s1Entrance := reqArb.io.s1Entrance
+  sinkB.io.msInfo := mshrCtl.io.msInfo
+  sinkC.io.msInfo := mshrCtl.io.msInfo
 
   reqArb.io.sinkA <> a_reqBuf.io.out
   reqArb.io.ATag := a_reqBuf.io.ATag
   reqArb.io.ASet := a_reqBuf.io.ASet
 
-  reqArb.io.sinkC <> sinkC.io.toReqArb
+  reqArb.io.sinkB <> sinkB.io.task
+  reqArb.io.sinkC <> sinkC.io.task
   reqArb.io.dirRead_s1 <> directory.io.read
   reqArb.io.taskToPipe_s2 <> mainPipe.io.taskFromArb_s2
   reqArb.io.mshrTask <> mshrCtl.io.mshrTask
@@ -80,16 +86,18 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   mshrCtl.io.resps.sinkE := grantBuf.io.e_resp
   mshrCtl.io.resps.sourceC := sourceC.io.resp
   mshrCtl.io.nestedwb := mainPipe.io.nestedwb
-  mshrCtl.io.pbRead <> sinkA.io.pbRead
-  mshrCtl.io.pbResp <> sinkA.io.pbResp
+  mshrCtl.io.bMergeTask := sinkB.io.bMergeTask
+  mshrCtl.io.replResp <> directory.io.replResp
+  mainPipe.io.replResp <> directory.io.replResp
 
   directory.io.resp <> mainPipe.io.dirResp_s3
   directory.io.metaWReq <> mainPipe.io.metaWReq
   directory.io.tagWReq <> mainPipe.io.tagWReq
+  directory.io.msInfo <> mshrCtl.io.msInfo
 
   dataStorage.io.req <> mainPipe.io.toDS.req_s3
   dataStorage.io.wdata := mainPipe.io.toDS.wdata_s3
-  
+
   mainPipe.io.toMSHRCtl <> mshrCtl.io.fromMainPipe
   mainPipe.io.fromMSHRCtl <> mshrCtl.io.toMainPipe
   mainPipe.io.bufRead <> sinkC.io.bufRead
@@ -104,19 +112,22 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
   mainPipe.io.globalCounter := grantBuf.io.globalCounter
   mainPipe.io.taskInfo_s1 <> reqArb.io.taskInfo_s1
 
-  releaseBuf.io.w(0) <> sinkC.io.releaseBufWrite
-  releaseBuf.io.w(0).id := mshrCtl.io.releaseBufWriteId
-  releaseBuf.io.w(1) <> mainPipe.io.releaseBufWrite
-  releaseBuf.io.w(2).valid := mshrCtl.io.nestedwbDataId.valid
-  releaseBuf.io.w(2).beat_sel := Fill(beatSize, 1.U(1.W))
-  releaseBuf.io.w(2).data := mainPipe.io.nestedwbData
-  releaseBuf.io.w(2).id := mshrCtl.io.nestedwbDataId.bits
+  // priority: nested-ReleaseData / probeAckData [NEW] > mainPipe DS rdata [OLD]
+  // 0/1 might happen at the same cycle with 2
+  releaseBuf.io.w(0).valid := mshrCtl.io.nestedwbDataId.valid
+  releaseBuf.io.w(0).beat_sel := Fill(beatSize, 1.U(1.W))
+  releaseBuf.io.w(0).data := mainPipe.io.nestedwbData
+  releaseBuf.io.w(0).id := mshrCtl.io.nestedwbDataId.bits
+  releaseBuf.io.w(1) <> sinkC.io.releaseBufWrite
+  releaseBuf.io.w(1).id := mshrCtl.io.releaseBufWriteId
+  releaseBuf.io.w(2) <> mainPipe.io.releaseBufWrite
 
   refillBuf.io.w(0) <> refillUnit.io.refillBufWrite
-  refillBuf.io.w(1) <> mainPipe.io.refillBufWrite
+  refillBuf.io.w(1) <> sinkC.io.refillBufWrite
+  refillBuf.io.w(2) <> mainPipe.io.refillBufWrite
 
   sourceC.io.in <> mainPipe.io.toSourceC
-  
+
   io.l1Hint.valid := mainPipe.io.l1Hint.valid
   io.l1Hint.bits := mainPipe.io.l1Hint.bits
   mshrCtl.io.grantStatus := grantBuf.io.grantStatus
@@ -132,13 +143,13 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
       p.train <> mainPipe.io.prefetchTrain.get
       sinkA.io.prefetchReq.get <> p.req
       p.resp <> grantBuf.io.prefetchResp.get
-      p.recv_addr := DontCare
+      p.recv_addr := 0.U.asTypeOf(p.recv_addr)
   }
 
   /* input & output signals */
   val inBuf = cacheParams.innerBuf
   val outBuf = cacheParams.outerBuf
-  
+
   /* connect upward channels */
   sinkA.io.a <> inBuf.a(io.in.a)
   io.in.b <> inBuf.b(mshrCtl.io.sourceB)
@@ -148,7 +159,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
 
   /* connect downward channels */
   io.out.a <> outBuf.a(mshrCtl.io.sourceA)
-  reqArb.io.sinkB <> outBuf.b(io.out.b)
+  sinkB.io.b <> outBuf.b(io.out.b)
   io.out.c <> outBuf.c(sourceC.io.out)
   refillUnit.io.sinkD <> outBuf.d(io.out.d)
   io.out.e <> outBuf.e(refillUnit.io.sourceE)
@@ -161,6 +172,7 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
       io.msStatus.get        := mshrCtl.io.msStatus.get
       io.dirResult.get.valid := RegNextN(directory.io.read.fire, 2, Some(false.B)) // manually generate dirResult.valid
       io.dirResult.get.bits  := directory.io.resp
+      io.latePF.get          := a_reqBuf.io.hasLatePF
     }
   )
 
@@ -186,7 +198,8 @@ class Slice()(implicit p: Parameters) extends L2Module with DontCareInnerLogic {
 
   if (cacheParams.enableMonitor) {
     val monitor = Module(new Monitor())
-    mainPipe.io.toMonitor <> monitor.io.fromMainPipe
+    monitor.io.fromMainPipe <> mainPipe.io.toMonitor
+//  monitor.io.nestedWBValid := mshrCtl.io.nestedwbDataId.valid
   } else {
     mainPipe.io.toMonitor <> DontCare
   }

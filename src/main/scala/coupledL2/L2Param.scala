@@ -25,8 +25,7 @@ import freechips.rocketchip.util._
 import org.chipsalliance.cde.config.Field
 import huancun.CacheParameters
 import coupledL2.prefetch._
-import MemReqSource._
-import utility.ReqSourceKey
+import utility.{MemReqSource, ReqSourceKey}
 
 // General parameter key of CoupledL2
 case object L2ParamKey extends Field[L2Param](L2Param())
@@ -39,6 +38,7 @@ case class L1Param
   ways: Int = 8,
   blockBytes: Int = 64,
   aliasBitsOpt: Option[Int] = None,
+  vaddrBitsOpt: Option[Int] = None
 ) {
   val capacity = sets * ways * blockBytes
   val setBits = log2Ceil(sets)
@@ -50,9 +50,17 @@ case class L1Param
 case object AliasKey extends ControlKey[UInt]("alias")
 case class AliasField(width: Int) extends BundleField[UInt](AliasKey, Output(UInt(width.W)), _ := 0.U(width.W))
 
+// Pass virtual address of upper level cache
+case object VaddrKey extends ControlKey[UInt]("vaddr")
+case class VaddrField(width: Int) extends BundleField[UInt](VaddrKey, Output(UInt(width.W)), _ := 0.U(width.W))
+
 // Indicate whether Hint is needed by upper level cache
 case object PrefetchKey extends ControlKey[Bool](name = "needHint")
 case class PrefetchField() extends BundleField[Bool](PrefetchKey, Output(Bool()), _ := false.B)
+
+case object IsHitKey extends ControlKey[Bool](name = "isHitInL3")
+
+case class IsHitField() extends BundleField[Bool](IsHitKey, Output(Bool()), _ := true.B)
 
 // Indicate whether this block is dirty or not (only used in handle Release/ReleaseData)
 // Now it only works for non-inclusive cache (ignored in inclusive cache)
@@ -65,7 +73,6 @@ case class L2Param
   name: String = "L2",
   ways: Int = 4,
   sets: Int = 128,
-  dirNBanks: Int = 8,
   blockBytes: Int = 64,
   pageBytes: Int = 4096,
   channelBytes: TLChannelBeatBytes = TLChannelBeatBytes(32),
@@ -82,9 +89,9 @@ case class L2Param
   // Client (these are set in Configs.scala in XiangShan)
   echoField: Seq[BundleFieldBase] = Nil,
   reqField: Seq[BundleFieldBase] = Nil, 
-  respKey: Seq[BundleKeyBase] = Nil,
+  respKey: Seq[BundleKeyBase] = Seq(IsHitKey),
   // Manager
-  reqKey: Seq[BundleKeyBase] = Seq(AliasKey, PrefetchKey, ReqSourceKey),
+  reqKey: Seq[BundleKeyBase] = Seq(AliasKey, VaddrKey, PrefetchKey, ReqSourceKey),
   respField: Seq[BundleFieldBase] = Nil,
 
   innerBuf: TLBufferParams = TLBufferParams(),
@@ -104,7 +111,9 @@ case class L2Param
   // Monitor
   enableMonitor: Boolean = true,
   // TopDown
-  elaboratedTopDown: Boolean = true
+  elaboratedTopDown: Boolean = true,
+  // env
+  FPGAPlatform: Boolean = false
 ) {
   def toCacheParams: CacheParameters = CacheParameters(
     name = name,
@@ -120,3 +129,5 @@ case object EdgeInKey extends Field[TLEdgeIn]
 case object EdgeOutKey extends Field[TLEdgeOut]
 
 case object BankBitsKey extends Field[Int]
+
+case object SliceIdKey extends Field[Int]

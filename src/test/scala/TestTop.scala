@@ -9,6 +9,8 @@ import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import huancun._
 import coupledL2.prefetch._
+import utility.{ChiselDB, FileRegisters, TLLogger}
+
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -77,6 +79,7 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
         node.makeIOs()(ValName(s"master_port_$i"))
     }
   }
+
 }
 
 class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
@@ -147,7 +150,7 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
         CacheParameters(
           name = s"l2",
           sets = 128,
-          ways = 4,
+          ways = 4 + 2,
           blockGranularity = log2Ceil(128)
         ),
       ),
@@ -162,7 +165,7 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
   xbar := TLBuffer() := l1i
   xbar := TLBuffer() := l1d
 
-  ram.node := 
+  ram.node :=
     TLXbar() :=*
     TLFragmenter(32, 64) :=*
     TLCacheCork() :=*
@@ -170,7 +173,7 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
     l3.node :=*
     TLBuffer() :=
     l2 :=* xbar
-  
+
   lazy val module = new LazyModuleImp(this) {
     val timer = WireDefault(0.U(64.W))
     val logEnable = WireDefault(false.B)
@@ -187,6 +190,7 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
         node.makeIOs()(ValName(s"master_port_$i"))
     }
   }
+
 }
 
 class TestTop_L2_Standalone()(implicit p: Parameters) extends LazyModule {
@@ -278,6 +282,7 @@ class TestTop_L2_Standalone()(implicit p: Parameters) extends LazyModule {
     }
     l3.makeIOs()(ValName(s"slave_port"))
   }
+
 }
 
 class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
@@ -324,7 +329,8 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
       ways = 4,
       sets = 128,
       clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
-      echoField = Seq(DirtyField())
+      echoField = Seq(DirtyField()),
+      hartIds = Seq{i}
     )
   }))).node)
 
@@ -339,7 +345,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
         CacheParameters(
           name = s"l2",
           sets = 128,
-          ways = 4,
+          ways = 4 + 2,
           blockGranularity = log2Ceil(128)
         ),
       ),
@@ -351,12 +357,12 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
   val xbar = TLXbar()
   val ram = LazyModule(new TLRAM(AddressSet(0, 0xffffL), beatBytes = 32))
 
-  l1d_nodes.zip(l2_nodes).map {
-    case (l1d, l2) => l2 := TLBuffer() := l1d
+  l1d_nodes.zip(l2_nodes).zipWithIndex map {
+    case ((l1d, l2), i) => l2 := TLLogger(s"L2_L1_${i}", true) := TLBuffer() := l1d
   }
 
-  for (l2 <- l2_nodes) {
-    xbar := TLBuffer() := l2
+  l2_nodes.zipWithIndex map {
+    case(l2, i) => xbar := TLLogger(s"L3_L2_${i}", true) := TLBuffer() := l2
   }
 
   ram.node :=
@@ -467,7 +473,7 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
         CacheParameters(
           name = s"l2",
           sets = 128,
-          ways = 4,
+          ways = 4 + 2,
           blockGranularity = log2Ceil(128)
         ),
       ),
@@ -513,6 +519,10 @@ object TestTop_L2 extends App {
   (new ChiselStage).execute(Array("--target", "verilog") ++ args, Seq(
     ChiselGeneratorAnnotation(() => top.module), FirtoolOption("--disable-annotation-unknown")
   ))
+
+  ChiselDB.init(false)
+  ChiselDB.addToFileRegisters
+  FileRegisters.write("./build")
 }
 
 object TestTop_L2_Standalone extends App {
@@ -527,6 +537,10 @@ object TestTop_L2_Standalone extends App {
   (new ChiselStage).execute(Array("--target", "verilog") ++ args, Seq(
     ChiselGeneratorAnnotation(() => top.module), FirtoolOption("--disable-annotation-unknown")
   ))
+
+  ChiselDB.init(false)
+  ChiselDB.addToFileRegisters
+  FileRegisters.write("./build")
 }
 
 object TestTop_L2L3 extends App {
@@ -544,6 +558,10 @@ object TestTop_L2L3 extends App {
   (new ChiselStage).execute(Array("--target", "verilog") ++ args, Seq(
     ChiselGeneratorAnnotation(() => top.module), FirtoolOption("--disable-annotation-unknown")
   ))
+
+  ChiselDB.init(false)
+  ChiselDB.addToFileRegisters
+  FileRegisters.write("./build")
 }
 
 object TestTop_L2L3L2 extends App {
@@ -561,6 +579,10 @@ object TestTop_L2L3L2 extends App {
   (new ChiselStage).execute(Array("--target", "verilog") ++ args, Seq(
     ChiselGeneratorAnnotation(() => top.module), FirtoolOption("--disable-annotation-unknown")
   ))
+
+  ChiselDB.init(false)
+  ChiselDB.addToFileRegisters
+  FileRegisters.write("./build")
 }
 
 object TestTop_fullSys extends App {
@@ -578,4 +600,8 @@ object TestTop_fullSys extends App {
   (new ChiselStage).execute(Array("--target", "verilog") ++ args, Seq(
     ChiselGeneratorAnnotation(() => top.module), FirtoolOption("--disable-annotation-unknown")
   ))
+
+  ChiselDB.init(false)
+  ChiselDB.addToFileRegisters
+  FileRegisters.write("./build")
 }
