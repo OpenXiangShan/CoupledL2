@@ -32,6 +32,8 @@ case class BOPParameters(
   scoreBits:      Int = 5,
   roundMax:       Int = 50,
   badScore:       Int = 1,
+  dQEntries: Int = 16,
+  dQLatency: Int = 60,
   offsetList: Seq[Int] = Seq(
     -256, -250, -243, -240, -225, -216, -200,
     -192, -180, -162, -160, -150, -144, -135, -128,
@@ -60,6 +62,7 @@ trait HasBOPParams extends HasPrefetcherHelper {
   // train address space: virtual or physical
   val virtualTrain = true
   val fullAddrBits = if(virtualTrain) fullVAddrBits else fullAddressBits
+  val noOffsetAddrBits = fullAddrBits - offsetBits
   override val REQ_FILTER_SIZE = 16
 
   // Best offset
@@ -74,6 +77,8 @@ trait HasBOPParams extends HasPrefetcherHelper {
   val badScore = bopParams.badScore
   val offsetList = bopParams.offsetList
   val inflightEntries = bopParams.inflightEntries
+  val dQEntries = bopParams.dQEntries
+  val dQLatency = bopParams.dQLatency
 
   val scores = offsetList.length
   val offsetWidth = log2Up(offsetList.max) + 2 // -32 <= offset <= 31
@@ -637,7 +642,7 @@ class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
 
 class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
   val io = IO(new Bundle() {
-    val in_req = Flipped(ValidIO(new BopReqBundle))
+    val in_req = Flipped(DecoupledIO(new BopReqBundle))
     val tlb_req = new L2ToL1TlbIO(nRespDups = 1)
     val out_req = DecoupledIO(new PrefetchReq)
   })
@@ -654,6 +659,7 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
   io.tlb_req.req <> tlb_req_arb.io.out
   io.tlb_req.req_kill := false.B
   io.tlb_req.resp.ready := true.B
+  io.in_req.ready := true.B
   io.out_req <> pf_req_arb.io.out
 
   /* s0: entries look up */
@@ -793,6 +799,67 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
   */
 }
 
+class DelayQueue(implicit p: Parameters) extends  BOPModule{
+  val io = IO(new Bundle(){
+    val in = Flipped(DecoupledIO(UInt(noOffsetAddrBits.W)))
+    val out = DecoupledIO(UInt(fullAddrBits.W))
+    // only record `fullAddrBits - offsetBits` bits
+    // out.bits = Cat(record, 0.U(offsetBits))
+  })
+
+  /* Setting */
+  val IdxWidth = log2Up(dQEntries)
+  val LatencyWidth = log2Up(dQLatency)
+  class Entry extends Bundle{
+    val addrNoOffset = UInt(noOffsetAddrBits.W)
+    val cnt = UInt(LatencyWidth.W)
+  }
+  val queue = RegInit(VecInit(Seq.fill(dQEntries)(0.U.asTypeOf(new Entry))))
+  val valids = RegInit(VecInit(Seq.fill(dQEntries)(false.B)))
+  val head = RegInit(0.U(IdxWidth.W))
+  val tail = RegInit(0.U(IdxWidth.W))
+  val empty = head === tail && !valids.last
+  val full = head === tail && valids.last
+  val outValid = !empty && !queue(head).cnt.orR
+
+  /* In & Out */
+  when(io.in.valid && !full) {
+    // if queue is full, we drop the new request
+    queue(tail).addrNoOffset := io.in.bits
+    queue(tail).cnt := dQLatency.asUInt
+    valids(tail) := true.B
+    tail := tail + 1.U
+    
+    /*
+    // if full, drop the old request
+    when(full && !io.deq.ready) {
+      head := head + 1.U
+    }
+    */
+  }
+  when(outValid && io.out.ready) {
+    valids(head) := false.B
+    head := head + 1.U
+  }
+  io.in.ready := true.B
+  io.out.valid := outValid
+  io.out.bits := Cat(queue(head).addrNoOffset, 0.U(offsetBits))
+
+  /* Update */
+  for(i <- 0 until dQEntries){
+    when(queue(i).cnt.orR){
+      queue(i).cnt := queue(i).cnt - 1.U
+    }
+  }
+
+  /* Perf */
+  XSPerfAccumulate(cacheParams, "full", full)
+  XSPerfAccumulate(cacheParams, "empty", empty)
+  XSPerfAccumulate(cacheParams, "entryNumber", PopCount(valids.asUInt))
+  XSPerfAccumulate(cacheParams, "inNumber", io.in.valid)
+  XSPerfAccumulate(cacheParams, "outNumber", io.out.valid)
+}
+
 class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   val io = IO(new Bundle() {
     val train = Flipped(DecoupledIO(new PrefetchTrain))
@@ -801,8 +868,10 @@ class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     val resp = Flipped(DecoupledIO(new PrefetchResp))
   })
 
+  val delayQueue = Module(new DelayQueue)
   val rrTable = Module(new RecentRequestTable)
   val scoreTable = Module(new OffsetScoreTable)
+  val reqFilter = Module(new PrefetchReqBuffer)
 
   val s0_fire = scoreTable.io.req.fire
   val s1_fire = WireInit(false.B)
@@ -819,10 +888,11 @@ class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
                  else io.resp.bits.addr - signedExtend((prefetchOffset << offsetBits), fullAddrBits)
 
   rrTable.io.r <> scoreTable.io.test
-  rrTable.io.w.valid := io.resp.valid
-  rrTable.io.w.bits := respFullAddr
+  rrTable.io.w <> delayQueue.io.out
   scoreTable.io.req.valid := io.train.valid
   scoreTable.io.req.bits := s0_oldFullAddr
+  delayQueue.io.in.valid := io.train.valid
+  delayQueue.io.in.bits := s0_reqVaddr
 
   /* s1 get or send req */
   val s1_req_valid = RegInit(false.B)
@@ -844,8 +914,8 @@ class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
 
   if (virtualTrain) {
     // FIXME lyq: it it not correct
-    s0_ready := io.tlb_req.req.ready && s1_ready || !s1_req_valid
-    s1_ready := io.req.ready || !io.req.valid
+    s0_ready := s1_ready || !s1_req_valid
+    s1_ready := reqFilter.io.in_req.ready || !s1_req_valid
     s1_fire := s1_ready && s1_req_valid
   } else {
     s0_ready := io.req.ready || !io.req.valid
@@ -854,14 +924,13 @@ class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   }
 
   // out value
-  io.train.ready := scoreTable.io.req.ready && s0_ready
-  io.resp.ready := rrTable.io.w.ready
+  io.train.ready := scoreTable.io.req.ready && delayQueue.io.in.ready && s0_ready
+  io.resp.ready := true.B
   io.tlb_req.resp.ready := true.B
 
   // different situation
   if(virtualTrain){
     /* s1 send tlb req */
-    val reqFilter = Module(new PrefetchReqBuffer)
     reqFilter.io.in_req.valid := s1_req_valid
     reqFilter.io.in_req.bits.full_vaddr := s1_newFullAddr
     reqFilter.io.in_req.bits.base_vaddr := s1_reqVaddr
@@ -901,6 +970,7 @@ class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     out_req.isBOP := true.B*/
 
   } else {
+    reqFilter.io <> DontCare
     io.tlb_req.req.valid := false.B
     io.tlb_req.req.bits := DontCare
     io.tlb_req.req_kill := false.B
