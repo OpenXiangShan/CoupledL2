@@ -88,7 +88,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   // if mshr_task_s1 is replRead, it might stall and wait for dirRead.ready, so we block new mshrTask from entering
   // TODO: will cause msTask path vacant for one-cycle after replRead, since not use Flow so as to avoid ready propagation
   io.mshrTask.ready := !io.fromGrantBuffer.blockMSHRReqEntrance && !s1_needs_replRead
-  mshr_task_s0.valid := io.mshrTask.fire()
+  mshr_task_s0.valid := io.mshrTask.fire
   mshr_task_s0.bits := io.mshrTask.bits
 
   /* ======== Stage 1 ======== */
@@ -198,9 +198,9 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   XSPerfAccumulate(cacheParams, "mshr_req", mshr_task_s0.valid)
   XSPerfAccumulate(cacheParams, "mshr_req_stall", io.mshrTask.valid && !io.mshrTask.ready)
 
-  XSPerfAccumulate(cacheParams, "sinkA_req", io.sinkA.fire())
-  XSPerfAccumulate(cacheParams, "sinkB_req", io.sinkB.fire())
-  XSPerfAccumulate(cacheParams, "sinkC_req", io.sinkC.fire())
+  XSPerfAccumulate(cacheParams, "sinkA_req", io.sinkA.fire)
+  XSPerfAccumulate(cacheParams, "sinkB_req", io.sinkB.fire)
+  XSPerfAccumulate(cacheParams, "sinkC_req", io.sinkC.fire)
   
   XSPerfAccumulate(cacheParams, "sinkA_stall", io.sinkA.valid && !io.sinkA.ready)
   XSPerfAccumulate(cacheParams, "sinkB_stall", io.sinkB.valid && !io.sinkB.ready)

@@ -23,7 +23,7 @@ import chipsalliance.rocketchip.config.Parameters
 import freechips.rocketchip.tilelink.TLPermissions._
 import utility.MemReqSource
 
-abstract class L2Module(implicit val p: Parameters) extends MultiIOModule with HasCoupledL2Parameters
+abstract class L2Module(implicit val p: Parameters) extends Module with HasCoupledL2Parameters
 abstract class L2Bundle(implicit val p: Parameters) extends Bundle with HasCoupledL2Parameters
 
 class ReplacerInfo(implicit p: Parameters) extends L2Bundle {

@@ -116,11 +116,11 @@ class SinkA(implicit p: Parameters) extends L2Module {
 
   // Performance counters
   // num of reqs
-  XSPerfAccumulate(cacheParams, "sinkA_req", io.task.fire())
-  XSPerfAccumulate(cacheParams, "sinkA_acquire_req", io.a.fire() && io.a.bits.opcode(2, 1) === AcquireBlock(2, 1))
-  XSPerfAccumulate(cacheParams, "sinkA_acquireblock_req", io.a.fire() && io.a.bits.opcode === AcquireBlock)
-  XSPerfAccumulate(cacheParams, "sinkA_acquireperm_req", io.a.fire() && io.a.bits.opcode === AcquirePerm)
-  XSPerfAccumulate(cacheParams, "sinkA_get_req", io.a.fire() && io.a.bits.opcode === Get)
+  XSPerfAccumulate(cacheParams, "sinkA_req", io.task.fire)
+  XSPerfAccumulate(cacheParams, "sinkA_acquire_req", io.a.fire && io.a.bits.opcode(2, 1) === AcquireBlock(2, 1))
+  XSPerfAccumulate(cacheParams, "sinkA_acquireblock_req", io.a.fire && io.a.bits.opcode === AcquireBlock)
+  XSPerfAccumulate(cacheParams, "sinkA_acquireperm_req", io.a.fire && io.a.bits.opcode === AcquirePerm)
+  XSPerfAccumulate(cacheParams, "sinkA_get_req", io.a.fire && io.a.bits.opcode === Get)
   prefetchOpt.foreach {
     _ =>
       XSPerfAccumulate(cacheParams, "sinkA_prefetch_req", io.prefetchReq.get.fire)
