@@ -182,7 +182,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
     timer := timer + 1.U
     a_begin_times.zipWithIndex.foreach {
       case (r, i) =>
-        when (sinkA.io.a.fire() && sinkA.io.a.bits.source === i.U) {
+        when (sinkA.io.a.fire && sinkA.io.a.bits.source === i.U) {
           r := timer
         }
     }

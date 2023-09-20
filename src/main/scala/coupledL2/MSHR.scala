@@ -422,7 +422,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   }
   // prefetchOpt.foreach {
   //   _ =>
-  //     when (io.tasks.prefetchTrain.get.fire()) {
+  //     when (io.tasks.prefetchTrain.get.fire) {
   //       state.s_triggerprefetch.get := true.B
   //     }
   // }

@@ -182,7 +182,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     start = 0, stop = mshrsAll, step = 1)
   // prefetchOpt.foreach {
   //   _ =>
-  //     XSPerfAccumulate(cacheParams, "prefetch_trains", io.prefetchTrain.get.fire())
+  //     XSPerfAccumulate(cacheParams, "prefetch_trains", io.prefetchTrain.get.fire)
   // }
   
   if (cacheParams.enablePerf) {
