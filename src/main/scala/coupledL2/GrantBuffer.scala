@@ -54,9 +54,6 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     val d = DecoupledIO(new TLBundleD(edgeIn.bundle))
     val e = Flipped(DecoupledIO(new TLBundleE(edgeIn.bundle)))
 
-    // response to MSHR
-    val e_resp = Output(new RespBundle)
-
     // for MainPipe entrance blocking
     val fromReqArb = Input(new Bundle() {
       val status_s1 = new PipeEntranceStatus
@@ -105,11 +102,43 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
 //  }
 
   val dtaskOpcode = io.d_task.bits.task.opcode
+  val mergeAtask = Wire(new TaskWithData())
+  mergeAtask.task.channel := io.d_task.bits.task.channel
+  mergeAtask.task.off := io.d_task.bits.task.aMergeTask.off
+  mergeAtask.task.alias.foreach(_ := io.d_task.bits.task.aMergeTask.alias.getOrElse(0.U))
+  mergeAtask.task.opcode := io.d_task.bits.task.aMergeTask.opcode
+  mergeAtask.task.param := io.d_task.bits.task.aMergeTask.param
+  mergeAtask.task.sourceId := io.d_task.bits.task.aMergeTask.sourceId
+  mergeAtask.task.meta := io.d_task.bits.task.aMergeTask.meta
+  mergeAtask.task.set := io.d_task.bits.task.set
+  mergeAtask.task.tag := io.d_task.bits.task.tag
+  mergeAtask.task.vaddr.foreach(_ := io.d_task.bits.task.vaddr.getOrElse(0.U))
+  mergeAtask.task.size := io.d_task.bits.task.size
+  mergeAtask.task.bufIdx := io.d_task.bits.task.bufIdx
+  mergeAtask.task.needProbeAckData := io.d_task.bits.task.needProbeAckData
+  mergeAtask.task.mshrTask := io.d_task.bits.task.mshrTask
+  mergeAtask.task.mshrId := io.d_task.bits.task.mshrId
+  mergeAtask.task.aliasTask.foreach(_ := io.d_task.bits.task.aliasTask.getOrElse(0.U))
+  mergeAtask.task.useProbeData := false.B
+  mergeAtask.task.fromL2pft.foreach(_ := false.B)
+  mergeAtask.task.needHint.foreach(_ := false.B)
+  mergeAtask.task.dirty := io.d_task.bits.task.dirty
+  mergeAtask.task.way := io.d_task.bits.task.way
+  mergeAtask.task.metaWen := io.d_task.bits.task.metaWen
+  mergeAtask.task.tagWen := io.d_task.bits.task.tagWen
+  mergeAtask.task.dsWen := io.d_task.bits.task.dsWen
+  mergeAtask.task.wayMask := io.d_task.bits.task.wayMask
+  mergeAtask.task.replTask := io.d_task.bits.task.replTask
+  mergeAtask.task.reqSource := io.d_task.bits.task.reqSource
+  mergeAtask.task.mergeA := false.B
+  mergeAtask.task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+  mergeAtask.data := io.d_task.bits.data
+
   // The following is organized in the order of data flow
   // =========== save d_task in queue[FIFO] ===========
   val grantQueue = Module(new Queue(new TaskWithData(), entries = mshrsAll))
-  grantQueue.io.enq.valid := io.d_task.valid && dtaskOpcode =/= HintAck
-  grantQueue.io.enq.bits := io.d_task.bits
+  grantQueue.io.enq.valid := io.d_task.valid && (dtaskOpcode =/= HintAck || io.d_task.bits.task.mergeA)
+  grantQueue.io.enq.bits := Mux(io.d_task.bits.task.mergeA, mergeAtask, io.d_task.bits)
   io.d_task.ready := true.B // GrantBuf should always be ready
 
   val grantQueueCnt = grantQueue.io.count
@@ -186,6 +215,14 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     entry.bits.set    := io.d_task.bits.task.set
     entry.bits.tag    := io.d_task.bits.task.tag
     entry.bits.sink   := io.d_task.bits.task.mshrId
+  } .elsewhen (io.d_task.fire && io.d_task.bits.task.mergeA) {
+    // if mergeA, alloc an entry for merge grant 
+    val insertIdx = PriorityEncoder(inflight_grant.map(!_.valid))
+    val entry = inflight_grant(insertIdx)
+    entry.valid := true.B
+    entry.bits.set := io.d_task.bits.task.set
+    entry.bits.tag := io.d_task.bits.task.tag
+    entry.bits.sink := io.d_task.bits.task.mshrId
   }
   val inflight_full = Cat(inflight_grant.map(_.valid)).andR
   assert(!inflight_full, "inflight_grant entries should not be full")
@@ -206,18 +243,8 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     inflight_grant(bufIdx).valid := false.B
   }
 
-  // =========== send e resp to MSHRs ===========
   io.e.ready := true.B
-  io.e_resp.valid := io.e.valid
-  io.e_resp.mshrId := io.e.bits.sink
-  io.e_resp.set := 0.U(setBits.W)
-  io.e_resp.tag := 0.U(tagBits.W)
-  io.e_resp.respInfo.opcode := GrantAck
-  io.e_resp.respInfo.param := 0.U(3.W)
-  io.e_resp.respInfo.last := true.B
-  io.e_resp.respInfo.dirty := false.B
-  io.e_resp.respInfo.isHit := false.B
-
+ 
   // =========== handle blocking - capacity conflict ===========
   // count the number of valid blocks + those in pipe that might use GrantBuf
   // so that GrantBuffer will not exceed capacity [back pressure]
