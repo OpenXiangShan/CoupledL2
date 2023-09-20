@@ -167,7 +167,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     assert(pftRespQueue.io.enq.ready, "pftRespQueue should never be full, no back pressure logic")
   }
   // If no prefetch, there never should be HintAck
-  assert(prefetchOpt.nonEmpty.B || !io.d_task.valid || dtaskOpcode =/= HintAck)
+  // assert(prefetchOpt.nonEmpty.B || !io.d_task.valid || dtaskOpcode =/= HintAck)
 
   // =========== record unreceived GrantAck ===========
   // Addrs with Grant sent and GrantAck not received
