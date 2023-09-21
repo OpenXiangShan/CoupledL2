@@ -31,12 +31,17 @@ import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram, XSPerfMax}
 class InflightGrantEntry(implicit p: Parameters) extends L2Bundle {
   val set   = UInt(setBits.W)
   val tag   = UInt(tagBits.W)
-  val sink  = UInt(mshrBits.W)
 }
 
 class TaskWithData(implicit p: Parameters) extends L2Bundle {
   val task = new TaskBundle()
   val data = new DSBlock()
+}
+
+class GrantQueueTask(implicit p: Parameters) extends L2Bundle {
+  val task = new TaskBundle()
+  val data = new DSBlock()
+  val grantid = UInt(mshrBits.W)
 }
 
 // 1. Communicate with L1
@@ -76,13 +81,13 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   })
 
   // =========== functions ===========
-  def toTLBundleD(task: TaskBundle, data: UInt = 0.U) = {
+  def toTLBundleD(task: TaskBundle, data: UInt = 0.U, grant_id: UInt = 0.U) = {
     val d = Wire(new TLBundleD(edgeIn.bundle))
     d.opcode := task.opcode
     d.param := task.param
     d.size := offsetBits.U
     d.source := task.sourceId
-    d.sink := task.mshrId
+    d.sink := grant_id
     d.denied := false.B
     d.data := data
     d.corrupt := false.B
@@ -101,44 +106,50 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
 //    (next_beat, next_beatsOH)
 //  }
 
+  val grantQueue = Module(new Queue(new GrantQueueTask(), entries = mshrsAll))
+  val inflight_grant = RegInit(VecInit(Seq.fill(grantBufInflightSize){
+    0.U.asTypeOf(Valid(new InflightGrantEntry))
+  }))
+
   val dtaskOpcode = io.d_task.bits.task.opcode
-  val mergeAtask = Wire(new TaskWithData())
-  mergeAtask.task.channel := io.d_task.bits.task.channel
-  mergeAtask.task.off := io.d_task.bits.task.aMergeTask.off
-  mergeAtask.task.alias.foreach(_ := io.d_task.bits.task.aMergeTask.alias.getOrElse(0.U))
-  mergeAtask.task.opcode := io.d_task.bits.task.aMergeTask.opcode
-  mergeAtask.task.param := io.d_task.bits.task.aMergeTask.param
-  mergeAtask.task.sourceId := io.d_task.bits.task.aMergeTask.sourceId
-  mergeAtask.task.meta := io.d_task.bits.task.aMergeTask.meta
-  mergeAtask.task.set := io.d_task.bits.task.set
-  mergeAtask.task.tag := io.d_task.bits.task.tag
-  mergeAtask.task.vaddr.foreach(_ := io.d_task.bits.task.vaddr.getOrElse(0.U))
-  mergeAtask.task.size := io.d_task.bits.task.size
-  mergeAtask.task.bufIdx := io.d_task.bits.task.bufIdx
-  mergeAtask.task.needProbeAckData := io.d_task.bits.task.needProbeAckData
-  mergeAtask.task.mshrTask := io.d_task.bits.task.mshrTask
-  mergeAtask.task.mshrId := io.d_task.bits.task.mshrId
-  mergeAtask.task.aliasTask.foreach(_ := io.d_task.bits.task.aliasTask.getOrElse(0.U))
-  mergeAtask.task.useProbeData := false.B
-  mergeAtask.task.fromL2pft.foreach(_ := false.B)
-  mergeAtask.task.needHint.foreach(_ := false.B)
-  mergeAtask.task.dirty := io.d_task.bits.task.dirty
-  mergeAtask.task.way := io.d_task.bits.task.way
-  mergeAtask.task.metaWen := io.d_task.bits.task.metaWen
-  mergeAtask.task.tagWen := io.d_task.bits.task.tagWen
-  mergeAtask.task.dsWen := io.d_task.bits.task.dsWen
-  mergeAtask.task.wayMask := io.d_task.bits.task.wayMask
-  mergeAtask.task.replTask := io.d_task.bits.task.replTask
-  mergeAtask.task.reqSource := io.d_task.bits.task.reqSource
-  mergeAtask.task.mergeA := false.B
-  mergeAtask.task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
-  mergeAtask.data := io.d_task.bits.data
+  val mergeAtask = Wire(new TaskBundle())
+  mergeAtask.channel := io.d_task.bits.task.channel
+  mergeAtask.off := io.d_task.bits.task.aMergeTask.off
+  mergeAtask.alias.foreach(_ := io.d_task.bits.task.aMergeTask.alias.getOrElse(0.U))
+  mergeAtask.opcode := io.d_task.bits.task.aMergeTask.opcode
+  mergeAtask.param := io.d_task.bits.task.aMergeTask.param
+  mergeAtask.sourceId := io.d_task.bits.task.aMergeTask.sourceId
+  mergeAtask.meta := io.d_task.bits.task.aMergeTask.meta
+  mergeAtask.set := io.d_task.bits.task.set
+  mergeAtask.tag := io.d_task.bits.task.tag
+  mergeAtask.vaddr.foreach(_ := io.d_task.bits.task.vaddr.getOrElse(0.U))
+  mergeAtask.size := io.d_task.bits.task.size
+  mergeAtask.bufIdx := io.d_task.bits.task.bufIdx
+  mergeAtask.needProbeAckData := io.d_task.bits.task.needProbeAckData
+  mergeAtask.mshrTask := io.d_task.bits.task.mshrTask
+  mergeAtask.mshrId := io.d_task.bits.task.mshrId
+  mergeAtask.aliasTask.foreach(_ := io.d_task.bits.task.aliasTask.getOrElse(0.U))
+  mergeAtask.useProbeData := false.B
+  mergeAtask.fromL2pft.foreach(_ := false.B)
+  mergeAtask.needHint.foreach(_ := false.B)
+  mergeAtask.dirty := io.d_task.bits.task.dirty
+  mergeAtask.way := io.d_task.bits.task.way
+  mergeAtask.metaWen := io.d_task.bits.task.metaWen
+  mergeAtask.tagWen := io.d_task.bits.task.tagWen
+  mergeAtask.dsWen := io.d_task.bits.task.dsWen
+  mergeAtask.wayMask := io.d_task.bits.task.wayMask
+  mergeAtask.replTask := io.d_task.bits.task.replTask
+  mergeAtask.reqSource := io.d_task.bits.task.reqSource
+  mergeAtask.mergeA := false.B
+  mergeAtask.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+  val inflight_insertIdx = PriorityEncoder(inflight_grant.map(!_.valid))
 
   // The following is organized in the order of data flow
   // =========== save d_task in queue[FIFO] ===========
-  val grantQueue = Module(new Queue(new TaskWithData(), entries = mshrsAll))
   grantQueue.io.enq.valid := io.d_task.valid && (dtaskOpcode =/= HintAck || io.d_task.bits.task.mergeA)
-  grantQueue.io.enq.bits := Mux(io.d_task.bits.task.mergeA, mergeAtask, io.d_task.bits)
+  grantQueue.io.enq.bits.task := Mux(io.d_task.bits.task.mergeA, mergeAtask, io.d_task.bits.task)
+  grantQueue.io.enq.bits.data := io.d_task.bits.data
+  grantQueue.io.enq.bits.grantid := inflight_insertIdx
   io.d_task.ready := true.B // GrantBuf should always be ready
 
   val grantQueueCnt = grantQueue.io.count
@@ -150,12 +161,14 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   val deqValid = grantQueue.io.deq.valid
   val deqTask = grantQueue.io.deq.bits.task
   val deqData = grantQueue.io.deq.bits.data.asTypeOf(Vec(beatSize, new DSBeat))
+  val deqId   = grantQueue.io.deq.bits.grantid
 
   // grantBuf: to keep the remaining unsent beat of GrantData
   val grantBufValid = RegInit(false.B)
   val grantBuf =  RegInit(0.U.asTypeOf(new Bundle() {
     val task = new TaskBundle()
     val data = new DSBeat()
+    val grantid = UInt(mshrBits.W)
   }))
 
   grantQueue.io.deq.ready := io.d.ready && !grantBufValid
@@ -165,6 +178,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     grantBufValid := true.B
     grantBuf.task := deqTask
     grantBuf.data := deqData(1)
+    grantBuf.grantid := deqId
   }
   when(grantBufValid && io.d.ready) {
     grantBufValid := false.B
@@ -173,8 +187,8 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   io.d.valid := grantBufValid || deqValid
   io.d.bits := Mux(
     grantBufValid,
-    toTLBundleD(grantBuf.task, grantBuf.data.data),
-    toTLBundleD(deqTask, deqData(0).data)
+    toTLBundleD(grantBuf.task, grantBuf.data.data, grantBuf.grantid),
+    toTLBundleD(deqTask, deqData(0).data, deqId)
   )
 
   // =========== send response to prefetcher ===========
@@ -204,25 +218,18 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
 
   // =========== record unreceived GrantAck ===========
   // Addrs with Grant sent and GrantAck not received
-  val inflight_grant = RegInit(VecInit(Seq.fill(grantBufInflightSize){
-    0.U.asTypeOf(Valid(new InflightGrantEntry))
-  }))
   when (io.d_task.fire && dtaskOpcode(2, 1) === Grant(2, 1)) {
     // choose an empty entry
-    val insertIdx = PriorityEncoder(inflight_grant.map(!_.valid))
-    val entry = inflight_grant(insertIdx)
+    val entry = inflight_grant(inflight_insertIdx)
     entry.valid := true.B
     entry.bits.set    := io.d_task.bits.task.set
     entry.bits.tag    := io.d_task.bits.task.tag
-    entry.bits.sink   := io.d_task.bits.task.mshrId
   } .elsewhen (io.d_task.fire && io.d_task.bits.task.mergeA) {
     // if mergeA, alloc an entry for merge grant 
-    val insertIdx = PriorityEncoder(inflight_grant.map(!_.valid))
-    val entry = inflight_grant(insertIdx)
+    val entry = inflight_grant(inflight_insertIdx)
     entry.valid := true.B
     entry.bits.set := io.d_task.bits.task.set
     entry.bits.tag := io.d_task.bits.task.tag
-    entry.bits.sink := io.d_task.bits.task.mshrId
   }
   val inflight_full = Cat(inflight_grant.map(_.valid)).andR
   assert(!inflight_full, "inflight_grant entries should not be full")
@@ -236,11 +243,8 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   }
 
   when (io.e.fire) {
-    // compare sink to clear buffer
-    val sinkMatchVec = inflight_grant.map(g => g.valid && g.bits.sink === io.e.bits.sink)
-    assert(PopCount(sinkMatchVec) === 1.U, "GrantBuf: there must be one and only one match")
-    val bufIdx = OHToUInt(sinkMatchVec)
-    inflight_grant(bufIdx).valid := false.B
+    assert(io.e.bits.sink < grantBufInflightSize.U, "GrantBuf: e.sink overflow inflight_grant size")
+    inflight_grant(io.e.bits.sink).valid := false.B
   }
 
   io.e.ready := true.B
