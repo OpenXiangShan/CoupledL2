@@ -49,7 +49,7 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
 
   val l2 = LazyModule(new CoupledL2())
   val xbar = TLXbar()
-  val ram = LazyModule(new TLRAM(AddressSet(0, 0xffffL), beatBytes = 32))
+  val ram = LazyModule(new TLRAM(AddressSet(0, 0xffffL), beatBytes = 1))
 
   for (l1d <- l1d_nodes) {
     xbar := TLBuffer() := l1d
@@ -57,7 +57,7 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
 
   ram.node :=
     TLXbar() :=*
-      TLFragmenter(32, 64) :=*
+      TLFragmenter(1, 1) :=*
       TLCacheCork() :=*
       TLDelayer(delayFactor) :=*
       l2.node :=* xbar

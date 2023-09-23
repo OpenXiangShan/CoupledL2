@@ -195,7 +195,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
         fifoId = None
       )
     },
-    beatBytes = 32,
+    beatBytes = 1,
     minLatency = 2,
     responseFields = cacheParams.respField,
     requestKeys = cacheParams.reqKey,
