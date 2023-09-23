@@ -271,6 +271,30 @@ class OffsetScoreTable(implicit p: Parameters) extends BOPModule {
     }
   }
 
+  /*
+  class DBEntry extends Bundle{
+    val off = UInt(offsetWidth.W)
+    val score = UInt(scoreBits.W)
+  }
+  object DBEntry{
+    def apply(off: UInt, score: UInt): DBEntry= {
+      val dbEntry = Wire(new DBEntry)
+      dbEntry.off := off
+      dbEntry.score := score
+      dbEntry
+    }
+  }
+  val table = ChiselDB. createTable("L2BopScoreTable", new DBEntry, basicDB = true)
+  val enTalbe = Constantin.createRecord("isWriteL2BopTable", 1.U)
+  table.log(
+    data = DBEntry(offList(ptr), st(ptr).score),
+    en = enTalbe.orR,
+    site = "BestOffsetPrefetch",
+    clock = clock,
+    reset = reset
+  )
+  */
+
 }
 
 class BopReqBundle(implicit p: Parameters) extends BOPBundle{
@@ -820,7 +844,7 @@ class DelayQueue(implicit p: Parameters) extends  BOPModule{
   val tail = RegInit(0.U(IdxWidth.W))
   val empty = head === tail && !valids.last
   val full = head === tail && valids.last
-  val outValid = !empty && !queue(head).cnt.orR
+  val outValid = !empty && !queue(head).cnt.orR && valids(head)
 
   /* In & Out */
   when(io.in.valid && !full) {
@@ -843,7 +867,7 @@ class DelayQueue(implicit p: Parameters) extends  BOPModule{
   }
   io.in.ready := true.B
   io.out.valid := outValid
-  io.out.bits := Cat(queue(head).addrNoOffset, 0.U(offsetBits))
+  io.out.bits := Cat(queue(head).addrNoOffset, 0.U(offsetBits.W))
 
   /* Update */
   for(i <- 0 until dQEntries){
@@ -858,6 +882,28 @@ class DelayQueue(implicit p: Parameters) extends  BOPModule{
   XSPerfAccumulate(cacheParams, "entryNumber", PopCount(valids.asUInt))
   XSPerfAccumulate(cacheParams, "inNumber", io.in.valid)
   XSPerfAccumulate(cacheParams, "outNumber", io.out.valid)
+
+  /*
+  class DBEntry extends Bundle{
+    val value = UInt(fullAddrBits.W)
+  }
+  object DBEntry{
+    def apply(v: UInt):DBEntry = {
+      val dbe = Wire(new DBEntry)
+      dbe.value := v
+      dbe
+    }
+  }
+  val table = ChiselDB. createTable("L2BopDelayQueueOut", new DBEntry, basicDB = true)
+  val enTalbe = Constantin.createRecord("isWriteL2BopDelayQueueOut", 1.U)
+  table.log(
+    data = DBEntry(io.out.bits),
+    en = enTalbe.orR && io.out.valid,
+    site = "BestOffsetPrefetch",
+    clock = clock,
+    reset = reset
+  )
+  */
 }
 
 class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
