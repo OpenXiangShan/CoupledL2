@@ -36,6 +36,10 @@ class ReqEntry(entries: Int = 4)(implicit p: Parameters) extends L2Bundle() {
   */
 //  val depMask = Vec(entries, Bool())
 
+  /* blocked by a same PA release from CORE (RAW) -> SinkC(release) 
+  */
+  val waitRaw  = UInt(bufBlocks.W)
+
 }
 
 class ChosenQBundle(idWIdth: Int = 2)(implicit p: Parameters) extends L2Bundle {
@@ -49,6 +53,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     val in          = Flipped(DecoupledIO(new TaskBundle))
     val out         = DecoupledIO(new TaskBundle)
     val mshrInfo  = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo)))
+    val sinkcInfo = Vec(bufBlocks, Flipped(ValidIO(new TaskBundle)))
     val mainPipeBlock = Input(Vec(2, Bool()))
 
     val ATag        = Output(UInt(tagBits.W))
@@ -90,6 +95,11 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     s.valid && s.bits.isPrefetch && sameAddr(a, s.bits) && !s.bits.willFree &&
     a.fromA && (a.opcode === AcquireBlock || a.opcode === AcquirePerm)
   )).asUInt.orR
+
+  //@RAW
+  def rawConflictMask(a: TaskBundle): UInt = VecInit(io.sinkcInfo.map(s =>
+    s.valid && sameAddr(a, s.bits))).asUInt
+  def rawConflict(a: TaskBundle): Bool = rawConflictMask(a).orR
 
   // count ways
 //  def countWaysOH(cond: (MSHRInfo => Bool)): UInt = {
@@ -138,7 +148,8 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
     entry.valid   := true.B
     // when Addr-Conflict / Same-Addr-Dependent / MainPipe-Block / noFreeWay-in-Set, entry not ready
-    entry.rdy     := !conflict(in) && !mpBlock && !s1Block // && !Cat(depMask).orR
+//    entry.rdy     := !conflict(in) && !mpBlock && !s1Block // && !Cat(depMask).orR
+    entry.rdy     := !conflict(in) && !rawConflict(in) && !mpBlock && !s1Block // && !Cat(depMask).orR //@RAW
     entry.task    := io.in.bits
     entry.waitMP  := Cat(
       s1Block,
@@ -146,6 +157,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       io.mainPipeBlock(1),
       0.U(1.W))
     entry.waitMS  := conflictMask(in)
+    entry.waitRaw := rawConflictMask(in) //@RAW
 
 //    entry.depMask := depMask
     assert(PopCount(conflictMask(in)) <= 2.U)
@@ -175,6 +187,10 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     when(e.valid) {
       val waitMSUpdate  = WireInit(e.waitMS)
 //      val depMaskUpdate = WireInit(e.depMask)
+
+      // use SinkC buffer valid to clear waitRAW @RAW
+      val rawMask = VecInit(io.sinkcInfo.map(s => s.valid )).asUInt
+      e.waitRaw := e.waitRaw & ~rawMask
 
       // when mshr will_free, clear it in other reqs' waitMS
       val willFreeMask = VecInit(io.mshrInfo.map(s => s.valid && s.bits.willFree)).asUInt
@@ -208,7 +224,8 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       // update info
       e.waitMS  := waitMSUpdate
 //      e.depMask := depMaskUpdate
-      e.rdy     := !waitMSUpdate.orR && !e.waitMP && !s1_Block
+//      e.rdy     := !waitMSUpdate.orR && !e.waitMP && !s1_Block
+      e.rdy     := !waitMSUpdate.orR && !e.waitMP && !s1_Block && !e.waitRaw.orR
     }
   }
 

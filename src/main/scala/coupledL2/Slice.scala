@@ -60,6 +60,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
 
   a_reqBuf.io.in <> sinkA.io.task
   a_reqBuf.io.mshrInfo := mshrCtl.io.msInfo
+  a_reqBuf.io.sinkcInfo := sinkC.io.sinkcInfo
   a_reqBuf.io.mainPipeBlock := mainPipe.io.toReqBuf
   a_reqBuf.io.s1Entrance := reqArb.io.s1Entrance
   sinkB.io.msInfo := mshrCtl.io.msInfo

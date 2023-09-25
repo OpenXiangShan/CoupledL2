@@ -47,6 +47,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
     val bufResp = Output(new PipeBufferResp)
     val refillBufWrite = Flipped(new MSHRBufWrite)
     val msInfo = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo)))
+    val sinkcInfo = Vec(bufBlocks, ValidIO(new TaskBundle))
   })
   
   val (first, last, _, beat) = edgeIn.count(io.c)
@@ -179,6 +180,13 @@ class SinkC(implicit p: Parameters) extends L2Module {
   io.c.ready := !isRelease || !first || !full || !hasData && io.task.ready && !taskArb.io.out.valid
 
   io.bufResp.data := dataBuf(io.bufRead.bits.bufIdx)
+
+  /*SinkC info to ReqBuffer to search RAW conflict*/
+  taskBuf.zipWithIndex.foreach{
+    case(t, i) =>
+      io.sinkcInfo(i).valid := taskValids(i)
+      io.sinkcInfo(i).bits := t
+  }
 
   // Performance counters
   val stall = io.c.valid && isRelease && !io.c.ready
