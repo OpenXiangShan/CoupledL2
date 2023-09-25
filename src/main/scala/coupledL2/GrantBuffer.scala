@@ -107,7 +107,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
 //  }
 
   val grantQueue = Module(new Queue(new GrantQueueTask(), entries = mshrsAll))
-  val inflight_grant = RegInit(VecInit(Seq.fill(grantBufInflightSize){
+  val inflightGrant = RegInit(VecInit(Seq.fill(grantBufInflightSize){
     0.U.asTypeOf(Valid(new InflightGrantEntry))
   }))
 
@@ -142,7 +142,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   mergeAtask.reqSource := io.d_task.bits.task.reqSource
   mergeAtask.mergeA := false.B
   mergeAtask.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
-  val inflight_insertIdx = PriorityEncoder(inflight_grant.map(!_.valid))
+  val inflight_insertIdx = PriorityEncoder(inflightGrant.map(!_.valid))
 
   // The following is organized in the order of data flow
   // =========== save d_task in queue[FIFO] ===========
@@ -218,24 +218,18 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
 
   // =========== record unreceived GrantAck ===========
   // Addrs with Grant sent and GrantAck not received
-  when (io.d_task.fire && dtaskOpcode(2, 1) === Grant(2, 1)) {
+  when (io.d_task.fire && (dtaskOpcode(2, 1) === Grant(2, 1) || io.d_task.bits.task.mergeA)) {
     // choose an empty entry
-    val entry = inflight_grant(inflight_insertIdx)
+    val entry = inflightGrant(inflight_insertIdx)
     entry.valid := true.B
     entry.bits.set    := io.d_task.bits.task.set
     entry.bits.tag    := io.d_task.bits.task.tag
-  } .elsewhen (io.d_task.fire && io.d_task.bits.task.mergeA) {
-    // if mergeA, alloc an entry for merge grant 
-    val entry = inflight_grant(inflight_insertIdx)
-    entry.valid := true.B
-    entry.bits.set := io.d_task.bits.task.set
-    entry.bits.tag := io.d_task.bits.task.tag
   }
-  val inflight_full = Cat(inflight_grant.map(_.valid)).andR
-  assert(!inflight_full, "inflight_grant entries should not be full")
+  val inflight_full = Cat(inflightGrant.map(_.valid)).andR
+  assert(!inflight_full, "inflightGrant entries should not be full")
 
   // report status to SourceB to block same-addr Probe
-  io.grantStatus zip inflight_grant foreach {
+  io.grantStatus zip inflightGrant foreach {
     case (g, i) =>
       g.valid := i.valid
       g.tag   := i.bits.tag
@@ -243,8 +237,8 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   }
 
   when (io.e.fire) {
-    assert(io.e.bits.sink < grantBufInflightSize.U, "GrantBuf: e.sink overflow inflight_grant size")
-    inflight_grant(io.e.bits.sink).valid := false.B
+    assert(io.e.bits.sink < grantBufInflightSize.U, "GrantBuf: e.sink overflow inflightGrant size")
+    inflightGrant(io.e.bits.sink).valid := false.B
   }
 
   io.e.ready := true.B
@@ -270,7 +264,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   }).asUInt) + pftRespQueue.get.io.count >= pftQueueLen.U)
 
   io.toReqArb.blockSinkReqEntrance.blockA_s1 := noSpaceForSinkReq || noSpaceForSinkPft.getOrElse(false.B)
-  io.toReqArb.blockSinkReqEntrance.blockB_s1 := Cat(inflight_grant.map(g => g.valid &&
+  io.toReqArb.blockSinkReqEntrance.blockB_s1 := Cat(inflightGrant.map(g => g.valid &&
     g.bits.set === io.fromReqArb.status_s1.b_set && g.bits.tag === io.fromReqArb.status_s1.b_tag)).orR
   //TODO: or should we still Stall B req?
   // A-replace related rprobe is handled in SourceB
@@ -315,7 +309,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   // =========== XSPerf ===========
   if (cacheParams.enablePerf) {
     val timers = RegInit(VecInit(Seq.fill(grantBufInflightSize){0.U(64.W)}))
-    inflight_grant zip timers map {
+    inflightGrant zip timers map {
       case (e, t) =>
         when(e.valid) { t := t + 1.U }
         when(RegNext(e.valid) && !e.valid) { t := 0.U }
