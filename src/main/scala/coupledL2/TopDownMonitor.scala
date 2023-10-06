@@ -115,6 +115,8 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     r =>  !r.hit &&
       (r.replacerInfo.reqSource === MemReqSource.Prefetch2L2BOP.id.U ||
        r.replacerInfo.reqSource === MemReqSource.Prefetch2L2SMS.id.U ||
+       r.replacerInfo.reqSource === MemReqSource.Prefetch2L2Stride.id.U ||
+       r.replacerInfo.reqSource === MemReqSource.Prefetch2L2Stream.id.U ||
        r.replacerInfo.reqSource === MemReqSource.Prefetch2L2TP.id.U)
   )
   val l2prefetchSentBOP = dirResultMatchVec(
@@ -122,6 +124,12 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   )
   val l2prefetchSentSMS = dirResultMatchVec(
     r => !r.hit && r.replacerInfo.reqSource === MemReqSource.Prefetch2L2SMS.id.U
+  )
+  val l2prefetchSentStride = dirResultMatchVec(
+    r => !r.hit && r.replacerInfo.reqSource === MemReqSource.Prefetch2L2Stride.id.U
+  )
+  val l2prefetchSentStream = dirResultMatchVec(
+    r => !r.hit && r.replacerInfo.reqSource === MemReqSource.Prefetch2L2Stream.id.U
   )
   val l2prefetchSentTP = dirResultMatchVec(
     r => !r.hit && r.replacerInfo.reqSource === MemReqSource.Prefetch2L2TP.id.U
@@ -137,6 +145,14 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   val l2prefetchUsefulSMS = dirResultMatchVec(
     r => reqFromCPU(r) && r.hit &&
       r.meta.prefetch.getOrElse(false.B) && r.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) === PfSource.SMS.id.U
+  )
+  val l2prefetchUsefulStride = dirResultMatchVec(
+    r => reqFromCPU(r) && r.hit &&
+      r.meta.prefetch.getOrElse(false.B) && r.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) === PfSource.Stride.id.U
+  )
+  val l2prefetchUsefulStream = dirResultMatchVec(
+    r => reqFromCPU(r) && r.hit &&
+      r.meta.prefetch.getOrElse(false.B) && r.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) === PfSource.Stream.id.U
   )
   val l2prefetchUsefulTP = dirResultMatchVec(
     r => reqFromCPU(r) && r.hit &&
@@ -164,6 +180,16 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     1000, clock, reset
   )
   XSPerfRolling(
+    cacheParams, "L2PrefetchAccuracyStride",
+    PopCount(l2prefetchUsefulStride), PopCount(l2prefetchSentStride),
+    1000, clock, reset
+  )
+  XSPerfRolling(
+    cacheParams, "L2PrefetchAccuracyStream",
+    PopCount(l2prefetchUsefulStream), PopCount(l2prefetchSentStream),
+    1000, clock, reset
+  )
+  XSPerfRolling(
     cacheParams, "L2PrefetchAccuracyTP",
     PopCount(l2prefetchUsefulTP), PopCount(l2prefetchSentTP),
     1000, clock, reset
@@ -186,6 +212,16 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   XSPerfRolling(
     cacheParams, "L2PrefetchCoverageSMS",
     PopCount(l2prefetchUsefulSMS), PopCount(l2demandRequest),
+    1000, clock, reset
+  )
+  XSPerfRolling(
+    cacheParams, "L2PrefetchCoverageStride",
+    PopCount(l2prefetchUsefulStride), PopCount(l2demandRequest),
+    1000, clock, reset
+  )
+  XSPerfRolling(
+    cacheParams, "L2PrefetchCoverageStream",
+    PopCount(l2prefetchUsefulStream), PopCount(l2demandRequest),
     1000, clock, reset
   )
   XSPerfRolling(
