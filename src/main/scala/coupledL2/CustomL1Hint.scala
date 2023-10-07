@@ -20,7 +20,7 @@ package coupledL2
 import chisel3._
 import chisel3.util._
 import utility._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.utils._
 
@@ -88,7 +88,7 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   val s4_l2_hit_grant_data = task_s4.valid && req_grantbuffer_next_cycle_s4 && task_s4.bits.opcode === GrantData && task_s4.bits.fromA && !task_s4.bits.mshrTask && !task_s4.bits.fromL2pft.getOrElse(false.B)
 
   val hint_s1, hint_s2, hint_s3, hint_s4, hint_s5 = Wire(io.l1Hint.cloneType)
-  
+
   // S1 hint
   //    * l1 acquire and l2 miss situation, **no hit situation**
   val s1_l2_miss_refill_grant_data    = task_s1.valid && task_s1.bits.fromA && task_s1.bits.opcode === GrantData
@@ -185,8 +185,8 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   // S4 hint
   //    * l1 acquire and l2 miss situation
   val s4_l2_miss_refill_grant_data    = d_s4 && task_s4.bits.opcode === GrantData && task_s4.bits.fromA && task_s4.bits.mshrTask && !task_s4.bits.fromL2pft.getOrElse(false.B)
-  val s4_l2_miss_refill_counter_match = Mux(d_s5 && task_s5.bits.opcode(0), (globalCounter + 3.U) === hintCycleAhead.U, 
-                                            Mux(d_s5 && !task_s5.bits.opcode(0), (globalCounter + 2.U) === hintCycleAhead.U, 
+  val s4_l2_miss_refill_counter_match = Mux(d_s5 && task_s5.bits.opcode(0), (globalCounter + 3.U) === hintCycleAhead.U,
+                                            Mux(d_s5 && !task_s5.bits.opcode(0), (globalCounter + 2.U) === hintCycleAhead.U,
                                                 (globalCounter + 1.U) === hintCycleAhead.U ))
   val validHintMiss_s4 = s4_l2_miss_refill_grant_data && s4_l2_miss_refill_counter_match
 

@@ -1,6 +1,6 @@
 init:
 	git submodule update --init
-	cd rocket-chip && git submodule update --init hardfloat api-config-chipsalliance
+	cd rocket-chip && git submodule update --init hardfloat cde
 
 compile:
 	mill -i CoupledL2.compile

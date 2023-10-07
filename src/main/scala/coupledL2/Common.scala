@@ -19,7 +19,7 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink.TLPermissions._
 import utility.MemReqSource
 
@@ -176,7 +176,7 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle {
   // to drop duplicate prefetch reqs
   val isAcqOrPrefetch = Bool()
   val isPrefetch = Bool()
-  
+
   // whether the mshr_task already in mainpipe
   val s_refill = Bool()
   val mergeA = Bool() // whether the mshr already merge an acquire(avoid alias merge)

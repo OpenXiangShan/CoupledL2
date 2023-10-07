@@ -22,7 +22,7 @@ import chisel3.util._
 import utility._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import coupledL2.utils.XSPerfAccumulate
 
 class RequestArb(implicit p: Parameters) extends L2Module {
@@ -201,7 +201,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   XSPerfAccumulate(cacheParams, "sinkA_req", io.sinkA.fire)
   XSPerfAccumulate(cacheParams, "sinkB_req", io.sinkB.fire)
   XSPerfAccumulate(cacheParams, "sinkC_req", io.sinkC.fire)
-  
+
   XSPerfAccumulate(cacheParams, "sinkA_stall", io.sinkA.valid && !io.sinkA.ready)
   XSPerfAccumulate(cacheParams, "sinkB_stall", io.sinkB.valid && !io.sinkB.ready)
   XSPerfAccumulate(cacheParams, "sinkC_stall", io.sinkC.valid && !io.sinkC.ready)
