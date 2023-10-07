@@ -8,7 +8,7 @@ import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import huancun._
 import coupledL2.prefetch._
-import utility.{ChiselDB, FileRegisters, TLLogger}
+import utility.{ChiselDB, FileRegisters, TLLogger, TLClientsMerger}
 
 
 import scala.collection.mutable.ArrayBuffer
@@ -298,6 +298,8 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
   val cacheParams = p(L2ParamKey)
 
   val nrL2 = 2
+  val nrL2Banks = 1
+  val nrL3Banks = 1
 
   def createClientNode(name: String, sources: Int) = {
     val masterNode = TLClientNode(Seq(
@@ -312,7 +314,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
         channelBytes = TLChannelBeatBytes(cacheParams.blockBytes),
         minLatency = 1,
         echoFields = Nil,
-        requestFields = Seq(AliasField(2)),
+        requestFields = Seq(AliasField(2), PrefetchField()),
         responseKeys = cacheParams.respKey
       )
     ))
@@ -329,10 +331,13 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
       sets = 128,
       clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
       echoField = Seq(DirtyField()),
-      hartIds = Seq{i}
+      hartIds = Seq{i},
+      prefetch = Some(coupledL2.prefetch.BOPParameters())
     )
   }))))
   val l2_nodes = coupledL2.map(_.node)
+  val l2_binders = (0 until nrL2).map(i => BankBinder(nrL2Banks, 64))
+  val l3_binder = BankBinder(nrL3Banks, 64)
 
   val l3 = LazyModule(new HuanCun()(new Config((_, _, _) => {
     case HCCacheParamsKey => HCCacheParameters(
@@ -354,23 +359,32 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
     )
   })))
 
-  val xbar = TLXbar()
+  val l2l3Xbar = TLXbar()
   val ram = LazyModule(new TLRAM(AddressSet(0, 0xffffL), beatBytes = 32))
 
   l1d_nodes.zip(l2_nodes).zipWithIndex map {
-    case ((l1d, l2), i) => l2 := TLLogger(s"L2_L1_${i}", true) := TLBuffer() := l1d
+    case ((l1d, l2), i) => l2 :*= TLXbar() := TLLogger(s"L2_L1_${i}", true) := TLBuffer() := l1d
   }
 
   l2_nodes.zipWithIndex map {
-    case(l2, i) => xbar := TLLogger(s"L3_L2_${i}", true) := TLBuffer() := l2
+    case (l2, i) => l2l3Xbar :=
+      TLLogger(s"L3_L2_${i}", true) := TLBuffer() :=
+      TLClientsMerger() :=
+      TLXbar() :=*
+        l2_binders(i) :*=
+      l2
   }
 
   ram.node :=
+    TLXbar() :=
+    TLFragmenter(32, 64) :=
+    TLCacheCork() :=
+    TLDelayer(delayFactor) :=
+    TLClientsMerger() :=
     TLXbar() :=*
-      TLFragmenter(32, 64) :=*
-      TLCacheCork() :=*
-      TLDelayer(delayFactor) :=*
-      l3.node :=* xbar
+    l3_binder :*=
+    l3.node :*=
+    l2l3Xbar
 
   lazy val module = new LazyModuleImp(this) {
     val timer = WireDefault(0.U(64.W))
