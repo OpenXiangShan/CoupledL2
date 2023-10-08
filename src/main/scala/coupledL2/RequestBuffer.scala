@@ -2,6 +2,7 @@ package coupledL2
 
 import chipsalliance.rocketchip.config.Parameters
 import freechips.rocketchip.tilelink.TLMessages._
+import freechips.rocketchip.tilelink.TLPermissions._
 import chisel3._
 import chisel3.util._
 import coupledL2.utils._
@@ -120,7 +121,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   // incoming Acquire can be merged with late_pf MSHR block
   val mergeAMask = VecInit(io.mshrInfo.map(s =>
     s.valid && s.bits.isPrefetch && sameAddr(in, s.bits) && !s.bits.willFree && !s.bits.dirHit && !s.bits.s_refill &&
-      in.fromA && (in.opcode === AcquireBlock || in.opcode === AcquirePerm) && !s.bits.mergeA
+      in.fromA && (in.opcode === AcquireBlock || in.opcode === AcquirePerm) && !s.bits.mergeA && !(in.param === toT && s.bits.param === toB)
   )).asUInt
   val mergeA = mergeAMask.orR
   val mergeAId = OHToUInt(mergeAMask)
