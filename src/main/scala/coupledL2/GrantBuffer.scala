@@ -20,7 +20,7 @@ package coupledL2
 import chisel3._
 import chisel3.util._
 import utility._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.prefetch.PrefetchResp
@@ -242,7 +242,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   }
 
   io.e.ready := true.B
- 
+
   // =========== handle blocking - capacity conflict ===========
   // count the number of valid blocks + those in pipe that might use GrantBuf
   // so that GrantBuffer will not exceed capacity [back pressure]

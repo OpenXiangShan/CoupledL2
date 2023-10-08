@@ -21,7 +21,7 @@ import chisel3._
 import chisel3.util._
 import utility._
 import coupledL2.MetaData._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
@@ -488,7 +488,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   customL1Hint.io.s1 := io.taskInfo_s1
   customL1Hint.io.s2 := task_s2
-  
+
   customL1Hint.io.s3.task      := task_s3
   customL1Hint.io.s3.d         := d_s3.valid
   customL1Hint.io.s3.need_mshr := need_mshr_s3

@@ -14,7 +14,7 @@
   * See the Mulan PSL v2 for more details.
   * *************************************************************************************
   */
-  
+
 package coupledL2
 
 import chisel3._
@@ -22,7 +22,7 @@ import chisel3.util.log2Ceil
 import freechips.rocketchip.diplomacy.BufferParams
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util._
-import chipsalliance.rocketchip.config.Field
+import org.chipsalliance.cde.config.Field
 import huancun.CacheParameters
 import coupledL2.prefetch._
 import utility.{MemReqSource, ReqSourceKey}
@@ -114,7 +114,7 @@ case class L2Param
 
   // Client (these are set in Configs.scala in XiangShan)
   echoField: Seq[BundleFieldBase] = Nil,
-  reqField: Seq[BundleFieldBase] = Nil, 
+  reqField: Seq[BundleFieldBase] = Nil,
   respKey: Seq[BundleKeyBase] = Seq(IsHitKey),
   // Manager
   reqKey: Seq[BundleKeyBase] = Seq(AliasKey, VaddrKey, PrefetchKey, ReqSourceKey),

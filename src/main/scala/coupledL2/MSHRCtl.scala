@@ -20,7 +20,7 @@ package coupledL2
 import chisel3._
 import chisel3.util._
 import utility._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.prefetch.PrefetchTrain
@@ -69,7 +69,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       val sinkD = new RespBundle
       val sourceC = new RespBundle
     })
-    
+
     val releaseBufWriteId = Output(UInt(mshrBits.W))
 
     /* nested writeback */
@@ -184,7 +184,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   //   _ =>
   //     XSPerfAccumulate(cacheParams, "prefetch_trains", io.prefetchTrain.get.fire)
   // }
-  
+
   if (cacheParams.enablePerf) {
     val start = 0
     val stop = 100
