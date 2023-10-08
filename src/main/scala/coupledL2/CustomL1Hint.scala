@@ -27,28 +27,19 @@ import coupledL2.utils._
 class CustomL1HintIOBundle(implicit p: Parameters) extends L2Bundle {
   // input information
   val s1 = Flipped(ValidIO(new TaskBundle()))
-  val s2 = Flipped(ValidIO(new TaskBundle()))
   val s3 = new L2Bundle {
       val task      = Flipped(ValidIO(new TaskBundle()))
-      val d         = Input(Bool())
       val need_mshr = Input(Bool())
   }
-  val s4 = new L2Bundle {
-      val task                  = Flipped(ValidIO(new TaskBundle()))
-      val d                     = Input(Bool())
-      val need_write_releaseBuf = Input(Bool())
-  }
-  val s5 = new L2Bundle {
-      val task = Flipped(ValidIO(new TaskBundle()))
-      val d    = Input(Bool())
-  }
-  val globalCounter   = Input(UInt((log2Ceil(mshrsAll) + 1).W))
-  val grantBufferHint = Flipped(ValidIO(new L2ToL1Hint()))
 
   // output hint
-  val l1Hint = ValidIO(new L2ToL1Hint())
+  val l1Hint = DecoupledIO(new L2ToL1Hint())
 }
 
+class HintQueueEntry(implicit p: Parameters) extends L2Bundle {
+  val source = UInt(sourceIdBits.W)
+  val opcode = UInt(3.W)
+}
 
 // grantData hint interface
 // use this interface to give a hint to l1 before actually sending a GrantData
@@ -56,173 +47,64 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   val io = IO(new CustomL1HintIOBundle)
 
   val task_s1 = io.s1
-  val task_s2 = io.s2
   val task_s3 = io.s3.task
-  val task_s4 = io.s4.task
-  val task_s5 = io.s5.task
-
-  val d_s3 = io.s3.d
-  val d_s4 = io.s4.d
-  val d_s5 = io.s5.d
-
-  require(hintCycleAhead <= 3)
-
-  // only use lower 2 bits of io.globalCounter to make timing happy
-  // as main pipeline will not trigger hint if io.globalCounter >= hintCycleAhead
-  val globalCounter   = io.globalCounter(1, 0)
-  val grantBufferHint = io.grantBufferHint
-
-  val impossible_pipe_hint = io.globalCounter >= hintCycleAhead.U
-
-  val mshr_req_s3  = task_s3.bits.mshrTask
+  val mshrReq_s1 = task_s1.bits.mshrTask
+  val mshrReq_s3 = task_s3.bits.mshrTask
   val need_mshr_s3 = io.s3.need_mshr
 
-  val need_write_releaseBuf_s4 = io.s4.need_write_releaseBuf
+  def isGrantData(t: TaskBundle):  Bool = t.fromA && t.opcode === GrantData
+  def isGrant(t: TaskBundle):      Bool = t.fromA && t.opcode === Grant
+  def isHintAck(t: TaskBundle):    Bool = t.fromA && t.opcode === HintAck // HintAck has no effect on Hint, WARNINGTODO: merge req!!
+  def isReleaseAck(t: TaskBundle): Bool = t.fromC && t.opcode === ReleaseAck
+  def isRelease(t: TaskBundle):    Bool = t.fromC && (t.opcode === Release || t.opcode === ReleaseData)
 
-  //  req_grantbuffer_next_cycle_s4: this **hit** req will request grantBuffer in S5
-  val req_grantbuffer_next_cycle_s4 = !need_write_releaseBuf_s4
+  // ==================== Hint Generation ====================
+  // Hint for "MSHRTask and ReleaseAck" will fire@s1
+  val mshr_GrantData_s1 = task_s1.valid &&  mshrReq_s1 && isGrantData(task_s1.bits)
+  val mshr_Grant_s1     = task_s1.valid &&  mshrReq_s1 && isGrant(task_s1.bits)
+  val chn_Release_s1    = task_s1.valid && !mshrReq_s1 && isRelease(task_s1.bits)
 
-  val s3_l2_hit_grant_data = task_s3.valid && !mshr_req_s3 && !need_mshr_s3 && task_s3.bits.fromA && task_s3.bits.opcode === AcquireBlock && !task_s3.bits.fromL2pft.getOrElse(false.B)
-  val s4_l2_hit_grant_data = task_s4.valid && req_grantbuffer_next_cycle_s4 && task_s4.bits.opcode === GrantData && task_s4.bits.fromA && !task_s4.bits.mshrTask && !task_s4.bits.fromL2pft.getOrElse(false.B)
+  val enqValid_s1 = mshr_GrantData_s1 || mshr_Grant_s1 || chn_Release_s1
+  val enqSource_s1 = task_s1.bits.sourceId
+  val enqOpcode_s1 = ParallelPriorityMux(
+    Seq(
+      mshr_Grant_s1 -> Grant,
+      mshr_GrantData_s1 -> GrantData,
+      chn_Release_s1 -> ReleaseAck
+    )
+  )
 
-  val hint_s1, hint_s2, hint_s3, hint_s4, hint_s5 = Wire(io.l1Hint.cloneType)
+  // Hint for "chnTask Hit" will fire@s3
+  val chn_Grant_s3     = task_s3.valid && !mshrReq_s3 && !need_mshr_s3 && isGrant(task_s3.bits)
+  val chn_GrantData_s3 = task_s3.valid && !mshrReq_s3 && !need_mshr_s3 && isGrantData(task_s3.bits)
+  val enqValid_s3 = chn_Grant_s3 || chn_GrantData_s3
+  val enqSource_s3 = task_s3.bits.sourceId
+  val enqOpcode_s3 = ParallelPriorityMux(
+    Seq(
+      chn_Grant_s3 -> Grant,
+      chn_GrantData_s3 -> GrantData
+    )
+  )
 
-  // S1 hint
-  //    * l1 acquire and l2 miss situation, **no hit situation**
-  val s1_l2_miss_refill_grant_data    = task_s1.valid && task_s1.bits.fromA && task_s1.bits.opcode === GrantData
-  val s1_l2_miss_refill_counter_match = Wire(Bool())
+  // ==================== Hint Queue ====================
+  val hintEntries = mshrsAll
+  val hintEntriesWidth = log2Ceil(hintEntries)
+  val hintQueue = Module(new Queue(new HintQueueEntry, hintEntries))
 
-  // TODO: generalization, for now, only fit hintCycleAhead == 3
-  s1_l2_miss_refill_counter_match := PopCount(Seq(d_s3, d_s4, d_s5, s3_l2_hit_grant_data, s4_l2_hit_grant_data, task_s2.valid && task_s2.bits.fromA)) === 0.U && globalCounter <= 2.U
-  val dummy_s1_valid = if(hintCycleAhead == 3) s1_l2_miss_refill_grant_data && s1_l2_miss_refill_counter_match else false.B
+  // this will have at most 1 entry
+  val hint_s1Queue = Module(new Queue(new HintQueueEntry, 2, flow = true))
+  hint_s1Queue.io.enq.valid := enqValid_s1
+  hint_s1Queue.io.enq.bits.opcode := enqOpcode_s1
+  hint_s1Queue.io.enq.bits.source := enqSource_s1
+  hint_s1Queue.io.deq.ready := hintQueue.io.enq.ready && !enqValid_s3
+  assert(hint_s1Queue.io.enq.ready, "hint_s1Queue should never be full")
+  assert(hintQueue.io.enq.ready, "hintQueue should never be full")
 
-  hint_s1.valid          := dummy_s1_valid && !impossible_pipe_hint
-  hint_s1.bits.sourceId  := task_s1.bits.sourceId
-  // hint_s1.bits.isKeyword := task_s1.bits.isKeyword
-  hint_s1.bits.isKeyword := task_s1.bits.isKeyword.getOrElse(false.B)
+  hintQueue.io.enq.valid := enqValid_s3 || hint_s1Queue.io.deq.valid
+  hintQueue.io.enq.bits.opcode := Mux(enqValid_s3, enqOpcode_s3, hint_s1Queue.io.deq.bits.opcode)
+  hintQueue.io.enq.bits.source := Mux(enqValid_s3, enqSource_s3, hint_s1Queue.io.deq.bits.source)
+  hintQueue.io.deq.ready := io.l1Hint.ready
 
-  // S2 hint
-  //    * l1 acquire and l2 miss situation, **no hit situation**
-  val s2_l2_miss_refill_grant_data    = task_s2.valid && task_s2.bits.fromA && task_s2.bits.opcode === GrantData && task_s2.bits.mshrTask
-  val s2_l2_miss_refill_counter_match = Wire(Bool())
-
-  // TODO: generalization, for now, only fit hintCycleAhead == 2
-  //  s2_l2_miss_refill_counter_match := PopCount(Seq(d_s3, d_s4, d_s5, s3_l2_hit_grant_data, s4_l2_hit_grant_data)) === 0.U && globalCounter === 0.U
-
-  s2_l2_miss_refill_counter_match := MuxLookup(Cat(d_s3, d_s4, d_s5), false.B)(Seq(
-    Cat(true.B, true.B, true.B)    -> ((globalCounter + 4.U + task_s5.bits.opcode(0) + task_s4.bits.opcode(0) + task_s3.bits.opcode(0)) === hintCycleAhead.U),
-    Cat(true.B, true.B, false.B)   -> ((globalCounter + 3.U + task_s4.bits.opcode(0) + task_s3.bits.opcode(0)) === hintCycleAhead.U),
-    Cat(true.B, false.B, true.B)   -> Mux(s4_l2_hit_grant_data, (globalCounter + 4.U + task_s5.bits.opcode(0) + task_s4.bits.opcode(0) + task_s3.bits.opcode(0)) === hintCycleAhead.U,
-                                                                (globalCounter + 3.U + task_s5.bits.opcode(0) + task_s3.bits.opcode(0)) === hintCycleAhead.U),
-    Cat(false.B, true.B, true.B)   -> Mux(s3_l2_hit_grant_data, (globalCounter + 4.U + task_s5.bits.opcode(0) + task_s4.bits.opcode(0) + task_s3.bits.opcode(0)) === hintCycleAhead.U,
-                                                                (globalCounter + 3.U + task_s5.bits.opcode(0) + task_s4.bits.opcode(0)) === hintCycleAhead.U),
-    Cat(true.B, false.B, false.B)  -> Mux(s4_l2_hit_grant_data, (globalCounter + 3.U + task_s4.bits.opcode(0) + task_s3.bits.opcode(0)) === hintCycleAhead.U,
-                                                                (globalCounter + 2.U + task_s3.bits.opcode(0)) === hintCycleAhead.U),
-    Cat(false.B, true.B, false.B)  -> ((globalCounter + 2.U + task_s4.bits.opcode(0)) === hintCycleAhead.U),
-    Cat(false.B, false.B, true.B)  -> Mux(s4_l2_hit_grant_data,
-                                          Mux(s3_l2_hit_grant_data, (globalCounter + 4.U + task_s5.bits.opcode(0) + task_s4.bits.opcode(0) + task_s3.bits.opcode(0)) === hintCycleAhead.U,
-                                                (globalCounter + 3.U + task_s5.bits.opcode(0) + task_s4.bits.opcode(0)) === hintCycleAhead.U),
-                                                    (globalCounter + 2.U + task_s5.bits.opcode(0)) === hintCycleAhead.U),
-    Cat(false.B, false.B, false.B) -> Mux(s4_l2_hit_grant_data,
-                                          Mux(s3_l2_hit_grant_data, (globalCounter + 4.U + task_s4.bits.opcode(0) + task_s3.bits.opcode(0)) === hintCycleAhead.U,
-                                                (globalCounter + 3.U + task_s4.bits.opcode(0)) === hintCycleAhead.U),
-                                                    (globalCounter + 2.U) === hintCycleAhead.U)
-  ))
-
-  hint_s2.valid         := s2_l2_miss_refill_grant_data && s2_l2_miss_refill_counter_match && !impossible_pipe_hint
-  hint_s2.bits.sourceId := task_s2.bits.sourceId
-  hint_s2.bits.isKeyword := task_s2.bits.isKeyword.getOrElse(false.B)
-
-  // S3 hint
-  //    * l1 acquire and l2 hit situation
-  val s3_l2_hit_counter_match = Wire(Bool())
-  when(d_s5 && d_s4) {
-    s3_l2_hit_counter_match := (globalCounter + 3.U + task_s5.bits.opcode(0) + task_s4.bits.opcode(0)) === hintCycleAhead.U
-  }.elsewhen(d_s4) {
-    s3_l2_hit_counter_match := (globalCounter + 3.U + task_s4.bits.opcode(0)) === hintCycleAhead.U
-  }.elsewhen(d_s5) {
-    // NOTE: if s4 is a hit grantData, it will not request grantBuffer in s4, but in s5
-    when(s4_l2_hit_grant_data) {
-      s3_l2_hit_counter_match := (globalCounter + 3.U + task_s5.bits.opcode(0) + task_s4.bits.opcode(0)) === hintCycleAhead.U
-    }.otherwise {
-      s3_l2_hit_counter_match := (globalCounter + 3.U + task_s5.bits.opcode(0)) === hintCycleAhead.U
-    }
-  }.otherwise {
-    when(s4_l2_hit_grant_data) {
-      s3_l2_hit_counter_match := (globalCounter + 3.U + task_s4.bits.opcode(0)) === hintCycleAhead.U
-    }.otherwise {
-      s3_l2_hit_counter_match :=  globalCounter + 3.U === hintCycleAhead.U
-    }
-  }
-  val validHint_s3 = s3_l2_hit_grant_data && s3_l2_hit_counter_match
-
-  // S3 hint
-  //    * l1 acquire and l2 miss situation
-  val s3_l2_miss_refill_grant_data    = d_s3 && mshr_req_s3 && task_s3.bits.fromA && task_s3.bits.opcode === GrantData && !task_s3.bits.fromL2pft.getOrElse(false.B)
-  val s3_l2_miss_refill_counter_match = Wire(Bool())
-  when(d_s5 && d_s4) {
-    s3_l2_miss_refill_counter_match := (globalCounter + 3.U + task_s5.bits.opcode(0) + task_s4.bits.opcode(0)) === hintCycleAhead.U
-  }.elsewhen(d_s4) {
-    s3_l2_miss_refill_counter_match := (globalCounter + 2.U + task_s4.bits.opcode(0)) === hintCycleAhead.U
-  }.elsewhen(d_s5) {
-    when(s4_l2_hit_grant_data) {
-      s3_l2_miss_refill_counter_match := (globalCounter + 3.U + task_s5.bits.opcode(0) + task_s4.bits.opcode(0)) === hintCycleAhead.U
-    }.otherwise {
-      s3_l2_miss_refill_counter_match := (globalCounter + 2.U + task_s5.bits.opcode(0)) === hintCycleAhead.U
-    }
-  }.otherwise {
-    s3_l2_miss_refill_counter_match :=  globalCounter + 1.U === hintCycleAhead.U
-  }
-  val validHintMiss_s3 = s3_l2_miss_refill_grant_data && s3_l2_miss_refill_counter_match
-
-  hint_s3.valid         := (validHint_s3 || validHintMiss_s3) && !impossible_pipe_hint
-  hint_s3.bits.sourceId := task_s3.bits.sourceId
-  hint_s3.bits.isKeyword:= task_s3.bits.isKeyword.getOrElse(false.B)
-
-  // S4 hint
-  //    * l1 acquire and l2 hit situation
-  val s4_l2_hit_counter_match = Mux(d_s5 && task_s5.bits.opcode(0), (globalCounter + 3.U) === hintCycleAhead.U,
-                                      (globalCounter + 2.U) === hintCycleAhead.U )
-  val validHint_s4            = s4_l2_hit_grant_data && s4_l2_hit_counter_match
-  // S4 hint
-  //    * l1 acquire and l2 miss situation
-  val s4_l2_miss_refill_grant_data    = d_s4 && task_s4.bits.opcode === GrantData && task_s4.bits.fromA && task_s4.bits.mshrTask && !task_s4.bits.fromL2pft.getOrElse(false.B)
-  val s4_l2_miss_refill_counter_match = Mux(d_s5 && task_s5.bits.opcode(0), (globalCounter + 3.U) === hintCycleAhead.U,
-                                            Mux(d_s5 && !task_s5.bits.opcode(0), (globalCounter + 2.U) === hintCycleAhead.U,
-                                                (globalCounter + 1.U) === hintCycleAhead.U ))
-  val validHintMiss_s4 = s4_l2_miss_refill_grant_data && s4_l2_miss_refill_counter_match
-
-  hint_s4.valid         := (validHint_s4 || validHintMiss_s4) && !impossible_pipe_hint
-  hint_s4.bits.sourceId := task_s4.bits.sourceId
-  hint_s4.bits.isKeyword := task_s4.bits.isKeyword.getOrElse(false.B)
-  // S5 hint
-  //    * l1 acquire and l2 hit situation
-  val validHint_s5 = d_s5 && task_s5.bits.opcode === GrantData && task_s5.bits.fromA && !task_s5.bits.mshrTask && ((globalCounter + 1.U) === hintCycleAhead.U) && !task_s5.bits.fromL2pft.getOrElse(false.B)
-  // S5 hint
-  //    * l1 acquire and l2 miss situation
-  val validHintMiss_s5 = d_s5 && task_s5.bits.opcode === GrantData && task_s5.bits.fromA && task_s5.bits.mshrTask && ((globalCounter + 1.U) === hintCycleAhead.U) && !task_s5.bits.fromL2pft.getOrElse(false.B)
-
-  hint_s5.valid         := (validHint_s5 || validHintMiss_s5) && !impossible_pipe_hint
-  hint_s5.bits.sourceId := task_s5.bits.sourceId
-  hint_s5.bits.isKeyword := task_s5.bits.isKeyword.getOrElse(false.B)
-
-  val hint_valid     = Seq(grantBufferHint.valid,          hint_s1.valid,          hint_s2.valid,          hint_s3.valid,          hint_s4.valid,          hint_s5.valid)
-  val hint_sourceId  = Seq(grantBufferHint.bits.sourceId,  hint_s1.bits.sourceId,  hint_s2.bits.sourceId,  hint_s3.bits.sourceId,  hint_s4.bits.sourceId,  hint_s5.bits.sourceId)
-  val hint_isKeyword = Seq(grantBufferHint.bits.isKeyword, hint_s1.bits.isKeyword, hint_s2.bits.isKeyword, hint_s3.bits.isKeyword, hint_s4.bits.isKeyword, hint_s5.bits.isKeyword)
-
-  io.l1Hint.valid          := VecInit(hint_valid).asUInt.orR
-  io.l1Hint.bits.sourceId  := ParallelMux(hint_valid zip hint_sourceId)
-  io.l1Hint.bits.isKeyword := ParallelMux(hint_valid zip hint_isKeyword)
-
-  // TODO: open this assert when hint is really correct for all situations
-  // assert(PopCount(VecInit(hint_valid)) <= 1.U)
-
-  XSPerfAccumulate(cacheParams, "hint_grantBufferHint_valid", grantBufferHint.valid)
-  XSPerfAccumulate(cacheParams, "hint_s1_valid", hint_s1.valid)
-  XSPerfAccumulate(cacheParams, "hint_s2_valid", hint_s2.valid)
-  XSPerfAccumulate(cacheParams, "hint_s3_valid", hint_s3.valid)
-  XSPerfAccumulate(cacheParams, "hint_s4_valid", hint_s4.valid)
-  XSPerfAccumulate(cacheParams, "hint_s5_valid", hint_s5.valid)
-  XSPerfAccumulate(cacheParams, "incorrect_hint", PopCount(VecInit(hint_valid)) > 1.U)
-
+  io.l1Hint.valid := hintQueue.io.deq.valid && hintQueue.io.deq.bits.opcode === GrantData
+  io.l1Hint.bits.sourceId := hintQueue.io.deq.bits.source
 }
