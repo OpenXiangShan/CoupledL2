@@ -33,8 +33,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     /* receive task from arbiter at stage 2 */
     val taskFromArb_s2 = Flipped(ValidIO(new TaskBundle()))
-    /* status from arbiter at stage1  */
-    val taskInfo_s1 = Flipped(ValidIO(new TaskBundle()))
 
     /* handle set conflict in req arb */
     val fromReqArb = Input(new Bundle() {
@@ -94,7 +92,11 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     val nestedwb = Output(new NestedWriteback)
     val nestedwbData = Output(new DSBlock)
 
+    /* send Hint to L1 */
     val l1Hint = DecoupledIO(new L2ToL1Hint())
+    /* receive s1 info for Hint */
+    val taskInfo_s1 = Flipped(ValidIO(new TaskBundle()))
+
     /* send prefetchTrain to Prefetch to trigger a prefetch req */
     val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain))
 
