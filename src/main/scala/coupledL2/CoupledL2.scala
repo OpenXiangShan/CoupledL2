@@ -444,12 +444,34 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
       case None => io.debugTopDown.l2MissMatch.foreach(_ := false.B)
     }
 
-    XSPerfAccumulate(cacheParams, "hint_fire", io.l2_hint.valid)
-    val grant_fire = slices.map{ slice => {
-                        val (_, _, grant_fire_last, _) = node.in.head._2.count(slice.io.in.d)
-                        slice.io.in.d.fire && grant_fire_last && slice.io.in.d.bits.opcode === GrantData
-                      }}
-    XSPerfAccumulate(cacheParams, "grant_data_fire", PopCount(VecInit(grant_fire)))
+    val grant_data_fire = slices.map { slice => {
+      val (first, _, _, _) = node.in.head._2.count(slice.io.in.d)
+      slice.io.in.d.fire && first && slice.io.in.d.bits.opcode === GrantData
+    }
+    }
+    XSPerfAccumulate(cacheParams, "grant_data_fire", PopCount(VecInit(grant_data_fire)))
+
+    val hint_source = io.l2_hint.bits
+
+    val grant_data_source = ParallelPriorityMux(slices.map {
+      s => (s.io.in.d.fire, s.io.in.d.bits.source)
+    })
+
+    val hintPipe2 = Module(new Pipeline(UInt(32.W), 2))
+    hintPipe2.io.in.valid := io.l2_hint.valid
+    hintPipe2.io.in.bits := hint_source
+    hintPipe2.io.out.ready := true.B
+
+    val hintPipe1 = Module(new Pipeline(UInt(32.W), 1))
+    hintPipe1.io.in.valid := io.l2_hint.valid
+    hintPipe1.io.in.bits := hint_source
+    hintPipe1.io.out.ready := true.B
+
+    val accurateHint = grant_data_fire.orR && hintPipe2.io.out.valid && hintPipe2.io.out.bits === grant_data_source
+    XSPerfAccumulate(cacheParams, "accurate3Hints", accurateHint)
+
+    val okHint = grant_data_fire.orR && hintPipe1.io.out.valid && hintPipe1.io.out.bits === grant_data_source
+    XSPerfAccumulate(cacheParams, "ok2Hints", accurateHint)
   }
 
   lazy val module = new CoupledL2Imp(this)

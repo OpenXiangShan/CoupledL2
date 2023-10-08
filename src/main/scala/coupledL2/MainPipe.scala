@@ -95,8 +95,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     val nestedwbData = Output(new DSBlock)
 
     val l1Hint = DecoupledIO(new L2ToL1Hint())
-    val grantBufferHint = Flipped(DecoupledIO(new L2ToL1Hint()))
-    val globalCounter = Input(UInt((log2Ceil(mshrsAll) + 1).W))
     /* send prefetchTrain to Prefetch to trigger a prefetch req */
     val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain))
 
