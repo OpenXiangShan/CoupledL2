@@ -200,16 +200,4 @@ class Slice()(implicit p: Parameters) extends L2Module {
   } else {
     mainPipe.io.toMonitor <> DontCare
   }
-
-  // ==================== debug info ====================
-  val cnt = Counter(true.B, 50000000)
-  val (first, _, _, _) = edgeIn.count(io.in.d)
-
-  when(io.in.d.fire && io.in.d.bits.opcode === GrantData && first) {
-    printf(p"G ${cnt._1} ${io.in.d.bits.source}\n")
-  }
-
-  when(io.l1Hint.fire) {
-    printf(p"H ${cnt._1} ${io.l1Hint.bits.sourceId}\n")
-  }
 }
