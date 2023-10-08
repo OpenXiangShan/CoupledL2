@@ -23,7 +23,7 @@ import freechips.rocketchip.diplomacy.BufferParams
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util._
 import org.chipsalliance.cde.config.Field
-import huancun.CacheParameters
+import huancun.{AliasKey, CacheParameters, IsHitKey, PrefetchKey}
 import coupledL2.prefetch._
 import utility.{MemReqSource, ReqSourceKey}
 
@@ -46,51 +46,12 @@ case class L1Param
   val needResolveAlias = aliasBitsOpt.nonEmpty
 }
 
-// Indicate alias bit of upper level cache
-case object AliasKey extends ControlKey[UInt]("alias")
-case class AliasField(width: Int) extends BundleField(AliasKey) {
-  override def data: UInt = Output(UInt(width.W))
-  override def default(x: UInt): Unit = {
-    x := 0.U(width.W)
-  }
-}
-
 // Pass virtual address of upper level cache
 case object VaddrKey extends ControlKey[UInt]("vaddr")
 case class VaddrField(width: Int) extends BundleField(VaddrKey) {
   override def data: UInt = Output(UInt(width.W))
   override def default(x: UInt): Unit = {
     x := 0.U(width.W)
-  }
-}
-
-// Indicate whether Hint is needed by upper level cache
-case object PrefetchKey extends ControlKey[Bool](name = "needHint")
-case class PrefetchField() extends BundleField(PrefetchKey) {
-  override def data: Bool = Output(Bool())
-  override def default(x: Bool): Unit = {
-    x := false.B
-  }
-}
-
-case object IsHitKey extends ControlKey[Bool](name = "isHitInL3")
-
-case class IsHitField() extends BundleField(IsHitKey) {
-  override def data: Bool = Output(Bool())
-
-  override def default(x: Bool): Unit = {
-    x := true.B
-  }
-}
-
-// Indicate whether this block is dirty or not (only used in handle Release/ReleaseData)
-// Now it only works for non-inclusive cache (ignored in inclusive cache)
-case object DirtyKey extends ControlKey[Bool](name = "blockisdirty")
-
-case class DirtyField() extends BundleField(DirtyKey) {
-  override def data: Bool = Output(Bool())
-  override def default(x: Bool): Unit = {
-    x := true.B
   }
 }
 
