@@ -399,6 +399,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     val merge_task = Mux(io.aMergeTask.valid, io.aMergeTask.bits, merge_task_r)
     mp_grant.aMergeTask.off := merge_task.off
     mp_grant.aMergeTask.alias.foreach(_ := merge_task.alias.getOrElse(0.U))
+    mp_grant.aMergeTask.vaddr.foreach(_ := merge_task.vaddr.getOrElse(0.U))
     mp_grant.aMergeTask.opcode := odOpGen(merge_task.opcode)
     mp_grant.aMergeTask.param := MuxLookup( // Acquire -> Grant
       merge_task.param,
@@ -585,6 +586,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.msInfo.bits.isAcqOrPrefetch := req_acquire || req_prefetch
   io.msInfo.bits.isPrefetch := req_prefetch
   io.msInfo.bits.s_refill := state.s_refill
+  io.msInfo.bits.param := req.param
   io.msInfo.bits.mergeA := mergeA
 
   assert(!(c_resp.valid && !io.status.bits.w_c_resp))
