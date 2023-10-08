@@ -592,7 +592,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   assert(!(c_resp.valid && !io.status.bits.w_c_resp))
   assert(!(d_resp.valid && !io.status.bits.w_d_resp))
 
-  /* ======== Handling Nested B ======== */
+  /* ======== Handling Merge B ======== */
   when (io.bMergeTask.valid) {
     state.s_merge_probeack := false.B
     state.s_release := true.B

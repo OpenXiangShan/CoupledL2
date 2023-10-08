@@ -96,8 +96,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     val nestedwb = Output(new NestedWriteback)
     val nestedwbData = Output(new DSBlock)
 
-    val l1Hint = ValidIO(new L2ToL1Hint())
-    val grantBufferHint = Flipped(ValidIO(new L2ToL1Hint()))
+    val l1Hint = DecoupledIO(new L2ToL1Hint())
+    val grantBufferHint = Flipped(DecoupledIO(new L2ToL1Hint()))
     val globalCounter = Input(UInt((log2Ceil(mshrsAll) + 1).W))
     /* send prefetchTrain to Prefetch to trigger a prefetch req */
     val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain))
@@ -487,22 +487,11 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val customL1Hint = Module(new CustomL1Hint)
 
   customL1Hint.io.s1 := io.taskInfo_s1
-  customL1Hint.io.s2 := task_s2
-
+  
   customL1Hint.io.s3.task      := task_s3
-  customL1Hint.io.s3.d         := d_s3.valid
+  // overwrite opcode: if sinkReq can respond, use sink_resp_s3.bits.opcode = Grant/GrantData
+  customL1Hint.io.s3.task.bits.opcode := Mux(sink_resp_s3.valid, sink_resp_s3.bits.opcode, task_s3.bits.opcode)
   customL1Hint.io.s3.need_mshr := need_mshr_s3
-
-  customL1Hint.io.s4.task                  := task_s4
-  customL1Hint.io.s4.d                     := d_s4.valid
-  customL1Hint.io.s4.need_write_releaseBuf := need_write_releaseBuf_s4
-  customL1Hint.io.s4.need_write_refillBuf  := need_write_refillBuf_s4
-
-  customL1Hint.io.s5.task      := task_s5
-  customL1Hint.io.s5.d         := d_s5.valid
-
-  customL1Hint.io.globalCounter   := io.globalCounter
-  customL1Hint.io.grantBufferHint <> io.grantBufferHint
 
   customL1Hint.io.l1Hint <> io.l1Hint
 
@@ -615,7 +604,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   val c = Seq(c_s5, c_s4, c_s3)
   val d = Seq(d_s5, d_s4, d_s3)
-  // DO NOT use TLArbiter because TLArbiter will send continuous beats for the same source
   val c_arb = Module(new Arbiter(io.toSourceC.bits.cloneType, c.size))
   val d_arb = Module(new Arbiter(io.toSourceD.bits.cloneType, d.size))
   c_arb.io.in <> c

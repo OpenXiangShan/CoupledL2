@@ -108,8 +108,6 @@ class Slice()(implicit p: Parameters) extends L2Module {
   mainPipe.io.releaseBufResp_s3.valid := RegNext(releaseBuf.io.r.valid && releaseBuf.io.r.ready, false.B)
   mainPipe.io.releaseBufResp_s3.bits := releaseBuf.io.r.data
   mainPipe.io.fromReqArb.status_s1 := reqArb.io.status_s1
-  mainPipe.io.grantBufferHint := grantBuf.io.l1Hint
-  mainPipe.io.globalCounter := grantBuf.io.globalCounter
   mainPipe.io.taskInfo_s1 <> reqArb.io.taskInfo_s1
 
   // priority: nested-ReleaseData / probeAckData [NEW] > mainPipe DS rdata [OLD]
