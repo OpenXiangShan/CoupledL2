@@ -300,9 +300,19 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
       if(bankBits == 0) true.B else set(bankBits - 1, 0) === bankId.U
     }
 
+    // ** WARNING:TODO: this depends on where the latch is
+    // ** if Hint latched in slice, while D-Channel latched in XSTile
+    // ** we need only [hintCycleAhead - 1] later
+    val sliceAhead = hintCycleAhead - 1
+
     val hintChosen = Wire(UInt(banks.W))
     val hintFire = Wire(Bool())
+
+    // if Hint indicates that this slice should fireD, yet no D resp comes out of this slice
+    // then we releaseSourceD, enabling io.d.ready for other slices
+    // TODO: if Hint for single slice is 100% accurate, may consider remove this
     val releaseSourceD = Wire(Vec(banks, Bool()))
+    val allCanFire = (RegNextN(!hintFire, sliceAhead) && RegNextN(!hintFire, sliceAhead + 1)) || Cat(releaseSourceD).orR
 
     val slices = node.in.zip(node.out).zipWithIndex.map {
       case (((in, edgeIn), (out, edgeOut)), i) =>
@@ -322,17 +332,10 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
           // we will try our best to select the grant of slice X.
           // If slice X has no grant then, it means that the hint at cycle T is wrong,
           // so we relax the restriction on grant selection.
-
-          // ** WARNING:TODO: this depends on where the latch is
-          // ** if Hint latched in slice, while D-Channel latched in XSTile
-          // ** we need only [hintCycleAhead - 1] later
-          val sliceAhead = hintCycleAhead - 1
           val sliceCanFire = RegNextN(hintFire && i.U === hintChosen, sliceAhead) ||
             RegNextN(hintFire && i.U === hintChosen, sliceAhead + 1)
 
           releaseSourceD(i) := sliceCanFire && !slice.io.in.d.valid
-          val allCanFire = RegNextN(!hintFire, sliceAhead) ||
-            RegNextN(!hintFire, sliceAhead + 1) || Cat(releaseSourceD).orR
 
           in.d.valid := slice.io.in.d.valid && (sliceCanFire || allCanFire)
           slice.io.in.d.ready := in.d.ready && (sliceCanFire || allCanFire)
@@ -389,7 +392,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
 
       l1HintArb.io.in <> VecInit(slices_l1Hint)
       io.l2_hint.valid := l1HintArb.io.out.fire && sourceIsDcache
-      io.l2_hint.bits := l1HintArb.io.out.bits.sourceId - dcacheSourceIdStart // HINTWARNING: this signal is missing in verilog
+      io.l2_hint.bits := l1HintArb.io.out.bits.sourceId - dcacheSourceIdStart
       // continuous hints can only be sent every two cycle, since GrantData takes two cycles
       l1HintArb.io.out.ready := !RegNext(io.l2_hint.valid, false.B)
 
@@ -397,6 +400,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
       hintFire := io.l2_hint.valid
     }
 
+    // ==================== TopDown ====================
     val topDown = topDownOpt.map(_ => Module(new TopDownMonitor()(p.alterPartial {
       case EdgeInKey => node.in.head._2
       case EdgeOutKey => node.out.head._2
@@ -417,6 +421,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
       case None => io.debugTopDown.l2MissMatch.foreach(_ := false.B)
     }
 
+    // ==================== XSPerf Counters ====================
     val grant_data_fire = slices.map { slice => {
       val (first, _, _, _) = node.in.head._2.count(slice.io.in.d)
       slice.io.in.d.fire && first && slice.io.in.d.bits.opcode === GrantData
@@ -444,7 +449,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     XSPerfAccumulate(cacheParams, "accurate3Hints", accurateHint)
 
     val okHint = grant_data_fire.orR && hintPipe1.io.out.valid && hintPipe1.io.out.bits === grant_data_source
-    XSPerfAccumulate(cacheParams, "ok2Hints", accurateHint)
+    XSPerfAccumulate(cacheParams, "ok2Hints", okHint)
   }
 
   lazy val module = new CoupledL2Imp(this)

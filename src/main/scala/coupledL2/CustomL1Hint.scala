@@ -93,12 +93,13 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   val hintEntriesWidth = log2Ceil(hintEntries)
   val hintQueue = Module(new Queue(new HintQueueEntry, hintEntries))
 
-  // this will have at most 1 entry
-  val hint_s1Queue = Module(new Queue(new HintQueueEntry, 2, flow = true))
+  // this will have at most 2 entries
+  val hint_s1Queue = Module(new Queue(new HintQueueEntry, 4, flow = true))
   hint_s1Queue.io.enq.valid := enqValid_s1
   hint_s1Queue.io.enq.bits.opcode := enqOpcode_s1
   hint_s1Queue.io.enq.bits.source := enqSource_s1
   hint_s1Queue.io.deq.ready := hintQueue.io.enq.ready && !enqValid_s3
+  // WARNING:TODO: ensure queue will never overflow
   assert(hint_s1Queue.io.enq.ready, "hint_s1Queue should never be full")
   assert(hintQueue.io.enq.ready, "hintQueue should never be full")
 
