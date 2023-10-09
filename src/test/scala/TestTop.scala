@@ -332,7 +332,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
       clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
       echoField = Seq(DirtyField()),
       hartIds = Seq{i},
-      prefetch = Some(coupledL2.prefetch.BOPParameters())
+      prefetch = Some(BOPParameters())
     )
   }))))
   val l2_nodes = coupledL2.map(_.node)
