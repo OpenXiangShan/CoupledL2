@@ -23,7 +23,7 @@ import utility._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import org.chipsalliance.cde.config.Parameters
-import huancun.{PreferCacheKey}
+import huancun.{DirtyKey, PreferCacheKey}
 
 class AcquireUnit(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
