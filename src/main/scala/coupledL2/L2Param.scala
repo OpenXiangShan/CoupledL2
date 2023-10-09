@@ -48,12 +48,7 @@ case class L1Param
 
 // Pass virtual address of upper level cache
 case object VaddrKey extends ControlKey[UInt]("vaddr")
-case class VaddrField(width: Int) extends BundleField(VaddrKey) {
-  override def data: UInt = Output(UInt(width.W))
-  override def default(x: UInt): Unit = {
-    x := 0.U(width.W)
-  }
-}
+case class VaddrField(width: Int) extends BundleField[UInt](VaddrKey, Output(UInt(width.W)), _ := 0.U(width.W))
 
 case class L2Param
 (
