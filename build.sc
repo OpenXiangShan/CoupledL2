@@ -3,6 +3,7 @@ import scalalib._
 import scalafmt._
 import os.Path
 import publish._
+import $file.common
 import $file.`rocket-chip`.common
 import $file.`rocket-chip`.common
 import $file.`rocket-chip`.cde.common
@@ -84,18 +85,7 @@ object huancun extends SbtModule with HasChisel {
   )
 }
 
-trait CoupledL2Module extends ScalaModule {
-
-  def rocketModule: ScalaModule
-
-  def utilityModule: ScalaModule
-
-  def huancunModule: ScalaModule
-
-  override def moduleDeps = super.moduleDeps ++ Seq(rocketModule, utilityModule, huancunModule)
-}
-
-object CoupledL2 extends SbtModule with HasChisel with CoupledL2Module {
+object CoupledL2 extends SbtModule with HasChisel with millbuild.common.CoupledL2Module {
 
   override def millSourcePath = millOuterCtx.millSourcePath
 
