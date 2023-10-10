@@ -22,7 +22,7 @@ import chisel3._
 import chisel3.util._
 import coupledL2.utils._
 import freechips.rocketchip.tilelink._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import utility._
 
 class GrantStatus(implicit p: Parameters) extends L2Bundle {
@@ -47,12 +47,16 @@ class SourceB(implicit p: Parameters) extends L2Module {
     val grantStatus = Input(Vec(grantBufInflightSize, new GrantStatus))
   })
 
+  val dcacheSourceIdStart = edgeIn.client.clients
+    .filter(_.supports.probe)
+    .map(c => c.sourceId.start.U).head
+
   def toTLBundleB(task: SourceBReq) = {
     val b = Wire(new TLBundleB(edgeIn.bundle))
     b.opcode  := task.opcode
     b.param   := task.param
     b.size    := offsetBits.U
-    b.source  := 0.U // make sure there are only 1 client
+    b.source  := dcacheSourceIdStart
     b.address := Cat(task.tag, task.set, 0.U(offsetBits.W))
     b.mask    := Fill(beatBytes, 1.U(1.W))
     b.data    := Cat(task.alias.getOrElse(0.U), 0.U(1.W)) // this is the same as HuanCun

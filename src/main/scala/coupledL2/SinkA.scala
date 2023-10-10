@@ -19,12 +19,13 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLHints._
 import coupledL2.prefetch.PrefetchReq
 import coupledL2.utils.XSPerfAccumulate
+import huancun.{AliasKey, PrefetchKey}
 import utility.MemReqSource
 
 class SinkA(implicit p: Parameters) extends L2Module {
@@ -69,6 +70,8 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.reqSource := a.user.lift(utility.ReqSourceKey).getOrElse(MemReqSource.NoWhere.id.U)
     task.replTask := false.B
     task.vaddr.foreach(_ := a.user.lift(VaddrKey).getOrElse(0.U))
+    task.mergeA := false.B
+    task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
     task
   }
   def fromPrefetchReqtoTaskBundle(req: PrefetchReq): TaskBundle = {
@@ -101,6 +104,8 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.reqSource := req.pfSource
     task.replTask := false.B
     task.vaddr.foreach(_ := 0.U)
+    task.mergeA := false.B
+    task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
     task
   }
   commonReq.valid := io.a.valid
@@ -116,11 +121,11 @@ class SinkA(implicit p: Parameters) extends L2Module {
 
   // Performance counters
   // num of reqs
-  XSPerfAccumulate(cacheParams, "sinkA_req", io.task.fire())
-  XSPerfAccumulate(cacheParams, "sinkA_acquire_req", io.a.fire() && io.a.bits.opcode(2, 1) === AcquireBlock(2, 1))
-  XSPerfAccumulate(cacheParams, "sinkA_acquireblock_req", io.a.fire() && io.a.bits.opcode === AcquireBlock)
-  XSPerfAccumulate(cacheParams, "sinkA_acquireperm_req", io.a.fire() && io.a.bits.opcode === AcquirePerm)
-  XSPerfAccumulate(cacheParams, "sinkA_get_req", io.a.fire() && io.a.bits.opcode === Get)
+  XSPerfAccumulate(cacheParams, "sinkA_req", io.task.fire)
+  XSPerfAccumulate(cacheParams, "sinkA_acquire_req", io.a.fire && io.a.bits.opcode(2, 1) === AcquireBlock(2, 1))
+  XSPerfAccumulate(cacheParams, "sinkA_acquireblock_req", io.a.fire && io.a.bits.opcode === AcquireBlock)
+  XSPerfAccumulate(cacheParams, "sinkA_acquireperm_req", io.a.fire && io.a.bits.opcode === AcquirePerm)
+  XSPerfAccumulate(cacheParams, "sinkA_get_req", io.a.fire && io.a.bits.opcode === Get)
   prefetchOpt.foreach {
     _ =>
       XSPerfAccumulate(cacheParams, "sinkA_prefetch_req", io.prefetchReq.get.fire)

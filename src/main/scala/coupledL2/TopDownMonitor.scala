@@ -16,7 +16,7 @@
 
 package coupledL2
 
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import chisel3._
 import chisel3.util._
 import coupledL2.prefetch.PfSource
@@ -29,17 +29,16 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     val dirResult = Vec(banks, Flipped(ValidIO(new DirResult)))
     val msStatus  = Vec(banks, Vec(mshrsAll, Flipped(ValidIO(new MSHRStatus))))
     val latePF    = Vec(banks, Input(Bool()))
+    val debugTopDown = new Bundle {
+      val robHeadPaddr = Vec(cacheParams.hartIds.length, Flipped(Valid(UInt(36.W))))
+      val l2MissMatch = Vec(cacheParams.hartIds.length, Output(Bool()))
+    }
   })
 
   /* ====== PART ONE ======
    * Check whether the Addr given by core is a Miss in Cache
    */
-  for (hartId <- cacheParams.hartIds) {
-    val perfName = s"${cacheParams.name}MissMatch_${hartId}"
-
-    val pAddr = WireInit(0.U.asTypeOf(Valid(UInt(36.W)))) // TODO: hand written to match PAddrBits in SoC.scala
-    ExcitingUtils.addSink(pAddr, s"rob_head_paddr_${hartId}", ExcitingUtils.Perf)
-
+  for (((hartId, pAddr), addrMatch) <- cacheParams.hartIds zip io.debugTopDown.robHeadPaddr zip io.debugTopDown.l2MissMatch) {
     val addrMatchVec = io.msStatus.zipWithIndex.map {
       case(slice, i) =>
         slice.map {
@@ -53,11 +52,8 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
         }
     }
 
-    val addrMatch = Cat(addrMatchVec.flatten).orR
-
-    XSPerfAccumulate(cacheParams, perfName, addrMatch)
-    ExcitingUtils.addSource(addrMatch, perfName, ExcitingUtils.Perf)
-    ExcitingUtils.addSink(WireDefault(addrMatch), perfName, ExcitingUtils.Perf)
+    addrMatch := Cat(addrMatchVec.flatten).orR
+    XSPerfAccumulate(cacheParams, s"${cacheParams.name}MissMatch_${hartId}", addrMatch)
   }
 
   /* ====== PART TWO ======
@@ -119,6 +115,8 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     r =>  !r.hit &&
       (r.replacerInfo.reqSource === MemReqSource.Prefetch2L2BOP.id.U ||
        r.replacerInfo.reqSource === MemReqSource.Prefetch2L2SMS.id.U ||
+       r.replacerInfo.reqSource === MemReqSource.Prefetch2L2Stride.id.U ||
+       r.replacerInfo.reqSource === MemReqSource.Prefetch2L2Stream.id.U ||
        r.replacerInfo.reqSource === MemReqSource.Prefetch2L2TP.id.U)
   )
   val l2prefetchSentBOP = dirResultMatchVec(
@@ -126,6 +124,12 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   )
   val l2prefetchSentSMS = dirResultMatchVec(
     r => !r.hit && r.replacerInfo.reqSource === MemReqSource.Prefetch2L2SMS.id.U
+  )
+  val l2prefetchSentStride = dirResultMatchVec(
+    r => !r.hit && r.replacerInfo.reqSource === MemReqSource.Prefetch2L2Stride.id.U
+  )
+  val l2prefetchSentStream = dirResultMatchVec(
+    r => !r.hit && r.replacerInfo.reqSource === MemReqSource.Prefetch2L2Stream.id.U
   )
   val l2prefetchSentTP = dirResultMatchVec(
     r => !r.hit && r.replacerInfo.reqSource === MemReqSource.Prefetch2L2TP.id.U
@@ -141,6 +145,14 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   val l2prefetchUsefulSMS = dirResultMatchVec(
     r => reqFromCPU(r) && r.hit &&
       r.meta.prefetch.getOrElse(false.B) && r.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) === PfSource.SMS.id.U
+  )
+  val l2prefetchUsefulStride = dirResultMatchVec(
+    r => reqFromCPU(r) && r.hit &&
+      r.meta.prefetch.getOrElse(false.B) && r.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) === PfSource.Stride.id.U
+  )
+  val l2prefetchUsefulStream = dirResultMatchVec(
+    r => reqFromCPU(r) && r.hit &&
+      r.meta.prefetch.getOrElse(false.B) && r.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) === PfSource.Stream.id.U
   )
   val l2prefetchUsefulTP = dirResultMatchVec(
     r => reqFromCPU(r) && r.hit &&
@@ -168,6 +180,16 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     1000, clock, reset
   )
   XSPerfRolling(
+    cacheParams, "L2PrefetchAccuracyStride",
+    PopCount(l2prefetchUsefulStride), PopCount(l2prefetchSentStride),
+    1000, clock, reset
+  )
+  XSPerfRolling(
+    cacheParams, "L2PrefetchAccuracyStream",
+    PopCount(l2prefetchUsefulStream), PopCount(l2prefetchSentStream),
+    1000, clock, reset
+  )
+  XSPerfRolling(
     cacheParams, "L2PrefetchAccuracyTP",
     PopCount(l2prefetchUsefulTP), PopCount(l2prefetchSentTP),
     1000, clock, reset
@@ -190,6 +212,16 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   XSPerfRolling(
     cacheParams, "L2PrefetchCoverageSMS",
     PopCount(l2prefetchUsefulSMS), PopCount(l2demandRequest),
+    1000, clock, reset
+  )
+  XSPerfRolling(
+    cacheParams, "L2PrefetchCoverageStride",
+    PopCount(l2prefetchUsefulStride), PopCount(l2demandRequest),
+    1000, clock, reset
+  )
+  XSPerfRolling(
+    cacheParams, "L2PrefetchCoverageStream",
+    PopCount(l2prefetchUsefulStream), PopCount(l2demandRequest),
     1000, clock, reset
   )
   XSPerfRolling(

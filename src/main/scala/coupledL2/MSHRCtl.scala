@@ -20,7 +20,7 @@ package coupledL2
 import chisel3._
 import chisel3.util._
 import utility._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.prefetch.PrefetchTrain
@@ -67,10 +67,9 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     val resps = Input(new Bundle() {
       val sinkC = new RespBundle
       val sinkD = new RespBundle
-      val sinkE = new RespBundle
       val sourceC = new RespBundle
     })
-    
+
     val releaseBufWriteId = Output(UInt(mshrBits.W))
 
     /* nested writeback */
@@ -84,6 +83,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     /* to ReqBuffer, to calculate conflict */
     /* to SinkB, to merge nested B req */
     val msInfo = Vec(mshrsAll, ValidIO(new MSHRInfo))
+    val aMergeTask = Flipped(ValidIO(new AMergeTask))
     val bMergeTask = Flipped(ValidIO(new BMergeTask))
 
     /* refill read replacer result */
@@ -121,8 +121,6 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       m.io.resps.sink_c.bits := io.resps.sinkC.respInfo
       m.io.resps.sink_d.valid := m.io.status.valid && io.resps.sinkD.valid && io.resps.sinkD.mshrId === i.U
       m.io.resps.sink_d.bits := io.resps.sinkD.respInfo
-      m.io.resps.sink_e.valid := m.io.status.valid && io.resps.sinkE.valid && io.resps.sinkE.mshrId === i.U
-      m.io.resps.sink_e.bits := io.resps.sinkE.respInfo
       m.io.resps.source_c.valid := m.io.status.valid && io.resps.sourceC.valid && io.resps.sourceC.mshrId === i.U
       m.io.resps.source_c.bits := io.resps.sourceC.respInfo
       m.io.replResp.valid := io.replResp.valid && io.replResp.bits.mshrId === i.U
@@ -130,6 +128,8 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
 
       io.msInfo(i) := m.io.msInfo
       m.io.nestedwb := io.nestedwb
+      m.io.aMergeTask.valid := io.aMergeTask.valid && io.aMergeTask.bits.id === i.U
+      m.io.aMergeTask.bits := io.aMergeTask.bits.task
       m.io.bMergeTask.valid := io.bMergeTask.valid && io.bMergeTask.bits.id === i.U
       m.io.bMergeTask.bits := io.bMergeTask.bits
   }
@@ -182,9 +182,9 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     start = 0, stop = mshrsAll, step = 1)
   // prefetchOpt.foreach {
   //   _ =>
-  //     XSPerfAccumulate(cacheParams, "prefetch_trains", io.prefetchTrain.get.fire())
+  //     XSPerfAccumulate(cacheParams, "prefetch_trains", io.prefetchTrain.get.fire)
   // }
-  
+
   if (cacheParams.enablePerf) {
     val start = 0
     val stop = 100

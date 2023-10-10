@@ -21,7 +21,7 @@ import chisel3._
 import chisel3.util._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import coupledL2.utils.XSPerfAccumulate
 import utility.MemReqSource
 
@@ -48,7 +48,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
     val refillBufWrite = Flipped(new MSHRBufWrite)
     val msInfo = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo)))
   })
-  
+
   val (first, last, _, beat) = edgeIn.count(io.c)
   val isRelease = io.c.bits.opcode(1)
   val hasData = io.c.bits.opcode(0)
@@ -66,7 +66,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
   val full = bufValids.andR
   val noSpace = full && hasData
   val nextPtr = PriorityEncoder(~bufValids)
-  val nextPtrReg = RegEnable(nextPtr, 0.U.asTypeOf(nextPtr), io.c.fire() && isRelease && first && hasData)
+  val nextPtrReg = RegEnable(nextPtr, 0.U.asTypeOf(nextPtr), io.c.fire && isRelease && first && hasData)
 
   def toTaskBundle(c: TLBundleC): TaskBundle = {
     val task = Wire(new TaskBundle)
@@ -97,10 +97,12 @@ class SinkC(implicit p: Parameters) extends L2Module {
     task.wayMask := Fill(cacheParams.ways, "b1".U)
     task.reqSource := MemReqSource.NoWhere.id.U // Ignore
     task.replTask := false.B
+    task.mergeA := false.B
+    task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
     task
   }
 
-  when (io.c.fire() && isRelease) {
+  when (io.c.fire && isRelease) {
     when (hasData) {
       when (first) {
         dataBuf(nextPtr)(beat) := io.c.bits.data
@@ -113,7 +115,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
     }
   }
 
-  when (io.c.fire() && isRelease && last && (!io.task.ready || taskArb.io.out.valid)) {
+  when (io.c.fire && isRelease && last && (!io.task.ready || taskArb.io.out.valid)) {
     when (hasData) {
       taskValids(nextPtrReg) := true.B
       taskBuf(nextPtrReg) := toTaskBundle(io.c.bits)
@@ -130,7 +132,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
     case (in, i) =>
       in.valid := taskValids(i)
       in.bits := taskBuf(i)
-      when (in.fire()) {
+      when (in.fire) {
         taskValids(i) := false.B
       }
   }

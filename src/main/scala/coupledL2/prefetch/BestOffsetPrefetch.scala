@@ -18,7 +18,7 @@
 package coupledL2.prefetch
 
 import utility.{MemReqSource, SRAMTemplate}
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import chisel3._
 import chisel3.util._
 import coupledL2.HasCoupledL2Parameters
@@ -146,15 +146,15 @@ class RecentRequestTable(implicit p: Parameters) extends BOPModule {
 
   val rAddr = io.r.req.bits.addr - signedExtend((io.r.req.bits.testOffset << offsetBits), fullAddressBits)
   val rData = Wire(rrTableEntry())
-  rrTable.io.r.req.valid := io.r.req.fire()
+  rrTable.io.r.req.valid := io.r.req.fire
   rrTable.io.r.req.bits.setIdx := idx(rAddr)
   rData := rrTable.io.r.resp.data(0)
 
-  assert(!RegNext(io.w.fire() && io.r.req.fire()), "single port SRAM should not read and write at the same time")
+  assert(!RegNext(io.w.fire && io.r.req.fire), "single port SRAM should not read and write at the same time")
 
   io.w.ready := rrTable.io.w.req.ready && !io.r.req.valid
   io.r.req.ready := true.B
-  io.r.resp.valid := RegNext(rrTable.io.r.req.fire(), false.B)
+  io.r.resp.valid := RegNext(rrTable.io.r.req.fire, false.B)
   io.r.resp.bits.ptr := RegNext(io.r.req.bits.ptr)
   io.r.resp.bits.hit := rData.valid && rData.tag === RegNext(tag(rAddr))
 
@@ -171,7 +171,7 @@ class OffsetScoreTable(implicit p: Parameters) extends BOPModule {
   // score table
   // val st = RegInit(VecInit(offsetList.map(off => (new ScoreTableEntry).apply(off.U, 0.U))))
   val st = RegInit(VecInit(Seq.fill(scores)((new ScoreTableEntry).apply(0.U))))
-  val offList = WireInit(VecInit(offsetList.map(off => off.S(offsetWidth.W).asUInt())))
+  val offList = WireInit(VecInit(offsetList.map(off => off.S(offsetWidth.W).asUInt)))
   val ptr = RegInit(0.U(scoreTableIdxBits.W))
   val round = RegInit(0.U(roundBits.W))
 
@@ -208,7 +208,7 @@ class OffsetScoreTable(implicit p: Parameters) extends BOPModule {
   // (1) one of the score equals SCOREMAX, or
   // (2) the number of rounds equals ROUNDMAX.
   when(state === s_learn) {
-    when(io.test.req.fire()) {
+    when(io.test.req.fire) {
       val roundFinish = ptr === (scores - 1).U
       ptr := Mux(roundFinish, 0.U, ptr + 1.U)
       round := Mux(roundFinish, round + 1.U, round)
@@ -219,7 +219,7 @@ class OffsetScoreTable(implicit p: Parameters) extends BOPModule {
       state := s_idle
     }
 
-    when(io.test.resp.fire() && io.test.resp.bits.hit) {
+    when(io.test.resp.fire && io.test.resp.bits.hit) {
       val oldScore = st(io.test.resp.bits.ptr).score
       val newScore = oldScore + 1.U
       val offset = offList(io.test.resp.bits.ptr)
@@ -278,10 +278,10 @@ class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   val req = Reg(new PrefetchReq)
   val req_valid = RegInit(false.B)
   val crossPage = getPPN(newAddr) =/= getPPN(oldAddr) // unequal tags
-  when(io.req.fire()) {
+  when(io.req.fire) {
     req_valid := false.B
   }
-  when(scoreTable.io.req.fire()) {
+  when(scoreTable.io.req.fire) {
     req.tag := parseFullAddress(newAddr)._1
     req.set := parseFullAddress(newAddr)._2
     req.needT := io.train.bits.needT
@@ -302,8 +302,8 @@ class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
       XSPerfAccumulate(cacheParams, "best_offset_pos_" + off.toString, prefetchOffset === off.U)
     }
   }
-  XSPerfAccumulate(cacheParams, "bop_req", io.req.fire())
-  XSPerfAccumulate(cacheParams, "bop_train", io.train.fire())
+  XSPerfAccumulate(cacheParams, "bop_req", io.req.fire)
+  XSPerfAccumulate(cacheParams, "bop_train", io.train.fire)
   XSPerfAccumulate(cacheParams, "bop_train_stall_for_st_not_ready", io.train.valid && !scoreTable.io.req.ready)
-  XSPerfAccumulate(cacheParams, "bop_cross_page", scoreTable.io.req.fire() && crossPage)
+  XSPerfAccumulate(cacheParams, "bop_cross_page", scoreTable.io.req.fire && crossPage)
 }

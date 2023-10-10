@@ -19,7 +19,7 @@ package coupledL2.prefetch
 
 import chisel3._
 import chisel3.util._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import utility.{ChiselDB, MemReqSource, SRAMTemplate}
 import coupledL2.HasCoupledL2Parameters
 import coupledL2.utils.{ReplacementPolicy, XSPerfAccumulate}

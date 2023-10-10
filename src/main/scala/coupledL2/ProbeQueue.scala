@@ -21,7 +21,7 @@ import chisel3._
 import chisel3.util._
 import coupledL2.utils._
 import freechips.rocketchip.tilelink._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 
 class ProbeQueue(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
@@ -51,12 +51,12 @@ class ProbeQueue(implicit p: Parameters) extends L2Module {
     if (i == 0) {
       prbq_in_sel(i) := ~prbq_valid_reg(i)
     } else {
-      prbq_in_sel(i) := ~prbq_valid_reg(i) & prbq_valid_reg.asUInt()(i - 1, 0).andR
+      prbq_in_sel(i) := ~prbq_valid_reg(i) & prbq_valid_reg.asUInt(i - 1, 0).andR
     }
     prbq_alloc(i) := io.sinkB.valid & prbq_in_sel(i)
 
     // free a entry of probe queue
-    prbq_out_sel(i) := ~(prbq_valid_reg.asUInt() & prbq_older_arr(i)).orR
+    prbq_out_sel(i) := ~(prbq_valid_reg.asUInt & prbq_older_arr(i)).orR
     prbq_free(i)    := prbq_valid_reg(i) & prbq_out_sel(i) & (~io.arb_busy_s0 | ~prb_valid_s0_reg)
 
     when(prbq_alloc(i)) {
@@ -69,10 +69,10 @@ class ProbeQueue(implicit p: Parameters) extends L2Module {
 
     // update the older array by LRU Algorithm
     when(prbq_alloc(i)) {
-      prbq_older_arr(i) := ~prbq_alloc.asUInt()
+      prbq_older_arr(i) := ~prbq_alloc.asUInt
     }
     .elsewhen(prbq_alloc.asUInt.orR) {
-      prbq_older_arr(i) := prbq_older_arr(i) & ~prbq_alloc.asUInt()
+      prbq_older_arr(i) := prbq_older_arr(i) & ~prbq_alloc.asUInt
     }
   }
 

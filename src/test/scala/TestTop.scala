@@ -2,7 +2,7 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import chipsalliance.rocketchip.config._
+import org.chipsalliance.cde.config._
 import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
@@ -16,10 +16,11 @@ import scala.collection.mutable.ArrayBuffer
 class TestTop_L2()(implicit p: Parameters) extends LazyModule {
 
   /*   L1D
-   *    | 
+   *    |
    *   L2
    */
 
+  override lazy val desiredName: String = "TestTop"
   val delayFactor = 0.5
   val cacheParams = p(L2ParamKey)
 
@@ -62,6 +63,16 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
       l2.node :=* xbar
 
   lazy val module = new LazyModuleImp(this){
+    val timer = WireDefault(0.U(64.W))
+    val logEnable = WireDefault(false.B)
+    val clean = WireDefault(false.B)
+    val dump = WireDefault(false.B)
+
+    dontTouch(timer)
+    dontTouch(logEnable)
+    dontTouch(clean)
+    dontTouch(dump)
+
     master_nodes.zipWithIndex.foreach{
       case (node, i) =>
         node.makeIOs()(ValName(s"master_port_$i"))
@@ -77,6 +88,8 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
    *      |
    *     L3
    */
+
+  override lazy val desiredName: String = "TestTop"
   val delayFactor = 0.2
   val cacheParams = p(L2ParamKey)
 
@@ -161,6 +174,16 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
     l2 :=* xbar
 
   lazy val module = new LazyModuleImp(this) {
+    val timer = WireDefault(0.U(64.W))
+    val logEnable = WireDefault(false.B)
+    val clean = WireDefault(false.B)
+    val dump = WireDefault(false.B)
+
+    dontTouch(timer)
+    dontTouch(logEnable)
+    dontTouch(clean)
+    dontTouch(dump)
+
     master_nodes.zipWithIndex.foreach {
       case (node, i) =>
         node.makeIOs()(ValName(s"master_port_$i"))
@@ -178,6 +201,7 @@ class TestTop_L2_Standalone()(implicit p: Parameters) extends LazyModule {
    *    L3 (fake, used for tl-test with salve)
    */
 
+  override lazy val desiredName: String = "TestTop"
   val delayFactor = 0.5
   val cacheParams = p(L2ParamKey)
 
@@ -241,6 +265,16 @@ class TestTop_L2_Standalone()(implicit p: Parameters) extends LazyModule {
       l2.node :=* xbar
 
   lazy val module = new LazyModuleImp(this){
+    val timer = WireDefault(0.U(64.W))
+    val logEnable = WireDefault(false.B)
+    val clean = WireDefault(false.B)
+    val dump = WireDefault(false.B)
+
+    dontTouch(timer)
+    dontTouch(logEnable)
+    dontTouch(clean)
+    dontTouch(dump)
+
     master_nodes.zipWithIndex.foreach{
       case (node, i) =>
         node.makeIOs()(ValName(s"master_port_$i"))
@@ -259,6 +293,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
    *    L3
    */
 
+  override lazy val desiredName: String = "TestTop"
   val delayFactor = 0.2
   val cacheParams = p(L2ParamKey)
 
@@ -287,7 +322,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
   val l1d_nodes = (0 until nrL2).map(i => createClientNode(s"l1d$i", 32))
   val master_nodes = l1d_nodes
 
-  val l2_nodes = (0 until nrL2).map(i => LazyModule(new CoupledL2()(new Config((_, _, _) => {
+  val coupledL2 = (0 until nrL2).map(i => LazyModule(new CoupledL2()(new Config((_, _, _) => {
     case L2ParamKey => L2Param(
       name = s"l2$i",
       ways = 4,
@@ -296,7 +331,8 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
       echoField = Seq(DirtyField()),
       hartIds = Seq{i}
     )
-  }))).node)
+  }))))
+  val l2_nodes = coupledL2.map(_.node)
 
   val l3 = LazyModule(new HuanCun()(new Config((_, _, _) => {
     case HCCacheParamsKey => HCCacheParameters(
@@ -337,6 +373,17 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
       l3.node :=* xbar
 
   lazy val module = new LazyModuleImp(this) {
+    val timer = WireDefault(0.U(64.W))
+    val logEnable = WireDefault(false.B)
+    val clean = WireDefault(false.B)
+    val dump = WireDefault(false.B)
+
+    dontTouch(timer)
+    dontTouch(logEnable)
+    dontTouch(clean)
+    dontTouch(dump)
+
+    coupledL2.foreach(_.module.io.debugTopDown := DontCare)
     master_nodes.zipWithIndex.foreach {
       case (node, i) =>
         node.makeIOs()(ValName(s"master_port_$i"))
@@ -353,6 +400,7 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
    *       L3
    */
 
+  override lazy val desiredName: String = "TestTop"
   val delayFactor = 0.2
   val cacheParams = p(L2ParamKey)
 
@@ -443,6 +491,16 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
       l3.node :=* l2xbar
 
   lazy val module = new LazyModuleImp(this) {
+    val timer = WireDefault(0.U(64.W))
+    val logEnable = WireDefault(false.B)
+    val clean = WireDefault(false.B)
+    val dump = WireDefault(false.B)
+
+    dontTouch(timer)
+    dontTouch(logEnable)
+    dontTouch(clean)
+    dontTouch(dump)
+
     master_nodes.zipWithIndex.foreach {
       case (node, i) =>
         node.makeIOs()(ValName(s"master_port_$i"))

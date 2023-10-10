@@ -20,9 +20,10 @@ package coupledL2
 import chisel3._
 import chisel3.util._
 import utility._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import coupledL2.utils.XSPerfAccumulate
+import huancun.DirtyKey
 
 //class SourceC(implicit p: Parameters) extends L2Module {
 //  val io = IO(new Bundle() {
