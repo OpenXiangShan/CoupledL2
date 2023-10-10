@@ -213,15 +213,15 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   tpMeta_w_bits.triggerTag := write_record_vtag
 
   val tpTable_w_vset = Mux(resetFinish, write_record_vset, resetIdx)
-  val tpTable_w_way = Mux(resetFinish, write_record_way, Fill(tpTableAssoc, true.B))
+  val tpTable_w_wayOH = Mux(resetFinish, UIntToOH(write_record_way), Fill(tpTableAssoc, true.B))
 
   when(!resetFinish) {
     tpMeta_w_bits.valid := false.B
     tpMeta_w_bits.triggerTag := 0.U
   }
 
-  tpDataTable.io.w.apply(tpTable_w_valid, tpData_w_bits, tpTable_w_vset, tpTable_w_way)
-  tpMetaTable.io.w.apply(tpTable_w_valid || !resetFinish, tpMeta_w_bits, tpTable_w_vset, tpTable_w_way)
+  tpDataTable.io.w.apply(tpTable_w_valid, tpData_w_bits, tpTable_w_vset, tpTable_w_wayOH)
+  tpMetaTable.io.w.apply(tpTable_w_valid || !resetFinish, tpMeta_w_bits, tpTable_w_vset, tpTable_w_wayOH)
 
   when(resetIdx === 0.U) {
     resetFinish := true.B
