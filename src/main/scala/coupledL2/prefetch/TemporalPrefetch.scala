@@ -267,7 +267,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     }
   }
 
-  io.req.valid := sending_valid
+  io.req.valid := false.B // sending_valid
   io.req.bits.tag := sendingTag
   io.req.bits.set := sendingSet
   io.req.bits.needT := true.B
