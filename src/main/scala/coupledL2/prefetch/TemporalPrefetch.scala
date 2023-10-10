@@ -32,7 +32,7 @@ case class TPParameters(
     tpQueueDepth: Int = 4,
     throttleCycles: Int = 4,
     replacementPolicy: String = "random",
-    verbose: Boolean = true
+    verbose: Boolean = false
 ) extends PrefetchParameters {
   override val hasPrefetchBit:  Boolean = true
   override val hasPrefetchSrc:  Boolean = true
@@ -278,12 +278,12 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   io.train.ready := resetFinish
 
   /* Performance collection */
-  val triggerDB = ChiselDB.createTable("tptrigger", new triggerBundle(), basicDB=true)
+  val triggerDB = ChiselDB.createTable("tptrigger", new triggerBundle(), basicDB=false)
   val triggerPt = Wire(new triggerBundle())
   triggerPt.paddr := write_record_trigger.paddr
   triggerPt.vaddr := recoverVaddr(write_record_trigger.vaddr)
 
-  val trainDB = ChiselDB.createTable("tptrain", new trainBundle(), basicDB=true)
+  val trainDB = ChiselDB.createTable("tptrain", new trainBundle(), basicDB=false)
   val trainPt = Wire(new trainBundle())
   trainPt.vaddr := recoverVaddr(train_s2.vaddr.getOrElse(0.U))
   trainPt.paddr := train_s2.addr
@@ -292,7 +292,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   trainPt.pfsource := train_s2.pfsource
   trainPt.metahit := hit_s2
 
-  val sendDB = ChiselDB.createTable("tpsend", new sendBundle(), basicDB=true)
+  val sendDB = ChiselDB.createTable("tpsend", new sendBundle(), basicDB=false)
   val sendPt = Wire(new sendBundle())
   sendPt.paddr := sending_data(sending_idx)
   sendPt.vaddr := recoverVaddr(sending_data_debug(sending_idx))
