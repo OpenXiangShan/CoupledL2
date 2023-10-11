@@ -31,7 +31,8 @@ case class TPParameters(
     blockOffBits: Int = 6,
     tpQueueDepth: Int = 4,
     throttleCycles: Int = 4,
-    replacementPolicy: String = "random"
+    replacementPolicy: String = "random",
+    verbose: Boolean = false
 ) extends PrefetchParameters {
   override val hasPrefetchBit:  Boolean = true
   override val hasPrefetchSrc:  Boolean = true
@@ -45,6 +46,7 @@ trait HasTPParams extends HasCoupledL2Parameters {
   val tpTableSetBits = log2Ceil(tpTableNrSet)
   val tpEntryMaxLen = tpParams.inflightEntries
   val tpTableReplacementPolicy = tpParams.replacementPolicy
+  val verbose = tpParams.verbose
   val vaddrBits = tpParams.vaddrBits
   val blockOffBits = tpParams.blockOffBits
   val tpQueueDepth = tpParams.tpQueueDepth
@@ -61,7 +63,8 @@ class tpMetaEntry(implicit p:Parameters) extends TPBundle {
 }
 
 class tpDataEntry(implicit p:Parameters) extends TPBundle {
-  val rawData = Vec(tpEntryMaxLen, UInt(vaddrBits.W))
+  val rawData = Vec(tpEntryMaxLen, UInt(fullAddressBits.W))
+  val rawData_debug = Vec(tpEntryMaxLen, UInt(vaddrBits.W))
   // TODO: val compressedData = UInt(512.W)
   val mode = UInt(3.W)
 }
@@ -75,10 +78,14 @@ class trainBundle(implicit p: Parameters) extends TPBundle {
   val vaddr = UInt(vaddrBits.W)
   val paddr = UInt(fullAddressBits.W)
   val hit = Bool()
+  val prefetched = Bool()
+  val pfsource = UInt(PfSource.pfSourceBits.W)
+  val metahit = Bool()
 }
 
 class sendBundle(implicit p: Parameters) extends TPBundle {
   val paddr = UInt(fullAddressBits.W)
+  val vaddr = UInt(vaddrBits.W)
 }
 
 /* VIVT, Physical Data */
@@ -91,6 +98,10 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   def parseVaddr(x: UInt): (UInt, UInt) = {
     (x(x.getWidth-1, tpTableSetBits), x(tpTableSetBits-1, 0))
+  }
+
+  def recoverVaddr(x: UInt): UInt = {
+    (x << 6.U).asUInt
   }
 
   val tpMetaTable = Module(
@@ -159,8 +170,10 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   /* Recorder logic */
   // TODO: compress data based on max delta
   val recorder_idx = RegInit(0.U(6.W))
-  val recorder_data = Reg(Vec(tpEntryMaxLen, UInt(vaddrBits.W)))
+  val recorder_data = Reg(Vec(tpEntryMaxLen, UInt(fullAddressBits.W)))
+  val recorder_data_debug = Reg(Vec(tpEntryMaxLen, UInt(vaddrBits.W)))
   val record_data_in = train_s2.addr
+  val record_data_in_debug = train_s2.vaddr.getOrElse(0.U)
   val write_record = RegInit(false.B)
   val write_record_way = RegInit(0.U.asTypeOf(way_s2))
   val write_record_trigger = RegInit(0.U.asTypeOf(new triggerBundle()))
@@ -168,6 +181,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   when(dorecord_s2) {
     recorder_idx := recorder_idx + 1.U
     recorder_data(recorder_idx) := record_data_in
+    recorder_data_debug(recorder_idx) := record_data_in_debug
     when(recorder_idx === (tpEntryMaxLen-1).U) {
       write_record := true.B
       write_record_way := way_s2  // choose way lazily
@@ -191,6 +205,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   val tpData_w_bits = Wire(new tpDataEntry())
   tpData_w_bits.rawData.zip(recorder_data).foreach(x => x._1 := x._2)
+  tpData_w_bits.rawData_debug.zip(recorder_data_debug).foreach(x => x._1 := x._2)
   tpData_w_bits.mode := 0.U
 
   val tpMeta_w_bits = Wire(new tpMetaEntry())
@@ -198,15 +213,15 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   tpMeta_w_bits.triggerTag := write_record_vtag
 
   val tpTable_w_vset = Mux(resetFinish, write_record_vset, resetIdx)
-  val tpTable_w_way = Mux(resetFinish, write_record_way, Fill(tpTableAssoc, true.B))
+  val tpTable_w_wayOH = Mux(resetFinish, UIntToOH(write_record_way), Fill(tpTableAssoc, true.B))
 
   when(!resetFinish) {
     tpMeta_w_bits.valid := false.B
     tpMeta_w_bits.triggerTag := 0.U
   }
 
-  tpDataTable.io.w.apply(tpTable_w_valid, tpData_w_bits, tpTable_w_vset, tpTable_w_way)
-  tpMetaTable.io.w.apply(tpTable_w_valid || !resetFinish, tpMeta_w_bits, tpTable_w_vset, tpTable_w_way)
+  tpDataTable.io.w.apply(tpTable_w_valid, tpData_w_bits, tpTable_w_vset, tpTable_w_wayOH)
+  tpMetaTable.io.w.apply(tpTable_w_valid || !resetFinish, tpMeta_w_bits, tpTable_w_vset, tpTable_w_wayOH)
 
   when(resetIdx === 0.U) {
     resetFinish := true.B
@@ -222,7 +237,8 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   val do_sending = RegInit(false.B)
   val sending_idx = RegInit(0.U(6.W))
-  val sending_data = Reg(Vec(tpEntryMaxLen, UInt(vaddrBits.W)))
+  val sending_data = Reg(Vec(tpEntryMaxLen, UInt(fullAddressBits.W)))
+  val sending_data_debug = Reg(Vec(tpEntryMaxLen, UInt(vaddrBits.W)))
   val sending_throttle = RegInit(0.U(4.W))
   val sending_valid = do_sending && !tpDataQFull && sending_throttle === tpThrottleCycles.U
   val (sendingTag, sendingSet, _) = parseFullAddress(sending_data(sending_idx))
@@ -230,6 +246,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   tpDataQueue.io.deq.ready := tpDataQFull || !do_sending
   when(tpDataQueue.io.deq.fire) {
     sending_data := tpDataQueue.io.deq.bits.rawData
+    sending_data_debug := tpDataQueue.io.deq.bits.rawData_debug
     sending_idx := 1.U  // TODO: dismiss the first addr because it is the trigger
     do_sending := true.B
   }
@@ -239,7 +256,12 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   when(io.req.fire) {
     sending_idx := sending_idx + 1.U
     sending_throttle := 0.U
-    printf("[TP] sending data: %x\n", sending_data(sending_idx))
+    if (verbose) {
+      printf("[TP] sending data: %x vaddr: %x\n",
+        sending_data(sending_idx),
+        recoverVaddr(sending_data_debug(sending_idx))
+      )
+    }
     when(sending_idx === (tpEntryMaxLen-1).U) {
       do_sending := false.B
     }
@@ -256,18 +278,24 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   io.train.ready := resetFinish
 
   /* Performance collection */
-  val triggerDB = ChiselDB.createTable("tptrigger", new triggerBundle())
-  val triggerPt = write_record_trigger
+  val triggerDB = ChiselDB.createTable("tptrigger", new triggerBundle(), basicDB=false)
+  val triggerPt = Wire(new triggerBundle())
+  triggerPt.paddr := write_record_trigger.paddr
+  triggerPt.vaddr := recoverVaddr(write_record_trigger.vaddr)
 
-  val trainDB = ChiselDB.createTable("tptrain", new trainBundle())
+  val trainDB = ChiselDB.createTable("tptrain", new trainBundle(), basicDB=false)
   val trainPt = Wire(new trainBundle())
-  trainPt.vaddr := train_s2.vaddr.getOrElse(0.U)
+  trainPt.vaddr := recoverVaddr(train_s2.vaddr.getOrElse(0.U))
   trainPt.paddr := train_s2.addr
-  trainPt.hit := hit_s2
+  trainPt.hit := train_s2.hit
+  trainPt.prefetched := train_s2.prefetched
+  trainPt.pfsource := train_s2.pfsource
+  trainPt.metahit := hit_s2
 
-  val sendDB = ChiselDB.createTable("tpsend", new sendBundle())
+  val sendDB = ChiselDB.createTable("tpsend", new sendBundle(), basicDB=false)
   val sendPt = Wire(new sendBundle())
   sendPt.paddr := sending_data(sending_idx)
+  sendPt.vaddr := recoverVaddr(sending_data_debug(sending_idx))
 
   triggerDB.log(triggerPt, tpTable_w_valid, "", clock, reset)
   trainDB.log(trainPt, s2_valid, "", clock, reset)
