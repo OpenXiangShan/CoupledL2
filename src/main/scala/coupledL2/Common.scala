@@ -304,13 +304,10 @@ class L2TlbReq(implicit p: Parameters) extends L2Bundle{
 class L2TlbResp(nDups: Int = 1)(implicit p: Parameters) extends L2Bundle {
   val paddr = Vec(nDups, Output(UInt(fullAddressBits.W)))
   val miss = Output(Bool())
-  val fast_miss = Output(Bool()) // without sram part for timing optimization
   val excp = Vec(nDups, new Bundle {
     val pf = new TlbExceptionBundle()
     val af = new TlbExceptionBundle()
   })
-  val static_pm = Output(Valid(Bool())) // valid for static, bits for mmio result from normal entries
-  val ptwBack = Output(Bool()) // when ptw back, wake up replay rs's state
 }
 class L2ToL1TlbIO(nRespDups: Int = 1)(implicit p: Parameters) extends L2Bundle{
   val req = DecoupledIO(new L2TlbReq)
