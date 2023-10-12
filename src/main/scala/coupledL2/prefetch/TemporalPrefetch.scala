@@ -248,6 +248,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   io.req.valid := false.B // sending_valid
   io.req.bits.tag := sendingTag
   io.req.bits.set := sendingSet
+  io.req.bits.vaddr.foreach(_ := 0.U)
   io.req.bits.needT := true.B
   io.req.bits.source := 0.U // TODO: ensure source 0 is dcache
   io.req.bits.pfSource := MemReqSource.Prefetch2L2TP.id.U

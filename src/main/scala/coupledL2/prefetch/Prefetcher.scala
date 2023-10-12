@@ -25,9 +25,95 @@ import freechips.rocketchip.tilelink._
 import coupledL2._
 import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram}
 
+/* virtual address */
+trait HasPrefetcherHelper extends HasCircularQueuePtrHelper with HasCoupledL2Parameters {
+  // filter
+  val TRAIN_FILTER_SIZE = 4
+  val REQ_FILTER_SIZE = 16
+  val TLB_REPLAY_CNT = 10
+
+  // parameters
+  val BLK_ADDR_RAW_WIDTH = 10
+  val REGION_SIZE = 1024
+  val PAGE_OFFSET = pageOffsetBits
+  val VADDR_HASH_WIDTH = 5
+
+  // vaddr:
+  // |       tag               |     index     |    offset    |
+  // |       block addr                        | block offset |
+  // |       region addr       |        region offset         |
+  val BLOCK_OFFSET = offsetBits
+  val REGION_OFFSET = log2Up(REGION_SIZE)
+  val REGION_BLKS = REGION_SIZE / blockBytes
+  val INDEX_BITS = log2Up(REGION_BLKS)
+  val TAG_BITS = fullVAddrBits - REGION_OFFSET
+  val PTAG_BITS = fullAddressBits - REGION_OFFSET
+  val BLOCK_ADDR_BITS = fullVAddrBits - BLOCK_OFFSET
+
+  // hash related
+  val HASH_TAG_WIDTH = VADDR_HASH_WIDTH + BLK_ADDR_RAW_WIDTH
+
+  def get_tag(vaddr: UInt) = {
+    require(vaddr.getWidth == fullVAddrBits)
+    vaddr(vaddr.getWidth - 1, REGION_OFFSET)
+  }
+
+  def get_ptag(vaddr: UInt) = {
+    require(vaddr.getWidth == fullAddressBits)
+    vaddr(vaddr.getWidth - 1, REGION_OFFSET)
+  }
+
+  def get_index(addr: UInt) = {
+    require(addr.getWidth >= REGION_OFFSET)
+    addr(REGION_OFFSET - 1, BLOCK_OFFSET)
+  }
+
+  def get_index_oh(vaddr: UInt): UInt = {
+    UIntToOH(get_index(vaddr))
+  }
+
+  def get_block_vaddr(vaddr: UInt): UInt = {
+    vaddr(vaddr.getWidth - 1, BLOCK_OFFSET)
+  }
+
+  def _vaddr_hash(x: UInt): UInt = {
+    val width = VADDR_HASH_WIDTH
+    val low = x(width - 1, 0)
+    val mid = x(2 * width - 1, width)
+    val high = x(3 * width - 1, 2 * width)
+    low ^ mid ^ high
+  }
+
+  def block_hash_tag(vaddr: UInt): UInt = {
+    val blk_addr = get_block_vaddr(vaddr)
+    val low = blk_addr(BLK_ADDR_RAW_WIDTH - 1, 0)
+    val high = blk_addr(BLK_ADDR_RAW_WIDTH - 1 + 3 * VADDR_HASH_WIDTH, BLK_ADDR_RAW_WIDTH)
+    val high_hash = _vaddr_hash(high)
+    Cat(high_hash, low)
+  }
+
+  def region_hash_tag(vaddr: UInt): UInt = {
+    val region_tag = get_tag(vaddr)
+    val low = region_tag(BLK_ADDR_RAW_WIDTH - 1, 0)
+    val high = region_tag(BLK_ADDR_RAW_WIDTH - 1 + 3 * VADDR_HASH_WIDTH, BLK_ADDR_RAW_WIDTH)
+    val high_hash = _vaddr_hash(high)
+    Cat(high_hash, low)
+  }
+
+  def region_to_block_addr(tag: UInt, index: UInt): UInt = {
+    Cat(tag, index)
+  }
+
+  def toBinary(n: Int): String = n match {
+    case 0 | 1 => s"$n"
+    case _ => s"${toBinary(n / 2)}${n % 2}"
+  }
+}
+
 class PrefetchReq(implicit p: Parameters) extends PrefetchBundle {
   val tag = UInt(fullTagBits.W)
   val set = UInt(setBits.W)
+  val vaddr = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W))
   val needT = Bool()
   val source = UInt(sourceIdBits.W)
   val pfSource = UInt(MemReqSource.reqSourceBits.W)
@@ -45,6 +131,7 @@ class PrefetchResp(implicit p: Parameters) extends PrefetchBundle {
   // val id = UInt(sourceIdBits.W)
   val tag = UInt(fullTagBits.W)
   val set = UInt(setBits.W)
+  val vaddr = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W))
   def addr = Cat(tag, set, 0.U(offsetBits.W))
 }
 
@@ -63,6 +150,7 @@ class PrefetchTrain(implicit p: Parameters) extends PrefetchBundle {
 
 class PrefetchIO(implicit p: Parameters) extends PrefetchBundle {
   val train = Flipped(DecoupledIO(new PrefetchTrain))
+  val tlb_req = new L2ToL1TlbIO(nRespDups= 1)
   val req = DecoupledIO(new PrefetchReq)
   val resp = Flipped(DecoupledIO(new PrefetchResp))
   val recv_addr = Flipped(ValidIO(new Bundle() {
@@ -136,6 +224,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
       pft.io.train <> io.train
       pft.io.resp <> io.resp
+      pft.io.tlb_req <> io.tlb_req
       pftQueue.io.enq <> pft.io.req
       pipe.io.in <> pftQueue.io.deq
       io.req <> pipe.io.out
@@ -157,6 +246,9 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       pfRcv.io.train.bits := 0.U.asTypeOf(new PrefetchTrain)
       pfRcv.io.resp.valid := false.B
       pfRcv.io.resp.bits := 0.U.asTypeOf(new PrefetchResp)
+      pfRcv.io.tlb_req.req.ready := true.B
+      pfRcv.io.tlb_req.resp.valid := false.B
+      pfRcv.io.tlb_req.resp.bits := DontCare
       assert(!pfRcv.io.req.valid ||
        pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2SMS.id.U ||
        pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2Stream.id.U ||
@@ -166,6 +258,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       // prefetch from local prefetchers: BOP & TP
       bop.io.train <> io.train
       bop.io.resp <> io.resp
+      bop.io.tlb_req <> io.tlb_req
       tp.io.train <> io.train
       tp.io.resp <> io.resp
 
