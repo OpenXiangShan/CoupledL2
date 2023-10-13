@@ -273,6 +273,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     val prefetchTrains = prefetchOpt.map(_ => Wire(Vec(banks, DecoupledIO(new PrefetchTrain()(pftParams)))))
     val prefetchResps = prefetchOpt.map(_ => Wire(Vec(banks, DecoupledIO(new PrefetchResp()(pftParams)))))
     val prefetchReqsReady = WireInit(VecInit(Seq.fill(banks)(false.B)))
+    io.l2_tlb_req <> DontCare
     prefetchOpt.foreach {
       _ =>
         fastArb(prefetchTrains.get, prefetcher.get.io.train, Some("prefetch_train"))
