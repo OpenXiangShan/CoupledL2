@@ -264,9 +264,18 @@ class PrefetchRecv extends Bundle {
   val pf_source = UInt(MemReqSource.reqSourceBits.W)
   val addr_valid = Bool()
   val l2_pf_en = Bool()
+  val needT = Bool()
 }
 
 // custom l2 - l1 interface
 class L2ToL1Hint(implicit p: Parameters) extends Bundle {
   val sourceId = UInt(32.W)    // tilelink sourceID
+}
+
+class L2toL1PrefetchConnectIO(implicit p: Parameters) extends L2Bundle{
+  val train = ValidIO(new Bundle{
+    val vaddr = UInt(fullVaddrBits.W)
+    val addr = UInt(fullAddressBits.W)
+    val needT = Bool()
+  })
 }

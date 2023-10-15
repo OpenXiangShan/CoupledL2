@@ -68,6 +68,7 @@ class PrefetchIO(implicit p: Parameters) extends PrefetchBundle {
   val recv_addr = Flipped(ValidIO(new Bundle() {
     val addr = UInt(64.W)
     val pfSource = UInt(MemReqSource.reqSourceBits.W)
+    val needT = Bool()
   }))
 }
 
@@ -140,55 +141,62 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       pipe.io.in <> pftQueue.io.deq
       io.req <> pipe.io.out
     case receiver: PrefetchReceiverParams =>
+      /* prefetch from upper level */
       val pfRcv = Module(new PrefetchReceiver())
-      val bop = Module(new BestOffsetPrefetch()(p.alterPartial({
-        case L2ParamKey => p(L2ParamKey).copy(prefetch = Some(BOPParameters()))
-      })))
-      val tp = Module(new TemporalPrefetch()(p.alterPartial({
-        case L2ParamKey => p(L2ParamKey).copy(prefetch = Some(TPParameters()))
-      })))
-      val pftQueue = Module(new PrefetchQueue)
-      val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
-      val l2_pf_en = RegNextN(io_l2_pf_en, 2, Some(true.B))
-
-      // prefetch from upper level
       pfRcv.io.recv_addr := ValidIODelay(io.recv_addr, 2)
       pfRcv.io.train.valid := false.B
       pfRcv.io.train.bits := 0.U.asTypeOf(new PrefetchTrain)
       pfRcv.io.resp.valid := false.B
       pfRcv.io.resp.bits := 0.U.asTypeOf(new PrefetchResp)
       assert(!pfRcv.io.req.valid ||
-       pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2SMS.id.U ||
-       pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2Stream.id.U ||
-       pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2Stride.id.U
+        pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2SMS.id.U ||
+        pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2Stream.id.U ||
+        pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2BOP.id.U ||
+        pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2Stride.id.U
       )
 
-      // prefetch from local prefetchers: BOP & TP
-      bop.io.train <> io.train
-      bop.io.resp <> io.resp
+      /* prefetch from local prefetchers: BOP, but now it is moved to L1 */
+      // val bop = Module(new BestOffsetPrefetch()(p.alterPartial({
+      //   case L2ParamKey => p(L2ParamKey).copy(prefetch = Some(BOPParameters()))
+      // })))
+      // bop.io.train <> io.train
+      // bop.io.resp <> io.resp
+
+      /* prefetch from local prefetchers: TP */
+      val tp = Module(new TemporalPrefetch()(p.alterPartial({
+        case L2ParamKey => p(L2ParamKey).copy(prefetch = Some(TPParameters()))
+      })))
       tp.io.train <> io.train
       tp.io.resp <> io.resp
 
-      // send to prq
-      pftQueue.io.enq.valid := pfRcv.io.req.valid || (l2_pf_en && (bop.io.req.valid || tp.io.req.valid))
+      /* send to prq */
+      val pftQueue = Module(new PrefetchQueue)
+      val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
+      val l2_pf_en = RegNextN(io_l2_pf_en, 2, Some(true.B))
+      // pftQueue.io.enq.valid := pfRcv.io.req.valid || (l2_pf_en && (bop.io.req.valid || tp.io.req.valid))
+      pftQueue.io.enq.valid := pfRcv.io.req.valid || (l2_pf_en && tp.io.req.valid)
       pftQueue.io.enq.bits := Mux(pfRcv.io.req.valid,
         pfRcv.io.req.bits,
-        Mux(bop.io.req.valid,
-          bop.io.req.bits,
-          tp.io.req.bits
-        )
+        // Mux(bop.io.req.valid,
+        //   bop.io.req.bits,
+        tp.io.req.bits
+        // )
       )
       pfRcv.io.req.ready := true.B
-      bop.io.req.ready := true.B
-      tp.io.req.ready := !pfRcv.io.req.valid && !bop.io.req.valid
+      // bop.io.req.ready := true.B
+      // tp.io.req.ready := !pfRcv.io.req.valid && !bop.io.req.valid
+      tp.io.req.ready := !pfRcv.io.req.valid
       pipe.io.in <> pftQueue.io.deq
       io.req <> pipe.io.out
 
-      XSPerfAccumulate(cacheParams, "prefetch_req_fromSMS", pfRcv.io.req.valid)
-      XSPerfAccumulate(cacheParams, "prefetch_req_fromBOP", l2_pf_en && bop.io.req.valid)
+      XSPerfAccumulate(cacheParams, "prefetch_req_fromSMS", pfRcv.io.req.valid && pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2SMS.id.U)
+      XSPerfAccumulate(cacheParams, "prefetch_req_fromStream", pfRcv.io.req.valid && pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2Stream.id.U)
+      XSPerfAccumulate(cacheParams, "prefetch_req_fromBOP", pfRcv.io.req.valid && pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2BOP.id.U)
+      XSPerfAccumulate(cacheParams, "prefetch_req_fromStride", pfRcv.io.req.valid && pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2Stride.id.U)
+      // XSPerfAccumulate(cacheParams, "prefetch_req_fromBOP", l2_pf_en && bop.io.req.valid)
       XSPerfAccumulate(cacheParams, "prefetch_req_fromTP", l2_pf_en && tp.io.req.valid)
-      XSPerfAccumulate(cacheParams, "prefetch_req_SMS_other_overlapped",
-        pfRcv.io.req.valid && l2_pf_en && (bop.io.req.valid || tp.io.req.valid))
+      XSPerfAccumulate(cacheParams, "prefetch_req_l1_and_l2", pfRcv.io.req.valid && l2_pf_en && tp.io.req.valid)
+
     case _ => assert(cond = false, "Unknown prefetcher")
   }
 }

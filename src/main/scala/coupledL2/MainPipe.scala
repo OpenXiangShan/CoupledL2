@@ -27,7 +27,7 @@ import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
 import coupledL2.utils._
 import coupledL2.debug._
-import coupledL2.prefetch.PrefetchTrain
+import coupledL2.prefetch.{PfSource, PrefetchTrain}
 
 class MainPipe(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
@@ -408,10 +408,10 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   io.prefetchTrain.foreach {
     train =>
-      // train on request(with needHint flag) miss or hit on prefetched block
+      // train on request(with needHint flag) bop hit on prefetched block for BOP in L1
       // trigger train also in a_merge here
       train.valid := task_s3.valid && (((req_acquire_s3 || req_get_s3) && req_s3.needHint.getOrElse(false.B) &&
-        (!dirResult_s3.hit || meta_s3.prefetch.get)) || req_s3.mergeA)
+        (meta_s3.prefetch.get && meta_s3.prefetchSrc.get === PfSource.BOP.id.U)) || req_s3.mergeA)
       train.bits.tag := req_s3.tag
       train.bits.set := req_s3.set
       train.bits.needT := Mux(req_s3.mergeA, needT(req_s3.aMergeTask.opcode, req_s3.aMergeTask.param),req_needT_s3)

@@ -41,7 +41,7 @@ class PrefetchReceiver()(implicit p: Parameters) extends PrefetchModule {
 
   io.req.bits.tag := parseFullAddress(io.recv_addr.bits.addr)._1
   io.req.bits.set := parseFullAddress(io.recv_addr.bits.addr)._2
-  io.req.bits.needT := false.B
+  io.req.bits.needT := io.recv_addr.bits.needT
   io.req.bits.source := 0.U // TODO: ensure source 0 is dcache
   io.req.bits.pfSource := io.recv_addr.bits.pfSource
   io.req.valid := io.recv_addr.valid

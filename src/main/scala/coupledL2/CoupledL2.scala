@@ -86,6 +86,7 @@ trait HasCoupledL2Parameters {
   val grantBufInflightSize = mshrsAll //TODO: lack or excessive? !! WARNING
 
   // width params with bank idx (used in prefetcher / ctrl unit)
+  val fullVaddrBits = vaddrBitsOpt.getOrElse(0) + offsetBits
   lazy val fullAddressBits = edgeOut.bundle.addressBits
   lazy val fullTagBits = fullAddressBits - setBits - offsetBits
   // width params without bank idx (used in slice)
@@ -216,8 +217,15 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
   class CoupledL2Imp(wrapper: LazyModule) extends LazyModuleImp(wrapper) {
     val banks = node.in.size
     val bankBits = if (banks == 1) 0 else log2Up(banks)
+    val _p: Parameters = p.alterPartial {
+      case EdgeInKey => node.in.head._2
+      case EdgeOutKey => node.out.head._2
+      case BankBitsKey => bankBits
+    }
     val io = IO(new Bundle {
       val l2_hint = Valid(UInt(32.W))
+      // TODO lyq: connect l2 to l1
+      val l2toL1PfConn = new L2toL1PrefetchConnectIO()(_p)
       val debugTopDown = new Bundle {
         val robHeadPaddr = Vec(cacheParams.hartIds.length, Flipped(Valid(UInt(36.W))))
         val l2MissMatch = Vec(cacheParams.hartIds.length, Output(Bool()))
@@ -264,17 +272,22 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     val prefetchTrains = prefetchOpt.map(_ => Wire(Vec(banks, DecoupledIO(new PrefetchTrain()(pftParams)))))
     val prefetchResps = prefetchOpt.map(_ => Wire(Vec(banks, DecoupledIO(new PrefetchResp()(pftParams)))))
     val prefetchReqsReady = WireInit(VecInit(Seq.fill(banks)(false.B)))
+    io.l2toL1PfConn <> DontCare
     prefetchOpt.foreach {
       _ =>
         fastArb(prefetchTrains.get, prefetcher.get.io.train, Some("prefetch_train"))
         prefetcher.get.io.req.ready := Cat(prefetchReqsReady).orR
         fastArb(prefetchResps.get, prefetcher.get.io.resp, Some("prefetch_resp"))
+        io.l2toL1PfConn.train.valid := prefetcher.get.io.train.valid
+        io.l2toL1PfConn.train.bits.vaddr := Cat(prefetcher.get.io.train.bits.vaddr.getOrElse(0.U), 0.U(offsetBits.W))
+        io.l2toL1PfConn.train.bits.addr := prefetcher.get.io.train.bits.addr
     }
     pf_recv_node match {
       case Some(x) =>
         prefetcher.get.io.recv_addr.valid := x.in.head._1.addr_valid
         prefetcher.get.io.recv_addr.bits.addr := x.in.head._1.addr
         prefetcher.get.io.recv_addr.bits.pfSource := x.in.head._1.pf_source
+        prefetcher.get.io.recv_addr.bits.needT := x.in.head._1.needT
         prefetcher.get.io_l2_pf_en := x.in.head._1.l2_pf_en
       case None =>
         prefetcher.foreach{
