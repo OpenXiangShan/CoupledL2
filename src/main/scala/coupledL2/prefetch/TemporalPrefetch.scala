@@ -31,6 +31,7 @@ case class TPParameters(
     blockOffBits: Int = 6,
     tpQueueDepth: Int = 4,
     throttleCycles: Int = 4,
+    tpModeWidth: Int = 3,
     replacementPolicy: String = "random"
 ) extends PrefetchParameters {
   override val hasPrefetchBit:  Boolean = true
@@ -49,6 +50,7 @@ trait HasTPParams extends HasCoupledL2Parameters {
   val blockOffBits = tpParams.blockOffBits
   val tpQueueDepth = tpParams.tpQueueDepth
   val tpThrottleCycles = tpParams.throttleCycles
+  val tpModeWidth = tpParams.tpModeWidth
   require(tpThrottleCycles > 0, "tpThrottleCycles must be greater than 0")
 }
 
@@ -61,9 +63,10 @@ class tpMetaEntry(implicit p:Parameters) extends TPBundle {
 }
 
 class tpDataEntry(implicit p:Parameters) extends TPBundle {
+  // TODO: delete rawdata
   val rawData = Vec(tpEntryMaxLen, UInt(vaddrBits.W))
-  // TODO: val compressedData = UInt(512.W)
-  val mode = UInt(3.W)
+  val compressedData = UInt(512.W)
+  val mode = UInt(tpModeWidth.W)
 }
 
 class triggerBundle(implicit p: Parameters) extends TPBundle {
@@ -92,6 +95,18 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   def parseVaddr(x: UInt): (UInt, UInt) = {
     (x(x.getWidth-1, tpTableSetBits), x(tpTableSetBits-1, 0))
   }
+
+  def cutOffset(addr: UInt, offset: UInt): UInt = {
+    (addr >> offset) << offset
+  }
+
+//  def getOffset(addr: UInt, offset: UInt): UInt = {
+//    addr((offset - 1.U).asUInt(), 0.U)
+//  }
+
+  /*Set Mode, Initialized in parameters?*/
+  val tpModeMax = VecInit(34.U, 31.U, 28.U, 24.U, 21.U, 18.U, 15.U, 10.U)
+  val tpModeOff = VecInit(0.U, 20.U, 21.U, 23.U, 26.U, 29.U, 33.U, 39.U)
 
   val tpMetaTable = Module(
     new SRAMTemplate(new tpMetaEntry(), set = tpTableNrSet, way = tpTableAssoc, shouldReset = false, singlePort = true)
@@ -157,18 +172,42 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val tpDataQFull = tpDataQueue.io.count === tpQueueDepth.U
 
   /* Recorder logic */
-  // TODO: compress data based on max delta
+  val recorder_mode = RegInit(0.U(tpModeWidth.W))
   val recorder_idx = RegInit(0.U(6.W))
   val recorder_data = Reg(Vec(tpEntryMaxLen, UInt(vaddrBits.W)))
+  val recorder_compressed_data = RegInit(0.U(512.W))
   val record_data_in = train_s2.addr
   val write_record = RegInit(false.B)
   val write_record_way = RegInit(0.U.asTypeOf(way_s2))
   val write_record_trigger = RegInit(0.U.asTypeOf(new triggerBundle()))
+  // get mode
+  val cur_mode = RegInit(0.U(tpModeWidth.W))
+  val set_mode = RegInit(VecInit(Seq.fill(8)(false.B)))
+  val base_addr = RegInit(0.U(vaddrBits.W))
+  // TODO: better logic
+  for (i <- 0 until 7) {
+    when(cutOffset(base_addr, tpModeOff(i)) =/= cutOffset(record_data_in, tpModeOff(i))) {
+      set_mode(i) := true.B
+    }
+  }
+  for (i <- 7 to 0 by -1) {
+    when(set_mode(i)) {
+      cur_mode := i.U
+    }
+  }
 
   when(dorecord_s2) {
+    when(cur_mode =/= recorder_mode) {
+      val last_recoder = recorder_compressed_data
+//      for (i <- 0 to 10 by 1) {
+//        recorder_data(((i + 1) * tpModeOff(cur_mode)).asUInt() - 1.U, (i * tpModeOff(cur_mode)).asUInt()) := last_recoder(((i + 1.U) * tpModeOff(recorder_mode)).asUInt() - 1.U, (i * tpModeOff(recorder_mode)).asUInt())
+//      }
+      recorder_mode := cur_mode
+    }
     recorder_idx := recorder_idx + 1.U
     recorder_data(recorder_idx) := record_data_in
-    when(recorder_idx === (tpEntryMaxLen-1).U) {
+    //    recorder_data((recorder_idx * tpModeOff(cur_mode)).asUInt() - 1.U, ((recorder_idx - 1.U) * tpModeOff(cur_mode)).asUInt()) := record_data_in((tpModeOff(cur_mode) - 1.U).asUInt(), 0.U)
+    when(recorder_idx === (tpModeMax(cur_mode) - 1.U)) {
       write_record := true.B
       write_record_way := way_s2  // choose way lazily
       recorder_idx := 0.U
@@ -191,6 +230,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   val tpData_w_bits = Wire(new tpDataEntry())
   tpData_w_bits.rawData.zip(recorder_data).foreach(x => x._1 := x._2)
+  tpData_w_bits.compressedData := recorder_compressed_data
   tpData_w_bits.mode := 0.U
 
   val tpMeta_w_bits = Wire(new tpMetaEntry())
