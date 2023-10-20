@@ -98,10 +98,6 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     s.valid && s.bits.isPrefetch && sameAddr(a, s.bits) && !s.bits.willFree &&
     a.fromA && (a.opcode === AcquireBlock || a.opcode === AcquirePerm)
   )).asUInt.orR
-  def mergeA_latepf(a: TaskBundle): Bool = VecInit(io.mshrInfo.map(s =>
-    s.valid && s.bits.isPrefetch && sameAddr(a, s.bits) && !s.bits.willFree && !s.bits.dirHit && !s.bits.s_refill &&
-    a.fromA && (a.opcode === AcquireBlock || a.opcode === AcquirePerm) && !s.bits.mergeA && !(in.param === NtoT && s.bits.param === NtoB)
-  )).asUInt.orR
 
   // count ways
 //  def countWaysOH(cond: (MSHRInfo => Bool)): UInt = {
@@ -133,7 +129,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   val canFlow = flow.B && !full && !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR
   val doFlow  = canFlow && io.out.ready
   io.hasLatePF := latePrefetch(in) && io.in.valid && !sameAddr(in, RegNext(in))
-  io.hasMergeA := mergeA_latepf(in) && io.in.valid && !sameAddr(in, RegNext(in))
+  io.hasMergeA := mergeA && io.in.valid && !sameAddr(in, RegNext(in))
 
   //  val depMask    = buffer.map(e => e.valid && sameAddr(io.in.bits, e.task))
   // remove duplicate prefetch if same-addr A req in MSHR or ReqBuf
