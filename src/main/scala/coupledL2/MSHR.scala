@@ -356,7 +356,13 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_grant.aliasTask.foreach(_ := req.aliasTask.getOrElse(false.B))
     // [Alias] write probeData into DS for alias-caused Probe,
     // but not replacement-cased Probe
-    mp_grant.useProbeData := dirResult.hit && req_get || req.aliasTask.getOrElse(false.B)
+    // if aliasTask is AcquireBlock NtoT and self_state is Branch, 
+    // and there is a nested Probe toN from L3(means the data Granted from L3 in the future may be a new data),
+    // useProbeData will be set false to use data in RefillBuffer
+    mp_grant.useProbeData := (dirResult.hit && req_get) || 
+      (req.aliasTask.getOrElse(false.B) && 
+        !(dirResult.meta.state === BRANCH && req.opcode === AcquireBlock && req_needT) 
+      )
     mp_grant.dirty := false.B
 
     mp_grant.meta := MetaEntry(
