@@ -164,6 +164,7 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   )
   val l2prefetchLate = io.latePF
 
+  // PF Accuracy
   XSPerfRolling(
     cacheParams, "L2PrefetchAccuracy",
     PopCount(l2prefetchUseful), PopCount(l2prefetchSent),
@@ -177,6 +178,11 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   XSPerfRolling(
     cacheParams, "L2PrefetchAccuracySMS",
     PopCount(l2prefetchUsefulSMS), PopCount(l2prefetchSentSMS),
+    1000, clock, reset
+  )
+  XSPerfRolling(
+    cacheParams, "L2PrefetchAccuracyTP",
+    PopCount(l2prefetchUsefulTP), PopCount(l2prefetchSentTP),
     1000, clock, reset
   )
   XSPerfRolling(
@@ -194,11 +200,15 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     PopCount(l2prefetchUsefulTP), PopCount(l2prefetchSentTP),
     1000, clock, reset
   )
+
+  // PF Late
   XSPerfRolling(
     cacheParams, "L2PrefetchLate",
     PopCount(l2prefetchLate), PopCount(l2prefetchUseful),
     1000, clock, reset
   )
+
+  // PF Coverage
   XSPerfRolling(
     cacheParams, "L2PrefetchCoverage",
     PopCount(l2prefetchUseful), PopCount(l2demandRequest),
@@ -212,6 +222,11 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   XSPerfRolling(
     cacheParams, "L2PrefetchCoverageSMS",
     PopCount(l2prefetchUsefulSMS), PopCount(l2demandRequest),
+    1000, clock, reset
+  )
+  XSPerfRolling(
+    cacheParams, "L2PrefetchCoverageTP",
+    PopCount(l2prefetchUsefulTP), PopCount(l2demandRequest),
     1000, clock, reset
   )
   XSPerfRolling(
