@@ -502,10 +502,12 @@ class PrefetchReqFilter(implicit p: Parameters) extends BOPModule{
   when(s1_valid && s1_hit){ assert(PopCount(s1_match_oh) === 1.U, "entries multi hit") }
   XSPerfAccumulate(cacheParams, "recv_req", io.in_req.valid)
   XSPerfAccumulate(cacheParams, "tlb_req", io.tlb_req.req.fire)
-  XSPerfAccumulate(cacheParams, "tlb_miss", io.tlb_req.resp.bits.miss)
+  XSPerfAccumulate(cacheParams, "tlb_miss", io.tlb_req.resp.valid && io.tlb_req.resp.bits.miss)
   XSPerfAccumulate(cacheParams, "tlb_excp",
+    io.tlb_req.resp.valid && !io.tlb_req.resp.bits.miss && (
     io.tlb_req.resp.bits.excp.head.pf.st || io.tlb_req.resp.bits.excp.head.af.st ||
-    io.tlb_req.resp.bits.excp.head.pf.ld || io.tlb_req.resp.bits.excp.head.af.ld)
+    io.tlb_req.resp.bits.excp.head.pf.ld || io.tlb_req.resp.bits.excp.head.af.ld
+  ))
   XSPerfAccumulate(cacheParams, "entry_alloc", PopCount(alloc))
   XSPerfAccumulate(cacheParams, "entry_update", PopCount(update))
   XSPerfAccumulate(cacheParams, "entry_tlb_fire", PopCount(tlb_fired))
@@ -706,7 +708,7 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
   for ((e, i) <- entries.zipWithIndex){
     alloc(i) := s1_valid && s1_invalid_oh(i)
     pf_fired(i) := s0_pf_fire_oh(i)
-    val exp = s1_tlb_fire_oh(i) && io.tlb_req.resp.valid &&
+    val exp = s1_tlb_fire_oh(i) && io.tlb_req.resp.valid && !io.tlb_req.resp.bits.miss &&
       ((e.needT && (io.tlb_req.resp.bits.excp.head.pf.st || io.tlb_req.resp.bits.excp.head.af.st)) ||
       (!e.needT && (io.tlb_req.resp.bits.excp.head.pf.ld || io.tlb_req.resp.bits.excp.head.af.ld)))
     val miss = s1_tlb_fire_oh(i) && io.tlb_req.resp.valid && io.tlb_req.resp.bits.miss
@@ -720,14 +722,15 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
     // recent data: update tlb resp
     when(tlb_fired(i)){
       e.update_paddr(io.tlb_req.resp.bits.paddr.head)
-    }.elsewhen(exp){
-      e.update_excp()
-    }.elsewhen(miss){ // miss
-      when(e.replayEn){ e.reset(i.U) }
-      .otherwise{ 
-        e.replayCnt := TLB_REPLAY_CNT.U 
+    }.elsewhen(miss) { // miss
+      when(e.replayEn) {
+        e.reset(i.U)
+      }.otherwise {
+        e.replayCnt := TLB_REPLAY_CNT.U
         e.replayEn := true.B
       }
+    }.elsewhen(exp){
+      e.update_excp()
     }
     // issue data: update pf
     when(pf_fired(i)){
@@ -767,7 +770,7 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
   XSPerfAccumulate(cacheParams, "tlb_req", io.tlb_req.req.valid)
   XSPerfAccumulate(cacheParams, "tlb_miss", io.tlb_req.resp.valid && io.tlb_req.resp.bits.miss)
   XSPerfAccumulate(cacheParams, "tlb_excp",
-    io.tlb_req.resp.valid && (
+    io.tlb_req.resp.valid && !io.tlb_req.resp.bits.miss && (
       io.tlb_req.resp.bits.excp.head.pf.st || io.tlb_req.resp.bits.excp.head.af.st ||
       io.tlb_req.resp.bits.excp.head.pf.ld || io.tlb_req.resp.bits.excp.head.af.ld
   ))
@@ -871,34 +874,6 @@ class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
 
     io.tlb_req <> reqFilter.io.tlb_req
     io.req <> reqFilter.io.out_req
-
-    /*io.tlb_req.req.valid := s1_req_valid
-    io.tlb_req.req.bits.vaddr := s1_newAddr
-    when(s1_needT){
-      io.tlb_req.req.bits.cmd := TlbCmd.write
-    }.otherwise{
-      io.tlb_req.req.bits.cmd := TlbCmd.read
-    }
-    io.tlb_req.req.bits.size := 3.U
-    io.tlb_req.req.bits.kill := false.B
-    io.tlb_req.req.bits.no_translate := false.B
-    io.tlb_req.req_kill := false.B
-
-    /* s2 get tlb resp and send prefetch req */
-    out_req_valid := RegNext(s1_req_valid) && io.tlb_req.resp.valid && !out_drop_req
-    out_req.tag := parseFullAddress(io.tlb_req.resp.bits.paddr.head)._1
-    out_req.set := parseFullAddress(io.tlb_req.resp.bits.paddr.head)._2
-    when(RegNext(s1_needT)){
-      out_drop_req := io.tlb_req.resp.valid && (io.tlb_req.resp.bits.miss || io.tlb_req.resp.bits.excp.head.pf.st || io.tlb_req.resp.bits.excp.head.af.st)
-    }.otherwise{
-      out_drop_req := io.tlb_req.resp.valid && (io.tlb_req.resp.bits.miss || io.tlb_req.resp.bits.excp.head.pf.ld || io.tlb_req.resp.bits.excp.head.af.ld)
-    }
-    // to unify vaddr format, offset needs to be removed here
-    out_req.vaddr.foreach(_ := RegNext(s1_reqVaddr))
-    out_req.needT := RegNext(s1_needT)
-    out_req.source := RegNext(s1_source)
-    out_req.pfSource := MemReqSource.Prefetch2L2BOP.id.U
-    out_req.isBOP := true.B*/
 
   } else {
     io.tlb_req.req.valid := false.B
