@@ -418,8 +418,9 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       train.bits.source := Mux(req_s3.mergeA, req_s3.aMergeTask.sourceId, req_s3.sourceId)
       train.bits.vaddr.foreach(_ := Mux(req_s3.mergeA, req_s3.aMergeTask.vaddr.getOrElse(0.U), req_s3.vaddr.getOrElse(0.U)))
       train.bits.hit := Mux(req_s3.mergeA, true.B, dirResult_s3.hit)
-      train.bits.prefetched := Mux(req_s3.mergeA, true.B, meta_s3.prefetch.get(false.B))
+      train.bits.prefetched := Mux(req_s3.mergeA, true.B, meta_s3.prefetch.getOrElse(false.B))
       train.bits.pfsource := meta_s3.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) // TODO
+      train.bits.reqsource := req_s3.reqSource
   }
 
   /* ======== Stage 4 ======== */

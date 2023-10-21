@@ -57,6 +57,7 @@ class PrefetchTrain(implicit p: Parameters) extends PrefetchBundle {
   val hit = Bool()
   val prefetched = Bool()
   val pfsource = UInt(PfSource.pfSourceBits.W)
+  val reqsource = UInt(MemReqSource.reqSourceBits.W)
 
   def addr: UInt = Cat(tag, set, 0.U(offsetBits.W))
 }
