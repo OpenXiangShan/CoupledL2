@@ -80,9 +80,7 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   /* ====== PART THREE ======
    * Distinguish req sources and count num & miss
    */
-  // count releases
-  val releaseCnt = allMSHRMatchVec(s => s.will_free && s.fromC)
-  XSPerfAccumulate(cacheParams, s"${cacheParams.name}C_ReleaseCnt_Total", PopCount(releaseCnt))
+  // For num of Probes and Releases, please check busPMU counters
 
   // we calculate at the point when directory returns result (dirResult.valid)
   // we add reqSource in replacerInfo, set in dirRead in ReqArb, pass it through Directory and get it in DirResult
