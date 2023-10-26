@@ -139,7 +139,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   require(cacheParams.hartIds.size == 1)
   val hartid = cacheParams.hartIds.head
   // 0 / 1: whether to enable temporal prefetcher
-  private val enableTP = WireInit(Constantin.createRecord("enableTP"+hartid.toString, initValue = 0.U))
+  private val enableTP = WireInit(Constantin.createRecord("enableTP"+hartid.toString, initValue = 1.U))
   // 0 ~ N: throttle cycles for each prefetch request
   private val tpThrottleCycles = WireInit(Constantin.createRecord("tp_throttleCycles"+hartid.toString, initValue = 4.U(3.W)))
   // 0 / 1: whether request to set as trigger on meta hit
