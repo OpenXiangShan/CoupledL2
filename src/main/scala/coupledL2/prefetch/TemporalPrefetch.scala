@@ -73,7 +73,6 @@ class tpDataEntry(implicit p:Parameters) extends TPBundle {
   val rawData = Vec(tpEntryMaxLen, UInt(fullAddressBits.W))
   // val rawData_debug = Vec(tpEntryMaxLen, UInt(vaddrBits.W))
   // TODO: val compressedData = UInt(512.W)
-  val mode = UInt(3.W)
 }
 
 class triggerBundle(implicit p: Parameters) extends TPBundle {
@@ -140,7 +139,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   require(cacheParams.hartIds.size == 1)
   val hartid = cacheParams.hartIds.head
   // 0 / 1: whether to enable temporal prefetcher
-  private val enableTP = WireInit(Constantin.createRecord("enableTP"+hartid.toString, initValue = 0.U))
+  private val enableTP = WireInit(Constantin.createRecord("enableTP"+hartid.toString, initValue = 1.U))
   // 0 ~ N: throttle cycles for each prefetch request
   private val tpThrottleCycles = WireInit(Constantin.createRecord("tp_throttleCycles"+hartid.toString, initValue = 4.U(3.W)))
   // 0 / 1: whether request to set as trigger on meta hit
@@ -150,17 +149,21 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   // 1 ~ tpEntryMaxLen: record threshold for recorder and sender (storage size will not be affected)
   private val recordThres = WireInit(Constantin.createRecord("tp_recordThres"+hartid.toString, initValue = tpEntryMaxLen.U))
   // 0 / 1: whether to train on vaddr
-  private val trainOnVaddr = WireInit(Constantin.createRecord("tp_trainOnVaddr"+hartid.toString, initValue = 1.U))
+  private val trainOnVaddr = WireInit(Constantin.createRecord("tp_trainOnVaddr"+hartid.toString, initValue = 0.U))
   // 0 / 1: whether to eliminate L1 prefetch request training
   private val trainOnL1PF = WireInit(Constantin.createRecord("tp_trainOnL1PF"+hartid.toString, initValue = 0.U))
 
+  if (vaddrBitsOpt.isEmpty) {
+    assert(!trainOnVaddr)
+  }
+
   /* Stage 0: query tpMetaTable */
 
-  val s0_valid = io.train.fire && io.train.bits.vaddr.getOrElse(0.U) =/= 0.U &&
+  val s0_valid = io.train.fire && Mux(trainOnVaddr.orR, io.train.bits.vaddr.getOrElse(0.U) =/= 0.U, true.B) &&
     Mux(trainOnL1PF.orR, true.B, io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
   val trainVaddr = io.train.bits.vaddr.getOrElse(0.U)
   val trainPaddr = io.train.bits.addr
-  val (vtag_s0, vset_s0) = parseVaddr(trainVaddr)
+  val (vtag_s0, vset_s0) = if (vaddrBitsOpt.nonEmpty) parseVaddr(trainVaddr) else (0.U, 0.U)
   val (ptag_s0, pset_s0) = parsePaddr(trainPaddr)
   val metas = tpMetaTable.io.r(s0_valid, Mux(trainOnVaddr.orR, vset_s0, pset_s0)).resp.data
 
@@ -171,16 +174,18 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val train_s1 = RegEnable(io.train.bits, s0_valid)
   val trainVaddr_s1 = train_s1.vaddr.getOrElse(0.U)
   val trainPaddr_s1 = train_s1.addr
-  val (vtag_s1, vset_s1) = parseVaddr(trainVaddr_s1)
+  val (vtag_s1, vset_s1) = if (vaddrBitsOpt.nonEmpty) parseVaddr(trainVaddr_s1) else (0.U, 0.U)
   val (ptag_s1, pset_s1) = parsePaddr(trainPaddr_s1)
 
   val tagMatchVec = metas.map(_.triggerTag === Mux(trainOnVaddr.orR, vtag_s1, ptag_s1))
   val metaValidVec = metas.map(_.valid === true.B)
 
+  /*
   val debug_metaValidVec = VecInit(metaValidVec.map(_ && s1_valid))
   val debug_tagVec = VecInit(metas.map(x => Mux(s1_valid, x.triggerTag, 0.U)))
   dontTouch(debug_metaValidVec)
   dontTouch(debug_tagVec)
+  */
 
   val hitVec = tagMatchVec.zip(metaValidVec).map(x => x._1 && x._2)
   val hitWay = OHToUInt(hitVec)
@@ -212,7 +217,6 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   dataReadQueue.io.enq.valid := s2_valid && hit_s2
   dataReadQueue.io.enq.bits.set := Mux(trainOnVaddr.orR, vset_s2, pset_s2)
   dataReadQueue.io.enq.bits.way := way_s2
-  dataReadQueue.io.enq.bits.mode := 0.U
   dataReadQueue.io.enq.bits.wmode := false.B
   dataReadQueue.io.enq.bits.rawData := DontCare
   dataReadQueue.io.enq.bits.hartid := hartid.U
@@ -236,7 +240,6 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   tpDataQueue.io.enq.valid := io.tpmeta_port.resp.valid && io.tpmeta_port.resp.bits.hartid === hartid.U
   tpDataQueue.io.enq.bits.rawData := io.tpmeta_port.resp.bits.rawData
-  tpDataQueue.io.enq.bits.mode := io.tpmeta_port.resp.bits.mode
   assert(tpDataQueue.io.enq.ready === true.B) // tpDataQueue is never full
 
 
@@ -289,7 +292,6 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   dataWriteQueue.io.enq.valid := tpTable_w_valid
   dataWriteQueue.io.enq.bits.wmode := true.B
   dataWriteQueue.io.enq.bits.rawData.zip(recorder_data).foreach(x => x._1 := x._2(35-6, 0))
-  dataWriteQueue.io.enq.bits.mode := 0.U
   dataWriteQueue.io.enq.bits.set := tpTable_w_set
   dataWriteQueue.io.enq.bits.way := tpTable_w_way
   dataWriteQueue.io.enq.bits.hartid := hartid.U
