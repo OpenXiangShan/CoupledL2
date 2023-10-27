@@ -136,16 +136,17 @@ class PrefetchResp(implicit p: Parameters) extends PrefetchBundle {
 }
 
 class PrefetchTrain(implicit p: Parameters) extends PrefetchBundle {
-  // val addr = UInt(addressBits.W)
   val tag = UInt(fullTagBits.W)
   val set = UInt(setBits.W)
   val needT = Bool()
   val source = UInt(sourceIdBits.W)
   val vaddr = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W))
-  // prefetch only when L2 receives a miss or prefetched hit req
-  // val miss = Bool()
-  // val prefetched = Bool()
-  def addr = Cat(tag, set, 0.U(offsetBits.W))
+  val hit = Bool()
+  val prefetched = Bool()
+  val pfsource = UInt(PfSource.pfSourceBits.W)
+  val reqsource = UInt(MemReqSource.reqSourceBits.W)
+
+  def addr: UInt = Cat(tag, set, 0.U(offsetBits.W))
 }
 
 class PrefetchIO(implicit p: Parameters) extends PrefetchBundle {
@@ -211,6 +212,9 @@ class PrefetchQueue(implicit p: Parameters) extends PrefetchModule {
 
 class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val io = IO(new PrefetchIO)
+  val tpio = IO(new Bundle() {
+    val tpmeta_port = prefetchOpt.map(_ => new tpmetaPortIO)
+  })
   /* io_l2_pf_en:
    * chicken bits for whether L2 prefetchers are enabled
    * it will control BOP and TP prefetchers
@@ -276,6 +280,9 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       tp.io.req.ready := !pfRcv.io.req.valid && !bop.io.req.valid
       pipe.io.in <> pftQueue.io.deq
       io.req <> pipe.io.out
+
+      // tpmeta interface
+      tp.io.tpmeta_port <> tpio.tpmeta_port.get
 
       XSPerfAccumulate(cacheParams, "prefetch_req_fromSMS", pfRcv.io.req.valid)
       XSPerfAccumulate(cacheParams, "prefetch_req_fromBOP", l2_pf_en && bop.io.req.valid)

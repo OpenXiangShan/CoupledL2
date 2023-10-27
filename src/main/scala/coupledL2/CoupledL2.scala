@@ -30,6 +30,7 @@ import org.chipsalliance.cde.config.Parameters
 import scala.math.max
 import coupledL2.prefetch._
 import coupledL2.utils.XSPerfAccumulate
+import huancun.{TPmetaReq, TPmetaResp}
 
 trait HasCoupledL2Parameters {
   val p: Parameters
@@ -215,6 +216,16 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
       Some(BundleBridgeSink(Some(() => new PrefetchRecv)))
     case _ => None
   }
+  val tpmeta_source_node = prefetchOpt match {
+    case Some(param: PrefetchReceiverParams) =>
+      if (param.hasTPPrefetcher) Some(BundleBridgeSource(() => DecoupledIO(new TPmetaReq))) else None
+    case _ => None
+  }
+  val tpmeta_sink_node = prefetchOpt match {
+    case Some(param: PrefetchReceiverParams) =>
+      if (param.hasTPPrefetcher) Some(BundleBridgeSink(Some(() => ValidIO(new TPmetaResp)))) else None
+    case _ => None
+  }
 
   class CoupledL2Imp(wrapper: LazyModule) extends LazyModuleImp(wrapper) {
     val banks = node.in.size
@@ -293,6 +304,17 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
             p.io.recv_addr := 0.U.asTypeOf(p.io.recv_addr)
             p.io_l2_pf_en := false.B
         }
+    }
+
+    tpmeta_source_node match {
+      case Some(x) =>
+        x.out.head._1 <> prefetcher.get.tpio.tpmeta_port.get.req
+      case None =>
+    }
+    tpmeta_sink_node match {
+      case Some(x) =>
+        prefetcher.get.tpio.tpmeta_port.get.resp <> x.in.head._1
+      case None =>
     }
 
     def restoreAddress(x: UInt, idx: Int) = {
