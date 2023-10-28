@@ -261,6 +261,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
 
       // prefetch from local prefetchers: BOP & TP
       bop.io.train <> io.train
+      bop.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
       bop.io.resp <> io.resp
       bop.io.tlb_req <> io.tlb_req
       tp.io.train <> io.train
