@@ -32,6 +32,7 @@ case class BOPParameters(
   scoreBits:      Int = 5,
   roundMax:       Int = 50,
   badScore:       Int = 1,
+  tlbReplayCnt:   Int = 10,
   offsetList: Seq[Int] = Seq(
     -256, -250, -243, -240, -225, -216, -200,
     -192, -180, -162, -160, -150, -144, -135, -128,
@@ -559,8 +560,8 @@ class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
   val vaddrNoOffset = UInt((fullVAddrBits-offsetBits).W)
   val baseVaddr = UInt((fullVAddrBits-offsetBits).W)
   val paddrNoOffset = UInt(fullVAddrBits.W)
-  val replayEn = Bool()
-  val replayCnt = UInt(4.W)
+  val replayEn = UInt(2.W)
+  val replayCnt = UInt(7.W)
   // for pf req
   val needT = Bool()
   val source = UInt(sourceIdBits.W)
@@ -571,7 +572,7 @@ class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
     vaddrNoOffset := 0.U
     baseVaddr := 0.U
     paddrNoOffset := 0.U
-    replayEn := false.B
+    replayEn := 0.U
     replayCnt := 0.U
     needT := false.B
     source := 0.U
@@ -582,7 +583,7 @@ class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
     paddrValid := false.B
     vaddrNoOffset := get_block_vaddr(req.full_vaddr)
     baseVaddr := req.base_vaddr
-    replayEn := false.B
+    replayEn := 0.U
     replayCnt := 0.U
     paddrNoOffset := 0.U
     needT := req.needT
@@ -624,7 +625,7 @@ class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
   def update_paddr(paddr: UInt) = {
     paddrValid := true.B
     paddrNoOffset := paddr(paddr.getWidth-1, offsetBits)
-    replayEn := false.B
+    replayEn := 0.U
     replayCnt := 0.U
   }
 
@@ -643,6 +644,9 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
     val tlb_req = new L2ToL1TlbIO(nRespDups = 1)
     val out_req = DecoupledIO(new PrefetchReq)
   })
+
+  val firstTlbReplayCnt = WireInit(Constantin.createRecord("firstTlbReplayCnt", bopParams.tlbReplayCnt.U))
+  val doubleTlbReplayCnt = WireInit(Constantin.createRecord("doubleTlbReplayCnt", 100.U))
 
   def wayMap[T <: Data](f: Int => T) = VecInit((0 until REQ_FILTER_SIZE).map(f))
   def get_flag(vaddr: UInt) = get_block_vaddr(vaddr)
@@ -703,6 +707,8 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
   /* entry update */
   val alloc = Wire(Vec(REQ_FILTER_SIZE, Bool()))
   val miss_drop = Wire(Vec(REQ_FILTER_SIZE, Bool()))
+  val miss_first_replay = Wire(Vec(REQ_FILTER_SIZE, Bool()))
+  val miss_double_replay = Wire(Vec(REQ_FILTER_SIZE, Bool()))
   val pf_fired = Wire(Vec(REQ_FILTER_SIZE, Bool()))
   val tlb_fired = Wire(Vec(REQ_FILTER_SIZE, Bool()))
   for ((e, i) <- entries.zipWithIndex){
@@ -713,8 +719,10 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
       (!e.needT && (io.tlb_req.resp.bits.excp.head.pf.ld || io.tlb_req.resp.bits.excp.head.af.ld)))
     val miss = s1_tlb_fire_oh(i) && io.tlb_req.resp.valid && io.tlb_req.resp.bits.miss
     tlb_fired(i) := s1_tlb_fire_oh(i) && io.tlb_req.resp.valid && !io.tlb_req.resp.bits.miss && !exp
-    miss_drop(i) := miss && e.replayEn
-    
+    miss_drop(i) := miss && e.replayEn(1)
+    miss_first_replay(i) := miss && !e.replayEn.orR
+    miss_double_replay(i) := miss && !e.replayEn(1) && e.replayEn(0)
+
     // old data: update replayCnt
     when(e.valid && e.replayCnt.orR) {
       e.replayCnt := e.replayCnt - 1.U
@@ -722,13 +730,14 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
     // recent data: update tlb resp
     when(tlb_fired(i)){
       e.update_paddr(io.tlb_req.resp.bits.paddr.head)
-    }.elsewhen(miss) { // miss
-      when(e.replayEn) {
-        e.reset(i.U)
-      }.otherwise {
-        e.replayCnt := TLB_REPLAY_CNT.U
-        e.replayEn := true.B
-      }
+    }.elsewhen(miss_drop(i)) { // miss
+      e.reset(i.U)
+    }.elsewhen(miss_first_replay(i)){
+      e.replayCnt := firstTlbReplayCnt
+      e.replayEn := 1.U
+    }.elsewhen(miss_double_replay(i)) {
+      e.replayCnt := doubleTlbReplayCnt
+      e.replayEn := 3.U
     }.elsewhen(exp){
       e.update_excp()
     }
@@ -775,6 +784,8 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
       io.tlb_req.resp.bits.excp.head.pf.ld || io.tlb_req.resp.bits.excp.head.af.ld
   ))
   XSPerfAccumulate(cacheParams, "entry_alloc", PopCount(alloc))
+  XSPerfAccumulate(cacheParams, "entry_miss_first_replay", PopCount(miss_first_replay))
+  XSPerfAccumulate(cacheParams, "entry_miss_double_replay", PopCount(miss_double_replay))
   XSPerfAccumulate(cacheParams, "entry_miss_drop", PopCount(miss_drop))
   XSPerfAccumulate(cacheParams, "entry_merge", io.in_req.valid && s0_match)
   XSPerfAccumulate(cacheParams, "entry_pf_fire", PopCount(pf_fired))
