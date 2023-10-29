@@ -905,6 +905,6 @@ class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     XSPerfAccumulate(cacheParams, "bop_train_stall_for_tlb_not_ready", io.train.valid && !io.tlb_req.req.ready)
     // XSPerfAccumulate(cacheParams, "bop_req_drop", out_drop_req)
   }else{
-    XSPerfAccumulate(cacheParams, "bop_cross_page", scoreTable.io.req.fire() && s0_crossPage)
+    XSPerfAccumulate(cacheParams, "bop_cross_page", scoreTable.io.req.fire && s0_crossPage)
   }
 }
