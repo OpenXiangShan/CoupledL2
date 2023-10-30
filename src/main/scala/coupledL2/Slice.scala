@@ -90,7 +90,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
   mshrCtl.io.replResp <> directory.io.replResp
   mainPipe.io.replResp <> directory.io.replResp
 
-  directory.io.resp <> mainPipe.io.dirResp_s3
+  directory.io.resp.bits <> mainPipe.io.dirResp_s3
   directory.io.metaWReq <> mainPipe.io.metaWReq
   directory.io.tagWReq <> mainPipe.io.tagWReq
   directory.io.msInfo <> mshrCtl.io.msInfo
@@ -170,8 +170,8 @@ class Slice()(implicit p: Parameters) extends L2Module {
   topDownOpt.foreach (
     _ => {
       io.msStatus.get        := mshrCtl.io.msStatus.get
-      io.dirResult.get.valid := RegNextN(directory.io.read.fire, 2, Some(false.B)) // manually generate dirResult.valid
-      io.dirResult.get.bits  := directory.io.resp
+      io.dirResult.get.valid := directory.io.resp.valid && !directory.io.replResp.valid // exclude MSHR-Grant read-dir
+      io.dirResult.get.bits  := directory.io.resp.bits
       io.latePF.get          := a_reqBuf.io.hasLatePF
     }
   )

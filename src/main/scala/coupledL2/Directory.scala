@@ -107,7 +107,7 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   val io = IO(new Bundle() {
     val read = Flipped(DecoupledIO(new DirRead))
-    val resp = Output(new DirResult)
+    val resp = ValidIO(new DirResult)
     val metaWReq = Flipped(ValidIO(new MetaWrite))
     val tagWReq = Flipped(ValidIO(new TagWrite))
     val replResp = ValidIO(new ReplacerResult)
@@ -201,13 +201,14 @@ class Directory(implicit p: Parameters) extends L2Module {
   val set_s3 = req_s3.set
   val replacerInfo_s3 = req_s3.replacerInfo
 
-  io.resp.hit   := hit_s3
-  io.resp.way   := way_s3
-  io.resp.meta  := meta_s3
-  io.resp.tag   := tag_s3
-  io.resp.set   := set_s3
-  io.resp.error := false.B  // depends on ECC
-  io.resp.replacerInfo := replacerInfo_s3
+  io.resp.valid      := reqValid_s3
+  io.resp.bits.hit   := hit_s3
+  io.resp.bits.way   := way_s3
+  io.resp.bits.meta  := meta_s3
+  io.resp.bits.tag   := tag_s3
+  io.resp.bits.set   := set_s3
+  io.resp.bits.error := false.B  // depends on ECC
+  io.resp.bits.replacerInfo := replacerInfo_s3
 
   dontTouch(io)
   dontTouch(metaArray.io)
