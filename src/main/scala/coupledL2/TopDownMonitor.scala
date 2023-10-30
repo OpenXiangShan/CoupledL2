@@ -162,6 +162,23 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   )
   val l2prefetchLate = io.latePF
 
+  XSPerfAccumulate(cacheParams, s"L2PrefetchSent", PopCount(l2prefetchSent))
+  XSPerfAccumulate(cacheParams, s"L2PrefetchSentBOP", PopCount(l2prefetchSentBOP))
+  XSPerfAccumulate(cacheParams, s"L2PrefetchSentSMS", PopCount(l2prefetchSentSMS))
+  XSPerfAccumulate(cacheParams, s"L2PrefetchSentStride", PopCount(l2prefetchSentStride))
+  XSPerfAccumulate(cacheParams, s"L2PrefetchSentStream", PopCount(l2prefetchSentStream))
+  XSPerfAccumulate(cacheParams, s"L2PrefetchSentTP", PopCount(l2prefetchSentTP))
+
+  XSPerfAccumulate(cacheParams, s"L2PrefetchUseful", PopCount(l2prefetchUseful))
+  XSPerfAccumulate(cacheParams, s"L2PrefetchUsefulBOP", PopCount(l2prefetchUsefulBOP))
+  XSPerfAccumulate(cacheParams, s"L2PrefetchUsefulSMS", PopCount(l2prefetchUsefulSMS))
+  XSPerfAccumulate(cacheParams, s"L2PrefetchUsefulStride", PopCount(l2prefetchUsefulStride))
+  XSPerfAccumulate(cacheParams, s"L2PrefetchUsefulStream", PopCount(l2prefetchUsefulStream))
+  XSPerfAccumulate(cacheParams, s"L2PrefetchUsefulTP", PopCount(l2prefetchUsefulTP))
+
+  XSPerfAccumulate(cacheParams, s"L2DemandRequest", PopCount(l2demandRequest))
+  XSPerfAccumulate(cacheParams, s"L2PrefetchLate", PopCount(l2prefetchLate))
+
   // PF Accuracy
   XSPerfRolling(
     cacheParams, "L2PrefetchAccuracy",

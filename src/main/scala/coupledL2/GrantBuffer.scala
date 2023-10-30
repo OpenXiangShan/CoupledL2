@@ -319,6 +319,9 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
         XSPerfHistogram(cacheParams, "grant_grantack_period", t, enable, 0, 12, 1)
         XSPerfMax(cacheParams, "max_grant_grantack_period", t, enable)
     }
+
+    XSPerfHistogram(cacheParams, "grantQueue_cnt", grantQueueCnt, true.B, 0, mshrsAll, 1)
+
     // pftRespQueue is about to be full, and using back pressure to block All MainPipe Entrance
     // which can SERIOUSLY affect performance, should consider less drastic prefetch policy
     XSPerfAccumulate(cacheParams, "WARNING_pftRespQueue_about_to_full", noSpaceForMSHRPft.getOrElse(false.B))
