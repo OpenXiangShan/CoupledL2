@@ -38,7 +38,8 @@ case class L1Param
   ways: Int = 8,
   blockBytes: Int = 64,
   aliasBitsOpt: Option[Int] = None,
-  vaddrBitsOpt: Option[Int] = None
+  vaddrBitsOpt: Option[Int] = None,
+  isKeywordBitsOpt : Option[Boolean] = None
 ) {
   val capacity = sets * ways * blockBytes
   val setBits = log2Ceil(sets)
@@ -49,6 +50,10 @@ case class L1Param
 // Pass virtual address of upper level cache
 case object VaddrKey extends ControlKey[UInt]("vaddr")
 case class VaddrField(width: Int) extends BundleField[UInt](VaddrKey, Output(UInt(width.W)), _ := 0.U(width.W))
+
+// Pass load_miss_acquire_keyword of upper level cache (L1)
+case object IsKeywordKey extends ControlKey[Bool]("isKeyword")
+case class IsKeywordField() extends BundleField[Bool](IsKeywordKey, Output(Bool()), _ := false.B)
 
 case class L2Param
 (
@@ -73,7 +78,7 @@ case class L2Param
   reqField: Seq[BundleFieldBase] = Nil,
   respKey: Seq[BundleKeyBase] = Seq(IsHitKey),
   // Manager
-  reqKey: Seq[BundleKeyBase] = Seq(AliasKey, VaddrKey, PrefetchKey, ReqSourceKey),
+  reqKey: Seq[BundleKeyBase] = Seq(AliasKey, VaddrKey, PrefetchKey, ReqSourceKey, IsKeywordKey),
   respField: Seq[BundleFieldBase] = Nil,
 
   innerBuf: TLBufferParams = TLBufferParams(),
