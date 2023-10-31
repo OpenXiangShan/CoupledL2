@@ -130,7 +130,8 @@ class Slice()(implicit p: Parameters) extends L2Module {
   sourceC.io.pipeStatusVec := reqArb.io.status_vec ++ mainPipe.io.status_vec_toC
 
   io.l1Hint.valid := mainPipe.io.l1Hint.valid
-  io.l1Hint.bits := mainPipe.io.l1Hint.bits
+  io.l1Hint.bits.sourceId := mainPipe.io.l1Hint.bits.sourceId
+  io.l1Hint.bits.isKeyword := mainPipe.io.l1Hint.bits.isKeyword
   mshrCtl.io.grantStatus := grantBuf.io.grantStatus
 
   grantBuf.io.d_task <> mainPipe.io.toSourceD
