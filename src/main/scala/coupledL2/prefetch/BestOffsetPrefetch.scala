@@ -267,6 +267,19 @@ class OffsetScoreTable(implicit p: Parameters) extends BOPModule {
     }
   }
 
+  class BopTrainEntry {
+    val bestOffset = UInt(offsetWidth.W)
+    val bestScore = UInt(scoreBits.W)
+  }
+
+  val l2BopTrainTable = ChiselDB.createTable("L2BopTrainTable", new BopTrainEntry)
+  for (i <- 0 until REQ_FILTER_SIZE) {
+    val data = Wire(new BopTrainEntry)
+    data.bestOffset := bestOffset
+    data.bestScore := bestScore
+    l2BopTrainTable.log(data = data, en = state === s_idle, site = "L2BOPTable", clock, reset)
+  }
+
 }
 
 class BopReqBundle(implicit p: Parameters) extends BOPBundle{
