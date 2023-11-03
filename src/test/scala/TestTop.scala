@@ -370,6 +370,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
       TLFragmenter(32, 64) :=*
       TLCacheCork() :=*
       TLDelayer(delayFactor) :=*
+      TLLogger(s"MEM_L3", true) :=*
       l3.node :=* xbar
 
   lazy val module = new LazyModuleImp(this) {

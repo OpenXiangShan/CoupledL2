@@ -36,11 +36,6 @@ class SinkA(implicit p: Parameters) extends L2Module {
   })
   assert(!(io.a.valid && io.a.bits.opcode(2, 1) === 0.U), "no Put")
 
-  val commonReq = Wire(io.task.cloneType)
-  val prefetchReq = prefetchOpt.map(_ => Wire(io.task.cloneType))
-
-  io.a.ready := commonReq.ready
-
   def fromTLAtoTaskBundle(a: TLBundleA): TaskBundle = {
     val task = Wire(new TaskBundle)
     task.channel := "b001".U
@@ -108,15 +103,20 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
     task
   }
-  commonReq.valid := io.a.valid
-  commonReq.bits := fromTLAtoTaskBundle(io.a.bits)
   if (prefetchOpt.nonEmpty) {
-    prefetchReq.get.valid := io.prefetchReq.get.valid
-    prefetchReq.get.bits := fromPrefetchReqtoTaskBundle(io.prefetchReq.get.bits)
-    io.prefetchReq.get.ready := prefetchReq.get.ready
-    fastArb(Seq(commonReq, prefetchReq.get), io.task)
+    io.task.valid := io.a.valid || io.prefetchReq.get.valid
+    io.task.bits := Mux(
+      io.a.valid,
+      fromTLAtoTaskBundle(io.a.bits),
+      fromPrefetchReqtoTaskBundle(io.prefetchReq.get.bits
+    ))
+
+    io.a.ready := io.task.ready
+    io.prefetchReq.get.ready := io.task.ready && !io.a.valid
   } else {
-    io.task <> commonReq
+    io.task.valid := io.a.valid
+    io.task.bits := fromTLAtoTaskBundle(io.a.bits)
+    io.a.ready := io.task.ready
   }
 
   // Performance counters
