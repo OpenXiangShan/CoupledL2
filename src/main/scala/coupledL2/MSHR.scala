@@ -390,7 +390,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     )
   )
   io.tasks.mainpipe.bits.reqSource := req.reqSource
-
+  io.tasks.mainpipe.bits.isKeyword.foreach(_:= req.isKeyword.getOrElse(false.B))
   // io.tasks.prefetchTrain.foreach {
   //   train =>
   //     train.bits.tag := req.tag

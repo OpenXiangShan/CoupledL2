@@ -149,6 +149,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   // =========== save d_task in queue[FIFO] ===========
   grantQueue.io.enq.valid := io.d_task.valid && (dtaskOpcode =/= HintAck || io.d_task.bits.task.mergeA)
   grantQueue.io.enq.bits.task := Mux(io.d_task.bits.task.mergeA, mergeAtask, io.d_task.bits.task)
+  grantQueue.io.enq.bits.task.isKeyword.foreach(_ := io.d_task.bits.task.isKeyword.getOrElse(false.B))
   grantQueue.io.enq.bits.data := io.d_task.bits.data
   grantQueue.io.enq.bits.grantid := inflight_insertIdx
   io.d_task.ready := true.B // GrantBuf should always be ready
@@ -161,6 +162,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   require(beatSize == 2)
   val deqValid = grantQueue.io.deq.valid
   val deqTask = grantQueue.io.deq.bits.task
+ // val deqTask.isKeyword.foreach(_ := grantQueue.io.deq.bits.task.isKeyword)
   val deqData = grantQueue.io.deq.bits.data.asTypeOf(Vec(beatSize, new DSBeat))
   val deqId   = grantQueue.io.deq.bits.grantid
 
