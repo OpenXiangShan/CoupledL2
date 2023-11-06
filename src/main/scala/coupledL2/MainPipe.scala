@@ -204,7 +204,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   ms_task.off              := req_s3.off
   ms_task.alias.foreach(_  := req_s3.alias.getOrElse(0.U))
   ms_task.vaddr.foreach(_  := req_s3.vaddr.getOrElse(0.U))
-  ms_task.isKeyword.foreach(_ := req_s3.isKeyword.get)//OrElse(false.B))
+  ms_task.isKeyword.foreach(_ := req_s3.isKeyword.get)  //OrElse(false.B))
 
   ms_task.opcode           := req_s3.opcode
   ms_task.param            := req_s3.param
@@ -266,7 +266,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   val source_req_s3 = Wire(new TaskBundle)
   source_req_s3 := Mux(sink_resp_s3.valid, sink_resp_s3.bits, req_s3)
-
+  source_req_s3.isKeyword.foreach(_ := req_s3.isKeyword.getOrElse(false.B))
   /* ======== Interact with DS ======== */
   val data_s3 = Mux(io.releaseBufResp_s3.valid, io.releaseBufResp_s3.bits.data, io.refillBufResp_s3.bits.data) // releaseBuf prior
   val c_releaseData_s3 = RegNext(io.bufResp.data.asUInt)
@@ -433,6 +433,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   when (task_s3.valid && !req_drop_s3) {
     task_s4.bits := source_req_s3
     task_s4.bits.mshrId := Mux(!task_s3.bits.mshrTask && need_mshr_s3, io.fromMSHRCtl.mshr_alloc_ptr, source_req_s3.mshrId)
+  //  task_s4.bits.isKeyword.foreach(_ :=source_req_s3.isKeyword.getOrElse(false.B))
     data_unready_s4 := data_unready_s3
     data_s4 := data_s3
     ren_s4 := ren
@@ -461,6 +462,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   c_s4.bits.task := task_s4.bits
   c_s4.bits.data.data := data_s4
   d_s4.bits.task := task_s4.bits
+  d_s4.bits.task.isKeyword.foreach(_ := task_s4.bits.isKeyword.getOrElse(false.B))
   d_s4.bits.data.data := data_s4
 
   /* ======== Stage 5 ======== */
@@ -473,6 +475,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   task_s5.valid := task_s4.valid && !req_drop_s4
   when (task_s4.valid && !req_drop_s4) {
     task_s5.bits := task_s4.bits
+    task_s5.bits.isKeyword.foreach(_ :=task_s4.bits.isKeyword.getOrElse(false.B))
     ren_s5 := ren_s4
     data_s5 := data_s4
     need_write_releaseBuf_s5 := need_write_releaseBuf_s4
