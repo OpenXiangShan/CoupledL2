@@ -249,9 +249,10 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   val noSpaceForSinkReq = PopCount(VecInit(io.pipeStatusVec.tail.map { case s =>
     s.valid && (s.bits.fromA || s.bits.fromC)
   }).asUInt) + grantQueueCnt >= mshrsAll.U
-  val noSpaceForMSHRReq = PopCount(VecInit(io.pipeStatusVec.map { case s =>
+  // for timing consideration, drop s1 info, so always reserve one entry for it
+  val noSpaceForMSHRReq = PopCount(VecInit(io.pipeStatusVec.tail.map { case s =>
     s.valid && (s.bits.fromA || s.bits.fromC)
-  }).asUInt) + grantQueueCnt >= mshrsAll.U
+  }).asUInt) + grantQueueCnt >= (mshrsAll-1).U
   // pftRespQueue also requires back pressure to ensure that it will not exceed capacity
   // Ideally, it should only block Prefetch from entering MainPipe
   // But since it is extremely rare that pftRespQueue of 10 would be full, we just block all Entrance here, simpler logic
@@ -259,9 +260,9 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   val noSpaceForSinkPft = prefetchOpt.map(_ => PopCount(VecInit(io.pipeStatusVec.tail.map { case s =>
     s.valid && s.bits.fromA
   }).asUInt) + pftRespQueue.get.io.count >= pftQueueLen.U)
-  val noSpaceForMSHRPft = prefetchOpt.map(_ => PopCount(VecInit(io.pipeStatusVec.map { case s =>
+  val noSpaceForMSHRPft = prefetchOpt.map(_ => PopCount(VecInit(io.pipeStatusVec.tail.map { case s =>
     s.valid && s.bits.fromA
-  }).asUInt) + pftRespQueue.get.io.count >= pftQueueLen.U)
+  }).asUInt) + pftRespQueue.get.io.count >= (pftQueueLen-1).U)
 
   io.toReqArb.blockSinkReqEntrance.blockA_s1 := noSpaceForSinkReq || noSpaceForSinkPft.getOrElse(false.B)
   io.toReqArb.blockSinkReqEntrance.blockB_s1 := Cat(inflightGrant.map(g => g.valid &&
