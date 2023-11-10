@@ -25,10 +25,6 @@ import org.chipsalliance.cde.config.Parameters
 import coupledL2.utils.XSPerfAccumulate
 import utility.MemReqSource
 
-class PipeBufferRead(implicit p: Parameters) extends L2Bundle {
-  val bufIdx = UInt(bufIdxBits.W)
-}
-
 class PipeBufferResp(implicit p: Parameters) extends L2Bundle {
   val data = Vec(beatSize, UInt((beatBytes * 8).W))
 }
@@ -43,7 +39,6 @@ class SinkC(implicit p: Parameters) extends L2Module {
     val task = DecoupledIO(new TaskBundle) // Release/ReleaseData
     val resp = Output(new RespBundle)
     val releaseBufWrite = Flipped(new MSHRBufWrite)
-    val bufRead = Input(ValidIO(new PipeBufferRead))
     val bufResp = Output(new PipeBufferResp)
     val refillBufWrite = Flipped(new MSHRBufWrite)
     val msInfo = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo)))
@@ -138,10 +133,6 @@ class SinkC(implicit p: Parameters) extends L2Module {
       }
   }
 
-  when (io.bufRead.valid) {
-    beatValids(io.bufRead.bits.bufIdx).foreach(_ := false.B)
-  }
-
   val cValid = io.c.valid && isRelease && last
   io.task.valid := cValid || taskArb.io.out.valid
   io.task.bits := Mux(taskArb.io.out.valid, taskArb.io.out.bits, toTaskBundle(io.c.bits))
@@ -181,7 +172,10 @@ class SinkC(implicit p: Parameters) extends L2Module {
 
   io.c.ready := !isRelease || !first || !full || !hasData && io.task.ready && !taskArb.io.out.valid
 
-  io.bufResp.data := dataBuf(io.bufRead.bits.bufIdx)
+  io.bufResp.data := RegNext(RegEnable(dataBuf(io.task.bits.bufIdx), io.task.fire))
+  when(RegNext(io.task.fire)) {
+    beatValids(io.task.bits.bufIdx).foreach(_ := false.B)
+  }
 
   // Performance counters
   val stall = io.c.valid && isRelease && !io.c.ready
