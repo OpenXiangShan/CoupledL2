@@ -91,6 +91,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     d.denied := false.B
     d.data := data
     d.corrupt := false.B
+    d.echo.lift(IsKeywordKey).foreach(_ := false.B)
     d
   }
 
@@ -181,6 +182,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   when(deqValid && io.d.ready && !grantBufValid && deqTask.opcode(0)) {
     grantBufValid := true.B
     grantBuf.task := deqTask
+    grantBuf.task.isKeyword.foreach(_ := deqTask.isKeyword.getOrElse(false.B))
    // grantBuf.data := deqData(1)
    grantBuf.data := Mux(deqTask.isKeyword.getOrElse(false.B),deqData(0),deqData(1))
     grantBuf.grantid := deqId
@@ -196,6 +198,15 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
    // toTLBundleD(deqTask, deqData(0).data, deqId)
     toTLBundleD(deqTask, Mux(deqTask.isKeyword.getOrElse(false.B),deqData(1).data,deqData(0).data), deqId)
   )
+ /* val d_isKeyword = Mux(
+    grantBufValid,
+    grantBuf.task.isKeyword,
+    deqTask.isKeyword
+  )*/
+  io.d.bits.echo.lift(IsKeywordKey).foreach(_ := Mux(
+    grantBufValid, 
+    grantBuf.task.isKeyword.getOrElse(false.B), 
+    deqTask.isKeyword.getOrElse(false.B)))
 
   // =========== send response to prefetcher ===========
   val pftRespEntry = new Bundle() {
