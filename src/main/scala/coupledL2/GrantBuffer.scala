@@ -250,7 +250,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     s.valid && (s.bits.fromA || s.bits.fromC)
   }).asUInt) + grantQueueCnt >= mshrsAll.U
   val noSpaceForMSHRReq = PopCount(VecInit(io.pipeStatusVec.map { case s =>
-    s.valid && s.bits.fromA
+    s.valid && (s.bits.fromA || s.bits.fromC)
   }).asUInt) + grantQueueCnt >= mshrsAll.U
   // pftRespQueue also requires back pressure to ensure that it will not exceed capacity
   // Ideally, it should only block Prefetch from entering MainPipe
