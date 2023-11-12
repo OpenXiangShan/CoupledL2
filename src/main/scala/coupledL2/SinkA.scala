@@ -71,7 +71,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.replTask := false.B
     task.vaddr.foreach(_ := a.user.lift(VaddrKey).getOrElse(0.U))
     //miss acquire keyword
-    task.isKeyword.foreach(_ := a.user.lift(IsKeywordKey).getOrElse(false.B)) 
+    task.isKeyword.foreach(_ := a.echo.lift(IsKeywordKey).getOrElse(false.B)) 
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
     task
