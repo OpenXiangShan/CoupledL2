@@ -192,11 +192,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   )
 
   // =========== send response to prefetcher ===========
-  val pftRespEntry = new Bundle() {
-    val tag = UInt(tagBits.W)
-    val set = UInt(setBits.W)
-    val vaddr = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W))
-  }
+  val pftRespEntry = new PrefetchResp()
   // TODO: this may not need 10 entries, but this does not take much space
   val pftQueueLen = 10
   val pftRespQueue = prefetchOpt.map(_ => Module(new Queue(pftRespEntry, entries = pftQueueLen, flow = true)))
@@ -206,12 +202,14 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     pftRespQueue.get.io.enq.bits.tag := io.d_task.bits.task.tag
     pftRespQueue.get.io.enq.bits.set := io.d_task.bits.task.set
     pftRespQueue.get.io.enq.bits.vaddr.foreach(_ := io.d_task.bits.task.vaddr.getOrElse(0.U))
+    pftRespQueue.get.io.enq.bits.pfSource := io.d_task.bits.task.reqSource
 
     val resp = io.prefetchResp.get
     resp.valid := pftRespQueue.get.io.deq.valid
     resp.bits.tag := pftRespQueue.get.io.deq.bits.tag
     resp.bits.set := pftRespQueue.get.io.deq.bits.set
     resp.bits.vaddr.foreach(_ := pftRespQueue.get.io.deq.bits.vaddr.getOrElse(0.U))
+    resp.bits.pfSource := pftRespQueue.get.io.deq.bits.pfSource
     pftRespQueue.get.io.deq.ready := resp.ready
 
     assert(pftRespQueue.get.io.enq.ready, "pftRespQueue should never be full, no back pressure logic")

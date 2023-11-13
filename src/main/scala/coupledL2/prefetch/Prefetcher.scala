@@ -134,7 +134,18 @@ class PrefetchResp(implicit p: Parameters) extends PrefetchBundle {
   val tag = UInt(fullTagBits.W)
   val set = UInt(setBits.W)
   val vaddr = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W))
+  val pfSource = UInt(MemReqSource.reqSourceBits.W)
+
   def addr = Cat(tag, set, 0.U(offsetBits.W))
+  def isBOP: Bool = pfSource === MemReqSource.Prefetch2L2BOP.id.U
+  def isPBOP: Bool = pfSource === MemReqSource.Prefetch2L2PBOP.id.U
+  def isSMS: Bool = pfSource === MemReqSource.Prefetch2L2SMS.id.U
+  def isTP: Bool = pfSource === MemReqSource.Prefetch2L2TP.id.U
+  def fromL2: Bool =
+    pfSource === MemReqSource.Prefetch2L2BOP.id.U ||
+      pfSource === MemReqSource.Prefetch2L2PBOP.id.U ||
+      pfSource === MemReqSource.Prefetch2L2SMS.id.U ||
+      pfSource === MemReqSource.Prefetch2L2TP.id.U
 }
 
 class PrefetchTrain(implicit p: Parameters) extends PrefetchBundle {
@@ -275,10 +286,12 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       vbop.io.train <> io.train
       vbop.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
       vbop.io.resp <> io.resp
+      vbop.io.resp.valid := io.resp.valid && io.resp.bits.isBOP
       vbop.io.tlb_req <> io.tlb_req
       pbop.io.train <> io.train
       pbop.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
       pbop.io.resp <> io.resp
+      pbop.io.resp.valid := io.resp.valid && io.resp.bits.isPBOP
       tp.io.train <> io.train
       tp.io.resp <> io.resp
 
