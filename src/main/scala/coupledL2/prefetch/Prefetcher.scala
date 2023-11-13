@@ -1,19 +1,19 @@
 /** *************************************************************************************
- * Copyright (c) 2020-2021 Institute of Computing Technology, Chinese Academy of Sciences
- * Copyright (c) 2020-2021 Peng Cheng Laboratory
- *
- * XiangShan is licensed under Mulan PSL v2.
- * You can use this software according to the terms and conditions of the Mulan PSL v2.
- * You may obtain a copy of Mulan PSL v2 at:
- * http://license.coscl.org.cn/MulanPSL2
- *
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- *
- * See the Mulan PSL v2 for more details.
- * *************************************************************************************
- */
+  * Copyright (c) 2020-2021 Institute of Computing Technology, Chinese Academy of Sciences
+  * Copyright (c) 2020-2021 Peng Cheng Laboratory
+  *
+  * XiangShan is licensed under Mulan PSL v2.
+  * You can use this software according to the terms and conditions of the Mulan PSL v2.
+  * You may obtain a copy of Mulan PSL v2 at:
+  * http://license.coscl.org.cn/MulanPSL2
+  *
+  * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+  * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+  *
+  * See the Mulan PSL v2 for more details.
+  * *************************************************************************************
+  */
 
 package coupledL2.prefetch
 
@@ -119,12 +119,14 @@ class PrefetchReq(implicit p: Parameters) extends PrefetchBundle {
   val pfSource = UInt(MemReqSource.reqSourceBits.W)
 
   def isBOP:Bool = pfSource === MemReqSource.Prefetch2L2BOP.id.U
+  def isPBOP:Bool = pfSource === MemReqSource.Prefetch2L2PBOP.id.U
   def isSMS:Bool = pfSource === MemReqSource.Prefetch2L2SMS.id.U
   def isTP:Bool = pfSource === MemReqSource.Prefetch2L2TP.id.U
   def fromL2:Bool =
     pfSource === MemReqSource.Prefetch2L2BOP.id.U ||
-    pfSource === MemReqSource.Prefetch2L2SMS.id.U ||
-    pfSource === MemReqSource.Prefetch2L2TP.id.U
+      pfSource === MemReqSource.Prefetch2L2PBOP.id.U ||
+      pfSource === MemReqSource.Prefetch2L2SMS.id.U ||
+      pfSource === MemReqSource.Prefetch2L2TP.id.U
 }
 
 class PrefetchResp(implicit p: Parameters) extends PrefetchBundle {
@@ -223,7 +225,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
 
   prefetchOpt.get match {
     case bop: BOPParameters =>
-      val pft = Module(new BestOffsetPrefetch)
+      val pft = Module(new VBestOffsetPrefetch)
       val pftQueue = Module(new PrefetchQueue)
       val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
       pft.io.train <> io.train
@@ -234,7 +236,17 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       io.req <> pipe.io.out
     case receiver: PrefetchReceiverParams =>
       val pfRcv = Module(new PrefetchReceiver())
-      val bop = Module(new BestOffsetPrefetch()(p.alterPartial({
+      val pbop = Module(new PBestOffsetPrefetch()(p.alterPartial({
+        case L2ParamKey => p(L2ParamKey).copy(prefetch = Some(BOPParameters(
+          virtualTrain = false,
+          offsetList = Seq(
+            -32, -30, -27, -25, -24, -20, -18, -16, -15,
+            -12, -10, -9, -8, -6, -5, -4, -3, -2, -1,
+            1, 2, 3, 4, 5, 6, 8, 9, 10,
+            12, 15, 16, 18, 20, 24, 25, 27, 30
+          ))))
+      })))
+      val vbop = Module(new VBestOffsetPrefetch()(p.alterPartial({
         case L2ParamKey => p(L2ParamKey).copy(prefetch = Some(BOPParameters()))
       })))
       val tp = Module(new TemporalPrefetch()(p.alterPartial({
@@ -254,31 +266,34 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       pfRcv.io.tlb_req.resp.valid := false.B
       pfRcv.io.tlb_req.resp.bits := DontCare
       assert(!pfRcv.io.req.valid ||
-       pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2SMS.id.U ||
-       pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2Stream.id.U ||
-       pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2Stride.id.U
+        pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2SMS.id.U ||
+        pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2Stream.id.U ||
+        pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2Stride.id.U
       )
 
       // prefetch from local prefetchers: BOP & TP
-      bop.io.train <> io.train
-      bop.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
-      bop.io.resp <> io.resp
-      bop.io.tlb_req <> io.tlb_req
+      vbop.io.train <> io.train
+      vbop.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
+      vbop.io.resp <> io.resp
+      vbop.io.tlb_req <> io.tlb_req
+      pbop.io.train <> io.train
+      pbop.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
+      pbop.io.resp <> io.resp
       tp.io.train <> io.train
       tp.io.resp <> io.resp
 
       // send to prq
-      pftQueue.io.enq.valid := pfRcv.io.req.valid || (l2_pf_en && (bop.io.req.valid || tp.io.req.valid))
-      pftQueue.io.enq.bits := Mux(pfRcv.io.req.valid,
-        pfRcv.io.req.bits,
-        Mux(bop.io.req.valid,
-          bop.io.req.bits,
-          tp.io.req.bits
-        )
-      )
+      pftQueue.io.enq.valid := pfRcv.io.req.valid || (l2_pf_en && (vbop.io.req.valid || pbop.io.req.valid || tp.io.req.valid))
+      pftQueue.io.enq.bits := ParallelPriorityMux(Seq(
+        pfRcv.io.req.valid -> pfRcv.io.req.bits,
+        vbop.io.req.valid -> vbop.io.req.bits,
+        pbop.io.req.valid -> pbop.io.req.bits,
+        tp.io.req.valid -> tp.io.req.bits
+      ))
       pfRcv.io.req.ready := true.B
-      bop.io.req.ready := true.B
-      tp.io.req.ready := !pfRcv.io.req.valid && !bop.io.req.valid
+      vbop.io.req.ready := true.B
+      pbop.io.req.ready := true.B
+      tp.io.req.ready := !pfRcv.io.req.valid && !vbop.io.req.valid
       pipe.io.in <> pftQueue.io.deq
       io.req <> pipe.io.out
 
@@ -286,10 +301,10 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       tp.io.tpmeta_port <> tpio.tpmeta_port.get
 
       XSPerfAccumulate(cacheParams, "prefetch_req_fromSMS", pfRcv.io.req.valid)
-      XSPerfAccumulate(cacheParams, "prefetch_req_fromBOP", l2_pf_en && bop.io.req.valid)
+      XSPerfAccumulate(cacheParams, "prefetch_req_fromBOP", l2_pf_en && vbop.io.req.valid)
       XSPerfAccumulate(cacheParams, "prefetch_req_fromTP", l2_pf_en && tp.io.req.valid)
       XSPerfAccumulate(cacheParams, "prefetch_req_SMS_other_overlapped",
-        pfRcv.io.req.valid && l2_pf_en && (bop.io.req.valid || tp.io.req.valid))
+        pfRcv.io.req.valid && l2_pf_en && (vbop.io.req.valid || tp.io.req.valid))
     case _ => assert(cond = false, "Unknown prefetcher")
   }
 }

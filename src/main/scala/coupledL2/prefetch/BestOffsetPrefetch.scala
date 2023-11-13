@@ -27,6 +27,7 @@ import coupledL2.utils.{ReplacementPolicy, XSPerfAccumulate}
 import scopt.Read
 
 case class BOPParameters(
+  virtualTrain: Boolean = true,
   rrTableEntries: Int = 256,
   rrTagBits:      Int = 12,
   scoreBits:      Int = 5,
@@ -59,7 +60,7 @@ trait HasBOPParams extends HasPrefetcherHelper {
   val bopParams = prefetchOpt.get.asInstanceOf[BOPParameters]
 
   // train address space: virtual or physical
-  val virtualTrain = true
+  val virtualTrain = bopParams.virtualTrain
   val fullAddrBits = if(virtualTrain) fullVAddrBits else fullAddressBits
   override val REQ_FILTER_SIZE = 16
 
@@ -817,7 +818,7 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
   */
 }
 
-class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
+class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   val io = IO(new Bundle() {
     val train = Flipped(DecoupledIO(new PrefetchTrain))
     val tlb_req = new L2ToL1TlbIO(nRespDups= 1)
@@ -928,4 +929,57 @@ class BestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   }else{
     XSPerfAccumulate(cacheParams, "bop_cross_page", scoreTable.io.req.fire && s0_crossPage)
   }
+}
+
+class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
+  val io = IO(new Bundle() {
+    val train = Flipped(DecoupledIO(new PrefetchTrain))
+    val req = DecoupledIO(new PrefetchReq)
+    val resp = Flipped(DecoupledIO(new PrefetchResp))
+  })
+
+  val rrTable = Module(new RecentRequestTable)
+  val scoreTable = Module(new OffsetScoreTable)
+
+  val prefetchOffset = scoreTable.io.prefetchOffset
+  val oldAddr = io.train.bits.addr
+  val newAddr = oldAddr + signedExtend((prefetchOffset << offsetBits), fullAddressBits)
+
+  rrTable.io.r <> scoreTable.io.test
+  rrTable.io.w.valid := io.resp.valid
+  rrTable.io.w.bits := Cat(Cat(io.resp.bits.tag, io.resp.bits.set) - signedExtend(prefetchOffset, setBits + fullTagBits), 0.U(offsetBits.W))
+  scoreTable.io.req.valid := io.train.valid
+  scoreTable.io.req.bits := oldAddr
+
+  val req = Reg(new PrefetchReq)
+  val req_valid = RegInit(false.B)
+  val crossPage = getPPN(newAddr) =/= getPPN(oldAddr) // unequal tags
+  when(io.req.fire) {
+    req_valid := false.B
+  }
+  when(scoreTable.io.req.fire) {
+    req.tag := parseFullAddress(newAddr)._1
+    req.set := parseFullAddress(newAddr)._2
+    req.needT := io.train.bits.needT
+    req.source := io.train.bits.source
+    req_valid := !crossPage // stop prefetch when prefetch req crosses pages
+  }
+
+  io.req.valid := req_valid
+  io.req.bits := req
+  io.req.bits.pfSource := MemReqSource.Prefetch2L2PBOP.id.U
+  io.train.ready := scoreTable.io.req.ready && (!req_valid || io.req.ready)
+  io.resp.ready := rrTable.io.w.ready
+
+  for (off <- offsetList) {
+    if (off < 0) {
+      XSPerfAccumulate(cacheParams, "best_offset_neg_" + (-off).toString, prefetchOffset === off.S(offsetWidth.W).asUInt)
+    } else {
+      XSPerfAccumulate(cacheParams, "best_offset_pos_" + off.toString, prefetchOffset === off.U)
+    }
+  }
+  XSPerfAccumulate(cacheParams, "bop_req", io.req.fire)
+  XSPerfAccumulate(cacheParams, "bop_train", io.train.fire)
+  XSPerfAccumulate(cacheParams, "bop_train_stall_for_st_not_ready", io.train.valid && !scoreTable.io.req.ready)
+  XSPerfAccumulate(cacheParams, "bop_cross_page", scoreTable.io.req.fire && crossPage)
 }
