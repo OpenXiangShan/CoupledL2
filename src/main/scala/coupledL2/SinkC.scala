@@ -111,7 +111,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
     }
   }
 
-  when (io.c.fire && isRelease && last && (!io.task.ready || taskArb.io.out.valid)) {
+  when (io.c.fire && isRelease && last) {
     when (hasData) {
       taskValids(nextPtrReg) := true.B
       taskBuf(nextPtrReg) := toTaskBundle(io.c.bits)
@@ -134,9 +134,9 @@ class SinkC(implicit p: Parameters) extends L2Module {
   }
 
   val cValid = io.c.valid && isRelease && last
-  io.task.valid := cValid || taskArb.io.out.valid
-  io.task.bits := Mux(taskArb.io.out.valid, taskArb.io.out.bits, toTaskBundle(io.c.bits))
-  io.task.bits.bufIdx := Mux(taskArb.io.out.valid, taskArb.io.out.bits.bufIdx, nextPtrReg)
+  io.task.valid := taskArb.io.out.valid
+  io.task.bits := taskArb.io.out.bits
+  io.task.bits.bufIdx := taskArb.io.out.bits.bufIdx
 
   io.resp.valid := io.c.valid && (first || last) && !isRelease
   io.resp.mshrId := 0.U // DontCare
@@ -170,7 +170,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
   io.refillBufWrite.id := RegNext(OHToUInt(newdataMask))
   io.refillBufWrite.data.data := dataBuf(RegNext(io.task.bits.bufIdx)).asUInt
 
-  io.c.ready := !isRelease || !first || !full || !hasData && io.task.ready && !taskArb.io.out.valid
+  io.c.ready := !isRelease || !first || !full
 
   io.bufResp.data := RegNext(RegEnable(dataBuf(io.task.bits.bufIdx), io.task.fire))
   when(RegNext(io.task.fire)) {
