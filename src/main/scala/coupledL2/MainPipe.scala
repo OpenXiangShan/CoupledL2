@@ -89,9 +89,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     /* read DS and write data into ReleaseBuf when the task needs to replace */
     val releaseBufWrite = Flipped(new MSHRBufWrite()) // s5 & s6
 
-    /* read DS and write data into RefillBuf when Acquire toT hits on B */
-    val refillBufWrite = Flipped(new MSHRBufWrite())
-
     val nestedwb = Output(new NestedWriteback)
     val nestedwbData = Output(new DSBlock)
 
@@ -303,11 +300,10 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     cache_alias ||
     need_data_b && need_mshr_s3_b ||
     need_data_mshr_repl
-  // B: need_write_refillBuf when L1 AcquireBlock BtoT
-  //    L2 sends AcquirePerm to L3, so GrantData to L1 needs to read DS ahead of time and store in RefillBuffer
-  // TODO: how about AcquirePerm BtoT interaction with refill buffer?
-  // !!TODO June 22th: this is no longer useful, cuz we only AcquirePerm when L1 AcquirePerm (see MSHR)
-  val need_write_refillBuf = sinkA_req_s3 && req_needT_s3 && dirResult_s3.hit && meta_s3.state === BRANCH && !req_prefetch_s3
+  // B: need_write_refillBuf indicates that DS should be read and the data will be written into RefillBuffer
+  //    when L1 AcquireBlock but L2 AcquirePerm to L3, we need to prepare data for L1
+  //    but this will no longer happen, cuz we always AcquireBlock for L1 AcquireBlock
+  val need_write_refillBuf = false.B
 
   /* ======== Write Directory ======== */
   val metaW_valid_s3_a    = sinkA_req_s3 && !need_mshr_s3_a && !req_get_s3 && !req_prefetch_s3 // get & prefetch that hit will not write meta
@@ -372,7 +368,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   /* ======== Interact with Channels (C & D) ======== */
   // do not need s4 & s5
   val chnl_fire_s3 = c_s3.fire || d_s3.fire
-  val req_drop_s3 = !need_write_releaseBuf && !need_write_refillBuf && (
+  val req_drop_s3 = !need_write_releaseBuf && (
     !mshr_req_s3 && need_mshr_s3 || chnl_fire_s3
   ) || (mshr_refill_s3 && retry)
 
@@ -426,7 +422,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val data_s4 = Reg(UInt((blockBytes * 8).W))
   val ren_s4 = RegInit(false.B)
   val need_write_releaseBuf_s4 = RegInit(false.B)
-  val need_write_refillBuf_s4 = RegInit(false.B)
   val isC_s4, isD_s4 = RegInit(false.B)
   task_s4.valid := task_s3.valid && !req_drop_s3
   when (task_s3.valid && !req_drop_s3) {
@@ -436,7 +431,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     data_s4 := data_s3
     ren_s4 := ren
     need_write_releaseBuf_s4 := need_write_releaseBuf
-    need_write_refillBuf_s4 := need_write_refillBuf
     isC_s4 := isC_s3
     isD_s4 := isD_s3
   }
@@ -452,7 +446,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   // for reqs that CANNOT give response in MainPipe, but needs to write releaseBuf/refillBuf
   // we cannot drop them at s3, we must let them go to s4/s5
   val chnl_fire_s4 = c_s4.fire || d_s4.fire
-  val req_drop_s4 = !need_write_releaseBuf_s4 && !need_write_refillBuf_s4 && chnl_fire_s4
+  val req_drop_s4 = !need_write_releaseBuf_s4 && chnl_fire_s4
 
   val c_d_valid_s4 = task_s4.valid && !RegNext(chnl_fire_s3, false.B)
   c_s4.valid := c_d_valid_s4 && isC_s4
@@ -467,7 +461,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val ren_s5 = RegInit(false.B)
   val data_s5 = Reg(UInt((blockBytes * 8).W))
   val need_write_releaseBuf_s5 = RegInit(false.B)
-  val need_write_refillBuf_s5 = RegInit(false.B)
   val isC_s5, isD_s5 = RegInit(false.B)
   // those hit@s3 and ready to fire@s5, and Now wait@s4
   val pendingC_s4 = task_s4.bits.fromB && !task_s4.bits.mshrTask && task_s4.bits.opcode === ProbeAckData
@@ -480,7 +473,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     ren_s5 := ren_s4
     data_s5 := data_s4
     need_write_releaseBuf_s5 := need_write_releaseBuf_s4
-    need_write_refillBuf_s5 := need_write_refillBuf_s4
     // except for those ready at s3/s4 (isC/D_s4), sink resps are also ready to fire at s5
     isC_s5 := isC_s4 || pendingC_s4
     isD_s5 := isD_s4 || pendingD_s4
@@ -501,7 +493,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   customL1Hint.io.s4.task                  := task_s4
   customL1Hint.io.s4.d                     := d_s4.valid
   customL1Hint.io.s4.need_write_releaseBuf := need_write_releaseBuf_s4
-  customL1Hint.io.s4.need_write_refillBuf  := need_write_refillBuf_s4
 
   customL1Hint.io.s5.task      := task_s5
   customL1Hint.io.s5.d         := d_s5.valid
@@ -516,12 +507,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.releaseBufWrite.data.data  := rdata_s5
   io.releaseBufWrite.id         := task_s5.bits.mshrId
   assert(!(io.releaseBufWrite.valid && !io.releaseBufWrite.ready), "releaseBuf should be ready when given valid")
-
-  io.refillBufWrite.valid     := task_s5.valid && need_write_refillBuf_s5
-  io.refillBufWrite.beat_sel  := Fill(beatSize, 1.U(1.W))
-  io.refillBufWrite.data.data := rdata_s5
-  io.refillBufWrite.id        := task_s5.bits.mshrId
-  assert(!(io.refillBufWrite.valid && !io.refillBufWrite.ready), "refillBuf should be ready when given valid")
 
   val c_d_valid_s5 = task_s5.valid && !RegNext(chnl_fire_s4, false.B) && !RegNextN(chnl_fire_s3, 2, Some(false.B))
   c_s5.valid := c_d_valid_s5 && isC_s5
