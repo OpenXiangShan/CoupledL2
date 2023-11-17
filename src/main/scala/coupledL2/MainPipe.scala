@@ -87,7 +87,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     val tagWReq = ValidIO(new TagWrite)
 
     /* read DS and write data into ReleaseBuf when the task needs to replace */
-    val releaseBufWrite = Flipped(new MSHRBufWrite()) // s5 & s6
+    val releaseBufWrite = ValidIO(new MSHRBufWrite())
 
     val nestedwb = Output(new NestedWriteback)
     val nestedwbData = Output(new DSBlock)
@@ -503,10 +503,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   customL1Hint.io.l1Hint <> io.l1Hint
 
   io.releaseBufWrite.valid      := task_s5.valid && need_write_releaseBuf_s5
-  io.releaseBufWrite.beat_sel   := Fill(beatSize, 1.U(1.W))
-  io.releaseBufWrite.data.data  := rdata_s5
-  io.releaseBufWrite.id         := task_s5.bits.mshrId
-  assert(!(io.releaseBufWrite.valid && !io.releaseBufWrite.ready), "releaseBuf should be ready when given valid")
+  io.releaseBufWrite.bits.id    := task_s5.bits.mshrId
+  io.releaseBufWrite.bits.data.data := rdata_s5
 
   val c_d_valid_s5 = task_s5.valid && !RegNext(chnl_fire_s4, false.B) && !RegNextN(chnl_fire_s3, 2, Some(false.B))
   c_s5.valid := c_d_valid_s5 && isC_s5

@@ -101,10 +101,10 @@ class Slice()(implicit p: Parameters) extends L2Module {
   mainPipe.io.fromMSHRCtl <> mshrCtl.io.toMainPipe
   mainPipe.io.bufResp <> sinkC.io.bufResp
   mainPipe.io.toDS.rdata_s5 := dataStorage.io.rdata
-  mainPipe.io.refillBufResp_s3.valid := RegNext(refillBuf.io.r.valid && refillBuf.io.r.ready, false.B)
-  mainPipe.io.refillBufResp_s3.bits := refillBuf.io.r.data
-  mainPipe.io.releaseBufResp_s3.valid := RegNext(releaseBuf.io.r.valid && releaseBuf.io.r.ready, false.B)
-  mainPipe.io.releaseBufResp_s3.bits := releaseBuf.io.r.data
+  mainPipe.io.refillBufResp_s3.valid := RegNext(refillBuf.io.r.valid, false.B)
+  mainPipe.io.refillBufResp_s3.bits := refillBuf.io.resp.data
+  mainPipe.io.releaseBufResp_s3.valid := RegNext(releaseBuf.io.r.valid, false.B)
+  mainPipe.io.releaseBufResp_s3.bits := releaseBuf.io.resp.data
   mainPipe.io.fromReqArb.status_s1 := reqArb.io.status_s1
   mainPipe.io.grantBufferHint := grantBuf.io.l1Hint
   mainPipe.io.globalCounter := grantBuf.io.globalCounter
@@ -113,11 +113,10 @@ class Slice()(implicit p: Parameters) extends L2Module {
   // priority: nested-ReleaseData / probeAckData [NEW] > mainPipe DS rdata [OLD]
   // 0/1 might happen at the same cycle with 2
   releaseBuf.io.w(0).valid := mshrCtl.io.nestedwbDataId.valid
-  releaseBuf.io.w(0).beat_sel := Fill(beatSize, 1.U(1.W))
-  releaseBuf.io.w(0).data := mainPipe.io.nestedwbData
-  releaseBuf.io.w(0).id := mshrCtl.io.nestedwbDataId.bits
+  releaseBuf.io.w(0).bits.data := mainPipe.io.nestedwbData
+  releaseBuf.io.w(0).bits.id := mshrCtl.io.nestedwbDataId.bits
   releaseBuf.io.w(1) <> sinkC.io.releaseBufWrite
-  releaseBuf.io.w(1).id := mshrCtl.io.releaseBufWriteId
+  releaseBuf.io.w(1).bits.id := mshrCtl.io.releaseBufWriteId
   releaseBuf.io.w(2) <> mainPipe.io.releaseBufWrite
 
   refillBuf.io.w(0) <> refillUnit.io.refillBufWrite

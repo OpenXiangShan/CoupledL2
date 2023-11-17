@@ -38,9 +38,9 @@ class SinkC(implicit p: Parameters) extends L2Module {
     val c = Flipped(DecoupledIO(new TLBundleC(edgeIn.bundle)))
     val task = DecoupledIO(new TaskBundle) // Release/ReleaseData
     val resp = Output(new RespBundle)
-    val releaseBufWrite = Flipped(new MSHRBufWrite)
+    val releaseBufWrite = ValidIO(new MSHRBufWrite)
     val bufResp = Output(new PipeBufferResp)
-    val refillBufWrite = Flipped(new MSHRBufWrite)
+    val refillBufWrite = ValidIO(new MSHRBufWrite)
     val msInfo = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo)))
   })
 
@@ -61,6 +61,8 @@ class SinkC(implicit p: Parameters) extends L2Module {
   val full = bufValids.andR
   val noSpace = full && hasData
   val nextPtr = PriorityEncoder(~bufValids)
+  // since DCache uses TLArbiter for Release & ProbeAck, we assume two beats of the block will be sent continuously
+  // in other words, different addresses will not interleave
   val nextPtrReg = RegEnable(nextPtr, 0.U.asTypeOf(nextPtr), io.c.fire && isRelease && first && hasData)
 
   def toTaskBundle(c: TLBundleC): TaskBundle = {
@@ -148,12 +150,15 @@ class SinkC(implicit p: Parameters) extends L2Module {
   io.resp.respInfo.dirty := io.c.bits.opcode(0)
   io.resp.respInfo.isHit := io.c.bits.opcode(0)
 
-  io.releaseBufWrite.valid := io.c.valid && io.c.bits.opcode === ProbeAckData
-  io.releaseBufWrite.beat_sel := UIntToOH(beat)
-  io.releaseBufWrite.data.data := Fill(beatSize, io.c.bits.data)
-  io.releaseBufWrite.id := 0.U(mshrBits.W) // id is given by MSHRCtl by comparing address to the MSHRs
+  // keep the first beat of ProbeAckData
+  val probeAckDataBuf = RegEnable(io.c.bits.data, 0.U((beatBytes * 8).W),
+    io.c.valid && io.c.bits.opcode === ProbeAckData && first)
 
-  // C-Release writing new data to refillBuffer, for repl-Release to write to DS
+  io.releaseBufWrite.valid := io.c.valid && io.c.bits.opcode === ProbeAckData && last
+  io.releaseBufWrite.bits.id := 0.U(mshrBits.W) // id is given by MSHRCtl by comparing address to the MSHRs
+  io.releaseBufWrite.bits.data.data := Cat(io.c.bits.data, probeAckDataBuf)
+
+  // C-Release, with new data, comes before repl-Release writes old refill data back to DS
   val newdataMask = VecInit(io.msInfo.map(s =>
     s.valid && s.bits.set === io.task.bits.set && s.bits.reqTag === io.task.bits.tag && s.bits.blockRefill
   )).asUInt
@@ -164,11 +169,10 @@ class SinkC(implicit p: Parameters) extends L2Module {
 
   // since what we are trying to prevent is that C-Release comes first and MSHR-Release comes later
   // we can make sure this refillBufWrite can be read by MSHR-Release
-  // TODO: this is rarely triggered, consider just blocking?
+  // TODO: this is rarely triggered, consider just blocking? but blocking may affect timing of SinkC-Directory
   io.refillBufWrite.valid := RegNext(io.task.fire && io.task.bits.opcode === ReleaseData && newdataMask.orR, false.B)
-  io.refillBufWrite.beat_sel := Fill(beatSize, 1.U(1.W))
-  io.refillBufWrite.id := RegNext(OHToUInt(newdataMask))
-  io.refillBufWrite.data.data := dataBuf(RegNext(io.task.bits.bufIdx)).asUInt
+  io.refillBufWrite.bits.id := RegNext(OHToUInt(newdataMask))
+  io.refillBufWrite.bits.data.data := dataBuf(RegNext(io.task.bits.bufIdx)).asUInt
 
   io.c.ready := !isRelease || !first || !full
 
