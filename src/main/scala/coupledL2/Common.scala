@@ -43,7 +43,7 @@ class MergeTaskBundle(implicit p: Parameters) extends L2Bundle {
   val off = UInt(offsetBits.W)
   val alias = aliasBitsOpt.map(_ => UInt(aliasBitsOpt.get.W)) // color bits in cache-alias issue
   val vaddr = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W)) // vaddr passed by client cache, for prefetcher train
-//  val isKeyword = isKeywordBitsOpt.map(_ => Bool())
+  val isKeyword = isKeywordBitsOpt.map(_ => Bool())
   val opcode = UInt(3.W) // type of the task operation
   val param = UInt(3.W)
   val sourceId = UInt(sourceIdBits.W) // tilelink sourceID

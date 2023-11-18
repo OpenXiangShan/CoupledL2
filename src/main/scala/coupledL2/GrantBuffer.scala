@@ -124,7 +124,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   mergeAtask.set := io.d_task.bits.task.set
   mergeAtask.tag := io.d_task.bits.task.tag
   mergeAtask.vaddr.foreach(_ := io.d_task.bits.task.vaddr.getOrElse(0.U))
-  mergeAtask.isKeyword.foreach(_ := io.d_task.bits.task.isKeyword.getOrElse(false.B))
+  mergeAtask.isKeyword.foreach(_ := io.d_task.bits.task.aMergeTask.isKeyword.getOrElse(false.B))
   mergeAtask.size := io.d_task.bits.task.size
   mergeAtask.bufIdx := io.d_task.bits.task.bufIdx
   mergeAtask.needProbeAckData := io.d_task.bits.task.needProbeAckData
@@ -145,12 +145,13 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   mergeAtask.mergeA := false.B
   mergeAtask.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
   val inflight_insertIdx = PriorityEncoder(inflightGrant.map(!_.valid))
-
+  val grantQueue_enq_isKeyword = Mux(io.d_task.bits.task.mergeA, mergeAtask.isKeyword.getOrElse(false.B), io.d_task.bits.task.isKeyword.getOrElse(false.B))
   // The following is organized in the order of data flow
   // =========== save d_task in queue[FIFO] ===========
   grantQueue.io.enq.valid := io.d_task.valid && (dtaskOpcode =/= HintAck || io.d_task.bits.task.mergeA)
   grantQueue.io.enq.bits.task := Mux(io.d_task.bits.task.mergeA, mergeAtask, io.d_task.bits.task)
-  grantQueue.io.enq.bits.task.isKeyword.foreach(_ := io.d_task.bits.task.isKeyword.getOrElse(false.B))
+  grantQueue.io.enq.bits.task.isKeyword.foreach(_ := grantQueue_enq_isKeyword)
+  //grantQueue.io.enq.bits.task.isKeyword.foreach(_ := io.d_task.bits.task.isKeyword.getOrElse(false.B))
   grantQueue.io.enq.bits.data := io.d_task.bits.data
   grantQueue.io.enq.bits.grantid := inflight_insertIdx
   io.d_task.ready := true.B // GrantBuf should always be ready
@@ -310,7 +311,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   when(globalCounter >= 3.U) {
     hintQueue.io.enq.valid := true.B
     hintQueue.io.enq.bits.sourceId := io.d_task.bits.task.sourceId
-    hintQueue.io.enq.bits.isKeyword := io.d_task.bits.task.isKeyword.getOrElse(false.B)
+    hintQueue.io.enq.bits.isKeyword := Mux(io.d_task.bits.task.mergeA, io.d_task.bits.task.aMergeTask.isKeyword.getOrElse(false.B), io.d_task.bits.task.isKeyword.getOrElse(false.B))
   }.otherwise {
     hintQueue.io.enq.valid := false.B
     hintQueue.io.enq.bits.sourceId := 0.U(sourceIdBits.W)
