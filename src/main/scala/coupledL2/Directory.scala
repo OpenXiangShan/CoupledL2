@@ -222,7 +222,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   // we cancel the Grant and let it retry
   // TODO: timing?
   val wayConflictMask = VecInit(io.msInfo.map(s =>
-    s.valid && s.bits.set === req_s3.set && (s.bits.releaseNotSent || s.bits.dirHit) && s.bits.way === finalWay
+    s.valid && s.bits.set === req_s3.set && (s.bits.blockRefill || s.bits.dirHit) && s.bits.way === finalWay
   )).asUInt
   val refillRetry = wayConflictMask.orR
 

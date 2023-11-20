@@ -163,9 +163,9 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle {
 
   // to block Acquire for to-be-replaced data until Release done (indicated by ReleaseAck received)
   val needRelease = Bool()
-  // MSHR needs to send ReleaseTask but has not yet sent it
+  // MSHR needs to send ReleaseTask but has not in mainpipe s3, RefillTask in MP need to block
   // PS: ReleaseTask is also responsible for writing refillData to DS when A miss
-  val releaseNotSent = Bool()
+  val blockRefill = Bool()
 
   val metaTag = UInt(tagBits.W)
   val dirHit = Bool()
