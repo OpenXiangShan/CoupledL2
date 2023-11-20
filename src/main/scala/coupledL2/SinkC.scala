@@ -163,7 +163,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
 
   // C-Release writing new data to refillBuffer, for repl-Release to write to DS
   val newdataMask = VecInit(io.msInfo.map(s =>
-    s.valid && s.bits.set === io.task.bits.set && s.bits.reqTag === io.task.bits.tag && s.bits.releaseNotSent
+    s.valid && s.bits.set === io.task.bits.set && s.bits.reqTag === io.task.bits.tag && s.bits.blockRefill
   )).asUInt
 
   // we must wait until 2nd beat written into databuf(idx) before we can read it
