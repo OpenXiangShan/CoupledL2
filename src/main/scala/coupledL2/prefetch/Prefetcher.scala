@@ -122,6 +122,7 @@ class PrefetchReq(implicit p: Parameters) extends PrefetchBundle {
   def isPBOP:Bool = pfSource === MemReqSource.Prefetch2L2PBOP.id.U
   def isSMS:Bool = pfSource === MemReqSource.Prefetch2L2SMS.id.U
   def isTP:Bool = pfSource === MemReqSource.Prefetch2L2TP.id.U
+  def needAck:Bool = pfSource === MemReqSource.Prefetch2L2BOP.id.U || pfSource === MemReqSource.Prefetch2L2PBOP.id.U
   def fromL2:Bool =
     pfSource === MemReqSource.Prefetch2L2BOP.id.U ||
       pfSource === MemReqSource.Prefetch2L2PBOP.id.U ||
@@ -221,6 +222,8 @@ class PrefetchQueue(implicit p: Parameters) extends PrefetchModule {
 
   XSPerfHistogram(cacheParams, "prefetch_queue_entry", PopCount(valids.asUInt),
     true.B, 0, inflightEntries, 1)
+  XSPerfAccumulate(cacheParams, "prefetch_queue_empty", empty)
+  XSPerfAccumulate(cacheParams, "prefetch_queue_full", full)
 }
 
 class Prefetcher(implicit p: Parameters) extends PrefetchModule {
@@ -313,9 +316,14 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       // tpmeta interface
       tp.io.tpmeta_port <> tpio.tpmeta_port.get
 
-      XSPerfAccumulate(cacheParams, "prefetch_req_fromSMS", pfRcv.io.req.valid)
+      XSPerfAccumulate(cacheParams, "prefetch_req_fromL1", pfRcv.io.req.valid)
       XSPerfAccumulate(cacheParams, "prefetch_req_fromBOP", l2_pf_en && vbop.io.req.valid)
+      XSPerfAccumulate(cacheParams, "prefetch_req_fromPBOP", l2_pf_en && pbop.io.req.valid)
       XSPerfAccumulate(cacheParams, "prefetch_req_fromTP", l2_pf_en && tp.io.req.valid)
+      XSPerfAccumulate(cacheParams, "prefetch_req_selectL1", pfRcv.io.req.valid)
+      XSPerfAccumulate(cacheParams, "prefetch_req_selectBOP", l2_pf_en && !pfRcv.io.req.valid && vbop.io.req.valid)
+      XSPerfAccumulate(cacheParams, "prefetch_req_selectPBOP", l2_pf_en && !pfRcv.io.req.valid && !vbop.io.req.valid && pbop.io.req.valid)
+      XSPerfAccumulate(cacheParams, "prefetch_req_selectTP", l2_pf_en && !pfRcv.io.req.valid && !vbop.io.req.valid && !pbop.io.req.valid && tp.io.req.valid)
       XSPerfAccumulate(cacheParams, "prefetch_req_SMS_other_overlapped",
         pfRcv.io.req.valid && l2_pf_en && (vbop.io.req.valid || tp.io.req.valid))
     case _ => assert(cond = false, "Unknown prefetcher")

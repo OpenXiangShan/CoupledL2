@@ -175,7 +175,7 @@ class RecentRequestTable(implicit p: Parameters) extends BOPModule {
 
 }
 
-class OffsetScoreTable(implicit p: Parameters) extends BOPModule {
+class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPModule {
   val io = IO(new Bundle {
     val req = Flipped(DecoupledIO(UInt(fullAddrBits.W)))
     val prefetchOffset = Output(UInt(offsetWidth.W))
@@ -274,12 +274,12 @@ class OffsetScoreTable(implicit p: Parameters) extends BOPModule {
     val bestScore = UInt(scoreBits.W)
   }
 
-  val l2BopTrainTable = ChiselDB.createTable("L2BopTrainTable", new BopTrainEntry)
+  val l2BopTrainTable = ChiselDB.createTable("L2BopTrainTable", new BopTrainEntry, basicDB = true)
   for (i <- 0 until REQ_FILTER_SIZE) {
     val data = Wire(new BopTrainEntry)
     data.bestOffset := bestOffset
     data.bestScore := bestScore
-    l2BopTrainTable.log(data = data, en = state === s_idle, site = "L2BOPTable", clock, reset)
+    l2BopTrainTable.log(data = data, en = state === s_idle, site = name+"OffsetScoreTable", clock, reset)
   }
 
 }
@@ -827,7 +827,7 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   })
 
   val rrTable = Module(new RecentRequestTable)
-  val scoreTable = Module(new OffsetScoreTable)
+  val scoreTable = Module(new OffsetScoreTable("vbop"))
 
   val s0_fire = scoreTable.io.req.fire
   val s1_fire = WireInit(false.B)
@@ -922,6 +922,7 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   }
   XSPerfAccumulate(cacheParams, "bop_req", io.req.fire)
   XSPerfAccumulate(cacheParams, "bop_train", io.train.fire)
+  XSPerfAccumulate(cacheParams, "bop_resp", io.resp.fire)
   XSPerfAccumulate(cacheParams, "bop_train_stall_for_st_not_ready", io.train.valid && !scoreTable.io.req.ready)
   if(virtualTrain){
     XSPerfAccumulate(cacheParams, "bop_train_stall_for_tlb_not_ready", io.train.valid && !io.tlb_req.req.ready)
@@ -939,7 +940,7 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   })
 
   val rrTable = Module(new RecentRequestTable)
-  val scoreTable = Module(new OffsetScoreTable)
+  val scoreTable = Module(new OffsetScoreTable("pbop"))
 
   val prefetchOffset = scoreTable.io.prefetchOffset
   val oldAddr = io.train.bits.addr
@@ -980,6 +981,7 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   }
   XSPerfAccumulate(cacheParams, "bop_req", io.req.fire)
   XSPerfAccumulate(cacheParams, "bop_train", io.train.fire)
+  XSPerfAccumulate(cacheParams, "bop_resp", io.resp.fire)
   XSPerfAccumulate(cacheParams, "bop_train_stall_for_st_not_ready", io.train.valid && !scoreTable.io.req.ready)
   XSPerfAccumulate(cacheParams, "bop_cross_page", scoreTable.io.req.fire && crossPage)
 }
