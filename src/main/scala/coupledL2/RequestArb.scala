@@ -134,7 +134,9 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   io.dirRead_s1.valid := chnl_task_s1.valid && !mshr_task_s1.valid || s1_needs_replRead && !io.fromMainPipe.blockG_s1
   io.dirRead_s1.bits.set := task_s1.bits.set
   io.dirRead_s1.bits.tag := task_s1.bits.tag
-  io.dirRead_s1.bits.wayMask := Fill(cacheParams.ways, "b1".U) //[deprecated]
+  // invalid way which causes mshr_retry
+  // TODO: random waymask can be used to avoid multi-way conflict
+  io.dirRead_s1.bits.wayMask := Mux(mshr_task_s1.valid && mshr_task_s1.bits.mshrRetry, (~(1.U(cacheParams.ways.W) << mshr_task_s1.bits.way)), Fill(cacheParams.ways, "b1".U))
   io.dirRead_s1.bits.replacerInfo.opcode := task_s1.bits.opcode
   io.dirRead_s1.bits.replacerInfo.channel := task_s1.bits.channel
   io.dirRead_s1.bits.replacerInfo.reqSource := task_s1.bits.reqSource

@@ -130,6 +130,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   mergeAtask.mshrId := io.d_task.bits.task.mshrId
   mergeAtask.aliasTask.foreach(_ := io.d_task.bits.task.aliasTask.getOrElse(0.U))
   mergeAtask.useProbeData := false.B
+  mergeAtask.mshrRetry := false.B
   mergeAtask.fromL2pft.foreach(_ := false.B)
   mergeAtask.needHint.foreach(_ := false.B)
   mergeAtask.dirty := io.d_task.bits.task.dirty
