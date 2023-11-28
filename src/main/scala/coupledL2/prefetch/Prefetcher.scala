@@ -212,11 +212,13 @@ class PrefetchQueue(implicit p: Parameters) extends PrefetchModule {
   // The reqs that are discarded = enq - deq
   XSPerfAccumulate(cacheParams, "prefetch_queue_enq",         io.enq.fire)
   XSPerfAccumulate(cacheParams, "prefetch_queue_enq_fromBOP", io.enq.fire && io.enq.bits.isBOP)
+  XSPerfAccumulate(cacheParams, "prefetch_queue_enq_fromPBOP", io.enq.fire && io.enq.bits.isPBOP)
   XSPerfAccumulate(cacheParams, "prefetch_queue_enq_fromSMS", io.enq.fire && io.enq.bits.isSMS)
   XSPerfAccumulate(cacheParams, "prefetch_queue_enq_fromTP",  io.enq.fire && io.enq.bits.isTP)
 
   XSPerfAccumulate(cacheParams, "prefetch_queue_deq",         io.deq.fire)
   XSPerfAccumulate(cacheParams, "prefetch_queue_deq_fromBOP", io.deq.fire && io.deq.bits.isBOP)
+  XSPerfAccumulate(cacheParams, "prefetch_queue_deq_fromPBOP", io.deq.fire && io.deq.bits.isPBOP)
   XSPerfAccumulate(cacheParams, "prefetch_queue_deq_fromSMS", io.deq.fire && io.deq.bits.isSMS)
   XSPerfAccumulate(cacheParams, "prefetch_queue_deq_fromTP",  io.deq.fire && io.deq.bits.isTP)
 
@@ -321,8 +323,8 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       XSPerfAccumulate(cacheParams, "prefetch_req_fromPBOP", l2_pf_en && pbop.io.req.valid)
       XSPerfAccumulate(cacheParams, "prefetch_req_fromTP", l2_pf_en && tp.io.req.valid)
       XSPerfAccumulate(cacheParams, "prefetch_req_selectL1", pfRcv.io.req.valid)
-      XSPerfAccumulate(cacheParams, "prefetch_req_selectBOP", l2_pf_en && !pfRcv.io.req.valid && vbop.io.req.valid)
-      XSPerfAccumulate(cacheParams, "prefetch_req_selectPBOP", l2_pf_en && !pfRcv.io.req.valid && !vbop.io.req.valid && pbop.io.req.valid)
+      XSPerfAccumulate(cacheParams, "prefetch_req_selectPBOP", l2_pf_en && !pfRcv.io.req.valid && pbop.io.req.valid)
+      XSPerfAccumulate(cacheParams, "prefetch_req_selectBOP", l2_pf_en && !pfRcv.io.req.valid && !pbop.io.req.valid && vbop.io.req.valid)
       XSPerfAccumulate(cacheParams, "prefetch_req_selectTP", l2_pf_en && !pfRcv.io.req.valid && !vbop.io.req.valid && !pbop.io.req.valid && tp.io.req.valid)
       XSPerfAccumulate(cacheParams, "prefetch_req_SMS_other_overlapped",
         pfRcv.io.req.valid && l2_pf_en && (vbop.io.req.valid || tp.io.req.valid))
