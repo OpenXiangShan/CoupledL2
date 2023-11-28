@@ -73,8 +73,6 @@ trait HasBOPParams extends HasPrefetcherHelper {
   val rrTagBits = if (defaultConfig) bopParams.rrTagBits else (fullAddrBits - offsetBits - rrIdxBits)
   val scoreBits = bopParams.scoreBits
   val roundMax = bopParams.roundMax
-  val badScore = bopParams.badScore
-  val initScore = bopParams.badScore + 1
   val offsetList = bopParams.offsetList
   val inflightEntries = bopParams.inflightEntries
 
@@ -184,6 +182,8 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
     val test = new TestOffsetBundle
   })
 
+  val badScore = WireInit(Constantin.createRecord("BopBadScore", bopParams.badScore.U))
+  val initScore = badScore + 1.U
   val prefetchOffset = RegInit(2.U(offsetWidth.W))
   val prefetchDisable = RegInit(false.B)
   // score table
@@ -194,7 +194,7 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
   val round = RegInit(0.U(roundBits.W))
 
   val bestOffset = RegInit(2.U(offsetWidth.W)) // the entry with the highest score while traversing
-  val bestScore = RegInit(initScore.U(scoreBits.W))
+  val bestScore = RegInit(initScore(scoreBits.W))
   val testOffset = offList(ptr)
   // def winner(e1: ScoreTableEntry, e2: ScoreTableEntry): ScoreTableEntry = {
   //   val w = Wire(new ScoreTableEntry)
@@ -214,7 +214,7 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
     round := 0.U
     bestScore := 0.U
     prefetchOffset := bestOffset
-    prefetchDisable := bestScore < badScore.U
+    prefetchDisable := bestScore < badScore
     state := s_learn
   }
 
@@ -264,7 +264,7 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
   io.test.resp.ready := true.B
 
   XSPerfAccumulate(cacheParams, "total_learn_phase", state === s_idle)
-  XSPerfAccumulate(cacheParams, "total_bop_disable", state === s_idle && bestScore < badScore.U)
+  XSPerfAccumulate(cacheParams, "total_bop_disable", state === s_idle && bestScore < badScore)
   XSPerfAccumulate(cacheParams, "total_bop_high_confidence", state === s_idle && bestScore === scoreMax.U)
 
   for (off <- offsetList) {
