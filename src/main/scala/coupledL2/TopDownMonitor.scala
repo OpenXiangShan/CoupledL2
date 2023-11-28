@@ -112,6 +112,7 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   val l2prefetchSent = dirResultMatchVec(
     r =>  !r.hit &&
       (r.replacerInfo.reqSource === MemReqSource.Prefetch2L2BOP.id.U ||
+       r.replacerInfo.reqSource === MemReqSource.Prefetch2L2PBOP.id.U ||
        r.replacerInfo.reqSource === MemReqSource.Prefetch2L2SMS.id.U ||
        r.replacerInfo.reqSource === MemReqSource.Prefetch2L2Stride.id.U ||
        r.replacerInfo.reqSource === MemReqSource.Prefetch2L2Stream.id.U ||
@@ -119,6 +120,9 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   )
   val l2prefetchSentBOP = dirResultMatchVec(
     r => !r.hit && r.replacerInfo.reqSource === MemReqSource.Prefetch2L2BOP.id.U
+  )
+  val l2prefetchSentPBOP = dirResultMatchVec(
+    r => !r.hit && r.replacerInfo.reqSource === MemReqSource.Prefetch2L2PBOP.id.U
   )
   val l2prefetchSentSMS = dirResultMatchVec(
     r => !r.hit && r.replacerInfo.reqSource === MemReqSource.Prefetch2L2SMS.id.U
@@ -139,6 +143,10 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   val l2prefetchUsefulBOP = dirResultMatchVec(
     r => reqFromCPU(r) && r.hit &&
       r.meta.prefetch.getOrElse(false.B) && r.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) === PfSource.BOP.id.U
+  )
+  val l2prefetchUsefulPBOP = dirResultMatchVec(
+    r => reqFromCPU(r) && r.hit &&
+      r.meta.prefetch.getOrElse(false.B) && r.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) === PfSource.PBOP.id.U
   )
   val l2prefetchUsefulSMS = dirResultMatchVec(
     r => reqFromCPU(r) && r.hit &&
@@ -171,6 +179,11 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   XSPerfRolling(
     cacheParams, "L2PrefetchAccuracyBOP",
     PopCount(l2prefetchUsefulBOP), PopCount(l2prefetchSentBOP),
+    1000, clock, reset
+  )
+  XSPerfRolling(
+    cacheParams, "L2PrefetchAccuracyPBOP",
+    PopCount(l2prefetchUsefulPBOP), PopCount(l2prefetchSentPBOP),
     1000, clock, reset
   )
   XSPerfRolling(
