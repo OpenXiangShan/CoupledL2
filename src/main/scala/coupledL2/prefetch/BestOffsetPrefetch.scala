@@ -17,7 +17,7 @@
 
 package coupledL2.prefetch
 
-import utility.{ChiselDB, Constantin, ParallelPriorityMux, RRArbiterInit, MemReqSource, SRAMTemplate}
+import utility.{ChiselDB, Constantin, MemReqSource, ParallelPriorityMux, RRArbiterInit, SRAMTemplate}
 import org.chipsalliance.cde.config.Parameters
 import chisel3.DontCare.:=
 import chisel3._
@@ -32,7 +32,7 @@ case class BOPParameters(
   rrTagBits:      Int = 12,
   scoreBits:      Int = 5,
   roundMax:       Int = 50,
-  badScore:       Int = 1,
+  badScore:       Int = 2,
   tlbReplayCnt:   Int = 10,
   offsetList: Seq[Int] = Seq(
     -256, -250, -243, -240, -225, -216, -200,
@@ -74,6 +74,7 @@ trait HasBOPParams extends HasPrefetcherHelper {
   val scoreBits = bopParams.scoreBits
   val roundMax = bopParams.roundMax
   val badScore = bopParams.badScore
+  val initScore = bopParams.badScore + 1
   val offsetList = bopParams.offsetList
   val inflightEntries = bopParams.inflightEntries
 
@@ -179,10 +180,12 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
   val io = IO(new Bundle {
     val req = Flipped(DecoupledIO(UInt(fullAddrBits.W)))
     val prefetchOffset = Output(UInt(offsetWidth.W))
+    val prefetchDisable = Output(Bool())
     val test = new TestOffsetBundle
   })
 
   val prefetchOffset = RegInit(2.U(offsetWidth.W))
+  val prefetchDisable = RegInit(false.B)
   // score table
   // val st = RegInit(VecInit(offsetList.map(off => (new ScoreTableEntry).apply(off.U, 0.U))))
   val st = RegInit(VecInit(Seq.fill(scores)((new ScoreTableEntry).apply(0.U))))
@@ -191,7 +194,7 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
   val round = RegInit(0.U(roundBits.W))
 
   val bestOffset = RegInit(2.U(offsetWidth.W)) // the entry with the highest score while traversing
-  val bestScore = RegInit(badScore.U(scoreBits.W))
+  val bestScore = RegInit(initScore.U(scoreBits.W))
   val testOffset = offList(ptr)
   // def winner(e1: ScoreTableEntry, e2: ScoreTableEntry): ScoreTableEntry = {
   //   val w = Wire(new ScoreTableEntry)
@@ -209,8 +212,9 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
     st.foreach(_.score := 0.U)
     ptr := 0.U
     round := 0.U
-    bestScore := badScore.U
+    bestScore := 0.U
     prefetchOffset := bestOffset
+    prefetchDisable := bestScore < badScore.U
     state := s_learn
   }
 
@@ -252,11 +256,16 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
 
   io.req.ready := state === s_learn
   io.prefetchOffset := prefetchOffset
+  io.prefetchDisable := prefetchDisable
   io.test.req.valid := state === s_learn && io.req.valid
   io.test.req.bits.addr := io.req.bits
   io.test.req.bits.testOffset := testOffset
   io.test.req.bits.ptr := ptr
   io.test.resp.ready := true.B
+
+  XSPerfAccumulate(cacheParams, "total_learn_phase", state === s_idle)
+  XSPerfAccumulate(cacheParams, "total_bop_disable", state === s_idle && bestScore < badScore.U)
+  XSPerfAccumulate(cacheParams, "total_bop_high_confidence", state === s_idle && bestScore === scoreMax.U)
 
   for (off <- offsetList) {
     if (off < 0) {
@@ -835,6 +844,7 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
 
   /* s0 train */
   val prefetchOffset = scoreTable.io.prefetchOffset
+  val prefetchDisable = scoreTable.io.prefetchDisable
   // NOTE: vaddr from l1 to l2 has no offset bits
   val s0_reqVaddr = io.train.bits.vaddr.getOrElse(0.U)
   val s0_oldFullAddr = if(virtualTrain) Cat(io.train.bits.vaddr.getOrElse(0.U), 0.U(offsetBits.W)) else io.train.bits.addr
@@ -884,19 +894,22 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   io.tlb_req.resp.ready := true.B
 
   // different situation
-  if(virtualTrain){
-    /* s1 send tlb req */
-    val reqFilter = Module(new PrefetchReqBuffer)
+  val reqFilter = Module(new PrefetchReqBuffer)
+  when(prefetchDisable || !virtualTrain.B){
+    reqFilter.io.in_req.valid := false.B
+    reqFilter.io.in_req.bits := DontCare
+  }.otherwise{
     reqFilter.io.in_req.valid := s1_req_valid
     reqFilter.io.in_req.bits.full_vaddr := s1_newFullAddr
     reqFilter.io.in_req.bits.base_vaddr := s1_reqVaddr
     reqFilter.io.in_req.bits.needT := s1_needT
     reqFilter.io.in_req.bits.source := s1_source
     reqFilter.io.in_req.bits.isBOP := true.B
+  }
 
+  if(virtualTrain){
     io.tlb_req <> reqFilter.io.tlb_req
     io.req <> reqFilter.io.out_req
-
   } else {
     io.tlb_req.req.valid := false.B
     io.tlb_req.req.bits := DontCare
@@ -930,6 +943,7 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   }else{
     XSPerfAccumulate(cacheParams, "bop_cross_page", scoreTable.io.req.fire && s0_crossPage)
   }
+  XSPerfAccumulate(cacheParams, "bop_drop_for_disable", scoreTable.io.req.fire && prefetchDisable)
 }
 
 class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
@@ -943,6 +957,7 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   val scoreTable = Module(new OffsetScoreTable("pbop"))
 
   val prefetchOffset = scoreTable.io.prefetchOffset
+  val prefetchDisable = scoreTable.io.prefetchDisable
   val oldAddr = io.train.bits.addr
   val newAddr = oldAddr + signedExtend((prefetchOffset << offsetBits), fullAddressBits)
 
@@ -963,7 +978,7 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     req.set := parseFullAddress(newAddr)._2
     req.needT := io.train.bits.needT
     req.source := io.train.bits.source
-    req_valid := !crossPage // stop prefetch when prefetch req crosses pages
+    req_valid := !crossPage && !prefetchDisable // stop prefetch when prefetch req crosses pages
   }
 
   io.req.valid := req_valid
@@ -983,5 +998,6 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   XSPerfAccumulate(cacheParams, "bop_train", io.train.fire)
   XSPerfAccumulate(cacheParams, "bop_resp", io.resp.fire)
   XSPerfAccumulate(cacheParams, "bop_train_stall_for_st_not_ready", io.train.valid && !scoreTable.io.req.ready)
-  XSPerfAccumulate(cacheParams, "bop_cross_page", scoreTable.io.req.fire && crossPage)
+  XSPerfAccumulate(cacheParams, "bop_drop_for_cross_page", scoreTable.io.req.fire && crossPage)
+  XSPerfAccumulate(cacheParams, "bop_drop_for_disable", scoreTable.io.req.fire && prefetchDisable)
 }
