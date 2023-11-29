@@ -86,7 +86,6 @@ class Slice()(implicit p: Parameters) extends L2Module {
   mshrCtl.io.resps.sourceC := sourceC.io.resp
   mshrCtl.io.nestedwb := mainPipe.io.nestedwb
   mshrCtl.io.aMergeTask := a_reqBuf.io.aMergeTask
-  mshrCtl.io.bMergeTask := sinkB.io.bMergeTask
   mshrCtl.io.replResp <> directory.io.replResp
   mainPipe.io.replResp <> directory.io.replResp
 

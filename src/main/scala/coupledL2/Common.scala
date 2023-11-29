@@ -170,9 +170,8 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle {
   val metaTag = UInt(tagBits.W)
   val dirHit = Bool()
 
-  // decide whether can nest B (req same-addr) or merge B with release (meta same-addr)
+  // decide whether can nest B (req same-addr)
   val nestB = Bool()
-  val mergeB = Bool()
 
   // to drop duplicate prefetch reqs
   val isAcqOrPrefetch = Bool()
@@ -208,7 +207,6 @@ class FSMState(implicit p: Parameters) extends L2Bundle {
   val s_release = Bool()  // release downwards
   val s_probeack = Bool() // respond probeack downwards
   val s_refill = Bool()   // respond grant upwards
-  val s_merge_probeack = Bool() // respond probeack downwards, Probe merge into A-replacement-Release
   // val s_grantack = Bool() // respond grantack downwards, moved to GrantBuf
   // val s_triggerprefetch = prefetchOpt.map(_ => Bool())
 

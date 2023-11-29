@@ -35,6 +35,9 @@ class DSBeat(implicit p: Parameters) extends L2Bundle {
 
 class DSBlock(implicit p: Parameters) extends L2Bundle {
   val data = UInt((blockBytes * 8).W)
+
+  // WARNING:TODO: check this
+  def toBeats: Vec[DSBeat] = Reverse(data).asTypeOf(Vec(beatSize, new DSBeat))
 }
 
 class DataStorage(implicit p: Parameters) extends L2Module {
