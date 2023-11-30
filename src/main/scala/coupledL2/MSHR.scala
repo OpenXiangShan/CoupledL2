@@ -464,6 +464,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   when (io.replResp.valid && replResp.retry) {
     state.s_refill := false.B
     state.s_retry := false.B
+    dirResult.way := replResp.way
   }
   when (io.replResp.valid && !replResp.retry) {
     state.w_replResp := true.B
