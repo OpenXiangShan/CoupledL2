@@ -198,6 +198,12 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
    // toTLBundleD(deqTask, deqData(0).data, deqId)
     toTLBundleD(deqTask, Mux(deqTask.isKeyword.getOrElse(false.B),deqData(1).data,deqData(0).data), deqId)
   )
+
+
+  XSPerfAccumulate(cacheParams, "toTLBundleD_valid", deqValid)
+  XSPerfAccumulate(cacheParams, "toTLBundleD_valid_isKeyword", deqValid && deqTask.isKeyword.getOrElse(false.B))
+  XSPerfAccumulate(cacheParams, "toTLBundleD_fire", deqValid && io.d.ready)
+  XSPerfAccumulate(cacheParams, "toTLBundleD_fire_isKeyword", deqValid && io.d.ready && deqTask.isKeyword.getOrElse(false.B))
  /* val d_isKeyword = Mux(
     grantBufValid,
     grantBuf.task.isKeyword,
