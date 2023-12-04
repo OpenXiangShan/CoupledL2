@@ -79,6 +79,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
   reqArb.io.fromMSHRCtl := mshrCtl.io.toReqArb
   reqArb.io.fromMainPipe := mainPipe.io.toReqArb
   reqArb.io.fromGrantBuffer := grantBuf.io.toReqArb
+  reqArb.io.fromSourceC := sourceC.io.toReqArb
 
   mshrCtl.io.fromReqArb.status_s1 := reqArb.io.status_s1
   mshrCtl.io.resps.sinkC := sinkC.io.resp
@@ -126,6 +127,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
   refillBuf.io.w(2) <> mainPipe.io.refillBufWrite
 
   sourceC.io.in <> mainPipe.io.toSourceC
+  sourceC.io.pipeStatusVec := reqArb.io.status_vec ++ mainPipe.io.status_vec
 
   io.l1Hint.valid := mainPipe.io.l1Hint.valid
   io.l1Hint.bits := mainPipe.io.l1Hint.bits
