@@ -47,7 +47,9 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     val toReqBuf = Output(Vec(2, Bool()))
 
     /* handle capacity conflict of GrantBuffer */
-    val status_vec = Vec(3, ValidIO(new PipeStatus))
+    val status_vec_toD = Vec(3, ValidIO(new PipeStatus))
+    /* handle capacity conflict of SourceC */
+    val status_vec_toC = Vec(3, ValidIO(new PipeStatus))
 
     /* get dir result at stage 3 */
     val dirResp_s3 = Input(new DirResult)
@@ -571,8 +573,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   io.toReqArb.blockG_s1 := task_s2.valid && s23Block('g', task_s2.bits)
   /* ======== Pipeline Status ======== */
-  require(io.status_vec.size == 3)
-  io.status_vec(0).valid := task_s3.valid && Mux(
+  require(io.status_vec_toD.size == 3)
+  io.status_vec_toD(0).valid := task_s3.valid && Mux(
     mshr_req_s3,
     mshr_refill_s3 && !retry,
     true.B
@@ -582,11 +584,19 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     // so maybe it is excessive for grantBuf capacity conflict
   )
 
-  io.status_vec(0).bits.channel := task_s3.bits.channel
-  io.status_vec(1).valid        := task_s4.valid && (isD_s4 || pendingD_s4)
-  io.status_vec(1).bits.channel := task_s4.bits.channel
-  io.status_vec(2).valid        := d_s5.valid
-  io.status_vec(2).bits.channel := task_s5.bits.channel
+  io.status_vec_toD(0).bits.channel := task_s3.bits.channel
+  io.status_vec_toD(1).valid        := task_s4.valid && (isD_s4 || pendingD_s4)
+  io.status_vec_toD(1).bits.channel := task_s4.bits.channel
+  io.status_vec_toD(2).valid        := d_s5.valid
+  io.status_vec_toD(2).bits.channel := task_s5.bits.channel
+
+  require(io.status_vec_toC.size == 3)
+  io.status_vec_toC(0).valid := task_s3.valid && Mux(mshr_req_s3, mshr_release_s3 || mshr_probeack_s3, true.B)
+  io.status_vec_toC(0).bits.channel := task_s3.bits.channel
+  io.status_vec_toC(1).valid        := task_s4.valid && (isC_s4 || pendingC_s4)
+  io.status_vec_toC(1).bits.channel := task_s4.bits.channel
+  io.status_vec_toC(2).valid        := c_s5.valid
+  io.status_vec_toC(2).bits.channel := task_s5.bits.channel
 
   /* ======== Other Signals Assignment ======== */
   // Initial state assignment
