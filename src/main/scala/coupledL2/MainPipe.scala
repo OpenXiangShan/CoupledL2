@@ -214,6 +214,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   ms_task.mshrId           := 0.U(mshrBits.W)
   ms_task.aliasTask.foreach(_ := cache_alias)
   ms_task.useProbeData     := false.B
+  ms_task.mshrRetry        := false.B
   ms_task.fromL2pft.foreach(_ := req_s3.fromL2pft.get)
   ms_task.needHint.foreach(_  := req_s3.needHint.get)
   ms_task.dirty            := false.B
