@@ -124,13 +124,28 @@ class SourceC(implicit p: Parameters) extends L2Module {
     }))
     val out = DecoupledIO(new TLBundleC(edgeOut.bundle))
     val resp = Output(new RespBundle)
+    val pipeStatusVec = Flipped(Vec(5, ValidIO(new PipeStatus)))
+    val toReqArb = Output(new Bundle() {
+      val blockSinkBReqEntrance = Bool()
+      val blockMSHRReqEntrance = Bool()
+    })
   })
 
   // We must keep SourceC FIFO, so a queue is used
-  // TODO: may be not enough / excessive
-  // it is better to add back pressure logic from SourceC
   val queue = Module(new Queue(io.in.bits.cloneType, entries = mshrsAll, flow = true))
   queue.io.enq <> io.in
+  // Add back pressure logic from SourceC
+  // refer to GrantBuffer
+  val sourceCQueueCnt = queue.io.count
+  val noSpaceForSinkBReq = PopCount(VecInit(io.pipeStatusVec.tail.map { case s =>
+    s.valid && (s.bits.fromA || s.bits.fromB)
+  }).asUInt) + sourceCQueueCnt >= mshrsAll.U
+  val noSpaceForMSHRReq = PopCount(VecInit(io.pipeStatusVec.tail.map { case s =>
+    s.valid && (s.bits.fromA || s.bits.fromB)
+  }).asUInt) + sourceCQueueCnt >= (mshrsAll-1).U
+
+  io.toReqArb.blockSinkBReqEntrance := noSpaceForSinkBReq
+  io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq
 
   // dequeued task, the only, ready to fire
   // WARNING: !it will reduce Release bandwidth to half! (though it is not critical)

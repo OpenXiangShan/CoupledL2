@@ -79,6 +79,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
   reqArb.io.fromMSHRCtl := mshrCtl.io.toReqArb
   reqArb.io.fromMainPipe := mainPipe.io.toReqArb
   reqArb.io.fromGrantBuffer := grantBuf.io.toReqArb
+  reqArb.io.fromSourceC := sourceC.io.toReqArb
 
   mshrCtl.io.fromReqArb.status_s1 := reqArb.io.status_s1
   mshrCtl.io.resps.sinkC := sinkC.io.resp
@@ -126,6 +127,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
   refillBuf.io.w(2) <> mainPipe.io.refillBufWrite
 
   sourceC.io.in <> mainPipe.io.toSourceC
+  sourceC.io.pipeStatusVec := reqArb.io.status_vec ++ mainPipe.io.status_vec_toC
 
   io.l1Hint.valid := mainPipe.io.l1Hint.valid
   io.l1Hint.bits := mainPipe.io.l1Hint.bits
@@ -133,9 +135,9 @@ class Slice()(implicit p: Parameters) extends L2Module {
 
   grantBuf.io.d_task <> mainPipe.io.toSourceD
   grantBuf.io.fromReqArb.status_s1 := reqArb.io.status_s1
-  grantBuf.io.pipeStatusVec := reqArb.io.status_vec ++ mainPipe.io.status_vec
+  grantBuf.io.pipeStatusVec := reqArb.io.status_vec ++ mainPipe.io.status_vec_toD
   mshrCtl.io.pipeStatusVec(0) := reqArb.io.status_vec(1) // s2 status
-  mshrCtl.io.pipeStatusVec(1) := mainPipe.io.status_vec(0) // s3 status
+  mshrCtl.io.pipeStatusVec(1) := mainPipe.io.status_vec_toD(0) // s3 status
 
   io.prefetch.foreach {
     p =>
