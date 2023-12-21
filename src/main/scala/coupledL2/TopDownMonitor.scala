@@ -30,6 +30,7 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     val msStatus  = Vec(banks, Vec(mshrsAll, Flipped(ValidIO(new MSHRStatus))))
     val latePF    = Vec(banks, Input(Bool()))
     val debugTopDown = new Bundle {
+      val robTrueCommit = Input(UInt(64.W))
       val robHeadPaddr = Vec(cacheParams.hartIds.length, Flipped(Valid(UInt(36.W))))
       val l2MissMatch = Vec(cacheParams.hartIds.length, Output(Bool()))
     }
@@ -174,90 +175,90 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   XSPerfRolling(
     cacheParams, "L2PrefetchAccuracy",
     PopCount(l2prefetchUseful), PopCount(l2prefetchSent),
-    1000, clock, reset
+    1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
     cacheParams, "L2PrefetchAccuracyBOP",
     PopCount(l2prefetchUsefulBOP), PopCount(l2prefetchSentBOP),
-    1000, clock, reset
+    1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
     cacheParams, "L2PrefetchAccuracyPBOP",
     PopCount(l2prefetchUsefulPBOP), PopCount(l2prefetchSentPBOP),
-    1000, clock, reset
+    1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
     cacheParams, "L2PrefetchAccuracySMS",
     PopCount(l2prefetchUsefulSMS), PopCount(l2prefetchSentSMS),
-    1000, clock, reset
+    1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
     cacheParams, "L2PrefetchAccuracyTP",
     PopCount(l2prefetchUsefulTP), PopCount(l2prefetchSentTP),
-    1000, clock, reset
+    1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
     cacheParams, "L2PrefetchAccuracyStride",
     PopCount(l2prefetchUsefulStride), PopCount(l2prefetchSentStride),
-    1000, clock, reset
+    1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
     cacheParams, "L2PrefetchAccuracyStream",
     PopCount(l2prefetchUsefulStream), PopCount(l2prefetchSentStream),
-    1000, clock, reset
+    1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
     cacheParams, "L2PrefetchAccuracyTP",
     PopCount(l2prefetchUsefulTP), PopCount(l2prefetchSentTP),
-    1000, clock, reset
+    1000, io.debugTopDown.robTrueCommit, clock, reset
   )
 
   // PF Late
   XSPerfRolling(
     cacheParams, "L2PrefetchLate",
     PopCount(l2prefetchLate), PopCount(l2prefetchUseful),
-    1000, clock, reset
+    1000, io.debugTopDown.robTrueCommit, clock, reset
   )
 
   // PF Coverage
   XSPerfRolling(
     cacheParams, "L2PrefetchCoverage",
     PopCount(l2prefetchUseful), PopCount(l2demandRequest),
-    1000, clock, reset
+    1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
     cacheParams, "L2PrefetchCoverageBOP",
     PopCount(l2prefetchUsefulBOP), PopCount(l2demandRequest),
-    1000, clock, reset
+    1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
     cacheParams, "L2PrefetchCoveragePBOP",
     PopCount(l2prefetchUsefulPBOP), PopCount(l2demandRequest),
-    1000, clock, reset
+    1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
     cacheParams, "L2PrefetchCoverageSMS",
     PopCount(l2prefetchUsefulSMS), PopCount(l2demandRequest),
-    1000, clock, reset
+    1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
     cacheParams, "L2PrefetchCoverageTP",
     PopCount(l2prefetchUsefulTP), PopCount(l2demandRequest),
-    1000, clock, reset
+    1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
     cacheParams, "L2PrefetchCoverageStride",
     PopCount(l2prefetchUsefulStride), PopCount(l2demandRequest),
-    1000, clock, reset
+    1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
     cacheParams, "L2PrefetchCoverageStream",
     PopCount(l2prefetchUsefulStream), PopCount(l2demandRequest),
-    1000, clock, reset
+    1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
     cacheParams, "L2PrefetchCoverageTP",
     PopCount(l2prefetchUsefulTP), PopCount(l2demandRequest),
-    1000, clock, reset
+    1000, io.debugTopDown.robTrueCommit, clock, reset
   )
 }

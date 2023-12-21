@@ -239,6 +239,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
       val l2_hint = Valid(UInt(32.W))
       val l2_tlb_req = new L2ToL1TlbIO(nRespDups = 1)(l2TlbParams)
       val debugTopDown = new Bundle {
+        val robTrueCommit = Input(UInt(64.W))
         val robHeadPaddr = Vec(cacheParams.hartIds.length, Flipped(Valid(UInt(36.W))))
         val l2MissMatch = Vec(cacheParams.hartIds.length, Output(Bool()))
       }
