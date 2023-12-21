@@ -231,6 +231,11 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     1000, clock, reset
   )
   XSPerfRolling(
+    cacheParams, "L2PrefetchCoveragePBOP",
+    PopCount(l2prefetchUsefulPBOP), PopCount(l2demandRequest),
+    1000, clock, reset
+  )
+  XSPerfRolling(
     cacheParams, "L2PrefetchCoverageSMS",
     PopCount(l2prefetchUsefulSMS), PopCount(l2demandRequest),
     1000, clock, reset

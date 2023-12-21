@@ -208,13 +208,14 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
   // 1. At the start of a learning phase
   // All the scores are reset to 0.
   // At the end of every learning phase, the prefetch offset is updated as the one with the highest score.
+  val isBad = bestScore <= badScore.U
   when(state === s_idle) {
     st.foreach(_.score := 0.U)
     ptr := 0.U
     round := 0.U
     bestScore := 0.U
     prefetchOffset := bestOffset
-    prefetchDisable := bestScore < badScore.U
+    prefetchDisable := isBad
     state := s_learn
   }
 
@@ -264,7 +265,7 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
   io.test.resp.ready := true.B
 
   XSPerfAccumulate(cacheParams, "total_learn_phase", state === s_idle)
-  XSPerfAccumulate(cacheParams, "total_bop_disable", state === s_idle && bestScore < badScore.U)
+  XSPerfAccumulate(cacheParams, "total_bop_disable", state === s_idle && isBad)
   XSPerfAccumulate(cacheParams, "total_bop_high_confidence", state === s_idle && bestScore === scoreMax.U)
 
   for (off <- offsetList) {
@@ -288,7 +289,8 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
     val data = Wire(new BopTrainEntry)
     data.bestOffset := bestOffset
     data.bestScore := bestScore
-    l2BopTrainTable.log(data = data, en = state === s_idle, site = name+"OffsetScoreTable", clock, reset)
+    // l2BopTrainTable.log(data = data, en = (state === s_idle) && !isBad, site = name+"OffsetScoreTable", clock, reset)
+    l2BopTrainTable.log(data = data, en = (state === s_idle), site = name+"OffsetScoreTable", clock, reset)
   }
 
 }
