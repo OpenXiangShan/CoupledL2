@@ -323,7 +323,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
         ),
         Mux( // Acquire
           req_promoteT || req_needT,
-          Mux(req_prefetch && !dirResult.hit, TIP, TRUNK),
+          Mux(req_prefetch && !meta.clients.orR, TIP, TRUNK),
           BRANCH
         )
       ),
