@@ -115,6 +115,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       m.io.id := i.U
       m.io.alloc.valid := selectedMSHROH(i) && io.fromMainPipe.mshr_alloc_s3.valid
       m.io.alloc.bits := io.fromMainPipe.mshr_alloc_s3.bits
+      m.io.alloc.bits.task.isKeyword.foreach(_:= io.fromMainPipe.mshr_alloc_s3.bits.task.isKeyword.getOrElse(false.B))
 
       m.io.resps.sink_c.valid := io.resps.sinkC.valid && resp_sinkC_match_vec(i)
       m.io.resps.sink_c.bits := io.resps.sinkC.respInfo

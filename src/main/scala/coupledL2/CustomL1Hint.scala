@@ -98,8 +98,10 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   s1_l2_miss_refill_counter_match := PopCount(Seq(d_s3, d_s4, d_s5, s3_l2_hit_grant_data, s4_l2_hit_grant_data, task_s2.valid && task_s2.bits.fromA)) === 0.U && globalCounter <= 2.U
   val dummy_s1_valid = if(hintCycleAhead == 3) s1_l2_miss_refill_grant_data && s1_l2_miss_refill_counter_match else false.B
 
-  hint_s1.valid         := dummy_s1_valid && !impossible_pipe_hint
-  hint_s1.bits.sourceId := task_s1.bits.sourceId
+  hint_s1.valid          := dummy_s1_valid && !impossible_pipe_hint
+  hint_s1.bits.sourceId  := task_s1.bits.sourceId
+  // hint_s1.bits.isKeyword := task_s1.bits.isKeyword
+  hint_s1.bits.isKeyword := task_s1.bits.isKeyword.getOrElse(false.B)
 
   // S2 hint
   //    * l1 acquire and l2 miss situation, **no hit situation**
@@ -131,6 +133,7 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
 
   hint_s2.valid         := s2_l2_miss_refill_grant_data && s2_l2_miss_refill_counter_match && !impossible_pipe_hint
   hint_s2.bits.sourceId := task_s2.bits.sourceId
+  hint_s2.bits.isKeyword := task_s2.bits.isKeyword.getOrElse(false.B)
 
   // S3 hint
   //    * l1 acquire and l2 hit situation
@@ -176,6 +179,7 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
 
   hint_s3.valid         := (validHint_s3 || validHintMiss_s3) && !impossible_pipe_hint
   hint_s3.bits.sourceId := task_s3.bits.sourceId
+  hint_s3.bits.isKeyword:= task_s3.bits.isKeyword.getOrElse(false.B)
 
   // S4 hint
   //    * l1 acquire and l2 hit situation
@@ -192,7 +196,7 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
 
   hint_s4.valid         := (validHint_s4 || validHintMiss_s4) && !impossible_pipe_hint
   hint_s4.bits.sourceId := task_s4.bits.sourceId
-
+  hint_s4.bits.isKeyword := task_s4.bits.isKeyword.getOrElse(false.B)
   // S5 hint
   //    * l1 acquire and l2 hit situation
   val validHint_s5 = d_s5 && task_s5.bits.opcode === GrantData && task_s5.bits.fromA && !task_s5.bits.mshrTask && ((globalCounter + 1.U) === hintCycleAhead.U) && !task_s5.bits.fromL2pft.getOrElse(false.B)
@@ -202,12 +206,16 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
 
   hint_s5.valid         := (validHint_s5 || validHintMiss_s5) && !impossible_pipe_hint
   hint_s5.bits.sourceId := task_s5.bits.sourceId
+  hint_s5.bits.isKeyword := task_s5.bits.isKeyword.getOrElse(false.B)
 
-  val hint_valid    = Seq(grantBufferHint.valid,         hint_s1.valid,         hint_s2.valid,         hint_s3.valid,         hint_s4.valid,         hint_s5.valid)
-  val hint_sourceId = Seq(grantBufferHint.bits.sourceId, hint_s1.bits.sourceId, hint_s2.bits.sourceId, hint_s3.bits.sourceId, hint_s4.bits.sourceId, hint_s5.bits.sourceId)
+  val hint_valid     = Seq(grantBufferHint.valid,          hint_s1.valid,          hint_s2.valid,          hint_s3.valid,          hint_s4.valid,          hint_s5.valid)
+  val hint_sourceId  = Seq(grantBufferHint.bits.sourceId,  hint_s1.bits.sourceId,  hint_s2.bits.sourceId,  hint_s3.bits.sourceId,  hint_s4.bits.sourceId,  hint_s5.bits.sourceId)
+  val hint_isKeyword = Seq(grantBufferHint.bits.isKeyword, hint_s1.bits.isKeyword, hint_s2.bits.isKeyword, hint_s3.bits.isKeyword, hint_s4.bits.isKeyword, hint_s5.bits.isKeyword)
 
-  io.l1Hint.valid         := VecInit(hint_valid).asUInt.orR
-  io.l1Hint.bits.sourceId := ParallelMux(hint_valid zip hint_sourceId)
+  io.l1Hint.valid          := VecInit(hint_valid).asUInt.orR
+  io.l1Hint.bits.sourceId  := ParallelMux(hint_valid zip hint_sourceId)
+  io.l1Hint.bits.isKeyword := ParallelMux(hint_valid zip hint_isKeyword)
+
   // TODO: open this assert when hint is really correct for all situations
   // assert(PopCount(VecInit(hint_valid)) <= 1.U)
 

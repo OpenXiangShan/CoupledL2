@@ -91,6 +91,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     d.denied := false.B
     d.data := data
     d.corrupt := false.B
+    d.echo.lift(IsKeywordKey).foreach(_ := false.B)
     d
   }
 
@@ -123,6 +124,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   mergeAtask.set := io.d_task.bits.task.set
   mergeAtask.tag := io.d_task.bits.task.tag
   mergeAtask.vaddr.foreach(_ := io.d_task.bits.task.vaddr.getOrElse(0.U))
+  mergeAtask.isKeyword.foreach(_ := io.d_task.bits.task.aMergeTask.isKeyword.getOrElse(false.B))
   mergeAtask.size := io.d_task.bits.task.size
   mergeAtask.bufIdx := io.d_task.bits.task.bufIdx
   mergeAtask.needProbeAckData := io.d_task.bits.task.needProbeAckData
@@ -144,11 +146,13 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   mergeAtask.mergeA := false.B
   mergeAtask.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
   val inflight_insertIdx = PriorityEncoder(inflightGrant.map(!_.valid))
-
+  val grantQueue_enq_isKeyword = Mux(io.d_task.bits.task.mergeA, mergeAtask.isKeyword.getOrElse(false.B), io.d_task.bits.task.isKeyword.getOrElse(false.B))
   // The following is organized in the order of data flow
   // =========== save d_task in queue[FIFO] ===========
   grantQueue.io.enq.valid := io.d_task.valid && (dtaskOpcode =/= HintAck || io.d_task.bits.task.mergeA)
   grantQueue.io.enq.bits.task := Mux(io.d_task.bits.task.mergeA, mergeAtask, io.d_task.bits.task)
+  grantQueue.io.enq.bits.task.isKeyword.foreach(_ := grantQueue_enq_isKeyword)
+  //grantQueue.io.enq.bits.task.isKeyword.foreach(_ := io.d_task.bits.task.isKeyword.getOrElse(false.B))
   grantQueue.io.enq.bits.data := io.d_task.bits.data
   grantQueue.io.enq.bits.grantid := inflight_insertIdx
   io.d_task.ready := true.B // GrantBuf should always be ready
@@ -161,6 +165,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   require(beatSize == 2)
   val deqValid = grantQueue.io.deq.valid
   val deqTask = grantQueue.io.deq.bits.task
+ // val deqTask.isKeyword.foreach(_ := grantQueue.io.deq.bits.task.isKeyword)
   val deqData = grantQueue.io.deq.bits.data.asTypeOf(Vec(beatSize, new DSBeat))
   val deqId   = grantQueue.io.deq.bits.grantid
 
@@ -178,7 +183,9 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   when(deqValid && io.d.ready && !grantBufValid && deqTask.opcode(0)) {
     grantBufValid := true.B
     grantBuf.task := deqTask
-    grantBuf.data := deqData(1)
+    grantBuf.task.isKeyword.foreach(_ := deqTask.isKeyword.getOrElse(false.B))
+   // grantBuf.data := deqData(1)
+   grantBuf.data := Mux(deqTask.isKeyword.getOrElse(false.B),deqData(0),deqData(1))
     grantBuf.grantid := deqId
   }
   when(grantBufValid && io.d.ready) {
@@ -189,8 +196,24 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   io.d.bits := Mux(
     grantBufValid,
     toTLBundleD(grantBuf.task, grantBuf.data.data, grantBuf.grantid),
-    toTLBundleD(deqTask, deqData(0).data, deqId)
+   // toTLBundleD(deqTask, deqData(0).data, deqId)
+    toTLBundleD(deqTask, Mux(deqTask.isKeyword.getOrElse(false.B),deqData(1).data,deqData(0).data), deqId)
   )
+
+
+  XSPerfAccumulate(cacheParams, "toTLBundleD_valid", deqValid)
+  XSPerfAccumulate(cacheParams, "toTLBundleD_valid_isKeyword", deqValid && deqTask.isKeyword.getOrElse(false.B))
+  XSPerfAccumulate(cacheParams, "toTLBundleD_fire", deqValid && io.d.ready)
+  XSPerfAccumulate(cacheParams, "toTLBundleD_fire_isKeyword", deqValid && io.d.ready && deqTask.isKeyword.getOrElse(false.B))
+ /* val d_isKeyword = Mux(
+    grantBufValid,
+    grantBuf.task.isKeyword,
+    deqTask.isKeyword
+  )*/
+  io.d.bits.echo.lift(IsKeywordKey).foreach(_ := Mux(
+    grantBufValid, 
+    grantBuf.task.isKeyword.getOrElse(false.B), 
+    deqTask.isKeyword.getOrElse(false.B)))
 
   // =========== send response to prefetcher ===========
   val pftRespEntry = new Bundle() {
@@ -276,7 +299,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
 
   // =========== generating Hint to L1 ===========
   // TODO: the following keeps the exact same logic as before, but it needs serious optimization
-  val hintQueue = Module(new Queue(UInt(sourceIdBits.W), entries = mshrsAll))
+  val hintQueue = Module(new Queue(new L2ToL1Hint, entries = mshrsAll))
   // Total number of beats left to send in GrantBuf
   // [This is better]
   // val globalCounter = (grantQueue.io.count << 1.U).asUInt + grantBufValid.asUInt // entries * 2 + grantBufValid
@@ -295,10 +318,12 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   // if globalCounter >= 3, it means the hint that should be sent is in GrantBuf
   when(globalCounter >= 3.U) {
     hintQueue.io.enq.valid := true.B
-    hintQueue.io.enq.bits := io.d_task.bits.task.sourceId
+    hintQueue.io.enq.bits.sourceId := io.d_task.bits.task.sourceId
+    hintQueue.io.enq.bits.isKeyword := Mux(io.d_task.bits.task.mergeA, io.d_task.bits.task.aMergeTask.isKeyword.getOrElse(false.B), io.d_task.bits.task.isKeyword.getOrElse(false.B))
   }.otherwise {
     hintQueue.io.enq.valid := false.B
-    hintQueue.io.enq.bits := 0.U(sourceIdBits.W)
+    hintQueue.io.enq.bits.sourceId := 0.U(sourceIdBits.W)
+    hintQueue.io.enq.bits.isKeyword := false.B
   }
   hintQueue.io.deq.ready := true.B
 
@@ -306,7 +331,8 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   io.globalCounter := globalCounter
 
   io.l1Hint.valid := hintQueue.io.deq.valid
-  io.l1Hint.bits.sourceId := hintQueue.io.deq.bits
+  io.l1Hint.bits.sourceId := hintQueue.io.deq.bits.sourceId
+  io.l1Hint.bits.isKeyword := hintQueue.io.deq.bits.isKeyword
 
   // =========== XSPerf ===========
   if (cacheParams.enablePerf) {
