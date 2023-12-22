@@ -242,4 +242,19 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     PopCount(l2prefetchUsefulTP), PopCount(l2demandRequest),
     1000, clock, reset
   )
+
+  XSPerfAccumulate(cacheParams, "l2prefetchSent", PopCount(l2prefetchSent))
+  XSPerfAccumulate(cacheParams, "l2prefetchSentBOP", PopCount(l2prefetchSentBOP))
+  XSPerfAccumulate(cacheParams, "l2prefetchSentSMS", PopCount(l2prefetchSentSMS))
+  XSPerfAccumulate(cacheParams, "l2prefetchSentStride", PopCount(l2prefetchSentStride))
+  XSPerfAccumulate(cacheParams, "l2prefetchSentStream", PopCount(l2prefetchSentStream))
+  XSPerfAccumulate(cacheParams, "l2prefetchSentTP", PopCount(l2prefetchSentTP))
+  XSPerfAccumulate(cacheParams, "l2prefetchUseful", PopCount(l2prefetchUseful))
+  XSPerfAccumulate(cacheParams, "l2prefetchUsefulBOP", PopCount(l2prefetchUsefulBOP))
+  XSPerfAccumulate(cacheParams, "l2prefetchUsefulSMS", PopCount(l2prefetchUsefulSMS))
+  XSPerfAccumulate(cacheParams, "l2prefetchUsefulStride", PopCount(l2prefetchUsefulStride))
+  XSPerfAccumulate(cacheParams, "l2prefetchUsefulStream", PopCount(l2prefetchUsefulStream))
+  XSPerfAccumulate(cacheParams, "l2prefetchUsefulTP", PopCount(l2prefetchUsefulTP))
+  XSPerfAccumulate(cacheParams, "l2demandRequest", PopCount(l2demandRequest))
+  XSPerfAccumulate(cacheParams, "l2prefetchLate", PopCount(l2prefetchLate))
 }
