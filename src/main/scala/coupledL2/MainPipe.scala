@@ -173,7 +173,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   /* ======== Interact with MSHR ======== */
   val acquire_on_miss_s3  = req_acquire_s3 || req_prefetch_s3 || req_get_s3 // TODO: remove this cause always acquire on miss?
-  val acquire_on_hit_s3   = meta_s3.state === BRANCH && req_needT_s3
+  val acquire_on_hit_s3   = meta_s3.state === BRANCH && req_needT_s3 && !req_prefetch_s3
   // For channel A reqs, alloc mshr when: acquire downwards is needed || alias
   val need_acquire_s3_a   = req_s3.fromA && Mux(
     dirResult_s3.hit,
