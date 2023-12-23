@@ -296,7 +296,8 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       vbop.io.resp <> io.resp
       vbop.io.resp.valid := io.resp.valid && io.resp.bits.isBOP
       vbop.io.tlb_req <> io.tlb_req
-      
+      vbop.io.pbopCrossPage := pbop.io.pbopCrossPage
+
       pbop.io.train <> io.train
       pbop.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
       pbop.io.resp <> io.resp
@@ -353,6 +354,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
         pfRcv.io.req.valid && l2_pf_en && (vbop.io.req.valid || tp.io.req.valid))
 
       //  //solo vbop
+      //  vbop.io.pbopCrossPage := true.B
       //  pftQueue.io.enq.valid := pfRcv.io.req.valid || (l2_pf_en && (vbop.io.req.valid || tp.io.req.valid))
       //  pftQueue.io.enq.bits := ParallelPriorityMux(Seq(
       //    pfRcv.io.req.valid -> pfRcv.io.req.bits,
