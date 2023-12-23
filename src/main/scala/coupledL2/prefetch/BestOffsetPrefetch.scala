@@ -210,7 +210,7 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
   // 1. At the start of a learning phase
   // All the scores are reset to 0.
   // At the end of every learning phase, the prefetch offset is updated as the one with the highest score.
-  val isBad = bestScore <= badscoreConstant
+  val isBad = bestScore < badscoreConstant
   when(state === s_idle) {
     st.foreach(_.score := 0.U)
     ptr := 0.U
@@ -292,7 +292,7 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
     data.bestOffset := bestOffset
     data.bestScore := bestScore
     // l2BopTrainTable.log(data = data, en = (state === s_idle) && !isBad, site = name+"OffsetScoreTable", clock, reset)
-    l2BopTrainTable.log(data = data, en = (state === s_idle), site = name+"OffsetScoreTable", clock, reset)
+    l2BopTrainTable.log(data = data, en = (state === s_idle) && !isBad, site = name+"OffsetScoreTable", clock, reset)
   }
 
 }
@@ -558,7 +558,7 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
 class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   val io = IO(new Bundle() {
     val train = Flipped(DecoupledIO(new PrefetchTrain))
-    val tlb_req = new L2ToL1TlbIO(nRespDups= 1)
+        val tlb_req = new L2ToL1TlbIO(nRespDups= 1)
     val req = DecoupledIO(new PrefetchReq)
     val resp = Flipped(DecoupledIO(new PrefetchResp))
   })
@@ -677,7 +677,7 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
 class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   val io = IO(new Bundle() {
     val train = Flipped(DecoupledIO(new PrefetchTrain))
-    val req = DecoupledIO(new PrefetchReq)
+        val req = DecoupledIO(new PrefetchReq)
     val resp = Flipped(DecoupledIO(new PrefetchResp))
   })
 
@@ -709,7 +709,7 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     req_valid := !crossPage && !prefetchDisable // stop prefetch when prefetch req crosses pages
   }
 
-  io.req.valid := req_valid
+    io.req.valid := req_valid
   io.req.bits := req
   io.req.bits.pfSource := MemReqSource.Prefetch2L2PBOP.id.U
   io.train.ready := scoreTable.io.req.ready && (!req_valid || io.req.ready)
