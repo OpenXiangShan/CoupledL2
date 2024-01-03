@@ -228,7 +228,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   val wayConflictPartII = VecInit(io.msInfo.map(s =>
     (s.bits.blockRefill || s.bits.dirHit) && s.bits.way === finalWay
   )).asUInt
-  val refillRetry = (wayConflictPartI | wayConflictPartII).orR
+  val refillRetry = (wayConflictPartI & wayConflictPartII).orR
 
   /* ======!! Replacement logic !!====== */
   /* ====== Read, choose replaceWay ====== */
