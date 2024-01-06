@@ -29,15 +29,13 @@ class DSRequest(implicit p: Parameters) extends L2Bundle {
   val wen = Bool()
 }
 
+// mask not used
 class DSBeat(implicit p: Parameters) extends L2Bundle {
   val data = UInt((beatBytes * 8).W)
 }
 
 class DSBlock(implicit p: Parameters) extends L2Bundle {
   val data = UInt((blockBytes * 8).W)
-
-  // WARNING:TODO: check this
-  def toBeats: Vec[DSBeat] = Reverse(data).asTypeOf(Vec(beatSize, new DSBeat))
 }
 
 class DataStorage(implicit p: Parameters) extends L2Module {
