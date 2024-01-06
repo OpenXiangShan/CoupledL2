@@ -37,7 +37,6 @@ class CustomL1HintIOBundle(implicit p: Parameters) extends L2Bundle {
       val task                  = Flipped(ValidIO(new TaskBundle()))
       val d                     = Input(Bool())
       val need_write_releaseBuf = Input(Bool())
-      val need_write_refillBuf  = Input(Bool())
   }
   val s5 = new L2Bundle {
       val task = Flipped(ValidIO(new TaskBundle()))
@@ -79,10 +78,9 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   val need_mshr_s3 = io.s3.need_mshr
 
   val need_write_releaseBuf_s4 = io.s4.need_write_releaseBuf
-  val need_write_refillBuf_s4  = io.s4.need_write_refillBuf
 
   //  req_grantbuffer_next_cycle_s4: this **hit** req will request grantBuffer in S5
-  val req_grantbuffer_next_cycle_s4 = !need_write_releaseBuf_s4 && !need_write_refillBuf_s4
+  val req_grantbuffer_next_cycle_s4 = !need_write_releaseBuf_s4
 
   val s3_l2_hit_grant_data = task_s3.valid && !mshr_req_s3 && !need_mshr_s3 && task_s3.bits.fromA && task_s3.bits.opcode === AcquireBlock && !task_s3.bits.fromL2pft.getOrElse(false.B)
   val s4_l2_hit_grant_data = task_s4.valid && req_grantbuffer_next_cycle_s4 && task_s4.bits.opcode === GrantData && task_s4.bits.fromA && !task_s4.bits.mshrTask && !task_s4.bits.fromL2pft.getOrElse(false.B)

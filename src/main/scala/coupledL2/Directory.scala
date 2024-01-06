@@ -219,13 +219,16 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   /* ====== refill retry ====== */
   // if refill chooses a way that has not finished writing its refillData back to DS (in MSHR Release),
-  // or the way is using by Alias-Acquire,
-  // we cancel the Grant and let it retry
-  // TODO: timing?
-  val wayConflictMask = VecInit(io.msInfo.map(s =>
-    s.valid && s.bits.set === req_s3.set && (s.bits.blockRefill || s.bits.dirHit) && s.bits.way === finalWay
+  // or the way is using by Alias-Acquire (hit), we cancel the Grant and LET IT RETRY
+
+  // comparing set is done at Stage2 for better timing
+  val wayConflictPartI  = RegEnable(VecInit(io.msInfo.map(s =>
+    s.valid && s.bits.set === req_s2.set)).asUInt, refillReqValid_s2)
+
+  val wayConflictPartII = VecInit(io.msInfo.map(s =>
+    (s.bits.blockRefill || s.bits.dirHit) && s.bits.way === finalWay
   )).asUInt
-  val refillRetry = wayConflictMask.orR
+  val refillRetry = (wayConflictPartI & wayConflictPartII).orR
 
   /* ======!! Replacement logic !!====== */
   /* ====== Read, choose replaceWay ====== */
