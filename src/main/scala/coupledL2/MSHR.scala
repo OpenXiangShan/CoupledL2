@@ -100,9 +100,11 @@ class MSHR(implicit p: Parameters) extends L2Module {
 
   val promoteT_normal =  dirResult.hit && meta_no_client && meta.state === TIP
   val promoteT_L3     = !dirResult.hit && gotT
-  val promoteT_alias  =  dirResult.hit && req.aliasTask.getOrElse(false.B) && meta.state === TRUNK
+  val promoteT_alias  =  dirResult.hit && req.aliasTask.getOrElse(false.B) && (meta.state === TRUNK || meta.state === TIP)
   // under above circumstances, we grant T to L1 even if it wants B
   val req_promoteT = (req_acquire || req_get || req_prefetch) && (promoteT_normal || promoteT_L3 || promoteT_alias)
+
+  assert(!(req_valid && req_prefetch && dirResult.hit), "MSHR can not receive prefetch hit req")
 
   /* ======== Task allocation ======== */
   // Theoretically, data to be released is saved in ReleaseBuffer, so Acquire can be sent as soon as req enters mshr
