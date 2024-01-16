@@ -289,7 +289,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
       0.U, // Get -> AccessAckData
       MuxLookup( // Acquire -> Grant
         req.param,
-        req.param,
+        req.param)(
         Seq(
           NtoB -> Mux(req_promoteT, toT, toB),
           BtoT -> toT,
@@ -366,7 +366,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_grant.aMergeTask.opcode := odOpGen(merge_task.opcode)
     mp_grant.aMergeTask.param := MuxLookup( // Acquire -> Grant
       merge_task.param,
-      merge_task.param,
+      merge_task.param)(
       Seq(
         NtoB -> Mux(req_promoteT, toT, toB),
         BtoT -> toT,
