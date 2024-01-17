@@ -109,7 +109,7 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   // TODO: generalization, for now, only fit hintCycleAhead == 2
   //  s2_l2_miss_refill_counter_match := PopCount(Seq(d_s3, d_s4, d_s5, s3_l2_hit_grant_data, s4_l2_hit_grant_data)) === 0.U && globalCounter === 0.U
 
-  s2_l2_miss_refill_counter_match := MuxLookup(Cat(d_s3, d_s4, d_s5), false.B, Seq(
+  s2_l2_miss_refill_counter_match := MuxLookup(Cat(d_s3, d_s4, d_s5), false.B)(Seq(
     Cat(true.B, true.B, true.B)    -> ((globalCounter + 4.U + task_s5.bits.opcode(0) + task_s4.bits.opcode(0) + task_s3.bits.opcode(0)) === hintCycleAhead.U),
     Cat(true.B, true.B, false.B)   -> ((globalCounter + 3.U + task_s4.bits.opcode(0) + task_s3.bits.opcode(0)) === hintCycleAhead.U),
     Cat(true.B, false.B, true.B)   -> Mux(s4_l2_hit_grant_data, (globalCounter + 4.U + task_s5.bits.opcode(0) + task_s4.bits.opcode(0) + task_s3.bits.opcode(0)) === hintCycleAhead.U,
