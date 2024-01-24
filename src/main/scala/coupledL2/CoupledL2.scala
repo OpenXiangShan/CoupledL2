@@ -233,6 +233,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     val bankBits = if (banks == 1) 0 else log2Up(banks)
     val io = IO(new Bundle {
     //  val l2_hint = Valid(UInt(32.W))
+      val hartid = Input(UInt(4.W))
       val l2_hint = ValidIO(new L2ToL1Hint())
       val debugTopDown = new Bundle {
         val robHeadPaddr = Vec(cacheParams.hartIds.length, Flipped(Valid(UInt(36.W))))
@@ -282,6 +283,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     val prefetchReqsReady = WireInit(VecInit(Seq.fill(banks)(false.B)))
     prefetchOpt.foreach {
       _ =>
+        prefetcher.get.hartidio := io.hartid
         fastArb(prefetchTrains.get, prefetcher.get.io.train, Some("prefetch_train"))
         prefetcher.get.io.req.ready := Cat(prefetchReqsReady).orR
         fastArb(prefetchResps.get, prefetcher.get.io.resp, Some("prefetch_resp"))

@@ -38,7 +38,7 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   /* ====== PART ONE ======
    * Check whether the Addr given by core is a Miss in Cache
    */
-  for (((hartId, pAddr), addrMatch) <- cacheParams.hartIds zip io.debugTopDown.robHeadPaddr zip io.debugTopDown.l2MissMatch) {
+  for ((pAddr, addrMatch) <- io.debugTopDown.robHeadPaddr zip io.debugTopDown.l2MissMatch) {
     val addrMatchVec = io.msStatus.zipWithIndex.map {
       case(slice, i) =>
         slice.map {
@@ -53,7 +53,7 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     }
 
     addrMatch := Cat(addrMatchVec.flatten).orR
-    XSPerfAccumulate(cacheParams, s"${cacheParams.name}MissMatch_${hartId}", addrMatch)
+    XSPerfAccumulate(cacheParams, s"${cacheParams.name}MissMatch", addrMatch)
   }
 
   /* ====== PART TWO ======

@@ -103,6 +103,7 @@ class tpmetaPortIO() extends Bundle {
 /* VIVT, Physical Data */
 class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val io = IO(new Bundle() {
+    val hartid = Input(UInt(4.W))
     val train = Flipped(DecoupledIO(new PrefetchTrain))
     val req = DecoupledIO(new PrefetchReq)
     val resp = Flipped(DecoupledIO(new PrefetchResp))
@@ -137,21 +138,20 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   /* Constantin Parameters */
 
   require(cacheParams.hartIds.size == 1)
-  val hartid = cacheParams.hartIds.head
   // 0 / 1: whether to enable temporal prefetcher
-  private val enableTP = WireInit(Constantin.createRecord("enableTP"+hartid.toString, initValue = 1.U))
+  private val enableTP = WireInit(Constantin.createRecord("enableTP", initValue = 1.U))
   // 0 ~ N: throttle cycles for each prefetch request
-  private val tpThrottleCycles = WireInit(Constantin.createRecord("tp_throttleCycles"+hartid.toString, initValue = 4.U(3.W)))
+  private val tpThrottleCycles = WireInit(Constantin.createRecord("tp_throttleCycles", initValue = 4.U(3.W)))
   // 0 / 1: whether request to set as trigger on meta hit
-  private val hitAsTrigger = WireInit(Constantin.createRecord("tp_hitAsTrigger"+hartid.toString, initValue = 1.U))
+  private val hitAsTrigger = WireInit(Constantin.createRecord("tp_hitAsTrigger", initValue = 1.U))
   // 1 ~ triggerQueueDepth: enqueue threshold for triggerQueue
-  private val triggerThres = WireInit(Constantin.createRecord("tp_triggerThres"+hartid.toString, initValue = 1.U(3.W)))
+  private val triggerThres = WireInit(Constantin.createRecord("tp_triggerThres", initValue = 1.U(3.W)))
   // 1 ~ tpEntryMaxLen: record threshold for recorder and sender (storage size will not be affected)
-  private val recordThres = WireInit(Constantin.createRecord("tp_recordThres"+hartid.toString, initValue = tpEntryMaxLen.U))
+  private val recordThres = WireInit(Constantin.createRecord("tp_recordThres", initValue = tpEntryMaxLen.U))
   // 0 / 1: whether to train on vaddr
-  private val trainOnVaddr = WireInit(Constantin.createRecord("tp_trainOnVaddr"+hartid.toString, initValue = 0.U))
+  private val trainOnVaddr = WireInit(Constantin.createRecord("tp_trainOnVaddr", initValue = 0.U))
   // 0 / 1: whether to eliminate L1 prefetch request training
-  private val trainOnL1PF = WireInit(Constantin.createRecord("tp_trainOnL1PF"+hartid.toString, initValue = 0.U))
+  private val trainOnL1PF = WireInit(Constantin.createRecord("tp_trainOnL1PF", initValue = 0.U))
 
   if (vaddrBitsOpt.isEmpty) {
     assert(!trainOnVaddr)
@@ -219,7 +219,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   dataReadQueue.io.enq.bits.way := way_s2
   dataReadQueue.io.enq.bits.wmode := false.B
   dataReadQueue.io.enq.bits.rawData := DontCare
-  dataReadQueue.io.enq.bits.hartid := hartid.U
+  dataReadQueue.io.enq.bits.hartid := io.hartid
 
 
   /* Async Stage: try to fetch or write tpData */
@@ -238,7 +238,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   /* Async Stage: get tpMeta and insert it into tpDataQueue */
 
-  tpDataQueue.io.enq.valid := io.tpmeta_port.resp.valid && io.tpmeta_port.resp.bits.hartid === hartid.U
+  tpDataQueue.io.enq.valid := io.tpmeta_port.resp.valid && io.tpmeta_port.resp.bits.hartid === io.hartid
   tpDataQueue.io.enq.bits.rawData := io.tpmeta_port.resp.bits.rawData
   assert(tpDataQueue.io.enq.ready === true.B) // tpDataQueue is never full
 
@@ -294,7 +294,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   dataWriteQueue.io.enq.bits.rawData.zip(recorder_data).foreach(x => x._1 := x._2(35-6, 0))
   dataWriteQueue.io.enq.bits.set := tpTable_w_set
   dataWriteQueue.io.enq.bits.way := tpTable_w_way
-  dataWriteQueue.io.enq.bits.hartid := hartid.U
+  dataWriteQueue.io.enq.bits.hartid := io.hartid
   assert(dataWriteQueue.io.enq.ready === true.B) // TODO: support back-pressure
 
   when(resetIdx === 0.U) {

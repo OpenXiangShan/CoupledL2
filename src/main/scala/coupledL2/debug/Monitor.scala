@@ -87,7 +87,6 @@ class Monitor(implicit p: Parameters) extends L2Module {
   /* ======== ChiselDB ======== */
 //  assert(cacheParams.hartIds.length == 1, "private L2 should have one and only one hardId")
   if (!cacheParams.FPGAPlatform) {
-    val hartId = if (cacheParams.hartIds.length == 1) cacheParams.hartIds.head else 0
     val table = ChiselDB.createTable(s"L2MP", new CPL2S3Info, basicDB = true)
     val s3Info = Wire(new CPL2S3Info)
     s3Info.mshrTask := req_s3.mshrTask
@@ -103,6 +102,6 @@ class Monitor(implicit p: Parameters) extends L2Module {
     s3Info.metaWvalid := mp.metaW_s3.valid
     s3Info.metaWway := OHToUInt(mp.metaW_s3.bits.wayOH)
 
-    table.log(s3Info, s3_valid, s"L2${hartId}_${p(SliceIdKey)}", clock, reset)
+    table.log(s3Info, s3_valid, s"L2_${p(SliceIdKey)}", clock, reset, siteNeedId = true)
   }
 }

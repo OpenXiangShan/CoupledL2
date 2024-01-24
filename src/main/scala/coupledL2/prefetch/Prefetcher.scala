@@ -123,6 +123,7 @@ class PrefetchQueue(implicit p: Parameters) extends PrefetchModule {
 }
 
 class Prefetcher(implicit p: Parameters) extends PrefetchModule {
+  val hartidio = IO(Input(UInt(4.W)))
   val io = IO(new PrefetchIO)
   val tpio = IO(new Bundle() {
     val tpmeta_port = prefetchOpt.map(_ => new tpmetaPortIO)
@@ -170,6 +171,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       // prefetch from local prefetchers: BOP & TP
       bop.io.train <> io.train
       bop.io.resp <> io.resp
+      tp.io.hartid := hartidio
       tp.io.train <> io.train
       tp.io.resp <> io.resp
 
