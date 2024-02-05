@@ -17,12 +17,16 @@
 
 package coupledL2.prefetch
 
-import utility.{MemReqSource, SRAMTemplate}
+import utility.MemReqSource
+
+import coupledL2.utils.SRAMTemplate
+
 import org.chipsalliance.cde.config.Parameters
 import chisel3._
 import chisel3.util._
 import coupledL2.HasCoupledL2Parameters
 import coupledL2.utils.XSPerfAccumulate
+import coupledL2.mbist.MBISTPipeline
 
 case class BOPParameters(
   rrTableEntries: Int = 256,
@@ -135,8 +139,12 @@ class RecentRequestTable(implicit p: Parameters) extends BOPModule {
   }
 
   val rrTable = Module(
-    new SRAMTemplate(rrTableEntry(), set = rrTableEntries, way = 1, shouldReset = true, singlePort = true)
+    new SRAMTemplate(rrTableEntry(), set = rrTableEntries, way = 1, shouldReset = true, singlePort = true, parentName = s"L2_BestOffsetPrefetch")
   )
+
+  val mbistPipeline = {
+    Module(new MBISTPipeline(1 , s"BestOffsetPrefetch_mbistPipe"))
+  }
 
   val wAddr = io.w.bits
   rrTable.io.w.req.valid := io.w.valid && !io.r.req.valid

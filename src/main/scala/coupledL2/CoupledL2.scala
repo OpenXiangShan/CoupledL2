@@ -32,6 +32,10 @@ import coupledL2.prefetch._
 import coupledL2.utils.XSPerfAccumulate
 import huancun.{TPmetaReq, TPmetaResp}
 
+import coupledL2.mbist.{MBISTInterface, MBISTPipeline}
+import coupledL2.utils.{SRAMTemplate ,ResetGen, DFTResetSignals}
+//import utility.{ResetGen, DFTResetSignals}
+
 trait HasCoupledL2Parameters {
   val p: Parameters
   val cacheParams = p(L2ParamKey)
@@ -333,7 +337,8 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     val hint_fire = Wire(Bool())
     val release_sourceD_condition = Wire(Vec(node.in.size, Bool()))
 
-    val slices = node.in.zip(node.out).zipWithIndex.map {
+    //val slices = node.in.zip(node.out).zipWithIndex.map {
+    val slicesWithPipelines = node.in.zip(node.out).zipWithIndex.map {
       case (((in, edgeIn), (out, edgeOut)), i) =>
         require(in.params.dataBits == out.params.dataBits)
         val rst_L2 = reset
@@ -345,6 +350,19 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
             case SliceIdKey => i
           }))
         }
+
+
+        // add mbist pipeline
+        val mbistSlicePipeline = if(cacheParams.hasMbist && cacheParams.hasShareBus) {
+          //Some(Module(new MBISTPipeline(3, s"MBIST_L2S${i}")))
+          Some(Module(new MBISTPipeline(2, s"MBIST_L2S${i}")))
+        } else {
+          None
+        }
+
+
+
+
         val sourceD_can_go = RegNextN(!hint_fire || i.U === OHToUInt(hint_chosen), hintCycleAhead - 1)
         release_sourceD_condition(i) := sourceD_can_go && !slice.io.in.d.valid
         slice.io.in <> in
@@ -387,8 +405,14 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
             }
         }
 
-        slice
+        //slice
+        (slice,mbistSlicePipeline)
     }
+    val slices = slicesWithPipelines.map(_._1)
+    val mbistPipes = slicesWithPipelines.map(_._2)
+
+
+
     val l1Hint_arb = Module(new Arbiter(new L2ToL1Hint(), slices.size))
     val slices_l1Hint = slices.zipWithIndex.map {
       case (s, i) => Pipeline(s.io.l1Hint, depth = 1, pipe = false, name = Some(s"l1Hint_buffer_$i"))
@@ -433,6 +457,79 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
                         slice.io.in.d.fire && grant_fire_last && slice.io.in.d.bits.opcode === GrantData
                       }}
     XSPerfAccumulate(cacheParams, "grant_data_fire", PopCount(VecInit(grant_fire)))
+
+    // L2 mbist share bus
+    val l2TopPipeLine = if(cacheParams.hasMbist && cacheParams.hasShareBus) {
+      Some(Module(new MBISTPipeline(Int.MaxValue, s"MBIST_L2")))
+    } else {
+      None
+    }
+
+  val l2MbistIntf =  if( true && true ){
+      val params = l2TopPipeLine.get.bd.params
+      val node = l2TopPipeLine.get.node
+      val intf = Some(Module(new MBISTInterface(
+        params = Seq(params),
+        ids = Seq(node.children.flatMap(_.array_id)),
+        name = s"MBIST_intf_l2",
+        pipelineNum = 1
+      )))
+
+      //println(s"intf.get.toPipeline.head  is  ${intf.get.toPipeline.head} l2pipePorts.get is ${l2pipePorts.get} ")
+
+
+
+      //intf.get.toPipeline.head <> l2pipePorts.get
+      intf.get.toPipeline.head <> l2TopPipeLine.get.io.mbist.get
+      l2TopPipeLine.get.genCSV(intf.get.info, "MBIST_L2")
+      intf.get.mbist := DontCare
+      dontTouch(intf.get.mbist)
+      //TODO: add mbist controller connections here
+      intf
+    } else {
+      None
+    }
+
+
+
+/*
+    val l2pipePorts = if(cacheParams.hasMbist && cacheParams.hasShareBus) {
+      Some(IO(l2TopPipeLine.get.io.mbist.get.cloneType))
+    } else {
+      None
+    }
+    if(cacheParams.hasMbist && cacheParams.hasShareBus){
+      l2pipePorts.get <> l2TopPipeLine.get.io.mbist.get
+    }
+*/
+
+/*
+    val sigFromSrams = if(cacheParams.hasMbist) Some(SRAMTemplate.genBroadCastBundleTop()) else None
+    val dft = if(cacheParams.hasMbist) Some(IO(sigFromSrams.get.cloneType)) else None
+    if(cacheParams.hasMbist) {
+      dft.get <> sigFromSrams.get
+      dontTouch(dft.get)
+    }
+*/
+
+    val sigFromSrams = if(true) Some(SRAMTemplate.genBroadCastBundleTop()) else None
+    val dft = if(true) Some(IO(sigFromSrams.get.cloneType)) else None
+    if(true) {
+      dft.get <> sigFromSrams.get
+      dontTouch(dft.get)
+    }
+
+
+
+
+
+
+
+
+
+
+
+
   }
 
   lazy val module = new CoupledL2Imp(this)

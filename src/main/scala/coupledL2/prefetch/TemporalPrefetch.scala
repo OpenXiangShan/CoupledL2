@@ -20,10 +20,16 @@ package coupledL2.prefetch
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
-import utility.{ChiselDB, Constantin, MemReqSource, SRAMTemplate}
+import utility.{ChiselDB, Constantin, MemReqSource}
+
+import coupledL2.utils.SRAMTemplate
+
 import coupledL2.HasCoupledL2Parameters
 import coupledL2.utils.{ReplacementPolicy, XSPerfAccumulate}
 import huancun.{TPmetaReq, TPmetaResp}
+import coupledL2.mbist.MBISTPipeline
+
+
 
 case class TPParameters(
     tpTableEntries: Int = 16384,
@@ -122,7 +128,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   }
 
   val tpMetaTable = Module(
-    new SRAMTemplate(new tpMetaEntry(), set = tpTableNrSet, way = tpTableAssoc, shouldReset = false, singlePort = true)
+    new SRAMTemplate(new tpMetaEntry(), set = tpTableNrSet, way = tpTableAssoc, shouldReset = false, singlePort = true, parentName = s"L2_TemporalPrefetch")
   )
   val dataReadQueue = Module(new Queue(new TPmetaReq(), dataReadQueueDepth, pipe = false, flow = false))
   val dataWriteQueue = Module(new Queue(new TPmetaReq(), dataWriteQueueDepth, pipe = false, flow = false))
@@ -133,6 +139,10 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val repl = ReplacementPolicy.fromString(tpTableReplacementPolicy, tpTableAssoc)
   val resetFinish = RegInit(false.B)
   val resetIdx = RegInit((tpTableNrSet - 1).U)
+
+  val mbistPipeline = {
+    Module(new MBISTPipeline(1 , s"TemporalPrefetch_mbistPipe"))
+  }
 
   /* Constantin Parameters */
 

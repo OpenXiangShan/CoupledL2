@@ -22,6 +22,8 @@ import chisel3.util._
 import coupledL2.utils.SRAMTemplate
 import utility.RegNextN
 import org.chipsalliance.cde.config.Parameters
+import coupledL2.mbist.MBISTPipeline
+
 
 class DSRequest(implicit p: Parameters) extends L2Bundle {
   val way = UInt(wayBits.W)
@@ -51,8 +53,13 @@ class DataStorage(implicit p: Parameters) extends L2Module {
     gen = new DSBlock,
     set = blocks,
     way = 1,
-    singlePort = true
+    singlePort = true,
+    parentName = s"L2_DataStorage"
   ))
+
+  val mbistPipeline = {
+    Module(new MBISTPipeline(1 , s"DataStorage_mbistPipe"))
+  }
 
   val arrayIdx = Cat(io.req.bits.way, io.req.bits.set)
   val wen = io.req.valid && io.req.bits.wen

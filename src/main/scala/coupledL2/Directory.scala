@@ -25,6 +25,7 @@ import utility.{ParallelPriorityMux, RegNextN}
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.prefetch.PfSource
 import freechips.rocketchip.tilelink.TLMessages._
+import coupledL2.mbist.MBISTPipeline
 
 class MetaEntry(implicit p: Parameters) extends L2Bundle {
   val dirty = Bool()
@@ -129,10 +130,14 @@ class Directory(implicit p: Parameters) extends L2Module {
   val metaWen = io.metaWReq.valid
   val replacerWen = WireInit(false.B)
 
-  val tagArray  = Module(new SRAMTemplate(UInt(tagBits.W), sets, ways, singlePort = true))
-  val metaArray = Module(new SRAMTemplate(new MetaEntry, sets, ways, singlePort = true))
+  val tagArray  = Module(new SRAMTemplate(UInt(tagBits.W), sets, ways, singlePort = true, parentName = s"L2_Directory_tag"))
+  val metaArray = Module(new SRAMTemplate(new MetaEntry, sets, ways, singlePort = true, parentName = s"L2_Directory_mata"))
   val tagRead = Wire(Vec(ways, UInt(tagBits.W)))
   val metaRead = Wire(Vec(ways, new MetaEntry()))
+
+  val mbistPipeline = {
+    Module(new MBISTPipeline(1 , s"Directory_mbistPipe"))
+  }
 
   val resetFinish = RegInit(false.B)
   val resetIdx = RegInit((sets - 1).U)
@@ -141,7 +146,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   val repl = ReplacementPolicy.fromString(cacheParams.replacement, ways)
   val random_repl = cacheParams.replacement == "random"
   val replacer_sram_opt = if(random_repl) None else
-    Some(Module(new SRAMTemplate(UInt(repl.nBits.W), sets, 1, singlePort = true, shouldReset = true)))
+    Some(Module(new SRAMTemplate(UInt(repl.nBits.W), sets, 1, singlePort = true, shouldReset = true, parentName = s"L2_Directory_replace")))
 
   /* ====== Generate response signals ====== */
   // hit/way calculation in stage 3, Cuz SRAM latency is high under high frequency
