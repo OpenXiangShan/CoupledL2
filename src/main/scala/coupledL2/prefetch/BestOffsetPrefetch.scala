@@ -178,8 +178,8 @@ class RecentRequestTable(implicit p: Parameters) extends BOPModule {
   io.w.ready := rrTable.io.w.req.ready && !io.r.req.valid
   io.r.req.ready := true.B
   io.r.resp.valid := RegNext(rrTable.io.r.req.fire, false.B)
-  io.r.resp.bits.ptr := RegNext(io.r.req.bits.ptr)
-  io.r.resp.bits.hit := rData.valid && rData.tag === RegNext(tag(rAddr))
+  io.r.resp.bits.ptr := RegEnable(io.r.req.bits.ptr, rrTable.io.r.req.fire)
+  io.r.resp.bits.hit := rData.valid && rData.tag === RegEnable(tag(rAddr), rrTable.io.r.req.fire)
 
 }
 
