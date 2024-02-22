@@ -1,19 +1,19 @@
 /** *************************************************************************************
-  * Copyright (c) 2020-2021 Institute of Computing Technology, Chinese Academy of Sciences
-  * Copyright (c) 2020-2021 Peng Cheng Laboratory
-  *
-  * XiangShan is licensed under Mulan PSL v2.
-  * You can use this software according to the terms and conditions of the Mulan PSL v2.
-  * You may obtain a copy of Mulan PSL v2 at:
-  * http://license.coscl.org.cn/MulanPSL2
-  *
-  * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
-  * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
-  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
-  *
-  * See the Mulan PSL v2 for more details.
-  * *************************************************************************************
-  */
+ * Copyright (c) 2020-2021 Institute of Computing Technology, Chinese Academy of Sciences
+ * Copyright (c) 2020-2021 Peng Cheng Laboratory
+ *
+ * XiangShan is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ * http://license.coscl.org.cn/MulanPSL2
+ *
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ *
+ * See the Mulan PSL v2 for more details.
+ * *************************************************************************************
+ */
 
 package coupledL2.prefetch
 
@@ -31,9 +31,17 @@ case class TPParameters(
     blockOffBits: Int = 6,
     tpQueueDepth: Int = 4,
     throttleCycles: Int = 4,
-    tpModeWidth: Int = 3,
+    modeOffsetList: Seq[Int] = Seq(
+      //0, 20, 21, 23, 26, 29, 33, 39
+      0, 23, 29, 39
+    ),
+    modeMaxLenList: Seq[Int] = Seq(
+      //34, 31, 28, 24, 21, 18, 15, 10
+      34, 24, 18, 10
+    ),
+    modeNum: Int = 4,
     replacementPolicy: String = "random"
-) extends PrefetchParameters {
+    ) extends PrefetchParameters {
   override val hasPrefetchBit:  Boolean = true
   override val hasPrefetchSrc:  Boolean = true
   override val inflightEntries: Int = 34
@@ -50,7 +58,9 @@ trait HasTPParams extends HasCoupledL2Parameters {
   val blockOffBits = tpParams.blockOffBits
   val tpQueueDepth = tpParams.tpQueueDepth
   val tpThrottleCycles = tpParams.throttleCycles
-  val tpModeWidth = tpParams.tpModeWidth
+  val modeOffsetList = tpParams.modeOffsetList
+  val modeMaxLenList = tpParams.modeMaxLenList
+  val modeNum = tpParams.modeNum
   require(tpThrottleCycles > 0, "tpThrottleCycles must be greater than 0")
 }
 
@@ -63,10 +73,9 @@ class tpMetaEntry(implicit p:Parameters) extends TPBundle {
 }
 
 class tpDataEntry(implicit p:Parameters) extends TPBundle {
-  // TODO: delete rawdata
   val rawData = Vec(tpEntryMaxLen, UInt(vaddrBits.W))
   val compressedData = UInt(512.W)
-  val mode = UInt(tpModeWidth.W)
+  val mode = UInt(log2Ceil(modeNum).W)
 }
 
 class triggerBundle(implicit p: Parameters) extends TPBundle {
@@ -96,17 +105,9 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     (x(x.getWidth-1, tpTableSetBits), x(tpTableSetBits-1, 0))
   }
 
-  def cutOffset(addr: UInt, offset: UInt): UInt = {
-    (addr >> offset) << offset
+  def cutOffset(addr: UInt, offset: Int): UInt = {
+    addr(addr.getWidth-1, offset)
   }
-
-//  def getOffset(addr: UInt, offset: UInt): UInt = {
-//    addr((offset - 1.U).asUInt(), 0.U)
-//  }
-
-  /*Set Mode, Initialized in parameters?*/
-  val tpModeMax = VecInit(34.U, 31.U, 28.U, 24.U, 21.U, 18.U, 15.U, 10.U)
-  val tpModeOff = VecInit(0.U, 20.U, 21.U, 23.U, 26.U, 29.U, 33.U, 39.U)
 
   val tpMetaTable = Module(
     new SRAMTemplate(new tpMetaEntry(), set = tpTableNrSet, way = tpTableAssoc, shouldReset = false, singlePort = true)
@@ -171,46 +172,54 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   tpDataQueue.io.enq.bits := tpDataTable.io.r.resp.data(way_s3)
   val tpDataQFull = tpDataQueue.io.count === tpQueueDepth.U
 
+  // update mode
+  val modeState = RegInit(VecInit(Seq.fill(modeNum)(0.U(1.W))))
+  // val newmode = VecInit(0.U(log2Ceil(modeNum).W))
+  for (i <- 0 until modeNum) {
+    when(s1_valid) {
+      modeState(i) := cutOffset(write_record_trigger.vaddr, modeOffsetList(i)) === cutOffset(trainVaddr_s1, modeOffsetList(i))
+    }
+  }
+  val newmode = Mux(modeState(0) === 1.U, 0.U,
+                Mux(modeState(1) === 1.U, 1.U,
+                Mux(modeState(2) === 1.U, 2.U, 3.U)
+    ))
+
+  // compress data
+  val recorder_compressed_tmp_data = Vec(modeNum, RegInit(0.U(512.W)))
+  when(s1_valid) {
+    for (i <- 0 until modeNum) {
+      for (j <- 0 until tpEntryMaxLen) {
+        recorder_compressed_tmp_data(i)((j+1)*modeOffsetList(i)-1, j*modeOffsetList(i))
+      }
+    }
+  }
+
   /* Recorder logic */
-  val recorder_mode = RegInit(0.U(tpModeWidth.W))
+  // TODO: compress data based on max delta
   val recorder_idx = RegInit(0.U(6.W))
   val recorder_data = Reg(Vec(tpEntryMaxLen, UInt(vaddrBits.W)))
   val recorder_compressed_data = RegInit(0.U(512.W))
+  val recorder_mode = RegInit(0.U(log2Ceil(modeNum).W))
   val record_data_in = train_s2.addr
   val write_record = RegInit(false.B)
   val write_record_way = RegInit(0.U.asTypeOf(way_s2))
   val write_record_trigger = RegInit(0.U.asTypeOf(new triggerBundle()))
-  // get mode
-  val cur_mode = RegInit(0.U(tpModeWidth.W))
-  val set_mode = RegInit(VecInit(Seq.fill(8)(false.B)))
-  val base_addr = RegInit(0.U(vaddrBits.W))
-  // TODO: better logic
-  for (i <- 0 until 7) {
-    when(cutOffset(base_addr, tpModeOff(i)) =/= cutOffset(record_data_in, tpModeOff(i))) {
-      set_mode(i) := true.B
-    }
-  }
-  for (i <- 7 to 0 by -1) {
-    when(set_mode(i)) {
-      cur_mode := i.U
-    }
-  }
 
   when(dorecord_s2) {
-    when(cur_mode =/= recorder_mode) {
-      val last_recoder = recorder_compressed_data
-//      for (i <- 0 to 10 by 1) {
-//        recorder_data(((i + 1) * tpModeOff(cur_mode)).asUInt() - 1.U, (i * tpModeOff(cur_mode)).asUInt()) := last_recoder(((i + 1.U) * tpModeOff(recorder_mode)).asUInt() - 1.U, (i * tpModeOff(recorder_mode)).asUInt())
-//      }
-      recorder_mode := cur_mode
-    }
     recorder_idx := recorder_idx + 1.U
     recorder_data(recorder_idx) := record_data_in
-    //    recorder_data((recorder_idx * tpModeOff(cur_mode)).asUInt() - 1.U, ((recorder_idx - 1.U) * tpModeOff(cur_mode)).asUInt()) := record_data_in((tpModeOff(cur_mode) - 1.U).asUInt(), 0.U)
-    when(recorder_idx === (tpModeMax(cur_mode) - 1.U)) {
+    recorder_compressed_data := Mux(newmode === 0.U, recorder_compressed_tmp_data(0),
+                                Mux(newmode === 1.U, recorder_compressed_tmp_data(1),
+                                Mux(newmode === 2.U, recorder_compressed_tmp_data(2),
+                                                     recorder_compressed_tmp_data(3)))
+    )
+    recorder_mode := newmode
+    when(recorder_idx === (tpEntryMaxLen-1).U) {
       write_record := true.B
       write_record_way := way_s2  // choose way lazily
       recorder_idx := 0.U
+      recorder_mode := 0.U
     }
     when(recorder_idx === 0.U) {
       // set trigger as the first addr
@@ -230,7 +239,6 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   val tpData_w_bits = Wire(new tpDataEntry())
   tpData_w_bits.rawData.zip(recorder_data).foreach(x => x._1 := x._2)
-  tpData_w_bits.compressedData := recorder_compressed_data
   tpData_w_bits.mode := 0.U
 
   val tpMeta_w_bits = Wire(new tpMetaEntry())
