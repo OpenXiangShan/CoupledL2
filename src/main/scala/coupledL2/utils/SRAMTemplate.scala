@@ -302,10 +302,11 @@ object SRAMTemplate {
 
   private var nodeId = 128
   private var wrapperId = 93
-  private var domainId = 93
+  //private var domainId = 93
   private var firstToBeBroadCast = 93
 
 
+  private var domainId = 0
 
 
   def getWayNumForEachNodeAndNodeNum_1toN(dw: Int, way: Int, mw: Int): (Int, Int) = {

@@ -45,6 +45,7 @@ case class MBISTBusParams
   set: Int,
   dataWidth: Int,
   maskWidth: Int,
+  hasDualPort: Boolean,
   domainName:String = "Unknown"
 ) {
   val arrayWidth = log2Up(array + 1)
@@ -86,14 +87,17 @@ case class RAM2MBISTParams
   maxArrayId:Int,
   bitWrite:Boolean,
   foundry:String,
-  sramInst:String
+  sramInst:String,
+
+  bankRange:String = "None"
 ) {
   val addrWidth = log2Up(set + 1)
   val arrayWidth = log2Up(maxArrayId + 1)
   def getAllNodesParams():Seq[RAM2MBISTParams] = {
     val res = Seq.tabulate(nodeNum)(idx => {
-      val nodeName = if(nodeNum > 1) hierarchyName + s"node${idx}" else hierarchyName.dropRight(1)
-      RAM2MBISTParams(set, dataWidth, maskWidth, singlePort, vname, nodeName, nodeNum, maxArrayId, bitWrite, foundry, sramInst)
+      //val nodeName = if(nodeNum > 1) hierarchyName + s"node${idx}" else hierarchyName.dropRight(1)
+      val nodeName = if(nodeNum > 1) hierarchyName + "_" + maxArrayId  + s"node${idx}" else hierarchyName + maxArrayId 
+      RAM2MBISTParams(set, dataWidth, maskWidth, singlePort, vname, nodeName, nodeNum, maxArrayId, bitWrite, foundry, sramInst, bankRange)
     })
     res
   }

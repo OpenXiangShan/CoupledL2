@@ -67,7 +67,8 @@ object MBIST {
       children.map(_.array).max,
       children.map(_.set).max,
       children.map(_.dataWidth).max,
-      children.map(_.maskWidth).max
+      children.map(_.maskWidth).max,
+      children.map(_.hasDualPort).reduce(_||_)
     )
 
   def inferMBITSBusParams(children: Seq[BaseNode]): MBISTBusParams =
@@ -85,6 +86,11 @@ object MBIST {
         case ram: RAMBaseNode => ram.bd.params.maskWidth
         case pl: PipelineBaseNode => pl.bd.params.maskWidth
       }).max,
+      (children map {
+        case ram: RAMBaseNode => !ram.bd.params.singlePort
+        case pl: PipelineBaseNode => pl.bd.params.hasDualPort
+      }).reduce(_||_)
+
     )
 
   def addRamNode(bd: RAM2MBIST, prefix: String, ids:Seq[Int]): RAMBaseNode = {
