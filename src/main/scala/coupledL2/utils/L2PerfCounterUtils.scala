@@ -18,11 +18,11 @@
 package coupledL2.utils
 
 import chisel3._
-import coupledL2.L2Param
+import coupledL2.HasL2BaseParameters
 import utility.{ChiselDB, LogPerfHelper, LogPerfIO}
 
 object XSPerfAccumulate {
-  def apply(params: L2Param, perfName: String, perfCnt: UInt) = {
+  def apply(params: HasL2BaseParameters, perfName: String, perfCnt: UInt) = {
     if (params.enablePerf && !params.FPGAPlatform) {
       val helper = Module(new LogPerfHelper)
       val perfClean = helper.io.clean
@@ -43,7 +43,7 @@ object XSPerfHistogram {
   // instead of simply accumulating counters
   // this function draws a histogram
   def apply(
-    params:   L2Param,
+    params:   HasL2BaseParameters,
     perfName: String,
     perfCnt:  UInt,
     enable:   Bool,
@@ -97,7 +97,7 @@ object XSPerfHistogram {
 }
 
 object XSPerfMax {
-  def apply(params: L2Param, perfName: String, perfCnt: UInt, enable: Bool) = {
+  def apply(params: HasL2BaseParameters, perfName: String, perfCnt: UInt, enable: Bool) = {
     if (params.enablePerf && !params.FPGAPlatform) {
       val helper = Module(new LogPerfHelper)
       val perfClean = helper.io.clean
@@ -129,7 +129,7 @@ object XSPerfRolling {
   }
 
   def apply(
-    params: L2Param,
+    params: HasL2BaseParameters,
     perfName: String,
     perfCnt: UInt,
     granularity: Int,
@@ -160,7 +160,7 @@ object XSPerfRolling {
   }
 
   def apply(
-    params: L2Param,
+    params: HasL2BaseParameters,
     perfName: String,
     perfCnt: UInt,
     eventTrigger: UInt,

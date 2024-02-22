@@ -27,9 +27,6 @@ import huancun.{AliasKey, CacheParameters, IsHitKey, PrefetchKey}
 import coupledL2.prefetch._
 import utility.{MemReqSource, ReqSourceKey}
 
-// General parameter key of CoupledL2
-case object L2ParamKey extends Field[L2Param](L2Param())
-
 // L1 Cache Params, used for TestTop generation
 case class L1Param
 (
@@ -55,53 +52,42 @@ case class VaddrField(width: Int) extends BundleField[UInt](VaddrKey, Output(UIn
 case object IsKeywordKey extends ControlKey[Bool]("isKeyword")
 case class IsKeywordField() extends BundleField[Bool](IsKeywordKey, Output(Bool()), _ := false.B)
 
-case class L2Param
-(
-  name: String = "L2",
-  ways: Int = 4,
-  sets: Int = 128,
-  blockBytes: Int = 64,
-  pageBytes: Int = 4096,
-  channelBytes: TLChannelBeatBytes = TLChannelBeatBytes(32),
-  clientCaches: Seq[L1Param] = Nil,
-  replacement: String = "plru",
-  mshrs: Int = 16,
-  releaseData: Int = 3,
-  /* 0 for dirty alone
-   * 1 for dirty and accessed
-   * 2 for all except prefetch & !accessed
-   * 3 for all
-   */
+// Parameters shared by both tilelink-to-tilelink L2 and tilelink-to-chi L2
+trait HasL2BaseParameters {
+  def name: String
+  def ways: Int
+  def sets: Int
 
-  // Client (these are set in Configs.scala in XiangShan)
-  echoField: Seq[BundleFieldBase] = Nil,
-  reqField: Seq[BundleFieldBase] = Nil,
-  respKey: Seq[BundleKeyBase] = Seq(IsHitKey),
+  val blockBytes: Int = 64
+  val pageBytes: Int = 4096
+  val channelBytes: TLChannelBeatBytes = TLChannelBeatBytes(32)
+
+  def clientCaches: Seq[L1Param]
+  def replacement: String
+  def mshrs: Int
+
+  // Client
+  def echoField: Seq[BundleFieldBase]
+  def reqField: Seq[BundleFieldBase]
+  def respKey: Seq[BundleKeyBase]
   // Manager
-  reqKey: Seq[BundleKeyBase] = Seq(AliasKey, VaddrKey, PrefetchKey, ReqSourceKey),
-  respField: Seq[BundleFieldBase] = Nil,
+  def reqKey: Seq[BundleKeyBase]
+  def respField: Seq[BundleFieldBase]
 
-  innerBuf: TLBufferParams = TLBufferParams(),
-  outerBuf: TLBufferParams = TLBufferParams(
-    a = BufferParams.default,
-    b = BufferParams.default,
-    c = BufferParams.none,
-    d = BufferParams.default,
-    e = BufferParams.default
-  ),
+  val innerBuf: TLBufferParams = TLBufferParams()
 
-  hartIds: Seq[Int] = Seq[Int](),
+  def hartIds: Seq[Int]
   // Prefetch
-  prefetch: Option[PrefetchParameters] = None,
+  def prefetch: Option[PrefetchParameters]
   // Performance analysis
-  enablePerf: Boolean = true,
+  def enablePerf: Boolean
   // Monitor
-  enableMonitor: Boolean = true,
+  def enableMonitor: Boolean
   // TopDown
-  elaboratedTopDown: Boolean = true,
+  def elaboratedTopDown: Boolean
   // env
-  FPGAPlatform: Boolean = false
-) {
+  def FPGAPlatform: Boolean
+
   def toCacheParams: CacheParameters = CacheParameters(
     name = name,
     sets = sets,

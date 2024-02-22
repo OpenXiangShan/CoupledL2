@@ -15,7 +15,7 @@
  * *************************************************************************************
  */
 
-package coupledL2
+package coupledL2.tl2tl
 
 import chisel3._
 import chisel3.util._
@@ -24,6 +24,7 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import org.chipsalliance.cde.config.Parameters
 import huancun.{DirtyKey, PreferCacheKey}
+import coupledL2._
 
 class AcquireUnit(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {

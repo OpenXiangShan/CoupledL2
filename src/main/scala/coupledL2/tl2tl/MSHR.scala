@@ -15,7 +15,7 @@
  * *************************************************************************************
  */
 
-package coupledL2
+package coupledL2.tl2tl
 
 import chisel3._
 import chisel3.util._
@@ -25,6 +25,7 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
 import org.chipsalliance.cde.config.Parameters
+import coupledL2._
 import coupledL2.prefetch.{PfSource, PrefetchTrain}
 import coupledL2.utils.XSPerfAccumulate
 
@@ -171,7 +172,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     // if accessed, we ReleaseData to keep the data in L3, for future access to be faster
     // [Access] TODO: consider use a counter
     mp_release.opcode := {
-      cacheParams.releaseData match {
+      tl2tlParams.releaseData match {
         case 0 => Mux(meta.dirty && meta.state =/= INVALID || probeDirty, ReleaseData, Release)
         case 1 => Mux(meta.dirty && meta.state =/= INVALID || probeDirty || meta.accessed, ReleaseData, Release)
         case 2 => Mux(meta.prefetch.getOrElse(false.B) && !meta.accessed, Release, ReleaseData) //TODO: has problem with this

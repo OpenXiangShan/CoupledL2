@@ -15,7 +15,7 @@
   * *************************************************************************************
   */
 
-package coupledL2
+package coupledL2.tl2tl
 
 import chisel3._
 import chisel3.util._
@@ -23,6 +23,7 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.util.leftOR
 import org.chipsalliance.cde.config.Parameters
+import coupledL2._
 import coupledL2.utils._
 import coupledL2.debug._
 import coupledL2.prefetch.PrefetchIO
@@ -147,7 +148,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
 
   /* input & output signals */
   val inBuf = cacheParams.innerBuf
-  val outBuf = cacheParams.outerBuf
+  val outBuf = tl2tlParams.outerBuf
 
   /* connect upward channels */
   sinkA.io.a <> inBuf.a(io.in.a)

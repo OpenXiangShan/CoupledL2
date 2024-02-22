@@ -26,15 +26,21 @@ import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.util._
-import org.chipsalliance.cde.config.Parameters
+import org.chipsalliance.cde.config.{Parameters, Field}
 import scala.math.max
 import coupledL2.prefetch._
 import coupledL2.utils.XSPerfAccumulate
+import coupledL2.tl2tl._
 import huancun.{TPmetaReq, TPmetaResp}
+
+case object EnableCHI extends Field[Boolean](false)
 
 trait HasCoupledL2Parameters {
   val p: Parameters
-  val cacheParams = p(L2ParamKey)
+  val cacheParams: HasL2BaseParameters = p(L2ParamKey)
+  val tl2tlParams: HasTLL2Parameters = p(L2ParamKey)
+  val tl2chiParams: tl2chi.HasCHIL2Parameters = p(tl2chi.L2ParamKey)
+  val enableCHI = p(EnableCHI)
 
   val blocks = cacheParams.sets * cacheParams.ways
   val blockBytes = cacheParams.blockBytes
@@ -252,7 +258,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     println(s"====== Inclusive ${cacheParams.name} ($sizeStr * $banks-bank) $prefetch ======")
     println(s"bankBits: ${bankBits}")
     println(s"replacement: ${cacheParams.replacement}")
-    println(s"replace policy: ${cacheParams.releaseData}")
+    println(s"replace policy: ${tl2tlParams.releaseData}")
     println(s"sets:${cacheParams.sets} ways:${cacheParams.ways} blockBytes:${cacheParams.blockBytes}")
     def print_bundle_fields(fs: Seq[BundleFieldBase], prefix: String) = {
       if(fs.nonEmpty){
