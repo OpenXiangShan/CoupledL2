@@ -24,8 +24,10 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util._
 import org.chipsalliance.cde.config.Field
 import huancun.{AliasKey, CacheParameters, IsHitKey, PrefetchKey}
+import huancun.{AliasField, PrefetchField}
 import coupledL2.prefetch._
 import utility.{MemReqSource, ReqSourceKey}
+import utility.{MemReqSource, ReqSourceKey,ReqSourceField}
 
 // General parameter key of CoupledL2
 case object L2ParamKey extends Field[L2Param](L2Param())
@@ -88,6 +90,14 @@ case class L2Param
     c = BufferParams.none,
     d = BufferParams.default,
     e = BufferParams.default
+  ),
+
+  innerBufPipe: TLBufferParams = TLBufferParams(
+    a = BufferParams.pipe,
+    b = BufferParams.default,
+    c = BufferParams.pipe,
+    d = BufferParams.default,
+    e = BufferParams.pipe
   ),
 
   hartIds: Seq[Int] = Seq[Int](),
