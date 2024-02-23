@@ -26,7 +26,7 @@ import coupledL2._
 import coupledL2.utils.XSPerfAccumulate
 import huancun.DirtyKey
 
-//class SourceC(implicit p: Parameters) extends L2Module {
+//class SourceC(implicit p: Parameters) extends TL2TLL2Module {
 //  val io = IO(new Bundle() {
 //    val in = Flipped(DecoupledIO(new Bundle() {
 //      val task = new TaskBundle()
@@ -117,7 +117,7 @@ import huancun.DirtyKey
 //  XSPerfAccumulate(cacheParams, "sourceC_full", full)
 //}
 
-class SourceC(implicit p: Parameters) extends L2Module {
+class SourceC(implicit p: Parameters) extends TL2TLL2Module {
   val io = IO(new Bundle() {
     val in = Flipped(DecoupledIO(new Bundle() {
       val task = new TaskBundle()

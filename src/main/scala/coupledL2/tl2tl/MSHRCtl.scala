@@ -27,7 +27,7 @@ import coupledL2._
 import coupledL2.prefetch.PrefetchTrain
 import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram, XSPerfMax}
 
-class MSHRSelector(implicit p: Parameters) extends L2Module {
+class MSHRSelector(implicit p: Parameters) extends TL2TLL2Module {
   val io = IO(new Bundle() {
     val idle = Input(Vec(mshrsAll, Bool()))
     val out = ValidIO(UInt(mshrsAll.W))
@@ -38,7 +38,7 @@ class MSHRSelector(implicit p: Parameters) extends L2Module {
   })
 }
 
-class MSHRCtl(implicit p: Parameters) extends L2Module {
+class MSHRCtl(implicit p: Parameters) extends TL2TLL2Module {
   val io = IO(new Bundle() {
     /* interact with req arb */
     val fromReqArb = Input(new Bundle() {

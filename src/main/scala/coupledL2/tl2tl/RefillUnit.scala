@@ -26,7 +26,7 @@ import coupledL2._
 import coupledL2.utils.XSPerfAccumulate
 import huancun.{DirtyKey, IsHitKey}
 
-class grantAckQEntry(implicit p: Parameters) extends L2Bundle {
+class grantAckQEntry(implicit p: Parameters) extends TL2TLL2Bundle {
   val source = UInt(sourceIdBits.W)
   val sink = UInt(outerSinkBits.W)
 }
@@ -34,7 +34,7 @@ class grantAckQEntry(implicit p: Parameters) extends L2Bundle {
 // Communicate with L3
 // Receive Grant/GrantData/ReleaseAck from d and
 // Send GrantAck through e
-class RefillUnit(implicit p: Parameters) extends L2Module {
+class RefillUnit(implicit p: Parameters) extends TL2TLL2Module {
   val io = IO(new Bundle() {
     val sinkD = Flipped(DecoupledIO(new TLBundleD(edgeOut.bundle)))
     val sourceE = DecoupledIO(new TLBundleE(edgeOut.bundle))

@@ -29,7 +29,7 @@ import coupledL2._
 import coupledL2.prefetch.{PfSource, PrefetchTrain}
 import coupledL2.utils.XSPerfAccumulate
 
-class MSHRTasks(implicit p: Parameters) extends L2Bundle {
+class MSHRTasks(implicit p: Parameters) extends TL2TLL2Bundle {
   // outer
   val source_a = DecoupledIO(new SourceAReq) // To AcquireUnit  // TODO: no need to use decoupled handshake
   val source_b = DecoupledIO(new SourceBReq)
@@ -37,7 +37,7 @@ class MSHRTasks(implicit p: Parameters) extends L2Bundle {
   // val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain)) // To prefetcher
 }
 
-class MSHRResps(implicit p: Parameters) extends L2Bundle {
+class MSHRResps(implicit p: Parameters) extends TL2TLL2Bundle {
   val sink_c = Flipped(ValidIO(new RespInfoBundle))
   val sink_d = Flipped(ValidIO(new RespInfoBundle))
   // make sure that Acquire is sent after Release,
@@ -45,7 +45,7 @@ class MSHRResps(implicit p: Parameters) extends L2Bundle {
   val source_c = Flipped(ValidIO(new RespInfoBundle))
 }
 
-class MSHR(implicit p: Parameters) extends L2Module {
+class MSHR(implicit p: Parameters) extends TL2TLL2Module {
   val io = IO(new Bundle() {
     val id = Input(UInt(mshrBits.W))
     val status = ValidIO(new MSHRStatus)

@@ -8,6 +8,7 @@ import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import huancun._
 import coupledL2.prefetch._
+import coupledL2.tl2tl._
 import utility.{ChiselDB, FileRegisters, TLLogger}
 
 
@@ -47,7 +48,7 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
   val l1d_nodes = (0 until 1) map( i => createClientNode(s"l1d$i", 32))
   val master_nodes = l1d_nodes
 
-  val l2 = LazyModule(new CoupledL2())
+  val l2 = LazyModule(new TL2TLCoupledL2())
   val xbar = TLXbar()
   val ram = LazyModule(new TLRAM(AddressSet(0, 0xffffL), beatBytes = 32))
 
@@ -124,7 +125,7 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
   ))
   val master_nodes = Seq(l1d, l1i)
 
-  val l2 = LazyModule(new CoupledL2()(new Config((_, _, _) => {
+  val l2 = LazyModule(new TL2TLCoupledL2()(new Config((_, _, _) => {
     case L2ParamKey => L2Param(
       name = s"l2",
       ways = 4,
@@ -250,7 +251,7 @@ class TestTop_L2_Standalone()(implicit p: Parameters) extends LazyModule {
   val l1d_nodes = (0 until 1) map( i => createClientNode(s"l1d$i", 32))
   val master_nodes = l1d_nodes
 
-  val l2 = LazyModule(new CoupledL2())
+  val l2 = LazyModule(new TL2TLCoupledL2())
   val xbar = TLXbar()
   val l3 = createManagerNode("Fake_L3", 16)
 
@@ -322,7 +323,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
   val l1d_nodes = (0 until nrL2).map(i => createClientNode(s"l1d$i", 32))
   val master_nodes = l1d_nodes
 
-  val coupledL2 = (0 until nrL2).map(i => LazyModule(new CoupledL2()(new Config((_, _, _) => {
+  val coupledL2 = (0 until nrL2).map(i => LazyModule(new TL2TLCoupledL2()(new Config((_, _, _) => {
     case L2ParamKey => L2Param(
       name = s"l2$i",
       ways = 4,
@@ -444,7 +445,7 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
     master_nodes = master_nodes ++ Seq(l1d, l1i) // TODO
 
     val l1xbar = TLXbar()
-    val l2node = LazyModule(new CoupledL2()(new Config((_, _, _) => {
+    val l2node = LazyModule(new TL2TLCoupledL2()(new Config((_, _, _) => {
       case L2ParamKey => L2Param(
         name = s"l2$i",
         ways = 4,

@@ -27,6 +27,8 @@ import huancun.{AliasKey, CacheParameters, IsHitKey, PrefetchKey}
 import coupledL2.prefetch._
 import utility.{MemReqSource, ReqSourceKey}
 
+case object EnableCHI extends Field[Boolean](false)
+
 // L1 Cache Params, used for TestTop generation
 case class L1Param
 (

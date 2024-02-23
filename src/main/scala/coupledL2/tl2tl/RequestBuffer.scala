@@ -26,7 +26,7 @@ import coupledL2._
 import coupledL2.utils._
 import utility._
 
-class ReqEntry(entries: Int = 4)(implicit p: Parameters) extends L2Bundle() {
+class ReqEntry(entries: Int = 4)(implicit p: Parameters) extends TL2TLL2Bundle() {
   val valid    = Bool()
   val rdy      = Bool()
   val task     = new TaskBundle()
@@ -57,17 +57,17 @@ class ReqEntry(entries: Int = 4)(implicit p: Parameters) extends L2Bundle() {
 
 }
 
-class ChosenQBundle(idWIdth: Int = 2)(implicit p: Parameters) extends L2Bundle {
+class ChosenQBundle(idWIdth: Int = 2)(implicit p: Parameters) extends TL2TLL2Bundle {
   val bits = new ReqEntry()
   val id = UInt(idWIdth.W)
 }
 
-class AMergeTask(implicit p: Parameters) extends L2Bundle {
+class AMergeTask(implicit p: Parameters) extends TL2TLL2Bundle {
   val id = UInt(mshrBits.W)
   val task = new TaskBundle()
 }
 
-class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Parameters) extends L2Module {
+class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Parameters) extends TL2TLL2Module {
 
   val io = IO(new Bundle() {
     val in          = Flipped(DecoupledIO(new TaskBundle))
@@ -80,7 +80,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     val ASet        = Output(UInt(setBits.W))
 
     // when Probe/Release/MSHR enters MainPipe, we need also to block A req
-    val s1Entrance = Flipped(ValidIO(new L2Bundle {
+    val s1Entrance = Flipped(ValidIO(new TL2TLL2Bundle {
       val set = UInt(setBits.W)
     }))
 

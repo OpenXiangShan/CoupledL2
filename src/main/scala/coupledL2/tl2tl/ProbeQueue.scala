@@ -24,7 +24,7 @@ import coupledL2.utils._
 import freechips.rocketchip.tilelink._
 import org.chipsalliance.cde.config.Parameters
 
-class ProbeQueue(implicit p: Parameters) extends L2Module {
+class ProbeQueue(implicit p: Parameters) extends TL2TLL2Module {
   val io = IO(new Bundle() {
     val sinkB = Flipped(DecoupledIO(new TLBundleB(edgeIn.bundle)))
     val arb_busy_s0 = Input(Bool())

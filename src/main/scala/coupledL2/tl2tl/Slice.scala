@@ -29,7 +29,7 @@ import coupledL2.debug._
 import coupledL2.prefetch.PrefetchIO
 import utility.RegNextN
 
-class Slice()(implicit p: Parameters) extends L2Module {
+class Slice()(implicit p: Parameters) extends TL2TLL2Module {
   val io = IO(new Bundle {
     val in = Flipped(TLBundle(edgeIn.bundle))
     val out = TLBundle(edgeOut.bundle)

@@ -30,7 +30,7 @@ import coupledL2.utils._
 import coupledL2.debug._
 import coupledL2.prefetch.{PfSource, PrefetchTrain}
 
-class MainPipe(implicit p: Parameters) extends L2Module {
+class MainPipe(implicit p: Parameters) extends TL2TLL2Module {
   val io = IO(new Bundle() {
     /* receive task from arbiter at stage 2 */
     val taskFromArb_s2 = Flipped(ValidIO(new TaskBundle()))
