@@ -92,6 +92,7 @@ case class L2Param
     e = BufferParams.default
   ),
 
+  //config a/c/e with pipe and b/d no pipe
   innerBufPipe: TLBufferParams = TLBufferParams(
     a = BufferParams.pipe,
     b = BufferParams.default,

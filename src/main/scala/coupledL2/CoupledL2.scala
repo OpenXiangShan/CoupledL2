@@ -480,7 +480,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
                            reqPriBank(3)(1,0).orR && reqPriBank(3)(2)) 
  */
     /*
-     align the A channel in case has user defined area
+     align l1i/ptw A channel in case has user defined area
      */
     val l1iReq = Wire(new TLBundle(l1dTlBundleParameters))
     l1iReq := 0.U.asTypeOf(new TLBundle(l1dTlBundleParameters))
