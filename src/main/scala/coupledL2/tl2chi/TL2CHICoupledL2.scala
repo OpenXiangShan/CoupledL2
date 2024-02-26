@@ -38,10 +38,12 @@ trait HasTL2CHICoupledL2Parameteres extends HasCoupledL2Parameters {
   // TODO
 }
 
-abstract class TL2CHIL2Bundle(implicit p: Parameters) extends Bundle
+abstract class TL2CHIL2Bundle(implicit val p: Parameters) extends Bundle
   with HasTL2CHICoupledL2Parameteres
-abstract class TL2CHIL2Module(implicit p: Parameters) extends Module
+  with HasCHIMsgParameters
+abstract class TL2CHIL2Module(implicit val p: Parameters) extends Module
   with HasTL2CHICoupledL2Parameteres
+  with HasCHIMsgParameters
 
 class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base
   with HasTL2CHICoupledL2Parameteres {

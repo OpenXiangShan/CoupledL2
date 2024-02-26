@@ -82,6 +82,7 @@ class TL2TLCoupledL2(implicit p: Parameters) extends CoupledL2Base
   }
 
   class CoupledL2Imp(wrapper: LazyModule) extends LazyModuleImp(wrapper) {
+
     val banks = node.in.size
     val bankBits = if (banks == 1) 0 else log2Up(banks)
     val io = IO(new Bundle {
