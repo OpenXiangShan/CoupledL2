@@ -17,7 +17,7 @@
 
 package coupledL2.prefetch
 
-import utility.{ChiselDB, Constantin, MemReqSource, ParallelPriorityMux, RRArbiterInit, SRAMTemplate}
+import utility.{GatedValidRegNext, ChiselDB, Constantin, MemReqSource, ParallelPriorityMux, RRArbiterInit, SRAMTemplate}
 import org.chipsalliance.cde.config.Parameters
 import chisel3.DontCare.:=
 import chisel3._
@@ -177,11 +177,11 @@ class RecentRequestTable(implicit p: Parameters) extends BOPModule {
   rrTable.io.r.req.bits.setIdx := idx(rAddr)
   rData := rrTable.io.r.resp.data(0)
 
-  assert(!RegNext(io.w.fire && io.r.req.fire), "single port SRAM should not read and write at the same time")
+  assert(!GatedValidRegNext(io.w.fire && io.r.req.fire), "single port SRAM should not read and write at the same time")
 
   io.w.ready := rrTable.io.w.req.ready && !io.r.req.valid
   io.r.req.ready := true.B
-  io.r.resp.valid := RegNext(rrTable.io.r.req.fire, false.B)
+  io.r.resp.valid := GatedValidRegNext(rrTable.io.r.req.fire, false.B)
   io.r.resp.bits.ptr := RegEnable(io.r.req.bits.ptr, rrTable.io.r.req.fire)
   io.r.resp.bits.hit := rData.valid && rData.tag === RegEnable(tag(rAddr), rrTable.io.r.req.fire)
 
