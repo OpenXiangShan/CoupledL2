@@ -290,7 +290,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       })))
       val pftQueue = Module(new PrefetchQueue)
       val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
-      val l2_pf_en = RegNextN(io_l2_pf_en, 2, Some(true.B))
+      val l2_pf_en = GatedValidRegNextN(io_l2_pf_en, 2, Some(true.B))
 
       // prefetch from upper level
       pfRcv.io.recv_addr := ValidIODelay(io.recv_addr, 2)
