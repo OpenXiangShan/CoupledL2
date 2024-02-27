@@ -161,6 +161,18 @@ trait HasCoupledL2Parameters {
     val opToA = VecInit(opSeq)(r)
     opToA
   }
+
+  def sizeBytesToStr(sizeBytes: Double): String = sizeBytes match {
+    case _ if sizeBytes >= 1024 * 1024 => (sizeBytes / 1024 / 1024) + "MB"
+    case _ if sizeBytes >= 1024        => (sizeBytes / 1024) + "KB"
+    case _                            => "B"
+  }
+  
+  def print_bundle_fields(fs: Seq[BundleFieldBase], prefix: String) = {
+    if(fs.nonEmpty){
+      println(fs.map{f => s"$prefix/${f.key.name}: (${f.data.getWidth}-bit)"}.mkString("\n"))
+    }
+  }
 }
 
 abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with HasCoupledL2Parameters {
@@ -168,30 +180,6 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
   val xfer = TransferSizes(blockBytes, blockBytes)
   val atom = TransferSizes(1, cacheParams.channelBytes.d.get)
   val access = TransferSizes(1, blockBytes)
-
-  val managerPortParams = (m: TLSlavePortParameters) => TLSlavePortParameters.v1(
-    m.managers.map { m =>
-      m.v2copy(
-        regionType = if (m.regionType >= RegionType.UNCACHED) RegionType.CACHED else m.regionType,
-        supports = TLMasterToSlaveTransferSizes(
-          acquireB = xfer,
-          acquireT = if (m.supportsAcquireT) xfer else TransferSizes.none,
-          arithmetic = if (m.supportsAcquireT) atom else TransferSizes.none,
-          logical = if (m.supportsAcquireT) atom else TransferSizes.none,
-          get = access,
-          putFull = if (m.supportsAcquireT) access else TransferSizes.none,
-          putPartial = if (m.supportsAcquireT) access else TransferSizes.none,
-          hint = access
-        ),
-        fifoId = None
-      )
-    },
-    beatBytes = 32,
-    minLatency = 2,
-    responseFields = cacheParams.respField,
-    requestKeys = cacheParams.reqKey,
-    endSinkId = idsAll
-  )
 
   val pf_recv_node: Option[BundleBridgeSink[PrefetchRecv]] = prefetchOpt match {
     case Some(_: PrefetchReceiverParams) =>

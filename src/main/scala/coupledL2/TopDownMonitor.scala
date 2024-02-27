@@ -21,8 +21,10 @@ import chisel3._
 import chisel3.util._
 import coupledL2.prefetch.PfSource
 import coupledL2.utils._
+import coupledL2.tl2tl.MSHRStatus
 import utility.MemReqSource
 
+// TODO: Accommodate CHI
 class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   val banks = 1 << bankBits
   val io = IO(new Bundle() {

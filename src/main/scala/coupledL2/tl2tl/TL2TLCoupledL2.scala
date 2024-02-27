@@ -47,6 +47,30 @@ abstract class TL2TLL2Module(implicit val p: Parameters) extends Module
 
 class TL2TLCoupledL2(implicit p: Parameters) extends CoupledL2Base
   with HasTL2TLCoupledL2Parameters {
+
+  val managerPortParams = (m: TLSlavePortParameters) => TLSlavePortParameters.v1(
+    m.managers.map { m =>
+      m.v2copy(
+        regionType = if (m.regionType >= RegionType.UNCACHED) RegionType.CACHED else m.regionType,
+        supports = TLMasterToSlaveTransferSizes(
+          acquireB = xfer,
+          acquireT = if (m.supportsAcquireT) xfer else TransferSizes.none,
+          arithmetic = if (m.supportsAcquireT) atom else TransferSizes.none,
+          logical = if (m.supportsAcquireT) atom else TransferSizes.none,
+          get = access,
+          putFull = if (m.supportsAcquireT) access else TransferSizes.none,
+          putPartial = if (m.supportsAcquireT) access else TransferSizes.none,
+          hint = access
+        ),
+        fifoId = None
+      )
+    },
+    beatBytes = 32,
+    minLatency = 2,
+    responseFields = cacheParams.respField,
+    requestKeys = cacheParams.reqKey,
+    endSinkId = idsAll
+  )
   
   val clientPortParams = (m: TLMasterPortParameters) => TLMasterPortParameters.v2(
     Seq(
@@ -96,11 +120,6 @@ class TL2TLCoupledL2(implicit p: Parameters) extends CoupledL2Base
 
     // Display info
     val sizeBytes = cacheParams.toCacheParams.capacity.toDouble
-    def sizeBytesToStr(sizeBytes: Double): String = sizeBytes match {
-      case _ if sizeBytes >= 1024 * 1024 => (sizeBytes / 1024 / 1024) + "MB"
-      case _ if sizeBytes >= 1024        => (sizeBytes / 1024) + "KB"
-      case _                            => "B"
-    }
     val sizeStr = sizeBytesToStr(sizeBytes)
     val prefetch = "prefetch: " + cacheParams.prefetch
     println(s"====== Inclusive ${cacheParams.name} ($sizeStr * $banks-bank) $prefetch ======")
@@ -108,11 +127,6 @@ class TL2TLCoupledL2(implicit p: Parameters) extends CoupledL2Base
     println(s"replacement: ${cacheParams.replacement}")
     println(s"replace policy: ${tl2tlParams.releaseData}")
     println(s"sets:${cacheParams.sets} ways:${cacheParams.ways} blockBytes:${cacheParams.blockBytes}")
-    def print_bundle_fields(fs: Seq[BundleFieldBase], prefix: String) = {
-      if(fs.nonEmpty){
-        println(fs.map{f => s"$prefix/${f.key.name}: (${f.data.getWidth}-bit)"}.mkString("\n"))
-      }
-    }
     print_bundle_fields(node.in.head._2.bundle.requestFields, "usr")
     print_bundle_fields(node.in.head._2.bundle.echoFields, "echo")
 
