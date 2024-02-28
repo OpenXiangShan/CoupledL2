@@ -33,11 +33,12 @@ case class TPParameters(
     throttleCycles: Int = 4,
     modeOffsetList: Seq[Int] = Seq(
       //0, 20, 21, 23, 26, 29, 33, 39
-      0, 23, 29, 39
+      20, 23, 29, 33
     ),
     modeMaxLenList: Seq[Int] = Seq(
       //34, 31, 28, 24, 21, 18, 15, 10
-      34, 24, 18, 10
+      //34, 25, 24, 22, 19, 17, 15, 13
+      25, 22, 17, 15
     ),
     modeNum: Int = 4,
     replacementPolicy: String = "random"
@@ -74,7 +75,7 @@ class tpMetaEntry(implicit p:Parameters) extends TPBundle {
 
 class tpDataEntry(implicit p:Parameters) extends TPBundle {
   val rawData = Vec(tpEntryMaxLen, UInt(vaddrBits.W))
-  val compressedData = UInt(512.W)
+  // val compressedData = UInt(512.W)
   val mode = UInt(log2Ceil(modeNum).W)
 }
 
@@ -106,7 +107,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   }
 
   def cutOffset(addr: UInt, offset: Int): UInt = {
-    addr(addr.getWidth-1, offset)
+    addr(addr.getWidth-1, offset - 1)
   }
 
   val tpMetaTable = Module(
@@ -172,6 +173,17 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   tpDataQueue.io.enq.bits := tpDataTable.io.r.resp.data(way_s3)
   val tpDataQFull = tpDataQueue.io.count === tpQueueDepth.U
 
+  /* Recorder logic */
+  // TODO: compress data based on max delta
+  val recorder_idx = RegInit(0.U(6.W))
+  val recorder_data = Reg(Vec(tpEntryMaxLen, UInt(vaddrBits.W)))
+  val recorder_compressed_data = RegInit(0.U(512.W))
+  val recorder_mode = RegInit(0.U(log2Ceil(modeNum).W))
+  val record_data_in = train_s2.addr
+  val write_record = RegInit(false.B)
+  val write_record_way = RegInit(0.U.asTypeOf(way_s2))
+  val write_record_trigger = RegInit(0.U.asTypeOf(new triggerBundle()))
+
   // update mode
   val modeState = RegInit(VecInit(Seq.fill(modeNum)(0.U(1.W))))
   // val newmode = VecInit(0.U(log2Ceil(modeNum).W))
@@ -186,25 +198,16 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     ))
 
   // compress data
-  val recorder_compressed_tmp_data = Vec(modeNum, RegInit(0.U(512.W)))
+  val recorder_compressed_tmp_data = RegInit(VecInit(Seq.fill(modeNum)(0.U(512.W))))//Vec(modeNum, RegInit(0.U(512.W)))
   when(s1_valid) {
     for (i <- 0 until modeNum) {
-      for (j <- 0 until tpEntryMaxLen) {
+      for (j <- 0 until modeMaxLenList(i)) {
         recorder_compressed_tmp_data(i)((j+1)*modeOffsetList(i)-1, j*modeOffsetList(i))
       }
     }
   }
 
-  /* Recorder logic */
-  // TODO: compress data based on max delta
-  val recorder_idx = RegInit(0.U(6.W))
-  val recorder_data = Reg(Vec(tpEntryMaxLen, UInt(vaddrBits.W)))
-  val recorder_compressed_data = RegInit(0.U(512.W))
-  val recorder_mode = RegInit(0.U(log2Ceil(modeNum).W))
-  val record_data_in = train_s2.addr
-  val write_record = RegInit(false.B)
-  val write_record_way = RegInit(0.U.asTypeOf(way_s2))
-  val write_record_trigger = RegInit(0.U.asTypeOf(new triggerBundle()))
+
 
   when(dorecord_s2) {
     recorder_idx := recorder_idx + 1.U
