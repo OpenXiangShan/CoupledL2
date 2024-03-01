@@ -75,7 +75,7 @@ class tpMetaEntry(implicit p:Parameters) extends TPBundle {
 
 class tpDataEntry(implicit p:Parameters) extends TPBundle {
   val rawData = Vec(tpEntryMaxLen, UInt(vaddrBits.W))
-  // val compressedData = UInt(512.W)
+  val compressedData = UInt(512.W)
   val mode = UInt(log2Ceil(modeNum).W)
 }
 
@@ -242,7 +242,10 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   val tpData_w_bits = Wire(new tpDataEntry())
   tpData_w_bits.rawData.zip(recorder_data).foreach(x => x._1 := x._2)
-  tpData_w_bits.mode := 0.U
+  tpData_w_bits.compressedData := recorder_compressed_data
+  tpData_w_bits.mode := recorder_mode
+  dontTouch(tpData_w_bits.compressedData)
+  dontTouch(tpData_w_bits.mode)
 
   val tpMeta_w_bits = Wire(new tpMetaEntry())
   tpMeta_w_bits.valid := true.B
