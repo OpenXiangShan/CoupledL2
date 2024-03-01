@@ -22,8 +22,26 @@ import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink.TLPermissions._
 import utility.MemReqSource
-import coupledL2.HasChannelBits
+import coupledL2.{HasChannelBits, DirResult}
 
 class MSHRStatus(implicit p: Parameters) extends TL2CHIL2Bundle with HasChannelBits {
   // TODO
+}
+
+class FSMState(implicit p: Parameters) extends TL2CHIL2Bundle {
+  // TODO
+}
+class TaskBundle(implicit p: Parameters) extends coupledL2.TaskBundle with HasCHIMsgParameters {
+  val tgtID = UInt(TGTID_WIDTH.W)
+  val srcID = UInt(SRCID_WIDTH.W)
+  val txnID = UInt(TXNID_WIDTH.W)
+  val dbID = UInt(DBID_WIDTH.W)
+  override val opcode = UInt(OPCODE_WIDTH.W)
+  val pCrdType = UInt(PCRDTYPE_WIDTH.W)
+}
+
+class MSHRRequest(implicit p: Parameters) extends TL2CHIL2Bundle {
+  val dirResult = new DirResult()
+  val state = new FSMState()
+  val task = new TaskBundle()
 }

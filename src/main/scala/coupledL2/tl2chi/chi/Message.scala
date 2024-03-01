@@ -20,6 +20,7 @@ package coupledL2.tl2chi
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
+import scala.math.max
 
 object CHICohStates {
   val width = 3
@@ -91,6 +92,7 @@ trait HasCHIMsgParameters {
   def RSP_OPCODE_WIDTH = CHIOpcode.RSPOpcodes.width
   def SNP_OPCODE_WIDTH = CHIOpcode.SNPOpcodes.width
   def DAT_OPCODE_WIDTH = CHIOpcode.DATOpcodes.width
+  def OPCODE_WIDTH = max(REQ_OPCODE_WIDTH, max(RSP_OPCODE_WIDTH, max(SNP_OPCODE_WIDTH, DAT_OPCODE_WIDTH)))
 
   def ADDR_WIDTH = 44 // TODO: To be confirmed
   def SIZE_WIDTH = 3

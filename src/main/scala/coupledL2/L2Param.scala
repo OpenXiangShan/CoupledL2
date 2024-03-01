@@ -105,4 +105,6 @@ case object EdgeOutKey extends Field[TLEdgeOut]
 
 case object BankBitsKey extends Field[Int]
 
+case object L2NBanksKey extends Field[Int]
+
 case object SliceIdKey extends Field[Int]
