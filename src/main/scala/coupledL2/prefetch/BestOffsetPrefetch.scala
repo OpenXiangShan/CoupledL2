@@ -34,6 +34,9 @@ case class BOPParameters(
   roundMax:       Int = 50,
   badScore:       Int = 2,
   tlbReplayCnt:   Int = 10,
+  dQEntries: Int = 16,
+  dQLatency: Int = 175,
+  dQMaxLatency: Int = 256,
   offsetList: Seq[Int] = Seq(
     -256, -250, -243, -240, -225, -216, -200,
     -192, -180, -162, -160, -150, -144, -135, -128,
@@ -62,6 +65,7 @@ trait HasBOPParams extends HasPrefetcherHelper {
   // train address space: virtual or physical
   val virtualTrain = bopParams.virtualTrain
   val fullAddrBits = if(virtualTrain) fullVAddrBits else fullAddressBits
+  val noOffsetAddrBits = fullAddrBits - offsetBits
   override val REQ_FILTER_SIZE = 16
 
   // Best offset
@@ -77,6 +81,9 @@ trait HasBOPParams extends HasPrefetcherHelper {
   val initScore = bopParams.badScore + 1
   val offsetList = bopParams.offsetList
   val inflightEntries = bopParams.inflightEntries
+  val dQEntries = bopParams.dQEntries
+  val dQLatency = bopParams.dQLatency
+  val dQMaxLatency = bopParams.dQMaxLatency
 
   val scores = offsetList.length
   val offsetWidth = log2Up(offsetList.max) + 2 // -32 <= offset <= 31
@@ -539,7 +546,7 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
   XSPerfAccumulate(cacheParams, "entry_pf_fire", PopCount(pf_fired))
   
   /*
-  val enTalbe = Constantin.createRecord("isWriteL2BopTable", 1.U)
+  val enTalbe = WireInit(Constantin.createRecord("isWriteL2BopTable", 1.U))
   val l2BOPTable = ChiselDB. createTable("L2BOPTable", new BopReqBufferEntry, basicDB = true)
   for (i <- 0 until REQ_FILTER_SIZE){
     when(alloc(i)){
@@ -555,6 +562,69 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
   */
 }
 
+class DelayQueue(name: String = "")(implicit p: Parameters) extends  BOPModule{
+  val io = IO(new Bundle(){
+    val in = Flipped(DecoupledIO(UInt(noOffsetAddrBits.W)))
+    val out = DecoupledIO(UInt(fullAddrBits.W))
+    // only record `fullAddrBits - offsetBits` bits
+    // out.bits = Cat(record, 0.U(offsetBits))
+  })
+
+  /* Setting */
+  val IdxWidth = log2Up(dQEntries)
+  val LatencyWidth = log2Up(dQMaxLatency)
+  class Entry extends Bundle{
+    val addrNoOffset = UInt(noOffsetAddrBits.W)
+    val cnt = UInt(LatencyWidth.W)
+  }
+  val queue = RegInit(VecInit(Seq.fill(dQEntries)(0.U.asTypeOf(new Entry))))
+  val valids = RegInit(VecInit(Seq.fill(dQEntries)(false.B)))
+  val head = RegInit(0.U(IdxWidth.W))
+  val tail = RegInit(0.U(IdxWidth.W))
+  val empty = head === tail && !valids.last
+  val full = head === tail && valids.last
+  val outValid = !empty && !queue(head).cnt.orR && valids(head)
+
+  /* In & Out */
+  var setDqLatency = WireInit(Constantin.createRecord("DelayQueueLatency"+name, dQLatency.U))
+  when(io.in.valid && !full) {
+    // if queue is full, we drop the new request
+    queue(tail).addrNoOffset := io.in.bits
+    queue(tail).cnt := setDqLatency // dQLatency.U
+    valids(tail) := true.B
+    tail := tail + 1.U
+
+    /*
+    // if full, drop the old request
+    when(full && !io.deq.ready) {
+      head := head + 1.U
+    }
+    */
+  }
+  when(outValid && io.out.ready) {
+    valids(head) := false.B
+    head := head + 1.U
+  }
+  io.in.ready := true.B
+  io.out.valid := outValid
+  io.out.bits := Cat(queue(head).addrNoOffset, 0.U(offsetBits.W))
+
+  /* Update */
+  for(i <- 0 until dQEntries){
+    when(queue(i).cnt.orR){
+      queue(i).cnt := queue(i).cnt - 1.U
+    }
+  }
+
+  /* Perf */
+  XSPerfAccumulate(cacheParams, "full", full)
+  XSPerfAccumulate(cacheParams, "empty", empty)
+  XSPerfAccumulate(cacheParams, "entryNumber", PopCount(valids.asUInt))
+  XSPerfAccumulate(cacheParams, "inNumber", io.in.valid)
+  XSPerfAccumulate(cacheParams, "outNumber", io.out.valid)
+
+}
+
 class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   val io = IO(new Bundle() {
     val train = Flipped(DecoupledIO(new PrefetchTrain))
@@ -564,6 +634,7 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     val resp = Flipped(DecoupledIO(new PrefetchResp))
   })
 
+  val delayQueue = Module(new DelayQueue("vbop"))
   val rrTable = Module(new RecentRequestTable)
   val scoreTable = Module(new OffsetScoreTable("vbop"))
 
@@ -577,14 +648,16 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   // NOTE: vaddr from l1 to l2 has no offset bits
   val s0_reqVaddr = io.train.bits.vaddr.getOrElse(0.U)
   val s0_oldFullAddr = if(virtualTrain) Cat(io.train.bits.vaddr.getOrElse(0.U), 0.U(offsetBits.W)) else io.train.bits.addr
+  val s0_oldFullAddrNoOff = s0_oldFullAddr(s0_oldFullAddr.getWidth-1, offsetBits)
   val s0_newFullAddr = s0_oldFullAddr + signedExtend((prefetchOffset << offsetBits), fullAddrBits)
   val s0_crossPage = getPPN(s0_newFullAddr) =/= getPPN(s0_oldFullAddr) // unequal tags
   val respFullAddr = if(virtualTrain) Cat(io.resp.bits.vaddr.getOrElse(0.U), 0.U(offsetBits.W))
                  else io.resp.bits.addr - signedExtend((prefetchOffset << offsetBits), fullAddrBits)
 
   rrTable.io.r <> scoreTable.io.test
-  rrTable.io.w.valid := io.resp.valid
-  rrTable.io.w.bits := respFullAddr
+  rrTable.io.w <> delayQueue.io.out
+  delayQueue.io.in.valid := io.train.valid
+  delayQueue.io.in.bits := s0_oldFullAddrNoOff
   scoreTable.io.req.valid := io.train.valid
   scoreTable.io.req.bits := s0_oldFullAddr
 
@@ -618,7 +691,7 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   }
 
   // out value
-  io.train.ready := scoreTable.io.req.ready && s0_ready
+  io.train.ready := delayQueue.io.in.ready && scoreTable.io.req.ready && s0_ready
   io.resp.ready := rrTable.io.w.ready
   io.tlb_req.resp.ready := true.B
 
@@ -683,17 +756,20 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     val resp = Flipped(DecoupledIO(new PrefetchResp))
   })
 
+  val delayQueue = Module(new DelayQueue("pbop"))
   val rrTable = Module(new RecentRequestTable)
   val scoreTable = Module(new OffsetScoreTable("pbop"))
 
   val prefetchOffset = scoreTable.io.prefetchOffset
   val prefetchDisable = scoreTable.io.prefetchDisable
   val oldAddr = io.train.bits.addr
+  val oldAddrNoOff = oldAddr(oldAddr.getWidth-1, offsetBits)
   val newAddr = oldAddr + signedExtend((prefetchOffset << offsetBits), fullAddressBits)
 
   rrTable.io.r <> scoreTable.io.test
-  rrTable.io.w.valid := io.resp.valid
-  rrTable.io.w.bits := Cat(Cat(io.resp.bits.tag, io.resp.bits.set) - signedExtend(prefetchOffset, setBits + fullTagBits), 0.U(offsetBits.W))
+  rrTable.io.w <> delayQueue.io.out
+  delayQueue.io.in.valid := io.train.valid
+  delayQueue.io.in.bits := oldAddrNoOff
   scoreTable.io.req.valid := io.train.valid
   scoreTable.io.req.bits := oldAddr
 
@@ -715,7 +791,7 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   io.req.valid := req_valid
   io.req.bits := req
   io.req.bits.pfSource := MemReqSource.Prefetch2L2PBOP.id.U
-  io.train.ready := scoreTable.io.req.ready && (!req_valid || io.req.ready)
+  io.train.ready := delayQueue.io.in.ready && scoreTable.io.req.ready && (!req_valid || io.req.ready)
   io.resp.ready := rrTable.io.w.ready
 
   for (off <- offsetList) {
