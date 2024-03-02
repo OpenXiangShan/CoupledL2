@@ -100,9 +100,11 @@ class MSHR(implicit p: Parameters) extends L2Module {
 
   val promoteT_normal =  dirResult.hit && meta_no_client && meta.state === TIP
   val promoteT_L3     = !dirResult.hit && gotT
-  val promoteT_alias  =  dirResult.hit && req.aliasTask.getOrElse(false.B) && meta.state === TRUNK
+  val promoteT_alias  =  dirResult.hit && req.aliasTask.getOrElse(false.B) && (meta.state === TRUNK || meta.state === TIP)
   // under above circumstances, we grant T to L1 even if it wants B
   val req_promoteT = (req_acquire || req_get || req_prefetch) && (promoteT_normal || promoteT_L3 || promoteT_alias)
+
+  assert(!(req_valid && req_prefetch && dirResult.hit), "MSHR can not receive prefetch hit req")
 
   /* ======== Task allocation ======== */
   // Theoretically, data to be released is saved in ReleaseBuffer, so Acquire can be sent as soon as req enters mshr
@@ -164,6 +166,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_release.off := 0.U
     mp_release.alias.foreach(_ := 0.U)
     mp_release.vaddr.foreach(_ := req.vaddr.getOrElse(0.U))
+    mp_release.isKeyword.foreach(_ := false.B)
     // if dirty, we must ReleaseData
     // if accessed, we ReleaseData to keep the data in L3, for future access to be faster
     // [Access] TODO: consider use a counter
@@ -186,6 +189,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     // mp_release definitely read releaseBuf and refillBuf at ReqArb
     // and it needs to write refillData to DS, so useProbeData is set false according to DS.wdata logic
     mp_release.useProbeData := false.B
+    mp_release.mshrRetry := false.B
     mp_release.way := dirResult.way
     mp_release.fromL2pft.foreach(_ := false.B)
     mp_release.needHint.foreach(_ := false.B)
@@ -209,6 +213,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_probeack.off := req.off
     mp_probeack.alias.foreach(_ := 0.U)
     mp_probeack.vaddr.foreach(_ := req.vaddr.getOrElse(0.U))
+    mp_probeack.isKeyword.foreach(_ := false.B)
     mp_probeack.opcode := Mux(
       meta.dirty && isT(meta.state) || probeDirty || req.needProbeAckData,
       ProbeAckData,
@@ -230,6 +235,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_probeack.mshrId := io.id
     mp_probeack.aliasTask.foreach(_ := false.B)
     mp_probeack.useProbeData := true.B // write [probeAckData] to DS, if not probed toN
+    mp_probeack.mshrRetry := false.B
     mp_probeack.way := dirResult.way
     mp_probeack.fromL2pft.foreach(_ := false.B)
     mp_probeack.needHint.foreach(_ := false.B)
@@ -261,6 +267,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_probeack
   }
 
+
   val mergeA = RegInit(false.B)
   when(io.aMergeTask.valid) {
     mergeA := true.B
@@ -275,13 +282,14 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_grant.sourceId := req.sourceId
     mp_grant.alias.foreach(_ := 0.U)
     mp_grant.vaddr.foreach(_ := req.vaddr.getOrElse(0.U))
+    mp_grant.isKeyword.foreach(_ := req.isKeyword.getOrElse(false.B))
     mp_grant.opcode := odOpGen(req.opcode)
     mp_grant.param := Mux(
       req_get || req_prefetch,
       0.U, // Get -> AccessAckData
       MuxLookup( // Acquire -> Grant
         req.param,
-        req.param,
+        req.param)(
         Seq(
           NtoB -> Mux(req_promoteT, toT, toB),
           BtoT -> toT,
@@ -342,19 +350,23 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_grant.needHint.foreach(_ := false.B)
     mp_grant.replTask := !dirResult.hit // Get and Alias are hit that does not need replacement
     mp_grant.wayMask := 0.U(cacheParams.ways.W)
+    mp_grant.mshrRetry := !state.s_retry
     mp_grant.reqSource := 0.U(MemReqSource.reqSourceBits.W)
 
     // Add merge grant task for Acquire and late Prefetch
     mp_grant.mergeA := mergeA || io.aMergeTask.valid
     val merge_task_r = RegEnable(io.aMergeTask.bits, 0.U.asTypeOf(new TaskBundle), io.aMergeTask.valid)
     val merge_task = Mux(io.aMergeTask.valid, io.aMergeTask.bits, merge_task_r)
+    val merge_task_isKeyword = Mux(io.aMergeTask.valid, io.aMergeTask.bits.isKeyword.getOrElse(false.B), merge_task_r.isKeyword.getOrElse(false.B) )
+
     mp_grant.aMergeTask.off := merge_task.off
     mp_grant.aMergeTask.alias.foreach(_ := merge_task.alias.getOrElse(0.U))
     mp_grant.aMergeTask.vaddr.foreach(_ := merge_task.vaddr.getOrElse(0.U))
+    mp_grant.aMergeTask.isKeyword.foreach(_ := merge_task_isKeyword)
     mp_grant.aMergeTask.opcode := odOpGen(merge_task.opcode)
     mp_grant.aMergeTask.param := MuxLookup( // Acquire -> Grant
       merge_task.param,
-      merge_task.param,
+      merge_task.param)(
       Seq(
         NtoB -> Mux(req_promoteT, toT, toB),
         BtoT -> toT,
@@ -385,7 +397,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     )
   )
   io.tasks.mainpipe.bits.reqSource := req.reqSource
-
+  io.tasks.mainpipe.bits.isKeyword.foreach(_:= req.isKeyword.getOrElse(false.B))
   // io.tasks.prefetchTrain.foreach {
   //   train =>
   //     train.bits.tag := req.tag
@@ -405,6 +417,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   when (io.tasks.mainpipe.ready) {
     when (mp_grant_valid) {
       state.s_refill := true.B
+      state.s_retry := true.B
     }.elsewhen (mp_release_valid) {
       state.s_release := true.B
       meta.state := INVALID
@@ -459,6 +472,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val replResp = io.replResp.bits
   when (io.replResp.valid && replResp.retry) {
     state.s_refill := false.B
+    state.s_retry := false.B
+    dirResult.way := replResp.way
   }
   when (io.replResp.valid && !replResp.retry) {
     state.w_replResp := true.B
@@ -522,7 +537,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.msInfo.bits.way := dirResult.way
   io.msInfo.bits.reqTag := req.tag
   io.msInfo.bits.needRelease := !state.w_releaseack
-  io.msInfo.bits.releaseNotSent := releaseNotSent
+  // if releaseTask is already in mainpipe_s1/s2, while a refillTask in mainpipe_s3, the refill should also be blocked and retry
+  io.msInfo.bits.blockRefill := releaseNotSent || RegNext(releaseNotSent,false.B) || RegNext(RegNext(releaseNotSent,false.B),false.B)
   io.msInfo.bits.dirHit := dirResult.hit
   io.msInfo.bits.metaTag := dirResult.tag
   io.msInfo.bits.willFree := will_free

@@ -41,6 +41,7 @@ class SinkB(implicit p: Parameters) extends L2Module {
     task.off := parseAddress(b.address)._3
     task.alias.foreach(_ := 0.U)
     task.vaddr.foreach(_ := 0.U)
+    task.isKeyword.foreach(_ := false.B)
     task.opcode := b.opcode
     task.param := b.param
     task.size := b.size
@@ -51,6 +52,7 @@ class SinkB(implicit p: Parameters) extends L2Module {
     task.mshrId := 0.U(mshrBits.W)
     task.aliasTask.foreach(_ := false.B)
     task.useProbeData := false.B
+    task.mshrRetry := false.B
     task.fromL2pft.foreach(_ := false.B)
     task.needHint.foreach(_ := false.B)
     task.dirty := false.B
@@ -75,7 +77,7 @@ class SinkB(implicit p: Parameters) extends L2Module {
 
   // unable to accept incoming B req because same-addr as some MSHR replaced block and cannot nest
   val replaceConflictMask = VecInit(io.msInfo.map(s =>
-    s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && s.bits.releaseNotSent
+    s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && s.bits.blockRefill
   )).asUInt
   val replaceConflict = replaceConflictMask.orR
 

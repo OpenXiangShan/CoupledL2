@@ -53,6 +53,10 @@ trait HasCoupledL2Parameters {
   val vaddrBitsOpt = if(cacheParams.clientCaches.isEmpty) None
                   else cacheParams.clientCaches.head.vaddrBitsOpt
   val fullVAddrBits = vaddrBitsOpt.getOrElse(0) + offsetBits
+  // from L1 load miss cache require
+  val isKeywordBitsOpt = if(cacheParams.clientCaches.isEmpty) None
+                  else cacheParams.clientCaches.head.isKeywordBitsOpt
+         
   val pageOffsetBits = log2Ceil(cacheParams.pageBytes)
 
   val bufBlocks = 4 // hold data that flows in MainPipe
@@ -236,7 +240,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
       case BankBitsKey => bankBits
     }
     val io = IO(new Bundle {
-      val l2_hint = Valid(UInt(32.W))
+      val l2_hint = ValidIO(new L2ToL1Hint())
       val l2_tlb_req = new L2ToL1TlbIO(nRespDups = 1)(l2TlbParams)
       val debugTopDown = new Bundle {
         val robTrueCommit = Input(UInt(64.W))
@@ -405,7 +409,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
 
         slice
     }
-    val l1Hint_arb = Module(new Arbiter(new L2ToL1Hint(), slices.size))
+    val l1Hint_arb = Module(new Arbiter(new L2ToL1Hint, slices.size))
     val slices_l1Hint = slices.zipWithIndex.map {
       case (s, i) => Pipeline(s.io.l1Hint, depth = 1, pipe = false, name = Some(s"l1Hint_buffer_$i"))
     }
@@ -416,7 +420,8 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
                                                           .unzip
     l1Hint_arb.io.in <> VecInit(slices_l1Hint)
     io.l2_hint.valid := l1Hint_arb.io.out.fire
-    io.l2_hint.bits := l1Hint_arb.io.out.bits.sourceId - Mux1H(client_sourceId_match_oh, client_sourceId_start)
+    io.l2_hint.bits.sourceId := l1Hint_arb.io.out.bits.sourceId - Mux1H(client_sourceId_match_oh, client_sourceId_start)
+    io.l2_hint.bits.isKeyword := l1Hint_arb.io.out.bits.isKeyword
     // always ready for grant hint
     l1Hint_arb.io.out.ready := true.B
 

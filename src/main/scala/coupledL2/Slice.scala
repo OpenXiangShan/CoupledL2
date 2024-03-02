@@ -52,7 +52,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
   val sinkC = Module(new SinkC)
   val sourceC = Module(new SourceC)
   val grantBuf = Module(new GrantBuffer)
-  val refillBuf = Module(new MSHRBuffer(wPorts = 3))
+  val refillBuf = Module(new MSHRBuffer(wPorts = 2))
   val releaseBuf = Module(new MSHRBuffer(wPorts = 3))
 
   val prbq = Module(new ProbeQueue())
@@ -79,6 +79,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
   reqArb.io.fromMSHRCtl := mshrCtl.io.toReqArb
   reqArb.io.fromMainPipe := mainPipe.io.toReqArb
   reqArb.io.fromGrantBuffer := grantBuf.io.toReqArb
+  reqArb.io.fromSourceC := sourceC.io.toReqArb
 
   mshrCtl.io.fromReqArb.status_s1 := reqArb.io.status_s1
   mshrCtl.io.resps.sinkC := sinkC.io.resp
@@ -99,13 +100,12 @@ class Slice()(implicit p: Parameters) extends L2Module {
 
   mainPipe.io.toMSHRCtl <> mshrCtl.io.fromMainPipe
   mainPipe.io.fromMSHRCtl <> mshrCtl.io.toMainPipe
-  mainPipe.io.bufRead <> sinkC.io.bufRead
   mainPipe.io.bufResp <> sinkC.io.bufResp
   mainPipe.io.toDS.rdata_s5 := dataStorage.io.rdata
-  mainPipe.io.refillBufResp_s3.valid := RegNext(refillBuf.io.r.valid && refillBuf.io.r.ready, false.B)
-  mainPipe.io.refillBufResp_s3.bits := refillBuf.io.r.data
-  mainPipe.io.releaseBufResp_s3.valid := RegNext(releaseBuf.io.r.valid && releaseBuf.io.r.ready, false.B)
-  mainPipe.io.releaseBufResp_s3.bits := releaseBuf.io.r.data
+  mainPipe.io.refillBufResp_s3.valid := RegNext(refillBuf.io.r.valid, false.B)
+  mainPipe.io.refillBufResp_s3.bits := refillBuf.io.resp.data
+  mainPipe.io.releaseBufResp_s3.valid := RegNext(releaseBuf.io.r.valid, false.B)
+  mainPipe.io.releaseBufResp_s3.bits := releaseBuf.io.resp.data
   mainPipe.io.fromReqArb.status_s1 := reqArb.io.status_s1
   mainPipe.io.grantBufferHint := grantBuf.io.l1Hint
   mainPipe.io.globalCounter := grantBuf.io.globalCounter
@@ -114,28 +114,28 @@ class Slice()(implicit p: Parameters) extends L2Module {
   // priority: nested-ReleaseData / probeAckData [NEW] > mainPipe DS rdata [OLD]
   // 0/1 might happen at the same cycle with 2
   releaseBuf.io.w(0).valid := mshrCtl.io.nestedwbDataId.valid
-  releaseBuf.io.w(0).beat_sel := Fill(beatSize, 1.U(1.W))
-  releaseBuf.io.w(0).data := mainPipe.io.nestedwbData
-  releaseBuf.io.w(0).id := mshrCtl.io.nestedwbDataId.bits
+  releaseBuf.io.w(0).bits.data := mainPipe.io.nestedwbData
+  releaseBuf.io.w(0).bits.id := mshrCtl.io.nestedwbDataId.bits
   releaseBuf.io.w(1) <> sinkC.io.releaseBufWrite
-  releaseBuf.io.w(1).id := mshrCtl.io.releaseBufWriteId
+  releaseBuf.io.w(1).bits.id := mshrCtl.io.releaseBufWriteId
   releaseBuf.io.w(2) <> mainPipe.io.releaseBufWrite
 
   refillBuf.io.w(0) <> refillUnit.io.refillBufWrite
   refillBuf.io.w(1) <> sinkC.io.refillBufWrite
-  refillBuf.io.w(2) <> mainPipe.io.refillBufWrite
 
   sourceC.io.in <> mainPipe.io.toSourceC
+  sourceC.io.pipeStatusVec := reqArb.io.status_vec ++ mainPipe.io.status_vec_toC
 
   io.l1Hint.valid := mainPipe.io.l1Hint.valid
-  io.l1Hint.bits := mainPipe.io.l1Hint.bits
+  io.l1Hint.bits.sourceId := mainPipe.io.l1Hint.bits.sourceId
+  io.l1Hint.bits.isKeyword := mainPipe.io.l1Hint.bits.isKeyword
   mshrCtl.io.grantStatus := grantBuf.io.grantStatus
 
   grantBuf.io.d_task <> mainPipe.io.toSourceD
   grantBuf.io.fromReqArb.status_s1 := reqArb.io.status_s1
-  grantBuf.io.pipeStatusVec := reqArb.io.status_vec ++ mainPipe.io.status_vec
+  grantBuf.io.pipeStatusVec := reqArb.io.status_vec ++ mainPipe.io.status_vec_toD
   mshrCtl.io.pipeStatusVec(0) := reqArb.io.status_vec(1) // s2 status
-  mshrCtl.io.pipeStatusVec(1) := mainPipe.io.status_vec(0) // s3 status
+  mshrCtl.io.pipeStatusVec(1) := mainPipe.io.status_vec_toD(0) // s3 status
 
   io.prefetch.foreach {
     p =>
