@@ -141,12 +141,12 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       e.valid && sameAddr(in, e.task)
     )
   ).asUInt
-  val dup        = io.in.valid && isPrefetch && dupMask.orR
+  val dup        = isPrefetch && dupMask.orR
 
   //!! TODO: we can also remove those that duplicate with mainPipe
 
   /* ======== Alloc ======== */
-  io.in.ready   := !full || doFlow || mergeA
+  io.in.ready   := !full || doFlow || mergeA || dup
 
   val insertIdx = PriorityEncoder(buffer.map(!_.valid))
   val alloc = !full && io.in.valid && !doFlow && !dup && !mergeA
@@ -208,7 +208,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       //    so when waitMP(1) is 0 and waitMP(0) is 1, desired cycleCnt reached
       //    we recalculate waitMS and occWays, overriding old mask
       //    to take new allocated MSHR into account
-      e.waitMP := e.waitMP >> 1.U
+      e.waitMP := e.waitMP >> 1
       when(e.waitMP(1) === 0.U && e.waitMP(0) === 1.U) {
         waitMSUpdate  := conflictMask(e.task)
       }
@@ -223,7 +223,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       val s1B_Block = io.s1Entrance.valid && io.s1Entrance.bits.set === e.task.set
       val s1_Block  = s1A_Block || s1B_Block
       when(s1_Block) {
-        e.waitMP := e.waitMP | "b0100".U // fired-req at s2 next cycle
+        e.waitMP := (e.waitMP >> 1) | "b0100".U // fired-req at s2 next cycle
       }
 
       // update info
@@ -252,7 +252,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
   // add XSPerf to see how many cycles the req is held in Buffer
   if(cacheParams.enablePerf) {
-    XSPerfAccumulate(cacheParams, "drop_prefetch", dup)
+    XSPerfAccumulate(cacheParams, "drop_prefetch", io.in.valid && dup)
     if(flow){
       XSPerfAccumulate(cacheParams, "req_buffer_flow", io.in.valid && doFlow)
     }
