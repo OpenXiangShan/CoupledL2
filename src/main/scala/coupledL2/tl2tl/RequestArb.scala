@@ -32,7 +32,7 @@ class RequestArb(implicit p: Parameters) extends TL2TLL2Module {
     val sinkA    = Flipped(DecoupledIO(new TaskBundle))
     val ATag     = Input(UInt(tagBits.W)) // !TODO: very dirty, consider optimize structure
     val ASet     = Input(UInt(setBits.W)) // To pass A entrance status to MP for blockA-info of ReqBuf
-    val s1Entrance = ValidIO(new TL2TLL2Bundle {
+    val s1Entrance = ValidIO(new L2Bundle {
       val set = UInt(setBits.W)
     })
 

@@ -22,7 +22,7 @@ import chisel3.util._
 import freechips.rocketchip.tilelink._
 import javax.xml.transform.OutputKeys
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.{L2ToL1Hint, DirResult, Directory, DataStorage, MSHRBuffer, MSHRBufWrite, SinkA, SinkC, GrantBuffer}
+import coupledL2.{L2ToL1Hint, DirResult, Directory, DataStorage, MSHRBuffer, MSHRBufWrite, SinkA, SinkC, GrantBuffer, RequestBuffer}
 import coupledL2.prefetch.PrefetchIO
 
 class Slice()(implicit p: Parameters) extends TL2CHIL2Module {
@@ -88,6 +88,9 @@ class Slice()(implicit p: Parameters) extends TL2CHIL2Module {
   reqArb.io.fromGrantBuffer := grantBuf.io.toReqArb
 
   reqBuf.io.in <> sinkA.io.task
+  reqBuf.io.mshrInfo := mshrCtl.io.msInfo
+  reqBuf.io.mainPipeBlock := mainPipe.io.toReqBuf
+  reqBuf.io.s1Entrance := reqArb.io.s1Entrance
 
   mainPipe.io.taskFromArb_s2 := reqArb.io.taskToPipe_s2
   mainPipe.io.taskInfo_s1 := reqArb.io.taskInfo_s1

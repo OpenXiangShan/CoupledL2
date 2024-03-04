@@ -28,6 +28,9 @@ import coupledL2._
 class RequestArb(implicit p: Parameters) extends TL2CHIL2Module {
   val io = IO(new Bundle() {
     val sinkA = Flipped(DecoupledIO(new TaskBundle()))
+    val s1Entrance = ValidIO(new TL2CHIL2Bundle {
+      val set = UInt(setBits.W)
+    })
     val rxsnp = Flipped(DecoupledIO(new TaskBundle()))
     val sinkC = Flipped(DecoupledIO(new TaskBundle()))
     val mshrTask = Flipped(DecoupledIO(new TaskBundle()))
