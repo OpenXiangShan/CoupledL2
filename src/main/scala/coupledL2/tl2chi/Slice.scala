@@ -80,7 +80,7 @@ class Slice()(implicit p: Parameters) extends TL2CHIL2Module {
   dataStorage.io.wdata := mainPipe.io.toDS.wdata_s3
 
   reqArb.io.sinkA <> reqBuf.io.out
-  reqArb.io.rxsnp <> rxsnp.io.in
+  reqArb.io.rxsnp <> rxsnp.io.task
   reqArb.io.sinkC <> sinkC.io.task
   reqArb.io.mshrTask <> mshrCtl.io.mshrTask
   reqArb.io.fromMSHRCtl := mshrCtl.io.toReqArb
@@ -172,7 +172,7 @@ class Slice()(implicit p: Parameters) extends TL2CHIL2Module {
   io.out.tx.req <> txreq.io.out
   io.out.tx.dat <> txdat.io.out
   io.out.tx.rsp <> txrsp.io.out
-  rxsnp.io.out <> io.out.rx.snp
+  rxsnp.io.rxsnp <> io.out.rx.snp
   rxdat.io.out <> io.out.rx.dat
   rxrsp.io.out <> io.out.rx.rsp
 }
