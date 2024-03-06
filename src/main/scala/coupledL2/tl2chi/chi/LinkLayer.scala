@@ -85,18 +85,21 @@ class PortIO extends Bundle with HasPortSwitch {
 
 class LCredit2Decoupled[T <: Data](
   gen: T,
-  lCreditNum: Int = 4 // the number of L-Credits that a receiver can provide
+  lcreditNum: Int = 4 // the number of L-Credits that a receiver can provide
 ) extends Module {
   val io = IO(new Bundle() {
     val in = Flipped(ChannelIO(gen.cloneType))
     val out = DecoupledIO(gen.cloneType)
   })
 
-  val queue = Module(new Queue(gen.cloneType, entries = lCreditNum, pipe = true, flow = false))
+  require(lcreditNum <= 15)
 
-  val lcreditsWidth = log2Up(lCreditNum) + 1
+  val queue = Module(new Queue(gen.cloneType, entries = lcreditNum, pipe = true, flow = false))
+
+  val lcreditsWidth = log2Up(lcreditNum) + 1
   val lcreditInflight = RegInit(0.U(lcreditsWidth.W))
-  val lcreditPool = RegInit(lCreditNum.U(lcreditsWidth.W))
+  val lcreditPool = RegInit(lcreditNum.U(lcreditsWidth.W))
+  assert(lcreditInflight + lcreditPool === lcreditNum.U)
   val lcreditOut = lcreditPool > queue.io.count
 
   val ready = lcreditInflight =/= 0.U
@@ -127,10 +130,45 @@ object LCredit2Decoupled {
   def apply[T <: Data](
     left: ChannelIO[T],
     right: DecoupledIO[T],
-    lCreditNum: Int = 4
+    lcreditNum: Int = 4
   ): Unit = {
-    val mod = Module(new LCredit2Decoupled(left.bits.cloneType, lCreditNum))
+    val mod = Module(new LCredit2Decoupled(left.bits.cloneType, lcreditNum))
     mod.io.in <> left
-    mod.io.out <> right
+    right <> mod.io.out
+  }
+}
+
+class Decoupled2LCredit[T <: Data](gen: T) extends Module {
+  val io = IO(new Bundle() {
+    val in = Flipped(DecoupledIO(gen.cloneType))
+    val out = ChannelIO(gen.cloneType)
+  })
+
+  val lcreditsMax = 15 // The maximum number of L-Credits that a receiver can provide is 15.
+
+  val lcreditPool = RegInit(0.U(log2Up(lcreditsMax).W))
+
+  when (io.out.lcrdv) {
+    when (!io.in.fire()) {
+      lcreditPool := lcreditPool + 1.U
+      assert(lcreditPool + 1.U =/= 0.U, "L-Credit pool overflow")
+    }
+  }.otherwise {
+    when (io.in.fire()) {
+      lcreditPool := lcreditPool - 1.U
+    }
+  }
+
+  io.in.ready := lcreditPool =/= 0.U
+  io.out.flitpend := false.B // TODO
+  io.out.flitv := io.in.fire()
+  io.out.flit := io.in.bits
+}
+
+object Decoupled2LCredit {
+  def apply[T <: Data](left: DecoupledIO[T], right: ChannelIO[T]): Unit = {
+    val mod = Module(new Decoupled2LCredit(left.bits.cloneType))
+    mod.io.in <> left
+    right <> mod.io.out
   }
 }
