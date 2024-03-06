@@ -31,13 +31,18 @@ class MSHRStatus(implicit p: Parameters) extends TL2CHIL2Bundle with HasChannelB
 class FSMState(implicit p: Parameters) extends TL2CHIL2Bundle {
   // TODO
 }
-class TaskBundle(implicit p: Parameters) extends coupledL2.TaskBundle with HasCHIMsgParameters {
+
+trait HasCHITaskFields extends HasCHIMsgParameters { Bundle =>
   val tgtID = UInt(TGTID_WIDTH.W)
   val srcID = UInt(SRCID_WIDTH.W)
   val txnID = UInt(TXNID_WIDTH.W)
   val dbID = UInt(DBID_WIDTH.W)
-  override val opcode = UInt(OPCODE_WIDTH.W)
+  val opcode = UInt(OPCODE_WIDTH.W)
   val pCrdType = UInt(PCRDTYPE_WIDTH.W)
+}
+class TaskBundle(implicit p: Parameters) extends coupledL2.TaskBundle
+  with HasCHITaskFields {
+  override val opcode = UInt(OPCODE_WIDTH.W)
 }
 
 class MSHRRequest(implicit p: Parameters) extends TL2CHIL2Bundle {
