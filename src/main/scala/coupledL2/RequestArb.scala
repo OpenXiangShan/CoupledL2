@@ -15,7 +15,7 @@
  * *************************************************************************************
  */
 
-package coupledL2.tl2tl
+package coupledL2
 
 import chisel3._
 import chisel3.util._
@@ -23,10 +23,9 @@ import utility._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2._
 import coupledL2.utils.XSPerfAccumulate
 
-class RequestArb(implicit p: Parameters) extends TL2TLL2Module {
+class RequestArb(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     /* receive incoming tasks */
     val sinkA    = Flipped(DecoupledIO(new TaskBundle))

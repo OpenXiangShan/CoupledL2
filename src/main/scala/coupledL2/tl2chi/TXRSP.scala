@@ -21,6 +21,7 @@ import chisel3._
 import chisel3.util._
 import utility._
 import org.chipsalliance.cde.config.Parameters
+import coupledL2.TaskBundle
 
 class TXRSP(implicit p: Parameters) extends TL2CHIL2Module {
   val io = IO(new Bundle() {

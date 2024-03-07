@@ -22,6 +22,7 @@ import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink.TLPermissions._
 import utility.MemReqSource
+import tl2chi.HasCHIMsgParameters
 
 abstract class L2Module(implicit val p: Parameters) extends Module with HasCoupledL2Parameters
 abstract class L2Bundle(implicit val p: Parameters) extends Bundle with HasCoupledL2Parameters
@@ -52,7 +53,9 @@ class MergeTaskBundle(implicit p: Parameters) extends L2Bundle {
 
 // We generate a Task for every TL request
 // this is the info that flows in Mainpipe
-class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
+class TaskBundle(implicit p: Parameters) extends L2Bundle
+  with HasChannelBits
+  with HasCHIMsgParameters {
   val set = UInt(setBits.W)
   val tag = UInt(tagBits.W)
   val off = UInt(offsetBits.W)
@@ -104,6 +107,14 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   // for merged MSHR tasks(Acquire & late Prefetch)
   val mergeA = Bool()
   val aMergeTask = new MergeTaskBundle()
+
+  // CHI
+  val tgtID = chiOpt.map(_ => UInt(TGTID_WIDTH.W))
+  val srcID = chiOpt.map(_ => UInt(SRCID_WIDTH.W))
+  val txnID = chiOpt.map(_ => UInt(TXNID_WIDTH.W))
+  val dbID = chiOpt.map(_ => UInt(DBID_WIDTH.W))
+  val chiOpcode = chiOpt.map(_ => UInt(OPCODE_WIDTH.W))
+  val pCrdType = chiOpt.map(_ => UInt(PCRDTYPE_WIDTH.W))
 }
 
 class PipeStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits

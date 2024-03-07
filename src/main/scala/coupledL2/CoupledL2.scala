@@ -49,6 +49,7 @@ trait HasCoupledL2Parameters {
   val offsetBits = log2Ceil(blockBytes)
   val beatBits = offsetBits - log2Ceil(beatBytes)
   val stateBits = MetaData.stateBits
+  val chiOpt = if (enableCHI) Some(true) else None
   val aliasBitsOpt = if(cacheParams.clientCaches.isEmpty) None
                   else cacheParams.clientCaches.head.aliasBitsOpt
   val vaddrBitsOpt = if(cacheParams.clientCaches.isEmpty) None

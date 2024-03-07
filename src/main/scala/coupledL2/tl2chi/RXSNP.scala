@@ -22,7 +22,7 @@ import chisel3.util._
 import utility._
 import org.chipsalliance.cde.config.Parameters
 import scala.collection.View.Fill
-import coupledL2.{MSHRInfo, MetaEntry, MergeTaskBundle}
+import coupledL2.{TaskBundle, MSHRInfo, MetaEntry, MergeTaskBundle}
 
 class RXSNP(
   lCreditNum: Int = 4 // the number of L-Credits that a receiver can provide
@@ -87,12 +87,12 @@ class RXSNP(
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
 
-    task.tgtID := 0.U // TODO
-    task.srcID := snp.srcID
-    task.txnID := snp.txnID
-    task.dbID := 0.U
-    task.opcode := snp.opcode
-    task.pCrdType := 0.U
+    task.tgtID.foreach(_ := 0.U) // TODO
+    task.srcID.foreach(_ := snp.srcID)
+    task.txnID.foreach(_ := snp.txnID)
+    task.dbID.foreach(_ := 0.U)
+    task.chiOpcode.foreach(_ := snp.opcode)
+    task.pCrdType.foreach(_ := 0.U)
 
     task
   }
