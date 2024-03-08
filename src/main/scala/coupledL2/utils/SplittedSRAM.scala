@@ -92,7 +92,7 @@ class SplittedSRAM[T <: Data]
 
 
   // aggregate data first, then way, finally use set to select
-  io.r.resp.data := Mux1H(ren_vec,
+  val rdata = Mux1H(ren_vec,
     (0 until setSplit).map(i =>
       (0 until waySplit).map(j =>
         (0 until innerWays).map(w =>
@@ -101,4 +101,6 @@ class SplittedSRAM[T <: Data]
       ).flatten
     ).flatten
   )
+
+  io.r.resp.data := VecInit(Seq.fill(ways)(rdata.asTypeOf(gen)))
 }
