@@ -20,6 +20,7 @@ package coupledL2
 import chisel3._
 import chisel3.util._
 import coupledL2.utils.SRAMTemplate
+import coupledL2.utils.SplittedSRAM
 import utility.RegNextN
 import org.chipsalliance.cde.config.Parameters
 
@@ -47,10 +48,14 @@ class DataStorage(implicit p: Parameters) extends L2Module {
     val wdata = Input(new DSBlock)
   })
 
-  val array = Module(new SRAMTemplate(
+
+  val array = Module(new SplittedSRAM(
     gen = new DSBlock,
-    set = blocks,
-    way = 1,
+    sets = blocks,
+    ways = 1,
+    setSplit = 4,
+    waySplit = 1,
+    dataSplit = 2,
     singlePort = true
   ))
 
