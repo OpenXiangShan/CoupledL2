@@ -23,6 +23,7 @@ import org.chipsalliance.cde.config.Parameters
 import utility.{ChiselDB, Constantin, MemReqSource, SRAMTemplate}
 import coupledL2.HasCoupledL2Parameters
 import coupledL2.utils.{ReplacementPolicy, XSPerfAccumulate}
+import coupledL2.utils.{ReplacementPolicy, XSPerfAccumulate, SplittedSRAM}
 import huancun.{TPmetaReq, TPmetaResp}
 
 case class TPParameters(
@@ -122,7 +123,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   }
 
   val tpMetaTable = Module(
-    new SRAMTemplate(new tpMetaEntry(), set = tpTableNrSet, way = tpTableAssoc, shouldReset = false, singlePort = true)
+    new SplittedSRAM(new tpMetaEntry(), sets = tpTableNrSet, ways = tpTableAssoc, setSplit = 1, waySplit = 1, dataSplit = 3, shouldReset = false, singlePort = true)
   )
   val dataReadQueue = Module(new Queue(new TPmetaReq(), dataReadQueueDepth, pipe = false, flow = false))
   val dataWriteQueue = Module(new Queue(new TPmetaReq(), dataWriteQueueDepth, pipe = false, flow = false))
