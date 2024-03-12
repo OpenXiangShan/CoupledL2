@@ -67,7 +67,8 @@ class Slice()(implicit p: Parameters) extends TL2CHIL2Module {
   grantBuf.io.fromReqArb.status_s1 := reqArb.io.status_s1
   grantBuf.io.pipeStatusVec := reqArb.io.status_vec ++ mainPipe.io.status_vec_toD
 
-  txreq.io.in <> mshrCtl.io.toTXREQ
+  // txreq.io.in <> mshrCtl.io.toTXREQ
+  arb(in = Seq(mainPipe.io.toTXREQ, mshrCtl.io.toTXREQ), out = txreq.io.in, name = Some("txreq"))
   txdat.io.in <> mainPipe.io.toTXDAT
   txrsp.io.in <> mainPipe.io.toTXRSP
 

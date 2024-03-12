@@ -22,10 +22,10 @@ import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink.TLPermissions._
 import utility.MemReqSource
-import coupledL2.HasChannelBits
+import coupledL2.HasTLChannelBits
 
 // MSHR exposes signals to MSHRCtl
-class MSHRStatus(implicit p: Parameters) extends TL2TLL2Bundle with HasChannelBits {
+class MSHRStatus(implicit p: Parameters) extends TL2TLL2Bundle with HasTLChannelBits {
   val set         = UInt(setBits.W)
   val reqTag      = UInt(tagBits.W)
   val metaTag     = UInt(tagBits.W)

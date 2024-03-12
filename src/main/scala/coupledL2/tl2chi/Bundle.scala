@@ -22,12 +22,15 @@ import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink.TLPermissions._
 import utility.MemReqSource
-import coupledL2.{HasChannelBits, DirResult}
+import coupledL2.{HasTLChannelBits, DirResult}
 
-class MSHRStatus(implicit p: Parameters) extends TL2CHIL2Bundle with HasChannelBits {
-  // TODO
+trait HasCHIChannelBits { this: Bundle =>
+  val txChannel = UInt(3.W)
+  def toTXREQ = channel(0).asBool
+  def toTXRSP = channel(1).asBool
+  def toTXDAT = channel(2).asBool
 }
 
-class FSMState(implicit p: Parameters) extends TL2CHIL2Bundle {
+class MSHRStatus(implicit p: Parameters) extends TL2CHIL2Bundle with HasTLChannelBits {
   // TODO
 }
