@@ -22,7 +22,7 @@ import chisel3.util._
 import freechips.rocketchip.util.SetAssocLRU
 import coupledL2.utils._
 import utility.{ParallelPriorityMux, RegNextN}
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import coupledL2.prefetch.PfSource
 import freechips.rocketchip.tilelink.TLMessages._
 
@@ -107,7 +107,7 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   val io = IO(new Bundle() {
     val read = Flipped(DecoupledIO(new DirRead))
-    val resp = Output(new DirResult)
+    val resp = ValidIO(new DirResult)
     val metaWReq = Flipped(ValidIO(new MetaWrite))
     val tagWReq = Flipped(ValidIO(new TagWrite))
     val replResp = ValidIO(new ReplacerResult)
@@ -188,10 +188,11 @@ class Directory(implicit p: Parameters) extends L2Module {
   val chosenWay = Mux(inv, invalidWay, replaceWay)
   // if chosenWay not in wayMask, then choose a way in wayMask
   // TODO: consider remove this is not used for better timing
+  // for retry bug fixing: if the chosenway cause retry last time, choose another way
   val finalWay = Mux(
     req_s3.wayMask(chosenWay),
     chosenWay,
-    PriorityEncoder(req_s3.wayMask) // can be optimized
+    PriorityEncoder(req_s3.wayMask)
   )
 
   val hit_s3 = Cat(hitVec).orR
@@ -201,13 +202,14 @@ class Directory(implicit p: Parameters) extends L2Module {
   val set_s3 = req_s3.set
   val replacerInfo_s3 = req_s3.replacerInfo
 
-  io.resp.hit   := hit_s3
-  io.resp.way   := way_s3
-  io.resp.meta  := meta_s3
-  io.resp.tag   := tag_s3
-  io.resp.set   := set_s3
-  io.resp.error := false.B  // depends on ECC
-  io.resp.replacerInfo := replacerInfo_s3
+  io.resp.valid      := reqValid_s3
+  io.resp.bits.hit   := hit_s3
+  io.resp.bits.way   := way_s3
+  io.resp.bits.meta  := meta_s3
+  io.resp.bits.tag   := tag_s3
+  io.resp.bits.set   := set_s3
+  io.resp.bits.error := false.B  // depends on ECC
+  io.resp.bits.replacerInfo := replacerInfo_s3
 
   dontTouch(io)
   dontTouch(metaArray.io)
@@ -217,13 +219,16 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   /* ====== refill retry ====== */
   // if refill chooses a way that has not finished writing its refillData back to DS (in MSHR Release),
-  // or the way is using by Alias-Acquire,
-  // we cancel the Grant and let it retry
-  // TODO: timing?
-  val wayConflictMask = VecInit(io.msInfo.map(s =>
-    s.valid && s.bits.set === req_s3.set && (s.bits.releaseNotSent || s.bits.dirHit) && s.bits.way === finalWay
+  // or the way is using by Alias-Acquire (hit), we cancel the Grant and LET IT RETRY
+
+  // comparing set is done at Stage2 for better timing
+  val wayConflictPartI  = RegEnable(VecInit(io.msInfo.map(s =>
+    s.valid && s.bits.set === req_s2.set)).asUInt, refillReqValid_s2)
+
+  val wayConflictPartII = VecInit(io.msInfo.map(s =>
+    (s.bits.blockRefill || s.bits.dirHit) && s.bits.way === finalWay
   )).asUInt
-  val refillRetry = wayConflictMask.orR
+  val refillRetry = (wayConflictPartI & wayConflictPartII).orR
 
   /* ======!! Replacement logic !!====== */
   /* ====== Read, choose replaceWay ====== */

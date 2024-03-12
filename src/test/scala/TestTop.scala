@@ -2,7 +2,7 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import chipsalliance.rocketchip.config._
+import org.chipsalliance.cde.config._
 import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
@@ -16,7 +16,7 @@ import scala.collection.mutable.ArrayBuffer
 class TestTop_L2()(implicit p: Parameters) extends LazyModule {
 
   /*   L1D
-   *    | 
+   *    |
    *   L2
    */
 
@@ -322,7 +322,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
   val l1d_nodes = (0 until nrL2).map(i => createClientNode(s"l1d$i", 32))
   val master_nodes = l1d_nodes
 
-  val l2_nodes = (0 until nrL2).map(i => LazyModule(new CoupledL2()(new Config((_, _, _) => {
+  val coupledL2 = (0 until nrL2).map(i => LazyModule(new CoupledL2()(new Config((_, _, _) => {
     case L2ParamKey => L2Param(
       name = s"l2$i",
       ways = 4,
@@ -331,7 +331,8 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
       echoField = Seq(DirtyField()),
       hartIds = Seq{i}
     )
-  }))).node)
+  }))))
+  val l2_nodes = coupledL2.map(_.node)
 
   val l3 = LazyModule(new HuanCun()(new Config((_, _, _) => {
     case HCCacheParamsKey => HCCacheParameters(
@@ -369,6 +370,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
       TLFragmenter(32, 64) :=*
       TLCacheCork() :=*
       TLDelayer(delayFactor) :=*
+      TLLogger(s"MEM_L3", true) :=*
       l3.node :=* xbar
 
   lazy val module = new LazyModuleImp(this) {
@@ -382,6 +384,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
     dontTouch(clean)
     dontTouch(dump)
 
+    coupledL2.foreach(_.module.io.debugTopDown := DontCare)
     master_nodes.zipWithIndex.foreach {
       case (node, i) =>
         node.makeIOs()(ValName(s"master_port_$i"))

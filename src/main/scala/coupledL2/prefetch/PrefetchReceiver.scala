@@ -17,7 +17,7 @@
 
 package coupledL2.prefetch
 
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import chisel3._
 import chisel3.util._
 import freechips.rocketchip.tilelink._
@@ -31,6 +31,7 @@ case class PrefetchReceiverParams(n: Int = 32) extends PrefetchParameters {
   override val hasPrefetchBit:  Boolean = true
   override val hasPrefetchSrc:  Boolean = true
   override val inflightEntries: Int = n
+  val hasTPPrefetcher: Boolean = true
 }
 
 class PrefetchReceiver()(implicit p: Parameters) extends PrefetchModule {

@@ -1,7 +1,8 @@
 package coupledL2
 
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink.TLMessages._
+import freechips.rocketchip.tilelink.TLPermissions._
 import chisel3._
 import chisel3.util._
 import coupledL2.utils._
@@ -97,10 +98,6 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     s.valid && s.bits.isPrefetch && sameAddr(a, s.bits) && !s.bits.willFree &&
     a.fromA && (a.opcode === AcquireBlock || a.opcode === AcquirePerm)
   )).asUInt.orR
-  def mergeA_latepf(a: TaskBundle): Bool = VecInit(io.mshrInfo.map(s =>
-    s.valid && s.bits.isPrefetch && sameAddr(a, s.bits) && !s.bits.willFree && !s.bits.dirHit && !s.bits.s_refill &&
-    a.fromA && (a.opcode === AcquireBlock || a.opcode === AcquirePerm) && !s.bits.mergeA
-  )).asUInt.orR
 
   // count ways
 //  def countWaysOH(cond: (MSHRInfo => Bool)): UInt = {
@@ -120,7 +117,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   // incoming Acquire can be merged with late_pf MSHR block
   val mergeAMask = VecInit(io.mshrInfo.map(s =>
     s.valid && s.bits.isPrefetch && sameAddr(in, s.bits) && !s.bits.willFree && !s.bits.dirHit && !s.bits.s_refill &&
-      in.fromA && (in.opcode === AcquireBlock || in.opcode === AcquirePerm) && !s.bits.mergeA
+      in.fromA && (in.opcode === AcquireBlock || in.opcode === AcquirePerm) && !s.bits.mergeA && !(in.param === NtoT && s.bits.param === NtoB)
   )).asUInt
   val mergeA = mergeAMask.orR
   val mergeAId = OHToUInt(mergeAMask)
@@ -132,7 +129,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   val canFlow = flow.B && !full && !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR
   val doFlow  = canFlow && io.out.ready
   io.hasLatePF := latePrefetch(in) && io.in.valid && !sameAddr(in, RegNext(in))
-  io.hasMergeA := mergeA_latepf(in) && io.in.valid && !sameAddr(in, RegNext(in))
+  io.hasMergeA := mergeA && io.in.valid && !sameAddr(in, RegNext(in))
 
   //  val depMask    = buffer.map(e => e.valid && sameAddr(io.in.bits, e.task))
   // remove duplicate prefetch if same-addr A req in MSHR or ReqBuf

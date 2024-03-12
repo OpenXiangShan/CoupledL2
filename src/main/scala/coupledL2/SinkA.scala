@@ -19,12 +19,13 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLHints._
 import coupledL2.prefetch.PrefetchReq
 import coupledL2.utils.XSPerfAccumulate
+import huancun.{AliasKey, PrefetchKey}
 import utility.MemReqSource
 
 class SinkA(implicit p: Parameters) extends L2Module {
@@ -34,11 +35,6 @@ class SinkA(implicit p: Parameters) extends L2Module {
     val task = DecoupledIO(new TaskBundle)
   })
   assert(!(io.a.valid && io.a.bits.opcode(2, 1) === 0.U), "no Put")
-
-  val commonReq = Wire(io.task.cloneType)
-  val prefetchReq = prefetchOpt.map(_ => Wire(io.task.cloneType))
-
-  io.a.ready := commonReq.ready
 
   def fromTLAtoTaskBundle(a: TLBundleA): TaskBundle = {
     val task = Wire(new TaskBundle)
@@ -57,6 +53,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.mshrId := 0.U(mshrBits.W)
     task.aliasTask.foreach(_ := false.B)
     task.useProbeData := false.B
+    task.mshrRetry := false.B
     task.fromL2pft.foreach(_ := false.B)
     task.needHint.foreach(_ := a.user.lift(PrefetchKey).getOrElse(false.B))
     task.dirty := false.B
@@ -69,6 +66,8 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.reqSource := a.user.lift(utility.ReqSourceKey).getOrElse(MemReqSource.NoWhere.id.U)
     task.replTask := false.B
     task.vaddr.foreach(_ := a.user.lift(VaddrKey).getOrElse(0.U))
+    //miss acquire keyword
+    task.isKeyword.foreach(_ := a.echo.lift(IsKeywordKey).getOrElse(false.B)) 
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
     task
@@ -91,6 +90,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.mshrId := 0.U(mshrBits.W)
     task.aliasTask.foreach(_ := false.B)
     task.useProbeData := false.B
+    task.mshrRetry := false.B
     task.fromL2pft.foreach(_ := req.isBOP)
     task.needHint.foreach(_ := false.B)
     task.dirty := false.B
@@ -103,19 +103,25 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.reqSource := req.pfSource
     task.replTask := false.B
     task.vaddr.foreach(_ := 0.U)
+    task.isKeyword.foreach(_ := false.B)
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
     task
   }
-  commonReq.valid := io.a.valid
-  commonReq.bits := fromTLAtoTaskBundle(io.a.bits)
   if (prefetchOpt.nonEmpty) {
-    prefetchReq.get.valid := io.prefetchReq.get.valid
-    prefetchReq.get.bits := fromPrefetchReqtoTaskBundle(io.prefetchReq.get.bits)
-    io.prefetchReq.get.ready := prefetchReq.get.ready
-    fastArb(Seq(commonReq, prefetchReq.get), io.task)
+    io.task.valid := io.a.valid || io.prefetchReq.get.valid
+    io.task.bits := Mux(
+      io.a.valid,
+      fromTLAtoTaskBundle(io.a.bits),
+      fromPrefetchReqtoTaskBundle(io.prefetchReq.get.bits
+    ))
+
+    io.a.ready := io.task.ready
+    io.prefetchReq.get.ready := io.task.ready && !io.a.valid
   } else {
-    io.task <> commonReq
+    io.task.valid := io.a.valid
+    io.task.bits := fromTLAtoTaskBundle(io.a.bits)
+    io.a.ready := io.task.ready
   }
 
   // Performance counters

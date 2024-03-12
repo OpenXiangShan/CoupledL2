@@ -19,7 +19,7 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink.TLPermissions._
 import utility.MemReqSource
 
@@ -42,6 +42,8 @@ trait HasChannelBits { this: Bundle =>
 class MergeTaskBundle(implicit p: Parameters) extends L2Bundle {
   val off = UInt(offsetBits.W)
   val alias = aliasBitsOpt.map(_ => UInt(aliasBitsOpt.get.W)) // color bits in cache-alias issue
+  val vaddr = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W)) // vaddr passed by client cache, for prefetcher train
+  val isKeyword = isKeywordBitsOpt.map(_ => Bool())
   val opcode = UInt(3.W) // type of the task operation
   val param = UInt(3.W)
   val sourceId = UInt(sourceIdBits.W) // tilelink sourceID
@@ -56,6 +58,8 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val off = UInt(offsetBits.W)
   val alias = aliasBitsOpt.map(_ => UInt(aliasBitsOpt.get.W)) // color bits in cache-alias issue
   val vaddr = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W)) // vaddr passed by client cache
+  // from L1 load miss require 
+  val isKeyword = isKeywordBitsOpt.map(_ => Bool())
   val opcode = UInt(3.W)                  // type of the task operation
   val param = UInt(3.W)
   val size = UInt(msgSizeBits.W)
@@ -68,6 +72,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val mshrId = UInt(mshrBits.W)           // mshr entry index (used only in mshr-task)
   val aliasTask = aliasBitsOpt.map(_ => Bool()) // Anti-alias
   val useProbeData = Bool()               // data source, true for ReleaseBuf and false for RefillBuf
+  val mshrRetry = Bool()                  // is retry task for mshr conflict
 
   // For Intent
   val fromL2pft = prefetchOpt.map(_ => Bool()) // Is the prefetch req from L2(BOP) or from L1 prefetch?
@@ -162,23 +167,23 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle {
 
   // to block Acquire for to-be-replaced data until Release done (indicated by ReleaseAck received)
   val needRelease = Bool()
-  // MSHR needs to send ReleaseTask but has not yet sent it
+  // MSHR needs to send ReleaseTask but has not in mainpipe s3, RefillTask in MP need to block
   // PS: ReleaseTask is also responsible for writing refillData to DS when A miss
-  val releaseNotSent = Bool()
+  val blockRefill = Bool()
 
   val metaTag = UInt(tagBits.W)
   val dirHit = Bool()
 
-  // decide whether can nest B (req same-addr) or merge B with release (meta same-addr)
+  // decide whether can nest B (req same-addr)
   val nestB = Bool()
-  val mergeB = Bool()
 
   // to drop duplicate prefetch reqs
   val isAcqOrPrefetch = Bool()
   val isPrefetch = Bool()
-  
+
   // whether the mshr_task already in mainpipe
   val s_refill = Bool()
+  val param = UInt(3.W)
   val mergeA = Bool() // whether the mshr already merge an acquire(avoid alias merge)
 }
 
@@ -206,9 +211,9 @@ class FSMState(implicit p: Parameters) extends L2Bundle {
   val s_release = Bool()  // release downwards
   val s_probeack = Bool() // respond probeack downwards
   val s_refill = Bool()   // respond grant upwards
-  val s_merge_probeack = Bool() // respond probeack downwards, Probe merge into A-replacement-Release
   // val s_grantack = Bool() // respond grantack downwards, moved to GrantBuf
   // val s_triggerprefetch = prefetchOpt.map(_ => Bool())
+  val s_retry = Bool()    // need retry when conflict
 
   // wait
   val w_rprobeackfirst = Bool()
@@ -267,4 +272,5 @@ class PrefetchRecv extends Bundle {
 // custom l2 - l1 interface
 class L2ToL1Hint(implicit p: Parameters) extends Bundle {
   val sourceId = UInt(32.W)    // tilelink sourceID
+  val isKeyword = Bool()       // miss entry keyword
 }

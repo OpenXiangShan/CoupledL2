@@ -21,13 +21,9 @@ import chisel3._
 import chisel3.util._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import coupledL2.utils.XSPerfAccumulate
 import utility.MemReqSource
-
-class PipeBufferRead(implicit p: Parameters) extends L2Bundle {
-  val bufIdx = UInt(bufIdxBits.W)
-}
 
 class PipeBufferResp(implicit p: Parameters) extends L2Bundle {
   val data = Vec(beatSize, UInt((beatBytes * 8).W))
@@ -42,13 +38,12 @@ class SinkC(implicit p: Parameters) extends L2Module {
     val c = Flipped(DecoupledIO(new TLBundleC(edgeIn.bundle)))
     val task = DecoupledIO(new TaskBundle) // Release/ReleaseData
     val resp = Output(new RespBundle)
-    val releaseBufWrite = Flipped(new MSHRBufWrite)
-    val bufRead = Input(ValidIO(new PipeBufferRead))
+    val releaseBufWrite = ValidIO(new MSHRBufWrite)
     val bufResp = Output(new PipeBufferResp)
-    val refillBufWrite = Flipped(new MSHRBufWrite)
+    val refillBufWrite = ValidIO(new MSHRBufWrite)
     val msInfo = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo)))
   })
-  
+
   val (first, last, _, beat) = edgeIn.count(io.c)
   val isRelease = io.c.bits.opcode(1)
   val hasData = io.c.bits.opcode(0)
@@ -66,6 +61,8 @@ class SinkC(implicit p: Parameters) extends L2Module {
   val full = bufValids.andR
   val noSpace = full && hasData
   val nextPtr = PriorityEncoder(~bufValids)
+  // since DCache uses TLArbiter for Release & ProbeAck, we assume two beats of the block will be sent continuously
+  // in other words, different addresses will not interleave
   val nextPtrReg = RegEnable(nextPtr, 0.U.asTypeOf(nextPtr), io.c.fire && isRelease && first && hasData)
 
   def toTaskBundle(c: TLBundleC): TaskBundle = {
@@ -76,6 +73,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
     task.off := parseAddress(c.address)._3
     task.alias.foreach(_ := 0.U)
     task.vaddr.foreach(_ := 0.U)
+    task.isKeyword.foreach(_ := false.B)
     task.opcode := c.opcode
     task.param := c.param
     task.size := c.size
@@ -86,6 +84,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
     task.mshrId := 0.U(mshrBits.W)
     task.aliasTask.foreach(_ := false.B)
     task.useProbeData := false.B
+    task.mshrRetry := false.B
     task.fromL2pft.foreach(_ := false.B)
     task.needHint.foreach(_ := false.B)
     task.dirty := false.B
@@ -115,7 +114,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
     }
   }
 
-  when (io.c.fire && isRelease && last && (!io.task.ready || taskArb.io.out.valid)) {
+  when (io.c.fire && isRelease && last) {
     when (hasData) {
       taskValids(nextPtrReg) := true.B
       taskBuf(nextPtrReg) := toTaskBundle(io.c.bits)
@@ -137,14 +136,10 @@ class SinkC(implicit p: Parameters) extends L2Module {
       }
   }
 
-  when (io.bufRead.valid) {
-    beatValids(io.bufRead.bits.bufIdx).foreach(_ := false.B)
-  }
-
   val cValid = io.c.valid && isRelease && last
-  io.task.valid := cValid || taskArb.io.out.valid
-  io.task.bits := Mux(taskArb.io.out.valid, taskArb.io.out.bits, toTaskBundle(io.c.bits))
-  io.task.bits.bufIdx := Mux(taskArb.io.out.valid, taskArb.io.out.bits.bufIdx, nextPtrReg)
+  io.task.valid := taskArb.io.out.valid
+  io.task.bits := taskArb.io.out.bits
+  io.task.bits.bufIdx := taskArb.io.out.bits.bufIdx
 
   io.resp.valid := io.c.valid && (first || last) && !isRelease
   io.resp.mshrId := 0.U // DontCare
@@ -156,14 +151,17 @@ class SinkC(implicit p: Parameters) extends L2Module {
   io.resp.respInfo.dirty := io.c.bits.opcode(0)
   io.resp.respInfo.isHit := io.c.bits.opcode(0)
 
-  io.releaseBufWrite.valid := io.c.valid && io.c.bits.opcode === ProbeAckData
-  io.releaseBufWrite.beat_sel := UIntToOH(beat)
-  io.releaseBufWrite.data.data := Fill(beatSize, io.c.bits.data)
-  io.releaseBufWrite.id := 0.U(mshrBits.W) // id is given by MSHRCtl by comparing address to the MSHRs
+  // keep the first beat of ProbeAckData
+  val probeAckDataBuf = RegEnable(io.c.bits.data, 0.U((beatBytes * 8).W),
+    io.c.valid && io.c.bits.opcode === ProbeAckData && first)
 
-  // C-Release writing new data to refillBuffer, for repl-Release to write to DS
+  io.releaseBufWrite.valid := io.c.valid && io.c.bits.opcode === ProbeAckData && last
+  io.releaseBufWrite.bits.id := 0.U(mshrBits.W) // id is given by MSHRCtl by comparing address to the MSHRs
+  io.releaseBufWrite.bits.data.data := Cat(io.c.bits.data, probeAckDataBuf)
+
+  // C-Release, with new data, comes before repl-Release writes old refill data back to DS
   val newdataMask = VecInit(io.msInfo.map(s =>
-    s.valid && s.bits.set === io.task.bits.set && s.bits.reqTag === io.task.bits.tag && s.bits.releaseNotSent
+    s.valid && s.bits.set === io.task.bits.set && s.bits.reqTag === io.task.bits.tag && s.bits.blockRefill
   )).asUInt
 
   // we must wait until 2nd beat written into databuf(idx) before we can read it
@@ -172,15 +170,17 @@ class SinkC(implicit p: Parameters) extends L2Module {
 
   // since what we are trying to prevent is that C-Release comes first and MSHR-Release comes later
   // we can make sure this refillBufWrite can be read by MSHR-Release
-  // TODO: this is rarely triggered, consider just blocking?
+  // TODO: this is rarely triggered, consider just blocking? but blocking may affect timing of SinkC-Directory
   io.refillBufWrite.valid := RegNext(io.task.fire && io.task.bits.opcode === ReleaseData && newdataMask.orR, false.B)
-  io.refillBufWrite.beat_sel := Fill(beatSize, 1.U(1.W))
-  io.refillBufWrite.id := RegNext(OHToUInt(newdataMask))
-  io.refillBufWrite.data.data := dataBuf(RegNext(io.task.bits.bufIdx)).asUInt
+  io.refillBufWrite.bits.id := RegNext(OHToUInt(newdataMask))
+  io.refillBufWrite.bits.data.data := dataBuf(RegNext(io.task.bits.bufIdx)).asUInt
 
-  io.c.ready := !isRelease || !first || !full || !hasData && io.task.ready && !taskArb.io.out.valid
+  io.c.ready := !isRelease || !first || !full
 
-  io.bufResp.data := dataBuf(io.bufRead.bits.bufIdx)
+  io.bufResp.data := RegNext(RegEnable(dataBuf(io.task.bits.bufIdx), io.task.fire))
+  when(RegNext(io.task.fire)) {
+    beatValids(io.task.bits.bufIdx).foreach(_ := false.B)
+  }
 
   // Performance counters
   val stall = io.c.valid && isRelease && !io.c.ready

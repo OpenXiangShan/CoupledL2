@@ -20,7 +20,7 @@ package coupledL2
 import chisel3._
 import chisel3.util._
 import utility._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.prefetch.PrefetchTrain
@@ -69,7 +69,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       val sinkD = new RespBundle
       val sourceC = new RespBundle
     })
-    
+
     val releaseBufWriteId = Output(UInt(mshrBits.W))
 
     /* nested writeback */
@@ -84,7 +84,6 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     /* to SinkB, to merge nested B req */
     val msInfo = Vec(mshrsAll, ValidIO(new MSHRInfo))
     val aMergeTask = Flipped(ValidIO(new AMergeTask))
-    val bMergeTask = Flipped(ValidIO(new BMergeTask))
 
     /* refill read replacer result */
     val replResp = Flipped(ValidIO(new ReplacerResult))
@@ -116,6 +115,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       m.io.id := i.U
       m.io.alloc.valid := selectedMSHROH(i) && io.fromMainPipe.mshr_alloc_s3.valid
       m.io.alloc.bits := io.fromMainPipe.mshr_alloc_s3.bits
+      m.io.alloc.bits.task.isKeyword.foreach(_:= io.fromMainPipe.mshr_alloc_s3.bits.task.isKeyword.getOrElse(false.B))
 
       m.io.resps.sink_c.valid := io.resps.sinkC.valid && resp_sinkC_match_vec(i)
       m.io.resps.sink_c.bits := io.resps.sinkC.respInfo
@@ -130,8 +130,6 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       m.io.nestedwb := io.nestedwb
       m.io.aMergeTask.valid := io.aMergeTask.valid && io.aMergeTask.bits.id === i.U
       m.io.aMergeTask.bits := io.aMergeTask.bits.task
-      m.io.bMergeTask.valid := io.bMergeTask.valid && io.bMergeTask.bits.id === i.U
-      m.io.bMergeTask.bits := io.bMergeTask.bits
   }
 
   io.toReqArb.blockC_s1 := false.B
@@ -184,7 +182,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   //   _ =>
   //     XSPerfAccumulate(cacheParams, "prefetch_trains", io.prefetchTrain.get.fire)
   // }
-  
+
   if (cacheParams.enablePerf) {
     val start = 0
     val stop = 100
