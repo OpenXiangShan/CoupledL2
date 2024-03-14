@@ -279,17 +279,20 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val recorder_data = RegInit(VecInit(Seq.fill(tpEntryMaxLen)(0.U(fullAddressBits.W))))
   val recorder_compressed_data = RegInit(0.U(512.W))
   val recorder_mode = RegInit(0.U(log2Ceil(modeNum).W))
+  val recorder_trigger = RegInit(0.U(train_s2.addr.getWidth.W))
   val record_data_in = train_s2.addr
   require(record_data_in.getWidth == fullAddressBits)
   val write_record = RegInit(false.B)
   val write_record_trigger = RegInit(0.U.asTypeOf(new triggerBundle()))
+
+  dontTouch(record_data_in)
 
   // update mode
   val modeState = RegInit(VecInit(Seq.fill(modeNum)(0.U(1.W))))
   // val newmode = VecInit(0.U(log2Ceil(modeNum).W))
   for (i <- 0 until (modeNum - 1)) {
     when(s1_valid) {
-      modeState(i) := cutOffset(write_record_trigger.vaddr, modeOffsetList(i)) === cutOffset(trainVaddr_s1, modeOffsetList(i))
+      modeState(i) := cutOffset(recorder_trigger, modeOffsetList(i)) === cutOffset(trainVaddr_s1, modeOffsetList(i))
     }
   }
   val newmode = Mux(modeState(0) === 1.U, 0.U,
@@ -306,18 +309,30 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val recorder_compressed_tmp_data1 = RegInit(VecInit(Seq.fill(modeMaxLenList(1))(0.U(modeOffsetList(1).W))))
   val recorder_compressed_tmp_data2 = RegInit(VecInit(Seq.fill(modeMaxLenList(2))(0.U(modeOffsetList(2).W))))
   val recorder_compressed_tmp_data3 = RegInit(VecInit(Seq.fill(modeMaxLenList(3))(0.U(modeOffsetList(3).W))))
-  when(s1_valid) {
-    for (i <- 0 until scala.math.min(modeMaxLenList(0), tpParams.inflightEntries)  - 1) {
-      recorder_compressed_tmp_data0(i) := recorder_data(i)(modeOffsetList(0) - 1, 0)
+  val recorder_compressed_idx0 = RegInit(0.U(log2Ceil(modeMaxLenList(0)).W))
+  val recorder_compressed_idx1 = RegInit(0.U(log2Ceil(modeMaxLenList(1)).W))
+  val recorder_compressed_idx2 = RegInit(0.U(log2Ceil(modeMaxLenList(2)).W))
+  val recorder_compressed_idx3 = RegInit(0.U(log2Ceil(modeMaxLenList(3)).W))
+  when(dorecord_s2) {
+    recorder_compressed_idx0 := recorder_compressed_idx0 + 1.U
+    recorder_compressed_tmp_data0(recorder_compressed_idx0) := record_data_in(modeOffsetList(0) - 1, 0) >> 6.U
+    when(recorder_compressed_idx0 === modeMaxLenList(0).asUInt - 1.U) {
+      recorder_compressed_idx0 := 0.U
     }
-    for (i <- 0 until scala.math.min(modeMaxLenList(1), tpParams.inflightEntries) - 1) {
-      recorder_compressed_tmp_data1(i) := recorder_data(i)(modeOffsetList(1) - 1, 0)
+    recorder_compressed_idx1 := recorder_compressed_idx1 + 1.U
+    recorder_compressed_tmp_data1(recorder_compressed_idx1) := record_data_in(modeOffsetList(1) - 1, 0) >> 6.U
+    when(recorder_compressed_idx1 === modeMaxLenList(1).asUInt - 1.U) {
+      recorder_compressed_idx1 := 0.U
     }
-    for (i <- 0 until scala.math.min(modeMaxLenList(2), tpParams.inflightEntries) - 1) {
-      recorder_compressed_tmp_data2(i) := recorder_data(i)(modeOffsetList(2) - 1, 0)
+    recorder_compressed_idx2 := recorder_compressed_idx2 + 1.U
+    recorder_compressed_tmp_data2(recorder_compressed_idx2) := record_data_in(modeOffsetList(2) - 1, 0) >> 6.U
+    when(recorder_compressed_idx2 === modeMaxLenList(2).asUInt - 1.U) {
+      recorder_compressed_idx2 := 0.U
     }
-    for (i <- 0 until scala.math.min(modeMaxLenList(3), tpParams.inflightEntries) - 1) {
-      recorder_compressed_tmp_data3(i) := recorder_data(i)(modeOffsetList(3) - 1, 0)
+    recorder_compressed_idx3 := recorder_compressed_idx3 + 1.U
+    recorder_compressed_tmp_data3(recorder_compressed_idx3) := record_data_in(modeOffsetList(3) - 1, 0) >> 6.U
+    when(recorder_compressed_idx3 === modeMaxLenList(3).asUInt - 1.U) {
+      recorder_compressed_idx3 := 0.U
     }
   }
   dontTouch(recorder_compressed_tmp_data)
@@ -345,9 +360,13 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
       write_record := true.B
       recorder_idx := 0.U
       recorder_mode := 0.U
+      recorder_trigger := 0.U
       write_record_trigger := triggerQueue.io.deq.bits
       triggerQueue.io.deq.ready := true.B
       assert(triggerQueue.io.deq.valid)
+    }
+    when(recorder_idx === 0.U) {
+      recorder_trigger := record_data_in
     }
   }
   dontTouch(recorder_mode)
