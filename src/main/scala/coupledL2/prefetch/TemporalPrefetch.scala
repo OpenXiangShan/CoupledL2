@@ -26,38 +26,34 @@ import coupledL2.utils.{ReplacementPolicy, XSPerfAccumulate}
 import huancun.{TPmetaReq, TPmetaResp}
 
 case class TPParameters(
-    tpTableEntries: Int = 16384,
-    tpTableAssoc: Int = 16,
-    vaddrBits: Int = 39,
-    blockOffBits: Int = 6,
-// <<<<<<< HEAD
-    tpQueueDepth: Int = 4,
-    throttleCycles: Int = 4,
-    modeOffsetList: Seq[Int] = Seq(
-      //0, 20, 21, 23, 26, 29, 33, 39
-      20, 23, 29, 39
-    ),
-    modeMaxLenList: Seq[Int] = Seq(
-      //34, 31, 28, 24, 21, 18, 15, 10
-      //34, 25, 24, 22, 19, 17, 15, 13
-      25, 22, 17, 13
-    ),
-    modeNum: Int = 4,
-    replacementPolicy: String = "random",
-// =======
-    dataReadQueueDepth: Int = 8,
-    dataWriteQueueDepth: Int = 4,
-    tpDataQueueDepth: Int = 8,
-    triggerQueueDepth: Int = 4,
-    // throttleCycles: Int = 4, // unused yet
-    // replacementPolicy: String = "random",
-    debug: Boolean = false
-
-    ) extends PrefetchParameters {
-// >>>>>>> origin/master
+     tpTableEntries: Int = 16384,
+     tpTableAssoc: Int = 16,
+     vaddrBits: Int = 39,
+     blockOffBits: Int = 6,
+     dataReadQueueDepth: Int = 8,
+     dataWriteQueueDepth: Int = 4,
+     tpDataQueueDepth: Int = 8,
+     triggerQueueDepth: Int = 4,
+     throttleCycles: Int = 4,  // unused yet
+     modeOffsetList: Seq[Int] = Seq(
+       //0, 20, 21, 23, 26, 29, 33, 39
+       //20, 23, 29, 39
+       11, 14, 20, 30
+     ),
+     modeMaxLenList: Seq[Int] = Seq(
+       //34, 31, 28, 24, 21, 18, 15, 10
+       //34, 25, 24, 22, 19, 17, 15, 13
+       //25, 22, 17, 13
+      45, 35, 24, 16
+     ),
+     modeNum: Int = 4,
+     replacementPolicy: String = "random",
+     debug: Boolean = false
+  ) extends PrefetchParameters {
   override val hasPrefetchBit:  Boolean = true
   override val hasPrefetchSrc:  Boolean = true
   override val inflightEntries: Int = 16
+//  override val inflightEntries: Int = 26
 }
 
 trait HasTPParams extends HasCoupledL2Parameters {
@@ -70,21 +66,15 @@ trait HasTPParams extends HasCoupledL2Parameters {
   val debug = tpParams.debug
   val vaddrBits = tpParams.vaddrBits
   val blockOffBits = tpParams.blockOffBits
-//<<<<<<< HEAD
-  val tpQueueDepth = tpParams.tpQueueDepth
-  val tpThrottleCycles = tpParams.throttleCycles
-  val modeOffsetList = tpParams.modeOffsetList
-  val modeMaxLenList = tpParams.modeMaxLenList
-  val modeNum = tpParams.modeNum
-  require(tpThrottleCycles > 0, "tpThrottleCycles must be greater than 0")
-//=======
   val dataReadQueueDepth = tpParams.dataReadQueueDepth
   val dataWriteQueueDepth = tpParams.dataWriteQueueDepth
   val tpDataQueueDepth = tpParams.tpDataQueueDepth
   val triggerQueueDepth = tpParams.triggerQueueDepth
-//  val tpThrottleCycles = tpParams.throttleCycles
-//  require(tpThrottleCycles > 0, "tpThrottleCycles must be greater than 0")
-//>>>>>>> origin/master
+  val modeOffsetList = tpParams.modeOffsetList
+  val modeMaxLenList = tpParams.modeMaxLenList
+  val modeNum = tpParams.modeNum
+  //  val tpThrottleCycles = tpParams.throttleCycles
+  //  require(tpThrottleCycles > 0, "tpThrottleCycles must be greater than 0")
 }
 
 abstract class TPBundle(implicit val p: Parameters) extends Bundle with HasTPParams
@@ -96,16 +86,11 @@ class tpMetaEntry(implicit p:Parameters) extends TPBundle {
 }
 
 class tpDataEntry(implicit p:Parameters) extends TPBundle {
-//<<<<<<< HEAD
-//  val rawData = Vec(tpEntryMaxLen, UInt(vaddrBits.W))
+  val rawData = Vec(tpEntryMaxLen, UInt(fullAddressBits.W))
   val compressedData = UInt(512.W)
   val mode = UInt(log2Ceil(modeNum).W)
   val trigger = new triggerBundle()
-//=======
-  val rawData = Vec(tpEntryMaxLen, UInt(fullAddressBits.W))
   // val rawData_debug = Vec(tpEntryMaxLen, UInt(vaddrBits.W))
-  // TODO: val compressedData = UInt(512.W)
-//>>>>>>> origin/master
 }
 
 class triggerBundle(implicit p: Parameters) extends TPBundle {
@@ -146,17 +131,16 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     (x(x.getWidth-1, tpTableSetBits), x(tpTableSetBits-1, 0))
   }
 
-//<<<<<<< HEAD
   def cutOffset(addr: UInt, offset: Int): UInt = {
-    addr(addr.getWidth-1, offset - 1)
-//=======
+    addr(addr.getWidth - 1, offset - 1)
+  }
+
   def parsePaddr(x: UInt): (UInt, UInt) = {
     (x(x.getWidth-1, tpTableSetBits+blockOffBits), x(tpTableSetBits+blockOffBits-1, blockOffBits))
   }
 
   def recoverVaddr(x: UInt): UInt = {
     (x << 6.U).asUInt
-//>>>>>>> origin/master
   }
 
   val tpMetaTable = Module(
@@ -258,6 +242,8 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   dataReadQueue.io.enq.bits.wmode := false.B
   dataReadQueue.io.enq.bits.rawData := DontCare
   dataReadQueue.io.enq.bits.hartid := hartid.U
+  dataReadQueue.io.enq.bits.compressedData := DontCare
+  dataReadQueue.io.enq.bits.mode := DontCare
 
 
   /* Async Stage: try to fetch or write tpData */
@@ -278,20 +264,21 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   tpDataQueue.io.enq.valid := io.tpmeta_port.resp.valid && io.tpmeta_port.resp.bits.hartid === hartid.U
   tpDataQueue.io.enq.bits.rawData := io.tpmeta_port.resp.bits.rawData
+  // TODO: issue compress data
+  tpDataQueue.io.enq.bits.trigger := 0.U.asTypeOf(new triggerBundle())
+  tpDataQueue.io.enq.bits.mode := io.tpmeta_port.resp.bits.mode
+  tpDataQueue.io.enq.bits.compressedData := io.tpmeta_port.resp.bits.compressedData
   assert(tpDataQueue.io.enq.ready === true.B) // tpDataQueue is never full
 
 
   /* Recorder logic TODO: compress data based on max delta */
 
   val recorder_idx = RegInit(0.U(6.W))
-//<<<<<<< HEAD
-  //val recorder_data = Reg(Vec(tpEntryMaxLen, UInt(vaddrBits.W)))
+  // val recorder_data = Reg(Vec(tpEntryMaxLen, UInt(fullAddressBits.W)))
+  // val recorder_data_debug = Reg(Vec(tpEntryMaxLen, UInt(vaddrBits.W)))
+  val recorder_data = RegInit(VecInit(Seq.fill(tpEntryMaxLen)(0.U(fullAddressBits.W))))
   val recorder_compressed_data = RegInit(0.U(512.W))
   val recorder_mode = RegInit(0.U(log2Ceil(modeNum).W))
-//=======
-  val recorder_data = Reg(Vec(tpEntryMaxLen, UInt(fullAddressBits.W)))
-  // val recorder_data_debug = Reg(Vec(tpEntryMaxLen, UInt(vaddrBits.W)))
-//>>>>>>> origin/master
   val record_data_in = train_s2.addr
   require(record_data_in.getWidth == fullAddressBits)
   val write_record = RegInit(false.B)
@@ -300,15 +287,17 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   // update mode
   val modeState = RegInit(VecInit(Seq.fill(modeNum)(0.U(1.W))))
   // val newmode = VecInit(0.U(log2Ceil(modeNum).W))
-  for (i <- 0 until (modeNum-1)) {
+  for (i <- 0 until (modeNum - 1)) {
     when(s1_valid) {
       modeState(i) := cutOffset(write_record_trigger.vaddr, modeOffsetList(i)) === cutOffset(trainVaddr_s1, modeOffsetList(i))
     }
   }
   val newmode = Mux(modeState(0) === 1.U, 0.U,
-                Mux(modeState(1) === 1.U, 1.U,
-                Mux(modeState(2) === 1.U, 2.U, 3.U)
+    Mux(modeState(1) === 1.U, 1.U,
+      Mux(modeState(2) === 1.U, 2.U, 3.U)
     ))
+  dontTouch(modeState)
+  dontTouch(newmode)
 
   // compress data
   // val recorder_compressed_tmp_data = RegInit(VecInit(Seq.fill(modeNum)(0.U(512.W))))//Vec(modeNum, RegInit(0.U(512.W)))
@@ -318,19 +307,24 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val recorder_compressed_tmp_data2 = RegInit(VecInit(Seq.fill(modeMaxLenList(2))(0.U(modeOffsetList(2).W))))
   val recorder_compressed_tmp_data3 = RegInit(VecInit(Seq.fill(modeMaxLenList(3))(0.U(modeOffsetList(3).W))))
   when(s1_valid) {
-    for (i <- 0 until modeMaxLenList(0) - 1) {
+    for (i <- 0 until scala.math.min(modeMaxLenList(0), tpParams.inflightEntries)  - 1) {
       recorder_compressed_tmp_data0(i) := recorder_data(i)(modeOffsetList(0) - 1, 0)
     }
-    for (i <- 0 until modeMaxLenList(1) - 1) {
+    for (i <- 0 until scala.math.min(modeMaxLenList(1), tpParams.inflightEntries) - 1) {
       recorder_compressed_tmp_data1(i) := recorder_data(i)(modeOffsetList(1) - 1, 0)
     }
-    for (i <- 0 until modeMaxLenList(2) - 1) {
+    for (i <- 0 until scala.math.min(modeMaxLenList(2), tpParams.inflightEntries) - 1) {
       recorder_compressed_tmp_data2(i) := recorder_data(i)(modeOffsetList(2) - 1, 0)
     }
-    for (i <- 0 until modeMaxLenList(3) - 1) {
+    for (i <- 0 until scala.math.min(modeMaxLenList(3), tpParams.inflightEntries) - 1) {
       recorder_compressed_tmp_data3(i) := recorder_data(i)(modeOffsetList(3) - 1, 0)
     }
   }
+  dontTouch(recorder_compressed_tmp_data)
+  dontTouch(recorder_compressed_tmp_data0)
+  dontTouch(recorder_compressed_tmp_data1)
+  dontTouch(recorder_compressed_tmp_data2)
+  dontTouch(recorder_compressed_tmp_data3)
   val recorder_compressed_tmp_connected_data0 = Cat(recorder_compressed_tmp_data0.reverse)
   val recorder_compressed_tmp_connected_data1 = Cat(recorder_compressed_tmp_data1.reverse)
   val recorder_compressed_tmp_connected_data2 = Cat(recorder_compressed_tmp_data2.reverse)
@@ -343,33 +337,21 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   when(dorecord_s2) {
     recorder_idx := recorder_idx + 1.U
-//<<<<<<< HEAD
-    //recorder_data(recorder_idx) := record_data_in
+    recorder_data(recorder_idx) := record_data_in >> 6.U // eliminate cacheline offset
     recorder_compressed_data := recorder_compressed_tmp_data
     recorder_mode := newmode
-    when(recorder_idx === (tpEntryMaxLen-1).U) {
-//=======
-    recorder_data(recorder_idx) := record_data_in >> 6.U // eliminate cacheline offset
     assert((record_data_in >> 6.U)(35, 30) === 0.U)
     when(recorder_idx === (recordThres-1.U)) {
-//>>>>>>> origin/master
       write_record := true.B
       recorder_idx := 0.U
-//<<<<<<< HEAD
       recorder_mode := 0.U
-    }
-    when(recorder_idx === 0.U) {
-      // set trigger as the first addr
-      // TODO: separate trigger and data
-      //write_record_trigger.vaddr := train_s2.vaddr.getOrElse(0.U)
-      //write_record_trigger.paddr := train_s2.addr
-//=======
       write_record_trigger := triggerQueue.io.deq.bits
       triggerQueue.io.deq.ready := true.B
       assert(triggerQueue.io.deq.valid)
-//>>>>>>> origin/master
     }
   }
+  dontTouch(recorder_mode)
+  dontTouch(recorder_compressed_data)
   when(write_record) {
     write_record := false.B
   }
@@ -378,18 +360,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   assert(RegNext(s2_valid, false.B) || !tpTable_w_valid, "tpTable_w_valid can only be true in s3")
 
   val (write_record_vtag, write_record_vset) = parseVaddr(write_record_trigger.vaddr)
-//<<<<<<< HEAD
-
-  val tpData_w_bits = Wire(new tpDataEntry())
-  tpData_w_bits.rawData.zip(recorder_data).foreach(x => x._1 := x._2)
-  tpData_w_bits.compressedData := recorder_compressed_data
-  tpData_w_bits.mode := recorder_mode
-  tpData_w_bits.trigger := write_record_trigger
-  dontTouch(tpData_w_bits.compressedData)
-  dontTouch(tpData_w_bits.mode)
-//=======
   val (write_record_ptag, write_record_pset) = parsePaddr(write_record_trigger.paddr)
-//>>>>>>> origin/master
 
   val tpMeta_w_bits = Wire(new tpMetaEntry())
   tpMeta_w_bits.valid := true.B
@@ -408,6 +379,8 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   dataWriteQueue.io.enq.valid := tpTable_w_valid
   dataWriteQueue.io.enq.bits.wmode := true.B
   dataWriteQueue.io.enq.bits.rawData.zip(recorder_data).foreach(x => x._1 := x._2(35-6, 0))
+  dataWriteQueue.io.enq.bits.compressedData := recorder_compressed_data
+  dataWriteQueue.io.enq.bits.mode := recorder_mode
   dataWriteQueue.io.enq.bits.set := tpTable_w_set
   dataWriteQueue.io.enq.bits.way := tpTable_w_way
   dataWriteQueue.io.enq.bits.hartid := hartid.U
@@ -426,24 +399,27 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   val do_sending = RegInit(false.B)
   val sending_idx = RegInit(0.U(6.W))
-//<<<<<<< HEAD
-  //val sending_data = Reg(Vec(tpEntryMaxLen, UInt(vaddrBits.W)))
+  val sending_data = Reg(Vec(tpEntryMaxLen, UInt(fullAddressBits.W)))
+  // val sending_data_debug = Reg(Vec(tpEntryMaxLen, UInt(vaddrBits.W)))
   val sending_compress_data = RegInit(0.U(512.W))
   val sending_trigger = RegInit(0.U.asTypeOf(new triggerBundle()))
   val sending_mode = RegInit(0.U(log2Ceil(modeNum).W))
   val sending_decompress_data = Wire(Vec(modeNum, Vec(tpEntryMaxLen, UInt(vaddrBits.W))))
   sending_decompress_data.foreach(_.foreach(_ := 0.U))
   val sending_tmp_data = Wire(Vec(tpEntryMaxLen, UInt(vaddrBits.W)))
-  //val sending_throttle = RegInit(0.U(4.W))
-  //val sending_valid = do_sending && !tpDataQFull && sending_throttle === tpThrottleCycles.U
-  val (sendingTag, sendingSet, _) = parseFullAddress(sending_data(sending_idx))
+  val sending_throttle = RegInit(0.U(4.W))
+  val tpDataQFull = tpDataQueue.io.count === tpDataQueueDepth.U
+
+  val sending_valid = do_sending && !tpDataQFull && sending_throttle === tpThrottleCycles
+  val current_sending_data = Cat(sending_data(sending_idx), 0.U(6.W))
+  val (sendingTag, sendingSet, _) = parseFullAddress(current_sending_data)
   val (sendingTagCompressed, sendingSetCompressed, _) = parseFullAddress(sending_tmp_data(sending_idx))
   dontTouch(sendingSetCompressed)
   dontTouch(sendingTagCompressed)
 
-  for (i <- 0 until modeNum-1) {
-    for (j <- 0 until (modeMaxLenList(i)-1)) {
-      sending_decompress_data(i)(j) := Cat(sending_trigger.vaddr(vaddrBits-1, modeOffsetList(i)), sending_compress_data((j+1)*modeOffsetList(i)-1, j*modeOffsetList(i)))
+  for (i <- 0 until modeNum - 1) {
+    for (j <- 0 until (scala.math.min(modeMaxLenList(i), tpParams.inflightEntries) - 1)) {
+      sending_decompress_data(i)(j) := Cat(sending_trigger.vaddr(vaddrBits - 1, modeOffsetList(i)), sending_compress_data((j + 1) * modeOffsetList(i) - 1, j * modeOffsetList(i)))
     }
   }
 
@@ -451,28 +427,15 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
                       Mux(sending_mode === 1.U, sending_decompress_data(1),
                       Mux(sending_mode === 2.U, sending_decompress_data(2),
                                                 sending_decompress_data(3)))
-                      )
-//=======
-  val sending_data = Reg(Vec(tpEntryMaxLen, UInt(fullAddressBits.W)))
-  // val sending_data_debug = Reg(Vec(tpEntryMaxLen, UInt(vaddrBits.W)))
-  val sending_throttle = RegInit(0.U(4.W))
-  val tpDataQFull = tpDataQueue.io.count === tpDataQueueDepth.U
-
-  val sending_valid = do_sending && !tpDataQFull && sending_throttle === tpThrottleCycles
-  val current_sending_data = Cat(sending_data(sending_idx), 0.U(6.W))
-  val (sendingTag, sendingSet, _) = parseFullAddress(current_sending_data)
-//>>>>>>> origin/master
+  )
 
   tpDataQueue.io.deq.ready := tpDataQFull || !do_sending
   when(tpDataQueue.io.deq.fire) {
     sending_data := tpDataQueue.io.deq.bits.rawData
-//<<<<<<< HEAD
+    // sending_data_debug := tpDataQueue.io.deq.bits.rawData_debug
     sending_compress_data := tpDataQueue.io.deq.bits.compressedData
     sending_mode := tpDataQueue.io.deq.bits.mode
     sending_trigger := tpDataQueue.io.deq.bits.trigger
-//=======
-    // sending_data_debug := tpDataQueue.io.deq.bits.rawData_debug
-//>>>>>>> origin/master
     sending_idx := 1.U  // TODO: dismiss the first addr because it is the trigger
     do_sending := true.B
   }
