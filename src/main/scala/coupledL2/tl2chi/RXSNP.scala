@@ -93,6 +93,7 @@ class RXSNP(
     task.dbID.foreach(_ := 0.U)
     task.chiOpcode.foreach(_ := snp.opcode)
     task.pCrdType.foreach(_ := 0.U)
+    task.retToSrc.foreach(_ := snp.retToSrc)
 
     task
   }

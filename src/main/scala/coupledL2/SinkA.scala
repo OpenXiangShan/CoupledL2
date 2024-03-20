@@ -39,6 +39,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
   def fromTLAtoTaskBundle(a: TLBundleA): TaskBundle = {
     val task = Wire(new TaskBundle)
     task.channel := "b001".U
+    task.txChannel := 0.U
     task.tag := parseAddress(a.address)._1
     task.set := parseAddress(a.address)._2
     task.off := parseAddress(a.address)._3

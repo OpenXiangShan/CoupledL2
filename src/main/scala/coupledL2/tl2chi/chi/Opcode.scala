@@ -120,6 +120,68 @@ object CHIOpcode {
     def SnpNotSharedDirtyFwd  = 0x14.U
 
     def SnpUniqueFwd          = 0x17.U
+
+    def widthCheck(opcode: UInt): Unit = { require (opcode.getWidth >= width) }
+
+    def isSnpXStash(opcode: UInt): Bool = {
+      widthCheck(opcode)
+      opcode === SnpUniqueStash || opcode === SnpMakeInvalidStash
+    }
+
+    def isSnpStashX(opcode: UInt): Bool = {
+      widthCheck(opcode)
+      opcode === SnpStashUnique || opcode === SnpStashShared
+    }
+
+    def isSnpXFwd(opcode: UInt): Bool = {
+      widthCheck(opcode)
+      opcode >= SnpSharedFwd
+    }
+
+    def isSnpOnceX(opcode: UInt): Bool = {
+      widthCheck(opcode)
+      opcode === SnpOnce || opcode === SnpOnceFwd
+    }
+
+    def isSnpCleanX(opcode: UInt): Bool = {
+      widthCheck(opcode)
+      opcode === SnpClean || opcode === SnpCleanFwd
+    }
+
+    def isSnpSharedX(opcode: UInt): Bool = {
+      widthCheck(opcode)
+      opcode === SnpShared || opcode === SnpSharedFwd
+    }
+
+    def isSnpNotSharedDirtyX(opcode: UInt): Bool = {
+      widthCheck(opcode)
+      opcode === SnpNotSharedDirty || opcode === SnpNotSharedDirtyFwd
+    }
+
+    def isSnpToB(opcode: UInt): Bool = {
+      isSnpCleanX(opcode) || isSnpSharedX(opcode) || isSnpNotSharedDirtyX(opcode)
+    }
+
+    def isSnpToN(opcode: UInt): Bool = {
+      isSnpUniqueX(opcode) || opcode === SnpCleanInvalid || isSnpMakeInvalidX (opcode)
+    }
+
+    def isSnpToBFwd(opcode: UInt): Bool = {
+      widthCheck(opcode)
+      opcode === SnpCleanFwd ||
+      opcode === SnpNotSharedDirtyFwd ||
+      opcode === SnpSharedFwd
+    }
+
+    def isSnpUniqueX(opcode: UInt): Bool = {
+      widthCheck(opcode)
+      opcode === SnpUnique || opcode === SnpUniqueFwd || opcode === SnpUniqueStash
+    }
+
+    def isSnpMakeInvalidX(opcode: UInt): Bool = {
+      widthCheck(opcode)
+      opcode === SnpMakeInvalid || opcode === SnpMakeInvalidStash
+    }
   }
 
   object DATOpcodes {
@@ -133,5 +195,11 @@ object CHIOpcode {
     def SnpRespDataPtl    = 0x5.U
     def SnpRespDataFwded  = 0x6.U
     def WriteDataCancel   = 0x7.U
+
+    def widthCheck(opcode: UInt): Unit = { require (opcode.getWidth >= width) }
+    def isSnpRespDataX(opcode: UInt): Bool = {
+      widthCheck(opcode)
+      opcode === SnpRespData || opcode === SnpRespDataPtl || opcode === SnpRespDataFwded
+    }
   }
 }

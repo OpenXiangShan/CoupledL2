@@ -24,6 +24,7 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.utils.XSPerfAccumulate
+import coupledL2.tl2chi.CHIOpcode._
 
 class RequestArb(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
@@ -170,17 +171,33 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   // For GrantData, read refillBuffer
   // Caution: GrantData-alias may read DataStorage or ReleaseBuf instead
   // Release-replTask also read refillBuf and then write to DS
+  val releaseRefillData = task_s2.bits.replTask && (if (enableCHI) {
+    task_s2.bits.toTXREQ && (
+      task_s2.bits.chiOpcode.get === REQOpcodes.WriteBackFull ||
+      task_s2.bits.chiOpcode.get === REQOpcodes.Evict
+    )
+  } else {
+    task_s2.bits.opcode(2, 1) === Release(2, 1)
+  })
   io.refillBufRead_s2.valid := mshrTask_s2 && (
-    task_s2.bits.fromB && task_s2.bits.opcode(2, 1) === ProbeAck(2, 1) && task_s2.bits.replTask ||
-    task_s2.bits.opcode(2, 1) === Release(2, 1) && task_s2.bits.replTask ||
+    task_s2.bits.fromB && task_s2.bits.opcode(2, 1) === ProbeAck(2, 1) && task_s2.bits.replTask || // ???
+    releaseRefillData ||
     mshrTask_s2_a_upwards && !task_s2.bits.useProbeData)
   io.refillBufRead_s2.bits.id := task_s2.bits.mshrId
 
   // ReleaseData and ProbeAckData read releaseBuffer
   // channel is used to differentiate GrantData and ProbeAckData
+  val snoopNeedData = if (enableCHI) {
+    task_s2.bits.fromB && task_s2.bits.toTXDAT && DATOpcodes.isSnpRespDataX(task_s2.bits.chiOpcode.get)
+  } else {
+    task_s2.bits.fromB && task_s2.bits.opcode === ProbeAckData
+  }
+  val releaseNeedData = if (enableCHI) {
+    task_s2.bits.toTXDAT && task_s2.bits.chiOpcode.get === DATOpcodes.CopyBackWrData
+  } else task_s2.bits.opcode === ReleaseData
   io.releaseBufRead_s2.valid := mshrTask_s2 && (
-    task_s2.bits.opcode === ReleaseData ||
-    task_s2.bits.fromB && task_s2.bits.opcode === ProbeAckData ||
+    releaseNeedData ||
+    snoopNeedData ||
     mshrTask_s2_a_upwards && task_s2.bits.useProbeData)
   io.releaseBufRead_s2.bits.id := task_s2.bits.mshrId
 

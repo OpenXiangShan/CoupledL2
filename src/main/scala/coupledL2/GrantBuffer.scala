@@ -115,6 +115,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   val dtaskOpcode = io.d_task.bits.task.opcode
   val mergeAtask = Wire(new TaskBundle())
   mergeAtask.channel := io.d_task.bits.task.channel
+  mergeAtask.txChannel := io.d_task.bits.task.txChannel
   mergeAtask.off := io.d_task.bits.task.aMergeTask.off
   mergeAtask.alias.foreach(_ := io.d_task.bits.task.aMergeTask.alias.getOrElse(0.U))
   mergeAtask.opcode := io.d_task.bits.task.aMergeTask.opcode

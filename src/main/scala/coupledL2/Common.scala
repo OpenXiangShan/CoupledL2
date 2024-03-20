@@ -22,7 +22,7 @@ import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink.TLPermissions._
 import utility.MemReqSource
-import tl2chi.{HasCHIMsgParameters, HasCHIChannelBits}
+import tl2chi.{HasCHIMsgParameters, HasCHIChannelBits, CHIREQ}
 
 abstract class L2Module(implicit val p: Parameters) extends Module with HasCoupledL2Parameters
 abstract class L2Bundle(implicit val p: Parameters) extends Bundle with HasCoupledL2Parameters
@@ -115,7 +115,30 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val txnID = chiOpt.map(_ => UInt(TXNID_WIDTH.W))
   val dbID = chiOpt.map(_ => UInt(DBID_WIDTH.W))
   val chiOpcode = chiOpt.map(_ => UInt(OPCODE_WIDTH.W))
+  val resp = chiOpt.map(_ => UInt(RESP_WIDTH.W))
+  val fwdState = chiOpt.map(_ => UInt(FWDSTATE_WIDTH.W))
   val pCrdType = chiOpt.map(_ => UInt(PCRDTYPE_WIDTH.W))
+  val retToSrc = chiOpt.map(_ => Bool()) // only used in snoop
+  val expCompAck = chiOpt.map(_ => Bool())
+
+  def toCHIREQBundle(): CHIREQ = {
+    val req = Wire(new CHIREQ())
+    req.tgtID := tgtID.getOrElse(0.U)
+    req.srcID := srcID.getOrElse(0.U)
+    req.txnID := txnID.getOrElse(0.U)
+    req.opcode := chiOpcode.getOrElse(0.U)
+    req.addr := Cat(tag, set, 0.U(offsetBits.W))
+    req.allowRetry := true.B // TODO: consider retry
+    req.pCrdType := pCrdType.getOrElse(0.U)
+    req.expCompAck := expCompAck.getOrElse(false.B)
+    req.memAttr.allocate := true.B // TBD
+    req.memAttr.cacheable := true.B
+    req.memAttr.device := false.B
+    req.memAttr.ewa := true.B // TBD
+    req.snpAttr := true.B
+    req.order := "0b11".U // Endpoint Order // TBD
+    req
+  }
 }
 
 class PipeStatus(implicit p: Parameters) extends L2Bundle with HasTLChannelBits

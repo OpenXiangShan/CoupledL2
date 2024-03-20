@@ -21,6 +21,7 @@ import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import scala.math.max
+import coupledL2.TaskBundle
 
 object CHICohStates {
   val width = 3
@@ -28,8 +29,21 @@ object CHICohStates {
   def I = "b000".U
   def SC = "b001".U
   def UC = "b010".U
-  def UD_PD = "b110".U
-  def SD_PD = "b111".U
+  def UD = "b010".U
+  def SD = "b011".U
+
+  def PassDirty = "b100".U
+
+  def I_PD = setPD(I)
+  def SC_PD = setPD(SC)
+  def UC_PD = setPD(UC)
+  def UD_PD = setPD(UD)
+  def SD_PD = setPD(SD)
+
+  def setPD(state: UInt, pd: Bool = true.B): UInt = {
+    require(state.getWidth == width)
+    state | Mux(pd, PassDirty, 0.U)
+  }
 }
 
 object OrderEncodings {
@@ -142,6 +156,7 @@ class CHISNP extends CHIBundle {
   val srcID = UInt(SRCID_WIDTH.W)
   val opcode = UInt(SNP_OPCODE_WIDTH.W)
   val addr = UInt(ADDR_WIDTH.W)
+  val retToSrc = Bool()
   // TODO: Finish this
 }
 
@@ -155,6 +170,8 @@ class CHIDAT extends CHIBundle {
   val dataID = UInt(DATAID_WIDTH.W)
   val be = UInt(BE_WIDTH.W)
   val data = UInt(DATA_WIDTH.W)
+  val resp = UInt(RESP_WIDTH.W)
+  val fwdState = UInt(FWDSTATE_WIDTH.W)
   // TODO: Finish this
 }
 
@@ -165,5 +182,7 @@ class CHIRSP extends CHIBundle {
   val dbID = UInt(DBID_WIDTH.W)
   val pCrdType = UInt(PCRDTYPE_WIDTH.W)
   val opcode = UInt(RSP_OPCODE_WIDTH.W)
+  val resp = UInt(RESP_WIDTH.W)
+  val fwdState = UInt(FWDSTATE_WIDTH.W)
   // TODO: Finish this
 }

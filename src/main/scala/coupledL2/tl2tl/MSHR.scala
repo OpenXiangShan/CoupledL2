@@ -204,6 +204,7 @@ class MSHR(implicit p: Parameters) extends TL2TLL2Module {
     mp_release.reqSource := 0.U(MemReqSource.reqSourceBits.W)
     mp_release.mergeA := false.B
     mp_release.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+    mp_release.txChannel := 0.U
     mp_release
   }
 
@@ -265,6 +266,7 @@ class MSHR(implicit p: Parameters) extends TL2TLL2Module {
     mp_probeack.replTask := false.B
     mp_probeack.mergeA := false.B
     mp_probeack.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+    mp_probeack.txChannel := 0.U
     mp_probeack
   }
 
@@ -387,6 +389,7 @@ class MSHR(implicit p: Parameters) extends TL2TLL2Module {
       prefetch = false.B,
       accessed = true.B
     )
+    mp_grant.txChannel := 0.U
 
     mp_grant
   }

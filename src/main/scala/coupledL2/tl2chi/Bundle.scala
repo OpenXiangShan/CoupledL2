@@ -26,9 +26,9 @@ import coupledL2.{HasTLChannelBits, DirResult}
 
 trait HasCHIChannelBits { this: Bundle =>
   val txChannel = UInt(3.W)
-  def toTXREQ = channel(0).asBool
-  def toTXRSP = channel(1).asBool
-  def toTXDAT = channel(2).asBool
+  def toTXREQ = txChannel(0).asBool
+  def toTXRSP = txChannel(1).asBool
+  def toTXDAT = txChannel(2).asBool
 }
 
 class MSHRStatus(implicit p: Parameters) extends TL2CHIL2Bundle with HasTLChannelBits {
