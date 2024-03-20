@@ -118,6 +118,11 @@ class tpmetaPortIO() extends Bundle {
   val resp = Flipped(ValidIO(new TPmetaResp))
 }
 
+class cpTriggerBundle(implicit p: Parameters) extends TPBundle {
+  val paddr = UInt(fullAddressBits.W)
+}
+
+
 /* VIVT, Physical Data */
 class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val io = IO(new Bundle() {
@@ -274,8 +279,8 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   /* Recorder logic TODO: compress data based on max delta */
   /*
-     s1(based on train_s1): 1. calculate possible new mode; 2. update tmp_compressed_data
-  `  s2(do_record): 1. update mode; 2. update tmp_compressed_data idx; 3. update compressed_data
+     s1(based on train_s1): 1. calculate possible new mode; 2. update tmp_compressed_data; 3. update tmp_compressed_data idx
+  `  s2(do_record): 1. update mode; 2.  update compressed_data
    */
 
   val recorder_idx = RegInit(0.U(6.W))
@@ -316,25 +321,48 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   // val recorder_compressed_tmp_data = RegInit(VecInit(Seq.fill(modeNum)(0.U(512.W))))//Vec(modeNum, RegInit(0.U(512.W)))
   val recorder_compressed_tmp_data = WireInit(0.U(512.W))
   val recorder_compressed_tmp_data0 = RegInit(VecInit(Seq.fill(modeMaxLenList(0))(0.U(modeOffsetList(0).W))))
-  val recorder_compressed_tmp_data1 = RegInit(VecInit(Seq.fill(modeMaxLenList(1))(0.U(modeOffsetList(1).W))))
-  val recorder_compressed_tmp_data2 = RegInit(VecInit(Seq.fill(modeMaxLenList(2))(0.U(modeOffsetList(2).W))))
-  val recorder_compressed_tmp_data3 = RegInit(VecInit(Seq.fill(modeMaxLenList(3))(0.U(modeOffsetList(3).W))))
+  val recorder_compressed_tmp_data1 = RegInit(VecInit(Seq.fill(modeMaxLenList(0))(0.U(modeOffsetList(1).W))))
+  val recorder_compressed_tmp_data2 = RegInit(VecInit(Seq.fill(modeMaxLenList(0))(0.U(modeOffsetList(2).W))))
+  val recorder_compressed_tmp_data3 = RegInit(VecInit(Seq.fill(modeMaxLenList(0))(0.U(modeOffsetList(3).W))))
   val recorder_compressed_idx0 = RegInit(0.U(log2Ceil(modeMaxLenList(0)).W))
-  val recorder_compressed_idx1 = RegInit(0.U(log2Ceil(modeMaxLenList(1)).W))
-  val recorder_compressed_idx2 = RegInit(0.U(log2Ceil(modeMaxLenList(2)).W))
-  val recorder_compressed_idx3 = RegInit(0.U(log2Ceil(modeMaxLenList(3)).W))
-  val lastRecord = WireInit(0.U(1.W))
-  lastRecord := ((newmode === 0.U && recorder_compressed_idx0 === modeMaxLenList(0).asUInt - 1.U) ||
-                (newmode === 1.U && recorder_compressed_idx1 === modeMaxLenList(1).asUInt - 1.U) ||
-                (newmode === 2.U && recorder_compressed_idx2 === modeMaxLenList(2).asUInt - 1.U) ||
-                (newmode === 3.U && recorder_compressed_idx3 === modeMaxLenList(3).asUInt - 1.U)).asUInt
-  when(s1_valid) {
+  val recorder_compressed_idx1 = RegInit(0.U(log2Ceil(modeMaxLenList(0)).W))
+  val recorder_compressed_idx2 = RegInit(0.U(log2Ceil(modeMaxLenList(0)).W))
+  val recorder_compressed_idx3 = RegInit(0.U(log2Ceil(modeMaxLenList(0)).W))
+  val lastRecord = WireInit(Bool(), false.B)
+  val lastRecord0 = WireInit(Bool(), false.B)
+  val lastRecord1 = WireInit(Bool(), false.B)
+  val lastRecord2 = WireInit(Bool(), false.B)
+  val lastRecord3 = WireInit(Bool(), false.B)
+  lastRecord0 := recorder_compressed_idx0 === modeMaxLenList(0).asUInt - 1.U
+  lastRecord1 := recorder_compressed_idx1 === modeMaxLenList(1).asUInt - 1.U
+  lastRecord2 := recorder_compressed_idx2 === modeMaxLenList(2).asUInt - 1.U
+  lastRecord3 := recorder_compressed_idx3 === modeMaxLenList(3).asUInt - 1.U
+  lastRecord := (newmode === 0.U && lastRecord0) ||
+                (newmode === 1.U && lastRecord1) ||
+                (newmode === 2.U && lastRecord2) ||
+                (newmode === 3.U && lastRecord3)
+  /*
+  to get stable compress data in s2, update data & idx in s1
+  special case 1(s1 valid but not record in s2, s2_valid & !dorecord_s2):
+    1. s1_valid: idx = idx & data store in (idx-1)
+    2. !s1_valid: idx = idx - 1
+  special case 2: // TODO: current stupid solution: expand list
+    1. using shorter offsets: longer offsets suspend when reach limit
+    2. short->long(offsets): if longer offset already reaches limit, stop all
+   */
+  when(s1_valid && !(s2_valid && !dorecord_s2)) {
     recorder_compressed_tmp_data0(recorder_compressed_idx0) := train_s1.addr(modeOffsetList(0) + 5, 6)
     recorder_compressed_tmp_data1(recorder_compressed_idx1) := train_s1.addr(modeOffsetList(1) + 5, 6)
     recorder_compressed_tmp_data2(recorder_compressed_idx2) := train_s1.addr(modeOffsetList(2) + 5, 6)
     recorder_compressed_tmp_data3(recorder_compressed_idx3) := train_s1.addr(modeOffsetList(3) + 5, 6)
   }
-  when(dorecord_s2) {
+  when(s1_valid && (s2_valid && !dorecord_s2)) {
+    recorder_compressed_tmp_data0(recorder_compressed_idx0 - 1.U) := train_s1.addr(modeOffsetList(0) + 5, 6)
+    recorder_compressed_tmp_data1(recorder_compressed_idx1 - 1.U) := train_s1.addr(modeOffsetList(1) + 5, 6)
+    recorder_compressed_tmp_data2(recorder_compressed_idx2 - 1.U) := train_s1.addr(modeOffsetList(2) + 5, 6)
+    recorder_compressed_tmp_data3(recorder_compressed_idx3 - 1.U) := train_s1.addr(modeOffsetList(3) + 5, 6)
+  }
+  when(s1_valid && !(s2_valid && !dorecord_s2)) {
     recorder_compressed_idx0 := recorder_compressed_idx0 + 1.U
     when(lastRecord === 1.U) {
       recorder_compressed_idx0 := 0.U
@@ -352,6 +380,12 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
       recorder_compressed_idx3 := 0.U
     }
   }
+  when(!s1_valid && (s2_valid && !dorecord_s2)) {
+    recorder_compressed_idx0 := recorder_compressed_idx0 - 1.U
+    recorder_compressed_idx1 := recorder_compressed_idx1 - 1.U
+    recorder_compressed_idx2 := recorder_compressed_idx2 - 1.U
+    recorder_compressed_idx3 := recorder_compressed_idx3 - 1.U
+  }
   dontTouch(lastRecord)
   dontTouch(recorder_compressed_tmp_data)
   dontTouch(recorder_compressed_tmp_data0)
@@ -363,9 +397,9 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val recorder_compressed_tmp_connected_data2 = Cat(recorder_compressed_tmp_data2.reverse)
   val recorder_compressed_tmp_connected_data3 = Cat(recorder_compressed_tmp_data3.reverse)
   recorder_compressed_tmp_data := Mux(newmode === 0.U, recorder_compressed_tmp_connected_data0,
-                                  Mux(newmode === 1.U, recorder_compressed_tmp_connected_data1,
-                                  Mux(newmode === 2.U, recorder_compressed_tmp_connected_data2,
-                                                       recorder_compressed_tmp_connected_data3)))
+                                  Mux(newmode === 1.U, recorder_compressed_tmp_connected_data1(modeMaxLenList(1) * modeOffsetList(1) - 1, 0),
+                                  Mux(newmode === 2.U, recorder_compressed_tmp_connected_data2(modeMaxLenList(2) * modeOffsetList(2) - 1, 0),
+                                                       recorder_compressed_tmp_connected_data3(modeMaxLenList(3) * modeOffsetList(3) - 1, 0))))
   when(dorecord_s2) {
     recorder_compressed_data := recorder_compressed_tmp_data
     when(recorder_compressed_idx0 === 0.U) {
@@ -383,11 +417,13 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     recorder_data(recorder_idx) := record_data_in >> 6.U // eliminate cacheline offset
     assert((record_data_in >> 6.U)(35, 30) === 0.U)
     when(recorder_idx === (recordThres-1.U)) {
-      write_record := true.B
       recorder_idx := 0.U
-      write_record_trigger := triggerQueue.io.deq.bits
       triggerQueue.io.deq.ready := true.B
       assert(triggerQueue.io.deq.valid)
+    }
+    when(lastRecord) {
+      write_record := true.B
+      write_record_trigger := triggerQueue.io.deq.bits
     }
   }
   when(write_record) {
@@ -439,6 +475,8 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   val do_sending = RegInit(false.B)
   val sending_idx = RegInit(0.U(6.W))
+  val sending_compress_idx = RegInit(0.U(log2Ceil(modeMaxLenList(0)).W))
+  val sending_compress_idx_limit = WireInit(0.U(log2Ceil(modeMaxLenList(0)).W))
   val sending_data = Reg(Vec(tpEntryMaxLen, UInt(fullAddressBits.W)))
   // val sending_data_debug = Reg(Vec(tpEntryMaxLen, UInt(vaddrBits.W)))
   val sending_compress_data = RegInit(0.U(512.W))
@@ -459,15 +497,17 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val tpDataQFull = tpDataQueue.io.count === tpDataQueueDepth.U
 
   val sending_valid = do_sending && !tpDataQFull && sending_throttle === tpThrottleCycles
-  val current_sending_data = Cat(sending_tmp_data(sending_idx), 0.U(6.W))
-  val current_sending_decompress_data = Cat(sending_data(sending_idx), 0.U(6.W))
+  val current_sending_data = Cat(sending_data(sending_idx), 0.U(6.W))
+  val current_sending_decompress_data = Cat(sending_tmp_data(sending_idx), 0.U(6.W))
   val (sendingTag, sendingSet, _) = parseFullAddress(current_sending_data)
   val (sendingTagCompressed, sendingSetCompressed, _) = parseFullAddress(sending_tmp_data(sending_idx))
+  dontTouch(sending_data)
   dontTouch(sendingSetCompressed)
   dontTouch(sendingTagCompressed)
   dontTouch(sending_trigger)
   dontTouch(sending_mode)
   dontTouch(sending_compress_data)
+  dontTouch(current_sending_decompress_data)
 
   for (i <- 0 until modeNum - 1) {
     for (j <- 0 until (scala.math.min(modeMaxLenList(i), tpParams.inflightEntries) - 1)) {
@@ -493,6 +533,10 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
                       Mux(sending_mode === 2.U, sending_decompress_data2,
                                                 sending_decompress_data3))
   )
+  sending_compress_idx_limit := Mux(sending_mode === 0.U, modeMaxLenList(0).asUInt,
+                                Mux(sending_mode === 1.U, modeMaxLenList(1).asUInt,
+                                Mux(sending_mode === 2.U, modeMaxLenList(2).asUInt,
+                                                          modeMaxLenList(3).asUInt)))
   dontTouch(sending_decompress_data0)
   dontTouch(sending_decompress_data1)
   dontTouch(sending_decompress_data2)
@@ -508,6 +552,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     sending_mode := tpDataQueue.io.deq.bits.mode
     sending_trigger := tpDataQueue.io.deq.bits.trigger
     sending_idx := 1.U  // TODO: dismiss the first addr because it is the trigger
+    sending_compress_idx := 1.U
     do_sending := true.B
   }
   when(((do_sending && !tpDataQFull) || sending_throttle =/= 0.U) && (sending_throttle =/= tpThrottleCycles)) {
@@ -519,14 +564,14 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     if (debug) {
       printf("[TP] sending data: %x\n", current_sending_data)
     }
-    when(sending_idx === (recordThres-1.U)) {
+    when(sending_idx === (sending_compress_idx_limit-1.U)) {
       do_sending := false.B
     }
   }
 
   io.req.valid := Mux(enableTP.orR, sending_valid, false.B)
-  io.req.bits.tag := sendingTag
-  io.req.bits.set := sendingSet
+  io.req.bits.tag := sendingTagCompressed
+  io.req.bits.set := sendingSetCompressed
   io.req.bits.needT := true.B
   io.req.bits.source := 0.U // TODO: ensure source 0 is dcache
   io.req.bits.pfSource := MemReqSource.Prefetch2L2TP.id.U
@@ -542,9 +587,9 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   triggerPt.vaddr := recoverVaddr(write_record_trigger.vaddr)
   triggerPt.way := write_record_trigger.way
 
-  val cptriggerDB = ChiselDB.createTable("tptrigger", UInt(fullAddressBits.W), basicDB = debug)
-  val cptriggerPt = Wire(UInt(fullAddressBits.W))
-  cptriggerPt := recorder_trigger
+  val cptriggerDB = ChiselDB.createTable("cptptrigger", new cpTriggerBundle(), basicDB = debug)
+  val cptriggerPt = Wire(new cpTriggerBundle())
+  cptriggerPt.paddr := recorder_trigger
 
   val trainDB = ChiselDB.createTable("tptrain", new trainBundle(), basicDB = debug)
   val trainPt = Wire(new trainBundle())
@@ -570,4 +615,13 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   trainDB.log(trainPt, s2_valid, "", clock, reset)
   sendDB.log(sendPt, io.req.fire, "", clock, reset)
   cpsendDB.log(cpsendPT, io.req.fire, "", clock, reset)
+
+  XSPerfAccumulate(cacheParams, "tp_compress_0", write_record && recorder_mode === 0.U)
+  XSPerfAccumulate(cacheParams, "tp_compress_1", write_record && recorder_mode === 1.U)
+  XSPerfAccumulate(cacheParams, "tp_compress_2", write_record && recorder_mode === 2.U)
+  XSPerfAccumulate(cacheParams, "tp_compress_3", write_record && recorder_mode === 3.U)
+  XSPerfAccumulate(cacheParams, "tp_compress_0_sent", tpDataQueue.io.deq.fire && tpDataQueue.io.deq.bits.mode === 0.U)
+  XSPerfAccumulate(cacheParams, "tp_compress_1_sent", tpDataQueue.io.deq.fire && tpDataQueue.io.deq.bits.mode === 1.U)
+  XSPerfAccumulate(cacheParams, "tp_compress_2_sent", tpDataQueue.io.deq.fire && tpDataQueue.io.deq.bits.mode === 2.U)
+  XSPerfAccumulate(cacheParams, "tp_compress_3_sent", tpDataQueue.io.deq.fire && tpDataQueue.io.deq.bits.mode === 3.U)
 }
