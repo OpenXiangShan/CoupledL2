@@ -95,6 +95,8 @@ case class L2Param
   prefetch: Option[PrefetchParameters] = None,
   // Performance analysis
   enablePerf: Boolean = true,
+  // RollingDB
+  enableRollingDB: Boolean = true,
   // Monitor
   enableMonitor: Boolean = true,
   // TopDown
