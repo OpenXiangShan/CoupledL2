@@ -83,6 +83,8 @@ trait HasL2BaseParameters {
   def prefetch: Option[PrefetchParameters]
   // Performance analysis
   def enablePerf: Boolean
+  // RollingDB
+  def enableRollingDB: Boolean
   // Monitor
   def enableMonitor: Boolean
   // TopDown

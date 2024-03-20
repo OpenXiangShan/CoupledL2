@@ -64,6 +64,7 @@ case class L2Param
   hartIds: Seq[Int] = Seq[Int](),
   prefetch: Option[PrefetchParameters] = None,
   enablePerf: Boolean = true,
+  enableRollingDB: Boolean = true,
   enableMonitor: Boolean = true,
   elaboratedTopDown: Boolean = true,
   FPGAPlatform: Boolean = false,

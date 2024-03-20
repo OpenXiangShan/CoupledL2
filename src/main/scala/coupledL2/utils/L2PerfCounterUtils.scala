@@ -136,7 +136,7 @@ object XSPerfRolling {
     clock: Clock,
     reset: Reset
   ): Unit = {
-    if (params.enablePerf && !params.FPGAPlatform) {
+    if (params.enableRollingDB && !params.FPGAPlatform) {
       val tableName = perfName + "_rolling_0"  // TODO: support naming hart id
       val rollingTable = ChiselDB.createTable(tableName, new RollingEntry(), basicDB=true)
 
@@ -168,7 +168,7 @@ object XSPerfRolling {
     clock: Clock,
     reset: Reset
   ): Unit = {
-    if (params.enablePerf && !params.FPGAPlatform) {
+    if (params.enableRollingDB && !params.FPGAPlatform) {
       val tableName = perfName + "_rolling_0"  // TODO: support naming hart id
       val rollingTable = ChiselDB.createTable(tableName, new RollingEntry(), basicDB=true)
 
