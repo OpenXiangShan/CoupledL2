@@ -87,6 +87,7 @@ trait HasBOPParams extends HasPrefetcherHelper {
 
   val scores = offsetList.length
   val offsetWidth = log2Up(offsetList.max) + 2 // -32 <= offset <= 31
+  val debug_offsetWidthBits = log2Up(offsetWidth) + 1
   val roundBits = log2Up(roundMax)
   val scoreMax = (1 << scoreBits) - 1
   val scoreTableIdxBits = log2Up(scores)
@@ -301,21 +302,6 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
     }
   }
 
-//  // FIXME lyq: remove the db
-//  class BopTrainEntry extends Bundle {
-//    val bestOffset = UInt(offsetWidth.W)
-//    val bestScore = UInt(scoreBits.W)
-//  }
-//
-//  val l2BopTrainTable = ChiselDB.createTable("L2BopTrainTable", new BopTrainEntry, basicDB = true)
-//  for (i <- 0 until REQ_FILTER_SIZE) {
-//    val data = Wire(new BopTrainEntry)
-//    data.bestOffset := bestOffset
-//    data.bestScore := bestScore
-//    // l2BopTrainTable.log(data = data, en = (state === s_idle) && !isBad, site = name+"OffsetScoreTable", clock, reset)
-//    l2BopTrainTable.log(data = data, en = (state === s_idle) && !isBad, site = name+"OffsetScoreTable", clock, reset)
-//  }
-
 }
 
 class BopReqBundle(implicit p: Parameters) extends BOPBundle{
@@ -376,7 +362,7 @@ class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
     val req = Wire(new PrefetchReq)
     req.tag := parseFullAddress(get_pf_paddr())._1
     req.set := parseFullAddress(get_pf_paddr())._2
-    req.vaddr.foreach(_ := baseVaddr)
+    req.vaddr.foreach(_ := vaddrNoOffset)
     req.needT := needT
     req.source := source
     req.pfSource := MemReqSource.Prefetch2L2BOP.id.U
@@ -644,19 +630,22 @@ class DelayQueue(name: String = "")(implicit p: Parameters) extends  BOPModule{
 
 
 class BopTrainEntry(implicit p: Parameters) extends BOPBundle {
-  val miss = Bool()
-  val score = UInt(scoreBits.W)
-  val offset = UInt(offsetWidth.W)
-  val cur_addr = UInt(fullAddrBits.W)
-  val old_addr = UInt(fullAddrBits.W)
   val trainType = UInt(8.W)
+  val old_addr = UInt(fullAddrBits.W)
+  val cur_addr = UInt(fullAddrBits.W)
+  val best_offset = UInt(offsetWidth.W)
+  val best_score = UInt(scoreBits.W)
+  val test_offset = UInt(offsetWidth.W)
+  val test_score = UInt(scoreBits.W)
+  val offset_width = UInt(debug_offsetWidthBits.W)
+  val miss = Bool()
 }
 
 class BopPfEntry(implicit p: Parameters) extends BOPBundle {
-  val pf_source = UInt(PfSource.pfSourceBits.W)
-  val pf_addr = UInt(fullAddrBits.W)
-  val trigger_addr = UInt(fullAddrBits.W)
   val trigger_pc = UInt(fullAddrBits.W)
+  val trigger_addr = UInt(fullAddrBits.W)
+  val pf_addr = UInt(fullAddrBits.W)
+  val pf_source = UInt(PfSource.pfSourceBits.W)
 }
 
 class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
@@ -686,7 +675,7 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   val s0_oldFullAddrNoOff = s0_oldFullAddr(s0_oldFullAddr.getWidth-1, offsetBits)
   val s0_newFullAddr = s0_oldFullAddr + signedExtend((prefetchOffset << offsetBits), fullAddrBits)
   val s0_crossPage = getPPN(s0_newFullAddr) =/= getPPN(s0_oldFullAddr) // unequal tags
-  val respFullAddr = if(virtualTrain) Cat(io.resp.bits.vaddr.getOrElse(0.U), 0.U(offsetBits.W))
+  val respFullAddr = if(virtualTrain) Cat(io.resp.bits.vaddr.getOrElse(0.U), 0.U(offsetBits.W)) - signedExtend((prefetchOffset << offsetBits), fullAddrBits)
                  else io.resp.bits.addr - signedExtend((prefetchOffset << offsetBits), fullAddrBits)
 
   rrTable.io.r <> scoreTable.io.test
@@ -701,6 +690,7 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   val s1_needT = RegEnable(io.train.bits.needT, s0_fire)
   val s1_source = RegEnable(io.train.bits.source, s0_fire)
   val s1_newFullAddr = RegEnable(s0_newFullAddr, s0_fire)
+  val s1_oldFullAddr = RegEnable(s0_oldFullAddr, s0_fire)
   val s1_reqVaddr = RegEnable(s0_reqVaddr, s0_fire)
   val s1_train_miss = RegEnable(!io.train.bits.hit, s0_fire)
   // val out_req = Wire(new PrefetchReq)
@@ -786,23 +776,26 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   val l2BopTrainTable = ChiselDB.createTable("L2VBopTrainTable", new BopTrainEntry, basicDB = true)
   val data = Wire(new BopTrainEntry)
   data.miss := s1_train_miss
-  data.score := scoreTable.io.debug.test_score
-  data.offset := scoreTable.io.debug.test_offset
-  data.cur_addr := s1_reqVaddr
+  data.offset_width := offsetWidth.U(debug_offsetWidthBits.W)
+  data.test_score := scoreTable.io.debug.test_score
+  data.test_offset := scoreTable.io.debug.test_offset
+  data.best_score := prefetchScore
+  data.best_offset := prefetchOffset
+  data.cur_addr := s1_oldFullAddr
   data.old_addr := Mux(scoreTable.io.debug.test_score =/= 0.U,
-    s1_reqVaddr - signedExtend((prefetchOffset << offsetBits), fullAddrBits),
+    s1_oldFullAddr - signedExtend((prefetchOffset << offsetBits), fullAddrBits),
     0.U
   )
   data.trainType := 0.U
-  l2BopTrainTable.log(data = data, en = RegNext(s0_fire), site = "vbop", clock, reset)
+  l2BopTrainTable.log(data = data, en = RegNext(s0_fire), site = "vbop_train", clock, reset)
 
   val l2BopPfTable = ChiselDB.createTable("L2VBopPfTable", new BopPfEntry, basicDB = true)
   val data2 = Wire(new BopPfEntry)
   data2.pf_source := io.req.bits.pfSource
-  io.req.bits.vaddr.foreach{i => data2.pf_addr := i}
-  data2.trigger_addr := reqFilter.io.debug_base_vaddr
+  data2.pf_addr := Cat(io.req.bits.vaddr.getOrElse(0.U), 0.U(offsetBits.W))
+  data2.trigger_addr := Cat(reqFilter.io.debug_base_vaddr, 0.U(offsetBits.W))
   data2.trigger_pc := 0.U
-  l2BopPfTable.log(data = data2, en = io.req.fire, site = "vbop", clock, reset)
+  l2BopPfTable.log(data = data2, en = io.req.fire, site = "vbop_pf", clock, reset)
 }
 
 class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
@@ -873,15 +866,18 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   val l2BopTrainTable = ChiselDB.createTable("L2PBopTrainTable", new BopTrainEntry, basicDB = true)
   val data = Wire(new BopTrainEntry)
   data.miss := s1_train_miss
-  data.score := scoreTable.io.debug.test_score
-  data.offset := scoreTable.io.debug.test_offset
+  data.offset_width := offsetWidth.U(debug_offsetWidthBits.W)
+  data.test_score := scoreTable.io.debug.test_score
+  data.test_offset := scoreTable.io.debug.test_offset
+  data.best_score := prefetchScore
+  data.best_offset := prefetchOffset
   data.cur_addr := s1_oldAddr
   data.old_addr := Mux(scoreTable.io.debug.test_score =/= 0.U,
     s1_oldAddr - signedExtend((prefetchOffset << offsetBits), fullAddrBits),
     0.U
   )
   data.trainType := 0.U
-  l2BopTrainTable.log(data = data, en = RegNext(s0_fire), site = "pbop", clock, reset)
+  l2BopTrainTable.log(data = data, en = RegNext(s0_fire), site = "pbop_train", clock, reset)
 
   val l2BopPfTable = ChiselDB.createTable("L2PBopPfTable", new BopPfEntry, basicDB = true)
   val data2 = Wire(new BopPfEntry)
@@ -889,5 +885,5 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   data2.pf_addr := s1_newAddr
   data2.trigger_addr := s1_oldAddr
   data2.trigger_pc := 0.U
-  l2BopPfTable.log(data = data2, en = io.req.fire, site = "pbop", clock, reset)
+  l2BopPfTable.log(data = data2, en = io.req.fire, site = "pbop_pf", clock, reset)
 }
