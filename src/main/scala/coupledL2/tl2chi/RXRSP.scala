@@ -29,6 +29,15 @@ class RXRSP(implicit p: Parameters) extends TL2CHIL2Module {
     val in = Output(new RespBundle())
   })
 
+  /* Response to MSHR for CompData CompDBIDResp*/
+  io.in.valid := io.out.valid 
+  io.in.mshrId := io.out.bits.txnid
+  io.in.set := 0.U(setBits.W)
+  io.in.tag := 0.U(tagBits.W)
+  io.in.respInfo.opcode := io.out.bits.opcode
+
+
   // TODO
   io <> DontCare
+
 }

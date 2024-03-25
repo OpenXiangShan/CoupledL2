@@ -94,7 +94,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val req_acquirePerm = req.opcode === AcquirePerm
   val req_get = req.opcode === Get
   val req_prefetch = req.opcode === Hint
-
+  val snpNoData = isSnpMakeInvalidX(req.chiOpcode) || isSnpStashX(req.chiOpcode)
+  val gotUD = meta.dirty & (meta === TRUNK || meta.state === TIP) //TC/TTC -> UD 
   val promoteT_normal =  dirResult.hit && meta_no_client && meta.state === TIP
   val promoteT_L3     = !dirResult.hit && gotT
   val promoteT_alias  =  dirResult.hit && req.aliasTask.getOrElse(false.B) && (meta.state === TRUNK || meta.state === TIP)
@@ -102,6 +103,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val req_promoteT = (req_acquire || req_get || req_prefetch) && (promoteT_normal || promoteT_L3 || promoteT_alias)
 
   assert(!(req_valid && req_prefetch && dirResult.hit), "MSHR can not receive prefetch hit req")
+
 
   /* ======== Task allocation ======== */
   // Theoretically, data to be released is saved in ReleaseBuffer, so Acquire can be sent as soon as req enters mshr
@@ -112,7 +114,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
 
   val mp_cbwrdata_valid = !state.s_cbwrdata
   val mp_snpresp_valid = !state.s_probeack && state.w_pprobeacklast
-  val mp_snprespdata_valid = !state.s_probeack && state.w_pprobeacklast
   val mp_grant_valid = !state.s_refill && state.w_grantlast && state.w_rprobeacklast // [Alias] grant after rprobe done
   io.tasks.mainpipe.valid := mp_wbfull_valid || mp_snpresp_valid || mp_grant_valid || mp_cbwrdata_valid
   // io.tasks.prefetchTrain.foreach(t => t.valid := !state.s_triggerprefetch.getOrElse(true.B))
@@ -220,53 +221,18 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_wbfull.mergeA := false.B
     mp_wbfull.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
     mp_wbfull.isCBWrDataTask := !state.s_cbWrData
-    mp_wbfull
-  }
 
-  val mp_cbwrdata_task = {
-    mp_wbfull.channel := req.channel
-    mp_wbfull.tag := dirResult.tag
-    mp_wbfull.set := req.set
-    mp_wbfull.off := 0.U
-    mp_wbfull.alias.foreach(_ := 0.U)
-    mp_wbfull.vaddr.foreach(_ := 0.U)
-    mp_wbfull.isKeyword.foreach(_ := false.B)
-    // if dirty, we must ReleaseData
-    // if accessed, we ReleaseData to keep the data in L3, for future access to be faster
-    // [Access] TODO: consider use a counter
-    mp_wbfull.opcode := {
-      cacheParams.releaseData match {
-        case 0 => Mux(meta.dirty && meta.state =/= INVALID || probeDirty, ReleaseData, Release)
-        case 1 => Mux(meta.dirty && meta.state =/= INVALID || probeDirty || meta.accessed, ReleaseData, Release)
-        case 2 => Mux(meta.prefetch.getOrElse(false.B) && !meta.accessed, Release, ReleaseData) //TODO: has problem with this
-        case 3 => ReleaseData // best performance with HuanCun-L3
-      }
-    }
-    mp_wbfull.param := Mux(isT(meta.state), TtoN, BtoN)
-    mp_wbfull.size := 0.U(msgSizeBits.W)
-    mp_wbfull.sourceId := 0.U(sourceIdBits.W)
-    mp_wbfull.bufIdx := 0.U(bufIdxBits.W)
-    mp_wbfull.needProbeAckData := false.B
-    mp_wbfull.mshrTask := true.B
-    mp_wbfull.mshrId := io.id
-    mp_wbfull.aliasTask.foreach(_ := false.B)
-    // mp_wbfull definitely read releaseBuf and refillBuf at ReqArb
-    // and it needs to write refillData to DS, so useProbeData is set false according to DS.wdata logic
-    mp_wbfull.useProbeData := false.B
-    mp_wbfull.mshrRetry := false.B
-    mp_wbfull.way := dirResult.way
-    mp_wbfull.fromL2pft.foreach(_ := false.B)
-    mp_wbfull.needHint.foreach(_ := false.B)
-    mp_wbfull.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
-    mp_wbfull.metaWen := false.B
-    mp_wbfull.meta := MetaEntry()
-    mp_wbfull.tagWen := false.B
-    mp_wbfull.dsWen := true.B // write refillData to DS
-    mp_wbfull.replTask := true.B
-    mp_wbfull.wayMask := 0.U(cacheParams.ways.W)
-    mp_wbfull.reqSource := 0.U(MemReqSource.reqSourceBits.W)
-    mp_wbfull.mergeA := false.B
-    mp_wbfull.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+    // CHI
+    mp_wbfull.tgtID := 0.U
+    mp_wbfull.srcID := 0.U
+    mp_wbfull.txnID := 0.U
+    mp_wbfull.dbID := 0.U 
+    mp_wbfull.chiOpcode := Mux(mp_cbwrdata_valid, CopyBackWrData, Mux(got_Dirty, WriteBackFull, Evict))
+    mp_wbfull.resp := I
+    mp_wbfull.fwdState := "b000"
+    mp_wbfull.pCrdType := "b0000" 
+    mp_wbfull.retToSrc := req.retToSrc
+    mp_wbfull.expCompAck := "b0"
     mp_wbfull
   }
 
@@ -328,6 +294,27 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_snpresp.replTask := false.B
     mp_snpresp.mergeA := false.B
     mp_snpresp.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+
+    // CHI
+    mp_snpresp.tgtID = 0.U
+    mp_snpresp.srcID = 0.U
+    mp_snpresp.txnID = 0.U
+    mp_snpresp.dbID = 0.U
+    mp_snpresp.chiOpcode = Mux(snpNoData, SnpResp, SnpRespData)
+    mp_snpresp.resp = ParallelLookUp(
+      Cat(isSnptoN, isSnptoB, isSnptoPeek, isSnptoPD),
+      Seq(
+        "b1000" -> I,
+        "b0100" -> SC,
+        "b0010" -> dirResultChi,
+        "b0001" -> Mux(gotUD, UC, dirResultChi)
+      ))
+    mp_snpresp.fwdState = "b000"
+    mp_snpresp.pCrdType = "b0000" 
+    mp_snpresp.retToSrc = req.retToSrc
+    mp_snpresp.expCompAck = "b0"
+    mp_snpresp
+
     mp_snpresp
   }
 
