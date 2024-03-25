@@ -548,6 +548,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.msInfo.bits.s_refill := state.s_refill
   io.msInfo.bits.param := req.param
   io.msInfo.bits.mergeA := mergeA
+  io.msInfo.bits.w_releaseack := state.w_releaseack
 
   assert(!(c_resp.valid && !io.status.bits.w_c_resp))
   assert(!(d_resp.valid && !io.status.bits.w_d_resp))
