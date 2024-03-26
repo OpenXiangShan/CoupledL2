@@ -419,7 +419,8 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
 
       l1HintArb.io.in <> VecInit(slices_l1Hint)
       io.l2_hint.valid := l1HintArb.io.out.fire && sourceIsDcache
-      io.l2_hint.bits := l1HintArb.io.out.bits.sourceId - dcacheSourceIdStart
+      io.l2_hint.bits.sourceId := l1HintArb.io.out.bits.sourceId - dcacheSourceIdStart
+      io.l2_hint.bits.isKeyword := l1HintArb.io.out.bits.isKeyword
       // continuous hints can only be sent every two cycle, since GrantData takes two cycles
       l1HintArb.io.out.ready := !RegNext(io.l2_hint.valid, false.B)
 
@@ -456,7 +457,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     }
     XSPerfAccumulate(cacheParams, "grant_data_fire", PopCount(VecInit(grant_data_fire)))
 
-    val hint_source = io.l2_hint.bits
+    val hint_source = io.l2_hint.bits.sourceId
 
     val grant_data_source = ParallelPriorityMux(slices.map {
       s => (s.io.in.d.fire, s.io.in.d.bits.source)

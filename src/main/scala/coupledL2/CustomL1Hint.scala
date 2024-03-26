@@ -27,6 +27,7 @@ import coupledL2.utils._
 class HintQueueEntry(implicit p: Parameters) extends L2Bundle {
   val source = UInt(sourceIdBits.W)
   val opcode = UInt(3.W)
+  val isKeyword = Bool()
 }
 
 class CustomL1HintIOBundle(implicit p: Parameters) extends L2Bundle {
@@ -68,6 +69,10 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
 
   val enqValid_s1 = mshr_GrantData_s1 || mshr_Grant_s1 || chn_Release_s1
   val enqSource_s1 = Mux(task_s1.bits.mergeA, task_s1.bits.aMergeTask.sourceId, task_s1.bits.sourceId)
+  val enqKeyWord_s1 = Mux(task_s1.bits.mergeA,
+    task_s1.bits.aMergeTask.isKeyword.getOrElse(false.B),
+    task_s1.bits.isKeyword.getOrElse(false.B)
+  )
   val enqOpcode_s1 = ParallelPriorityMux(
     Seq(
       mshr_Grant_s1 -> Grant,
@@ -81,6 +86,7 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   val chn_GrantData_s3 = task_s3.valid && !mshrReq_s3 && !need_mshr_s3 && isGrantData(task_s3.bits)
   val enqValid_s3 = chn_Grant_s3 || chn_GrantData_s3
   val enqSource_s3 = task_s3.bits.sourceId
+  val enqKeyWord_s3 = task_s3.bits.isKeyword.getOrElse(false.B)
   val enqOpcode_s3 = ParallelPriorityMux(
     Seq(
       chn_Grant_s3 -> Grant,
@@ -98,6 +104,7 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   hint_s1Queue.io.enq.valid := enqValid_s1
   hint_s1Queue.io.enq.bits.opcode := enqOpcode_s1
   hint_s1Queue.io.enq.bits.source := enqSource_s1
+  hint_s1Queue.io.enq.bits.isKeyword := enqKeyWord_s1
   hint_s1Queue.io.deq.ready := hintQueue.io.enq.ready && !enqValid_s3
   // WARNING:TODO: ensure queue will never overflow
   assert(hint_s1Queue.io.enq.ready, "hint_s1Queue should never be full")
@@ -106,8 +113,10 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   hintQueue.io.enq.valid := enqValid_s3 || hint_s1Queue.io.deq.valid
   hintQueue.io.enq.bits.opcode := Mux(enqValid_s3, enqOpcode_s3, hint_s1Queue.io.deq.bits.opcode)
   hintQueue.io.enq.bits.source := Mux(enqValid_s3, enqSource_s3, hint_s1Queue.io.deq.bits.source)
+  hintQueue.io.enq.bits.isKeyword := Mux(enqValid_s3, enqKeyWord_s3, hint_s1Queue.io.deq.bits.isKeyword)
   hintQueue.io.deq.ready := io.l1Hint.ready
 
   io.l1Hint.valid := hintQueue.io.deq.valid && hintQueue.io.deq.bits.opcode === GrantData
   io.l1Hint.bits.sourceId := hintQueue.io.deq.bits.source
+  io.l1Hint.bits.isKeyword := hintQueue.io.deq.bits.isKeyword
 }

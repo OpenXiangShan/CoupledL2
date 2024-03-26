@@ -127,6 +127,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
   io.l1Hint.valid := mainPipe.io.l1Hint.valid
   io.l1Hint.bits.sourceId := mainPipe.io.l1Hint.bits.sourceId
   io.l1Hint.bits.isKeyword := mainPipe.io.l1Hint.bits.isKeyword
+  mainPipe.io.l1Hint.ready := io.l1Hint.ready
   mshrCtl.io.grantStatus := grantBuf.io.grantStatus
 
   grantBuf.io.d_task <> mainPipe.io.toSourceD
