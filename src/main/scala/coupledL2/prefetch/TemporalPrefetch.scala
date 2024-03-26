@@ -333,10 +333,10 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val lastRecord1 = WireInit(Bool(), false.B)
   val lastRecord2 = WireInit(Bool(), false.B)
   val lastRecord3 = WireInit(Bool(), false.B)
-  lastRecord0 := recorder_compressed_idx0 === modeMaxLenList(0).asUInt - 1.U
-  lastRecord1 := recorder_compressed_idx1 === modeMaxLenList(1).asUInt - 1.U
-  lastRecord2 := recorder_compressed_idx2 === modeMaxLenList(2).asUInt - 1.U
-  lastRecord3 := recorder_compressed_idx3 === modeMaxLenList(3).asUInt - 1.U
+  lastRecord0 := recorder_compressed_idx0 >= modeMaxLenList(0).asUInt - 1.U
+  lastRecord1 := recorder_compressed_idx1 >= modeMaxLenList(1).asUInt - 1.U
+  lastRecord2 := recorder_compressed_idx2 >= modeMaxLenList(2).asUInt - 1.U
+  lastRecord3 := recorder_compressed_idx3 >= modeMaxLenList(3).asUInt - 1.U
   lastRecord := (newmode === 0.U && lastRecord0) ||
                 (newmode === 1.U && lastRecord1) ||
                 (newmode === 2.U && lastRecord2) ||
