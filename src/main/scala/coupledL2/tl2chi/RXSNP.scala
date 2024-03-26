@@ -43,13 +43,17 @@ class RXSNP(
     s.valid && s.bits.set === task.set && s.bits.reqTag === task.tag && !s.bits.willFree && !s.bits.nestB
   )).asUInt.orR
 
-  // unable to accept incoming B req because same-addr as some MSHR replaced block and cannot nest
+  /*
+   1. For TL unable to accept incoming B req because same-addr as some MSHR replaced block and cannot nest
+   2. For CHI ignore this kind of block
+   */
   val replaceConflictMask = VecInit(io.msInfo.map(s =>
     s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && s.bits.blockRefill // TODO: confirm this
   )).asUInt
   val replaceConflict = replaceConflictMask.orR
 
-  io.task.valid := decoupledSnp.valid && !addrConflict && !replaceConflict
+//  io.task.valid := decoupledSnp.valid && !addrConflict && !replaceConflict
+  io.task.valid := decoupledSnp.valid && !addrConflict
   io.task.bits := task
   decoupledSnp.ready := io.task.ready
 
@@ -86,7 +90,7 @@ class RXSNP(
     task.replTask := false.B
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
-
+    task.snpHitReleas := replaceConflict   //indicate read release buffer @s2 to get snoop data 
     task.tgtID.foreach(_ := 0.U) // TODO
     task.srcID.foreach(_ := snp.srcID)
     task.txnID.foreach(_ := snp.txnID)
@@ -94,7 +98,6 @@ class RXSNP(
     task.chiOpcode.foreach(_ := snp.opcode)
     task.pCrdType.foreach(_ := 0.U)
     task.retToSrc.foreach(_ := snp.retToSrc)
-
     task
   }
 

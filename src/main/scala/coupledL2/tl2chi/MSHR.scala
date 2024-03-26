@@ -31,6 +31,7 @@ import coupledL2.utils.XSPerfAccumulate
 class MSHRTasks(implicit p: Parameters) extends L2Bundle {
   // outer
   val txreq = DecoupledIO(new CHIREQ) //TODO: no need to use decoupled handshake
+  val txrsp = DecoupledIO(new CHIRSP) //TODO: no need to use decoupled handshake
   val source_b = DecoupledIO(new SourceBReq)
   val mainpipe = DecoupledIO(new TaskBundle) // To Mainpipe (SourceC or SourceD)
   // val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain)) // To prefetcher
@@ -63,7 +64,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val probeGotN = RegInit(false.B)
   val timer = RegInit(0.U(64.W)) // for performance analysis
 
-  /* MSHR Allocation */
   val req_valid = RegInit(false.B)
   val req       = RegInit(0.U.asTypeOf(new TaskBundle()))
   val dirResult = RegInit(0.U.asTypeOf(new DirResult()))
@@ -72,6 +72,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   initState.elements.foreach(_._2 := true.B)
   val state     = RegInit(new FSMState(), initState)
 
+  /* Allocation */
   when(io.alloc.valid) {
     req_valid := true.B
     state     := io.alloc.bits.state
@@ -108,6 +109,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   /* ======== Task allocation ======== */
   // Theoretically, data to be released is saved in ReleaseBuffer, so Acquire can be sent as soon as req enters mshr
   io.tasks.txreq.valid := !state.s_acquire || !state.s_reIssue
+  io.tasks.txrsp.valid := RegNext(io.rxdat.valid)
   io.tasks.source_b.valid := !state.s_pprobe || !state.s_rprobe
   val mp_wbfull_valid = !state.s_release && state.w_rprobeacklast && state.w_grantlast &&
         state.w_replResp // release after Grant to L1 sent and replRead returns
@@ -118,12 +120,31 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.tasks.mainpipe.valid := mp_wbfull_valid || mp_snpresp_valid || mp_grant_valid || mp_cbwrdata_valid
   // io.tasks.prefetchTrain.foreach(t => t.valid := !state.s_triggerprefetch.getOrElse(true.B))
 
+  /*TXRSP for CompAck/DBID */
+    val txrsp_task = {
+      val orsp = io.tasks.txrsp.bits
+      orsp.qos := 0.U
+      orsp.tgtID := 0.U
+      orsp.srcID := 0.U
+      orsp.txnID := io.id
+      orsp.opcode := CompAck
+      orsp.resperr := 0.U
+      orsp.resp  := gotResp
+      orsp.fwdState := 0.U
+      orsp.stashhit := 0.U
+      orsp.datapull :=0.U
+      orsp.dbid := 0.U
+      orsp.pcrdtype := 0.U
+      orsp.tracetag := 0.U
+    }
+
+  /*TXREQ for Transaction Request*/
   val a_task = {
     val oa = io.tasks.txreq.bits
     oa.qos := 0.U
     oa.tgtID := 0.U
     oa.srcID := 0.U
-    oa.txnID := 0.U
+    oa.txnID := io.id
     oa.returnNid := 0.U
     oa.stashNid := 0.U
     oa.stashNidValid := 0.U
@@ -133,7 +154,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
         Seq(
           Cat(AcquireBlock, false.B, false.B) -> ReadNotShareDirty, //load miss/store miss
           Cat(AcquirePerm,  false.B, false.B) -> ReadUnique,        //store upgrade miss
-          Cat(AcquirePerm,   true.B, false.B) -> MakedUnique,       //store upgrade hit + noT
+          Cat(AcquirePerm,   true.B, false.B) -> ReadUnique,        //TODO may use MakeUnique
+//          Cat(AcquirePerm,   true.B, false.B) -> MakedUnique,     //store upgrade hit + noT
           Cat(Get,          false.B, false.B) -> ReadClean,
           Cat(Hint,         false.B, false.B) -> ReadNotShareDirty
         ))
@@ -507,8 +529,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
         state.w_rprobeackfirst := true.B
         state.w_rprobeacklast := state.w_rprobeacklast || c_resp.bits.last
         state.w_pprobeackfirst := true.B
-      state.w_pprobeacklast := state.w_pprobeacklast || c_resp.bits.last
-      state.w_pprobeack := state.w_pprobeack || req.off === 0.U || c_resp.bits.last
+        state.w_pprobeacklast := state.w_pprobeacklast || c_resp.bits.last
+        state.w_pprobeack := state.w_pprobeack || req.off === 0.U || c_resp.bits.last
     }
     when (c_resp.bits.opcode === ProbeAckData) {
       probeDirty := true.B
@@ -523,13 +545,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
     val req_get = req.opcode === Get
     val req_prefetch = req.opcode === Hint
 
-
-    val compData = rxdat.valid & (rxdat.bits.opcode === CompData)
-    val dirty = (rxdat.bits.resp === 3'b010) || (rxdat.bits.resp === 3'b110)
-
-//    gotT := (rxdat.bits.resp === 3'b010) || (rxdat.bits.resp === 3'b110) // 010-UC   110-UD_PD
-//    gotDirty := gotDirty || (rxdat.bits.resp === 3'b110) || (rxdat.bits.resp === 3'b111) // 010-UD_PD   111-SD_PD
-    
+    val rxrspIsUC = (rxdat.bits.resp === 3'b010)
+    val rxrspIsUD = (rxdat.bits.resp === 3'b110)
 
     //RXDAT
     when (rxdat.valid) {
@@ -537,10 +554,10 @@ class MSHR(implicit p: Parameters) extends L2Module {
         state.w_grantfirst := true.B
         state.w_grantlast := rxdat.bits.last
         state.w_grant := req.off === 0.U || rxdat.bits.last  // TODO? why offset?
-
-        gotT := rxdat.bits.dirty
-        gotDirty := gotDirty || rxdat.bits.dirty
+        gotT := rxrspIsUC || rxrspIsUD 
+        gotDirty := gotDirty || rxrspIsUD
         gotGrantData := true.B
+
       }
     }
 
@@ -550,9 +567,9 @@ class MSHR(implicit p: Parameters) extends L2Module {
         state.w_grantfirst := true.B
         state.w_grantlast := rxrsp.bits.last
         state.w_grant := req.off === 0.U || rxrsp.bits.last  // TODO? why offset?
-        gotT := rxdat.bits.dirty
-        gotDirty := gotDirty || rxrsp.bits.dirty
-      }ss
+        gotT := isUC
+        gotDirty := false.B
+      }
       when(rxrsp.bits.opcode === CompDBID) {
 //        state.w_releaseack := true.B
         state.s_cbWrData := false.B
