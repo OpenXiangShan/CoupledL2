@@ -219,6 +219,8 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   val pftRespEntry = new Bundle() {
     val tag = UInt(tagBits.W)
     val set = UInt(setBits.W)
+    val vaddr = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W))
+    val pfSource = UInt(MemReqSource.reqSourceBits.W)
   }
   // TODO: this may not need 10 entries, but this does not take much space
   val pftQueueLen = 10
