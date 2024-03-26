@@ -216,7 +216,12 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     deqTask.isKeyword.getOrElse(false.B)))
 
   // =========== send response to prefetcher ===========
-  val pftRespEntry = new PrefetchResp()
+  val pftRespEntry = new Bundle() {
+    val tag = UInt(tagBits.W)
+    val set = UInt(setBits.W)
+    val vaddr = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W))
+    val pfSource = UInt(MemReqSource.reqSourceBits.W)
+  }
   // TODO: this may not need 10 entries, but this does not take much space
   val pftQueueLen = 10
   val pftRespQueue = prefetchOpt.map(_ => Module(new Queue(pftRespEntry, entries = pftQueueLen, flow = true)))
