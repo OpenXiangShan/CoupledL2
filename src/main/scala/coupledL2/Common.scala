@@ -109,6 +109,9 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val mergeA = Bool()
   val aMergeTask = new MergeTaskBundle()
 
+  //Used for get data from ReleaseBuf when snoop hit with same PA 
+  val snpHitRelease = Bool()
+  val snpHitReleaseIdx = UInt(bufIdxBits.W) 
   // CHI
   val tgtID = chiOpt.map(_ => UInt(TGTID_WIDTH.W))
   val srcID = chiOpt.map(_ => UInt(SRCID_WIDTH.W))
@@ -200,6 +203,10 @@ class RespInfoBundle(implicit p: Parameters) extends L2Bundle {
   val last = Bool() // last beat
   val dirty = Bool() // only used for sinkD resps
   val isHit = Bool() // only used for sinkD resps
+ //CHI
+  val txnid = UInt(8.W)
+  val srcid = UInt(11.W)
+  val pcrdtype = UInt(4.W)
 }
 
 class RespBundle(implicit p: Parameters) extends L2Bundle {
@@ -237,7 +244,7 @@ class FSMState(implicit p: Parameters) extends L2Bundle {
   // CHI
   val s_compack = chiOpt.map(_ => Bool())
   val s_cbwrdata = chiOpt.map(_ => Bool())
-
+  val s_reissue = chiOpt.map(_ => Bool())
 }
 
 class SourceAReq(implicit p: Parameters) extends L2Bundle {

@@ -90,7 +90,8 @@ class RXSNP(
     task.replTask := false.B
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
-    task.snpHitReleas := replaceConflict   //indicate read release buffer @s2 to get snoop data 
+    task.snpHitRelease := replaceConflict   //indicate read release buffer @s2 to get snoop data 
+    task.snpHitReleaseIdx := replaceConflictMask  //the index of ReleaseBuffer that conflict 
     task.tgtID.foreach(_ := 0.U) // TODO
     task.srcID.foreach(_ := snp.srcID)
     task.txnID.foreach(_ := snp.txnID)

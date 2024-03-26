@@ -72,6 +72,10 @@ class MSHR(implicit p: Parameters) extends L2Module {
   initState.elements.foreach(_._2 := true.B)
   val state     = RegInit(new FSMState(), initState)
 
+  //for Retry
+  val srcnid = RegInit(false.B)
+  val pcrdgrant = RegInit(false.B)
+
   /* Allocation */
   when(io.alloc.valid) {
     req_valid := true.B
@@ -108,19 +112,19 @@ class MSHR(implicit p: Parameters) extends L2Module {
 
   /* ======== Task allocation ======== */
   // Theoretically, data to be released is saved in ReleaseBuffer, so Acquire can be sent as soon as req enters mshr
-  io.tasks.txreq.valid := !state.s_acquire || !state.s_reIssue
+  io.tasks.txreq.valid := !state.s_acquire || !state.s_reissue
   io.tasks.txrsp.valid := RegNext(io.rxdat.valid)
   io.tasks.source_b.valid := !state.s_pprobe || !state.s_rprobe
-  val mp_wbfull_valid = !state.s_release && state.w_rprobeacklast && state.w_grantlast &&
+  val mp_release_valid = !state.s_release && state.w_rprobeacklast && state.w_grantlast &&
         state.w_replResp // release after Grant to L1 sent and replRead returns
 
   val mp_cbwrdata_valid = !state.s_cbwrdata
-  val mp_snpresp_valid = !state.s_probeack && state.w_pprobeacklast
+  val mp_probeack_valid = !state.s_probeack && state.w_pprobeacklast
   val mp_grant_valid = !state.s_refill && state.w_grantlast && state.w_rprobeacklast // [Alias] grant after rprobe done
-  io.tasks.mainpipe.valid := mp_wbfull_valid || mp_snpresp_valid || mp_grant_valid || mp_cbwrdata_valid
+  io.tasks.mainpipe.valid := mp_wbfull_valid || mp_probeack_valid || mp_grant_valid || mp_cbwrdata_valid
   // io.tasks.prefetchTrain.foreach(t => t.valid := !state.s_triggerprefetch.getOrElse(true.B))
 
-  /*TXRSP for CompAck/DBID */
+  /*TXRSP for CompAck */
     val txrsp_task = {
       val orsp = io.tasks.txrsp.bits
       orsp.qos := 0.U
@@ -129,7 +133,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
       orsp.txnID := io.id
       orsp.opcode := CompAck
       orsp.resperr := 0.U
-      orsp.resp  := gotResp
+      orsp.resp  := 0.U
       orsp.fwdState := 0.U
       orsp.stashhit := 0.U
       orsp.datapull :=0.U
@@ -141,8 +145,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
   /*TXREQ for Transaction Request*/
   val a_task = {
     val oa = io.tasks.txreq.bits
-    oa.qos := 0.U
-    oa.tgtID := 0.U
+    oa.qos := Mux(!state.s_reissue, 3.U, 0.U) //TODO increase qos when retry
+    oa.tgtID := Mux(!state.s_reissue, srcnid, 0.U)
     oa.srcID := 0.U
     oa.txnID := io.id
     oa.returnNid := 0.U
@@ -163,9 +167,9 @@ class MSHR(implicit p: Parameters) extends L2Module {
     oa.addr := Cat(task.tag, task.set, 0.U(offsetBits.W)) //TODO 36bit -> 48bit
     oa.ns := "b0"
     oa.likelyshared := "b0"
-    oa.allowRetry := "b1"
+    oa.allowRetry := state.s_reissue
     oa.order := "b00"
-    oa.PCrdType := "b0000"
+    oa.PCrdType := Mux(!state.s_reissue, pcrdtype, 0.U)
     oa.expCompAck := true.B
     oa.memAttr := "b1101" // {allocate, cacheable, Device, EWA}
     oa.snpAttr := "b1"
@@ -197,19 +201,19 @@ class MSHR(implicit p: Parameters) extends L2Module {
     ob
   }
 
-  val mp_wbfull, mp_snpresp, mp_grant, mp_cbwrdata = Wire(new TaskBundle)
-  val mp_wbfull_task = {
-    mp_wbfull.channel := req.channel
-    mp_wbfull.tag := dirResult.tag
-    mp_wbfull.set := req.set
-    mp_wbfull.off := 0.U
-    mp_wbfull.alias.foreach(_ := 0.U)
-    mp_wbfull.vaddr.foreach(_ := 0.U)
-    mp_wbfull.isKeyword.foreach(_ := false.B)
+  val mp_release, mp_probeack, mp_grant, mp_cbwrdata = Wire(new TaskBundle)
+  val mp_release_task = {
+    mp_release.channel := req.channel
+    mp_release.tag := dirResult.tag
+    mp_release.set := req.set
+    mp_release.off := 0.U
+    mp_release.alias.foreach(_ := 0.U)
+    mp_release.vaddr.foreach(_ := 0.U)
+    mp_release.isKeyword.foreach(_ := false.B)
     // if dirty, we must ReleaseData
     // if accessed, we ReleaseData to keep the data in L3, for future access to be faster
     // [Access] TODO: consider use a counter
-    mp_wbfull.opcode := {
+    mp_release.opcode := {
       cacheParams.releaseData match {
         case 0 => Mux(meta.dirty && meta.state =/= INVALID || probeDirty, ReleaseData, Release)
         case 1 => Mux(meta.dirty && meta.state =/= INVALID || probeDirty || meta.accessed, ReleaseData, Release)
@@ -217,61 +221,61 @@ class MSHR(implicit p: Parameters) extends L2Module {
         case 3 => ReleaseData // best performance with HuanCun-L3
       }
     }
-    mp_wbfull.param := Mux(isT(meta.state), TtoN, BtoN)
-    mp_wbfull.size := 0.U(msgSizeBits.W)
-    mp_wbfull.sourceId := 0.U(sourceIdBits.W)
-    mp_wbfull.bufIdx := 0.U(bufIdxBits.W)
-    mp_wbfull.needProbeAckData := false.B
-    mp_wbfull.mshrTask := true.B
-    mp_wbfull.mshrId := io.id
-    mp_wbfull.aliasTask.foreach(_ := false.B)
-    // mp_wbfull definitely read releaseBuf and refillBuf at ReqArb
+    mp_release.param := Mux(isT(meta.state), TtoN, BtoN)
+    mp_release.size := 0.U(msgSizeBits.W)
+    mp_release.sourceId := 0.U(sourceIdBits.W)
+    mp_release.bufIdx := 0.U(bufIdxBits.W)
+    mp_release.needProbeAckData := false.B
+    mp_release.mshrTask := true.B
+    mp_release.mshrId := io.id
+    mp_release.aliasTask.foreach(_ := false.B)
+    // mp_release definitely read releaseBuf and refillBuf at ReqArb
     // and it needs to write refillData to DS, so useProbeData is set false according to DS.wdata logic
-    mp_wbfull.useProbeData := false.B
-    mp_wbfull.mshrRetry := false.B
-    mp_wbfull.way := dirResult.way
-    mp_wbfull.fromL2pft.foreach(_ := false.B)
-    mp_wbfull.needHint.foreach(_ := false.B)
-    mp_wbfull.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
-    mp_wbfull.metaWen := false.B
-    mp_wbfull.meta := MetaEntry()
-    mp_wbfull.tagWen := false.B
-    mp_wbfull.dsWen := true.B // write refillData to DS
-    mp_wbfull.replTask := true.B
-    mp_wbfull.wayMask := 0.U(cacheParams.ways.W)
-    mp_wbfull.reqSource := 0.U(MemReqSource.reqSourceBits.W)
-    mp_wbfull.mergeA := false.B
-    mp_wbfull.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
-    mp_wbfull.isCBWrDataTask := !state.s_cbWrData
+    mp_release.useProbeData := false.B
+    mp_release.mshrRetry := false.B
+    mp_release.way := dirResult.way
+    mp_release.fromL2pft.foreach(_ := false.B)
+    mp_release.needHint.foreach(_ := false.B)
+    mp_release.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
+    mp_release.metaWen := false.B
+    mp_release.meta := MetaEntry()
+    mp_release.tagWen := false.B
+    mp_release.dsWen := true.B // write refillData to DS
+    mp_release.replTask := true.B
+    mp_release.wayMask := 0.U(cacheParams.ways.W)
+    mp_release.reqSource := 0.U(MemReqSource.reqSourceBits.W)
+    mp_release.mergeA := false.B
+    mp_release.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+    mp_release.isCBWrDataTask := !state.s_cbwrdata
 
     // CHI
-    mp_wbfull.tgtID := 0.U
-    mp_wbfull.srcID := 0.U
-    mp_wbfull.txnID := 0.U
-    mp_wbfull.dbID := 0.U 
-    mp_wbfull.chiOpcode := Mux(mp_cbwrdata_valid, CopyBackWrData, Mux(got_Dirty, WriteBackFull, Evict))
-    mp_wbfull.resp := I
-    mp_wbfull.fwdState := "b000"
-    mp_wbfull.pCrdType := "b0000" 
-    mp_wbfull.retToSrc := req.retToSrc
-    mp_wbfull.expCompAck := "b0"
-    mp_wbfull
+    mp_release.tgtID := 0.U
+    mp_release.srcID := 0.U
+    mp_release.txnID := 0.U
+    mp_release.dbID := 0.U 
+    mp_release.chiOpcode := Mux(mp_cbwrdata_valid, CopyBackWrData, Mux(got_Dirty, WriteBackFull, Evict))
+    mp_release.resp := I
+    mp_release.fwdState := "b000"
+    mp_release.pCrdType := "b0000" 
+    mp_release.retToSrc := req.retToSrc
+    mp_release.expCompAck := "b0"
+    mp_release
   }
 
-  val mp_snpresp_task = {
-    mp_snpresp.channel := req.channel
-    mp_snpresp.tag := req.tag
-    mp_snpresp.set := req.set
-    mp_snpresp.off := req.off
-    mp_snpresp.alias.foreach(_ := 0.U)
-    mp_snpresp.vaddr.foreach(_ := 0.U)
-    mp_snpresp.isKeyword.foreach(_ := false.B)
-    mp_snpresp.opcode := Mux(
+  val mp_probeack_task = {
+    mp_probeack.channel := req.channel
+    mp_probeack.tag := req.tag
+    mp_probeack.set := req.set
+    mp_probeack.off := req.off
+    mp_probeack.alias.foreach(_ := 0.U)
+    mp_probeack.vaddr.foreach(_ := 0.U)
+    mp_probeack.isKeyword.foreach(_ := false.B)
+    mp_probeack.opcode := Mux(
       meta.dirty && isT(meta.state) || probeDirty || req.needProbeAckData,
       ProbeAckData,
       ProbeAck
     )
-    mp_snpresp.param := ParallelLookUp(
+    mp_probeack.param := ParallelLookUp(
       Cat(isT(meta.state), req.param(bdWidth - 1, 0)),
       Seq(
         Cat(false.B, toN) -> BtoN,
@@ -279,20 +283,20 @@ class MSHR(implicit p: Parameters) extends L2Module {
         Cat(true.B, toB) -> TtoB
       )
     )
-    mp_snpresp.size := 0.U(msgSizeBits.W)
-    mp_snpresp.sourceId := 0.U(sourceIdBits.W)
-    mp_snpresp.bufIdx := 0.U(bufIdxBits.W)
-    mp_snpresp.needProbeAckData := false.B
-    mp_snpresp.mshrTask := true.B
-    mp_snpresp.mshrId := io.id
-    mp_snpresp.aliasTask.foreach(_ := false.B)
-    mp_snpresp.useProbeData := true.B // write [probeAckData] to DS, if not probed toN
-    mp_snpresp.mshrRetry := false.B
-    mp_snpresp.way := dirResult.way
-    mp_snpresp.fromL2pft.foreach(_ := false.B)
-    mp_snpresp.needHint.foreach(_ := false.B)
-    mp_snpresp.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
-    mp_snpresp.meta := MetaEntry(
+    mp_probeack.size := 0.U(msgSizeBits.W)
+    mp_probeack.sourceId := 0.U(sourceIdBits.W)
+    mp_probeack.bufIdx := 0.U(bufIdxBits.W)
+    mp_probeack.needProbeAckData := false.B
+    mp_probeack.mshrTask := true.B
+    mp_probeack.mshrId := io.id
+    mp_probeack.aliasTask.foreach(_ := false.B)
+    mp_probeack.useProbeData := true.B // write [probeAckData] to DS, if not probed toN
+    mp_probeack.mshrRetry := false.B
+    mp_probeack.way := dirResult.way
+    mp_probeack.fromL2pft.foreach(_ := false.B)
+    mp_probeack.needHint.foreach(_ := false.B)
+    mp_probeack.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
+    mp_probeack.meta := MetaEntry(
       dirty = false.B,
       state = Mux(
         req.param === toN,
@@ -308,22 +312,22 @@ class MSHR(implicit p: Parameters) extends L2Module {
       prefetch = req.param =/= toN && meta_pft,
       accessed = req.param =/= toN && meta.accessed
     )
-    mp_snpresp.metaWen := true.B
-    mp_snpresp.tagWen := false.B
-    mp_snpresp.dsWen := req.param =/= toN && probeDirty
-    mp_snpresp.wayMask := 0.U(cacheParams.ways.W)
-    mp_snpresp.reqSource := 0.U(MemReqSource.reqSourceBits.W)
-    mp_snpresp.replTask := false.B
-    mp_snpresp.mergeA := false.B
-    mp_snpresp.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+    mp_probeack.metaWen := true.B
+    mp_probeack.tagWen := false.B
+    mp_probeack.dsWen := req.param =/= toN && probeDirty
+    mp_probeack.wayMask := 0.U(cacheParams.ways.W)
+    mp_probeack.reqSource := 0.U(MemReqSource.reqSourceBits.W)
+    mp_probeack.replTask := false.B
+    mp_probeack.mergeA := false.B
+    mp_probeack.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
 
     // CHI
-    mp_snpresp.tgtID = 0.U
-    mp_snpresp.srcID = 0.U
-    mp_snpresp.txnID = 0.U
-    mp_snpresp.dbID = 0.U
-    mp_snpresp.chiOpcode = Mux(snpNoData, SnpResp, SnpRespData)
-    mp_snpresp.resp = ParallelLookUp(
+    mp_probeack.tgtID = 0.U
+    mp_probeack.srcID = 0.U
+    mp_probeack.txnID = 0.U
+    mp_probeack.dbID = 0.U
+    mp_probeack.chiOpcode = Mux(snpNoData, SnpResp, SnpRespData)
+    mp_probeack.resp = ParallelLookUp(
       Cat(isSnptoN, isSnptoB, isSnptoPeek, isSnptoPD),
       Seq(
         "b1000" -> I,
@@ -331,13 +335,13 @@ class MSHR(implicit p: Parameters) extends L2Module {
         "b0010" -> dirResultChi,
         "b0001" -> Mux(gotUD, UC, dirResultChi)
       ))
-    mp_snpresp.fwdState = "b000"
-    mp_snpresp.pCrdType = "b0000" 
-    mp_snpresp.retToSrc = req.retToSrc
-    mp_snpresp.expCompAck = "b0"
-    mp_snpresp
+    mp_probeack.fwdState = "b000"
+    mp_probeack.pCrdType = "b0000" 
+    mp_probeack.retToSrc = req.retToSrc
+    mp_probeack.expCompAck = "b0"
+    mp_probeack
 
-    mp_snpresp
+    mp_probeack
   }
 
 
@@ -464,11 +468,10 @@ class MSHR(implicit p: Parameters) extends L2Module {
   }
   io.tasks.mainpipe.bits := ParallelPriorityMux(
     Seq(
-      mp_grant_valid        -> mp_grant,
-      mp_wbfull_valid       -> mp_wbfull,
-      mp_cbwrdata_valid     -> mp_wbfull,
-      mp_snpresp_valid      -> mp_snpresp
-      mp_snprespdata_valid  -> mp_snpresp
+      mp_grant_valid         -> mp_grant,
+      mp_release_valid       -> mp_release,
+      mp_cbwrdata_valid      -> mp_release,
+      mp_probeack_valid      -> mp_probeack
     )
   )
   io.tasks.mainpipe.bits.reqSource := req.reqSource
@@ -484,7 +487,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   /* ======== Task update ======== */
   when (io.tasks.txreq.fire) {
     state.s_acquire := true.B 
-    state.s_reIssue := true.B 
+    state.s_reissue := true.B 
   }
   when (io.tasks.source_b.fire) {
     state.s_pprobe := true.B
@@ -494,14 +497,14 @@ class MSHR(implicit p: Parameters) extends L2Module {
     when (mp_grant_valid) {
       state.s_refill := true.B
       state.s_retry := true.B
-    }.elsewhen (mp_wbfull_valid) {
+    }.elsewhen (mp_release_valid) {
       state.s_release := true.B
       meta.state := INVALID
     }.elsewhen (mp_cbwrdata_valid) {
-      state.s_cbWrData := true.B
+      state.s_cbwrdata := true.B
       state.w_releaseack := true.B
       meta.state := INVALID
-    }.elsewhen (mp_snpresp_valid) {
+    }.elsewhen (mp_probeack_valid) {
       state.s_probeack := true.B
     }
   }
@@ -557,7 +560,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
         gotT := rxrspIsUC || rxrspIsUD 
         gotDirty := gotDirty || rxrspIsUD
         gotGrantData := true.B
-
       }
     }
 
@@ -575,11 +577,14 @@ class MSHR(implicit p: Parameters) extends L2Module {
         state.s_cbWrData := false.B
       }
       when(rxrsp.bits.opcode === RetryAck) {
-        state.w_credit := false.B  
+        state.w_credit := false.B
+        srcnid = rxrsp.bits.srcnid
+        pcrdtype = rxrsp.bits.pcrdtype
+
       }
       when(rxrsp.bits.opcode === PCrdGrant) {
         state.w_credit := true.B
-        state.s_reIssue := true.B 
+        state.s_reissue := false.B 
       }
     }
 
@@ -691,7 +696,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   // if (cacheParams.enablePerf) {
     val acquire_ts = RegEnable(timer, false.B, io.tasks.txreq.fire)
     val probe_ts = RegEnable(timer, false.B, io.tasks.source_b.fire)
-    val release_ts = RegEnable(timer, false.B, !mp_grant_valid && mp_wbfull_valid && io.tasks.mainpipe.ready)
+    val release_ts = RegEnable(timer, false.B, !mp_grant_valid && mp_release_valid && io.tasks.mainpipe.ready)
     val acquire_period = IO(Output(UInt(64.W)))
     val probe_period = IO(Output(UInt(64.W)))
     val release_period = IO(Output(UInt(64.W)))
