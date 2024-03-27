@@ -30,6 +30,8 @@ class RXDAT(implicit p: Parameters) extends TL2CHIL2Module {
     val refillBufWrite = ValidIO(new MSHRBufWrite())
   })
 
+  /* RXDAT for Transactions: CompData */
+
   //For bus width is 256-bit
   val first = (io.out.bits.dataid === "b00")
   val last  = (io.out.bits.dataid === "b10")
@@ -47,8 +49,13 @@ class RXDAT(implicit p: Parameters) extends TL2CHIL2Module {
   io.in.mshrId := io.out.bits.txnid
   io.in.set := 0.U(setBits.W)
   io.in.tag := 0.U(tagBits.W)
-  io.in.respInfo.opcode := io.out.bits.opcode
+//  io.in.respInfo.opcode := io.out.bits.opcode
   io.in.respInfo.last := last
+
+  io.in.respInfo.chiOpcode := io.out.bits.opcode
+  io.in.respInfo.homenid := io.out.bits.homenid
+  io.in.respInfo.dbid := io.out.bits.dbid
+
 
   // count refillData all zero
   // (assume beat0 and beat1 of the same block always come continuously, no intersection)

@@ -73,8 +73,10 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val state     = RegInit(new FSMState(), initState)
 
   //for Retry
-  val srcnid = RegInit(false.B)
-  val pcrdgrant = RegInit(false.B)
+  val srcnid = RegInit(0.U(11.W))
+  val homenid = RegInit(0.U(11.W))
+  val dbid = RegInit(0.U(8.W))
+  val pcrdtype = RegInit(0.U(4.W))
 
   /* Allocation */
   when(io.alloc.valid) {
@@ -128,9 +130,9 @@ class MSHR(implicit p: Parameters) extends L2Module {
     val txrsp_task = {
       val orsp = io.tasks.txrsp.bits
       orsp.qos := 0.U
-      orsp.tgtID := 0.U
+      orsp.tgtID := homenid
       orsp.srcID := 0.U
-      orsp.txnID := io.id
+      orsp.txnID := dbid
       orsp.opcode := CompAck
       orsp.resperr := 0.U
       orsp.resp  := 0.U
@@ -246,17 +248,17 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_release.reqSource := 0.U(MemReqSource.reqSourceBits.W)
     mp_release.mergeA := false.B
     mp_release.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
-    mp_release.isCBWrDataTask := !state.s_cbwrdata
 
     // CHI
-    mp_release.tgtID := 0.U
+    mp_release.tgtID := Mux(mp_cbwrdata_valid, srcid, 0.U)
     mp_release.srcID := 0.U
-    mp_release.txnID := 0.U
+    mp_release.txnID := Mux(mp_cbwrdata_valid, dbid, io.id)
+    mp_release.homenID := 0.U
     mp_release.dbID := 0.U 
     mp_release.chiOpcode := Mux(mp_cbwrdata_valid, CopyBackWrData, Mux(got_Dirty, WriteBackFull, Evict))
     mp_release.resp := I
     mp_release.fwdState := "b000"
-    mp_release.pCrdType := "b0000" 
+    mp_release.pcrdtype := "b0000" 
     mp_release.retToSrc := req.retToSrc
     mp_release.expCompAck := "b0"
     mp_release
@@ -322,10 +324,11 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_probeack.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
 
     // CHI
-    mp_probeack.tgtID = 0.U
+    mp_probeack.tgtID = 0.U  //TODO: anchored HN Node ID 
     mp_probeack.srcID = 0.U
     mp_probeack.txnID = 0.U
-    mp_probeack.dbID = 0.U
+    mp_probeack.homeID = req.srcID
+    mp_probeack.dbID = reg.txnID
     mp_probeack.chiOpcode = Mux(snpNoData, SnpResp, SnpRespData)
     mp_probeack.resp = ParallelLookUp(
       Cat(isSnptoN, isSnptoB, isSnptoPeek, isSnptoPD),
@@ -560,6 +563,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
         gotT := rxrspIsUC || rxrspIsUD 
         gotDirty := gotDirty || rxrspIsUD
         gotGrantData := true.B
+        dbid := rxdat.bits.dbid
+        homenid := rxdat.bits.homenid
       }
     }
 
@@ -572,9 +577,11 @@ class MSHR(implicit p: Parameters) extends L2Module {
         gotT := isUC
         gotDirty := false.B
       }
-      when(rxrsp.bits.opcode === CompDBID) {
+      when(rxrsp.bits.opcode === CompDBIDResp) {
 //        state.w_releaseack := true.B
         state.s_cbWrData := false.B
+        srcid := rxrsp.bits.srcnid
+        dbid := rxrsp.bits.dbid
       }
       when(rxrsp.bits.opcode === RetryAck) {
         state.w_credit := false.B

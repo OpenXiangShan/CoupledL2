@@ -164,6 +164,7 @@ class CHIDAT extends CHIBundle {
   val tgtID = UInt(TGTID_WIDTH.W)
   val srcID = UInt(SRCID_WIDTH.W)
   val txnID = UInt(TXNID_WIDTH.W)
+  val homeNID = UInt(HOMENID_WIDTH.W)
   val dbID = UInt(DBID_WIDTH.W)
   val opcode = UInt(DAT_OPCODE_WIDTH.W)
   val ccID = UInt(CCID_WIDTH.W)
