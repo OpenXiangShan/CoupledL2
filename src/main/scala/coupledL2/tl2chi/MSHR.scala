@@ -27,6 +27,8 @@ import freechips.rocketchip.tilelink.TLPermissions._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.prefetch.{PfSource, PrefetchTrain}
 import coupledL2.utils.XSPerfAccumulate
+import coupledL2.tl2chi._
+import coupledL2._
 
 class MSHRTasks(implicit p: Parameters) extends L2Bundle {
   // outer
@@ -72,7 +74,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   initState.elements.foreach(_._2 := true.B)
   val state     = RegInit(new FSMState(), initState)
 
-  //for Retry
+  //for CHI
   val srcnid = RegInit(0.U(11.W))
   val homenid = RegInit(0.U(11.W))
   val dbid = RegInit(0.U(8.W))
@@ -102,7 +104,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val req_get = req.opcode === Get
   val req_prefetch = req.opcode === Hint
   val snpNoData = isSnpMakeInvalidX(req.chiOpcode) || isSnpStashX(req.chiOpcode)
-  val gotUD = meta.dirty & (meta === TRUNK || meta.state === TIP) //TC/TTC -> UD 
+  val gotUD = meta.dirty & (meta.state === TRUNK || meta.state === TIP) //TC/TTC -> UD 
   val promoteT_normal =  dirResult.hit && meta_no_client && meta.state === TIP
   val promoteT_L3     = !dirResult.hit && gotT
   val promoteT_alias  =  dirResult.hit && req.aliasTask.getOrElse(false.B) && (meta.state === TRUNK || meta.state === TIP)
@@ -115,46 +117,44 @@ class MSHR(implicit p: Parameters) extends L2Module {
   /* ======== Task allocation ======== */
   // Theoretically, data to be released is saved in ReleaseBuffer, so Acquire can be sent as soon as req enters mshr
   io.tasks.txreq.valid := !state.s_acquire || !state.s_reissue
-  io.tasks.txrsp.valid := RegNext(io.rxdat.valid)
+  io.tasks.txrsp.valid := RegNext(io.resps.rxdat.valid)
   io.tasks.source_b.valid := !state.s_pprobe || !state.s_rprobe
   val mp_release_valid = !state.s_release && state.w_rprobeacklast && state.w_grantlast &&
         state.w_replResp // release after Grant to L1 sent and replRead returns
-
   val mp_cbwrdata_valid = !state.s_cbwrdata
   val mp_probeack_valid = !state.s_probeack && state.w_pprobeacklast
   val mp_grant_valid = !state.s_refill && state.w_grantlast && state.w_rprobeacklast // [Alias] grant after rprobe done
-  io.tasks.mainpipe.valid := mp_wbfull_valid || mp_probeack_valid || mp_grant_valid || mp_cbwrdata_valid
+  io.tasks.mainpipe.valid := mp_release_valid || mp_probeack_valid || mp_grant_valid || mp_cbwrdata_valid
   // io.tasks.prefetchTrain.foreach(t => t.valid := !state.s_triggerprefetch.getOrElse(true.B))
 
   /*TXRSP for CompAck */
     val txrsp_task = {
       val orsp = io.tasks.txrsp.bits
-      orsp.qos := 0.U
       orsp.tgtID := homenid
       orsp.srcID := 0.U
       orsp.txnID := dbid
+      orsp.dbID := 0.U
       orsp.opcode := CompAck
-      orsp.resperr := 0.U
+//      orsp.resperr := 0.U
       orsp.resp  := 0.U
       orsp.fwdState := 0.U
-      orsp.stashhit := 0.U
-      orsp.datapull :=0.U
-      orsp.dbid := 0.U
-      orsp.pcrdtype := 0.U
-      orsp.tracetag := 0.U
+//      orsp.stashhit := 0.U
+//      orsp.datapull :=0.U
+//      orsp.pcrdtype := 0.U
+//      orsp.tracetag := 0.U
     }
 
   /*TXREQ for Transaction Request*/
   val a_task = {
     val oa = io.tasks.txreq.bits
-    oa.qos := Mux(!state.s_reissue, 3.U, 0.U) //TODO increase qos when retry
+//    oa.qos := Mux(!state.s_reissue, 3.U, 0.U) //TODO increase qos when retry
     oa.tgtID := Mux(!state.s_reissue, srcnid, 0.U)
     oa.srcID := 0.U
     oa.txnID := io.id
-    oa.returnNid := 0.U
-    oa.stashNid := 0.U
-    oa.stashNidValid := 0.U
-    oa.stashInfo := 0.U
+//    oa.returnNid := 0.U
+//    oa.stashNid := 0.U
+//    oa.stashNidValid := 0.U
+//    oa.stashInfo := 0.U
     oa.opcode := ParallelLookUp(
       Cat(req.opcode, dirResult.hit, isT(meta.state))
         Seq(
@@ -425,8 +425,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
     )
     mp_grant.metaWen := true.B
     mp_grant.tagWen := !dirResult.hit
-    mp_grant.dsWen := (!dirResult.hit || gotDirty && gotGrantData || probeDirty && (req_get || req.aliasTask.getOrElse(false.B))
-      mp_grant.fromL2pft.foreach(_ := req.fromL2pft.get)
+    mp_grant.dsWen := (!dirResult.hit || gotDirty && gotGrantData || probeDirty && (req_get || req.aliasTask.getOrElse(false.B)))
+    mp_grant.fromL2pft.foreach(_ := req.fromL2pft.get)
     mp_grant.needHint.foreach(_ := false.B)
     mp_grant.replTask := !dirResult.hit // Get and Alias are hit that does not need replacement
     mp_grant.wayMask := 0.U(cacheParams.ways.W)
@@ -545,14 +545,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
       probeGotN := true.B
     }
   }
-    val req_needT = needT(req.opcode, req.param)
-    val req_acquire = req.opcode === AcquireBlock && req.fromA || req.opcode === AcquirePerm // AcquireBlock and Probe share the same opcode
-    val req_acquirePerm = req.opcode === AcquirePerm
-    val req_get = req.opcode === Get
-    val req_prefetch = req.opcode === Hint
-
-    val rxrspIsUC = (rxdat.bits.resp === 3'b010)
-    val rxrspIsUD = (rxdat.bits.resp === 3'b110)
+  val rxrspIsUC = (rxdat.bits.resp === "b010")
+  val rxrspIsUD = (rxdat.bits.resp === "b110")
 
     //RXDAT
     when (rxdat.valid) {
