@@ -141,7 +141,8 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   }
 }
 
-class PipeStatus(implicit p: Parameters) extends L2Bundle with HasTLChannelBits
+class PipeStatus(implicit p: Parameters) extends L2Bundle
+  with HasTLChannelBits
 
 class PipeEntranceStatus(implicit p: Parameters) extends L2Bundle {
   val tags = Vec(4, UInt(tagBits.W))

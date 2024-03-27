@@ -65,12 +65,18 @@ class Slice()(implicit p: Parameters) extends TL2CHIL2Module {
 
   grantBuf.io.d_task <> mainPipe.io.toSourceD
   grantBuf.io.fromReqArb.status_s1 := reqArb.io.status_s1
-  grantBuf.io.pipeStatusVec := reqArb.io.status_vec ++ mainPipe.io.status_vec_toD
+  grantBuf.io.pipeStatusVec := reqArb.io.status_vec.get ++ mainPipe.io.status_vec_toD
 
-  // txreq.io.in <> mshrCtl.io.toTXREQ
-  arb(in = Seq(mainPipe.io.toTXREQ, mshrCtl.io.toTXREQ), out = txreq.io.in, name = Some("txreq"))
+  val status_vec_toTX = reqArb.io.status_vec_toTX.get ++ mainPipe.io.status_vec_toTX
+  txreq.io.pipeReq <> mainPipe.io.toTXREQ
+  txreq.io.mshrReq <> mshrCtl.io.toTXREQ
+  txreq.io.pipeStatusVec := status_vec_toTX
+
   txdat.io.in <> mainPipe.io.toTXDAT
+  txdat.io.pipeStatusVec := status_vec_toTX
+
   txrsp.io.in <> mainPipe.io.toTXRSP
+  txrsp.io.pipeStatusVec := status_vec_toTX
 
   directory.io.read <> reqArb.io.dirRead_s1
   directory.io.metaWReq := mainPipe.io.metaWReq
@@ -87,7 +93,10 @@ class Slice()(implicit p: Parameters) extends TL2CHIL2Module {
   reqArb.io.fromMSHRCtl := mshrCtl.io.toReqArb
   reqArb.io.fromMainPipe := mainPipe.io.toReqArb
   reqArb.io.fromGrantBuffer := grantBuf.io.toReqArb
-  reqArb.io.fromSourceC := 0.U.asTypeOf(reqArb.io.fromSourceC.cloneType)
+  // reqArb.io.fromSourceC := 0.U.asTypeOf(reqArb.io.fromSourceC.cloneType)
+  reqArb.io.fromTXDAT.foreach(_ := txdat.io.toReqArb)
+  reqArb.io.fromTXRSP.foreach(_ := txrsp.io.toReqArb)
+  reqArb.io.fromTXREQ.foreach(_ := txreq.io.toReqArb)
 
   reqBuf.io.in <> sinkA.io.task
   reqBuf.io.mshrInfo := mshrCtl.io.msInfo

@@ -50,8 +50,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
 
     /* handle capacity conflict of GrantBuffer */
     val status_vec_toD = Vec(3, ValidIO(new PipeStatus))
-    /* handle capacity conflict of SourceC */
-    val status_vec_toC = Vec(3, ValidIO(new PipeStatus))
+    /* handle capacity conflict of TX channels */
+    val status_vec_toTX = Vec(3, ValidIO(new PipeStatusWithCHI))
 
     /* get dir result at stage 3 */
     val dirResp_s3 = Input(new DirResult())
@@ -309,6 +309,11 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
     sink_resp_s3.bits.opcode := 0.U
     sink_resp_s3.bits.param := 0.U
 
+    sink_resp_s3.bits.tgtID.foreach(_ := task_s3.bits.srcID.get)
+    sink_resp_s3.bits.srcID.foreach(_ := task_s3.bits.tgtID.get) // TODO: srcID should be fixed. FIX THIS!!!
+    sink_resp_s3.bits.txnID.foreach(_ := task_s3.bits.txnID.get)
+    sink_resp_s3.bits.dbID.foreach(_ := 0.U) // TODO
+    sink_resp_s3.bits.pCrdType.foreach(_ := 0.U) // TODO
     sink_resp_s3.bits.chiOpcode.foreach(_ := MuxLookup(Cat(doFwd, doRespData), RSPOpcodes.SnpResp)(Seq(
       Cat(false.B, false.B) -> RSPOpcodes.SnpResp,
       Cat(true.B, false.B)  -> RSPOpcodes.SnpRespFwded,
@@ -676,8 +681,17 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   io.status_vec_toD(2).valid        := d_s5.valid
   io.status_vec_toD(2).bits.channel := task_s5.bits.channel
 
-  // TODO: consider capacity control of TX channels
-  io.status_vec_toC := DontCare
+  // capacity control of TX channels
+  val tx_task_s3 = Wire(Valid(new TaskBundle))
+  tx_task_s3.valid := task_s3.valid // TODO: review this
+  tx_task_s3.bits := source_req_s3
+  val tasks = Seq(tx_task_s3, task_s4, task_s5)
+  io.status_vec_toTX.zip(tasks).foreach { case (status, task) =>
+    status.valid := task.valid
+    status.bits.channel := task.bits.channel
+    status.bits.txChannel := task.bits.txChannel
+    status.bits.mshrTask := task.bits.mshrTask
+  }
 
   /* ======== Other Signals Assignment ======== */
   // Initial state assignment

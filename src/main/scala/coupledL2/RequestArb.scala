@@ -24,6 +24,8 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.utils.XSPerfAccumulate
+import coupledL2.tl2tl._
+import coupledL2.tl2chi._
 import coupledL2.tl2chi.CHIOpcode._
 
 class RequestArb(implicit p: Parameters) extends L2Module {
@@ -54,7 +56,8 @@ class RequestArb(implicit p: Parameters) extends L2Module {
 
     /* status of each pipeline stage */
     val status_s1 = Output(new PipeEntranceStatus) // set & tag of entrance status
-    val status_vec = Vec(2, ValidIO(new PipeStatus)) // whether this stage will flow into SourceD
+    val status_vec = if (!enableCHI) Some(Vec(2, ValidIO(new PipeStatus))) else None
+    val status_vec_toTX = if (enableCHI) Some(Vec(2, ValidIO(new PipeStatusWithCHI))) else None
 
     /* handle set conflict, capacity conflict */
     val fromMSHRCtl = Input(new BlockInfo())
@@ -63,10 +66,10 @@ class RequestArb(implicit p: Parameters) extends L2Module {
       val blockSinkReqEntrance = new BlockInfo()
       val blockMSHRReqEntrance = Bool()
     })
-    val fromSourceC = Input(new Bundle() {
-      val blockSinkBReqEntrance = Bool()
-      val blockMSHRReqEntrance = Bool()
-    })
+    val fromSourceC = if (!enableCHI) Some(Input(new SourceCBlockBundle)) else None
+    val fromTXDAT = if (enableCHI) Some(Input(new TXDATBlockBundle)) else None
+    val fromTXRSP = if (enableCHI) Some(Input(new TXRSPBlockBundle)) else None
+    val fromTXREQ = if (enableCHI) Some(Input(new TXBlockBundle)) else None
   })
 
   /* ======== Reset ======== */
@@ -92,7 +95,11 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   /* ======== Stage 0 ======== */
   // if mshr_task_s1 is replRead, it might stall and wait for dirRead.ready, so we block new mshrTask from entering
   // TODO: will cause msTask path vacant for one-cycle after replRead, since not use Flow so as to avoid ready propagation
-  io.mshrTask.ready := !io.fromGrantBuffer.blockMSHRReqEntrance && !s1_needs_replRead && !io.fromSourceC.blockMSHRReqEntrance
+  io.mshrTask.ready := !io.fromGrantBuffer.blockMSHRReqEntrance && !s1_needs_replRead &&
+    (if (io.fromSourceC.isDefined) !io.fromSourceC.get.blockMSHRReqEntrance else true.B) &&
+    (if (io.fromTXDAT.isDefined) !io.fromTXDAT.get.blockMSHRReqEntrance else true.B) &&
+    (if (io.fromTXRSP.isDefined) !io.fromTXRSP.get.blockMSHRReqEntrance else true.B) &&
+    (if (io.fromTXREQ.isDefined) !io.fromTXREQ.get.blockMSHRReqEntrance else true.B)
   mshr_task_s0.valid := io.mshrTask.fire
   mshr_task_s0.bits := io.mshrTask.bits
 
@@ -110,7 +117,10 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val B_task = io.sinkB.bits
   val C_task = io.sinkC.bits
   val block_A = io.fromMSHRCtl.blockA_s1 || io.fromMainPipe.blockA_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockA_s1
-  val block_B = io.fromMSHRCtl.blockB_s1 || io.fromMainPipe.blockB_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockB_s1 || io.fromSourceC.blockSinkBReqEntrance
+  val block_B = io.fromMSHRCtl.blockB_s1 || io.fromMainPipe.blockB_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockB_s1 ||
+    (if (io.fromSourceC.isDefined) io.fromSourceC.get.blockSinkBReqEntrance else false.B) ||
+    (if (io.fromTXDAT.isDefined) io.fromTXDAT.get.blockSinkBReqEntrance else false.B) ||
+    (if (io.fromTXRSP.isDefined) io.fromTXRSP.get.blockSinkBReqEntrance else false.B)
   val block_C = io.fromMSHRCtl.blockC_s1 || io.fromMainPipe.blockC_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockC_s1
 
   val sinkValids = VecInit(Seq(
@@ -207,11 +217,22 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   io.status_s1.sets := VecInit(Seq(C_task.set, B_task.set, io.ASet, mshr_task_s1.bits.set))
   io.status_s1.tags := VecInit(Seq(C_task.tag, B_task.tag, io.ATag, mshr_task_s1.bits.tag))
  // io.status_s1.isKeyword := VecInit(Seq(C_task.isKeyword, B_task.isKeyword, io.isKeyword, mshr_task_s1.bits.isKeyword))
-  require(io.status_vec.size == 2)
-  io.status_vec.zip(Seq(task_s1, task_s2)).foreach {
-    case (status, task) =>
-      status.valid := task.valid
-      status.bits.channel := task.bits.channel
+  if (!enableCHI) {
+    require(io.status_vec.get.size == 2)
+    io.status_vec.get.zip(Seq(task_s1, task_s2)).foreach {
+      case (status, task) =>
+        status.valid := task.valid
+        status.bits.channel := task.bits.channel
+    }
+  } else {
+    require(io.status_vec.get.size == 2)
+    io.status_vec_toTX.get.zip(Seq(task_s1, task_s2)).foreach {
+      case (status, task) =>
+        status.valid := task.valid
+        status.bits.channel := task.bits.channel
+        status.bits.txChannel := task.bits.txChannel
+        status.bits.mshrTask := task.bits.mshrTask
+    }
   }
 
   dontTouch(io)
