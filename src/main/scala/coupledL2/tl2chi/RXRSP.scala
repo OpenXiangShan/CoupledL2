@@ -25,7 +25,7 @@ import coupledL2.RespBundle
 
 class RXRSP(implicit p: Parameters) extends TL2CHIL2Module {
   val io = IO(new Bundle() {
-    val out = Flipped(ChannelIO(new CHIRSP()))
+    val out = Flipped(DecoupledIO(new CHIRSP()))
     val in = Output(new RespBundle())
   })
 

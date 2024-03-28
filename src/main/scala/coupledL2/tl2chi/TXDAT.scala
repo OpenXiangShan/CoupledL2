@@ -32,7 +32,7 @@ class TXDATBlockBundle(implicit p: Parameters) extends TXBlockBundle {
 class TXDAT(implicit p: Parameters) extends TL2CHIL2Module {
   val io = IO(new Bundle() {
     val in = Flipped(DecoupledIO(new TaskWithData()))
-    val out = ChannelIO(new CHIDAT())
+    val out = DecoupledIO(new CHIDAT())
 
     val pipeStatusVec = Flipped(Vec(5, ValidIO(new PipeStatusWithCHI)))
     val toReqArb = Output(new TXDATBlockBundle)
@@ -80,16 +80,12 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module {
   val beatsOH = beatValids.asUInt
   val (beat, next_beatsOH) = getBeat(data, beatsOH)
 
-  val out = Wire(DecoupledIO(new CHIDAT))
-  out.valid := taskValid
-  out.bits := toCHIDATBundle(taskR.task, beat, beatsOH)
+  io.out.valid := taskValid
+  io.out.bits := toCHIDATBundle(taskR.task, beat, beatsOH)
 
-  when (out.fire) {
+  when (io.out.fire) {
     beatValids := VecInit(next_beatsOH.asBools)
   }
-
-  Decoupled2LCredit(out, io.out)
-
 
   def getBeat(data: UInt, beatsOH: UInt): (UInt, UInt) = {
     // get one beat from data according to beatsOH

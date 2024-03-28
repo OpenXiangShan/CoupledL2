@@ -32,7 +32,7 @@ class TXRSPBlockBundle(implicit p: Parameters) extends TXBlockBundle {
 class TXRSP(implicit p: Parameters) extends TL2CHIL2Module {
   val io = IO(new Bundle() {
     val in = Flipped(DecoupledIO(new TaskBundle()))
-    val out = ChannelIO(new CHIRSP())
+    val out = DecoupledIO(new CHIRSP())
 
     val pipeStatusVec = Flipped(Vec(5, ValidIO(new PipeStatusWithCHI)))
     val toReqArb = Output(new TXRSPBlockBundle)
@@ -64,13 +64,9 @@ class TXRSP(implicit p: Parameters) extends TL2CHIL2Module {
   io.toReqArb.blockSinkBReqEntrance := noSpaceForSinkBReq
   io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq
 
-  val out = Wire(DecoupledIO(new CHIRSP))
-  out.valid := queue.io.deq.valid
-  out.bits := toCHIRSPBundle(queue.io.deq.bits)
-  queue.io.deq.ready := out.ready
-
-  Decoupled2LCredit(out, io.out)
-
+  io.out.valid := queue.io.deq.valid
+  io.out.bits := toCHIRSPBundle(queue.io.deq.bits)
+  queue.io.deq.ready := io.out.ready
 
   def toCHIRSPBundle(task: TaskBundle): CHIRSP = {
     val rsp = Wire(new CHIRSP())

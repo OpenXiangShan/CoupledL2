@@ -33,7 +33,7 @@ class TXREQ(implicit p: Parameters) extends TL2CHIL2Module {
   val io = IO(new Bundle() {
     val pipeReq = Flipped(DecoupledIO(new CHIREQ()))
     val mshrReq = Flipped(DecoupledIO(new CHIREQ()))
-    val out = ChannelIO(new CHIREQ())
+    val out = DecoupledIO(new CHIREQ())
 
     val pipeStatusVec = Flipped(Vec(5, ValidIO(new PipeStatusWithCHI)))
     val toReqArb = Output(new TXBlockBundle)
@@ -66,5 +66,6 @@ class TXREQ(implicit p: Parameters) extends TL2CHIL2Module {
   io.pipeReq.ready := true.B
   io.mshrReq.ready := !io.pipeReq.valid && !noSpace
 
-  Decoupled2LCredit(queue.io.deq, io.out)
+  // Decoupled2LCredit(queue.io.deq, io.out)
+  io.out <> queue.io.deq
 }

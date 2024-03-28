@@ -28,15 +28,12 @@ class RXSNP(
   lCreditNum: Int = 4 // the number of L-Credits that a receiver can provide
 )(implicit p: Parameters) extends TL2CHIL2Module {
   val io = IO(new Bundle() {
-    val rxsnp = Flipped(ChannelIO(new CHISNP()))
+    val rxsnp = Flipped(DecoupledIO(new CHISNP()))
     val task = DecoupledIO(new TaskBundle())
     val msInfo = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo())))
   })
 
-  val decoupledSnp = Wire(DecoupledIO(new CHISNP()))
-  LCredit2Decoupled(io.rxsnp, decoupledSnp)
-
-  val task = fromSnpToTaskBundle(decoupledSnp.bits)
+  val task = fromSnpToTaskBundle(io.rxsnp.bits)
 
   // unable to accept incoming B req because same-addr as some MSHR REQ
   val addrConflict = VecInit(io.msInfo.map(s =>
@@ -49,9 +46,9 @@ class RXSNP(
   )).asUInt
   val replaceConflict = replaceConflictMask.orR
 
-  io.task.valid := decoupledSnp.valid && !addrConflict && !replaceConflict
+  io.task.valid := io.rxsnp.valid && !addrConflict && !replaceConflict
   io.task.bits := task
-  decoupledSnp.ready := io.task.ready
+  io.rxsnp.ready := io.task.ready
 
   def fromSnpToTaskBundle(snp: CHISNP): TaskBundle = {
     val task = Wire(new TaskBundle)

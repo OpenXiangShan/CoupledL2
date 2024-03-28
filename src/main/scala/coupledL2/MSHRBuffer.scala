@@ -21,7 +21,6 @@ import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.utils._
-import java.util.ResourceBundle
 
 class MSHRBufRead(implicit p: Parameters) extends L2Bundle {
   val id = Output(UInt(mshrBits.W))

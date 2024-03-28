@@ -30,11 +30,16 @@ import coupledL2._
 import coupledL2.prefetch._
 import coupledL2.utils.XSPerfAccumulate
 import scala.languageFeature.implicitConversions
-import java.util.ResourceBundle
 
 trait HasTL2CHICoupledL2Parameteres extends HasCoupledL2Parameters {
   val tl2chiParams: HasCHIL2Parameters = p(L2ParamKey)
 
+  // def lcreditArb[T <: Bundle](in: Seq[ChannelIO[T]], out: ChannelIO[T], name: Option[String] = None): Unit = {
+  //   val arb = Module(new LCreditArbiter[T](chiselTypeOf(out.bits), in.size))
+  //   if (name.nonEmpty) { arb.suggestName(s"${name.get}_arb") }
+  //   for ((a, req) <- arb.io.in.zip(in)) { a <> req }
+  //   out <> arb.io.out
+  // }
   // TODO
 }
 
@@ -80,7 +85,6 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base
 
     // TODO
     io.debugTopDown <> DontCare
-    io.chi <> DontCare
 
     // Display info
     val sizeBytes = cacheParams.toCacheParams.capacity.toDouble
@@ -229,6 +233,61 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base
 
     hint_chosen := l1Hint_arb.io.chosen
     hint_fire := io.l2_hint.valid
+
+    val sliceIdWidth = log2Ceil(slices.size)
+    def setSliceID(txnID: UInt, sliceID: UInt): UInt = Cat(sliceID, txnID.tail(sliceIdWidth))
+    def getSliceID(txnID: UInt): UInt = txnID.head(sliceIdWidth)
+    def restoreTXNID(txnID: UInt): UInt = Cat(0.U(sliceIdWidth.W), txnID.tail(sliceIdWidth))
+
+    // TXREQ
+    val txreq_arb = Module(new Arbiter(new CHIREQ, slices.size))
+    val txreq = Wire(DecoupledIO(new CHIREQ))
+    slices.zip(txreq_arb.io.in).foreach { case (s, in) => in <> s.io.out.tx.req }
+    txreq <> txreq_arb.io.out
+    txreq.bits.txnID := setSliceID(txreq_arb.io.out.bits.txnID, txreq_arb.io.chosen)
+    Decoupled2LCredit(txreq, io.chi.tx.req)
+
+    // TXRSP
+    val txrsp = Wire(DecoupledIO(new CHIRSP))
+    arb(slices.map(_.io.out.tx.rsp), txrsp, Some("txrsp"))
+    Decoupled2LCredit(txrsp, io.chi.tx.rsp)
+
+    // TXDAT
+    val txdat = Wire(DecoupledIO(new CHIDAT))
+    arb(slices.map(_.io.out.tx.dat), txdat, Some("txdat"))
+    Decoupled2LCredit(txdat, io.chi.tx.dat)
+
+    // RXSNP
+    val rxsnp = Wire(DecoupledIO(new CHISNP))
+    LCredit2Decoupled(io.chi.rx.snp, rxsnp)
+    val rxsnpSliceID = rxsnp.bits.addr(sliceIdWidth - 1, 0)
+    slices.zipWithIndex.foreach { case (s, i) =>
+      s.io.out.rx.snp.valid := rxsnp.valid && rxsnpSliceID === i.U
+      s.io.out.rx.snp.bits := rxsnp.bits
+    }
+    rxsnp.ready := Cat(slices.zipWithIndex.map { case (s, i) => s.io.out.rx.snp.ready && rxsnpSliceID === i.U }).orR
+
+    // RXRSP
+    val rxrsp = Wire(DecoupledIO(new CHIRSP))
+    LCredit2Decoupled(io.chi.rx.rsp, rxrsp)
+    val rxrspSliceID = getSliceID(rxrsp.bits.txnID)
+    slices.zipWithIndex.foreach { case (s, i) =>
+      s.io.out.rx.rsp.valid := rxrsp.valid && rxrspSliceID === i.U
+      s.io.out.rx.rsp.bits := rxrsp.bits
+      s.io.out.rx.rsp.bits.txnID := restoreTXNID(rxrsp.bits.txnID)
+    }
+    rxrsp.ready := Cat(slices.zipWithIndex.map { case (s, i) => s.io.out.rx.rsp.ready && rxrspSliceID === i.U }).orR
+
+    // RXDAT
+    val rxdat = Wire(DecoupledIO(new CHIDAT))
+    LCredit2Decoupled(io.chi.rx.dat, rxdat)
+    val rxdatSliceID = getSliceID(rxdat.bits.txnID)
+    slices.zipWithIndex.foreach { case (s, i) =>
+      s.io.out.rx.dat.valid := rxdat.valid && rxdatSliceID === i.U
+      s.io.out.rx.dat.bits := rxdat.bits
+      s.io.out.rx.dat.bits.txnID := restoreTXNID(rxdat.bits.txnID)
+    }
+    rxdat.ready := Cat(slices.zipWithIndex.map { case (s, i) => s.io.out.rx.dat.ready && rxdatSliceID === i.U}).orR
 
     val topDown = topDownOpt.map(_ => Module(new TopDownMonitor()(p.alterPartial {
       case EdgeInKey => node.in.head._2

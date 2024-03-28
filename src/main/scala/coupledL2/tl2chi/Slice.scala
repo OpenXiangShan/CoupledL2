@@ -20,7 +20,6 @@ package coupledL2.tl2chi
 import chisel3._
 import chisel3.util._
 import freechips.rocketchip.tilelink._
-import javax.xml.transform.OutputKeys
 import org.chipsalliance.cde.config.Parameters
 import coupledL2._
 import coupledL2.prefetch.PrefetchIO
@@ -28,7 +27,7 @@ import coupledL2.prefetch.PrefetchIO
 class Slice()(implicit p: Parameters) extends TL2CHIL2Module {
   val io = IO(new Bundle() {
     val in = Flipped(TLBundle(edgeIn.bundle))
-    val out = new PortIO
+    val out = new DecoupledPortIO
     val sliceId = Input(UInt(bankBits.W))
     val l1Hint = Decoupled(new L2ToL1Hint())
     val prefetch = prefetchOpt.map(_ => Flipped(new PrefetchIO))
@@ -93,7 +92,6 @@ class Slice()(implicit p: Parameters) extends TL2CHIL2Module {
   reqArb.io.fromMSHRCtl := mshrCtl.io.toReqArb
   reqArb.io.fromMainPipe := mainPipe.io.toReqArb
   reqArb.io.fromGrantBuffer := grantBuf.io.toReqArb
-  // reqArb.io.fromSourceC := 0.U.asTypeOf(reqArb.io.fromSourceC.cloneType)
   reqArb.io.fromTXDAT.foreach(_ := txdat.io.toReqArb)
   reqArb.io.fromTXRSP.foreach(_ := txrsp.io.toReqArb)
   reqArb.io.fromTXREQ.foreach(_ := txreq.io.toReqArb)
@@ -186,4 +184,5 @@ class Slice()(implicit p: Parameters) extends TL2CHIL2Module {
   rxsnp.io.rxsnp <> io.out.rx.snp
   rxdat.io.out <> io.out.rx.dat
   rxrsp.io.out <> io.out.rx.rsp
+
 }
