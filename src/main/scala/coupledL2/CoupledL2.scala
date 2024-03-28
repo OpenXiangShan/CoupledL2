@@ -21,7 +21,7 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import utility.{FastArbiter, Pipeline}
+import utility.{FastArbiter, ParallelMax, ParallelPriorityMux, Pipeline, RegNextN}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
@@ -327,16 +327,19 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
       if(bankBits == 0) true.B else set(bankBits - 1, 0) === bankId.U
     }
 
-    def RegNextN[T <: Data](data: T, n: Int): T = {
-      if(n == 1)
-        RegNext(data)
-      else
-        RegNextN(data, n - 1)
-    }
+    // ** WARNING:TODO: this depends on where the latch is
+    // ** if Hint latched in slice, while D-Channel latched in XSTile
+    // ** we need only [hintCycleAhead - 1] later
+    val sliceAhead = hintCycleAhead - 1
 
-    val hint_chosen = Wire(UInt(node.in.size.W))
-    val hint_fire = Wire(Bool())
-    val release_sourceD_condition = Wire(Vec(node.in.size, Bool()))
+    val hintChosen = Wire(UInt(banks.W))
+    val hintFire = Wire(Bool())
+
+    // if Hint indicates that this slice should fireD, yet no D resp comes out of this slice
+    // then we releaseSourceD, enabling io.d.ready for other slices
+    // TODO: if Hint for single slice is 100% accurate, may consider remove this
+    val releaseSourceD = Wire(Vec(banks, Bool()))
+    val allCanFire = (RegNextN(!hintFire, sliceAhead) && RegNextN(!hintFire, sliceAhead + 1)) || Cat(releaseSourceD).orR
 
     val slices = node.in.zip(node.out).zipWithIndex.map {
       case (((in, edgeIn), (out, edgeOut)), i) =>
@@ -350,16 +353,21 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
             case SliceIdKey => i
           }))
         }
-        val sourceD_can_go = RegNextN(!hint_fire || i.U === OHToUInt(hint_chosen), hintCycleAhead - 1)
-        release_sourceD_condition(i) := sourceD_can_go && !slice.io.in.d.valid
         slice.io.in <> in
-        if(enableHintGuidedGrant) {
-          // If the hint of slice X is selected in T cycle, then in T + 3 cycle we will try our best to select the grant of slice X.
-          // If slice X has no grant in T + 3 cycle, it means that the hint of T cycle is wrong, so relax the restriction on grant selection.
-          // Timing will be worse if enabled
-          in.d.valid := slice.io.in.d.valid && (sourceD_can_go || Cat(release_sourceD_condition).orR)
-          slice.io.in.d.ready := in.d.ready && (sourceD_can_go || Cat(release_sourceD_condition).orR)
+        if (enableHintGuidedGrant) {
+          // If the hint of slice X is selected at cycle T, then at cycle (T + 3) & (T + 4)
+          // we will try our best to select the grant of slice X.
+          // If slice X has no grant then, it means that the hint at cycle T is wrong,
+          // so we relax the restriction on grant selection.
+          val sliceCanFire = RegNextN(hintFire && i.U === hintChosen, sliceAhead) ||
+            RegNextN(hintFire && i.U === hintChosen, sliceAhead + 1)
+
+          releaseSourceD(i) := sliceCanFire && !slice.io.in.d.valid
+
+          in.d.valid := slice.io.in.d.valid && (sliceCanFire || allCanFire)
+          slice.io.in.d.ready := in.d.ready && (sliceCanFire || allCanFire)
         }
+
         in.b.bits.address := restoreAddress(slice.io.in.b.bits.address, i)
         out <> slice.io.out
         out.a.bits.address := restoreAddress(slice.io.out.a.bits.address, i)
@@ -394,25 +402,33 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
 
         slice
     }
-    val l1Hint_arb = Module(new Arbiter(new L2ToL1Hint, slices.size))
-    val slices_l1Hint = slices.zipWithIndex.map {
-      case (s, i) => Pipeline(s.io.l1Hint, depth = 1, pipe = false, name = Some(s"l1Hint_buffer_$i"))
+
+    if(enableHintGuidedGrant) {
+      // for timing consideration, hint should latch one cycle before sending to L1
+      // instead of adding a Pipeline/Queue to latch here, we just set hintQueue in GrantBuf & CustomL1Hint "flow=false"
+      val l1HintArb = Module(new Arbiter(new L2ToL1Hint(), slices.size))
+      val slices_l1Hint = slices.zipWithIndex.map {
+        case (s, i) => s.io.l1Hint
+      }
+      // should only Hint for DCache
+      val (sourceIsDcache, dcacheSourceIdStart) = node.in.head._2.client.clients
+        .filter(_.supports.probe)
+        .map(c => {
+          (c.sourceId.contains(l1HintArb.io.out.bits.sourceId).asInstanceOf[Bool], c.sourceId.start.U)
+        }).head
+
+      l1HintArb.io.in <> VecInit(slices_l1Hint)
+      io.l2_hint.valid := l1HintArb.io.out.fire && sourceIsDcache
+      io.l2_hint.bits.sourceId := l1HintArb.io.out.bits.sourceId - dcacheSourceIdStart
+      io.l2_hint.bits.isKeyword := l1HintArb.io.out.bits.isKeyword
+      // continuous hints can only be sent every two cycle, since GrantData takes two cycles
+      l1HintArb.io.out.ready := !RegNext(io.l2_hint.valid, false.B)
+
+      hintChosen := l1HintArb.io.chosen // ! THIS IS NOT ONE-HOT !
+      hintFire := io.l2_hint.valid
     }
-    val (client_sourceId_match_oh, client_sourceId_start) = node.in.head._2.client.clients
-                                                          .map(c => {
-                                                                (c.sourceId.contains(l1Hint_arb.io.out.bits.sourceId).asInstanceOf[Bool], c.sourceId.start.U)
-                                                              })
-                                                          .unzip
-    l1Hint_arb.io.in <> VecInit(slices_l1Hint)
-    io.l2_hint.valid := l1Hint_arb.io.out.fire
-    io.l2_hint.bits.sourceId := l1Hint_arb.io.out.bits.sourceId - Mux1H(client_sourceId_match_oh, client_sourceId_start)
-    io.l2_hint.bits.isKeyword := l1Hint_arb.io.out.bits.isKeyword
-    // always ready for grant hint
-    l1Hint_arb.io.out.ready := true.B
 
-    hint_chosen := l1Hint_arb.io.chosen
-    hint_fire := io.l2_hint.valid
-
+    // ==================== TopDown ====================
     val topDown = topDownOpt.map(_ => Module(new TopDownMonitor()(p.alterPartial {
       case EdgeInKey => node.in.head._2
       case EdgeOutKey => node.out.head._2
@@ -433,12 +449,35 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
       case None => io.debugTopDown.l2MissMatch.foreach(_ := false.B)
     }
 
-    XSPerfAccumulate(cacheParams, "hint_fire", io.l2_hint.valid)
-    val grant_fire = slices.map{ slice => {
-                        val (_, _, grant_fire_last, _) = node.in.head._2.count(slice.io.in.d)
-                        slice.io.in.d.fire && grant_fire_last && slice.io.in.d.bits.opcode === GrantData
-                      }}
-    XSPerfAccumulate(cacheParams, "grant_data_fire", PopCount(VecInit(grant_fire)))
+    // ==================== XSPerf Counters ====================
+    val grant_data_fire = slices.map { slice => {
+      val (first, _, _, _) = node.in.head._2.count(slice.io.in.d)
+      slice.io.in.d.fire && first && slice.io.in.d.bits.opcode === GrantData
+    }
+    }
+    XSPerfAccumulate(cacheParams, "grant_data_fire", PopCount(VecInit(grant_data_fire)))
+
+    val hint_source = io.l2_hint.bits.sourceId
+
+    val grant_data_source = ParallelPriorityMux(slices.map {
+      s => (s.io.in.d.fire, s.io.in.d.bits.source)
+    })
+
+    val hintPipe2 = Module(new Pipeline(UInt(32.W), 2))
+    hintPipe2.io.in.valid := io.l2_hint.valid
+    hintPipe2.io.in.bits := hint_source
+    hintPipe2.io.out.ready := true.B
+
+    val hintPipe1 = Module(new Pipeline(UInt(32.W), 1))
+    hintPipe1.io.in.valid := io.l2_hint.valid
+    hintPipe1.io.in.bits := hint_source
+    hintPipe1.io.out.ready := true.B
+
+    val accurateHint = grant_data_fire.orR && hintPipe2.io.out.valid && hintPipe2.io.out.bits === grant_data_source
+    XSPerfAccumulate(cacheParams, "accurate3Hints", accurateHint)
+
+    val okHint = grant_data_fire.orR && hintPipe1.io.out.valid && hintPipe1.io.out.bits === grant_data_source
+    XSPerfAccumulate(cacheParams, "ok2Hints", okHint)
   }
 
   lazy val module = new CoupledL2Imp(this)
