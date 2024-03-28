@@ -198,11 +198,6 @@ class Slice()(implicit p: Parameters) extends L2Module {
     XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 500, 1000, 100, true, false)
   }
 
-  if (cacheParams.enableMonitor) {
-    val monitor = Module(new Monitor())
-    monitor.io.fromMainPipe <> mainPipe.io.toMonitor
-//  monitor.io.nestedWBValid := mshrCtl.io.nestedwbDataId.valid
-  } else {
-    mainPipe.io.toMonitor <> DontCare
-  }
+  val monitor = Module(new Monitor())
+  monitor.io.fromMainPipe <> mainPipe.io.toMonitor
 }

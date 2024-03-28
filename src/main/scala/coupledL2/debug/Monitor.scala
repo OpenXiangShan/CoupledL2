@@ -86,7 +86,7 @@ class Monitor(implicit p: Parameters) extends L2Module {
 
   /* ======== ChiselDB ======== */
 //  assert(cacheParams.hartIds.length == 1, "private L2 should have one and only one hardId")
-  if (!cacheParams.FPGAPlatform) {
+  if (cacheParams.enableMonitor && !cacheParams.FPGAPlatform) {
     val hartId = if (cacheParams.hartIds.length == 1) cacheParams.hartIds.head else 0
     val table = ChiselDB.createTable(s"L2MP", new CPL2S3Info, basicDB = true)
     val s3Info = Wire(new CPL2S3Info)
