@@ -74,10 +74,6 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
 
     // to block sourceB from sending same-addr probe until GrantAck received
     val grantStatus = Output(Vec(grantBufInflightSize, new GrantStatus))
-
-    // generate hint signal for L1
-    val l1Hint = ValidIO(new L2ToL1Hint())
-    val globalCounter = Output(UInt((log2Ceil(mshrsAll) + 1).W))
   })
 
   // =========== functions ===========
@@ -297,43 +293,6 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   io.toReqArb.blockSinkReqEntrance.blockG_s1 := false.B // this is not used
   io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq || noSpaceForMSHRPft.getOrElse(false.B)
 
-  // =========== generating Hint to L1 ===========
-  // TODO: the following keeps the exact same logic as before, but it needs serious optimization
-  val hintQueue = Module(new Queue(new L2ToL1Hint, entries = mshrsAll))
-  // Total number of beats left to send in GrantBuf
-  // [This is better]
-  // val globalCounter = (grantQueue.io.count << 1.U).asUInt + grantBufValid.asUInt // entries * 2 + grantBufValid
-  val globalCounter = RegInit(0.U((log2Ceil(grantBufSize) + 1).W))
-  when(io.d_task.fire) {
-    val hasData = io.d_task.bits.task.opcode(0)
-    when(hasData) {
-      globalCounter := globalCounter + 1.U // counter = counter + 2 - 1
-    }.otherwise {
-      globalCounter := globalCounter // counter = counter + 1 - 1
-    }
-  }.otherwise {
-    globalCounter := Mux(globalCounter === 0.U, 0.U, globalCounter - 1.U) // counter = counter - 1
-  }
-
-  // if globalCounter >= 3, it means the hint that should be sent is in GrantBuf
-  when(globalCounter >= 3.U) {
-    hintQueue.io.enq.valid := true.B
-    hintQueue.io.enq.bits.sourceId := io.d_task.bits.task.sourceId
-    hintQueue.io.enq.bits.isKeyword := Mux(io.d_task.bits.task.mergeA, io.d_task.bits.task.aMergeTask.isKeyword.getOrElse(false.B), io.d_task.bits.task.isKeyword.getOrElse(false.B))
-  }.otherwise {
-    hintQueue.io.enq.valid := false.B
-    hintQueue.io.enq.bits.sourceId := 0.U(sourceIdBits.W)
-    hintQueue.io.enq.bits.isKeyword := false.B
-  }
-  hintQueue.io.deq.ready := true.B
-
-  // tell CustomL1Hint about the delay in GrantBuf
-  io.globalCounter := globalCounter
-
-  io.l1Hint.valid := hintQueue.io.deq.valid
-  io.l1Hint.bits.sourceId := hintQueue.io.deq.bits.sourceId
-  io.l1Hint.bits.isKeyword := hintQueue.io.deq.bits.isKeyword
-
   // =========== XSPerf ===========
   if (cacheParams.enablePerf) {
     val timers = RegInit(VecInit(Seq.fill(grantBufInflightSize){0.U(64.W)}))
@@ -349,6 +308,6 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     }
     // pftRespQueue is about to be full, and using back pressure to block All MainPipe Entrance
     // which can SERIOUSLY affect performance, should consider less drastic prefetch policy
-    XSPerfAccumulate(cacheParams, "WARNING_pftRespQueue_about_to_full", noSpaceForMSHRPft.getOrElse(false.B))
+    XSPerfAccumulate(cacheParams, "pftRespQueue_about_to_full", noSpaceForMSHRPft.getOrElse(false.B))
   }
 }
