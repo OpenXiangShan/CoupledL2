@@ -593,21 +593,23 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   val customL1Hint = Module(new CustomL1Hint)
 
   customL1Hint.io.s1 := io.taskInfo_s1
-  customL1Hint.io.s2 := task_s2
+  // customL1Hint.io.s2 := task_s2
 
   customL1Hint.io.s3.task      := task_s3
-  customL1Hint.io.s3.d         := d_s3.valid
+  // overwrite opcode: if sinkReq can respond, use sink_resp_s3.bits.opcode = Grant/GrantData
+  customL1Hint.io.s3.task.bits.opcode := Mux(sink_resp_s3.valid, sink_resp_s3.bits.opcode, task_s3.bits.opcode)
+  // customL1Hint.io.s3.d         := d_s3.valid
   customL1Hint.io.s3.need_mshr := need_mshr_s3
 
-  customL1Hint.io.s4.task                  := task_s4
-  customL1Hint.io.s4.d                     := d_s4.valid
-  customL1Hint.io.s4.need_write_releaseBuf := need_write_releaseBuf_s4
+  // customL1Hint.io.s4.task                  := task_s4
+  // customL1Hint.io.s4.d                     := d_s4.valid
+  // customL1Hint.io.s4.need_write_releaseBuf := need_write_releaseBuf_s4
 
-  customL1Hint.io.s5.task      := task_s5
-  customL1Hint.io.s5.d         := d_s5.valid
+  // customL1Hint.io.s5.task      := task_s5
+  // customL1Hint.io.s5.d         := d_s5.valid
 
-  customL1Hint.io.globalCounter   := io.globalCounter
-  customL1Hint.io.grantBufferHint <> io.grantBufferHint
+  // customL1Hint.io.globalCounter   := io.globalCounter
+  // customL1Hint.io.grantBufferHint <> io.grantBufferHint
 
   customL1Hint.io.l1Hint <> io.l1Hint
 

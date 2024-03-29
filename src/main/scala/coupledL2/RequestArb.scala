@@ -141,8 +141,10 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   // mshr_task_s1 is s1_[reg]
   // task_s1 is [wire] to s2_reg
   val task_s1 = Mux(mshr_task_s1.valid, mshr_task_s1, chnl_task_s1)
+  val s1_to_s2_valid = task_s1.valid && !mshr_replRead_stall
 
-  io.taskInfo_s1 := mshr_task_s1
+  io.taskInfo_s1.valid := s1_to_s2_valid
+  io.taskInfo_s1.bits := task_s1.bits
 
   /* Meta read request */
   // ^ only sinkA/B/C tasks need to read directory
@@ -168,8 +170,8 @@ class RequestArb(implicit p: Parameters) extends L2Module {
 
   /* ========  Stage 2 ======== */
   val task_s2 = RegInit(0.U.asTypeOf(task_s1))
-  task_s2.valid := task_s1.valid && !mshr_replRead_stall
-  when(task_s1.valid && !mshr_replRead_stall) { task_s2.bits := task_s1.bits }
+  task_s2.valid := s1_to_s2_valid
+  when(s1_to_s2_valid) { task_s2.bits := task_s1.bits }
 
   io.taskToPipe_s2 := task_s2
 

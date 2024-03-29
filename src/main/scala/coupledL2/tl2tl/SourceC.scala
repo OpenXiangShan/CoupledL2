@@ -153,7 +153,7 @@ class SourceC(implicit p: Parameters) extends TL2TLL2Module {
   io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq
 
   // dequeued task, the only, ready to fire
-  // WARNING: !it will reduce Release bandwidth to half! (though it is not critical)
+  // WARNING: !it will reduce Release bandwidth to half!!!
   // TODO: change it the same way as GrantBuf
   val beatValids = RegInit(VecInit(Seq.fill(beatSize)(false.B)))
   val taskValid = beatValids.asUInt.orR

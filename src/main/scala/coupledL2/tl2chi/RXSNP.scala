@@ -45,7 +45,7 @@ class RXSNP(
    2. For CHI ignore this kind of block
    */
   val replaceConflictMask = VecInit(io.msInfo.map(s =>
-    s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && s.bits.blockRefill // TODO: confirm this
+    s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && s.bits.blockRefill && !s.bits.w_releaseack
   )).asUInt
   val replaceConflict = replaceConflictMask.orR
 

@@ -114,8 +114,8 @@ class Slice()(implicit p: Parameters) extends TL2CHIL2Module {
   mainPipe.io.releaseBufResp_s3.valid := RegNext(releaseBuf.io.r.valid, false.B)
   mainPipe.io.releaseBufResp_s3.bits := releaseBuf.io.resp.data
   mainPipe.io.toDS.rdata_s5 := dataStorage.io.rdata
-  mainPipe.io.grantBufferHint := grantBuf.io.l1Hint
-  mainPipe.io.globalCounter := grantBuf.io.globalCounter
+  // mainPipe.io.grantBufferHint := grantBuf.io.l1Hint
+  // mainPipe.io.globalCounter := grantBuf.io.globalCounter
 
   mshrCtl.io.fromReqArb.status_s1 := reqArb.io.status_s1
   mshrCtl.io.fromMainPipe <> mainPipe.io.toMSHRCtl

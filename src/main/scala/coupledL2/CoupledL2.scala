@@ -21,7 +21,7 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import utility.{FastArbiter, Pipeline}
+import utility.{FastArbiter, ParallelMax, ParallelPriorityMux, Pipeline, RegNextN}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
@@ -194,5 +194,4 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       Some(BundleBridgeSink(Some(() => new PrefetchRecv)))
     case _ => None
   }
-
 }
