@@ -101,6 +101,8 @@ trait HasCHIMsgParameters {
   def RETURNTXNID_WIDTH = TXNID_WIDTH
   def STASHNID_WIDTH = NODEID_WIDTH
   def STASHLPID_WIDTH = LPID_WIDTH
+  def STASHINFO_WIDTH = 2 //TODO
+
 
   def REQ_OPCODE_WIDTH = CHIOpcode.REQOpcodes.width
   def RSP_OPCODE_WIDTH = CHIOpcode.RSPOpcodes.width
@@ -137,17 +139,30 @@ trait HasCHIMsgParameters {
 abstract class CHIBundle extends Bundle with HasCHIMsgParameters
 
 class CHIREQ extends CHIBundle {
+  val qos = UInt(QOS_WIDTH.W)
   val tgtID = UInt(TGTID_WIDTH.W)
   val srcID = UInt(SRCID_WIDTH.W)
   val txnID = UInt(TXNID_WIDTH.W)
+  val returnNID = UInt(RETURNNID_WIDTH.W)
+  val stashNID = UInt(STASHNID_WIDTH.W)
+  val stashNIDValid = Bool()
+  val stashInfo = UInt(STASHINFO_WIDTH.W)
   val opcode = UInt(REQ_OPCODE_WIDTH.W)
+  val size = UInt(SIZE_WIDTH.W)
   val addr = UInt(ADDR_WIDTH.W)
+  val ns = Bool()
+  val likelyshared = Bool()
   val allowRetry = Bool()
+  val order = UInt(ORDER_WIDTH.W)
   val pCrdType = UInt(PCRDTYPE_WIDTH.W)
-  val expCompAck = Bool()
   val memAttr = new MemAttr()
   val snpAttr = Bool()
-  val order = UInt(ORDER_WIDTH.W)
+  val snoopable = Bool()
+  val lpid = UInt(LPID_WIDTH.W)
+  val excel = Bool()
+  val snoopme = Bool()
+  val expCompAck = Bool()
+  val tracetag = Bool()
   // TODO: Finish this
 }
 

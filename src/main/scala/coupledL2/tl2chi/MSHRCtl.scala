@@ -47,8 +47,12 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
     // val mshrFull = Output(Bool())
     val mshrTask = DecoupledIO(new TaskBundle())
 
+    /* status of s2 and s3 */
+    val pipeStatusVec = Flipped(Vec(2, ValidIO(new PipeStatus)))
+
     /* send reqs */
     val toTXREQ = DecoupledIO(new CHIREQ())
+    val toTXRSP = DecoupledIO(new CHIRSP())
     val toSourceB = DecoupledIO(new TLBundleB(edgeIn.bundle))
 
     /* to block sourceB from sending same-addr probe until GrantAck received */
@@ -69,6 +73,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
 
     /* MSHR info to Sinks */
     val msInfo = Vec(mshrsAll, ValidIO(new MSHRInfo()))
+    val aMergeTask = Flipped(ValidIO(new AMergeTask))
 
     /* refill read replacer result */
     val replResp = Flipped(ValidIO(new ReplacerResult))
@@ -121,8 +126,8 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
       m.io.alloc.bits := io.fromMainPipe.mshr_alloc_s3.bits
       m.io.alloc.bits.task.isKeyword.foreach(_:= io.fromMainPipe.mshr_alloc_s3.bits.task.isKeyword.getOrElse(false.B))
 
-      m.io.resps.sink_c.valid := io.resps.sinkC.valid && resp_sinkC_match_vec(i)
-      m.io.resps.sink_c.bits := io.resps.sinkC.respInfo
+      m.io.resps.sinkC.valid := io.resps.sinkC.valid && resp_sinkC_match_vec(i)
+      m.io.resps.sinkC.bits := io.resps.sinkC.respInfo
 
       m.io.resps.rxdat.valid := m.io.status.valid && io.resps.rxdat.valid && io.resps.rxdat.mshrId === i.U
       m.io.resps.rxdat.bits := io.resps.rxdat.respInfo
@@ -145,10 +150,11 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
   io.toReqArb.blockA_s1 := a_mshrFull // conflict logic in ReqBuf
   io.toReqArb.blockG_s1 := false.B
 
-   /* Acquire downwards */
-  val acquireUnit = Module(new AcquireUnit())
-  fastArb(mshrs.map(_.io.tasks.source_a), acquireUnit.io.task, Some("source_a"))
-  io.toTXREQ <> acquireUnit.io.sourceA
+   /* Acquire downwards to TXREQ*/
+  fastArb(mshrs.map(_.io.tasks.txreq), io.toTXREQ, Some("txreq"))
+
+  /* Response downwards to TXRSP*/
+  fastArb(mshrs.map(_.io.tasks.txrsp), io.toTXRSP, Some("txrsp"))
 
   /* Probe upwards */
   val sourceB = Module(new SourceB())
@@ -169,7 +175,6 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
   })
   assert(RegNext(PopCount(mshrs.map(_.io.nestedwbData)) <= 1.U), "should only be one nestedwbData")
 
-  dontTouch(io.sourceA)
 
   /* Status for topDown monitor */
   topDownOpt.foreach (_ =>
@@ -178,7 +183,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
     }
   )
   /* Performance counters */
-  XSPerfAccumulate(cacheParams, "capacity_conflict_to_sinkA", a_mshrFull)
+/*  XSPerfAccumulate(cacheParams, "capacity_conflict_to_sinkA", a_mshrFull)
   XSPerfAccumulate(cacheParams, "capacity_conflict_to_sinkB", mshrFull)
   XSPerfHistogram(cacheParams, "mshr_alloc", io.toMainPipe.mshr_alloc_ptr,
     enable = io.fromMainPipe.mshr_alloc_s3.valid,
@@ -187,7 +192,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
     val start = 0
     val stop = 100
     val step = 5
-    val acquire_period = ParallelMux(mshrs.map { case m => m.io.resps.sink_d.valid -> m.acquire_period })
+    val acquire_period = ParallelMux(mshrs.map { case m => m.io.resps.sink_d.valid -> m.acquire_period }) 
     val release_period = ParallelMux(mshrs.map { case m => m.io.resps.sink_d.valid -> m.release_period })
     val probe_period = ParallelMux(mshrs.map { case m => m.io.resps.sink_c.valid -> m.probe_period })
     val acquire_period_en = io.resps.rxdat.valid &&
@@ -198,7 +203,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
     XSPerfHistogram(cacheParams, "acquire_period", acquire_period, acquire_period_en, start, stop, step)
     XSPerfHistogram(cacheParams, "release_period", release_period, release_period_en, start, stop, step)
     XSPerfHistogram(cacheParams, "probe_period", probe_period, probe_period_en, start, stop, step)
-
+ 
     val timers = RegInit(VecInit(Seq.fill(mshrsAll)(0.U(64.W))))
     for (((timer, m), i) <- timers.zip(mshrs).zipWithIndex) {
       when (m.io.alloc.valid) {
@@ -211,6 +216,6 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
         timer, enable, 0, 300, 10)
       XSPerfMax(cacheParams, "mshr_latency", timer, enable)
     }
-  }
+  }*/
 }
 

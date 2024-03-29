@@ -116,7 +116,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val tgtID = chiOpt.map(_ => UInt(TGTID_WIDTH.W))
   val srcID = chiOpt.map(_ => UInt(SRCID_WIDTH.W))
   val txnID = chiOpt.map(_ => UInt(TXNID_WIDTH.W))
-  val homeID = chiOpt.map(_ => UInt(SRCID_WIDTH.W))
+  val homeNID = chiOpt.map(_ => UInt(SRCID_WIDTH.W))
   val dbID = chiOpt.map(_ => UInt(DBID_WIDTH.W))
   val chiOpcode = chiOpt.map(_ => UInt(OPCODE_WIDTH.W))
   val resp = chiOpt.map(_ => UInt(RESP_WIDTH.W))
@@ -198,18 +198,22 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle {
   val mergeA = Bool() // whether the mshr already merge an acquire(avoid alias merge)
 }
 
-class RespInfoBundle(implicit p: Parameters) extends L2Bundle {
+class RespInfoBundle(implicit p: Parameters) extends L2Bundle
+    with HasCHIMsgParameters
+{
   val opcode = UInt(3.W)
   val param = UInt(3.W)
   val last = Bool() // last beat
   val dirty = Bool() // only used for sinkD resps
   val isHit = Bool() // only used for sinkD resps
  //CHI
-  val chiOpcode = UInt(5.W)
-  val txnid = UInt(8.W)
-  val srcid = UInt(11.W)
-  val homenid = UInt(11.W)
-  val pcrdtype = UInt(4.W)
+  val chiOpcode = chiOpt.map(_ => UInt(OPCODE_WIDTH.W))
+  val txnID = chiOpt.map(_ => UInt(TXNID_WIDTH.W))
+  val srcID = chiOpt.map(_ => UInt(SRCID_WIDTH.W))
+  val homeNID = chiOpt.map(_ => UInt(SRCID_WIDTH.W))
+  val dbID = chiOpt.map(_ => UInt(DBID_WIDTH.W))
+  val resp = chiOpt.map(_ => UInt(RESP_WIDTH.W))
+  val pCrdType = chiOpt.map(_ => UInt(PCRDTYPE_WIDTH.W))
 }
 
 class RespBundle(implicit p: Parameters) extends L2Bundle {
