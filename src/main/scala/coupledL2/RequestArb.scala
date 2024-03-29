@@ -39,6 +39,9 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     val sinkC    = Flipped(DecoupledIO(new TaskBundle))
     val mshrTask = Flipped(DecoupledIO(new TaskBundle))
 
+    /* receive incoming TPmeta req */
+    val sinkTPmeta = Flipped(DecoupledIO(new TaskBundle))
+
     /* read/write directory */
     val dirRead_s1 = DecoupledIO(new DirRead())  // To directory, read meta/tag
 
@@ -108,6 +111,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val A_task = io.sinkA.bits
   val B_task = io.sinkB.bits
   val C_task = io.sinkC.bits
+  val TPmeta_task = io.sinkTPmeta.bits
   val block_A = io.fromMSHRCtl.blockA_s1 || io.fromMainPipe.blockA_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockA_s1
   val block_B = io.fromMSHRCtl.blockB_s1 || io.fromMainPipe.blockB_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockB_s1 || io.fromSourceC.blockSinkBReqEntrance
   val block_C = io.fromMSHRCtl.blockC_s1 || io.fromMainPipe.blockC_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockC_s1
@@ -115,17 +119,19 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val sinkValids = VecInit(Seq(
     io.sinkC.valid && !block_C,
     io.sinkB.valid && !block_B,
-    io.sinkA.valid && !block_A
+    io.sinkA.valid && !block_A,
+    io.sinkTPmeta.valid
   )).asUInt
 
   val sink_ready_basic = io.dirRead_s1.ready && resetFinish && !mshr_task_s1.valid
+  io.sinkTPmeta.ready := sink_ready_basic && !sinkValids(2) && !sinkValids(1) && !sinkValids(0) // SinkA & SinkB & SinkC prior to SinkTPmeta
   io.sinkA.ready := sink_ready_basic && !block_A && !sinkValids(1) && !sinkValids(0) // SinkC prior to SinkA & SinkB
   io.sinkB.ready := sink_ready_basic && !block_B && !sinkValids(0) // SinkB prior to SinkA
   io.sinkC.ready := sink_ready_basic && !block_C
 
   val chnl_task_s1 = Wire(Valid(new TaskBundle()))
   chnl_task_s1.valid := io.dirRead_s1.ready && sinkValids.orR && resetFinish
-  chnl_task_s1.bits := ParallelPriorityMux(sinkValids, Seq(C_task, B_task, A_task))
+  chnl_task_s1.bits := ParallelPriorityMux(sinkValids, Seq(C_task, B_task, A_task, TPmeta_task))
 
   // mshr_task_s1 is s1_[reg]
   // task_s1 is [wire] to s2_reg
@@ -134,7 +140,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   io.taskInfo_s1 := mshr_task_s1
 
   /* Meta read request */
-  // ^ only sinkA/B/C tasks need to read directory
+  // ^ only sinkA/B/C/TPmeta tasks need to read directory
   io.dirRead_s1.valid := chnl_task_s1.valid && !mshr_task_s1.valid || s1_needs_replRead && !io.fromMainPipe.blockG_s1
   io.dirRead_s1.bits.set := task_s1.bits.set
   io.dirRead_s1.bits.tag := task_s1.bits.tag
@@ -156,6 +162,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   )
 
   /* ========  Stage 2 ======== */
+  // TODO: relaseBuf?
   val task_s2 = RegInit(0.U.asTypeOf(task_s1))
   task_s2.valid := task_s1.valid && !mshr_replRead_stall
   when(task_s1.valid && !mshr_replRead_stall) { task_s2.bits := task_s1.bits }
@@ -181,7 +188,8 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   io.releaseBufRead_s2.valid := mshrTask_s2 && (
     task_s2.bits.opcode === ReleaseData ||
     task_s2.bits.fromB && task_s2.bits.opcode === ProbeAckData ||
-    mshrTask_s2_a_upwards && task_s2.bits.useProbeData)
+    mshrTask_s2_a_upwards && task_s2.bits.useProbeData ||
+    task_s2.bits.channel(4) && task_s2.bits.tpmetaWenRepl)
   io.releaseBufRead_s2.bits.id := task_s2.bits.mshrId
 
   require(beatSize == 2)

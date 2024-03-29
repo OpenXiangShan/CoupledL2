@@ -26,6 +26,7 @@ import utility.MemReqSource
 trait PrefetchParameters {
   val hasPrefetchBit:  Boolean
   val hasPrefetchSrc:  Boolean
+  val hasTP: Boolean
   val inflightEntries: Int // max num of inflight prefetch reqs
 }
 

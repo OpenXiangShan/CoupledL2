@@ -125,7 +125,7 @@ class PrefetchQueue(implicit p: Parameters) extends PrefetchModule {
 class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val io = IO(new PrefetchIO)
   val tpio = IO(new Bundle() {
-    val tpmeta_port = prefetchOpt.map(_ => new tpmetaPortIO)
+    val tpmeta_port = prefetchOpt.map(_ => new tpmetaL2PortIO)
   })
   /* io_l2_pf_en:
    * chicken bits for whether L2 prefetchers are enabled

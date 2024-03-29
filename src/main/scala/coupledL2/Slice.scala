@@ -35,6 +35,9 @@ class Slice()(implicit p: Parameters) extends L2Module {
     val sliceId = Input(UInt(bankBits.W))
     val l1Hint = Decoupled(new L2ToL1Hint())
     val prefetch = prefetchOpt.map(_ => Flipped(new PrefetchIO))
+    //TODO:link
+    val tpMetaReq = prefetchOpt.map(_ => Flipped(DecoupledIO(new TPmetaL2Req)))
+    val tpMetaResp = prefetchOpt.map(_ => ValidIO(new TPmetaL2Resp))
     val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
     val dirResult = topDownOpt.map(_ => ValidIO(new DirResult))
     val latePF = topDownOpt.map(_ => Output(Bool()))
@@ -50,6 +53,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
   val sinkA = Module(new SinkA)
   val sinkB = Module(new SinkB)
   val sinkC = Module(new SinkC)
+  val sinkTPmeta = Module(new SinkTPmeta)
   val sourceC = Module(new SourceC)
   val grantBuf = Module(new GrantBuffer)
   val refillBuf = Module(new MSHRBuffer(wPorts = 2))
@@ -68,6 +72,8 @@ class Slice()(implicit p: Parameters) extends L2Module {
   reqArb.io.sinkA <> a_reqBuf.io.out
   reqArb.io.ATag := a_reqBuf.io.ATag
   reqArb.io.ASet := a_reqBuf.io.ASet
+
+  reqArb.io.sinkTPmeta <> sinkTPmeta.io.task
 
   reqArb.io.sinkB <> sinkB.io.task
   reqArb.io.sinkC <> sinkC.io.task
@@ -110,6 +116,9 @@ class Slice()(implicit p: Parameters) extends L2Module {
   mainPipe.io.grantBufferHint := grantBuf.io.l1Hint
   mainPipe.io.globalCounter := grantBuf.io.globalCounter
   mainPipe.io.taskInfo_s1 <> reqArb.io.taskInfo_s1
+  mainPipe.io.tpMetaReqData.get <> sinkTPmeta.io.tpMetaDataW.get
+
+  sinkTPmeta.io.tpMetaResp.get := mainPipe.io.tpMetaResp.get
 
   // priority: nested-ReleaseData / probeAckData [NEW] > mainPipe DS rdata [OLD]
   // 0/1 might happen at the same cycle with 2
@@ -143,6 +152,19 @@ class Slice()(implicit p: Parameters) extends L2Module {
       p.resp <> grantBuf.io.prefetchResp.get
       p.recv_addr := 0.U.asTypeOf(p.recv_addr)
   }
+
+//  io.tpMetaReq.foreach {
+//    r =>
+//      r.valid <> mainPipe.io.tpMetaReq.get.valid
+//      mainPipe.io.tpMetaReq.get.ready <> r.ready
+//      r.bits <> mainPipe.io.tpMetaReq.get.bits
+//  }
+
+//  io.tpMetaResp.foreach {
+//    r =>
+//      mainPipe.io.tpMetaResp.get.valid <> r.valid
+//      mainPipe.io.tpMetaResp.get.bits <> r.bits
+//  }
 
   /* input & output signals */
   val inBuf = cacheParams.innerBuf

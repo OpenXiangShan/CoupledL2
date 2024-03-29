@@ -61,6 +61,7 @@ trait HasCoupledL2Parameters {
   val prefetchOpt = cacheParams.prefetch
   val hasPrefetchBit = prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchBit
   val hasPrefetchSrc = prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchSrc
+  val hasTP = prefetchOpt.nonEmpty && prefetchOpt.get.hasTP
   val topDownOpt = if(cacheParams.elaboratedTopDown) Some(true) else None
 
   val enableHintGuidedGrant = true
@@ -385,6 +386,18 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
               prefetchResps.get(i).bits.tag := resp_tag
               prefetchResps.get(i).bits.set := resp_set
             }
+        }
+
+        (slice.io.tpMetaReq, prefetcher.get.tpio.tpmeta_port) match {
+          case (Some(sliceReq), Some(prefetcherPort)) =>
+            sliceReq <> prefetcherPort.req
+          case _ =>
+        }
+
+        (slice.io.tpMetaResp, prefetcher.get.tpio.tpmeta_port) match {
+          case (Some(sliceResp), Some(prefetcherPort)) =>
+            sliceResp <> prefetcherPort.resp
+          case _ =>
         }
 
         slice

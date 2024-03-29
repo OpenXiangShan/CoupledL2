@@ -34,6 +34,7 @@ class MetaEntry(implicit p: Parameters) extends L2Bundle {
   val alias = aliasBitsOpt.map(width => UInt(width.W)) // alias bits of client
   val prefetch = if (hasPrefetchBit) Some(Bool()) else None // whether block is prefetched
   val prefetchSrc = if (hasPrefetchSrc) Some(UInt(PfSource.pfSourceBits.W)) else None // prefetch source
+  val tpMeta = if(hasTP) Some(Bool()) else None
   val accessed = Bool()
 
   def =/=(entry: MetaEntry): Bool = {
@@ -47,7 +48,7 @@ object MetaEntry {
     init
   }
   def apply(dirty: Bool, state: UInt, clients: UInt, alias: Option[UInt], prefetch: Bool = false.B,
-            pfsrc: UInt = PfSource.NoWhere.id.U, accessed: Bool = false.B
+            pfsrc: UInt = PfSource.NoWhere.id.U, tpMeta: Bool = false.B, accessed: Bool = false.B
   )(implicit p: Parameters) = {
     val entry = Wire(new MetaEntry)
     entry.dirty := dirty
@@ -56,6 +57,7 @@ object MetaEntry {
     entry.alias.foreach(_ := alias.getOrElse(0.U))
     entry.prefetch.foreach(_ := prefetch)
     entry.prefetchSrc.foreach(_ := pfsrc)
+    entry.tpMeta.foreach(_ := tpMeta)
     entry.accessed := accessed
     entry
   }

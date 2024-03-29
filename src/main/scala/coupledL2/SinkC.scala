@@ -67,7 +67,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
 
   def toTaskBundle(c: TLBundleC): TaskBundle = {
     val task = Wire(new TaskBundle)
-    task.channel := "b100".U
+    task.channel := "b0100".U
     task.tag := parseAddress(c.address)._1
     task.set := parseAddress(c.address)._2
     task.off := parseAddress(c.address)._3
@@ -97,6 +97,8 @@ class SinkC(implicit p: Parameters) extends L2Module {
     task.replTask := false.B
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+    task.tpmetaWen := false.B
+    task.tpmetaWenRepl := false.B
     task
   }
 

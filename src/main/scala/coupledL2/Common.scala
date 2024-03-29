@@ -33,10 +33,11 @@ class ReplacerInfo(implicit p: Parameters) extends L2Bundle {
 }
 
 trait HasChannelBits { this: Bundle =>
-  val channel = UInt(3.W)
+  val channel = UInt(4.W)
   def fromA = channel(0).asBool
   def fromB = channel(1).asBool
   def fromC = channel(2).asBool
+  def fromTP = channel(3).asBool
 }
 
 class MergeTaskBundle(implicit p: Parameters) extends L2Bundle {
@@ -57,7 +58,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val off = UInt(offsetBits.W)
   val alias = aliasBitsOpt.map(_ => UInt(aliasBitsOpt.get.W)) // color bits in cache-alias issue
   val vaddr = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W)) // vaddr passed by client cache
-  val opcode = UInt(3.W)                  // type of the task operation
+  val opcode = UInt(4.W)                  // type of the task operation
   val param = UInt(3.W)
   val size = UInt(msgSizeBits.W)
   val sourceId = UInt(sourceIdBits.W)     // tilelink sourceID
@@ -101,6 +102,10 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   // for merged MSHR tasks(Acquire & late Prefetch)
   val mergeA = Bool()
   val aMergeTask = new MergeTaskBundle()
+
+  // for TPmetaReq(read & write)
+  val tpmetaWen = Bool()
+  val tpmetaWenRepl = Bool()
 }
 
 class PipeStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits
@@ -269,4 +274,40 @@ class PrefetchRecv extends Bundle {
 // custom l2 - l1 interface
 class L2ToL1Hint(implicit p: Parameters) extends Bundle {
   val sourceId = UInt(32.W)    // tilelink sourceID
+}
+
+class TPmetaL2ReqBundle(implicit p: Parameters) extends L2Bundle {
+  val set = UInt(setBits.W)
+  val tag = UInt(tagBits.W)
+  val off = UInt(offsetBits.W)
+}
+
+class TPmetaData extends Bundle {
+  val hartid = UInt(4.W)
+  val rawData = UInt(512.W)
+}
+
+class TPmetaReq(implicit p: Parameters) extends L2Bundle {
+  // TODO: Fix according to L2
+  val hartid = UInt(4.W) // max 16 harts
+  val l2ReqBundle = new TPmetaL2ReqBundle()
+  val wmode = Bool()
+  val rawData = Vec(16, UInt((36-6).W))
+}
+
+class TPmetaResp extends Bundle {
+  val hartid = UInt(4.W)
+  val rawData = Vec(16, UInt((36-6).W))
+}
+
+class TPmetaL2Req(implicit p: Parameters) extends L2Bundle {
+  val l2ReqBundle = new TPmetaL2ReqBundle()
+  val wmode = Bool()
+  // [511, 508] = hartid; [479, 0] = rawData
+  val rawData = UInt(512.W)
+}
+
+class TPmetaL2Resp extends Bundle {
+  val exist = Bool()
+  val rawData = UInt(512.W)
 }
