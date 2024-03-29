@@ -182,17 +182,39 @@ class Directory(implicit p: Parameters) extends L2Module {
   val metaValidVec = metaAll_s3.map(_.state =/= MetaData.INVALID)
   val hitVec = tagMatchVec.zip(metaValidVec).map(x => x._1 && x._2)
 
+  /* ====== refill retry ====== */
+  // when refill, ways that have not finished writing its refillData back to DS (in MSHR Release),
+  // or using by Alias-Acquire (hit), can not be used for replace.
+  // choose free way to refill, if all ways are occupied, we cancel the Grant and LET IT RETRY
+  // compare is done at Stage2 for better timing
+  val occWayMask_s2 = VecInit(io.msInfo.map(s =>
+    Mux(
+      s.valid && (s.bits.set === req_s2.set) && (s.bits.blockRefill || s.bits.dirHit),
+      UIntToOH(s.bits.way, ways),
+      0.U(ways.W)
+    )
+  )).reduceTree(_ | _)
+  
+  val freeWayMask_s3 = RegEnable(~occWayMask_s2, refillReqValid_s2)
+  val refillRetry = !(freeWayMask_s3.orR)
+
   val hitWay = OHToUInt(hitVec)
   val replaceWay = WireInit(UInt(wayBits.W), 0.U)
   val (inv, invalidWay) = invalid_way_sel(metaAll_s3, replaceWay)
   val chosenWay = Mux(inv, invalidWay, replaceWay)
   // if chosenWay not in wayMask, then choose a way in wayMask
-  // TODO: consider remove this is not used for better timing
   // for retry bug fixing: if the chosenway cause retry last time, choose another way
-  val finalWay = Mux(
+  /*val finalWay = Mux(
     req_s3.wayMask(chosenWay),
     chosenWay,
     PriorityEncoder(req_s3.wayMask)
+  )*/
+  // for retry bug fixing: if the chosenway not in freewaymask, choose another way
+  // TODO: req_s3.wayMask not take into consideration
+  val finalWay = Mux(
+    freeWayMask_s3(chosenWay),
+    chosenWay,
+    PriorityEncoder(freeWayMask_s3)
   )
 
   val hit_s3 = Cat(hitVec).orR
@@ -216,19 +238,6 @@ class Directory(implicit p: Parameters) extends L2Module {
   dontTouch(tagArray.io)
 
   io.read.ready := !io.metaWReq.valid && !io.tagWReq.valid && !replacerWen
-
-  /* ====== refill retry ====== */
-  // if refill chooses a way that has not finished writing its refillData back to DS (in MSHR Release),
-  // or the way is using by Alias-Acquire (hit), we cancel the Grant and LET IT RETRY
-
-  // comparing set is done at Stage2 for better timing
-  val wayConflictPartI  = RegEnable(VecInit(io.msInfo.map(s =>
-    s.valid && s.bits.set === req_s2.set)).asUInt, refillReqValid_s2)
-
-  val wayConflictPartII = VecInit(io.msInfo.map(s =>
-    (s.bits.blockRefill || s.bits.dirHit) && s.bits.way === finalWay
-  )).asUInt
-  val refillRetry = (wayConflictPartI & wayConflictPartII).orR
 
   /* ======!! Replacement logic !!====== */
   /* ====== Read, choose replaceWay ====== */
