@@ -15,7 +15,7 @@
  * *************************************************************************************
  */
 
-package coupledL2
+package coupledL2.tl2chi
 
 import chisel3._
 import chisel3.util._
@@ -34,7 +34,6 @@ import coupledL2.tl2chi.CHIOpcode.RSPOpcodes._
 import coupledL2.tl2chi.CHIOpcode.SNPOpcodes._
 import coupledL2.tl2chi.CHICohStates._
 import coupledL2.MetaData._
-import coupledL2.tl2chi._
 import coupledL2._
 
 

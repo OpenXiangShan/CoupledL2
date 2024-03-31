@@ -25,7 +25,7 @@ import coupledL2.{RespBundle, MSHRBufWrite}
 
 class RXDAT(implicit p: Parameters) extends TL2CHIL2Module {
   val io = IO(new Bundle() {
-    val out = Flipped(ChannelIO(new CHIDAT()))
+    val out = Flipped(DecoupledIO(new CHIDAT()))
     val in = Output(new RespBundle())
     val refillBufWrite = ValidIO(new MSHRBufWrite())
   })

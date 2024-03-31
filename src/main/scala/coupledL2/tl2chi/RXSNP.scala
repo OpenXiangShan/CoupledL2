@@ -28,15 +28,12 @@ class RXSNP(
   lCreditNum: Int = 4 // the number of L-Credits that a receiver can provide
 )(implicit p: Parameters) extends TL2CHIL2Module {
   val io = IO(new Bundle() {
-    val rxsnp = Flipped(ChannelIO(new CHISNP()))
+    val rxsnp = Flipped(DecoupledIO(new CHISNP()))
     val task = DecoupledIO(new TaskBundle())
     val msInfo = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo())))
   })
 
-  val decoupledSnp = Wire(DecoupledIO(new CHISNP()))
-  LCredit2Decoupled(io.rxsnp, decoupledSnp)
-
-  val task = fromSnpToTaskBundle(decoupledSnp.bits)
+  val task = fromSnpToTaskBundle(io.rxsnp.bits)
 
   // unable to accept incoming B req because same-addr as some MSHR REQ
   val addrConflict = VecInit(io.msInfo.map(s =>
@@ -52,10 +49,9 @@ class RXSNP(
   )).asUInt
   val replaceConflict = replaceConflictMask.orR
 
-//  io.task.valid := decoupledSnp.valid && !addrConflict && !replaceConflict
-  io.task.valid := decoupledSnp.valid && !addrConflict
+  io.task.valid := io.rxsnp.valid && !addrConflict && !replaceConflict
   io.task.bits := task
-  decoupledSnp.ready := io.task.ready
+  io.rxsnp.ready := io.task.ready
 
   def fromSnpToTaskBundle(snp: CHISNP): TaskBundle = {
     val task = Wire(new TaskBundle)
@@ -90,8 +86,8 @@ class RXSNP(
     task.replTask := false.B
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
-    task.snpHitRelease := replaceConflict   //indicate read release buffer @s2 to get snoop data 
-    task.snpHitReleaseIdx := replaceConflictMask  //the index of ReleaseBuffer that conflict 
+    // task.snpHitRelease := replaceConflict   //indicate read release buffer @s2 to get snoop data 
+    // task.snpHitReleaseIdx := replaceConflictMask  //the index of ReleaseBuffer that conflict 
     task.tgtID.foreach(_ := 0.U) // TODO
     task.srcID.foreach(_ := snp.srcID)
     task.txnID.foreach(_ := snp.txnID)

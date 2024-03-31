@@ -23,12 +23,62 @@ import utility._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.TaskBundle
 
+class TXRSPBlockBundle(implicit p: Parameters) extends TXBlockBundle {
+  val blockSinkBReqEntrance = Bool()
+
+  override def apply() = 0.U.asTypeOf(this)
+}
+
 class TXRSP(implicit p: Parameters) extends TL2CHIL2Module {
   val io = IO(new Bundle() {
     val in = Flipped(DecoupledIO(new TaskBundle()))
-    val out = ChannelIO(new CHIRSP())
+    val out = DecoupledIO(new CHIRSP())
+
+    val pipeStatusVec = Flipped(Vec(5, ValidIO(new PipeStatusWithCHI)))
+    val toReqArb = Output(new TXRSPBlockBundle)
   })
 
-  // TODO
-  io <> DontCare
+  assert(!io.in.valid || io.in.bits.toTXRSP, "txChannel is wrong for TXRSP")
+  assert(io.in.ready, "TXRSP should never be full")
+  require(chiOpt.isDefined)
+
+  // TODO: an mshrsAll-entry queue is too much, evaluate for a proper size later
+  val queue = Module(new Queue(io.in.bits.cloneType, entries = mshrsAll, flow = true))
+  queue.io.enq <> io.in
+
+  // Back pressure logic from TXRSP
+  val queueCnt = queue.io.count
+  // TODO: this may be imprecise, review this later
+  val pipeStatus_s1_s5 = io.pipeStatusVec
+  val pipeStatus_s1_s2 = pipeStatus_s1_s5.take(2)
+  val pipeStatus_s2 = pipeStatus_s1_s2.tail
+  val pipeStatus_s3_s5 = pipeStatus_s1_s5.drop(2)
+  // inflightCnt equals the number of reqs on s2~s5 that may flow into TXRSP soon, plus queueCnt.
+  // The calculation of inflightCnt might be imprecise and leads to false positive back pressue.
+  val inflightCnt = PopCount(Cat(pipeStatus_s3_s5.map(s => s.valid && s.bits.toTXRSP && (s.bits.fromB || s.bits.mshrTask)))) +
+    PopCount(Cat(pipeStatus_s2.map(s => s.valid && Mux(s.bits.mshrTask, s.bits.toTXRSP, s.bits.fromB)))) +
+    queueCnt
+  val noSpaceForSinkBReq = inflightCnt >= mshrsAll.U
+  val noSpaceForMSHRReq = inflightCnt >= (mshrsAll-1).U
+
+  io.toReqArb.blockSinkBReqEntrance := noSpaceForSinkBReq
+  io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq
+
+  io.out.valid := queue.io.deq.valid
+  io.out.bits := toCHIRSPBundle(queue.io.deq.bits)
+  queue.io.deq.ready := io.out.ready
+
+  def toCHIRSPBundle(task: TaskBundle): CHIRSP = {
+    val rsp = Wire(new CHIRSP())
+    rsp.tgtID := task.tgtID.get
+    rsp.srcID := task.srcID.get
+    rsp.txnID := task.txnID.get
+    rsp.dbID := task.dbID.get
+    rsp.pCrdType := task.pCrdType.get
+    rsp.opcode := task.chiOpcode.get
+    rsp.resp := task.resp.get
+    rsp.fwdState := task.fwdState.get
+    // TODO: Finish this
+    rsp
+  }
 }

@@ -109,9 +109,9 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val mergeA = Bool()
   val aMergeTask = new MergeTaskBundle()
 
-  //Used for get data from ReleaseBuf when snoop hit with same PA 
-  val snpHitRelease = Bool()
-  val snpHitReleaseIdx = UInt(bufIdxBits.W) 
+  // //Used for get data from ReleaseBuf when snoop hit with same PA 
+  // val snpHitRelease = Bool()
+  // val snpHitReleaseIdx = UInt(bufIdxBits.W) 
   // CHI
   val tgtID = chiOpt.map(_ => UInt(TGTID_WIDTH.W))
   val srcID = chiOpt.map(_ => UInt(SRCID_WIDTH.W))
@@ -145,7 +145,8 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   }
 }
 
-class PipeStatus(implicit p: Parameters) extends L2Bundle with HasTLChannelBits
+class PipeStatus(implicit p: Parameters) extends L2Bundle
+  with HasTLChannelBits
 
 class PipeEntranceStatus(implicit p: Parameters) extends L2Bundle {
   val tags = Vec(4, UInt(tagBits.W))
