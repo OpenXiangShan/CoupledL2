@@ -96,6 +96,10 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base
     println(s"sets:${cacheParams.sets} ways:${cacheParams.ways} blockBytes:${cacheParams.blockBytes}")
     print_bundle_fields(node.in.head._2.bundle.requestFields, "usr")
     print_bundle_fields(node.in.head._2.bundle.echoFields, "echo")
+    println(s"CHI REQ Width: ${(new CHIREQ).asUInt.getWidth}")
+    println(s"CHI RSP Width: ${(new CHIRSP).asUInt.getWidth}")
+    println(s"CHI SNP Width: ${(new CHISNP).asUInt.getWidth}")
+    println(s"CHI DAT Width: ${(new CHIDAT).asUInt.getWidth}")
 
     node.edges.in.headOption.foreach { n =>
       n.client.clients.zipWithIndex.foreach {

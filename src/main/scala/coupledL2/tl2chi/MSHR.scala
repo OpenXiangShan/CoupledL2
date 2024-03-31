@@ -172,7 +172,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
     oa.returnNID := 0.U
     oa.stashNID := 0.U
     oa.stashNIDValid := false.B
-    oa.stashInfo := 0.U
     oa.opcode := ParallelLookUp(
       Cat(req.opcode, dirResult.hit, isT(meta.state)),
         Seq(
@@ -193,11 +192,10 @@ class MSHR(implicit p: Parameters) extends L2Module {
     oa.expCompAck := true.B
     oa.memAttr := "b1101".U // {allocate, cacheable, Device, EWA}
     oa.snpAttr := true.B
-    oa.snoopable := true.B
-    oa.lpid := 0.U
-    oa.excel := false.B
-    oa.snoopme := false.B
-    oa.tracetag := false.B
+    oa.lpID := 0.U
+    oa.excl := false.B
+    oa.snoopMe := false.B
+    oa.traceTag := false.B
     oa
   }
 

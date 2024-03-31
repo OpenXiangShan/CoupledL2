@@ -96,12 +96,12 @@ trait HasCHIMsgParameters {
   def TGTID_WIDTH = NODEID_WIDTH
   def SRCID_WIDTH = NODEID_WIDTH
   def TXNID_WIDTH = 8 // An 8-bit field is defined for the TxnID to accommodate up to 256 outstanding transactions
-  def LPID_WIDTH = 4 // TODO: To be confirmed
+  def LPID_WIDTH = 5 // TODO: To be confirmed
   def RETURNNID_WIDTH = NODEID_WIDTH
   def RETURNTXNID_WIDTH = TXNID_WIDTH
   def STASHNID_WIDTH = NODEID_WIDTH
   def STASHLPID_WIDTH = LPID_WIDTH
-  def STASHINFO_WIDTH = 2 //TODO
+  // def STASHINFO_WIDTH = 2 //TODO
 
 
   def REQ_OPCODE_WIDTH = CHIOpcode.REQOpcodes.width
@@ -111,6 +111,7 @@ trait HasCHIMsgParameters {
   def OPCODE_WIDTH = max(REQ_OPCODE_WIDTH, max(RSP_OPCODE_WIDTH, max(SNP_OPCODE_WIDTH, DAT_OPCODE_WIDTH)))
 
   def ADDR_WIDTH = 44 // TODO: To be confirmed
+  def SNP_ADDR_WIDTH = ADDR_WIDTH - 3
   def SIZE_WIDTH = 3
   def PCRDTYPE_WIDTH = 4
   def MEMATTR_WIDTH = 4
@@ -127,6 +128,7 @@ trait HasCHIMsgParameters {
   def RESPERR_WIDTH = 2
   def RESP_WIDTH = CHICohStates.width
   def FWDSTATE_WIDTH = CHICohStates.width
+  def DATAPULL_WIDTH = 3
   def DATASOURCE_WIDTH = 3
   def CCID_WIDTH = 2 // TODO: To be confirmed
   def DATAID_WIDTH = 2 // TODO: To be confirmed
@@ -143,10 +145,17 @@ class CHIREQ extends CHIBundle {
   val tgtID = UInt(TGTID_WIDTH.W)
   val srcID = UInt(SRCID_WIDTH.W)
   val txnID = UInt(TXNID_WIDTH.W)
-  val returnNID = UInt(RETURNNID_WIDTH.W)
-  val stashNID = UInt(STASHNID_WIDTH.W)
-  val stashNIDValid = Bool()
-  val stashInfo = UInt(STASHINFO_WIDTH.W)
+
+  val returnNID = UInt(RETURNNID_WIDTH.W) // Used for DMT
+  def stashNID = returnNID // Used for Stash
+
+  val stashNIDValid = Bool() // Used for Stash
+  def endian = stashNIDValid // Used for Atomic
+
+  val returnTxnID = UInt(RETURNTXNID_WIDTH.W)
+  def stashLPID = returnTxnID(STASHLPID_WIDTH - 1, 0)
+  def stashLPIDValid = returnTxnID(STASHLPID_WIDTH).asBool
+
   val opcode = UInt(REQ_OPCODE_WIDTH.W)
   val size = UInt(SIZE_WIDTH.W)
   val addr = UInt(ADDR_WIDTH.W)
@@ -157,48 +166,72 @@ class CHIREQ extends CHIBundle {
   val pCrdType = UInt(PCRDTYPE_WIDTH.W)
   val memAttr = new MemAttr()
   val snpAttr = Bool()
-  val snoopable = Bool()
-  val lpid = UInt(LPID_WIDTH.W)
-  val excel = Bool()
-  val snoopme = Bool()
+  val lpID = UInt(LPID_WIDTH.W)
+
+  val snoopMe = Bool() // Used for Atomic
+  def excl = snoopMe // Used for Exclusive transactions
+
   val expCompAck = Bool()
-  val tracetag = Bool()
-  // TODO: Finish this
+  val traceTag = Bool()
 }
 
 class CHISNP extends CHIBundle {
-  val txnID = UInt(TXNID_WIDTH.W)
+  val qos = UInt(QOS_WIDTH.W)
   val srcID = UInt(SRCID_WIDTH.W)
+  val txnID = UInt(TXNID_WIDTH.W)
+  val fwdNID = UInt(FWDNID_WIDTH.W)
+
+  val fwdTxnID = UInt(FWDTXNID_WIDTH.W)
+  def stashLPID = fwdTxnID(STASHLPID_WIDTH - 1, 0)
+  def stashLPIDValid = fwdTxnID(STASHLPID_WIDTH).asBool
+  def vmIDExt = fwdTxnID
+
   val opcode = UInt(SNP_OPCODE_WIDTH.W)
-  val addr = UInt(ADDR_WIDTH.W)
+  val addr = UInt(SNP_ADDR_WIDTH.W)
+  val ns = Bool()
+
+  val doNotGoToSD = Bool()
+  def doNotDataPull = doNotGoToSD
+
   val retToSrc = Bool()
-  // TODO: Finish this
+  val traceTag = Bool()
 }
 
 class CHIDAT extends CHIBundle {
+  val qos = UInt(QOS_WIDTH.W)
   val tgtID = UInt(TGTID_WIDTH.W)
   val srcID = UInt(SRCID_WIDTH.W)
   val txnID = UInt(TXNID_WIDTH.W)
   val homeNID = UInt(HOMENID_WIDTH.W)
-  val dbID = UInt(DBID_WIDTH.W)
   val opcode = UInt(DAT_OPCODE_WIDTH.W)
+  val respErr = UInt(RESPERR_WIDTH.W)
+  val resp = UInt(RESP_WIDTH.W)
+
+  val fwdState = UInt(FWDSTATE_WIDTH.W) // Used for DCT
+  def dataPull = fwdState // Used for Stash
+  def dataSource = fwdState // Indicates Data source in a response
+
+  val dbID = UInt(DBID_WIDTH.W)
   val ccID = UInt(CCID_WIDTH.W)
   val dataID = UInt(DATAID_WIDTH.W)
+  val traceTag = Bool()
   val be = UInt(BE_WIDTH.W)
   val data = UInt(DATA_WIDTH.W)
-  val resp = UInt(RESP_WIDTH.W)
-  val fwdState = UInt(FWDSTATE_WIDTH.W)
-  // TODO: Finish this
 }
 
 class CHIRSP extends CHIBundle {
+  val qos = UInt(QOS_WIDTH.W)
   val tgtID = UInt(TGTID_WIDTH.W)
   val srcID = UInt(SRCID_WIDTH.W)
   val txnID = UInt(TXNID_WIDTH.W)
+  val opcode = UInt(RSP_OPCODE_WIDTH.W)
+  val respErr = UInt(RESPERR_WIDTH.W)
+  val resp = UInt(RESP_WIDTH.W)
+
+  val fwdState = UInt(FWDSTATE_WIDTH.W)
+  def dataPull = fwdState
+
   val dbID = UInt(DBID_WIDTH.W)
   val pCrdType = UInt(PCRDTYPE_WIDTH.W)
-  val opcode = UInt(RSP_OPCODE_WIDTH.W)
-  val resp = UInt(RESP_WIDTH.W)
-  val fwdState = UInt(FWDSTATE_WIDTH.W)
-  // TODO: Finish this
+  val traceTag = Bool()
 }
