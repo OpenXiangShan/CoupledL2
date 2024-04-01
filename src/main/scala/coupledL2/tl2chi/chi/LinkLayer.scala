@@ -122,7 +122,7 @@ class LCredit2Decoupled[T <: Bundle](
   queue.io.enq.valid := accept
   // queue.io.enq.bits := io.in.bits
   var lsb = 0
-  queue.io.enq.bits.getElements.foreach { case e =>
+  queue.io.enq.bits.getElements.reverse.foreach { case e =>
     e := io.in.bits(lsb + e.asUInt.getWidth - 1, lsb).asTypeOf(e.cloneType)
     lsb += e.asUInt.getWidth
   }
@@ -146,7 +146,7 @@ object LCredit2Decoupled {
   }
 }
 
-class Decoupled2LCredit[T <: Data](gen: T) extends Module {
+class Decoupled2LCredit[T <: Bundle](gen: T) extends Module {
   val io = IO(new Bundle() {
     val in = Flipped(DecoupledIO(gen.cloneType))
     val out = ChannelIO(gen.cloneType)
@@ -170,11 +170,11 @@ class Decoupled2LCredit[T <: Data](gen: T) extends Module {
   io.in.ready := lcreditPool =/= 0.U
   io.out.flitpend := false.B // TODO
   io.out.flitv := io.in.fire()
-  io.out.flit := io.in.bits.asUInt
+  io.out.flit := io.in.bits.getElements.map(_.asUInt).scanLeft(0.U(0.W))((x, y) => Cat(x, y)).last
 }
 
 object Decoupled2LCredit {
-  def apply[T <: Data](left: DecoupledIO[T], right: ChannelIO[T]): Unit = {
+  def apply[T <: Bundle](left: DecoupledIO[T], right: ChannelIO[T]): Unit = {
     val mod = Module(new Decoupled2LCredit(left.bits.cloneType))
     mod.io.in <> left
     right <> mod.io.out

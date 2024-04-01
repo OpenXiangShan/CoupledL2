@@ -143,6 +143,8 @@ abstract class CHIBundle extends Bundle with HasCHIMsgParameters
 
 class CHIREQ extends CHIBundle {
   // BE CAUTIOUS with the order of the flit fields
+
+  /* LSB */
   val qos = UInt(QOS_WIDTH.W)
   val tgtID = UInt(TGTID_WIDTH.W)
   val srcID = UInt(SRCID_WIDTH.W)
@@ -176,9 +178,14 @@ class CHIREQ extends CHIBundle {
   val expCompAck = Bool()
   val traceTag = Bool()
   val rsvdc = UInt(REQ_RSVDC_WIDTH.W)
+
+  /* MSB */
 }
 
 class CHISNP extends CHIBundle {
+  // BE CAUTIOUS with the order of the flit fields
+
+  /* LSB */
   val qos = UInt(QOS_WIDTH.W)
   val srcID = UInt(SRCID_WIDTH.W)
   val txnID = UInt(TXNID_WIDTH.W)
@@ -198,9 +205,14 @@ class CHISNP extends CHIBundle {
 
   val retToSrc = Bool()
   val traceTag = Bool()
+
+  /* MSB */
 }
 
 class CHIDAT extends CHIBundle {
+  // BE CAUTIOUS with the order of the flit fields
+
+  /* LSB */
   val qos = UInt(QOS_WIDTH.W)
   val tgtID = UInt(TGTID_WIDTH.W)
   val srcID = UInt(SRCID_WIDTH.W)
@@ -221,9 +233,15 @@ class CHIDAT extends CHIBundle {
   val rsvdc = UInt(DAT_RSVDC_WIDTH.W)
   val be = UInt(BE_WIDTH.W)
   val data = UInt(DATA_WIDTH.W)
+  // TODO: maybe Data Check and Poison
+
+  /* MSB */
 }
 
 class CHIRSP extends CHIBundle {
+  // BE CAUTIOUS with the order of the flit fields
+
+  /* LSB */
   val qos = UInt(QOS_WIDTH.W)
   val tgtID = UInt(TGTID_WIDTH.W)
   val srcID = UInt(SRCID_WIDTH.W)
@@ -238,4 +256,5 @@ class CHIRSP extends CHIBundle {
   val dbID = UInt(DBID_WIDTH.W)
   val pCrdType = UInt(PCRDTYPE_WIDTH.W)
   val traceTag = Bool()
+  /* MSB */
 }
