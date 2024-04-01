@@ -27,21 +27,11 @@ class ChannelIO[+T <: Data](gen: T) extends Bundle {
   // Flit Valid. The transmitter sets the signal HIGH to indicate when FLIT[(W-1):0] is valid.
   val flitv = Output(Bool())
   // Flit.
-  val flit = Output(gen)
+  val flit = Output(UInt(gen.getWidth.W))
   // L-Credit Valid. The receiver sets this signal HIGH to return a channel L-Credit to a transmitter.
   val lcrdv = Input(Bool())
 
-  def map[B <: Data](f: T => B): ChannelIO[B] = {
-    val _map_flit = f(flit)
-    val _map = Wire(ChannelIO(chiselTypeOf(_map_flit)))
-    _map.flitpend := flitpend
-    _map.flitv := flitv
-    _map.flit := _map_flit
-    lcrdv := _map.lcrdv
-    _map
-  }
-
-  def bits: T = flit
+  def bits: UInt = flit
 }
 
 object ChannelIO {
@@ -95,7 +85,7 @@ class DecoupledPortIO extends Bundle {
   val rx = Flipped(new DecoupledUpwardsLinkIO)
 }
 
-class LCredit2Decoupled[T <: Data](
+class LCredit2Decoupled[T <: Bundle](
   gen: T,
   lcreditNum: Int = 4 // the number of L-Credits that a receiver can provide
 ) extends Module {
@@ -130,7 +120,13 @@ class LCredit2Decoupled[T <: Data](
   }
 
   queue.io.enq.valid := accept
-  queue.io.enq.bits := io.in.bits
+  // queue.io.enq.bits := io.in.bits
+  var lsb = 0
+  queue.io.enq.bits.getElements.foreach { case e =>
+    e := io.in.bits(lsb + e.asUInt.getWidth - 1, lsb).asTypeOf(e.cloneType)
+    lsb += e.asUInt.getWidth
+  }
+
   assert(!accept || queue.io.enq.ready)
 
   io.in.lcrdv := lcreditOut
@@ -139,12 +135,12 @@ class LCredit2Decoupled[T <: Data](
 }
 
 object LCredit2Decoupled {
-  def apply[T <: Data](
+  def apply[T <: Bundle](
     left: ChannelIO[T],
     right: DecoupledIO[T],
     lcreditNum: Int = 4
   ): Unit = {
-    val mod = Module(new LCredit2Decoupled(left.bits.cloneType, lcreditNum))
+    val mod = Module(new LCredit2Decoupled(right.bits.cloneType, lcreditNum))
     mod.io.in <> left
     right <> mod.io.out
   }
@@ -174,7 +170,7 @@ class Decoupled2LCredit[T <: Data](gen: T) extends Module {
   io.in.ready := lcreditPool =/= 0.U
   io.out.flitpend := false.B // TODO
   io.out.flitv := io.in.fire()
-  io.out.flit := io.in.bits
+  io.out.flit := io.in.bits.asUInt
 }
 
 object Decoupled2LCredit {

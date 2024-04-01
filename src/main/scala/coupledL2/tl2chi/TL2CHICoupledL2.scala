@@ -100,6 +100,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base
     println(s"CHI RSP Width: ${(new CHIRSP).getWidth}")
     println(s"CHI SNP Width: ${(new CHISNP).getWidth}")
     println(s"CHI DAT Width: ${(new CHIDAT).getWidth}")
+    println(s"CHI Port Width: ${io.chi.getWidth}")
 
     node.edges.in.headOption.foreach { n =>
       n.client.clients.zipWithIndex.foreach {

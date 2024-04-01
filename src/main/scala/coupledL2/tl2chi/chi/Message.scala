@@ -142,6 +142,7 @@ trait HasCHIMsgParameters {
 abstract class CHIBundle extends Bundle with HasCHIMsgParameters
 
 class CHIREQ extends CHIBundle {
+  // BE CAUTIOUS with the order of the flit fields
   val qos = UInt(QOS_WIDTH.W)
   val tgtID = UInt(TGTID_WIDTH.W)
   val srcID = UInt(SRCID_WIDTH.W)
