@@ -105,7 +105,7 @@ class LCredit2Decoupled[T <: Bundle](
   val lcreditOut = lcreditPool > queue.io.count
 
   val ready = lcreditInflight =/= 0.U
-  val accept = ready && io.in.flitv
+  val accept = ready && io.in.flitv && RegNext(io.in.flitpend)
 
   when (lcreditOut) {
     when (!accept) {
@@ -168,9 +168,9 @@ class Decoupled2LCredit[T <: Bundle](gen: T) extends Module {
   }
 
   io.in.ready := lcreditPool =/= 0.U
-  io.out.flitpend := false.B // TODO
+  io.out.flitpend := true.B
   io.out.flitv := io.in.fire()
-  io.out.flit := io.in.bits.getElements.map(_.asUInt).scanLeft(0.U(0.W))((x, y) => Cat(x, y)).last
+  io.out.flit := Cat(io.in.bits.getElements.map(_.asUInt))
 }
 
 object Decoupled2LCredit {
@@ -180,71 +180,3 @@ object Decoupled2LCredit {
     right <> mod.io.out
   }
 }
-
-// class LCreditArbiterIO[T <: Data](private val gen: T, val n: Int) extends Bundle {
-//   val in = Flipped(Vec(n, ChannelIO(gen)))
-//   val out = ChannelIO(gen)
-//   // val chosen = Output(UInt(log2Ceil(n).W))
-// }
-
-// class LCreditArbiter[T <: Data](val gen: T, val n: Int) extends Module {
-
-//   override def desiredName = s"LCreditArbiter${n}_${gen.typeName}"
-
-//   val io = IO(new LCreditArbiterIO(gen, n))
-
-//   val lcreditsAverage = scala.math.ceil(lcreditsMax.toFloat / n).toInt
-
-//   val participants = RegInit(VecInit(Seq.fill(n)(0.U(lcreditsAverage.W))))
-//   val queues = Seq.fill(n)(Module(new Queue(gen.cloneType, entries = lcreditsAverage, pipe = true, flow = false)))
-
-//   // which participant should an L-Credit be handed out
-//   val grantlcrdv = participants.map(p => p === participants.reduce(_ & _))
-//   val grantlcrdvOH = PriorityEncoderOH(grantlcrdv)
-//   // which participant should be selected when multiple inputs burst
-//   val queueValids = queues.map(_.io.deq.valid)
-//   val inputValids = (io.in.map(_.flitv) zip participants.map(_.orR)).map(x => x._1 && x._2)
-//   val flits = queues.map(_.io.deq.bits) ++ in.in.map(_.flit)
-//   val valids = queueValids ++ inputValids
-//   val grantv = valids.length match {
-//     case 0 => Seq()
-//     case 1 => Seq(true.B)
-//     case _ => true.B +: valids.tail.init.scanLeft(valids.head)(_ || _).map(!_)
-//   }
-//   val fires = (valids zip grantv).map(x => x._1 && x._2)
-//   // val grantvOH = PriorityEncoderOH(valids)
-
-//   io.in.zip(grantlcrdvOH).foreach { case (in, g) => in.lcrdv := io.out.lcrdv && g }
-
-//   /* 
-//     When multiple inputs burst in the same cycle, only one could be chosen into output.
-//     Other inputs should enqueue and the dequeue later.
-//     */
-//   io.out.flitv := Cat(valids).orR
-//   io.out.flitpend := true.B // TODO: consider flitpend
-//   io.out.flit := ParallelPriorityMux(valids, queues.map(_.io.deq.bits) ++ io.in.map(_.bits))
-
-//   for (i <- 0 until n) {
-//     queues(i).io.deq.ready := grantv(i)
-
-//     queues(i).io.enq.valid := inputValids(i) && !(grantv.drop(n))(i)
-//     queues(i).io.enq.bits := io.in(i).bits
-//     assert(queues(i).io.enq.ready, "queues should always be ready")
-
-//     val p = io.in(i).lcrdv // produce L-Credit
-//     val v = fires(i) || fires(i + n) // consume L-Credit
-
-//     when (p && !v) { participants(i) := produce(participants(i)) }
-//     when (v && !p) { participants(i) := consume(participants(i)) }
-
-//     assert(!(p && !v && participants(i).andR), s"L-Credit overflows for input-${i}")
-//     assert(!(v && !participants(i).orR), s"L-Credit runs out for input-${i}")
-//   }
-
-//   // produce lcredits
-//   def produce(x: UInt): UInt = Cat(x, 1.U(1.W))
-//   // consume lcredits
-//   def consume(x: UInt): UInt = x >> 1
-
-//   assert(!io.out.lcrdv || Cat(grantlcrdv).orR)
-// }
