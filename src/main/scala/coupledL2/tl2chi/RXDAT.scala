@@ -50,13 +50,13 @@ class RXDAT(implicit p: Parameters) extends TL2CHIL2Module {
   io.in.set := 0.U(setBits.W)
   io.in.tag := 0.U(tagBits.W)
 //  io.in.respInfo.opcode := io.out.bits.opcode
+  io.in.respInfo := 0.U.asTypeOf(io.in.respInfo.cloneType)
   io.in.respInfo.last := last
 
   io.in.respInfo.chiOpcode.get := io.out.bits.opcode
   io.in.respInfo.homeNID.get := io.out.bits.homeNID
   io.in.respInfo.dbID.get := io.out.bits.dbID
 
+  io.out.ready := true.B
 
-  // TODO
-  io <> DontCare
 }

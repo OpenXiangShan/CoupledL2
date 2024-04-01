@@ -30,8 +30,6 @@ class ChannelIO[+T <: Data](gen: T) extends Bundle {
   val flit = Output(UInt(gen.getWidth.W))
   // L-Credit Valid. The receiver sets this signal HIGH to return a channel L-Credit to a transmitter.
   val lcrdv = Input(Bool())
-
-  def bits: UInt = flit
 }
 
 object ChannelIO {
@@ -123,7 +121,7 @@ class LCredit2Decoupled[T <: Bundle](
   // queue.io.enq.bits := io.in.bits
   var lsb = 0
   queue.io.enq.bits.getElements.reverse.foreach { case e =>
-    e := io.in.bits(lsb + e.asUInt.getWidth - 1, lsb).asTypeOf(e.cloneType)
+    e := io.in.flit(lsb + e.asUInt.getWidth - 1, lsb).asTypeOf(e.cloneType)
     lsb += e.asUInt.getWidth
   }
 

@@ -111,8 +111,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
     // TODO
   })
 
-  io <> DontCare
-
   require(chiOpt.isDefined)
 
   val resetFinish = RegInit(false.B)

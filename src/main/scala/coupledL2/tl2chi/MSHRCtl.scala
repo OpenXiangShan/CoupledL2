@@ -82,10 +82,6 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
     val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
   })
 
-  // TODO
-  io <> DontCare
-
-
   /*MSHR allocation pointer gen -> to Mainpipe*/
   class MSHRSelector(implicit p: Parameters) extends L2Module {
     val io = IO(new Bundle() {
