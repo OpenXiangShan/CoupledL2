@@ -67,6 +67,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
 
   def toTaskBundle(c: TLBundleC): TaskBundle = {
     val task = Wire(new TaskBundle)
+    task := 0.U.asTypeOf(new TaskBundle)
     task.channel := "b100".U
     task.txChannel := 0.U
     task.tag := parseAddress(c.address)._1
@@ -146,6 +147,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
   io.resp.mshrId := 0.U // DontCare
   io.resp.tag := parseAddress(io.c.bits.address)._1
   io.resp.set := parseAddress(io.c.bits.address)._2
+  io.resp.respInfo := 0.U.asTypeOf(io.resp.respInfo.cloneType)
   io.resp.respInfo.opcode := io.c.bits.opcode
   io.resp.respInfo.param := io.c.bits.param
   io.resp.respInfo.last := last

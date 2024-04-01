@@ -38,6 +38,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
 
   def fromTLAtoTaskBundle(a: TLBundleA): TaskBundle = {
     val task = Wire(new TaskBundle)
+    task := 0.U.asTypeOf(new TaskBundle)
     task.channel := "b001".U
     task.txChannel := 0.U
     task.tag := parseAddress(a.address)._1
@@ -76,6 +77,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
   def fromPrefetchReqtoTaskBundle(req: PrefetchReq): TaskBundle = {
     val task = Wire(new TaskBundle)
     val fullAddr = Cat(req.tag, req.set, 0.U(offsetBits.W))
+    task := 0.U.asTypeOf(new TaskBundle)
     task.channel := "b001".U
     task.tag := parseAddress(fullAddr)._1
     task.set := parseAddress(fullAddr)._2

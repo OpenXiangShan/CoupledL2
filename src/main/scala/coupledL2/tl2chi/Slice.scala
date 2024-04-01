@@ -64,7 +64,7 @@ class Slice()(implicit p: Parameters) extends TL2CHIL2Module {
 
   grantBuf.io.d_task <> mainPipe.io.toSourceD
   grantBuf.io.fromReqArb.status_s1 := reqArb.io.status_s1
-  grantBuf.io.pipeStatusVec := reqArb.io.status_vec.get ++ mainPipe.io.status_vec_toD
+  grantBuf.io.pipeStatusVec := reqArb.io.status_vec ++ mainPipe.io.status_vec_toD
 
   val status_vec_toTX = reqArb.io.status_vec_toTX.get ++ mainPipe.io.status_vec_toTX
   txreq.io.pipeReq <> mainPipe.io.toTXREQ
@@ -74,8 +74,11 @@ class Slice()(implicit p: Parameters) extends TL2CHIL2Module {
   txdat.io.in <> mainPipe.io.toTXDAT
   txdat.io.pipeStatusVec := status_vec_toTX
 
-  txrsp.io.in <> mainPipe.io.toTXRSP
+  txrsp.io.pipeRsp <> mainPipe.io.toTXRSP
+  txrsp.io.mshrRsp <> mshrCtl.io.toTXRSP
   txrsp.io.pipeStatusVec := status_vec_toTX
+
+  rxsnp.io.msInfo := mshrCtl.io.msInfo
 
   directory.io.read <> reqArb.io.dirRead_s1
   directory.io.metaWReq := mainPipe.io.metaWReq
@@ -85,6 +88,8 @@ class Slice()(implicit p: Parameters) extends TL2CHIL2Module {
   dataStorage.io.req := mainPipe.io.toDS.req_s3
   dataStorage.io.wdata := mainPipe.io.toDS.wdata_s3
 
+  reqArb.io.ATag := reqBuf.io.ATag
+  reqArb.io.ASet := reqBuf.io.ASet
   reqArb.io.sinkA <> reqBuf.io.out
   reqArb.io.sinkB <> rxsnp.io.task
   reqArb.io.sinkC <> sinkC.io.task
@@ -126,6 +131,10 @@ class Slice()(implicit p: Parameters) extends TL2CHIL2Module {
   mshrCtl.io.resps.rxdat := rxdat.io.in
   mshrCtl.io.nestedwb := mainPipe.io.nestedwb
   mshrCtl.io.replResp := directory.io.replResp
+  mshrCtl.io.aMergeTask := reqBuf.io.aMergeTask
+  // TODO: This is ugly
+  mshrCtl.io.pipeStatusVec(0) := (reqArb.io.status_vec)(1) // s2 status
+  mshrCtl.io.pipeStatusVec(1) := mainPipe.io.status_vec_toD(0) // s3 status
 
   /* Read and write release buffer */
   releaseBuf.io.r := reqArb.io.releaseBufRead_s2
@@ -157,8 +166,7 @@ class Slice()(implicit p: Parameters) extends TL2CHIL2Module {
   }
 
   /* IO Connection */
-  io.l1Hint.valid := mainPipe.io.l1Hint.valid
-  io.l1Hint.bits := mainPipe.io.l1Hint.bits
+  io.l1Hint <> mainPipe.io.l1Hint
   topDownOpt.foreach (
     _ => {
       io.msStatus.get := mshrCtl.io.msStatus.get

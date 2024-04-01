@@ -52,7 +52,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
 
     /* send reqs */
     val toTXREQ = DecoupledIO(new CHIREQ())
-    val toTXRSP = DecoupledIO(new CHIRSP())
+    val toTXRSP = DecoupledIO(new CHIRSP()) // TODO: unify with main pipe, which should be TaskBundle
     val toSourceB = DecoupledIO(new TLBundleB(edgeIn.bundle))
 
     /* to block sourceB from sending same-addr probe until GrantAck received */

@@ -54,7 +54,7 @@ class RXSNP(
   io.rxsnp.ready := io.task.ready
 
   def fromSnpToTaskBundle(snp: CHISNP): TaskBundle = {
-    val task = Wire(new TaskBundle)
+    val task = WireInit(0.U.asTypeOf(new TaskBundle))
     task.channel := "b010".U
     task.tag := parseAddress(snp.addr)._1
     task.set := parseAddress(snp.addr)._2

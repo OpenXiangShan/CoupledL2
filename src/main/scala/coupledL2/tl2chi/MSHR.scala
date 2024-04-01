@@ -37,7 +37,7 @@ import coupledL2.MetaData._
 import coupledL2._
 
 
-class MSHRTasks(implicit p: Parameters) extends TL2CHIL2Module {
+class MSHRTasks(implicit p: Parameters) extends TL2CHIL2Bundle {
   // outer
   val txreq = DecoupledIO(new CHIREQ) //TODO: no need to use decoupled Shandshake
   val txrsp = DecoupledIO(new CHIRSP) //TODO: no need to use decoupled handshake
@@ -46,7 +46,7 @@ class MSHRTasks(implicit p: Parameters) extends TL2CHIL2Module {
   // val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain)) // To prefetcher
 }
 
-class MSHRResps(implicit p: Parameters) extends TL2CHIL2Module {
+class MSHRResps(implicit p: Parameters) extends TL2CHIL2Bundle {
   val sinkC = Flipped(ValidIO(new RespInfoBundle))  
   val rxrsp = Flipped(ValidIO(new RespInfoBundle))  
   val rxdat = Flipped(ValidIO(new RespInfoBundle))  
@@ -54,7 +54,7 @@ class MSHRResps(implicit p: Parameters) extends TL2CHIL2Module {
 //  val rxdat = new RespBundle()  
 }
 
-class MSHR(implicit p: Parameters) extends L2Module {
+class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   val io = IO(new Bundle() {
     val id = Input(UInt(mshrBits.W))
     val status = ValidIO(new MSHRStatus)
@@ -148,6 +148,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   /*TXRSP for CompAck */
     val txrsp_task = {
       val orsp = io.tasks.txrsp.bits
+      orsp := 0.U.asTypeOf(io.tasks.txrsp.bits.cloneType)
       orsp.tgtID := homenid
       orsp.srcID := 0.U
       orsp.txnID := dbid
@@ -165,6 +166,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   /*TXREQ for Transaction Request*/
   val a_task = {
     val oa = io.tasks.txreq.bits
+    oa := 0.U.asTypeOf(io.tasks.txreq.bits.cloneType)
 //    oa.qos := Mux(!state.s_reissue, 3.U, 0.U) //TODO increase qos when retry
     oa.tgtID := Mux(!state.s_reissue.getOrElse(false.B), srcid, 0.U)
     oa.srcID := 0.U
@@ -190,7 +192,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     oa.order := "b00".U
     oa.pCrdType := Mux(!state.s_reissue.getOrElse(false.B), pcrdtype, 0.U)
     oa.expCompAck := true.B
-    oa.memAttr := "b1101".U // {allocate, cacheable, Device, EWA}
+    oa.memAttr := MemAttr(cacheable = true.B, allocate = true.B, device = false.B, ewa = true.B)
     oa.snpAttr := true.B
     oa.lpID := 0.U
     oa.excl := false.B
@@ -218,7 +220,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     ob
   }
 
-  val mp_release, mp_probeack, mp_grant, mp_cbwrdata = Wire(new TaskBundle)
+  val mp_release, mp_probeack, mp_grant, mp_cbwrdata = WireInit(0.U.asTypeOf(new TaskBundle))
   val mp_release_task = {
     mp_release.channel := req.channel
     mp_release.tag := dirResult.tag
@@ -659,7 +661,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
   // alias: should protect meta from being accessed or occupied
   val releaseNotSent = !state.s_release
   io.status.valid := req_valid
-  io.status.bits.txChannel := req.channel //Comfirm with Mainpipe
+  io.status.bits.channel := req.channel
+  io.status.bits.txChannel := req.txChannel // TODO
   io.status.bits.set := req.set
   io.status.bits.reqTag := req.tag
   io.status.bits.metaTag := dirResult.tag

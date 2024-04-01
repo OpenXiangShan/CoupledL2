@@ -126,7 +126,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val expCompAck = chiOpt.map(_ => Bool())
 
   def toCHIREQBundle(): CHIREQ = {
-    val req = Wire(new CHIREQ())
+    val req = WireInit(0.U.asTypeOf(new CHIREQ()))
     req.tgtID := tgtID.getOrElse(0.U)
     req.srcID := srcID.getOrElse(0.U)
     req.txnID := txnID.getOrElse(0.U)
@@ -140,7 +140,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
     req.memAttr.device := false.B
     req.memAttr.ewa := true.B // TBD
     req.snpAttr := true.B
-    req.order := "0b11".U // Endpoint Order // TBD
+    req.order := "b11".U // Endpoint Order // TBD
     req
   }
 }

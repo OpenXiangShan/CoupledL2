@@ -100,7 +100,7 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module {
   }
 
   def toCHIDATBundle(task: TaskBundle, beat: UInt, beatsOH: UInt): CHIDAT = {
-    val dat = Wire(new CHIDAT())
+    val dat = WireInit(0.U.asTypeOf(new CHIDAT()))
 
     // width parameters and width check
     require(beat.getWidth == dat.data.getWidth)

@@ -56,7 +56,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
 
     /* status of each pipeline stage */
     val status_s1 = Output(new PipeEntranceStatus) // set & tag of entrance status
-    val status_vec = if (!enableCHI) Some(Vec(2, ValidIO(new PipeStatus))) else None
+    val status_vec = Vec(2, ValidIO(new PipeStatus))
     val status_vec_toTX = if (enableCHI) Some(Vec(2, ValidIO(new PipeStatusWithCHI))) else None
 
     /* handle set conflict, capacity conflict */
@@ -219,15 +219,16 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   io.status_s1.sets := VecInit(Seq(C_task.set, B_task.set, io.ASet, mshr_task_s1.bits.set))
   io.status_s1.tags := VecInit(Seq(C_task.tag, B_task.tag, io.ATag, mshr_task_s1.bits.tag))
  // io.status_s1.isKeyword := VecInit(Seq(C_task.isKeyword, B_task.isKeyword, io.isKeyword, mshr_task_s1.bits.isKeyword))
-  if (!enableCHI) {
-    require(io.status_vec.get.size == 2)
-    io.status_vec.get.zip(Seq(task_s1, task_s2)).foreach {
-      case (status, task) =>
-        status.valid := task.valid
-        status.bits.channel := task.bits.channel
-    }
-  } else {
-    require(io.status_vec.get.size == 2)
+
+  require(io.status_vec.size == 2)
+  io.status_vec.zip(Seq(task_s1, task_s2)).foreach {
+    case (status, task) =>
+      status.valid := task.valid
+      status.bits.channel := task.bits.channel
+  }
+
+  if (enableCHI) {
+    require(io.status_vec_toTX.get.size == 2)
     io.status_vec_toTX.get.zip(Seq(task_s1, task_s2)).foreach {
       case (status, task) =>
         status.valid := task.valid

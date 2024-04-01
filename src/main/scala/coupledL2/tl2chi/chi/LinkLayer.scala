@@ -92,7 +92,7 @@ class PortIO extends Bundle with HasPortSwitch {
 
 class DecoupledPortIO extends Bundle {
   val tx = new DecoupledDownwardsLinkIO
-  val rx = new DecoupledUpwardsLinkIO
+  val rx = Flipped(new DecoupledUpwardsLinkIO)
 }
 
 class LCredit2Decoupled[T <: Data](

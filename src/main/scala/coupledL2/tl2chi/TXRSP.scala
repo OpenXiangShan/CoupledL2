@@ -31,20 +31,21 @@ class TXRSPBlockBundle(implicit p: Parameters) extends TXBlockBundle {
 
 class TXRSP(implicit p: Parameters) extends TL2CHIL2Module {
   val io = IO(new Bundle() {
-    val in = Flipped(DecoupledIO(new TaskBundle()))
+    // val in = Flipped(DecoupledIO(new TaskBundle()))
+    val pipeRsp = Flipped(DecoupledIO(new TaskBundle))
+    val mshrRsp = Flipped(DecoupledIO(new CHIRSP()))
     val out = DecoupledIO(new CHIRSP())
 
     val pipeStatusVec = Flipped(Vec(5, ValidIO(new PipeStatusWithCHI)))
     val toReqArb = Output(new TXRSPBlockBundle)
   })
 
-  assert(!io.in.valid || io.in.bits.toTXRSP, "txChannel is wrong for TXRSP")
-  assert(io.in.ready, "TXRSP should never be full")
+  assert(!io.pipeRsp.valid || io.pipeRsp.bits.toTXRSP, "txChannel is wrong for TXRSP")
+  assert(io.pipeRsp.ready, "TXRSP should never be full")
   require(chiOpt.isDefined)
 
   // TODO: an mshrsAll-entry queue is too much, evaluate for a proper size later
-  val queue = Module(new Queue(io.in.bits.cloneType, entries = mshrsAll, flow = true))
-  queue.io.enq <> io.in
+  val queue = Module(new Queue(new CHIRSP, entries = mshrsAll, flow = true))
 
   // Back pressure logic from TXRSP
   val queueCnt = queue.io.count
@@ -65,11 +66,17 @@ class TXRSP(implicit p: Parameters) extends TL2CHIL2Module {
   io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq
 
   io.out.valid := queue.io.deq.valid
-  io.out.bits := toCHIRSPBundle(queue.io.deq.bits)
+  io.out.bits := queue.io.deq.bits
   queue.io.deq.ready := io.out.ready
 
+  queue.io.enq.valid := io.pipeRsp.valid || io.mshrRsp.valid && !noSpaceForSinkBReq && !noSpaceForMSHRReq
+  queue.io.enq.bits := Mux(io.pipeRsp.valid, toCHIRSPBundle(io.pipeRsp.bits), io.mshrRsp.bits)
+
+  io.pipeRsp.ready := true.B
+  io.mshrRsp.ready := !io.pipeRsp.valid && !noSpaceForSinkBReq && !noSpaceForMSHRReq
+
   def toCHIRSPBundle(task: TaskBundle): CHIRSP = {
-    val rsp = Wire(new CHIRSP())
+    val rsp = WireInit(0.U.asTypeOf(new CHIRSP()))
     rsp.tgtID := task.tgtID.get
     rsp.srcID := task.srcID.get
     rsp.txnID := task.txnID.get

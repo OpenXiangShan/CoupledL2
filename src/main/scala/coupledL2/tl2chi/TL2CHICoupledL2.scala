@@ -96,10 +96,10 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base
     println(s"sets:${cacheParams.sets} ways:${cacheParams.ways} blockBytes:${cacheParams.blockBytes}")
     print_bundle_fields(node.in.head._2.bundle.requestFields, "usr")
     print_bundle_fields(node.in.head._2.bundle.echoFields, "echo")
-    println(s"CHI REQ Width: ${(new CHIREQ).asUInt.getWidth}")
-    println(s"CHI RSP Width: ${(new CHIRSP).asUInt.getWidth}")
-    println(s"CHI SNP Width: ${(new CHISNP).asUInt.getWidth}")
-    println(s"CHI DAT Width: ${(new CHIDAT).asUInt.getWidth}")
+    println(s"CHI REQ Width: ${(new CHIREQ).getWidth}")
+    println(s"CHI RSP Width: ${(new CHIRSP).getWidth}")
+    println(s"CHI SNP Width: ${(new CHISNP).getWidth}")
+    println(s"CHI DAT Width: ${(new CHIDAT).getWidth}")
 
     node.edges.in.headOption.foreach { n =>
       n.client.clients.zipWithIndex.foreach {
@@ -238,10 +238,9 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base
     hint_chosen := l1Hint_arb.io.chosen
     hint_fire := io.l2_hint.valid
 
-    val sliceIdWidth = log2Ceil(slices.size)
-    def setSliceID(txnID: UInt, sliceID: UInt): UInt = Cat(sliceID, txnID.tail(sliceIdWidth))
-    def getSliceID(txnID: UInt): UInt = txnID.head(sliceIdWidth)
-    def restoreTXNID(txnID: UInt): UInt = Cat(0.U(sliceIdWidth.W), txnID.tail(sliceIdWidth))
+    def setSliceID(txnID: UInt, sliceID: UInt): UInt = if (banks <= 1) txnID else Cat(sliceID, txnID.tail(bankBits))
+    def getSliceID(txnID: UInt): UInt = if (banks <= 1) 0.U else txnID.head(bankBits)
+    def restoreTXNID(txnID: UInt): UInt = if (banks <= 1) txnID else Cat(0.U(bankBits.W), txnID.tail(bankBits))
 
     // TXREQ
     val txreq_arb = Module(new Arbiter(new CHIREQ, slices.size))
@@ -264,7 +263,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base
     // RXSNP
     val rxsnp = Wire(DecoupledIO(new CHISNP))
     LCredit2Decoupled(io.chi.rx.snp, rxsnp)
-    val rxsnpSliceID = rxsnp.bits.addr(sliceIdWidth - 1, 0)
+    val rxsnpSliceID = if (banks <= 1) 0.U else rxsnp.bits.addr(bankBits - 1, 0)
     slices.zipWithIndex.foreach { case (s, i) =>
       s.io.out.rx.snp.valid := rxsnp.valid && rxsnpSliceID === i.U
       s.io.out.rx.snp.bits := rxsnp.bits
@@ -292,6 +291,11 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base
       s.io.out.rx.dat.bits.txnID := restoreTXNID(rxdat.bits.txnID)
     }
     rxdat.ready := Cat(slices.zipWithIndex.map { case (s, i) => s.io.out.rx.dat.ready && rxdatSliceID === i.U}).orR
+
+    // TODO: Interface activation and deactivation
+    io.chi.txsactive := true.B
+    io.chi.tx.linkactivereq := true.B
+    io.chi.rx.linkactiveack := true.B
 
     val topDown = topDownOpt.map(_ => Module(new TopDownMonitor()(p.alterPartial {
       case EdgeInKey => node.in.head._2

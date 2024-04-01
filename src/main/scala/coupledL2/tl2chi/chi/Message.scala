@@ -26,13 +26,13 @@ import coupledL2.TaskBundle
 object CHICohStates {
   val width = 3
 
-  def I = "b000".U
-  def SC = "b001".U
-  def UC = "b010".U
-  def UD = "b010".U
-  def SD = "b011".U
+  def I = "b000".U(width.W)
+  def SC = "b001".U(width.W)
+  def UC = "b010".U(width.W)
+  def UD = "b010".U(width.W)
+  def SD = "b011".U(width.W)
 
-  def PassDirty = "b100".U
+  def PassDirty = "b100".U(width.W)
 
   def I_PD = setPD(I)
   def SC_PD = setPD(SC)
@@ -73,18 +73,16 @@ class MemAttr extends Bundle {
   val ewa = Bool()
 }
 
-// object MemAttr extends HasCHIMsgParameters {
-//   def apply(memAttr: UInt): MemAttr = {
-//     require(memAttr.getWidth >= MEMATTR_WIDTH)
-//     val attr = Wire(new MemAttr)
-//     attr.ewa := memAttr(0).asBool
-//     attr.device := memAttr(1).asBool
-//     attr.cacheable := memAttr(2).asBool
-//     attr.allocate := memAttr(3).asBool
-//     attr
-//   }
-//   def apply(): MemAttr = apply(0.U(MEMATTR_WIDTH.W))
-// }
+object MemAttr extends HasCHIMsgParameters {
+  def apply(allocate: Bool, cacheable: Bool, device: Bool, ewa: Bool): MemAttr = {
+    val memAttr = Wire(new MemAttr)
+    memAttr.allocate := allocate
+    memAttr.cacheable := cacheable
+    memAttr.device := device
+    memAttr.ewa := ewa
+    memAttr
+  }
+}
 
 trait HasCHIMsgParameters {
   // TODO: Comfirm the fields and their corresponding width

@@ -100,9 +100,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
     val nestedwbData = Output(new DSBlock())
 
     /* l2 refill hint */
-    val l1Hint = ValidIO(new L2ToL1Hint())
-    val grantBufferHint = Flipped(ValidIO(new L2ToL1Hint()))
-    val globalCounter = Input(UInt((log2Ceil(mshrsAll) + 1).W))
+    val l1Hint = DecoupledIO(new L2ToL1Hint())
+    // val grantBufferHint = Flipped(ValidIO(new L2ToL1Hint()))
+    // val globalCounter = Input(UInt((log2Ceil(mshrsAll) + 1).W))
 
     /* send prefetchTrain to Prefetch to trigger a prefetch req */
     val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain))
@@ -125,7 +125,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
     resetFinish := true.B
   }
 
-  val txreq_s3, txreq_s4, txreq_s5 = Wire(io.toTXREQ.cloneType)
+  val txreq_s3, txreq_s4, txreq_s5 = WireInit(0.U.asTypeOf(io.toTXREQ.cloneType))
   val txrsp_s3, txrsp_s4, txrsp_s5 = Wire(io.toTXRSP.cloneType)
   val txdat_s3, txdat_s4, txdat_s5 = Wire(io.toTXDAT.cloneType)
   val d_s3, d_s4, d_s5 = Wire(io.toSourceD.cloneType)
@@ -478,9 +478,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   txreq_s3.bits := source_req_s3.toCHIREQBundle()
   txrsp_s3.bits := source_req_s3
   txdat_s3.bits.task := source_req_s3
-  txdat_s3.bits.data := data_s3
+  txdat_s3.bits.data.data := data_s3
   d_s3.bits.task := source_req_s3
-  d_s3.bits.data := data_s3
+  d_s3.bits.data.data := data_s3
 
   when (task_s3.valid) {
     OneHot.checkOneHot(Seq(isTXREQ_s3, isTXRSP_s3, isTXDAT_s3, isD_s3))
@@ -563,7 +563,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   txreq_s4.bits := task_s4.bits.toCHIREQBundle()
   txrsp_s4.bits := task_s4.bits
   txdat_s4.bits.task := task_s4.bits
-  txdat_s4.bits.data := data_s4
+  txdat_s4.bits.data.data := data_s4
 
   /* ======== Stage 5 ======== */
   val task_s5 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
@@ -627,7 +627,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   txreq_s5.bits := task_s5.bits.toCHIREQBundle()
   txrsp_s5.bits := task_s5.bits
   txdat_s5.bits.task := task_s5.bits
-  txdat_s5.bits.data := out_data_s5
+  txdat_s5.bits.data.data := out_data_s5
 
   /* ======== BlockInfo ======== */
   // if s2/s3 might write Dir, we must block s1 sink entrance
