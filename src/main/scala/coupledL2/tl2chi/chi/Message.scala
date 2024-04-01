@@ -134,6 +134,9 @@ trait HasCHIMsgParameters {
   def DATA_WIDTH = 256
   def DATACHECK_WIDTH = DATA_WIDTH / 8
 
+  // User defined
+  def REQ_RSVDC_WIDTH = 4 // Permitted RSVDC bus widths X = 0, 4, 12, 16, 24, 32
+  def DAT_RSVDC_WIDTH = 4 // Permitted RSVDC bus widths Y = 0, 4, 12, 16, 24, 32
 }
 
 abstract class CHIBundle extends Bundle with HasCHIMsgParameters
@@ -171,6 +174,7 @@ class CHIREQ extends CHIBundle {
 
   val expCompAck = Bool()
   val traceTag = Bool()
+  val rsvdc = UInt(REQ_RSVDC_WIDTH.W)
 }
 
 class CHISNP extends CHIBundle {
@@ -213,6 +217,7 @@ class CHIDAT extends CHIBundle {
   val ccID = UInt(CCID_WIDTH.W)
   val dataID = UInt(DATAID_WIDTH.W)
   val traceTag = Bool()
+  val rsvdc = UInt(DAT_RSVDC_WIDTH.W)
   val be = UInt(BE_WIDTH.W)
   val data = UInt(DATA_WIDTH.W)
 }
