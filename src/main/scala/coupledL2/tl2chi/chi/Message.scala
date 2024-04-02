@@ -86,7 +86,7 @@ object MemAttr extends HasCHIMsgParameters {
 
 trait HasCHIMsgParameters {
   // TODO: Comfirm the fields and their corresponding width
-  def NODEID_WIDTH = 7
+  def NODEID_WIDTH = 11
   require(NODEID_WIDTH >= 7 && NODEID_WIDTH <= 11)
 
   // Transaction request fields
@@ -108,7 +108,7 @@ trait HasCHIMsgParameters {
   def DAT_OPCODE_WIDTH = CHIOpcode.DATOpcodes.width
   def OPCODE_WIDTH = max(REQ_OPCODE_WIDTH, max(RSP_OPCODE_WIDTH, max(SNP_OPCODE_WIDTH, DAT_OPCODE_WIDTH)))
 
-  def ADDR_WIDTH = 44 // TODO: To be confirmed
+  def ADDR_WIDTH = 48 // TODO: To be confirmed
   def SNP_ADDR_WIDTH = ADDR_WIDTH - 3
   def SIZE_WIDTH = 3
   def PCRDTYPE_WIDTH = 4
@@ -135,6 +135,9 @@ trait HasCHIMsgParameters {
   def DATACHECK_WIDTH = DATA_WIDTH / 8
 
   // User defined
+  /*
+  * Currently don't care about *::RSVDC, and the width is tied to 4.
+  */
   def REQ_RSVDC_WIDTH = 4 // Permitted RSVDC bus widths X = 0, 4, 12, 16, 24, 32
   def DAT_RSVDC_WIDTH = 4 // Permitted RSVDC bus widths Y = 0, 4, 12, 16, 24, 32
 }
