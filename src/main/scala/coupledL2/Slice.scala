@@ -153,18 +153,18 @@ class Slice()(implicit p: Parameters) extends L2Module {
       p.recv_addr := 0.U.asTypeOf(p.recv_addr)
   }
 
-//  io.tpMetaReq.foreach {
-//    r =>
-//      r.valid <> mainPipe.io.tpMetaReq.get.valid
-//      mainPipe.io.tpMetaReq.get.ready <> r.ready
-//      r.bits <> mainPipe.io.tpMetaReq.get.bits
-//  }
+  io.tpMetaReq.foreach {
+    r =>
+      sinkTPmeta.io.tpMetaReq.get.valid := r.valid
+      r.ready := sinkTPmeta.io.tpMetaReq.get.ready
+      sinkTPmeta.io.tpMetaReq.get.bits := r.bits
+  }
 
-//  io.tpMetaResp.foreach {
-//    r =>
-//      mainPipe.io.tpMetaResp.get.valid <> r.valid
-//      mainPipe.io.tpMetaResp.get.bits <> r.bits
-//  }
+  io.tpMetaResp.foreach {
+    r =>
+      r.valid := sinkTPmeta.io.tpMetaResp.get.valid
+      r.bits := sinkTPmeta.io.tpMetaResp.get.bits
+  }
 
   /* input & output signals */
   val inBuf = cacheParams.innerBuf
