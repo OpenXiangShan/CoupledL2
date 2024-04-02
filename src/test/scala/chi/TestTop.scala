@@ -76,7 +76,11 @@ class TestTop_CHIL2()(implicit p: Parameters) extends LazyModule {
         node.makeIOs()(ValName(s"master_port_$i"))
     }
 
-    l2.module.io <> DontCare
+    val io = IO(new Bundle {
+      val chi = new PortIO
+    })
+
+    l2.module.io.chi <> io.chi
     dontTouch(l2.module.io)
   }
 
@@ -86,10 +90,16 @@ object TestTop_CHIL2 extends App {
   val config = new Config((_, _, _) => {
     case L2ParamKey => L2Param(
       clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
-      echoField = Seq(DirtyField())
+      echoField = Seq(DirtyField()),
+      enablePerf = false,
+      enableRollingDB = false,
+      enableMonitor = false,
+      elaboratedTopDown = false,
+      FPGAPlatform = true
     )
     case EnableCHI => true
   })
+
   val top = DisableMonitors(p => LazyModule(new TestTop_CHIL2()(p)))(config)
 
   (new ChiselStage).execute(args, Seq(
