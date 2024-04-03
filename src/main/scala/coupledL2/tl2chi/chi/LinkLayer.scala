@@ -133,12 +133,26 @@ class LCredit2Decoupled[T <: Bundle](
 }
 
 object LCredit2Decoupled {
+  val defaultLCreditNum = 4
+
   def apply[T <: Bundle](
     left: ChannelIO[T],
     right: DecoupledIO[T],
+  ): Unit = {
+    val mod = Module(new LCredit2Decoupled(right.bits.cloneType, defaultLCreditNum))
+    mod.io.in <> left
+    right <> mod.io.out
+  }
+
+  def apply[T <: Bundle](
+    left: ChannelIO[T],
+    right: DecoupledIO[T],
+    suggestName: Option[String],
     lcreditNum: Int = 4
   ): Unit = {
     val mod = Module(new LCredit2Decoupled(right.bits.cloneType, lcreditNum))
+    suggestName.foreach(name => mod.suggestName(name))
+
     mod.io.in <> left
     right <> mod.io.out
   }
@@ -174,6 +188,14 @@ class Decoupled2LCredit[T <: Bundle](gen: T) extends Module {
 object Decoupled2LCredit {
   def apply[T <: Bundle](left: DecoupledIO[T], right: ChannelIO[T]): Unit = {
     val mod = Module(new Decoupled2LCredit(left.bits.cloneType))
+    mod.io.in <> left
+    right <> mod.io.out
+  }
+
+  def apply[T <: Bundle](left: DecoupledIO[T], right: ChannelIO[T], suggestName: Option[String]): Unit = {
+    val mod = Module(new Decoupled2LCredit(left.bits.cloneType))
+    suggestName.foreach(name => mod.suggestName(name))
+    
     mod.io.in <> left
     right <> mod.io.out
   }

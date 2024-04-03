@@ -249,21 +249,21 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base
     slices.zip(txreq_arb.io.in).foreach { case (s, in) => in <> s.io.out.tx.req }
     txreq <> txreq_arb.io.out
     txreq.bits.txnID := setSliceID(txreq_arb.io.out.bits.txnID, txreq_arb.io.chosen)
-    Decoupled2LCredit(txreq, io.chi.tx.req)
+    Decoupled2LCredit(txreq, io.chi.tx.req, Some("Decoupled2LCredit_TXREQ"))
 
     // TXRSP
     val txrsp = Wire(DecoupledIO(new CHIRSP))
     arb(slices.map(_.io.out.tx.rsp), txrsp, Some("txrsp"))
-    Decoupled2LCredit(txrsp, io.chi.tx.rsp)
+    Decoupled2LCredit(txrsp, io.chi.tx.rsp, Some("Decoupled2LCredit_TXRSP"))
 
     // TXDAT
     val txdat = Wire(DecoupledIO(new CHIDAT))
     arb(slices.map(_.io.out.tx.dat), txdat, Some("txdat"))
-    Decoupled2LCredit(txdat, io.chi.tx.dat)
+    Decoupled2LCredit(txdat, io.chi.tx.dat, Some("Decoupled2LCredit_TXDAT"))
 
     // RXSNP
     val rxsnp = Wire(DecoupledIO(new CHISNP))
-    LCredit2Decoupled(io.chi.rx.snp, rxsnp)
+    LCredit2Decoupled(io.chi.rx.snp, rxsnp, Some("LCredit2Decoupled_RXSNP"))
     val rxsnpSliceID = if (banks <= 1) 0.U else rxsnp.bits.addr(bankBits - 1, 0)
     slices.zipWithIndex.foreach { case (s, i) =>
       s.io.out.rx.snp.valid := rxsnp.valid && rxsnpSliceID === i.U
@@ -273,7 +273,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base
 
     // RXRSP
     val rxrsp = Wire(DecoupledIO(new CHIRSP))
-    LCredit2Decoupled(io.chi.rx.rsp, rxrsp)
+    LCredit2Decoupled(io.chi.rx.rsp, rxrsp, Some("LCredit2Decoupled_RXRSP"))
     val rxrspSliceID = getSliceID(rxrsp.bits.txnID)
     slices.zipWithIndex.foreach { case (s, i) =>
       s.io.out.rx.rsp.valid := rxrsp.valid && rxrspSliceID === i.U
@@ -284,7 +284,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base
 
     // RXDAT
     val rxdat = Wire(DecoupledIO(new CHIDAT))
-    LCredit2Decoupled(io.chi.rx.dat, rxdat)
+    LCredit2Decoupled(io.chi.rx.dat, rxdat, Some("LCredit2Decoupled_RXDAT"))
     val rxdatSliceID = getSliceID(rxdat.bits.txnID)
     slices.zipWithIndex.foreach { case (s, i) =>
       s.io.out.rx.dat.valid := rxdat.valid && rxdatSliceID === i.U
