@@ -100,7 +100,7 @@ class LCredit2Decoupled[T <: Bundle](
   val lcreditInflight = RegInit(0.U(lcreditsWidth.W))
   val lcreditPool = RegInit(lcreditNum.U(lcreditsWidth.W))
   assert(lcreditInflight + lcreditPool === lcreditNum.U)
-  val lcreditOut = lcreditPool > queue.io.count
+  val lcreditOut = (lcreditPool > queue.io.count) && !reset.asUInt
 
   val ready = lcreditInflight =/= 0.U
   val accept = ready && io.in.flitv && RegNext(io.in.flitpend)
