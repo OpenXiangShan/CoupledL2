@@ -175,9 +175,10 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     oa.stashNID := 0.U
     oa.stashNIDValid := false.B
     oa.opcode := ParallelLookUp(
-      Cat(req.opcode, dirResult.hit, isT(meta.state)),
+      Cat(req.opcode, dirResult.hit, Mux(dirResult.hit, isT(meta.state), false.B)),
         Seq(
           Cat(AcquireBlock, false.B, false.B) -> ReadNotSharedDirty, //load miss/store miss
+          Cat(AcquireBlock, true.B,  false.B) -> ReadUnique,
           Cat(AcquirePerm,  false.B, false.B) -> ReadUnique,        //store upgrade miss
           Cat(AcquirePerm,   true.B, false.B) -> ReadUnique,        //store upgrade hit + noT -> may use MakeUnique
 //          Cat(AcquirePerm,   true.B, false.B) -> MakedUnique,     //store upgrade hit + noT
