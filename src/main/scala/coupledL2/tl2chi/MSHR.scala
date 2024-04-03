@@ -363,7 +363,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     mp_probeack.pCrdType.get := "b0000".U 
     mp_probeack.retToSrc.get := req.retToSrc.getOrElse(false.B)
     mp_probeack.expCompAck.get := false.B
-    mp_probeack
 
     mp_probeack
   }
@@ -571,7 +570,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 
     //RXDAT
     when (rxdat.valid) {
-      when(rxdat.bits.opcode === CompData) {
+      when(rxdat.bits.chiOpcode.get === CompData) {
         state.w_grantfirst := true.B
         state.w_grantlast := rxdat.bits.last
         state.w_grant := req.off === 0.U || rxdat.bits.last  // TODO? why offset?
@@ -585,26 +584,26 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 
     //RXRSP for dataless
     when (rxrsp.valid) {
-      when(rxdat.bits.opcode === Comp) {
+      when(rxdat.bits.chiOpcode.get === Comp) {
         state.w_grantfirst := true.B
         state.w_grantlast := rxrsp.bits.last
         state.w_grant := req.off === 0.U || rxrsp.bits.last  // TODO? why offset?
         gotT := rxrspIsUC
         gotDirty := false.B
       }
-      when(rxrsp.bits.opcode === CompDBIDResp) {
+      when(rxrsp.bits.chiOpcode.get === CompDBIDResp) {
 //        state.w_releaseack := true.B
         state.s_cbwrdata.get := false.B
         srcid := rxrsp.bits.srcID.getOrElse(0.U)
         dbid := rxrsp.bits.dbID.getOrElse(0.U)
       }
-      when(rxrsp.bits.opcode === RetryAck) {
+      when(rxrsp.bits.chiOpcode.get === RetryAck) {
 //        state.w_credit := false.B
         srcid := rxrsp.bits.srcID.getOrElse(0.U)
         pcrdtype := rxrsp.bits.pCrdType.getOrElse(0.U)
 
       }
-      when(rxrsp.bits.opcode === PCrdGrant) {
+      when(rxrsp.bits.chiOpcode.get === PCrdGrant) {
 //        state.w_credit := true.B
         state.s_reissue.get := false.B 
       }
