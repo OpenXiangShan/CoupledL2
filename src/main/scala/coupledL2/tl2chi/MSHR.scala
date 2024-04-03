@@ -33,6 +33,7 @@ import coupledL2.tl2chi.CHIOpcode.REQOpcodes._
 import coupledL2.tl2chi.CHIOpcode.RSPOpcodes._
 import coupledL2.tl2chi.CHIOpcode.SNPOpcodes._
 import coupledL2.tl2chi.CHICohStates._
+import coupledL2.tl2chi.CHIChannel
 import coupledL2.MetaData._
 import coupledL2._
 
@@ -224,6 +225,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   val mp_release, mp_probeack, mp_grant, mp_cbwrdata = WireInit(0.U.asTypeOf(new TaskBundle))
   val mp_release_task = {
     mp_release.channel := req.channel
+    mp_release.txChannel := CHIChannel.TXREQ
     mp_release.tag := dirResult.tag
     mp_release.set := req.set
     mp_release.off := 0.U
@@ -285,6 +287,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 
   val mp_probeack_task = {
     mp_probeack.channel := req.channel
+    mp_probeack.txChannel := Mux(snpNoData, CHIChannel.TXRSP, CHIChannel.TXDAT)
     mp_probeack.tag := req.tag
     mp_probeack.set := req.set
     mp_probeack.off := req.off
