@@ -135,7 +135,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   // Theoretically, data to be released is saved in ReleaseBuffer, so Acquire can be sent as soon as req enters mshr
 //  io.tasks.txreq.valid := !state.s_acquire || !state.s_reissue
   io.tasks.txreq.valid := !state.s_acquire || !state.s_reissue.getOrElse(false.B)
-  io.tasks.txrsp.valid := RegNext(io.resps.rxdat.valid)
+  io.tasks.txrsp.valid := RegNext(io.resps.rxdat.valid && io.resps.rxdat.bits.last)
   io.tasks.source_b.valid := !state.s_pprobe || !state.s_rprobe
   val mp_release_valid = !state.s_release && state.w_rprobeacklast && state.w_grantlast &&
         state.w_replResp // release after Grant to L1 sent and replRead returns
