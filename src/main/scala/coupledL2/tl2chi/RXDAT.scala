@@ -49,13 +49,19 @@ class RXDAT(implicit p: Parameters) extends TL2CHIL2Module {
   io.in.mshrId := io.out.bits.txnID
   io.in.set := 0.U(setBits.W)
   io.in.tag := 0.U(tagBits.W)
-//  io.in.respInfo.opcode := io.out.bits.opcode
-  io.in.respInfo := 0.U.asTypeOf(io.in.respInfo.cloneType)
-  io.in.respInfo.last := last
 
+  io.in.respInfo.opcode        := DontCare
+  io.in.respInfo.param         := DontCare
+  io.in.respInfo.last          := last
+  io.in.respInfo.dirty         := DontCare
+  io.in.respInfo.isHit         := DontCare
   io.in.respInfo.chiOpcode.get := io.out.bits.opcode
-  io.in.respInfo.homeNID.get := io.out.bits.homeNID
-  io.in.respInfo.dbID.get := io.out.bits.dbID
+  io.in.respInfo.txnID.get     := io.out.bits.txnID
+  io.in.respInfo.srcID.get     := io.out.bits.srcID
+  io.in.respInfo.homeNID.get   := io.out.bits.homeNID
+  io.in.respInfo.dbID.get      := io.out.bits.dbID
+  io.in.respInfo.resp.get      := io.out.bits.resp
+  io.in.respInfo.pCrdType.get  := DontCare // RXDAT Channel does not have a pCrdType field
 
   io.out.ready := true.B
 
