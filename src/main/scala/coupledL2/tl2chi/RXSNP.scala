@@ -23,6 +23,8 @@ import utility._
 import org.chipsalliance.cde.config.Parameters
 import scala.collection.View.Fill
 import coupledL2.{TaskBundle, MSHRInfo, MetaEntry, MergeTaskBundle}
+import coupledL2.tl2chi.CHIOpcode.SNPOpcodes._
+import freechips.rocketchip.tilelink.TLPermissions._
 
 class RXSNP(
   lCreditNum: Int = 4 // the number of L-Credits that a receiver can provide
@@ -63,7 +65,26 @@ class RXSNP(
     task.vaddr.foreach(_ := 0.U)
     task.isKeyword.foreach(_ := false.B)
     // task.opcode := snp.opcode
-    task.param := 0.U
+    task.param := ParallelLookUp(
+      snp.opcode,
+      Seq(
+        SnpShared       -> toB,
+        SnpSharedFwd    -> toB,
+        SnpCleanInvalid -> toN,
+        SnpMakeInvalid  -> toN,
+        SnpUnique       -> toN,
+        SnpUniqueFwd    -> toN,
+        // TODO: ...
+      )
+    )
+
+    when(io.rxsnp.valid) {
+      // Some snp opcodes are now supported
+      val impementedSnpOpcodes = Seq(SnpShared, SnpSharedFwd, SnpCleanInvalid, SnpMakeInvalid, SnpUnique, SnpUniqueFwd)
+      val hasMatch = Cat(VecInit(impementedSnpOpcodes.map(opcode => snp.opcode === opcode))).orR
+      assert(hasMatch, "SNP opcode => %d is not implemented! addr => 0x%x", snp.opcode, snp.addr)
+    }
+    
     task.size := log2Up(cacheParams.blockBytes).U
     task.sourceId := 0.U(sourceIdBits.W)
     task.bufIdx := 0.U(bufIdxBits.W)
