@@ -37,6 +37,7 @@ object CHIOpcode {
     def CleanInvalid          = 0x09.U
     def MakeInvalid           = 0x0A.U
     def CleanUnique           = 0x0B.U
+    def MakeReadUnique        = 0x41.U
     def MakeUnique            = 0x0C.U
     def Evict                 = 0x0D.U
 
