@@ -175,17 +175,29 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     oa.returnNID := 0.U
     oa.stashNID := 0.U
     oa.stashNIDValid := false.B
-    oa.opcode := ParallelLookUp(
-      Cat(req.opcode, dirResult.hit, Mux(dirResult.hit, isT(meta.state), false.B)),
+    oa.opcode := Mux(req_acquire, 
+      ParallelLookUp(
+        Cat(req.param, dirResult.hit, Mux(dirResult.hit, isT(meta.state), false.B)),
         Seq(
-          Cat(AcquireBlock, false.B, false.B) -> ReadNotSharedDirty, //load miss/store miss
-          Cat(AcquireBlock, true.B,  false.B) -> ReadUnique,
-          Cat(AcquirePerm,  false.B, false.B) -> ReadUnique,        //store upgrade miss
-          Cat(AcquirePerm,   true.B, false.B) -> ReadUnique,        //store upgrade hit + noT -> may use MakeUnique
-//          Cat(AcquirePerm,   true.B, false.B) -> MakedUnique,     //store upgrade hit + noT
-          Cat(Get,          false.B, false.B) -> ReadClean,
-          Cat(Hint,         false.B, false.B) -> ReadNotSharedDirty
-        ))
+          // Cat(NtoB, true.B, false.B) ->  // hit
+          Cat(NtoB, false.B, false.B) -> ReadNotSharedDirty,
+          Cat(NtoT, true.B,  false.B) -> MakeReadUnique,
+          // Cat(NtoT, true.B, true.B) ->  // hit
+          Cat(NtoT, false.B, false.B) -> ReadUnique,
+        )
+      ),
+      Mux(req_get,
+        ReadClean,
+        ReadNotSharedDirty, // Hint
+      )
+    )
+    
+    when(io.tasks.txreq.valid && req_valid) {
+      assert(!(req_acquire && req.param === NtoB && dirResult.hit), "no need to send Read transaction!")
+      assert(!(req_acquire && req.param === NtoT && dirResult.hit && isT(meta.state)), "no need to send Read transaction!")
+      assert(!(req_get && dirResult.hit), "no need to send Read transaction!")
+    }
+
     oa.size := "b110".U  //64Byte
     oa.addr := Cat(req.tag, req.set, 0.U(offsetBits.W)) //TODO 36bit -> 48bit
     oa.ns := false.B
