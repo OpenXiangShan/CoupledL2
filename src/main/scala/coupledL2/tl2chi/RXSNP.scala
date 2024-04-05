@@ -51,9 +51,14 @@ class RXSNP(
   )).asUInt
   val replaceConflict = replaceConflictMask.orR
 
-  io.task.valid := io.rxsnp.valid && !addrConflict && !replaceConflict
+  val stall = addrConflict || replaceConflict
+  io.task.valid := io.rxsnp.valid && !stall
   io.task.bits := task
-  io.rxsnp.ready := io.task.ready
+  io.rxsnp.ready := io.task.ready && !stall
+
+  assert(!(stall && io.rxsnp.fire))
+  dontTouch(addrConflict)
+  dontTouch(replaceConflict)
 
   def fromSnpToTaskBundle(snp: CHISNP): TaskBundle = {
     val task = WireInit(0.U.asTypeOf(new TaskBundle))
