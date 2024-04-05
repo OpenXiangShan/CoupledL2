@@ -526,9 +526,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   val pendingD_s4 = task_s4.bits.fromA && !task_s4.bits.mshrTask && (
     task_s4.bits.opcode === GrantData || task_s4.bits.opcode === AccessAckData
   )
-  when (task_s3.valid && !req_drop_s3 || task_s4.valid) {
-    task_s4.valid := task_s3.valid
-  }
+  
+  task_s4.valid := task_s3.valid && !req_drop_s3
+
   when (task_s3.valid && !req_drop_s3) {
     task_s4.bits := source_req_s3
 
