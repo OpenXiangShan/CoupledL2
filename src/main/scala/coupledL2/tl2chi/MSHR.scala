@@ -588,7 +588,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 
     //RXRSP for dataless
     when (rxrsp.valid) {
-      when(rxdat.bits.chiOpcode.get === Comp) {
+      when(rxrsp.bits.chiOpcode.get === Comp) {
         // There is a pending Read transaction waiting for the Comp resp
         when(!state.w_grant) {
           state.w_grantfirst := true.B
