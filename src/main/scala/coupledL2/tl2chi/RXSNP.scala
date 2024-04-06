@@ -36,9 +36,10 @@ class RXSNP(
   val task = fromSnpToTaskBundle(io.rxsnp.bits)
 
   // unable to accept incoming B req because same-addr as some MSHR REQ
-  val addrConflict = VecInit(io.msInfo.map(s =>
+  val addrConflictMask = VecInit(io.msInfo.map(s =>
     s.valid && s.bits.set === task.set && s.bits.reqTag === task.tag && !s.bits.willFree && !s.bits.nestB
-  )).asUInt.orR
+  )).asUInt
+  val addrConflict = addrConflictMask.orR
 
   /*
    1. For TL unable to accept incoming B req because same-addr as some MSHR replaced block and cannot nest
@@ -55,7 +56,9 @@ class RXSNP(
   io.rxsnp.ready := io.task.ready && !stall
 
   assert(!(stall && io.rxsnp.fire))
+  dontTouch(addrConflictMask)
   dontTouch(addrConflict)
+  dontTouch(replaceConflictMask)
   dontTouch(replaceConflict)
 
   def fromSnpToTaskBundle(snp: CHISNP): TaskBundle = {
