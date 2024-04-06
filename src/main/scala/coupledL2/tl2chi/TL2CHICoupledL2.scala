@@ -249,21 +249,21 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base
     slices.zip(txreq_arb.io.in).foreach { case (s, in) => in <> s.io.out.tx.req }
     txreq <> txreq_arb.io.out
     txreq.bits.txnID := setSliceID(txreq_arb.io.out.bits.txnID, txreq_arb.io.chosen)
-    Decoupled2LCredit(txreq, io.chi.tx.req, Some("Decoupled2LCredit_TXREQ"))
+    // Decoupled2LCredit(txreq, io.chi.tx.req, Some("txreq"))
 
     // TXRSP
     val txrsp = Wire(DecoupledIO(new CHIRSP))
     arb(slices.map(_.io.out.tx.rsp), txrsp, Some("txrsp"))
-    Decoupled2LCredit(txrsp, io.chi.tx.rsp, Some("Decoupled2LCredit_TXRSP"))
+    // Decoupled2LCredit(txrsp, io.chi.tx.rsp, Some("txrsp"))
 
     // TXDAT
     val txdat = Wire(DecoupledIO(new CHIDAT))
     arb(slices.map(_.io.out.tx.dat), txdat, Some("txdat"))
-    Decoupled2LCredit(txdat, io.chi.tx.dat, Some("Decoupled2LCredit_TXDAT"))
+    // Decoupled2LCredit(txdat, io.chi.tx.dat, Some("txdat"))
 
     // RXSNP
     val rxsnp = Wire(DecoupledIO(new CHISNP))
-    LCredit2Decoupled(io.chi.rx.snp, rxsnp, Some("LCredit2Decoupled_RXSNP"))
+    // LCredit2Decoupled(io.chi.rx.snp, rxsnp, Some("rxsnp"))
     val rxsnpSliceID = if (banks <= 1) 0.U else rxsnp.bits.addr(bankBits - 1, 0)
     slices.zipWithIndex.foreach { case (s, i) =>
       s.io.out.rx.snp.valid := rxsnp.valid && rxsnpSliceID === i.U
@@ -273,7 +273,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base
 
     // RXRSP
     val rxrsp = Wire(DecoupledIO(new CHIRSP))
-    LCredit2Decoupled(io.chi.rx.rsp, rxrsp, Some("LCredit2Decoupled_RXRSP"))
+    // LCredit2Decoupled(io.chi.rx.rsp, rxrsp, Some("rxrsp"))
     val rxrspSliceID = getSliceID(rxrsp.bits.txnID)
     slices.zipWithIndex.foreach { case (s, i) =>
       s.io.out.rx.rsp.valid := rxrsp.valid && rxrspSliceID === i.U
@@ -284,7 +284,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base
 
     // RXDAT
     val rxdat = Wire(DecoupledIO(new CHIDAT))
-    LCredit2Decoupled(io.chi.rx.dat, rxdat, Some("LCredit2Decoupled_RXDAT"))
+    // LCredit2Decoupled(io.chi.rx.dat, rxdat, Some("rxdat"))
     val rxdatSliceID = getSliceID(rxdat.bits.txnID)
     slices.zipWithIndex.foreach { case (s, i) =>
       s.io.out.rx.dat.valid := rxdat.valid && rxdatSliceID === i.U
@@ -293,10 +293,17 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base
     }
     rxdat.ready := Cat(slices.zipWithIndex.map { case (s, i) => s.io.out.rx.dat.ready && rxdatSliceID === i.U}).orR
 
-    // TODO: Interface activation and deactivation
-    io.chi.txsactive := true.B
-    io.chi.tx.linkactivereq := true.B
-    io.chi.rx.linkactiveack := true.B
+    val linkMonitor = Module(new LinkMonitor)
+    linkMonitor.io.in.tx.req <> txreq
+    linkMonitor.io.in.tx.rsp <> txrsp
+    linkMonitor.io.in.tx.dat <> txdat
+    rxsnp <> linkMonitor.io.in.rx.snp
+    rxrsp <> linkMonitor.io.in.rx.rsp
+    rxdat <> linkMonitor.io.in.rx.dat
+    io.chi <> linkMonitor.io.out
+    // io.chi.txsactive := true.B
+    // io.chi.tx.linkactivereq := true.B
+    // io.chi.rx.linkactiveack := true.B
 
     val topDown = topDownOpt.map(_ => Module(new TopDownMonitor()(p.alterPartial {
       case EdgeInKey => node.in.head._2
