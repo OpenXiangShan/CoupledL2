@@ -303,14 +303,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       ProbeAckData,
       ProbeAck
     )
-    mp_probeack.param := ParallelLookUp(
-      Cat(isT(meta.state), req.param(bdWidth - 1, 0)),
-      Seq(
-        Cat(false.B, toN) -> BtoN,
-        Cat(true.B, toN) -> TtoN,
-        Cat(true.B, toB) -> TtoB
-      )
-    )
+    mp_probeack.param := DontCare
     mp_probeack.size := 0.U(msgSizeBits.W)
     mp_probeack.sourceId := 0.U(sourceIdBits.W)
     mp_probeack.bufIdx := 0.U(bufIdxBits.W)
@@ -327,22 +320,22 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     mp_probeack.meta := MetaEntry(
       dirty = false.B,
       state = Mux(
-        req.param === toN,
+        isSnpToN(req.chiOpcode.get),
         INVALID,
         Mux(
-          req.param === toB,
+          isSnpToB(req.chiOpcode.get),
           BRANCH,
           meta.state
         )
       ),
       clients = Fill(clientBits, !probeGotN),
       alias = meta.alias, //[Alias] Keep alias bits unchanged
-      prefetch = req.param =/= toN && meta_pft,
-      accessed = req.param =/= toN && meta.accessed
+      prefetch = !isSnpToN(req.chiOpcode.get) && meta_pft,
+      accessed = !isSnpToN(req.chiOpcode.get) && meta.accessed
     )
     mp_probeack.metaWen := true.B
     mp_probeack.tagWen := false.B
-    mp_probeack.dsWen := req.param =/= toN && probeDirty
+    mp_probeack.dsWen := !isSnpToN(req.chiOpcode.get) && probeDirty
     mp_probeack.wayMask := 0.U(cacheParams.ways.W)
     mp_probeack.reqSource := 0.U(MemReqSource.reqSourceBits.W)
     mp_probeack.replTask := false.B
