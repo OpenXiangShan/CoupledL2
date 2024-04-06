@@ -32,7 +32,8 @@ class RXDAT(implicit p: Parameters) extends TL2CHIL2Module {
 
   /* RXDAT for Transactions: CompData */
 
-  //For bus width is 256-bit
+  // TODO: parameterize this
+  // For bus width is 256-bit
   val first = (io.out.bits.dataID === "b00".U)
   val last  = (io.out.bits.dataID === "b10".U)
 
@@ -40,7 +41,7 @@ class RXDAT(implicit p: Parameters) extends TL2CHIL2Module {
   val grantDataBuf = RegEnable(io.out.bits.data, 0.U((beatBytes * 8).W), io.out.valid && first)
 
   /* Write Refill Buffer*/
-  io.refillBufWrite.valid := io.out.valid && first
+  io.refillBufWrite.valid := io.out.valid && last
   io.refillBufWrite.bits.id := io.out.bits.txnID
   io.refillBufWrite.bits.data.data := Cat(io.out.bits.data, grantDataBuf)
 
