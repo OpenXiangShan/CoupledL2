@@ -211,7 +211,11 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     ob.opcode := Probe
     ob.param := Mux(
       !state.s_pprobe,
-      req.param,
+      Mux(
+        isSnpToB(req.chiOpcode.get),
+        toB,
+        Mux(isSnpToN(req.chiOpcode.get), toN, toT)
+      ),
       Mux(
         req_get && dirResult.hit && meta.state === TRUNK,
         toB,
