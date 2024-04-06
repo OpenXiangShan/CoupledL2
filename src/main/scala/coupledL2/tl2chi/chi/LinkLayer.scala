@@ -277,4 +277,9 @@ class LinkMonitor extends Module {
   io.out.txsactive := true.B
   io.out.tx.linkactivereq := !reset.asBool
   io.out.rx.linkactiveack := RegNext(io.out.rx.linkactivereq) || !rxDeact
+
+  dontTouch(io.out.tx.linkactivereq)
+  dontTouch(io.out.tx.linkactiveack)
+  dontTouch(io.out.rx.linkactivereq)
+  dontTouch(io.out.rx.linkactiveack)
 }
