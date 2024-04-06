@@ -465,7 +465,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   val isTXDAT_s3 = Mux(
     mshr_req_s3,
     mshr_snpRespDataX_s3 || mshr_cbWrData_s3,
-    req_s3.fromB && !need_mshr_s3 && !data_unready_s3
+    req_s3.fromB && !need_mshr_s3 && doRespData && !data_unready_s3
   )
   val isTXREQ_s3 = mshr_req_s3 && (mshr_writeBackFull_s3 || mshr_evict_s3)
 
