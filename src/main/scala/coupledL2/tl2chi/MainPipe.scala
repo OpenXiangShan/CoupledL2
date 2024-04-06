@@ -310,7 +310,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
     sink_resp_s3.bits.tgtID.foreach(_ := task_s3.bits.srcID.get)
     sink_resp_s3.bits.srcID.foreach(_ := task_s3.bits.tgtID.get) // TODO: srcID should be fixed. FIX THIS!!!
     sink_resp_s3.bits.txnID.foreach(_ := task_s3.bits.txnID.get)
-    sink_resp_s3.bits.dbID.foreach(_ := 0.U) // TODO
+    sink_resp_s3.bits.dbID.foreach(_ := task_s3.bits.txnID.get) // TODO
     sink_resp_s3.bits.pCrdType.foreach(_ := 0.U) // TODO
     sink_resp_s3.bits.chiOpcode.foreach(_ := MuxLookup(Cat(doFwd, doRespData), RSPOpcodes.SnpResp)(Seq(
       Cat(false.B, false.B) -> RSPOpcodes.SnpResp,
