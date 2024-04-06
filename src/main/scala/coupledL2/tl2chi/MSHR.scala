@@ -589,11 +589,19 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     //RXRSP for dataless
     when (rxrsp.valid) {
       when(rxdat.bits.chiOpcode.get === Comp) {
-        state.w_grantfirst := true.B
-        state.w_grantlast := rxrsp.bits.last
-        state.w_grant := req.off === 0.U || rxrsp.bits.last  // TODO? why offset?
-        gotT := rxrspIsUC
-        gotDirty := false.B
+        // There is a pending Read transaction waiting for the Comp resp
+        when(!state.w_grant) {
+          state.w_grantfirst := true.B
+          state.w_grantlast := rxrsp.bits.last
+          state.w_grant := req.off === 0.U || rxrsp.bits.last  // TODO? why offset?
+          gotT := rxrspIsUC
+          gotDirty := false.B
+        }
+
+        // There is a pending Evict transaction waiting for the Comp resp
+        when(!state.w_releaseack) {
+          state.w_releaseack := true.B
+        }
       }
       when(rxrsp.bits.chiOpcode.get === CompDBIDResp) {
 //        state.w_releaseack := true.B
