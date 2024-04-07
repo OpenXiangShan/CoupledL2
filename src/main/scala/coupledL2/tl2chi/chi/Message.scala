@@ -86,7 +86,7 @@ object MemAttr extends HasCHIMsgParameters {
 
 trait HasCHIMsgParameters {
   // TODO: Comfirm the fields and their corresponding width
-  def NODEID_WIDTH = 11
+  def NODEID_WIDTH = 7
   require(NODEID_WIDTH >= 7 && NODEID_WIDTH <= 11)
 
   // Transaction request fields
