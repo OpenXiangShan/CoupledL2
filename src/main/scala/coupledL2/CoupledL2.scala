@@ -84,6 +84,8 @@ trait HasCoupledL2Parameters {
   lazy val msgSizeBits = edgeIn.bundle.sizeBits
   lazy val sourceIdAll = 1 << sourceIdBits
 
+  lazy val hartIdLen: Int = log2Up(cacheParams.hartIds.length)
+
   val mshrsAll = cacheParams.mshrs
   val idsAll = 256// ids of L2 //TODO: Paramterize like this: max(mshrsAll * 2, sourceIdAll * 2)
   val mshrBits = log2Up(idsAll)
