@@ -275,6 +275,6 @@ class LinkMonitor extends Module {
   LCredit2Decoupled(io.out.rx.dat, io.in.rx.dat, LinkState(rxState), rxdatDeact, Some("rxdat"))
 
   io.out.txsactive := true.B
-  io.out.tx.linkactivereq := true.B
+  io.out.tx.linkactivereq := !reset.asBool
   io.out.rx.linkactiveack := RegNext(io.out.rx.linkactivereq) || !rxDeact
 }
