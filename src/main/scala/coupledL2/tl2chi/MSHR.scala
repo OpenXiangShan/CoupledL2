@@ -69,6 +69,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     val replResp = Flipped(ValidIO(new ReplacerResult))
   })
 
+  require (chiOpt.isDefined)
+
   val gotT = RegInit(false.B) // L3 might return T even though L2 wants B
   val gotDirty = RegInit(false.B)
   val gotGrantData = RegInit(false.B)
@@ -85,10 +87,10 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   val state     = RegInit(new FSMState(), initState)
 
   //for CHI
-  val srcid = RegInit(0.U(11.W))
-  val homenid = RegInit(0.U(11.W))
-  val dbid = RegInit(0.U(8.W))
-  val pcrdtype = RegInit(0.U(4.W))
+  val srcid = RegInit(0.U(NODEID_WIDTH.W))
+  val homenid = RegInit(0.U(NODEID_WIDTH.W))
+  val dbid = RegInit(0.U(DBID_WIDTH.W))
+  val pcrdtype = RegInit(0.U(PCRDTYPE_WIDTH.W))
   val metaChi = ParallelLookUp(
     Cat(meta.dirty, meta.state),
     Seq(
@@ -122,7 +124,10 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   val req_acquirePerm = req.opcode === AcquirePerm
   val req_get = req.opcode === Get
   val req_prefetch = req.opcode === Hint
-  val snpNoData = isSnpMakeInvalidX(req.chiOpcode.get) || isSnpStashX(req.chiOpcode.get)
+
+  val req_chiOpcode = req.chiOpcode.get
+
+  val snpNoData = isSnpMakeInvalidX(req_chiOpcode) || isSnpStashX(req_chiOpcode)
   val gotUD = meta.dirty & isT(meta.state) //TC/TTC -> UD
   val promoteT_normal =  dirResult.hit && meta_no_client && meta.state === TIP
   val promoteT_L3     = !dirResult.hit && gotT
@@ -212,9 +217,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     ob.param := Mux(
       !state.s_pprobe,
       Mux(
-        isSnpToB(req.chiOpcode.get),
+        isSnpToB(req_chiOpcode),
         toB,
-        Mux(isSnpToN(req.chiOpcode.get), toN, toT)
+        Mux(isSnpToN(req_chiOpcode), toN, toT)
       ),
       Mux(
         req_get && dirResult.hit && meta.state === TRUNK,
@@ -350,10 +355,10 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     mp_probeack.dbID.get := req.txnID.getOrElse(0.U)
     mp_probeack.chiOpcode.get := Mux(snpNoData, SnpResp, SnpRespData)
     mp_probeack.resp.get := ParallelLookUp(
-      Cat(isSnpToN(req.chiOpcode.get),
-          isSnpToB(req.chiOpcode.get),
-          isSnpOnceX(req.chiOpcode.get) || isSnpStashX(req.chiOpcode.get),
-          isSnpToPD(req.chiOpcode.get)),
+      Cat(isSnpToN(req_chiOpcode),
+          isSnpToB(req_chiOpcode),
+          isSnpOnceX(req_chiOpcode) || isSnpStashX(req_chiOpcode),
+          isSnpToPD(req_chiOpcode)),
       Seq(
         "b1000".U -> I,
         "b0100".U -> SC,
