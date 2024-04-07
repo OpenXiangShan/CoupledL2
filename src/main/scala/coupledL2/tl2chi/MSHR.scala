@@ -121,9 +121,12 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 
     gotRetryAck := false.B
     gotPCrdGrant := false.B
+<<<<<<< HEAD
     srcid := 0.U
     dbid := 0.U
     pcrdtype := 0.U
+=======
+>>>>>>> 54f8325 (MSHR: retry only when both RetryAck and PCrdGrant are received)
   }
 
   /* ======== Enchantment ======== */
