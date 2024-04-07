@@ -136,7 +136,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   // Theoretically, data to be released is saved in ReleaseBuffer, so Acquire can be sent as soon as req enters mshr
 //  io.tasks.txreq.valid := !state.s_acquire || !state.s_reissue
   io.tasks.txreq.valid := !state.s_acquire || !state.s_reissue.getOrElse(false.B)
-  io.tasks.txrsp.valid := RegNext(io.resps.rxdat.valid && io.resps.rxdat.bits.last)
+  io.tasks.txrsp.valid := !state.s_compack.get && state.w_grantlast
   io.tasks.source_b.valid := !state.s_pprobe || !state.s_rprobe
   val mp_release_valid = !state.s_release && state.w_rprobeacklast && state.w_grantlast &&
         state.w_replResp // release after Grant to L1 sent and replRead returns
@@ -229,7 +229,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   val mp_release, mp_probeack, mp_grant, mp_cbwrdata = WireInit(0.U.asTypeOf(new TaskBundle))
   val mp_release_task = {
     mp_release.channel := req.channel
-    mp_release.txChannel := CHIChannel.TXREQ
+    mp_release.txChannel := Mux(mp_cbwrdata_valid, CHIChannel.TXDAT, CHIChannel.TXREQ)
     mp_release.tag := dirResult.tag
     mp_release.set := req.set
     mp_release.off := 0.U
@@ -303,14 +303,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       ProbeAckData,
       ProbeAck
     )
-    mp_probeack.param := ParallelLookUp(
-      Cat(isT(meta.state), req.param(bdWidth - 1, 0)),
-      Seq(
-        Cat(false.B, toN) -> BtoN,
-        Cat(true.B, toN) -> TtoN,
-        Cat(true.B, toB) -> TtoB
-      )
-    )
+    mp_probeack.param := DontCare
     mp_probeack.size := 0.U(msgSizeBits.W)
     mp_probeack.sourceId := 0.U(sourceIdBits.W)
     mp_probeack.bufIdx := 0.U(bufIdxBits.W)
@@ -327,22 +320,22 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     mp_probeack.meta := MetaEntry(
       dirty = false.B,
       state = Mux(
-        req.param === toN,
+        isSnpToN(req.chiOpcode.get),
         INVALID,
         Mux(
-          req.param === toB,
+          isSnpToB(req.chiOpcode.get),
           BRANCH,
           meta.state
         )
       ),
       clients = Fill(clientBits, !probeGotN),
       alias = meta.alias, //[Alias] Keep alias bits unchanged
-      prefetch = req.param =/= toN && meta_pft,
-      accessed = req.param =/= toN && meta.accessed
+      prefetch = !isSnpToN(req.chiOpcode.get) && meta_pft,
+      accessed = !isSnpToN(req.chiOpcode.get) && meta.accessed
     )
     mp_probeack.metaWen := true.B
     mp_probeack.tagWen := false.B
-    mp_probeack.dsWen := req.param =/= toN && probeDirty
+    mp_probeack.dsWen := !isSnpToN(req.chiOpcode.get) && probeDirty
     mp_probeack.wayMask := 0.U(cacheParams.ways.W)
     mp_probeack.reqSource := 0.U(MemReqSource.reqSourceBits.W)
     mp_probeack.replTask := false.B
@@ -519,6 +512,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   when (io.tasks.txreq.fire) {
     state.s_acquire := true.B 
     state.s_reissue.get := true.B 
+  }
+  when(io.tasks.txrsp.fire) {
+    state.s_compack.get := true.B
   }
   when (io.tasks.source_b.fire) {
     state.s_pprobe := true.B
