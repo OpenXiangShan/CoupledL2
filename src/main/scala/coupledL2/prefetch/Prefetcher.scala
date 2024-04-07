@@ -172,6 +172,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       bop.io.resp <> io.resp
       tp.io.train <> io.train
       tp.io.resp <> io.resp
+      tp.io.hartid := tpio.tpmeta_port.get.req.bits.hartid
 
       // send to prq
       pftQueue.io.enq.valid := pfRcv.io.req.valid || (l2_pf_en && (bop.io.req.valid || tp.io.req.valid))
