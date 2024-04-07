@@ -91,6 +91,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   val homenid = RegInit(0.U(NODEID_WIDTH.W))
   val dbid = RegInit(0.U(DBID_WIDTH.W))
   val pcrdtype = RegInit(0.U(PCRDTYPE_WIDTH.W))
+  val gotRetryAck = RegInit(false.B)
+  val gotPCrdGrant = RegInit(false.B)
   val metaChi = ParallelLookUp(
     Cat(meta.dirty, meta.state),
     Seq(
@@ -113,6 +115,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     probeDirty  := false.B
     probeGotN   := false.B
     timer       := 1.U
+
+    gotRetryAck := false.B
+    gotPCrdGrant := false.B
   }
 
   /* ======== Enchantment ======== */
@@ -140,7 +145,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   /* ======== Task allocation ======== */
   // Theoretically, data to be released is saved in ReleaseBuffer, so Acquire can be sent as soon as req enters mshr
 //  io.tasks.txreq.valid := !state.s_acquire || !state.s_reissue
-  io.tasks.txreq.valid := !state.s_acquire || !state.s_reissue.getOrElse(false.B)
+  io.tasks.txreq.valid := !state.s_acquire || !state.s_reissue.getOrElse(false.B) && gotRetryAck && gotPCrdGrant
   io.tasks.txrsp.valid := !state.s_compack.get && state.w_grantlast
   io.tasks.source_b.valid := !state.s_pprobe || !state.s_rprobe
   val mp_release_valid = !state.s_release && state.w_rprobeacklast && state.w_grantlast &&
@@ -618,11 +623,12 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 //        state.w_credit := false.B
         srcid := rxrsp.bits.srcID.getOrElse(0.U)
         pcrdtype := rxrsp.bits.pCrdType.getOrElse(0.U)
-
+        gotRetryAck := true.B
       }
       when(rxrsp.bits.chiOpcode.get === PCrdGrant) {
 //        state.w_credit := true.B
-        state.s_reissue.get := false.B 
+        state.s_reissue.get := false.B
+        gotPCrdGrant := true.B
       }
     }
 
