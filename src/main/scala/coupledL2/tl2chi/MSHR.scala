@@ -355,7 +355,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     // CHI
     mp_probeack.tgtID.get := 0.U  //TODO: anchored HN Node ID 
     mp_probeack.srcID.get := 0.U
-    mp_probeack.txnID.get := 0.U
+    mp_probeack.txnID.get := req.txnID.getOrElse(0.U)
     mp_probeack.homeNID.get := req.srcID.getOrElse(0.U)
     mp_probeack.dbID.get := req.txnID.getOrElse(0.U)
     mp_probeack.chiOpcode.get := Mux(snpNoData, SnpResp, SnpRespData)
@@ -736,6 +736,24 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   io.nestedwbData := nestedwb_match && io.nestedwb.c_set_dirty
 
   dontTouch(state)
+
+
+  // 
+  // deadlock check
+  // 
+  val validCnt = RegInit(0.U(64.W))
+  when(io.alloc.valid) {
+    validCnt := 0.U
+  }
+
+  when(req_valid) {
+    validCnt := validCnt + 1.U
+  }
+
+  val mshrAddr = Cat(req.tag, req.set, 0.U(6.W)) // TODO: consider multibank
+  val VALID_CNT_MAX = 30000.U
+  assert(validCnt <= VALID_CNT_MAX, "validCnt > 5000, may be there is a deadlock! addr => 0x%x req_opcode => %d channel => 0b%b", mshrAddr, req.opcode, req.channel)
+
 
   /* ======== Performance counters ======== */
   // time stamp
