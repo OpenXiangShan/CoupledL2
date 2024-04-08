@@ -121,12 +121,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 
     gotRetryAck := false.B
     gotPCrdGrant := false.B
-<<<<<<< HEAD
     srcid := 0.U
     dbid := 0.U
     pcrdtype := 0.U
-=======
->>>>>>> 54f8325 (MSHR: retry only when both RetryAck and PCrdGrant are received)
   }
 
   /* ======== Enchantment ======== */
@@ -254,7 +251,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   val mp_release, mp_probeack, mp_grant, mp_cbwrdata = WireInit(0.U.asTypeOf(new TaskBundle))
   val mp_release_task = {
     mp_release.channel := req.channel
-    mp_release.txChannel := Mux(mp_cbwrdata_valid, CHIChannel.TXDAT, CHIChannel.TXREQ)
+    mp_release.txChannel := CHIChannel.TXREQ
     mp_release.tag := dirResult.tag
     mp_release.set := req.set
     mp_release.off := 0.U
@@ -265,14 +262,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     // if accessed, we ReleaseData to keep the data in L3, for future access to be faster
     // [Access] TODO: consider use a counter
     mp_release.opcode := 0.U // use chiOpcode
-/*    mp_release.opcode := {
-      cacheParams.releaseData match {
-        case 0 => Mux(meta.dirty && meta.state =/= INVALID || probeDirty, ReleaseData, Release)
-        case 1 => Mux(meta.dirty && meta.state =/= INVALID || probeDirty || meta.accessed, ReleaseData, Release)
-        case 2 => Mux(meta.prefetch.getOrElse(false.B) && !meta.accessed, Release, ReleaseData) //TODO: has problem with this
-        case 3 => ReleaseData // best performance with HuanCun-L3
-      }
-    }*/
     mp_release.param := Mux(isT(meta.state), TtoN, BtoN)
     mp_release.size := 0.U(msgSizeBits.W)
     mp_release.sourceId := 0.U(sourceIdBits.W)
@@ -288,7 +277,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     mp_release.way := dirResult.way
     mp_release.fromL2pft.foreach(_ := false.B)
     mp_release.needHint.foreach(_ := false.B)
-    mp_release.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
+    mp_release.dirty := false.B//meta.dirty && meta.state =/= INVALID || probeDirty
     mp_release.metaWen := false.B
     mp_release.meta := MetaEntry()
     mp_release.tagWen := false.B
@@ -300,18 +289,67 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     mp_release.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
 
     // CHI
-    mp_release.tgtID.get := Mux(mp_cbwrdata_valid, srcid, 0.U)
+    mp_release.tgtID.get := 0.U
     mp_release.srcID.get := 0.U
-    mp_release.txnID.get := Mux(mp_cbwrdata_valid, dbid, io.id)
+    mp_release.txnID.get := io.id
     mp_release.homeNID.get := 0.U
     mp_release.dbID.get := 0.U 
-    mp_release.chiOpcode.get := Mux(mp_cbwrdata_valid, CopyBackWrData, Mux(gotDirty, WriteBackFull, Evict))
-    mp_release.resp.get := I
-    mp_release.fwdState.get := "b000".U
-    mp_release.pCrdType.get := "b0000".U 
+    mp_release.chiOpcode.get := Mux(isT(meta.state) && meta.dirty, WriteBackFull, Evict)
+    mp_release.resp.get := 0.U // DontCare
+    mp_release.fwdState.get := 0.U // DontCare
+    mp_release.pCrdType.get := 0.U // DontCare // TODO: consider retry of WriteBackFull/Evict
     mp_release.retToSrc.get := req.retToSrc.get
     mp_release.expCompAck.get := false.B
     mp_release
+  }
+  
+  val mp_cbwrdata_task = {
+    mp_cbwrdata.channel := req.channel
+    mp_cbwrdata.txChannel := CHIChannel.TXDAT
+    mp_cbwrdata.tag := dirResult.tag
+    mp_cbwrdata.set := req.set
+    mp_cbwrdata.off := 0.U
+    mp_cbwrdata.alias.foreach(_ := 0.U)
+    mp_cbwrdata.vaddr.foreach(_ := 0.U)
+    mp_cbwrdata.isKeyword.foreach(_ := false.B)
+    mp_cbwrdata.opcode := 0.U
+    mp_cbwrdata.param := 0.U
+    mp_cbwrdata.size := 0.U(msgSizeBits.W)
+    mp_cbwrdata.sourceId := 0.U(sourceIdBits.W)
+    mp_cbwrdata.bufIdx := 0.U(bufIdxBits.W)
+    mp_cbwrdata.needProbeAckData := false.B
+    mp_cbwrdata.mshrTask := true.B
+    mp_cbwrdata.mshrId := io.id
+    mp_cbwrdata.aliasTask.foreach(_ := false.B)
+    mp_cbwrdata.useProbeData := false.B // DontCare
+    mp_cbwrdata.mshrRetry := false.B
+    mp_cbwrdata.way := dirResult.way
+    mp_cbwrdata.fromL2pft.foreach(_ := false.B)
+    mp_cbwrdata.needHint.foreach(_ := false.B)
+    mp_cbwrdata.dirty := false.B // DontCare
+    mp_cbwrdata.metaWen := false.B
+    mp_cbwrdata.meta := MetaEntry()
+    mp_cbwrdata.tagWen := false.B
+    mp_cbwrdata.dsWen := false.B
+    mp_cbwrdata.replTask := false.B
+    mp_cbwrdata.wayMask := 0.U
+    mp_cbwrdata.reqSource := 0.U
+    mp_cbwrdata.mergeA := false.B
+    mp_cbwrdata.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+
+    // CHI
+    mp_cbwrdata.tgtID.get := srcid
+    mp_cbwrdata.srcID.get := 0.U
+    mp_cbwrdata.txnID.get := dbid
+    mp_cbwrdata.homeNID.get := 0.U
+    mp_cbwrdata.dbID.get := 0.U
+    mp_cbwrdata.chiOpcode.get := CopyBackWrData
+    mp_cbwrdata.resp.get := UD_PD // Only a dirty block 
+    mp_cbwrdata.fwdState.get := 0.U
+    mp_cbwrdata.pCrdType.get := 0.U // TODO
+    mp_cbwrdata.retToSrc.get := req.retToSrc.get // DontCare
+    mp_cbwrdata.expCompAck.get := false.B
+    mp_cbwrdata
   }
 
   val mp_probeack_task = {
@@ -519,7 +557,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     Seq(
       mp_grant_valid         -> mp_grant,
       mp_release_valid       -> mp_release,
-      mp_cbwrdata_valid      -> mp_release,
+      mp_cbwrdata_valid      -> mp_cbwrdata,
       mp_probeack_valid      -> mp_probeack
     )
   )
