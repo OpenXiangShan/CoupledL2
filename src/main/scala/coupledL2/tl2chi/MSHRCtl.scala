@@ -26,6 +26,8 @@ import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.prefetch.PrefetchTrain
 import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram, XSPerfMax}
 import coupledL2._
+import tl2chi.{HasCHIMsgParameters}
+import coupledL2.tl2chi.CHIOpcode.RSPOpcodes._
 
 class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
   val io = IO(new Bundle() {
@@ -106,6 +108,31 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
   mshrSelector.io.idle := mshrs.map(m => !m.io.status.valid)
   io.toMainPipe.mshr_alloc_ptr := OHToUInt(selectedMSHROH)
 
+  /* 16 entry CAM used to collect PCrd when receive PCrdGrant 
+   1. {srcID, PCrdType} 
+   2. Broadcast to each MSHR for seaching -> clear when hit  
+   */
+//  val hitPCamAll = Wire(Vec(mshrsAll, UInt(mshrsAll.W)))
+  val hitPCamAll = Wire(Vec(mshrsAll, Vec(mshrsAll, Bool())))
+  val isPCrdGrant = io.resps.rxrsp.valid && (io.resps.rxrsp.respInfo.chiOpcode.get === PCrdGrant)
+  val pCamValids = RegInit(VecInit(Seq.fill(mshrsAll){ false.B }))
+//  val pCam  = RegInit(Vec(mshrsAll, new PCrdInfo ()))
+  val pCam  = RegInit(VecInit(Seq.fill(mshrsAll)(0.U.asTypeOf(new PCrdInfo))))
+  val enqIdx = PriorityEncoder(~pCamValids.asUInt)
+
+  when (isPCrdGrant){
+    pCamValids(enqIdx) := true.B
+    pCam(enqIdx).srcID.get := io.resps.rxrsp.respInfo.srcID.get
+    pCam(enqIdx).pCrdType.get := io.resps.rxrsp.respInfo.pCrdType.get
+  }
+
+  for (i <- 0 until mshrsAll) {
+    for (j <- 0 until mshrsAll) {
+      when (hitPCamAll(i)(j)){
+        pCamValids(j) := false.B
+      }
+    }
+  }
 
   /* SinkC(release) search MSHR with PA */
   val resp_sinkC_match_vec = mshrs.map { mshr =>
@@ -128,7 +155,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
       m.io.resps.rxdat.valid := m.io.status.valid && io.resps.rxdat.valid && io.resps.rxdat.mshrId === i.U
       m.io.resps.rxdat.bits := io.resps.rxdat.respInfo
 
-      m.io.resps.rxrsp.valid := m.io.status.valid && io.resps.rxrsp.valid && io.resps.rxrsp.mshrId === i.U
+      m.io.resps.rxrsp.valid := (m.io.status.valid && io.resps.rxrsp.valid && io.resps.rxrsp.mshrId === i.U) || isPCrdGrant
       m.io.resps.rxrsp.bits := io.resps.rxrsp.respInfo
 
       m.io.replResp.valid := io.replResp.valid && io.replResp.bits.mshrId === i.U
@@ -138,6 +165,10 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
       m.io.nestedwb := io.nestedwb
       m.io.aMergeTask.valid := io.aMergeTask.valid && io.aMergeTask.bits.id === i.U
       m.io.aMergeTask.bits := io.aMergeTask.bits.task
+
+      m.io.pCam := pCam
+      m.io.pCamValids := pCamValids
+      hitPCamAll(i) := m.io.hitpCam
   }
 
   /* Reserve 1 entry for SinkB */

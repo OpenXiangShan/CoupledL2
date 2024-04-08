@@ -67,6 +67,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     val nestedwbData = Output(Bool())
     val aMergeTask = Flipped(ValidIO(new TaskBundle))
     val replResp = Flipped(ValidIO(new ReplacerResult))
+    val pCam = Input(Vec(mshrsAll, new PCrdInfo()))
+    val pCamValids = Input(Vec(mshrsAll, Bool()))
+    val hitpCam = Output(Vec(mshrsAll, Bool()))
   })
 
   require (chiOpt.isDefined)
@@ -581,6 +584,13 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   }
   val rxrspIsUC = (rxdat.bits.resp.get === "b010".U)
   val rxrspIsUD = (rxdat.bits.resp.get === "b110".U)
+  val hitpCamType = VecInit(io.pCam.map(p => 
+    p.pCrdType.get === pcrdtype && p.srcID.get === srcid
+  )).asUInt
+
+  io.hitpCam := VecInit((hitpCamType.asBools zip io.pCamValids).map(x => x._1 && x._2))
+
+  val hasPCrd = io.hitpCam.asUInt.orR
 
     //RXDAT
     when (rxdat.valid) {
@@ -620,15 +630,25 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
         dbid := rxrsp.bits.dbID.getOrElse(0.U)
       }
       when(rxrsp.bits.chiOpcode.get === RetryAck) {
-//        state.w_credit := false.B
         srcid := rxrsp.bits.srcID.getOrElse(0.U)
         pcrdtype := rxrsp.bits.pCrdType.getOrElse(0.U)
         gotRetryAck := true.B
+        // when there is this type of pCredit in pool -> reissue
+        when (hasPCrd) {
+          state.s_reissue.get := false.B
+          gotPCrdGrant := true.B
+        }
+
+
+
       }
       when(rxrsp.bits.chiOpcode.get === PCrdGrant) {
-//        state.w_credit := true.B
-        state.s_reissue.get := false.B
-        gotPCrdGrant := true.B
+        when(gotRetryAck) {
+          when ((rxrsp.bits.pCrdType.get === pcrdtype) && (rxrsp.bits.srcID.get === srcid)){
+            state.s_reissue.get := false.B
+            gotPCrdGrant := true.B
+          }
+        }
       }
     }
 
