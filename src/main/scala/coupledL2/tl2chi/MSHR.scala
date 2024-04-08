@@ -134,6 +134,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   val meta_no_client = !meta.clients.orR
 
   val req_needT = needT(req.opcode, req.param)
+  val req_needB = needB(req.opcode, req.param)
   val req_acquire = req.opcode === AcquireBlock && req.fromA || req.opcode === AcquirePerm // AcquireBlock and Probe share the same opcode
   val req_acquirePerm = req.opcode === AcquirePerm
   val req_get = req.opcode === Get
@@ -194,23 +195,28 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     oa.returnNID := 0.U
     oa.stashNID := 0.U
     oa.stashNIDValid := false.B
-    oa.opcode := ParallelLookUp(
-      Cat(req.opcode, dirResult.hit, Mux(dirResult.hit, isT(meta.state), false.B)),
-        Seq(
-          Cat(AcquireBlock, false.B, false.B) -> ReadNotSharedDirty, //load miss/store miss
-          Cat(AcquireBlock, true.B,  false.B) -> ReadUnique,
-          Cat(AcquirePerm,  false.B, false.B) -> ReadUnique,        //store upgrade miss
-          Cat(AcquirePerm,   true.B, false.B) -> ReadUnique,        //store upgrade hit + noT -> may use MakeUnique
-//          Cat(AcquirePerm,   true.B, false.B) -> MakedUnique,     //store upgrade hit + noT
-          Cat(Get,          false.B, false.B) -> ReadClean,
-          Cat(Hint,         false.B, false.B) -> ReadNotSharedDirty
-        ))
+    /**
+      *           TL                  CHI
+      *  --------------------------------------------
+      *  Get                  |  ReadNotSharedDirty
+      *  AcquireBlock NtoB    |  ReadNotSharedDirty
+      *  AcquireBlock NtoT    |  ReadUnique
+      *  AcquirePerm NtoT     |  MakeUnique
+      *  AcquirePerm BtoT     |  ReadUnique
+      *  PrefetchRead         |  ReadNotSharedDirty
+      *  PrefetchWrite        |  ReadUnique
+      */
+    oa.opcode := ParallelPriorityMux(Seq(
+      (req.opcode === AcquirePerm && req.param === NtoT) -> MakeUnique,
+      req_needT                                          -> ReadUnique,
+      req_needB /* Default */                            -> ReadNotSharedDirty
+    ))
     oa.size := "b110".U  //64Byte
     oa.addr := Cat(req.tag, req.set, 0.U(offsetBits.W)) //TODO 36bit -> 48bit
     oa.ns := false.B
     oa.likelyshared := false.B
     oa.allowRetry := state.s_reissue.getOrElse(false.B)
-    oa.order := "b00".U
+    oa.order := OrderEncodings.None // TODO: To be confirmed
     oa.pCrdType := Mux(!state.s_reissue.getOrElse(false.B), pcrdtype, 0.U)
     oa.expCompAck := true.B
     oa.memAttr := MemAttr(cacheable = true.B, allocate = true.B, device = false.B, ewa = true.B)
