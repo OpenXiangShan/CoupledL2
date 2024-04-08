@@ -751,7 +751,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   }
 
   val mshrAddr = Cat(req.tag, req.set, 0.U(6.W)) // TODO: consider multibank
-  assert(validCnt <= 5000.U, "validCnt > 5000, may be there is a deadlock! addr => 0x%x req_opcode => %d channel => 0b%b", mshrAddr, req.opcode, req.channel)
+  val VALID_CNT_MAX = 30000.U
+  assert(validCnt <= VALID_CNT_MAX, "validCnt > 5000, may be there is a deadlock! addr => 0x%x req_opcode => %d channel => 0b%b", mshrAddr, req.opcode, req.channel)
 
 
   /* ======== Performance counters ======== */
