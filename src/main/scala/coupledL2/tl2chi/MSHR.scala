@@ -355,7 +355,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     // CHI
     mp_probeack.tgtID.get := 0.U  //TODO: anchored HN Node ID 
     mp_probeack.srcID.get := 0.U
-    mp_probeack.txnID.get := 0.U
+    mp_probeack.txnID.get := req.txnID.getOrElse(0.U)
     mp_probeack.homeNID.get := req.srcID.getOrElse(0.U)
     mp_probeack.dbID.get := req.txnID.getOrElse(0.U)
     mp_probeack.chiOpcode.get := Mux(snpNoData, SnpResp, SnpRespData)
