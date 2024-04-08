@@ -139,7 +139,30 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 
   val req_chiOpcode = req.chiOpcode.get
 
-  val snpNoData = isSnpMakeInvalidX(req_chiOpcode) || isSnpStashX(req_chiOpcode)
+  val snpToN = isSnpToN(req_chiOpcode)
+  val snpToB = isSnpToB(req_chiOpcode)
+
+  /**
+    * About which snoop should echo SnpRespData[Fwded] instead of SnpResp[Fwded]:
+    * 1. When the snooped block is dirty, always echo SnpRespData[Fwded], except for SnpMakeInvalid*, SnpStash*,
+    *    SnpOnceFwd, and SnpUniqueFwd.
+    * 2. When the snoop opcode is SnpCleanFwd, SnpNotSharedDirtyFwd or SnpSharedFwd, always echo SnpRespDataFwded
+    *    if RetToSrc = 1 as long as the snooped block is valid.
+    */
+  val doRespData = isT(meta.state) && meta.dirty && (
+    req_chiOpcode === SnpOnce ||
+    snpToB ||
+    req_chiOpcode === SnpUnique ||
+    req_chiOpcode === SnpUniqueStash ||
+    req_chiOpcode === SnpCleanShared ||
+    req_chiOpcode === SnpCleanInvalid
+  ) || dirResult.hit && req.retToSrc.get && isSnpToBFwd(req_chiOpcode)
+  /**
+    * About which snoop should echo SnpResp[Data]Fwded instead of SnpResp[Data]:
+    * 1. When the snoop opcode is Snp*Fwd and the snooped block is valid.
+    */
+  val doFwd = isSnpXFwd(req_chiOpcode) && dirResult.hit
+
   val gotUD = meta.dirty & isT(meta.state) //TC/TTC -> UD
   val promoteT_normal =  dirResult.hit && meta_no_client && meta.state === TIP
   val promoteT_L3     = !dirResult.hit && gotT
@@ -234,9 +257,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     ob.param := Mux(
       !state.s_pprobe,
       Mux(
-        isSnpToB(req_chiOpcode),
+        snpToB,
         toB,
-        Mux(isSnpToN(req_chiOpcode), toN, toT)
+        Mux(snpToN, toN, toT)
       ),
       Mux(
         req_get && dirResult.hit && meta.state === TRUNK,
@@ -354,18 +377,18 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 
   val mp_probeack_task = {
     mp_probeack.channel := req.channel
-    mp_probeack.txChannel := Mux(snpNoData, CHIChannel.TXRSP, CHIChannel.TXDAT)
+    mp_probeack.txChannel := Mux(doRespData, CHIChannel.TXDAT, CHIChannel.TXRSP)
     mp_probeack.tag := req.tag
     mp_probeack.set := req.set
     mp_probeack.off := req.off
     mp_probeack.alias.foreach(_ := 0.U)
     mp_probeack.vaddr.foreach(_ := 0.U)
     mp_probeack.isKeyword.foreach(_ := false.B)
-    mp_probeack.opcode := Mux(
+    mp_probeack.opcode := 0.U /* Mux(
       meta.dirty && isT(meta.state) || probeDirty || req.needProbeAckData,
       ProbeAckData,
       ProbeAck
-    )
+    ) */ // DontCare
     mp_probeack.param := DontCare
     mp_probeack.size := 0.U(msgSizeBits.W)
     mp_probeack.sourceId := 0.U(sourceIdBits.W)
@@ -374,31 +397,34 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     mp_probeack.mshrTask := true.B
     mp_probeack.mshrId := io.id
     mp_probeack.aliasTask.foreach(_ := false.B)
-    mp_probeack.useProbeData := true.B // write [probeAckData] to DS, if not probed toN
+    mp_probeack.useProbeData := true.B // write [probeAckData] to DS, if not probed toN // ???
     mp_probeack.mshrRetry := false.B
     mp_probeack.way := dirResult.way
     mp_probeack.fromL2pft.foreach(_ := false.B)
     mp_probeack.needHint.foreach(_ := false.B)
     mp_probeack.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
     mp_probeack.meta := MetaEntry(
-      dirty = false.B,
+      /**
+        * Under what circumstances should the dirty bit be cleared:
+        * 1. If the snoop belongs to SnpToN
+        * 2. If the snoop belongs to SnpToB
+        * 3. If the snoop is SnpCleanShared
+        * Otherwise, the dirty bit should stay the same as before.
+        */
+      dirty = !snpToN && !snpToB && req_chiOpcode =/= SnpCleanShared && meta.dirty,
       state = Mux(
-        isSnpToN(req.chiOpcode.get),
+        snpToN,
         INVALID,
-        Mux(
-          isSnpToB(req.chiOpcode.get),
-          BRANCH,
-          meta.state
-        )
+        Mux(snpToB, BRANCH, meta.state)
       ),
-      clients = Fill(clientBits, !probeGotN),
+      clients = Fill(clientBits, !probeGotN && !snpToN),
       alias = meta.alias, //[Alias] Keep alias bits unchanged
-      prefetch = !isSnpToN(req.chiOpcode.get) && meta_pft,
-      accessed = !isSnpToN(req.chiOpcode.get) && meta.accessed
+      prefetch = !snpToN && meta_pft,
+      accessed = !snpToN && meta.accessed
     )
     mp_probeack.metaWen := true.B
     mp_probeack.tagWen := false.B
-    mp_probeack.dsWen := !isSnpToN(req.chiOpcode.get) && probeDirty
+    mp_probeack.dsWen := !snpToN && probeDirty
     mp_probeack.wayMask := 0.U(cacheParams.ways.W)
     mp_probeack.reqSource := 0.U(MemReqSource.reqSourceBits.W)
     mp_probeack.replTask := false.B
@@ -406,26 +432,49 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     mp_probeack.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
 
     // CHI
-    mp_probeack.tgtID.get := 0.U  //TODO: anchored HN Node ID 
+    mp_probeack.tgtID.get := req.srcID.get
     mp_probeack.srcID.get := 0.U
-    mp_probeack.txnID.get := req.txnID.getOrElse(0.U)
-    mp_probeack.homeNID.get := req.srcID.getOrElse(0.U)
+    mp_probeack.txnID.get := req.txnID.get
+    mp_probeack.homeNID.get := 0.U
+    // For SnpRespData or SnpRespData, DBID is set to the same value as the TxnID of the snoop.
+    // For SnpRespDataFwded or SnpRespDataFwded, DBID is not defined and can be any value.
     mp_probeack.dbID.get := req.txnID.getOrElse(0.U)
-    mp_probeack.chiOpcode.get := Mux(snpNoData, SnpResp, SnpRespData)
-    mp_probeack.resp.get := ParallelLookUp(
-      Cat(isSnpToN(req_chiOpcode),
-          isSnpToB(req_chiOpcode),
-          isSnpOnceX(req_chiOpcode) || isSnpStashX(req_chiOpcode),
-          isSnpToPD(req_chiOpcode)),
-      Seq(
-        "b1000".U -> I,
-        "b0100".U -> SC,
-        "b0010".U -> metaChi,
-        "b0001".U -> Mux(gotUD, UC, metaChi)
-      ))
-    mp_probeack.fwdState.get := "b000".U
-    mp_probeack.pCrdType.get := "b0000".U 
-    mp_probeack.retToSrc.get := req.retToSrc.getOrElse(false.B)
+    mp_probeack.chiOpcode.get := MuxLookup(Cat(doFwd, doRespData), SnpResp)(Seq(
+      Cat(false.B, false.B) -> SnpResp,
+      Cat(true.B, false.B)  -> SnpRespFwded,
+      Cat(false.B, true.B)  -> SnpRespData, // ignore SnpRespDataPtl for now
+      Cat(true.B, true.B)   -> SnpRespDataFwded
+    ))
+
+    val respCacheState = ParallelPriorityMux(Seq(
+      snpToN -> I,
+      snpToB -> SC,
+      (isSnpOnceX(req_chiOpcode) || isSnpStashX(req_chiOpcode)) ->
+        Mux(probeDirty || meta.dirty, UD, metaChi),
+      isSnpCleanShared(req_chiOpcode) -> Mux(isT(meta.state), UC, metaChi)
+    ))
+    val respPassDirty = (meta.dirty || probeDirty) && (
+      snpToB ||
+      req_chiOpcode === SnpUnique ||
+      req_chiOpcode === SnpUniqueStash ||
+      req_chiOpcode === SnpCleanShared ||
+      req_chiOpcode === SnpCleanInvalid
+    )
+    mp_probeack.resp.get := setPD(respCacheState, respPassDirty)
+
+    val fwdCacheState = Mux(
+      isSnpToBFwd(req_chiOpcode),
+      SC,
+      Mux(
+        req_chiOpcode === SnpUniqueFwd,
+        Mux(meta.dirty || probeDirty, UD, UC),
+        I
+      )
+    )
+    val fwdPassDirty = req_chiOpcode === SnpUniqueFwd && (meta.dirty || probeDirty)
+    mp_probeack.fwdState.get := setPD(fwdCacheState, fwdPassDirty)
+    mp_probeack.pCrdType.get := 0.U
+    mp_probeack.retToSrc.get := req.retToSrc.get // DontCare
     mp_probeack.expCompAck.get := false.B
 
     mp_probeack
