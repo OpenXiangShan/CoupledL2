@@ -737,6 +737,23 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 
   dontTouch(state)
 
+
+  // 
+  // deadlock check
+  // 
+  val validCnt = RegInit(0.U(64.W))
+  when(io.alloc.valid) {
+    validCnt := 0.U
+  }
+
+  when(req_valid) {
+    validCnt := validCnt + 1.U
+  }
+
+  val mshrAddr = Cat(req.tag, req.set, 0.U(6.W)) // TODO: consider multibank
+  assert(validCnt <= 5000.U, "validCnt > 5000, may be there is a deadlock! addr => 0x%x req_opcode => %d channel => 0b%b", mshrAddr, req.opcode, req.channel)
+
+
   /* ======== Performance counters ======== */
   // time stamp
   // if (cacheParams.enablePerf) {
