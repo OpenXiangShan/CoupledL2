@@ -121,6 +121,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 
     gotRetryAck := false.B
     gotPCrdGrant := false.B
+    srcid := 0.U
+    dbid := 0.U
+    pcrdtype := 0.U
   }
 
   /* ======== Enchantment ======== */
@@ -638,9 +641,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
           state.s_reissue.get := false.B
           gotPCrdGrant := true.B
         }
-
-
-
       }
       when(rxrsp.bits.chiOpcode.get === PCrdGrant) {
         when(gotRetryAck) {
