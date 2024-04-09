@@ -648,31 +648,29 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     }
   }
 
+  /*                      Handling response
 
-
-/*                      Handling response
-
-     TL                    CHI             CHI Resp              CHI channel 
------------------------------------------------------------------------------
- AcquireBlock       |  ReadNotShareDirty |  CompData           |    rxdat 
- AcquirePerm(miss)  |  ReadUnique        |  CompData           |    rxdat 
- AcquirePerm(hit B) |  MakeUnique        |  Comp               |    rxrsp <- TODO
- Get                |  ReadClean         |  CompData           |    rxdat 
- Hint               |  ReadNotShareDirty |  CompData           |    rxdat 
- Release            |  WriteBackFull     |  CompDBID           |    rxrsp 
-                    |  *                 |  RetryAck+PCrdGrant |    rxrsp <-
- */
-    val c_resp = io.resps.sinkC
-    val rxrsp = io.resps.rxrsp
-    val rxdat = io.resps.rxdat
-      //Probe core response
-    when (c_resp.valid) {
-      when (c_resp.bits.opcode === ProbeAck || c_resp.bits.opcode === ProbeAckData) {
-        state.w_rprobeackfirst := true.B
-        state.w_rprobeacklast := state.w_rprobeacklast || c_resp.bits.last
-        state.w_pprobeackfirst := true.B
-        state.w_pprobeacklast := state.w_pprobeacklast || c_resp.bits.last
-        state.w_pprobeack := state.w_pprobeack || req.off === 0.U || c_resp.bits.last
+      TL                    CHI             CHI Resp              CHI channel 
+  -----------------------------------------------------------------------------
+  AcquireBlock       |  ReadNotShareDirty |  CompData           |    rxdat 
+  AcquirePerm(miss)  |  ReadUnique        |  CompData           |    rxdat 
+  AcquirePerm(hit B) |  MakeUnique        |  Comp               |    rxrsp <- TODO
+  Get                |  ReadClean         |  CompData           |    rxdat 
+  Hint               |  ReadNotShareDirty |  CompData           |    rxdat 
+  Release            |  WriteBackFull     |  CompDBID           |    rxrsp 
+                     |  *                 |  RetryAck+PCrdGrant |    rxrsp <-
+  */
+  val c_resp = io.resps.sinkC
+  val rxrsp = io.resps.rxrsp
+  val rxdat = io.resps.rxdat
+  //Probe core response
+  when (c_resp.valid) {
+    when (c_resp.bits.opcode === ProbeAck || c_resp.bits.opcode === ProbeAckData) {
+      state.w_rprobeackfirst := true.B
+      state.w_rprobeacklast := state.w_rprobeacklast || c_resp.bits.last
+      state.w_pprobeackfirst := true.B
+      state.w_pprobeacklast := state.w_pprobeacklast || c_resp.bits.last
+      state.w_pprobeack := state.w_pprobeack || req.off === 0.U || c_resp.bits.last
     }
     when (c_resp.bits.opcode === ProbeAckData) {
       probeDirty := true.B
@@ -691,77 +689,77 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 
   val hasPCrd = io.hitpCam.asUInt.orR
 
-    //RXDAT
-    when (rxdat.valid) {
-      when(rxdat.bits.chiOpcode.get === CompData) {
+  //RXDAT
+  when (rxdat.valid) {
+    when(rxdat.bits.chiOpcode.get === CompData) {
+      state.w_grantfirst := true.B
+      state.w_grantlast := rxdat.bits.last
+      state.w_grant := req.off === 0.U || rxdat.bits.last  // TODO? why offset?
+      gotT := rxrspIsUC || rxrspIsUD 
+      gotDirty := gotDirty || rxrspIsUD
+      gotGrantData := true.B
+      dbid := rxdat.bits.dbID.getOrElse(0.U)
+      homenid := rxdat.bits.homeNID.getOrElse(0.U)
+    }
+  }
+
+  //RXRSP for dataless
+  when (rxrsp.valid) {
+    when(rxrsp.bits.chiOpcode.get === Comp) {
+      // There is a pending Read transaction waiting for the Comp resp
+      when(!state.w_grant) {
         state.w_grantfirst := true.B
-        state.w_grantlast := rxdat.bits.last
-        state.w_grant := req.off === 0.U || rxdat.bits.last  // TODO? why offset?
-        gotT := rxrspIsUC || rxrspIsUD 
-        gotDirty := gotDirty || rxrspIsUD
-        gotGrantData := true.B
-        dbid := rxdat.bits.dbID.getOrElse(0.U)
-        homenid := rxdat.bits.homeNID.getOrElse(0.U)
+        state.w_grantlast := rxrsp.bits.last
+        state.w_grant := req.off === 0.U || rxrsp.bits.last  // TODO? why offset?
+        gotT := rxrspIsUC
+        gotDirty := false.B
+      }
+
+      // There is a pending Evict transaction waiting for the Comp resp
+      when(!state.w_releaseack) {
+        state.w_releaseack := true.B
       }
     }
-
-    //RXRSP for dataless
-    when (rxrsp.valid) {
-      when(rxrsp.bits.chiOpcode.get === Comp) {
-        // There is a pending Read transaction waiting for the Comp resp
-        when(!state.w_grant) {
-          state.w_grantfirst := true.B
-          state.w_grantlast := rxrsp.bits.last
-          state.w_grant := req.off === 0.U || rxrsp.bits.last  // TODO? why offset?
-          gotT := rxrspIsUC
-          gotDirty := false.B
-        }
-
-        // There is a pending Evict transaction waiting for the Comp resp
-        when(!state.w_releaseack) {
-          state.w_releaseack := true.B
-        }
-      }
-      when(rxrsp.bits.chiOpcode.get === CompDBIDResp) {
+    when(rxrsp.bits.chiOpcode.get === CompDBIDResp) {
 //        state.w_releaseack := true.B
-        state.s_cbwrdata.get := false.B
-        srcid := rxrsp.bits.srcID.getOrElse(0.U)
-        dbid := rxrsp.bits.dbID.getOrElse(0.U)
+      state.s_cbwrdata.get := false.B
+      srcid := rxrsp.bits.srcID.getOrElse(0.U)
+      dbid := rxrsp.bits.dbID.getOrElse(0.U)
+    }
+    when(rxrsp.bits.chiOpcode.get === RetryAck) {
+      srcid := rxrsp.bits.srcID.getOrElse(0.U)
+      pcrdtype := rxrsp.bits.pCrdType.getOrElse(0.U)
+      gotRetryAck := true.B
+      // when there is this type of pCredit in pool -> reissue
+      when (hasPCrd) {
+        state.s_reissue.get := false.B
+        gotPCrdGrant := true.B
       }
-      when(rxrsp.bits.chiOpcode.get === RetryAck) {
-        srcid := rxrsp.bits.srcID.getOrElse(0.U)
-        pcrdtype := rxrsp.bits.pCrdType.getOrElse(0.U)
-        gotRetryAck := true.B
-        // when there is this type of pCredit in pool -> reissue
-        when (hasPCrd) {
+    }
+    when(rxrsp.bits.chiOpcode.get === PCrdGrant) {
+      when(gotRetryAck) {
+        when ((rxrsp.bits.pCrdType.get === pcrdtype) && (rxrsp.bits.srcID.get === srcid)){
           state.s_reissue.get := false.B
           gotPCrdGrant := true.B
         }
       }
-      when(rxrsp.bits.chiOpcode.get === PCrdGrant) {
-        when(gotRetryAck) {
-          when ((rxrsp.bits.pCrdType.get === pcrdtype) && (rxrsp.bits.srcID.get === srcid)){
-            state.s_reissue.get := false.B
-            gotPCrdGrant := true.B
-          }
-        }
-      }
     }
+  }
 
-    //replay
-    val replResp = io.replResp.bits
-    when (io.replResp.valid && replResp.retry) {
-      state.s_refill := false.B
-      state.s_retry := false.B
-      dirResult.way := replResp.way
-    }
-    when (io.replResp.valid && !replResp.retry) {
-      state.w_replResp := true.B
+  //replay
+  val replResp = io.replResp.bits
+  when (io.replResp.valid && replResp.retry) {
+    state.s_refill := false.B
+    state.s_retry := false.B
+    dirResult.way := replResp.way
+  }
+  when (io.replResp.valid && !replResp.retry) {
+    state.w_replResp := true.B
 
-  // update meta (no need to update hit/set/error/replacerInfo of dirResult)
-      dirResult.tag := replResp.tag
-      dirResult.way := replResp.way
-      dirResult.meta := replResp.meta
+    // update meta (no need to update hit/set/error/replacerInfo of dirResult)
+    dirResult.tag := replResp.tag
+    dirResult.way := replResp.way
+    dirResult.meta := replResp.meta
 
     // replacer choosing:
     // 1. an invalid way, release no longer needed
