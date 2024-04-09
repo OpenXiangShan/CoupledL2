@@ -251,11 +251,14 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   val neverRespData = SNPOpcodes.isSnpMakeInvalidX(req_s3.chiOpcode.get) || SNPOpcodes.isSnpStashX(req_s3.chiOpcode.get) ||
     req_s3.chiOpcode.get === SNPOpcodes.SnpOnceFwd || req_s3.chiOpcode.get === SNPOpcodes.SnpUniqueFwd
   val shouldRespData = dirResult_s3.hit && (
-    meta_s3.state === TIP && meta_s3.dirty ||
+    (meta_s3.state === TIP || meta_s3.state === TRUNK) && meta_s3.dirty ||
     SNPOpcodes.isSnpXFwd(req_s3.chiOpcode.get) && retToSrc
   )
   val doRespData = shouldRespData && !neverRespData
-
+  dontTouch(doRespData)
+  dontTouch(shouldRespData)
+  dontTouch(neverRespData)
+  
   // Resp[2: 0] = {PassDirty, CacheState[1: 0]}
   val respCacheState = WireInit(I)
   val respPassDirty = dirResult_s3.hit && meta_s3.state === TIP && meta_s3.dirty && !(neverRespData || req_s3.chiOpcode.get === SNPOpcodes.SnpOnce)
