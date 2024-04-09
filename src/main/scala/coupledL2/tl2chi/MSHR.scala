@@ -180,7 +180,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   io.tasks.source_b.valid := !state.s_pprobe || !state.s_rprobe
   val mp_release_valid = !state.s_release && state.w_rprobeacklast && state.w_grantlast &&
         state.w_replResp // release after Grant to L1 sent and replRead returns
-  val mp_cbwrdata_valid = !state.s_cbwrdata.getOrElse(false.B)
+  val mp_cbwrdata_valid = !state.s_cbwrdata.getOrElse(false.B) && state.w_releaseack
   val mp_probeack_valid = !state.s_probeack && state.w_pprobeacklast
   val mp_grant_valid = !state.s_refill && state.w_grantlast && state.w_rprobeacklast // [Alias] grant after rprobe done
   io.tasks.mainpipe.valid := mp_release_valid || mp_probeack_valid || mp_grant_valid || mp_cbwrdata_valid
@@ -641,7 +641,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       // meta.state := INVALID
     }.elsewhen (mp_cbwrdata_valid) {
       state.s_cbwrdata.get := true.B
-      state.w_releaseack := true.B
       meta.state := INVALID
     }.elsewhen (mp_probeack_valid) {
       state.s_probeack := true.B
@@ -726,7 +725,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     }
     when(rxrsp.bits.chiOpcode.get === CompDBIDResp) {
       state.w_releaseack := true.B
-      state.s_cbwrdata.get := false.B
       srcid := rxrsp.bits.srcID.getOrElse(0.U)
       dbid := rxrsp.bits.dbID.getOrElse(0.U)
     }
