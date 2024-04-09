@@ -625,7 +625,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     state.s_acquire := true.B 
     state.s_reissue.get := true.B 
   }
-  when(io.tasks.txrsp.fire) {
+  when (io.tasks.txrsp.fire) {
     state.s_compack.get := true.B
   }
   when (io.tasks.source_b.fire) {
@@ -663,7 +663,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   val c_resp = io.resps.sinkC
   val rxrsp = io.resps.rxrsp
   val rxdat = io.resps.rxdat
-  //Probe core response
+  // Probe core response
   when (c_resp.valid) {
     when (c_resp.bits.opcode === ProbeAck || c_resp.bits.opcode === ProbeAckData) {
       state.w_rprobeackfirst := true.B
@@ -679,8 +679,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       probeGotN := true.B
     }
   }
-  val rxrspIsUC = (rxdat.bits.resp.get === "b010".U)
-  val rxrspIsUD = (rxdat.bits.resp.get === "b110".U)
+
   val hitpCamType = VecInit(io.pCam.map(p => 
     p.pCrdType.get === pcrdtype && p.srcID.get === srcid
   )).asUInt
@@ -689,39 +688,44 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 
   val hasPCrd = io.hitpCam.asUInt.orR
 
-  //RXDAT
+  val rxdatIsU = rxdat.bits.resp.get === UC
+  val rxdatIsU_PD = rxdat.bits.resp.get === UC_PD
+
+  val rxrspIsU = rxrsp.bits.resp.get === UC
+
+  // RXDAT
   when (rxdat.valid) {
-    when(rxdat.bits.chiOpcode.get === CompData) {
+    when (rxdat.bits.chiOpcode.get === CompData) {
       state.w_grantfirst := true.B
       state.w_grantlast := rxdat.bits.last
       state.w_grant := req.off === 0.U || rxdat.bits.last  // TODO? why offset?
-      gotT := rxrspIsUC || rxrspIsUD 
-      gotDirty := gotDirty || rxrspIsUD
+      gotT := rxdatIsU || rxdatIsU_PD
+      gotDirty := gotDirty || rxdatIsU_PD
       gotGrantData := true.B
       dbid := rxdat.bits.dbID.getOrElse(0.U)
       homenid := rxdat.bits.homeNID.getOrElse(0.U)
     }
   }
 
-  //RXRSP for dataless
+  // RXRSP for dataless
   when (rxrsp.valid) {
-    when(rxrsp.bits.chiOpcode.get === Comp) {
+    when (rxrsp.bits.chiOpcode.get === Comp) {
       // There is a pending Read transaction waiting for the Comp resp
-      when(!state.w_grant) {
+      when (!state.w_grant) {
         state.w_grantfirst := true.B
         state.w_grantlast := rxrsp.bits.last
         state.w_grant := req.off === 0.U || rxrsp.bits.last  // TODO? why offset?
-        gotT := rxrspIsUC
+        gotT := rxrspIsU
         gotDirty := false.B
       }
 
       // There is a pending Evict transaction waiting for the Comp resp
-      when(!state.w_releaseack) {
+      when (!state.w_releaseack) {
         state.w_releaseack := true.B
       }
     }
     when(rxrsp.bits.chiOpcode.get === CompDBIDResp) {
-//        state.w_releaseack := true.B
+      state.w_releaseack := true.B
       state.s_cbwrdata.get := false.B
       srcid := rxrsp.bits.srcID.getOrElse(0.U)
       dbid := rxrsp.bits.dbID.getOrElse(0.U)
@@ -746,7 +750,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     }
   }
 
-  //replay
+  // replay
   val replResp = io.replResp.bits
   when (io.replResp.valid && replResp.retry) {
     state.s_refill := false.B
@@ -770,8 +774,11 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       // set release flags
       state.s_release := false.B
       state.w_releaseack := false.B
+      when (isT(replResp.meta.state) && replResp.meta.dirty) {
+        state.s_cbwrdata.get := false.B
+      }
       // rprobe clients if any
-      when(replResp.meta.clients.orR) {
+      when (replResp.meta.clients.orR) {
         state.s_rprobe := false.B
         state.w_rprobeackfirst := false.B
         state.w_rprobeacklast := false.B
