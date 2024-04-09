@@ -788,7 +788,10 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     timer := timer + 1.U
   }
 
-  val no_schedule = state.s_refill && state.s_probeack && state.s_release // && state.s_triggerprefetch.getOrElse(true.B)
+  val no_schedule = state.s_refill && state.s_probeack && state.s_release &&
+    state.s_compack.getOrElse(true.B) &&
+    state.s_cbwrdata.getOrElse(true.B) &&
+    state.s_reissue.getOrElse(true.B)
   val no_wait = state.w_rprobeacklast && state.w_pprobeacklast && state.w_grantlast && state.w_releaseack && state.w_replResp
   val will_free = no_schedule && no_wait
   when (will_free && req_valid) {
