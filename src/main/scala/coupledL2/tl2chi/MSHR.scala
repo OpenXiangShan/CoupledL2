@@ -638,7 +638,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       state.s_retry := true.B
     }.elsewhen (mp_release_valid) {
       state.s_release := true.B
-      meta.state := INVALID
+      // meta.state := INVALID
     }.elsewhen (mp_cbwrdata_valid) {
       state.s_cbwrdata.get := true.B
       state.w_releaseack := true.B
