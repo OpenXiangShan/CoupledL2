@@ -78,6 +78,8 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
       case (node, i) =>
         node.makeIOs()(ValName(s"master_port_$i"))
     }
+
+    l2.module.io.hartId := DontCare
   }
 
 }
@@ -137,7 +139,7 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
         rrTagBits = 6
       ))
     )
-  }))).node
+  })))
 
   val l3 = LazyModule(new HuanCun()(new Config((_, _, _) => {
     case HCCacheParamsKey => HCCacheParameters(
@@ -172,7 +174,7 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
     TLDelayer(delayFactor) :=*
     l3.node :=*
     TLBuffer() :=
-    l2 :=* xbar
+    l2.node :=* xbar
 
   lazy val module = new LazyModuleImp(this) {
     val timer = WireDefault(0.U(64.W))
@@ -189,6 +191,8 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
       case (node, i) =>
         node.makeIOs()(ValName(s"master_port_$i"))
     }
+
+    l2.module.io.hartId := DontCare
   }
 
 }
@@ -218,7 +222,7 @@ class TestTop_L2_Standalone()(implicit p: Parameters) extends LazyModule {
         ),
         channelBytes = TLChannelBeatBytes(cacheParams.blockBytes),
         minLatency = 1,
-        echoFields = cacheParams.echoField,
+        echoFields = Nil,
         requestFields = Seq(AliasField(2)),
         responseKeys = cacheParams.respKey
       )
@@ -281,6 +285,8 @@ class TestTop_L2_Standalone()(implicit p: Parameters) extends LazyModule {
         node.makeIOs()(ValName(s"master_port_$i"))
     }
     l3.makeIOs()(ValName(s"slave_port"))
+
+    l2.module.io.hartId := DontCare
   }
 
 }
@@ -385,7 +391,13 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
     dontTouch(clean)
     dontTouch(dump)
 
-    coupledL2.foreach(_.module.io.debugTopDown := DontCare)
+    coupledL2.foreach {
+      case l2 => {
+        l2.module.io.debugTopDown := DontCare
+        l2.module.io.hartId := DontCare
+      }
+    }
+
     master_nodes.zipWithIndex.foreach {
       case (node, i) =>
         node.makeIOs()(ValName(s"master_port_$i"))
@@ -445,7 +457,8 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
     master_nodes = master_nodes ++ Seq(l1d, l1i) // TODO
 
     val l1xbar = TLXbar()
-    val l2node = LazyModule(new TL2TLCoupledL2()(new Config((_, _, _) => {
+
+    val l2 = LazyModule(new TL2TLCoupledL2()(new Config((_, _, _) => {
       case L2ParamKey => L2Param(
         name = s"l2$i",
         ways = 4,
@@ -457,12 +470,16 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
           rrTagBits = 6
         ))
       )
-    }))).node
+    })))
 
     l1xbar := TLBuffer() := l1i
     l1xbar := TLBuffer() := l1d
 
-    l2xbar := TLBuffer() := l2node := l1xbar
+    l2xbar := TLBuffer() := l2.node := l1xbar
+
+    InModuleBody {
+      l2.module.io.hartId := DontCare
+    }
   }
 
   val l3 = LazyModule(new HuanCun()(new Config((_, _, _) => {

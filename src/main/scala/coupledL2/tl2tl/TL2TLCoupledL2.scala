@@ -95,6 +95,7 @@ class TL2TLCoupledL2(implicit p: Parameters) extends CoupledL2Base {
     val banks = node.in.size
     val bankBits = if (banks == 1) 0 else log2Up(banks)
     val io = IO(new Bundle {
+      val hartId = Input(UInt(hartIdLen.W))
     //  val l2_hint = Valid(UInt(32.W))
       val l2_hint = ValidIO(new L2ToL1Hint())
       val debugTopDown = new Bundle {
@@ -137,6 +138,7 @@ class TL2TLCoupledL2(implicit p: Parameters) extends CoupledL2Base {
       _ =>
         fastArb(prefetchTrains.get, prefetcher.get.io.train, Some("prefetch_train"))
         prefetcher.get.io.req.ready := Cat(prefetchReqsReady).orR
+        prefetcher.get.hartId := io.hartId
         fastArb(prefetchResps.get, prefetcher.get.io.resp, Some("prefetch_resp"))
     }
     pf_recv_node match {
