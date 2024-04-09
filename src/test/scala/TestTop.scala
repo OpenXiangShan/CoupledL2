@@ -191,7 +191,7 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
         node.makeIOs()(ValName(s"master_port_$i"))
     }
 
-    l2.module.io.hartId := DontCare // Some other signals also need DontCare
+    l2.module.io.hartId := DontCare
   }
 
 }
@@ -221,7 +221,7 @@ class TestTop_L2_Standalone()(implicit p: Parameters) extends LazyModule {
         ),
         channelBytes = TLChannelBeatBytes(cacheParams.blockBytes),
         minLatency = 1,
-        echoFields = cacheParams.echoField,
+        echoFields = Nil,
         requestFields = Seq(AliasField(2)),
         responseKeys = cacheParams.respKey
       )
@@ -285,7 +285,7 @@ class TestTop_L2_Standalone()(implicit p: Parameters) extends LazyModule {
     }
     l3.makeIOs()(ValName(s"slave_port"))
 
-    l2.module.io.hartId := DontCare // Some other signals also need DontCare
+    l2.module.io.hartId := DontCare
   }
 
 }
@@ -476,7 +476,7 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
     l2xbar := TLBuffer() := l2.node := l1xbar
 
     InModuleBody {
-      l2.module.io.hartId := DontCare // Some other signals also need DontCare
+      l2.module.io.hartId := DontCare
     }
   }
 
