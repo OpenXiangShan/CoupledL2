@@ -167,9 +167,9 @@ object CHIOpcode {
       isSnpUniqueX(opcode) || opcode === SnpCleanInvalid || isSnpMakeInvalidX (opcode)
     }
 
-    def isSnpToPD(opcode: UInt): Bool = {
+    def isSnpCleanShared(opcode: UInt): Bool = {
       widthCheck(opcode)
-      opcode >= SnpCleanShared
+      opcode === SnpCleanShared
     }
 
     def isSnpToBFwd(opcode: UInt): Bool = {

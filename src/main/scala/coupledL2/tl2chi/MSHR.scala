@@ -131,6 +131,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   val meta_no_client = !meta.clients.orR
 
   val req_needT = needT(req.opcode, req.param)
+  val req_needB = needB(req.opcode, req.param)
   val req_acquire = req.opcode === AcquireBlock && req.fromA || req.opcode === AcquirePerm // AcquireBlock and Probe share the same opcode
   val req_acquirePerm = req.opcode === AcquirePerm
   val req_get = req.opcode === Get
@@ -138,13 +139,36 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 
   val req_chiOpcode = req.chiOpcode.get
 
-  val snpNoData = isSnpMakeInvalidX(req_chiOpcode) || isSnpStashX(req_chiOpcode)
+  val snpToN = isSnpToN(req_chiOpcode)
+  val snpToB = isSnpToB(req_chiOpcode)
+
+  /**
+    * About which snoop should echo SnpRespData[Fwded] instead of SnpResp[Fwded]:
+    * 1. When the snooped block is dirty, always echo SnpRespData[Fwded], except for SnpMakeInvalid*, SnpStash*,
+    *    SnpOnceFwd, and SnpUniqueFwd.
+    * 2. When the snoop opcode is SnpCleanFwd, SnpNotSharedDirtyFwd or SnpSharedFwd, always echo SnpRespDataFwded
+    *    if RetToSrc = 1 as long as the snooped block is valid.
+    */
+  val doRespData = isT(meta.state) && meta.dirty && (
+    req_chiOpcode === SnpOnce ||
+    snpToB ||
+    req_chiOpcode === SnpUnique ||
+    req_chiOpcode === SnpUniqueStash ||
+    req_chiOpcode === SnpCleanShared ||
+    req_chiOpcode === SnpCleanInvalid
+  ) || dirResult.hit && req.retToSrc.get && isSnpToBFwd(req_chiOpcode)
+  /**
+    * About which snoop should echo SnpResp[Data]Fwded instead of SnpResp[Data]:
+    * 1. When the snoop opcode is Snp*Fwd and the snooped block is valid.
+    */
+  val doFwd = isSnpXFwd(req_chiOpcode) && dirResult.hit
+
   val gotUD = meta.dirty & isT(meta.state) //TC/TTC -> UD
   val promoteT_normal =  dirResult.hit && meta_no_client && meta.state === TIP
   val promoteT_L3     = !dirResult.hit && gotT
   val promoteT_alias  =  dirResult.hit && req.aliasTask.getOrElse(false.B) && (meta.state === TRUNK || meta.state === TIP)
   // under above circumstances, we grant T to L1 even if it wants B
-  val req_promoteT = (req_acquire || req_get || req_prefetch) && (promoteT_normal || promoteT_L3 || promoteT_alias)
+  val req_promoteT = (req_acquire || req_prefetch) && (promoteT_normal || promoteT_L3 || promoteT_alias)
 
   assert(!(req_valid && req_prefetch && dirResult.hit), "MSHR can not receive prefetch hit req")
 
@@ -156,7 +180,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   io.tasks.source_b.valid := !state.s_pprobe || !state.s_rprobe
   val mp_release_valid = !state.s_release && state.w_rprobeacklast && state.w_grantlast &&
         state.w_replResp // release after Grant to L1 sent and replRead returns
-  val mp_cbwrdata_valid = !state.s_cbwrdata.getOrElse(false.B)
+  val mp_cbwrdata_valid = !state.s_cbwrdata.getOrElse(false.B) && state.w_releaseack
   val mp_probeack_valid = !state.s_probeack && state.w_pprobeacklast
   val mp_grant_valid = !state.s_refill && state.w_grantlast && state.w_rprobeacklast // [Alias] grant after rprobe done
   io.tasks.mainpipe.valid := mp_release_valid || mp_probeack_valid || mp_grant_valid || mp_cbwrdata_valid
@@ -191,23 +215,28 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     oa.returnNID := 0.U
     oa.stashNID := 0.U
     oa.stashNIDValid := false.B
-    oa.opcode := ParallelLookUp(
-      Cat(req.opcode, dirResult.hit, Mux(dirResult.hit, isT(meta.state), false.B)),
-        Seq(
-          Cat(AcquireBlock, false.B, false.B) -> ReadNotSharedDirty, //load miss/store miss
-          Cat(AcquireBlock, true.B,  false.B) -> ReadUnique,
-          Cat(AcquirePerm,  false.B, false.B) -> ReadUnique,        //store upgrade miss
-          Cat(AcquirePerm,   true.B, false.B) -> ReadUnique,        //store upgrade hit + noT -> may use MakeUnique
-//          Cat(AcquirePerm,   true.B, false.B) -> MakedUnique,     //store upgrade hit + noT
-          Cat(Get,          false.B, false.B) -> ReadClean,
-          Cat(Hint,         false.B, false.B) -> ReadNotSharedDirty
-        ))
+    /**
+      *           TL                  CHI
+      *  --------------------------------------------
+      *  Get                  |  ReadNotSharedDirty
+      *  AcquireBlock NtoB    |  ReadNotSharedDirty
+      *  AcquireBlock NtoT    |  ReadUnique
+      *  AcquirePerm NtoT     |  MakeUnique
+      *  AcquirePerm BtoT     |  ReadUnique
+      *  PrefetchRead         |  ReadNotSharedDirty
+      *  PrefetchWrite        |  ReadUnique
+      */
+    oa.opcode := ParallelPriorityMux(Seq(
+      (req.opcode === AcquirePerm && req.param === NtoT) -> MakeUnique,
+      req_needT                                          -> ReadUnique,
+      req_needB /* Default */                            -> ReadNotSharedDirty
+    ))
     oa.size := "b110".U  //64Byte
     oa.addr := Cat(req.tag, req.set, 0.U(offsetBits.W)) //TODO 36bit -> 48bit
     oa.ns := false.B
     oa.likelyshared := false.B
     oa.allowRetry := state.s_reissue.getOrElse(false.B)
-    oa.order := "b00".U
+    oa.order := OrderEncodings.None // TODO: To be confirmed
     oa.pCrdType := Mux(!state.s_reissue.getOrElse(false.B), pcrdtype, 0.U)
     oa.expCompAck := true.B
     oa.memAttr := MemAttr(cacheable = true.B, allocate = true.B, device = false.B, ewa = true.B)
@@ -228,9 +257,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     ob.param := Mux(
       !state.s_pprobe,
       Mux(
-        isSnpToB(req_chiOpcode),
+        snpToB,
         toB,
-        Mux(isSnpToN(req_chiOpcode), toN, toT)
+        Mux(snpToN, toN, toT)
       ),
       Mux(
         req_get && dirResult.hit && meta.state === TRUNK,
@@ -245,7 +274,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   val mp_release, mp_probeack, mp_grant, mp_cbwrdata = WireInit(0.U.asTypeOf(new TaskBundle))
   val mp_release_task = {
     mp_release.channel := req.channel
-    mp_release.txChannel := Mux(mp_cbwrdata_valid, CHIChannel.TXDAT, CHIChannel.TXREQ)
+    mp_release.txChannel := CHIChannel.TXREQ
     mp_release.tag := dirResult.tag
     mp_release.set := req.set
     mp_release.off := 0.U
@@ -256,14 +285,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     // if accessed, we ReleaseData to keep the data in L3, for future access to be faster
     // [Access] TODO: consider use a counter
     mp_release.opcode := 0.U // use chiOpcode
-/*    mp_release.opcode := {
-      cacheParams.releaseData match {
-        case 0 => Mux(meta.dirty && meta.state =/= INVALID || probeDirty, ReleaseData, Release)
-        case 1 => Mux(meta.dirty && meta.state =/= INVALID || probeDirty || meta.accessed, ReleaseData, Release)
-        case 2 => Mux(meta.prefetch.getOrElse(false.B) && !meta.accessed, Release, ReleaseData) //TODO: has problem with this
-        case 3 => ReleaseData // best performance with HuanCun-L3
-      }
-    }*/
     mp_release.param := Mux(isT(meta.state), TtoN, BtoN)
     mp_release.size := 0.U(msgSizeBits.W)
     mp_release.sourceId := 0.U(sourceIdBits.W)
@@ -279,7 +300,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     mp_release.way := dirResult.way
     mp_release.fromL2pft.foreach(_ := false.B)
     mp_release.needHint.foreach(_ := false.B)
-    mp_release.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
+    mp_release.dirty := false.B//meta.dirty && meta.state =/= INVALID || probeDirty
     mp_release.metaWen := false.B
     mp_release.meta := MetaEntry()
     mp_release.tagWen := false.B
@@ -291,34 +312,83 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     mp_release.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
 
     // CHI
-    mp_release.tgtID.get := Mux(mp_cbwrdata_valid, srcid, 0.U)
+    mp_release.tgtID.get := 0.U
     mp_release.srcID.get := 0.U
-    mp_release.txnID.get := Mux(mp_cbwrdata_valid, dbid, io.id)
+    mp_release.txnID.get := io.id
     mp_release.homeNID.get := 0.U
     mp_release.dbID.get := 0.U 
-    mp_release.chiOpcode.get := Mux(mp_cbwrdata_valid, CopyBackWrData, Mux(gotDirty, WriteBackFull, Evict))
-    mp_release.resp.get := I
-    mp_release.fwdState.get := "b000".U
-    mp_release.pCrdType.get := "b0000".U 
+    mp_release.chiOpcode.get := Mux(isT(meta.state) && meta.dirty, WriteBackFull, Evict)
+    mp_release.resp.get := 0.U // DontCare
+    mp_release.fwdState.get := 0.U // DontCare
+    mp_release.pCrdType.get := 0.U // DontCare // TODO: consider retry of WriteBackFull/Evict
     mp_release.retToSrc.get := req.retToSrc.get
     mp_release.expCompAck.get := false.B
     mp_release
   }
+  
+  val mp_cbwrdata_task = {
+    mp_cbwrdata.channel := req.channel
+    mp_cbwrdata.txChannel := CHIChannel.TXDAT
+    mp_cbwrdata.tag := dirResult.tag
+    mp_cbwrdata.set := req.set
+    mp_cbwrdata.off := 0.U
+    mp_cbwrdata.alias.foreach(_ := 0.U)
+    mp_cbwrdata.vaddr.foreach(_ := 0.U)
+    mp_cbwrdata.isKeyword.foreach(_ := false.B)
+    mp_cbwrdata.opcode := 0.U
+    mp_cbwrdata.param := 0.U
+    mp_cbwrdata.size := 0.U(msgSizeBits.W)
+    mp_cbwrdata.sourceId := 0.U(sourceIdBits.W)
+    mp_cbwrdata.bufIdx := 0.U(bufIdxBits.W)
+    mp_cbwrdata.needProbeAckData := false.B
+    mp_cbwrdata.mshrTask := true.B
+    mp_cbwrdata.mshrId := io.id
+    mp_cbwrdata.aliasTask.foreach(_ := false.B)
+    mp_cbwrdata.useProbeData := false.B // DontCare
+    mp_cbwrdata.mshrRetry := false.B
+    mp_cbwrdata.way := dirResult.way
+    mp_cbwrdata.fromL2pft.foreach(_ := false.B)
+    mp_cbwrdata.needHint.foreach(_ := false.B)
+    mp_cbwrdata.dirty := false.B // DontCare
+    mp_cbwrdata.metaWen := false.B
+    mp_cbwrdata.meta := MetaEntry()
+    mp_cbwrdata.tagWen := false.B
+    mp_cbwrdata.dsWen := false.B
+    mp_cbwrdata.replTask := false.B
+    mp_cbwrdata.wayMask := 0.U
+    mp_cbwrdata.reqSource := 0.U
+    mp_cbwrdata.mergeA := false.B
+    mp_cbwrdata.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+
+    // CHI
+    mp_cbwrdata.tgtID.get := srcid
+    mp_cbwrdata.srcID.get := 0.U
+    mp_cbwrdata.txnID.get := dbid
+    mp_cbwrdata.homeNID.get := 0.U
+    mp_cbwrdata.dbID.get := 0.U
+    mp_cbwrdata.chiOpcode.get := CopyBackWrData
+    mp_cbwrdata.resp.get := UD_PD // Only a dirty block 
+    mp_cbwrdata.fwdState.get := 0.U
+    mp_cbwrdata.pCrdType.get := 0.U // TODO
+    mp_cbwrdata.retToSrc.get := req.retToSrc.get // DontCare
+    mp_cbwrdata.expCompAck.get := false.B
+    mp_cbwrdata
+  }
 
   val mp_probeack_task = {
     mp_probeack.channel := req.channel
-    mp_probeack.txChannel := Mux(snpNoData, CHIChannel.TXRSP, CHIChannel.TXDAT)
+    mp_probeack.txChannel := Mux(doRespData, CHIChannel.TXDAT, CHIChannel.TXRSP)
     mp_probeack.tag := req.tag
     mp_probeack.set := req.set
     mp_probeack.off := req.off
     mp_probeack.alias.foreach(_ := 0.U)
     mp_probeack.vaddr.foreach(_ := 0.U)
     mp_probeack.isKeyword.foreach(_ := false.B)
-    mp_probeack.opcode := Mux(
+    mp_probeack.opcode := 0.U /* Mux(
       meta.dirty && isT(meta.state) || probeDirty || req.needProbeAckData,
       ProbeAckData,
       ProbeAck
-    )
+    ) */ // DontCare
     mp_probeack.param := DontCare
     mp_probeack.size := 0.U(msgSizeBits.W)
     mp_probeack.sourceId := 0.U(sourceIdBits.W)
@@ -327,31 +397,34 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     mp_probeack.mshrTask := true.B
     mp_probeack.mshrId := io.id
     mp_probeack.aliasTask.foreach(_ := false.B)
-    mp_probeack.useProbeData := true.B // write [probeAckData] to DS, if not probed toN
+    mp_probeack.useProbeData := true.B // write [probeAckData] to DS, if not probed toN // ???
     mp_probeack.mshrRetry := false.B
     mp_probeack.way := dirResult.way
     mp_probeack.fromL2pft.foreach(_ := false.B)
     mp_probeack.needHint.foreach(_ := false.B)
     mp_probeack.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
     mp_probeack.meta := MetaEntry(
-      dirty = false.B,
+      /**
+        * Under what circumstances should the dirty bit be cleared:
+        * 1. If the snoop belongs to SnpToN
+        * 2. If the snoop belongs to SnpToB
+        * 3. If the snoop is SnpCleanShared
+        * Otherwise, the dirty bit should stay the same as before.
+        */
+      dirty = !snpToN && !snpToB && req_chiOpcode =/= SnpCleanShared && meta.dirty,
       state = Mux(
-        isSnpToN(req.chiOpcode.get),
+        snpToN,
         INVALID,
-        Mux(
-          isSnpToB(req.chiOpcode.get),
-          BRANCH,
-          meta.state
-        )
+        Mux(snpToB, BRANCH, meta.state)
       ),
-      clients = Fill(clientBits, !probeGotN),
+      clients = Fill(clientBits, !probeGotN && !snpToN),
       alias = meta.alias, //[Alias] Keep alias bits unchanged
-      prefetch = !isSnpToN(req.chiOpcode.get) && meta_pft,
-      accessed = !isSnpToN(req.chiOpcode.get) && meta.accessed
+      prefetch = !snpToN && meta_pft,
+      accessed = !snpToN && meta.accessed
     )
     mp_probeack.metaWen := true.B
     mp_probeack.tagWen := false.B
-    mp_probeack.dsWen := !isSnpToN(req.chiOpcode.get) && probeDirty
+    mp_probeack.dsWen := !snpToN && probeDirty
     mp_probeack.wayMask := 0.U(cacheParams.ways.W)
     mp_probeack.reqSource := 0.U(MemReqSource.reqSourceBits.W)
     mp_probeack.replTask := false.B
@@ -359,26 +432,49 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     mp_probeack.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
 
     // CHI
-    mp_probeack.tgtID.get := 0.U  //TODO: anchored HN Node ID 
+    mp_probeack.tgtID.get := req.srcID.get
     mp_probeack.srcID.get := 0.U
-    mp_probeack.txnID.get := req.txnID.getOrElse(0.U)
-    mp_probeack.homeNID.get := req.srcID.getOrElse(0.U)
+    mp_probeack.txnID.get := req.txnID.get
+    mp_probeack.homeNID.get := 0.U
+    // For SnpRespData or SnpRespData, DBID is set to the same value as the TxnID of the snoop.
+    // For SnpRespDataFwded or SnpRespDataFwded, DBID is not defined and can be any value.
     mp_probeack.dbID.get := req.txnID.getOrElse(0.U)
-    mp_probeack.chiOpcode.get := Mux(snpNoData, SnpResp, SnpRespData)
-    mp_probeack.resp.get := ParallelLookUp(
-      Cat(isSnpToN(req_chiOpcode),
-          isSnpToB(req_chiOpcode),
-          isSnpOnceX(req_chiOpcode) || isSnpStashX(req_chiOpcode),
-          isSnpToPD(req_chiOpcode)),
-      Seq(
-        "b1000".U -> I,
-        "b0100".U -> SC,
-        "b0010".U -> metaChi,
-        "b0001".U -> Mux(gotUD, UC, metaChi)
-      ))
-    mp_probeack.fwdState.get := "b000".U
-    mp_probeack.pCrdType.get := "b0000".U 
-    mp_probeack.retToSrc.get := req.retToSrc.getOrElse(false.B)
+    mp_probeack.chiOpcode.get := MuxLookup(Cat(doFwd, doRespData), SnpResp)(Seq(
+      Cat(false.B, false.B) -> SnpResp,
+      Cat(true.B, false.B)  -> SnpRespFwded,
+      Cat(false.B, true.B)  -> SnpRespData, // ignore SnpRespDataPtl for now
+      Cat(true.B, true.B)   -> SnpRespDataFwded
+    ))
+
+    val respCacheState = ParallelPriorityMux(Seq(
+      snpToN -> I,
+      snpToB -> SC,
+      (isSnpOnceX(req_chiOpcode) || isSnpStashX(req_chiOpcode)) ->
+        Mux(probeDirty || meta.dirty, UD, metaChi),
+      isSnpCleanShared(req_chiOpcode) -> Mux(isT(meta.state), UC, metaChi)
+    ))
+    val respPassDirty = (meta.dirty || probeDirty) && (
+      snpToB ||
+      req_chiOpcode === SnpUnique ||
+      req_chiOpcode === SnpUniqueStash ||
+      req_chiOpcode === SnpCleanShared ||
+      req_chiOpcode === SnpCleanInvalid
+    )
+    mp_probeack.resp.get := setPD(respCacheState, respPassDirty)
+
+    val fwdCacheState = Mux(
+      isSnpToBFwd(req_chiOpcode),
+      SC,
+      Mux(
+        req_chiOpcode === SnpUniqueFwd,
+        Mux(meta.dirty || probeDirty, UD, UC),
+        I
+      )
+    )
+    val fwdPassDirty = req_chiOpcode === SnpUniqueFwd && (meta.dirty || probeDirty)
+    mp_probeack.fwdState.get := setPD(fwdCacheState, fwdPassDirty)
+    mp_probeack.pCrdType.get := 0.U
+    mp_probeack.retToSrc.get := req.retToSrc.get // DontCare
     mp_probeack.expCompAck.get := false.B
 
     mp_probeack
@@ -462,7 +558,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     )
     mp_grant.metaWen := true.B
     mp_grant.tagWen := !dirResult.hit
-    mp_grant.dsWen := (!dirResult.hit || gotDirty && gotGrantData || probeDirty && (req_get || req.aliasTask.getOrElse(false.B)))
+    mp_grant.dsWen := (!dirResult.hit || gotDirty) && gotGrantData || probeDirty && (req_get || req.aliasTask.getOrElse(false.B))
     mp_grant.fromL2pft.foreach(_ := req.fromL2pft.get)
     mp_grant.needHint.foreach(_ := false.B)
     mp_grant.replTask := !dirResult.hit // Get and Alias are hit that does not need replacement
@@ -510,7 +606,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     Seq(
       mp_grant_valid         -> mp_grant,
       mp_release_valid       -> mp_release,
-      mp_cbwrdata_valid      -> mp_release,
+      mp_cbwrdata_valid      -> mp_cbwrdata,
       mp_probeack_valid      -> mp_probeack
     )
   )
@@ -529,7 +625,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     state.s_acquire := true.B 
     state.s_reissue.get := true.B 
   }
-  when(io.tasks.txrsp.fire) {
+  when (io.tasks.txrsp.fire) {
     state.s_compack.get := true.B
   }
   when (io.tasks.source_b.fire) {
@@ -542,41 +638,38 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       state.s_retry := true.B
     }.elsewhen (mp_release_valid) {
       state.s_release := true.B
-      meta.state := INVALID
+      // meta.state := INVALID
     }.elsewhen (mp_cbwrdata_valid) {
       state.s_cbwrdata.get := true.B
-      state.w_releaseack := true.B
       meta.state := INVALID
     }.elsewhen (mp_probeack_valid) {
       state.s_probeack := true.B
     }
   }
 
+  /*                      Handling response
 
-
-/*                      Handling response
-
-     TL                    CHI             CHI Resp              CHI channel 
------------------------------------------------------------------------------
- AcquireBlock       |  ReadNotShareDirty |  CompData           |    rxdat 
- AcquirePerm(miss)  |  ReadUnique        |  CompData           |    rxdat 
- AcquirePerm(hit B) |  MakeUnique        |  Comp               |    rxrsp <- TODO
- Get                |  ReadClean         |  CompData           |    rxdat 
- Hint               |  ReadNotShareDirty |  CompData           |    rxdat 
- Release            |  WriteBackFull     |  CompDBID           |    rxrsp 
-                    |  *                 |  RetryAck+PCrdGrant |    rxrsp <-
- */
-    val c_resp = io.resps.sinkC
-    val rxrsp = io.resps.rxrsp
-    val rxdat = io.resps.rxdat
-      //Probe core response
-    when (c_resp.valid) {
-      when (c_resp.bits.opcode === ProbeAck || c_resp.bits.opcode === ProbeAckData) {
-        state.w_rprobeackfirst := true.B
-        state.w_rprobeacklast := state.w_rprobeacklast || c_resp.bits.last
-        state.w_pprobeackfirst := true.B
-        state.w_pprobeacklast := state.w_pprobeacklast || c_resp.bits.last
-        state.w_pprobeack := state.w_pprobeack || req.off === 0.U || c_resp.bits.last
+      TL                    CHI             CHI Resp              CHI channel 
+  -----------------------------------------------------------------------------
+  AcquireBlock       |  ReadNotShareDirty |  CompData           |    rxdat 
+  AcquirePerm(miss)  |  ReadUnique        |  CompData           |    rxdat 
+  AcquirePerm(hit B) |  MakeUnique        |  Comp               |    rxrsp <- TODO
+  Get                |  ReadClean         |  CompData           |    rxdat 
+  Hint               |  ReadNotShareDirty |  CompData           |    rxdat 
+  Release            |  WriteBackFull     |  CompDBID           |    rxrsp 
+                     |  *                 |  RetryAck+PCrdGrant |    rxrsp <-
+  */
+  val c_resp = io.resps.sinkC
+  val rxrsp = io.resps.rxrsp
+  val rxdat = io.resps.rxdat
+  // Probe core response
+  when (c_resp.valid) {
+    when (c_resp.bits.opcode === ProbeAck || c_resp.bits.opcode === ProbeAckData) {
+      state.w_rprobeackfirst := true.B
+      state.w_rprobeacklast := state.w_rprobeacklast || c_resp.bits.last
+      state.w_pprobeackfirst := true.B
+      state.w_pprobeacklast := state.w_pprobeacklast || c_resp.bits.last
+      state.w_pprobeack := state.w_pprobeack || req.off === 0.U || c_resp.bits.last
     }
     when (c_resp.bits.opcode === ProbeAckData) {
       probeDirty := true.B
@@ -585,8 +678,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       probeGotN := true.B
     }
   }
-  val rxrspIsUC = (rxdat.bits.resp.get === "b010".U)
-  val rxrspIsUD = (rxdat.bits.resp.get === "b110".U)
+
   val hitpCamType = VecInit(io.pCam.map(p => 
     p.pCrdType.get === pcrdtype && p.srcID.get === srcid
   )).asUInt
@@ -595,77 +687,81 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 
   val hasPCrd = io.hitpCam.asUInt.orR
 
-    //RXDAT
-    when (rxdat.valid) {
-      when(rxdat.bits.chiOpcode.get === CompData) {
+  val rxdatIsU = rxdat.bits.resp.get === UC
+  val rxdatIsU_PD = rxdat.bits.resp.get === UC_PD
+
+  val rxrspIsU = rxrsp.bits.resp.get === UC
+
+  // RXDAT
+  when (rxdat.valid) {
+    when (rxdat.bits.chiOpcode.get === CompData) {
+      state.w_grantfirst := true.B
+      state.w_grantlast := rxdat.bits.last
+      state.w_grant := req.off === 0.U || rxdat.bits.last  // TODO? why offset?
+      gotT := rxdatIsU || rxdatIsU_PD
+      gotDirty := gotDirty || rxdatIsU_PD
+      gotGrantData := true.B
+      dbid := rxdat.bits.dbID.getOrElse(0.U)
+      homenid := rxdat.bits.homeNID.getOrElse(0.U)
+    }
+  }
+
+  // RXRSP for dataless
+  when (rxrsp.valid) {
+    when (rxrsp.bits.chiOpcode.get === Comp) {
+      // There is a pending Read transaction waiting for the Comp resp
+      when (!state.w_grant) {
         state.w_grantfirst := true.B
-        state.w_grantlast := rxdat.bits.last
-        state.w_grant := req.off === 0.U || rxdat.bits.last  // TODO? why offset?
-        gotT := rxrspIsUC || rxrspIsUD 
-        gotDirty := gotDirty || rxrspIsUD
-        gotGrantData := true.B
-        dbid := rxdat.bits.dbID.getOrElse(0.U)
-        homenid := rxdat.bits.homeNID.getOrElse(0.U)
+        state.w_grantlast := rxrsp.bits.last
+        state.w_grant := req.off === 0.U || rxrsp.bits.last  // TODO? why offset?
+        gotT := rxrspIsU
+        gotDirty := false.B
+      }
+
+      // There is a pending Evict transaction waiting for the Comp resp
+      when (!state.w_releaseack) {
+        state.w_releaseack := true.B
       }
     }
-
-    //RXRSP for dataless
-    when (rxrsp.valid) {
-      when(rxrsp.bits.chiOpcode.get === Comp) {
-        // There is a pending Read transaction waiting for the Comp resp
-        when(!state.w_grant) {
-          state.w_grantfirst := true.B
-          state.w_grantlast := rxrsp.bits.last
-          state.w_grant := req.off === 0.U || rxrsp.bits.last  // TODO? why offset?
-          gotT := rxrspIsUC
-          gotDirty := false.B
-        }
-
-        // There is a pending Evict transaction waiting for the Comp resp
-        when(!state.w_releaseack) {
-          state.w_releaseack := true.B
-        }
+    when(rxrsp.bits.chiOpcode.get === CompDBIDResp) {
+      state.w_releaseack := true.B
+      srcid := rxrsp.bits.srcID.getOrElse(0.U)
+      dbid := rxrsp.bits.dbID.getOrElse(0.U)
+    }
+    when(rxrsp.bits.chiOpcode.get === RetryAck) {
+      srcid := rxrsp.bits.srcID.getOrElse(0.U)
+      pcrdtype := rxrsp.bits.pCrdType.getOrElse(0.U)
+      gotRetryAck := true.B
+      // when there is this type of pCredit in pool -> reissue
+      when (hasPCrd) {
+        state.s_reissue.get := false.B
+        gotPCrdGrant := true.B
       }
-      when(rxrsp.bits.chiOpcode.get === CompDBIDResp) {
-//        state.w_releaseack := true.B
-        state.s_cbwrdata.get := false.B
-        srcid := rxrsp.bits.srcID.getOrElse(0.U)
-        dbid := rxrsp.bits.dbID.getOrElse(0.U)
-      }
-      when(rxrsp.bits.chiOpcode.get === RetryAck) {
-        srcid := rxrsp.bits.srcID.getOrElse(0.U)
-        pcrdtype := rxrsp.bits.pCrdType.getOrElse(0.U)
-        gotRetryAck := true.B
-        // when there is this type of pCredit in pool -> reissue
-        when (hasPCrd) {
+    }
+    when(rxrsp.bits.chiOpcode.get === PCrdGrant) {
+      when(gotRetryAck) {
+        when ((rxrsp.bits.pCrdType.get === pcrdtype) && (rxrsp.bits.srcID.get === srcid)){
           state.s_reissue.get := false.B
           gotPCrdGrant := true.B
         }
       }
-      when(rxrsp.bits.chiOpcode.get === PCrdGrant) {
-        when(gotRetryAck) {
-          when ((rxrsp.bits.pCrdType.get === pcrdtype) && (rxrsp.bits.srcID.get === srcid)){
-            state.s_reissue.get := false.B
-            gotPCrdGrant := true.B
-          }
-        }
-      }
     }
+  }
 
-    //replay
-    val replResp = io.replResp.bits
-    when (io.replResp.valid && replResp.retry) {
-      state.s_refill := false.B
-      state.s_retry := false.B
-      dirResult.way := replResp.way
-    }
-    when (io.replResp.valid && !replResp.retry) {
-      state.w_replResp := true.B
+  // replay
+  val replResp = io.replResp.bits
+  when (io.replResp.valid && replResp.retry) {
+    state.s_refill := false.B
+    state.s_retry := false.B
+    dirResult.way := replResp.way
+  }
+  when (io.replResp.valid && !replResp.retry) {
+    state.w_replResp := true.B
 
-  // update meta (no need to update hit/set/error/replacerInfo of dirResult)
-      dirResult.tag := replResp.tag
-      dirResult.way := replResp.way
-      dirResult.meta := replResp.meta
+    // update meta (no need to update hit/set/error/replacerInfo of dirResult)
+    dirResult.tag := replResp.tag
+    dirResult.way := replResp.way
+    dirResult.meta := replResp.meta
 
     // replacer choosing:
     // 1. an invalid way, release no longer needed
@@ -676,8 +772,11 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       // set release flags
       state.s_release := false.B
       state.w_releaseack := false.B
+      when (isT(replResp.meta.state) && replResp.meta.dirty) {
+        state.s_cbwrdata.get := false.B
+      }
       // rprobe clients if any
-      when(replResp.meta.clients.orR) {
+      when (replResp.meta.clients.orR) {
         state.s_rprobe := false.B
         state.w_rprobeackfirst := false.B
         state.w_rprobeacklast := false.B
@@ -689,7 +788,10 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     timer := timer + 1.U
   }
 
-  val no_schedule = state.s_refill && state.s_probeack && state.s_release // && state.s_triggerprefetch.getOrElse(true.B)
+  val no_schedule = state.s_refill && state.s_probeack && state.s_release &&
+    state.s_compack.getOrElse(true.B) &&
+    state.s_cbwrdata.getOrElse(true.B) &&
+    state.s_reissue.getOrElse(true.B)
   val no_wait = state.w_rprobeacklast && state.w_pprobeacklast && state.w_grantlast && state.w_releaseack && state.w_replResp
   val will_free = no_schedule && no_wait
   when (will_free && req_valid) {
