@@ -96,6 +96,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   val pcrdtype = RegInit(0.U(PCRDTYPE_WIDTH.W))
   val gotRetryAck = RegInit(false.B)
   val gotPCrdGrant = RegInit(false.B)
+  val gotReissued = RegInit(false.B)
   val metaChi = ParallelLookUp(
     Cat(meta.dirty, meta.state),
     Seq(
@@ -121,6 +122,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 
     gotRetryAck := false.B
     gotPCrdGrant := false.B
+    gotReissued := false.B
     srcid := 0.U
     dbid := 0.U
     pcrdtype := 0.U
@@ -640,13 +642,15 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
         when (hasPCrd) {
           state.s_reissue.get := false.B
           gotPCrdGrant := true.B
+          gotReissued := true.B
         }
       }
-      when(rxrsp.bits.chiOpcode.get === PCrdGrant) {
+      when((rxrsp.bits.chiOpcode.get === PCrdGrant) && !gotReissued) {
         when(gotRetryAck) {
           when ((rxrsp.bits.pCrdType.get === pcrdtype) && (rxrsp.bits.srcID.get === srcid)){
             state.s_reissue.get := false.B
             gotPCrdGrant := true.B
+            gotReissued := true.B
           }
         }
       }
