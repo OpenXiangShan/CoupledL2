@@ -190,8 +190,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   /*TXREQ for Transaction Request*/
   val a_task = {
     val oa = io.tasks.txreq.bits
-    oa := 0.U.asTypeOf(io.tasks.txreq.bits.cloneType)
+    oa := 0.U.asTypeOf(io.tasks.txreq.bits.cloneType) 
 //    oa.qos := Mux(!state.s_reissue, 3.U, 0.U) //TODO increase qos when retry
+    oa.qos := 0.U //TODO increase qos when retry
     oa.tgtID := Mux(!state.s_reissue.getOrElse(false.B), srcid, 0.U)
     oa.srcID := 0.U
     oa.txnID := io.id
@@ -206,7 +207,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
           Cat(AcquirePerm,  false.B, false.B) -> ReadUnique,        //store upgrade miss
           Cat(AcquirePerm,   true.B, false.B) -> ReadUnique,        //store upgrade hit + noT -> may use MakeUnique
 //          Cat(AcquirePerm,   true.B, false.B) -> MakedUnique,     //store upgrade hit + noT
-          Cat(Get,          false.B, false.B) -> ReadClean,
+          Cat(Get,          false.B, false.B) -> ReadNotSharedDirty,
           Cat(Hint,         false.B, false.B) -> ReadNotSharedDirty
         ))
     oa.size := "b110".U  //64Byte

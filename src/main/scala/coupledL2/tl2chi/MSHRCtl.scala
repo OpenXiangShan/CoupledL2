@@ -132,7 +132,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
    */
 //  val pCamValids = RegInit(VecInit(Seq.fill(mshrsAll){ false.B }))
   val pCam  = RegInit(VecInit(Seq.fill(mshrsAll)(0.U.asTypeOf(new PCrdInfo))))
-  val pCamPri = Wire(UInt(1.W))
+  val pCamPri = Wire(UInt(5.W))
   val pCamValids = Cat(pCam.map(_.valid))
   val enqIdx = PriorityEncoder(~pCamValids.asUInt)
 
@@ -142,7 +142,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
     pCam(enqIdx).pCrdType.get := io.resps.rxrsp.respInfo.pCrdType.get
   }
 
-  pCamPri := 0.U
+  pCamPri := 16.U 
 
   //each entry zip pCam
   for (i <- 0 until mshrsAll) { //entry
@@ -198,7 +198,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
       m.io.aMergeTask.bits := io.aMergeTask.bits.task
 
       waitPCrdInfo(i) := m.io.waitPCrdInfo 
-      m.io.pCamPri := pCamPri === i.U
+      m.io.pCamPri := (pCamPri === i.U) && waitPCrdInfo(i).valid
 //      m.io.pCam := pCam
 //      m.io.pCamValids := pCamValids
 //      hitPCamAll(i) := m.io.hitpCam
