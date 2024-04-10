@@ -67,9 +67,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     val nestedwbData = Output(Bool())
     val aMergeTask = Flipped(ValidIO(new TaskBundle))
     val replResp = Flipped(ValidIO(new ReplacerResult))
-    val pCam = Input(Vec(mshrsAll, new PCrdInfo()))
-    val pCamValids = Input(Vec(mshrsAll, Bool()))
-    val hitpCam = Output(Vec(mshrsAll, Bool()))
+    val pCamPri = Input(Bool())
+    val waitPCrdInfo = Output(new PCrdInfo)
   })
 
   require (chiOpt.isDefined)
@@ -96,6 +95,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   val pcrdtype = RegInit(0.U(PCRDTYPE_WIDTH.W))
   val gotRetryAck = RegInit(false.B)
   val gotPCrdGrant = RegInit(false.B)
+  val gotReissued = RegInit(false.B)
   val metaChi = ParallelLookUp(
     Cat(meta.dirty, meta.state),
     Seq(
@@ -106,6 +106,12 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       Cat( true.B, TRUNK) -> UD,
       Cat( true.B, TIP)   -> UD
     ))
+
+  //for PCrdGrant info. search
+  io.waitPCrdInfo.valid := gotRetryAck && !gotReissued
+  io.waitPCrdInfo.srcID.get := srcid
+  io.waitPCrdInfo.pCrdType.get := pcrdtype
+
   /* Allocation */
   when(io.alloc.valid) {
     req_valid := true.B
@@ -121,6 +127,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 
     gotRetryAck := false.B
     gotPCrdGrant := false.B
+    gotReissued := false.B
     srcid := 0.U
     dbid := 0.U
     pcrdtype := 0.U
@@ -679,14 +686,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     }
   }
 
-  val hitpCamType = VecInit(io.pCam.map(p => 
-    p.pCrdType.get === pcrdtype && p.srcID.get === srcid
-  )).asUInt
-
-  io.hitpCam := VecInit((hitpCamType.asBools zip io.pCamValids).map(x => x._1 && x._2))
-
-  val hasPCrd = io.hitpCam.asUInt.orR
-
   val rxdatIsU = rxdat.bits.resp.get === UC
   val rxdatIsU_PD = rxdat.bits.resp.get === UC_PD
 
@@ -706,7 +705,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     }
   }
 
-  // RXRSP for dataless
+ // RXRSP for dataless
   when (rxrsp.valid) {
     when (rxrsp.bits.chiOpcode.get === Comp) {
       // There is a pending Read transaction waiting for the Comp resp
@@ -737,20 +736,19 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       srcid := rxrsp.bits.srcID.getOrElse(0.U)
       pcrdtype := rxrsp.bits.pCrdType.getOrElse(0.U)
       gotRetryAck := true.B
-      // when there is this type of pCredit in pool -> reissue
-      when (hasPCrd) {
-        state.s_reissue.get := false.B
-        gotPCrdGrant := true.B
-      }
     }
-    when(rxrsp.bits.chiOpcode.get === PCrdGrant) {
-      when(gotRetryAck) {
-        when ((rxrsp.bits.pCrdType.get === pcrdtype) && (rxrsp.bits.srcID.get === srcid)){
-          state.s_reissue.get := false.B
-          gotPCrdGrant := true.B
-        }
-      }
+    when((rxrsp.bits.chiOpcode.get === PCrdGrant) && !gotReissued) {
+      state.s_reissue.get := false.B
+      gotPCrdGrant := true.B
+      gotReissued := true.B
     }
+  }
+
+ // when there is this type of pCredit in pCam -> reissue
+  when (io.pCamPri) {
+    state.s_reissue.get := false.B
+    gotPCrdGrant := true.B
+    gotReissued := true.B
   }
 
   // replay
