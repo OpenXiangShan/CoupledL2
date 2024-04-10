@@ -43,7 +43,7 @@ class MSHRBuffer(wPorts: Int = 1)(implicit p: Parameters) extends L2Module {
     val w = Vec(wPorts, Flipped(ValidIO(new MSHRBufWrite)))
   })
 
-  val buffer = Reg(Vec(mshrsAll, new DSBlock))
+  val buffer = RegInit(VecInit(Seq.fill(mshrsAll)(0.U.asTypeOf(new DSBlock))))
 
   buffer.zipWithIndex.foreach {
     case (block, i) =>
