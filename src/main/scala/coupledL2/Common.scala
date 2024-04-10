@@ -204,6 +204,7 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle {
 class PCrdInfo(implicit p: Parameters) extends L2Bundle
     with HasCHIMsgParameters
 {
+  val valid = Bool()
   val srcID = chiOpt.map(_ => UInt(SRCID_WIDTH.W))
   val pCrdType = chiOpt.map(_ => UInt(PCRDTYPE_WIDTH.W))
 }

@@ -67,10 +67,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     val nestedwbData = Output(Bool())
     val aMergeTask = Flipped(ValidIO(new TaskBundle))
     val replResp = Flipped(ValidIO(new ReplacerResult))
-    val pCam = Input(Vec(mshrsAll, new PCrdInfo()))
-    val pCamValids = Input(Vec(mshrsAll, Bool()))
-    val hitpCam = Output(Vec(mshrsAll, Bool()))
-  })
+    val pCamPri =Input(Bool())
+    val waitPCrdInfo = Output(new PCrdInfo)
+    })
 
   require (chiOpt.isDefined)
 
@@ -107,6 +106,12 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       Cat( true.B, TRUNK) -> UD,
       Cat( true.B, TIP)   -> UD
     ))
+
+  //for PCrdGrant info. search
+  io.waitPCrdInfo.valid := gotRetryAck && !gotReissued
+  io.waitPCrdInfo.srcID.get := srcid
+  io.waitPCrdInfo.pCrdType.get := pcrdtype
+
   /* Allocation */
   when(io.alloc.valid) {
     req_valid := true.B
@@ -586,30 +591,23 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     when (isToN(c_resp.bits.param)) {
       probeGotN := true.B
     }
-  }
+   }
   val rxrspIsUC = (rxdat.bits.resp.get === "b010".U)
   val rxrspIsUD = (rxdat.bits.resp.get === "b110".U)
-  val hitpCamType = VecInit(io.pCam.map(p => 
-    p.pCrdType.get === pcrdtype && p.srcID.get === srcid
-  )).asUInt
 
-  io.hitpCam := VecInit((hitpCamType.asBools zip io.pCamValids).map(x => x._1 && x._2))
-
-  val hasPCrd = io.hitpCam.asUInt.orR
-
-    //RXDAT
-    when (rxdat.valid) {
-      when(rxdat.bits.chiOpcode.get === CompData) {
-        state.w_grantfirst := true.B
-        state.w_grantlast := rxdat.bits.last
-        state.w_grant := req.off === 0.U || rxdat.bits.last  // TODO? why offset?
-        gotT := rxrspIsUC || rxrspIsUD 
-        gotDirty := gotDirty || rxrspIsUD
-        gotGrantData := true.B
-        dbid := rxdat.bits.dbID.getOrElse(0.U)
-        homenid := rxdat.bits.homeNID.getOrElse(0.U)
-      }
+  //RXDAT
+  when (rxdat.valid) {
+    when(rxdat.bits.chiOpcode.get === CompData) {
+      state.w_grantfirst := true.B
+      state.w_grantlast := rxdat.bits.last
+      state.w_grant := req.off === 0.U || rxdat.bits.last  // TODO? why offset?
+      gotT := rxrspIsUC || rxrspIsUD
+      gotDirty := gotDirty || rxrspIsUD
+      gotGrantData := true.B
+      dbid := rxdat.bits.dbID.getOrElse(0.U)
+      homenid := rxdat.bits.homeNID.getOrElse(0.U)
     }
+  }
 
     //RXRSP for dataless
     when (rxrsp.valid) {
@@ -629,7 +627,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
         }
       }
       when(rxrsp.bits.chiOpcode.get === CompDBIDResp) {
-//        state.w_releaseack := true.B
         state.s_cbwrdata.get := false.B
         srcid := rxrsp.bits.srcID.getOrElse(0.U)
         dbid := rxrsp.bits.dbID.getOrElse(0.U)
@@ -638,23 +635,20 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
         srcid := rxrsp.bits.srcID.getOrElse(0.U)
         pcrdtype := rxrsp.bits.pCrdType.getOrElse(0.U)
         gotRetryAck := true.B
-        // when there is this type of pCredit in pool -> reissue
-        when (hasPCrd) {
+      }
+      when((rxrsp.bits.chiOpcode.get === PCrdGrant) && !gotReissued) {
+            state.s_reissue.get := false.B
+            gotPCrdGrant := true.B
+            gotReissued := true.B
+      }
+    }
+ 
+      // when there is this type of pCredit in pCam -> reissue
+       when (io.pCamPri) {
           state.s_reissue.get := false.B
           gotPCrdGrant := true.B
           gotReissued := true.B
         }
-      }
-      when((rxrsp.bits.chiOpcode.get === PCrdGrant) && !gotReissued) {
-        when(gotRetryAck) {
-          when ((rxrsp.bits.pCrdType.get === pcrdtype) && (rxrsp.bits.srcID.get === srcid)){
-            state.s_reissue.get := false.B
-            gotPCrdGrant := true.B
-            gotReissued := true.B
-          }
-        }
-      }
-    }
 
     //replay
     val replResp = io.replResp.bits
