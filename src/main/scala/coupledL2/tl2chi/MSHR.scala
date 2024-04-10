@@ -722,6 +722,10 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       when (!state.w_releaseack) {
         state.w_releaseack := true.B
       }
+
+      // Comp for Dataless transaction that include CompAck
+      // Use DBID as a identifier for CompAck
+      dbid := rxrsp.bits.dbID.getOrElse(0.U)
     }
     when(rxrsp.bits.chiOpcode.get === CompDBIDResp) {
       state.w_releaseack := true.B

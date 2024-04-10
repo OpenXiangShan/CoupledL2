@@ -39,12 +39,14 @@ class RXRSP(implicit p: Parameters) extends TL2CHIL2Module {
   io.in.mshrId := io.out.bits.txnID
   io.in.set := 0.U(setBits.W)
   io.in.tag := 0.U(tagBits.W)
-  io.in.respInfo := 0.U.asTypeOf(io.in.respInfo.cloneType)
+
+  io.in.respInfo               := 0.U.asTypeOf(io.in.respInfo.cloneType)
   io.in.respInfo.chiOpcode.get := io.out.bits.opcode
-  io.in.respInfo.txnID.get := io.out.bits.txnID
-  io.in.respInfo.srcID.get := io.out.bits.srcID
-  io.in.respInfo.dbID.get := io.out.bits.dbID
-  io.in.respInfo.pCrdType.get := io.out.bits.pCrdType
+  io.in.respInfo.txnID.get     := io.out.bits.txnID
+  io.in.respInfo.srcID.get     := io.out.bits.srcID
+  io.in.respInfo.dbID.get      := io.out.bits.dbID
+  io.in.respInfo.pCrdType.get  := io.out.bits.pCrdType
+  io.in.respInfo.last          := true.B
 
   io.out.ready := true.B
 
