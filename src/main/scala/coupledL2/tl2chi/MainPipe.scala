@@ -337,7 +337,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   val hasData_s3 = source_req_s3.opcode(0) || source_req_s3.toTXDAT
 
   val need_data_a = dirResult_s3.hit && (req_get_s3 || req_acquireBlock_s3)
-  val need_data_b = doRespData // TODO: consider forwarding
+  val need_data_b = sinkB_req_s3 && (doRespData || dirResult_s3.hit && meta_s3.state === TRUNK) // TODO: consider forwarding
   val need_data_mshr_repl = mshr_refill_s3 && need_repl && !retry
   val ren = need_data_a || need_data_b || need_data_mshr_repl
 
