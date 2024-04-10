@@ -231,7 +231,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       req_needT                                          -> ReadUnique,
       req_needB /* Default */                            -> ReadNotSharedDirty
     ))
-    oa.size := "b110".U  //64Byte
+    oa.size := log2Ceil(blockBytes).U
     oa.addr := Cat(req.tag, req.set, 0.U(offsetBits.W)) //TODO 36bit -> 48bit
     oa.ns := false.B
     oa.likelyshared := false.B
@@ -286,7 +286,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     // [Access] TODO: consider use a counter
     mp_release.opcode := 0.U // use chiOpcode
     mp_release.param := Mux(isT(meta.state), TtoN, BtoN)
-    mp_release.size := 0.U(msgSizeBits.W)
+    mp_release.size := log2Ceil(blockBytes).U
     mp_release.sourceId := 0.U(sourceIdBits.W)
     mp_release.bufIdx := 0.U(bufIdxBits.W)
     mp_release.needProbeAckData := false.B
@@ -337,7 +337,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     mp_cbwrdata.isKeyword.foreach(_ := false.B)
     mp_cbwrdata.opcode := 0.U
     mp_cbwrdata.param := 0.U
-    mp_cbwrdata.size := 0.U(msgSizeBits.W)
+    mp_cbwrdata.size := log2Ceil(blockBytes).U
     mp_cbwrdata.sourceId := 0.U(sourceIdBits.W)
     mp_cbwrdata.bufIdx := 0.U(bufIdxBits.W)
     mp_cbwrdata.needProbeAckData := false.B
@@ -390,7 +390,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       ProbeAck
     ) */ // DontCare
     mp_probeack.param := DontCare
-    mp_probeack.size := 0.U(msgSizeBits.W)
+    mp_probeack.size := log2Ceil(blockBytes).U
     mp_probeack.sourceId := 0.U(sourceIdBits.W)
     mp_probeack.bufIdx := 0.U(bufIdxBits.W)
     mp_probeack.needProbeAckData := false.B
