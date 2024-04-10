@@ -118,8 +118,6 @@ class Slice()(implicit p: Parameters) extends L2Module {
   mainPipe.io.taskInfo_s1 <> reqArb.io.taskInfo_s1
   mainPipe.io.tpMetaReqData.get <> sinkTPmeta.io.tpMetaDataW.get
 
-  sinkTPmeta.io.tpMetaResp.get := mainPipe.io.tpMetaResp.get
-
   // priority: nested-ReleaseData / probeAckData [NEW] > mainPipe DS rdata [OLD]
   // 0/1 might happen at the same cycle with 2
   releaseBuf.io.w(0).valid := mshrCtl.io.nestedwbDataId.valid
@@ -162,8 +160,8 @@ class Slice()(implicit p: Parameters) extends L2Module {
 
   io.tpMetaResp.foreach {
     r =>
-      r.valid := sinkTPmeta.io.tpMetaResp.get.valid
-      r.bits := sinkTPmeta.io.tpMetaResp.get.bits
+      r.valid := mainPipe.io.tpMetaResp.get.valid
+      r.bits := mainPipe.io.tpMetaResp.get.bits
   }
 
   /* input & output signals */

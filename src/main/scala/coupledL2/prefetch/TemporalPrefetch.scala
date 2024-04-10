@@ -21,7 +21,7 @@ import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import utility.{ChiselDB, Constantin, MemReqSource, SRAMTemplate}
-import coupledL2.{HasCoupledL2Parameters, TPmetaL2Req, TPmetaL2Resp, TPmetaReq, TPmetaResp, L2Bundle, TPmetaL2ReqBundle}
+import coupledL2.{HasCoupledL2Parameters, TPmetaL2Req, TPmetaL2Resp, TPmetaReq, TPmetaResp, L2Bundle, TPmetaL2ReqBundle, TPmetaL3Req, TPmetaL3Resp}
 import coupledL2.utils.{ReplacementPolicy, XSPerfAccumulate}
 import coupledL2.utils.{ReplacementPolicy, SplittedSRAM, XSPerfAccumulate}
 //import huancun.{TPmetaReq, TPmetaResp}
@@ -70,6 +70,7 @@ class tpMetaEntry(implicit p:Parameters) extends TPBundle {
   val valid = Bool()
   val triggerTag = UInt((vaddrBits-blockOffBits-tpTableSetBits).W)
   val l2ReqBundle = new TPmetaL2ReqBundle()
+  val tab = UInt(2.W)
 }
 
 class tpDataEntry(implicit p:Parameters) extends TPBundle {
@@ -114,6 +115,12 @@ class tpmetaL2PortIO(implicit p: Parameters) extends Bundle {
   val resp = Flipped(ValidIO(new TPmetaL2Resp))
 }
 
+class tpmetaL3PortIO(implicit p: Parameters) extends Bundle {
+  val req = DecoupledIO(new TPmetaL3Req())
+  val resp = Flipped(ValidIO(new TPmetaL3Resp))
+}
+
+
 /* VIVT, Physical Data */
 class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val io = IO(new Bundle() {
@@ -121,6 +128,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     val req = DecoupledIO(new PrefetchReq)
     val resp = Flipped(DecoupledIO(new PrefetchResp))
     val tpmeta_port = new tpmetaL2PortIO()
+    val tpmeta_l3port = new tpmetaL3PortIO()
   })
 
   def parseVaddr(x: UInt): (UInt, UInt) = {
@@ -222,7 +230,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   /* Stage 2: access tpData on meta hit, record it on meta miss */
 
   val s2_valid = RegNext(s1_valid, false.B)
-  val tpMetaRespValid_s2 = RegEnable(tpMetaRespValid_s2, s1_valid)
+  val tpMetaRespValid_s2 = RegEnable(tpMetaRespValid_s1, s1_valid)
   val hit_s2 = RegEnable(hit_s1, false.B, s1_valid)
   val way_s2 = RegEnable(way_s1, s1_valid)
   val vset_s2 = RegEnable(vset_s1, s1_valid)
@@ -247,6 +255,8 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   dataReadQueue.io.enq.bits.wmode := false.B
   dataReadQueue.io.enq.bits.rawData := DontCare
   dataReadQueue.io.enq.bits.hartid := hartid.U
+  dontTouch(dataReadQueue.io.enq.bits.wmode)
+  dontTouch(dataWriteQueue.io.enq.bits.wmode)
 
   tpMetaReadQueue.io.enq.valid := dataReadQueue.io.deq.fire
   tpMetaReadQueue.io.enq.bits.set := Mux(trainOnVaddr.orR, vset_s2, pset_s2)
@@ -326,12 +336,14 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   tpMeta_w_bits.l2ReqBundle.tag := Mux(trainOnVaddr.orR, write_record_l2_vtag, write_record_l2_ptag)
   tpMeta_w_bits.l2ReqBundle.set := Mux(trainOnVaddr.orR, write_record_l2_vset, write_record_l2_pset)
   tpMeta_w_bits.l2ReqBundle.off := Mux(trainOnVaddr.orR, write_record_l2_voff, write_record_l2_poff)
+  tpMeta_w_bits.tab := DontCare
   when(!resetFinish) {
     tpMeta_w_bits.valid := false.B
     tpMeta_w_bits.triggerTag := 0.U
     tpMeta_w_bits.l2ReqBundle.tag := 0.U
     tpMeta_w_bits.l2ReqBundle.set := 0.U
     tpMeta_w_bits.l2ReqBundle.off := 0.U
+    tpMeta_w_bits.tab := 0.U
   }
 
   val tpTable_w_set = Mux(resetFinish, Mux(trainOnVaddr.orR, write_record_vset, write_record_pset), resetIdx)
@@ -401,6 +413,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   io.resp.ready := true.B
   io.train.ready := resetFinish && !tpMetaRespQueue.io.deq.valid
+  tpMetaRespQueue.io.deq.ready := true.B
 
 
   /* Performance collection */
@@ -427,4 +440,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   triggerDB.log(triggerPt, tpTable_w_valid, "", clock, reset)
   trainDB.log(trainPt, s2_valid, "", clock, reset)
   sendDB.log(sendPt, io.req.fire, "", clock, reset)
+
+  io.tpmeta_l3port.req.valid := readReqValid || writeReqValid
+  io.tpmeta_l3port.req.bits := DontCare
 }

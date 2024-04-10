@@ -189,7 +189,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     task_s2.bits.opcode === ReleaseData ||
     task_s2.bits.fromB && task_s2.bits.opcode === ProbeAckData ||
     mshrTask_s2_a_upwards && task_s2.bits.useProbeData ||
-    task_s2.bits.channel(4) && task_s2.bits.tpmetaWenRepl)
+    task_s2.bits.channel(3) && task_s2.bits.tpmetaWenRepl)
   io.releaseBufRead_s2.bits.id := task_s2.bits.mshrId
 
   require(beatSize == 2)

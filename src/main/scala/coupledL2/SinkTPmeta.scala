@@ -14,7 +14,6 @@ import utility.MemReqSource
 class SinkTPmeta(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val tpMetaReq = prefetchOpt.map(_ => Flipped(DecoupledIO(new TPmetaL2Req)))
-    val tpMetaResp = prefetchOpt.map(_ => ValidIO(new TPmetaL2Resp))
     val task = DecoupledIO(new TaskBundle)
     // TODO: Mainpipe
     val tpMetaDataW = prefetchOpt.map(_ => DecoupledIO(new TPmetaData))
@@ -27,7 +26,7 @@ class SinkTPmeta(implicit p: Parameters) extends L2Module {
     task.set := req.l2ReqBundle.set
     task.off := 0.U
     task.alias.foreach(_ := 0.U)
-    task.opcode := TPmetaReq
+    task.opcode := 0.U //dontcare
     task.param := 0.U
     task.size := offsetBits.U
     task.sourceId := 0.U

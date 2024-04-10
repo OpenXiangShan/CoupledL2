@@ -331,7 +331,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val metaW_valid_s3_a    = sinkA_req_s3 && !need_mshr_s3_a && !req_get_s3 && !req_prefetch_s3 // get & prefetch that hit will not write meta
   val metaW_valid_s3_b    = sinkB_req_s3 && !need_mshr_s3_b && dirResult_s3.hit && (meta_s3.state === TIP || meta_s3.state === BRANCH && req_s3.param === toN)
   val metaW_valid_s3_c    = sinkC_req_s3 && dirResult_s3.hit
-  val metaW_valid_s3_tp   = (sinkTP_req_s3 && tp_req_w_s3 && !need_repl) || (mshr_req_s3 && tp_req_w_s3 && tp_req_w_repl_s3) || (sinkTP_req_s3 && !tp_req_w_s3)
+  val metaW_valid_s3_tp   = (sinkTP_req_s3 && tp_req_w_s3 && !need_repl) || (mshr_req_s3 && tp_req_w_s3 && tp_req_w_repl_s3)
   val metaW_valid_s3_mshr = mshr_req_s3 && req_s3.metaWen && !(mshr_refill_s3 && retry)
   require(clientBits == 1)
 
@@ -369,7 +369,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val metaW_s3_tp = MetaEntry(
     dirty = false.B,
     state = TRUNK,
-    clients = io.tpMetaReqData.get.bits.hartid,
+    clients = UIntToOH(io.tpMetaReqData.get.bits.hartid),
     alias = Some(0.U),
     accessed = sinkTP_req_s3 && !tp_req_w_s3,
     tpMeta = true.B
@@ -457,6 +457,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val need_write_releaseBuf_s4 = RegInit(false.B)
   val isC_s4, isD_s4 = RegInit(false.B)
   val hit_s4 = RegInit(false.B) //TPmeta needs
+  val hit_s3 = WireInit(false.B) //override later
   task_s4.valid := task_s3.valid && !req_drop_s3
   when (task_s3.valid && !req_drop_s3) {
     task_s4.bits := source_req_s3
@@ -551,7 +552,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   d_s5.bits.task := task_s5.bits
   d_s5.bits.data.data := out_data_s5
 
-  io.tpMetaResp.get.valid := task_s5.valid && task_s5.bits.channel(4)
+  io.tpMetaResp.get.valid := task_s5.valid && task_s5.bits.channel(3) && !task_s5.bits.tpmetaWen
   io.tpMetaResp.get.bits.exist := hit_s5
   io.tpMetaResp.get.bits.rawData := rdata_s5
 
@@ -675,7 +676,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   XSPerfAccumulate(cacheParams, "mshr_release_req", task_s3.valid && mshr_release_s3)
 
   // directory access result
-  val hit_s3 = task_s3.valid && !mshr_req_s3 && dirResult_s3.hit
+  hit_s3 := task_s3.valid && !mshr_req_s3 && dirResult_s3.hit
   val miss_s3 = task_s3.valid && !mshr_req_s3 && !dirResult_s3.hit
   XSPerfAccumulate(cacheParams, "a_req_hit", hit_s3 && req_s3.fromA)
   XSPerfAccumulate(cacheParams, "acquire_hit", hit_s3 && req_s3.fromA &&
