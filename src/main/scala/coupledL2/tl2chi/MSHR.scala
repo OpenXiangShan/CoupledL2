@@ -190,7 +190,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     val txrsp_task = {
       val orsp = io.tasks.txrsp.bits
       orsp := 0.U.asTypeOf(io.tasks.txrsp.bits.cloneType)
-      orsp.tgtID := homenid
+      orsp.tgtID := Mux(req.opcode === AcquirePerm && req.param === NtoT, srcid, homenid)
       orsp.srcID := 0.U
       orsp.txnID := dbid
       orsp.dbID := 0.U
@@ -726,6 +726,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       // Comp for Dataless transaction that include CompAck
       // Use DBID as a identifier for CompAck
       dbid := rxrsp.bits.dbID.getOrElse(0.U)
+      srcid := rxrsp.bits.srcID.getOrElse(0.U)
     }
     when(rxrsp.bits.chiOpcode.get === CompDBIDResp) {
       state.w_releaseack := true.B
