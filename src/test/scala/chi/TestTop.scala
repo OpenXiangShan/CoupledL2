@@ -95,7 +95,12 @@ object TestTop_CHIL2 extends App {
       enableRollingDB = false,
       enableMonitor = false,
       elaboratedTopDown = false,
-      FPGAPlatform = true
+      FPGAPlatform = true,
+      // SAM for CMN 2X2 Mesh
+      // sam = Seq(
+      //   AddressSet(0x0L, 0xfffffffbfL) -> 8,
+      //   AddressSet(0x0L, 0xfffffffffL) -> 40
+      // )
     )
     case EnableCHI => true
   })

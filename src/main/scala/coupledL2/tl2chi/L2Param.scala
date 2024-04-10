@@ -29,7 +29,7 @@ import utility.ReqSourceKey
 
 // Parameters particular to original tileLink-to-chi CoupledL2
 trait HasCHIL2Parameters {
-  // TODO
+  val sam: Seq[(AddressSet, Int)]
 }
 
 case class L2Param(
@@ -57,7 +57,7 @@ case class L2Param(
   FPGAPlatform: Boolean = false,
 
   // Parameters particular to original tileLink-to-chi CoupledL2
-  // TODO
+  sam: Seq[(AddressSet, Int)] = Seq(AddressSet.everything -> 33)
 ) extends HasL2BaseParameters with HasCHIL2Parameters
 
 // General parameter key of CoupledL2

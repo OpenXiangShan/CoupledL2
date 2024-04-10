@@ -68,4 +68,5 @@ class TXREQ(implicit p: Parameters) extends TL2CHIL2Module {
 
   // Decoupled2LCredit(queue.io.deq, io.out)
   io.out <> queue.io.deq
+  io.out.bits.tgtID := SAM(sam).lookup(io.out.bits.addr)
 }

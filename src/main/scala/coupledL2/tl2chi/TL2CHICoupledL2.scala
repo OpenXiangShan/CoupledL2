@@ -40,7 +40,7 @@ trait HasTL2CHICoupledL2Parameteres extends HasCoupledL2Parameters {
   //   for ((a, req) <- arb.io.in.zip(in)) { a <> req }
   //   out <> arb.io.out
   // }
-  // TODO
+  val sam = tl2chiParams.sam
 }
 
 abstract class TL2CHIL2Bundle(implicit val p: Parameters) extends Bundle
