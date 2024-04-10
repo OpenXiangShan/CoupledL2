@@ -142,7 +142,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
     pCam(enqIdx).pCrdType.get := io.resps.rxrsp.respInfo.pCrdType.get
   }
 
-  pCamPri := 0.U 
+  pCamPri := 16.U  //out of range of mshrAll 
 
   //each entry zip pCam
   for (i <- 0 until mshrsAll) { //entry
