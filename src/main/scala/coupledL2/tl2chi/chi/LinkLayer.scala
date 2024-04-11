@@ -221,7 +221,7 @@ class Decoupled2LCredit[T <: Bundle](gen: T) extends Module {
 
   io.in.ready := lcreditPool =/= 0.U && !disableFlit
   io.out.flitpend := true.B
-  io.out.flitv := io.in.fire() || returnLCreditValid
+  io.out.flitv := io.in.fire || returnLCreditValid
   io.out.flit := Mux(
     io.in.valid,
     Cat(io.in.bits.getElements.map(_.asUInt)),

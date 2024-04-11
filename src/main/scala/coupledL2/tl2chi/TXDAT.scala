@@ -71,7 +71,7 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module {
 
   val dequeueReady = !taskValid // TODO: this may introduce bubble?
   queue.io.deq.ready := dequeueReady
-  when (queue.io.deq.fire()) {
+  when (queue.io.deq.fire) {
     beatValids.foreach(_ := true.B)
     taskR := queue.io.deq.bits
   }
