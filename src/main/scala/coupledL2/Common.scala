@@ -202,14 +202,6 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle {
   val w_releaseack = Bool()
 }
 
-// PCrd info for MSHR Retry 
-class PCrdInfo(implicit p: Parameters) extends L2Bundle
-    with HasCHIMsgParameters
-{
-  val srcID = chiOpt.map(_ => UInt(SRCID_WIDTH.W))
-  val pCrdType = chiOpt.map(_ => UInt(PCRDTYPE_WIDTH.W))
-}
-
 class RespInfoBundle(implicit p: Parameters) extends L2Bundle
     with HasCHIMsgParameters
 {
