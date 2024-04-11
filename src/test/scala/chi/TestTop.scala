@@ -98,8 +98,8 @@ object TestTop_CHIL2 extends App {
       FPGAPlatform = true,
       // SAM for CMN 2X2 Mesh
       // sam = Seq(
-      //   AddressSet(0x0L, 0xfffffffbfL) -> 8,
-      //   AddressSet(0x0L, 0xfffffffffL) -> 40
+      //   AddressSet(0x0L,  0xfffffffbfL) -> 8,
+      //   AddressSet(0x40L, 0xfffffffbfL) -> 40
       // )
     )
     case EnableCHI => true
