@@ -638,6 +638,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       state.s_retry := true.B
     }.elsewhen (mp_release_valid) {
       state.s_release := true.B
+      state.s_cbwrdata.get := !(isT(meta.state) && meta.dirty)
       // meta.state := INVALID
     }.elsewhen (mp_cbwrdata_valid) {
       state.s_cbwrdata.get := true.B
@@ -777,9 +778,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       // set release flags
       state.s_release := false.B
       state.w_releaseack := false.B
-      when (isT(replResp.meta.state) && replResp.meta.dirty) {
-        state.s_cbwrdata.get := false.B
-      }
       // rprobe clients if any
       when (replResp.meta.clients.orR) {
         state.s_rprobe := false.B
