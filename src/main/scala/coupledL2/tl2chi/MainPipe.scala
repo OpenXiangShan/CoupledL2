@@ -574,9 +574,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   val need_write_releaseBuf_s5 = RegInit(false.B)
   val isD_s5, isTXREQ_s5, isTXRSP_s5, isTXDAT_s5 = RegInit(false.B)
 
-  when (task_s4.valid && !req_drop_s4 || task_s5.valid) {
-    task_s5.valid := task_s4.valid
-  }
+
+  task_s5.valid := task_s4.valid && !req_drop_s4
+
   when (task_s4.valid && !req_drop_s4) {
     task_s5.bits := task_s4.bits
     ren_s5 := ren_s4
