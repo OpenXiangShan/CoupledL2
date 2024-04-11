@@ -29,6 +29,14 @@ import coupledL2._
 import tl2chi.{HasCHIMsgParameters}
 import coupledL2.tl2chi.CHIOpcode.RSPOpcodes._
 
+// PCrd info for MSHR Retry 
+class PCrdInfo(implicit p: Parameters) extends TL2CHIL2Bundle
+{
+  val valid = Bool()
+  val srcID = chiOpt.map(_ => UInt(SRCID_WIDTH.W))
+  val pCrdType = chiOpt.map(_ => UInt(PCRDTYPE_WIDTH.W))
+}
+
 class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
   val io = IO(new Bundle() {
     /* interact with req arb */
@@ -108,28 +116,51 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
   mshrSelector.io.idle := mshrs.map(m => !m.io.status.valid)
   io.toMainPipe.mshr_alloc_ptr := OHToUInt(selectedMSHROH)
 
-  /* 16 entry CAM used to collect PCrd when receive PCrdGrant 
-   1. {srcID, PCrdType} 
-   2. Broadcast to each MSHR for seaching -> clear when hit  
+  /*
+   when PCrdGrant, give credit to one entry that:
+   1. got RetryAck and not Reissued
+   2. match srcID and PCrdType
+   3. has priority if multi-entry match
    */
-//  val hitPCamAll = Wire(Vec(mshrsAll, UInt(mshrsAll.W)))
-  val hitPCamAll = Wire(Vec(mshrsAll, Vec(mshrsAll, Bool())))
   val isPCrdGrant = io.resps.rxrsp.valid && (io.resps.rxrsp.respInfo.chiOpcode.get === PCrdGrant)
-  val pCamValids = RegInit(VecInit(Seq.fill(mshrsAll){ false.B }))
-//  val pCam  = RegInit(Vec(mshrsAll, new PCrdInfo ()))
+  val waitPCrdInfo  = Wire(Vec(mshrsAll, new PCrdInfo))
+
+  val matchPCrdGrant = VecInit(waitPCrdInfo.map(p =>
+      isPCrdGrant && p.valid &&
+      p.srcID.get === io.resps.rxrsp.respInfo.srcID.get &&
+      p.pCrdType.get === io.resps.rxrsp.respInfo.pCrdType.get
+  )).asUInt
+
+  val pCrdPri = PriorityEncoder(matchPCrdGrant.asUInt)
+
+  /* when PCrdGrant come before RetryAck, 16 entry CAM used to:
+   1. save {srcID, PCrdType} 
+   2. Broadcast to each MSHR for seaching when RetryAck   
+   */
+//  val pCamValids = RegInit(VecInit(Seq.fill(mshrsAll){ false.B }))
   val pCam  = RegInit(VecInit(Seq.fill(mshrsAll)(0.U.asTypeOf(new PCrdInfo))))
+  val pCamPri = Wire(UInt(5.W))
+  val pCamValids = Cat(pCam.map(_.valid))
   val enqIdx = PriorityEncoder(~pCamValids.asUInt)
 
-  when (isPCrdGrant){
-    pCamValids(enqIdx) := true.B
+  when (isPCrdGrant && !pCrdPri.orR){
+    pCam(enqIdx).valid := true.B
     pCam(enqIdx).srcID.get := io.resps.rxrsp.respInfo.srcID.get
     pCam(enqIdx).pCrdType.get := io.resps.rxrsp.respInfo.pCrdType.get
   }
 
-  for (i <- 0 until mshrsAll) {
-    for (j <- 0 until mshrsAll) {
-      when (hitPCamAll(i)(j)){
-        pCamValids(j) := false.B
+  pCamPri := 16.U  //out of range of mshrAll 
+
+  //each entry zip pCam
+  for (i <- 0 until mshrsAll) { //entry
+    when (waitPCrdInfo(i).valid) {
+      for (j <- 0 until mshrsAll) { //pCam
+        when (pCam(j).valid &&
+              waitPCrdInfo(i).srcID.get === pCam(j).srcID.get &&
+              waitPCrdInfo(i).srcID.get === pCam(j).pCrdType.get) {
+          pCam(j).valid := false.B
+          pCamPri := i.U
+        }
       }
     }
   }
@@ -155,7 +186,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
       m.io.resps.rxdat.valid := m.io.status.valid && io.resps.rxdat.valid && io.resps.rxdat.mshrId === i.U
       m.io.resps.rxdat.bits := io.resps.rxdat.respInfo
 
-      m.io.resps.rxrsp.valid := (m.io.status.valid && io.resps.rxrsp.valid && io.resps.rxrsp.mshrId === i.U) || isPCrdGrant
+      m.io.resps.rxrsp.valid := (m.io.status.valid && io.resps.rxrsp.valid && io.resps.rxrsp.mshrId === i.U) || (isPCrdGrant && pCrdPri === i.U)
       m.io.resps.rxrsp.bits := io.resps.rxrsp.respInfo
 
       m.io.replResp.valid := io.replResp.valid && io.replResp.bits.mshrId === i.U
@@ -166,9 +197,8 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
       m.io.aMergeTask.valid := io.aMergeTask.valid && io.aMergeTask.bits.id === i.U
       m.io.aMergeTask.bits := io.aMergeTask.bits.task
 
-      m.io.pCam := pCam
-      m.io.pCamValids := pCamValids
-      hitPCamAll(i) := m.io.hitpCam
+      waitPCrdInfo(i) := m.io.waitPCrdInfo 
+      m.io.pCamPri := (pCamPri === i.U) && waitPCrdInfo(i).valid
   }
 
   /* Reserve 1 entry for SinkB */
