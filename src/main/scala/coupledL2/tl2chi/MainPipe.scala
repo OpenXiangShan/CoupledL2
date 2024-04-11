@@ -324,6 +324,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
     sink_resp_s3.bits.resp.foreach(_ := setPD(respCacheState, respPassDirty))
     sink_resp_s3.bits.fwdState.foreach(_ := setPD(fwdCacheState, fwdPassDirty))
     sink_resp_s3.bits.txChannel := Cat(doRespData, !doRespData, false.B)//Mux(doRespData, "b100".U, "b010".U) // TODO: parameterize this
+    sink_resp_s3.bits.size := log2Ceil(blockBytes).U
 
   }.otherwise { // req_s3.fromC
     sink_resp_s3.bits.opcode := ReleaseAck
