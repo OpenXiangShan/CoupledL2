@@ -27,7 +27,7 @@ import coupledL2._
 import coupledL2.utils.XSPerfAccumulate
 import utility.MemReqSource
 
-class SinkB(implicit p: Parameters) extends TL2TLL2Module {
+class SinkB(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val b = Flipped(DecoupledIO(new TLBundleB(edgeIn.bundle)))
     val task = DecoupledIO(new TaskBundle)

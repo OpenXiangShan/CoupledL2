@@ -29,29 +29,15 @@ import scala.math.max
 import coupledL2._
 import coupledL2.prefetch._
 import coupledL2.utils.XSPerfAccumulate
-import scala.languageFeature.implicitConversions
-
-trait HasTL2CHICoupledL2Parameteres extends HasCoupledL2Parameters {
-  val tl2chiParams: HasCHIL2Parameters = p(L2ParamKey)
-
-  // def lcreditArb[T <: Bundle](in: Seq[ChannelIO[T]], out: ChannelIO[T], name: Option[String] = None): Unit = {
-  //   val arb = Module(new LCreditArbiter[T](chiselTypeOf(out.bits), in.size))
-  //   if (name.nonEmpty) { arb.suggestName(s"${name.get}_arb") }
-  //   for ((a, req) <- arb.io.in.zip(in)) { a <> req }
-  //   out <> arb.io.out
-  // }
-  val sam = tl2chiParams.sam
-}
 
 abstract class TL2CHIL2Bundle(implicit val p: Parameters) extends Bundle
-  with HasTL2CHICoupledL2Parameteres
+  with HasCoupledL2Parameters
   with HasCHIMsgParameters
 abstract class TL2CHIL2Module(implicit val p: Parameters) extends Module
-  with HasTL2CHICoupledL2Parameteres
+  with HasCoupledL2Parameters
   with HasCHIMsgParameters
 
-class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base
-  with HasTL2CHICoupledL2Parameteres {
+class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
 
   val addressRange = AddressSet(0x00000000L, 0xfffffffffL).subtract(AddressSet(0x0L, 0x7fffffffL)) // TODO: parameterize this
   val managerParameters = TLSlavePortParameters.v1(

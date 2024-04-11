@@ -146,10 +146,10 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     case receiver: PrefetchReceiverParams =>
       val pfRcv = Module(new PrefetchReceiver())
       val bop = Module(new BestOffsetPrefetch()(p.alterPartial({
-        case tl2tl.L2ParamKey => p(tl2tl.L2ParamKey).copy(prefetch = Some(BOPParameters()))
+        case L2ParamKey => p(L2ParamKey).copy(prefetch = Some(BOPParameters()))
       })))
       val tp = Module(new TemporalPrefetch()(p.alterPartial({
-        case tl2tl.L2ParamKey => p(tl2tl.L2ParamKey).copy(prefetch = Some(TPParameters()))
+        case L2ParamKey => p(L2ParamKey).copy(prefetch = Some(TPParameters()))
       })))
       val pftQueue = Module(new PrefetchQueue)
       val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))

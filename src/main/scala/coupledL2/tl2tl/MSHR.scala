@@ -29,7 +29,7 @@ import coupledL2._
 import coupledL2.prefetch.{PfSource, PrefetchTrain}
 import coupledL2.utils.XSPerfAccumulate
 
-class MSHRTasks(implicit p: Parameters) extends TL2TLL2Bundle {
+class MSHRTasks(implicit p: Parameters) extends L2Bundle {
   // outer
   val source_a = DecoupledIO(new SourceAReq) // To AcquireUnit  // TODO: no need to use decoupled handshake
   val source_b = DecoupledIO(new SourceBReq)
@@ -37,7 +37,7 @@ class MSHRTasks(implicit p: Parameters) extends TL2TLL2Bundle {
   // val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain)) // To prefetcher
 }
 
-class MSHRResps(implicit p: Parameters) extends TL2TLL2Bundle {
+class MSHRResps(implicit p: Parameters) extends L2Bundle {
   val sink_c = Flipped(ValidIO(new RespInfoBundle))
   val sink_d = Flipped(ValidIO(new RespInfoBundle))
   // make sure that Acquire is sent after Release,
@@ -45,7 +45,7 @@ class MSHRResps(implicit p: Parameters) extends TL2TLL2Bundle {
   val source_c = Flipped(ValidIO(new RespInfoBundle))
 }
 
-class MSHR(implicit p: Parameters) extends TL2TLL2Module {
+class MSHR(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val id = Input(UInt(mshrBits.W))
     val status = ValidIO(new MSHRStatus)
@@ -172,7 +172,7 @@ class MSHR(implicit p: Parameters) extends TL2TLL2Module {
     // if accessed, we ReleaseData to keep the data in L3, for future access to be faster
     // [Access] TODO: consider use a counter
     mp_release.opcode := {
-      tl2tlParams.releaseData match {
+      cacheParams.releaseData match {
         case 0 => Mux(meta.dirty && meta.state =/= INVALID || probeDirty, ReleaseData, Release)
         case 1 => Mux(meta.dirty && meta.state =/= INVALID || probeDirty || meta.accessed, ReleaseData, Release)
         case 2 => Mux(meta.prefetch.getOrElse(false.B) && !meta.accessed, Release, ReleaseData) //TODO: has problem with this

@@ -30,23 +30,8 @@ import coupledL2._
 import coupledL2.prefetch._
 import coupledL2.utils.XSPerfAccumulate
 import huancun.{TPmetaReq, TPmetaResp}
-import scala.languageFeature.implicitConversions
 
-trait HasTL2TLCoupledL2Parameters extends HasCoupledL2Parameters{
-  val tl2tlParams: HasTLL2Parameters = p(L2ParamKey)
-
-  lazy val edgeOut = p(EdgeOutKey)
-
-  lazy val outerSinkBits = edgeOut.bundle.sinkBits
-}
-
-abstract class TL2TLL2Bundle(implicit val p: Parameters) extends Bundle
-  with HasTL2TLCoupledL2Parameters
-abstract class TL2TLL2Module(implicit val p: Parameters) extends Module
-  with HasTL2TLCoupledL2Parameters
-
-class TL2TLCoupledL2(implicit p: Parameters) extends CoupledL2Base
-  with HasTL2TLCoupledL2Parameters {
+class TL2TLCoupledL2(implicit p: Parameters) extends CoupledL2Base {
 
   val managerPortParams = (m: TLSlavePortParameters) => TLSlavePortParameters.v1(
     m.managers.map { m =>
@@ -125,7 +110,7 @@ class TL2TLCoupledL2(implicit p: Parameters) extends CoupledL2Base
     println(s"====== Inclusive ${cacheParams.name} ($sizeStr * $banks-bank) $prefetch ======")
     println(s"bankBits: ${bankBits}")
     println(s"replacement: ${cacheParams.replacement}")
-    println(s"replace policy: ${tl2tlParams.releaseData}")
+    println(s"replace policy: ${cacheParams.releaseData}")
     println(s"sets:${cacheParams.sets} ways:${cacheParams.ways} blockBytes:${cacheParams.blockBytes}")
     print_bundle_fields(node.in.head._2.bundle.requestFields, "usr")
     print_bundle_fields(node.in.head._2.bundle.echoFields, "echo")

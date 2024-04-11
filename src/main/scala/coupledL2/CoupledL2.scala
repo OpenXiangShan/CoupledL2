@@ -36,8 +36,7 @@ trait HasCoupledL2Parameters {
   val p: Parameters
   // val tl2tlParams: HasTLL2Parameters = p(L2ParamKey)
   val enableCHI = p(EnableCHI)
-  val cacheParams: HasL2BaseParameters =
-    if (enableCHI) p(tl2chi.L2ParamKey) else p(tl2tl.L2ParamKey)
+  val cacheParams = p(L2ParamKey)
 
   val blocks = cacheParams.sets * cacheParams.ways
   val blockBytes = cacheParams.blockBytes
@@ -76,7 +75,7 @@ trait HasCoupledL2Parameters {
   val hintCycleAhead = 3 // how many cycles the hint will send before grantData
 
   lazy val edgeIn = p(EdgeInKey)
-  // lazy val edgeOut = p(EdgeOutKey)
+  lazy val edgeOut = p(EdgeOutKey)
   lazy val bankBits = p(BankBitsKey)
 
   lazy val clientBits = edgeIn.client.clients.count(_.supports.probe)
@@ -103,7 +102,9 @@ trait HasCoupledL2Parameters {
   lazy val addressBits = fullAddressBits - bankBits
   lazy val tagBits = fullTagBits - bankBits
 
-  // lazy val outerSinkBits = edgeOut.bundle.sinkBits
+  lazy val outerSinkBits = edgeOut.bundle.sinkBits
+
+  val sam = cacheParams.sam
 
   def getClientBitOH(sourceId: UInt): UInt = {
     if (clientBits == 0) {

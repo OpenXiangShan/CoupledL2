@@ -19,7 +19,7 @@ package coupledL2
 
 import chisel3._
 import chisel3.util.log2Ceil
-import freechips.rocketchip.diplomacy.BufferParams
+import freechips.rocketchip.diplomacy.{BufferParams, AddressSet}
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util._
 import org.chipsalliance.cde.config.Field
@@ -54,44 +54,57 @@ case class VaddrField(width: Int) extends BundleField[UInt](VaddrKey, Output(UIn
 case object IsKeywordKey extends ControlKey[Bool]("isKeyword")
 case class IsKeywordField() extends BundleField[Bool](IsKeywordKey, Output(Bool()), _ := false.B)
 
-// Parameters shared by both tilelink-to-tilelink L2 and tilelink-to-chi L2
-trait HasL2BaseParameters {
-  def name: String
-  def ways: Int
-  def sets: Int
-
-  val blockBytes: Int = 64
-  val pageBytes: Int = 4096
-  val channelBytes: TLChannelBeatBytes = TLChannelBeatBytes(32)
-
-  def clientCaches: Seq[L1Param]
-  def replacement: String
-  def mshrs: Int
+case class L2Param(
+  name: String = "L2",
+  ways: Int = 4,
+  sets: Int = 128,
+  blockBytes: Int = 64,
+  pageBytes: Int = 4096,
+  channelBytes: TLChannelBeatBytes = TLChannelBeatBytes(32),
+  clientCaches: Seq[L1Param] = Nil,
+  replacement: String = "plru",
+  mshrs: Int = 16,
+  releaseData: Int = 3,
+  /* 0 for dirty alone
+   * 1 for dirty and accessed
+   * 2 for all except prefetch & !accessed
+   * 3 for all
+   */
 
   // Client
-  def echoField: Seq[BundleFieldBase]
-  def reqField: Seq[BundleFieldBase]
-  def respKey: Seq[BundleKeyBase]
+  echoField: Seq[BundleFieldBase] = Nil,
+  reqField: Seq[BundleFieldBase] = Nil,
+  respKey: Seq[BundleKeyBase] = Seq(IsHitKey),
   // Manager
-  def reqKey: Seq[BundleKeyBase]
-  def respField: Seq[BundleFieldBase]
+  reqKey: Seq[BundleKeyBase] = Seq(AliasKey, VaddrKey, PrefetchKey, ReqSourceKey),
+  respField: Seq[BundleFieldBase] = Nil,
 
-  val innerBuf: TLBufferParams = TLBufferParams()
+  innerBuf: TLBufferParams = TLBufferParams(),
+  outerBuf: TLBufferParams = TLBufferParams(
+    a = BufferParams.default,
+    b = BufferParams.default,
+    c = BufferParams.none,
+    d = BufferParams.default,
+    e = BufferParams.default
+  ),
 
-  def hartIds: Seq[Int]
+  hartIds: Seq[Int] = Seq[Int](),
   // Prefetch
-  def prefetch: Option[PrefetchParameters]
+  prefetch: Option[PrefetchParameters] = None,
   // Performance analysis
-  def enablePerf: Boolean
+  enablePerf: Boolean = true,
   // RollingDB
-  def enableRollingDB: Boolean
+  enableRollingDB: Boolean = true,
   // Monitor
-  def enableMonitor: Boolean
+  enableMonitor: Boolean = true,
   // TopDown
-  def elaboratedTopDown: Boolean
+  elaboratedTopDown: Boolean = true,
   // env
-  def FPGAPlatform: Boolean
+  FPGAPlatform: Boolean = false,
 
+  // Network layer SAM
+  sam: Seq[(AddressSet, Int)] = Seq(AddressSet.everything -> 33)
+) {
   def toCacheParams: CacheParameters = CacheParameters(
     name = name,
     sets = sets,
@@ -100,6 +113,8 @@ trait HasL2BaseParameters {
     blockBytes = blockBytes
   )
 }
+
+case object L2ParamKey extends Field[L2Param](L2Param())
 
 case object EdgeInKey extends Field[TLEdgeIn]
 
