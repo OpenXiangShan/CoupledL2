@@ -180,11 +180,43 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   io.tasks.source_b.valid := !state.s_pprobe || !state.s_rprobe
   val mp_release_valid = !state.s_release && state.w_rprobeacklast && state.w_grantlast &&
         state.w_replResp // release after Grant to L1 sent and replRead returns
-  val mp_cbwrdata_valid = !state.s_cbwrdata.getOrElse(false.B) && state.w_releaseack
+  val mp_cbwrdata_valid = !state.s_cbwrdata.getOrElse(true.B) && state.w_releaseack
   val mp_probeack_valid = !state.s_probeack && state.w_pprobeacklast
   val mp_grant_valid = !state.s_refill && state.w_grantlast && state.w_rprobeacklast // [Alias] grant after rprobe done
-  io.tasks.mainpipe.valid := mp_release_valid || mp_probeack_valid || mp_grant_valid || mp_cbwrdata_valid
+  val mp_dct_valid = !state.s_dct.getOrElse(true.B) && state.s_probeack
+  io.tasks.mainpipe.valid :=
+    mp_release_valid  ||
+    mp_probeack_valid ||
+    mp_grant_valid    ||
+    mp_cbwrdata_valid ||
+    mp_dct_valid
   // io.tasks.prefetchTrain.foreach(t => t.valid := !state.s_triggerprefetch.getOrElse(true.B))
+
+  // resp and fwdState
+  val respCacheState = ParallelPriorityMux(Seq(
+    snpToN -> I,
+    snpToB -> SC,
+    (isSnpOnceX(req_chiOpcode) || isSnpStashX(req_chiOpcode)) ->
+      Mux(probeDirty || meta.dirty, UD, metaChi),
+    isSnpCleanShared(req_chiOpcode) -> Mux(isT(meta.state), UC, metaChi)
+  ))
+  val respPassDirty = (meta.dirty || probeDirty) && (
+    snpToB ||
+    req_chiOpcode === SnpUnique ||
+    req_chiOpcode === SnpUniqueStash ||
+    req_chiOpcode === SnpCleanShared ||
+    req_chiOpcode === SnpCleanInvalid
+  )
+  val fwdCacheState = Mux(
+    isSnpToBFwd(req_chiOpcode),
+    SC,
+    Mux(
+      req_chiOpcode === SnpUniqueFwd,
+      Mux(meta.dirty || probeDirty, UD, UC),
+      I
+    )
+  )
+  val fwdPassDirty = req_chiOpcode === SnpUniqueFwd && (meta.dirty || probeDirty)
 
   /*TXRSP for CompAck */
     val txrsp_task = {
@@ -271,7 +303,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     ob
   }
 
-  val mp_release, mp_probeack, mp_grant, mp_cbwrdata = WireInit(0.U.asTypeOf(new TaskBundle))
+  val mp_release, mp_probeack, mp_grant, mp_cbwrdata, mp_dct = WireInit(0.U.asTypeOf(new TaskBundle))
   val mp_release_task = {
     mp_release.channel := req.channel
     mp_release.txChannel := CHIChannel.TXREQ
@@ -445,33 +477,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       Cat(false.B, true.B)  -> SnpRespData, // ignore SnpRespDataPtl for now
       Cat(true.B, true.B)   -> SnpRespDataFwded
     ))
-
-    val respCacheState = ParallelPriorityMux(Seq(
-      snpToN -> I,
-      snpToB -> SC,
-      (isSnpOnceX(req_chiOpcode) || isSnpStashX(req_chiOpcode)) ->
-        Mux(probeDirty || meta.dirty, UD, metaChi),
-      isSnpCleanShared(req_chiOpcode) -> Mux(isT(meta.state), UC, metaChi)
-    ))
-    val respPassDirty = (meta.dirty || probeDirty) && (
-      snpToB ||
-      req_chiOpcode === SnpUnique ||
-      req_chiOpcode === SnpUniqueStash ||
-      req_chiOpcode === SnpCleanShared ||
-      req_chiOpcode === SnpCleanInvalid
-    )
     mp_probeack.resp.get := setPD(respCacheState, respPassDirty)
-
-    val fwdCacheState = Mux(
-      isSnpToBFwd(req_chiOpcode),
-      SC,
-      Mux(
-        req_chiOpcode === SnpUniqueFwd,
-        Mux(meta.dirty || probeDirty, UD, UC),
-        I
-      )
-    )
-    val fwdPassDirty = req_chiOpcode === SnpUniqueFwd && (meta.dirty || probeDirty)
     mp_probeack.fwdState.get := setPD(fwdCacheState, fwdPassDirty)
     mp_probeack.pCrdType.get := 0.U
     mp_probeack.retToSrc.get := req.retToSrc.get // DontCare
@@ -602,12 +608,62 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 
     mp_grant
   }
+
+  val mp_dct_task = {
+    mp_dct.channel := req.channel
+    mp_dct.txChannel := CHIChannel.TXDAT
+    mp_dct.tag := req.tag
+    mp_dct.set := req.set
+    mp_dct.off := req.off
+    mp_dct.alias.foreach(_ := 0.U)
+    mp_dct.vaddr.foreach(_ := 0.U)
+    mp_dct.isKeyword.foreach(_ := 0.U)
+    mp_dct.opcode := 0.U // DontCare
+    mp_dct.param := 0.U // DontCare
+    mp_dct.size := log2Ceil(blockBytes).U
+    mp_dct.sourceId := 0.U(sourceIdBits.W)
+    mp_dct.bufIdx := 0.U(sourceIdBits.W)
+    mp_dct.needProbeAckData := false.B
+    mp_dct.mshrTask := true.B
+    mp_dct.mshrId := io.id
+    mp_dct.aliasTask.foreach(_ := false.B)
+    mp_dct.useProbeData := true.B
+    mp_dct.mshrRetry := false.B
+    mp_dct.way := dirResult.way
+    mp_dct.fromL2pft.foreach(_ := false.B)
+    mp_dct.needHint.foreach(_ := false.B)
+    mp_dct.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
+    mp_dct.meta := MetaEntry()
+    mp_dct.metaWen := false.B // meta is written by SnpResp[Data]Fwded, not CompData
+    mp_dct.tagWen := false.B
+    mp_dct.dsWen := false.B
+    mp_dct.wayMask := 0.U(cacheParams.ways.W)
+    mp_dct.reqSource := 0.U(MemReqSource.reqSourceBits.W)
+    mp_dct.replTask := false.B
+    mp_dct.mergeA := false.B
+    mp_dct.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+
+    // CHI
+    mp_dct.tgtID.get := req.fwdNID.get
+    mp_dct.srcID.get := 0.U
+    mp_dct.txnID.get := req.fwdTxnID.get
+    mp_dct.homeNID.get := req.srcID.get
+    mp_dct.chiOpcode.get := CompData
+    mp_dct.resp.get := setPD(fwdCacheState, fwdPassDirty)
+    mp_dct.fwdState.get := 0.U
+    mp_dct.pCrdType.get := 0.U // DontCare
+    mp_dct.retToSrc.get := false.B // DontCare
+    mp_dct.expCompAck.get := false.B // DontCare
+
+    mp_dct
+  }
   io.tasks.mainpipe.bits := ParallelPriorityMux(
     Seq(
       mp_grant_valid         -> mp_grant,
       mp_release_valid       -> mp_release,
       mp_cbwrdata_valid      -> mp_cbwrdata,
-      mp_probeack_valid      -> mp_probeack
+      mp_probeack_valid      -> mp_probeack,
+      mp_dct_valid           -> mp_dct
     )
   )
   io.tasks.mainpipe.bits.reqSource := req.reqSource
@@ -645,6 +701,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       meta.state := INVALID
     }.elsewhen (mp_probeack_valid) {
       state.s_probeack := true.B
+    }.elsewhen (mp_dct_valid) {
+      state.s_dct.get := true.B
     }
   }
 
@@ -794,7 +852,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   val no_schedule = state.s_refill && state.s_probeack && state.s_release &&
     state.s_compack.getOrElse(true.B) &&
     state.s_cbwrdata.getOrElse(true.B) &&
-    state.s_reissue.getOrElse(true.B)
+    state.s_reissue.getOrElse(true.B) &&
+    state.s_dct.getOrElse(true.B)
   val no_wait = state.w_rprobeacklast && state.w_pprobeacklast && state.w_grantlast && state.w_releaseack && state.w_replResp
   val will_free = no_schedule && no_wait
   when (will_free && req_valid) {

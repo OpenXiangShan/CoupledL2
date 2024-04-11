@@ -207,9 +207,13 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val releaseNeedData = if (enableCHI) {
     task_s2.bits.toTXDAT && task_s2.bits.chiOpcode.get === DATOpcodes.CopyBackWrData
   } else task_s2.bits.opcode === ReleaseData
+  val dctNeedData = if (enableCHI) {
+    task_s2.bits.toTXDAT && task_s2.bits.chiOpcode.get === DATOpcodes.CompData
+  } else false.B
   io.releaseBufRead_s2.valid := mshrTask_s2 && (
     releaseNeedData ||
     snoopNeedData ||
+    dctNeedData ||
     mshrTask_s2_a_upwards && task_s2.bits.useProbeData)
   io.releaseBufRead_s2.bits.id := task_s2.bits.mshrId
 

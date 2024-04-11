@@ -100,6 +100,8 @@ class RXSNP(
     task.srcID.foreach(_ := snp.srcID)
     task.txnID.foreach(_ := snp.txnID)
     task.dbID.foreach(_ := 0.U)
+    task.fwdNID.foreach(_ := snp.fwdNID)
+    task.fwdTxnID.foreach(_ := snp.fwdTxnID)
     task.chiOpcode.foreach(_ := snp.opcode)
     task.pCrdType.foreach(_ := 0.U)
     task.retToSrc.foreach(_ := snp.retToSrc)

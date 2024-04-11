@@ -118,6 +118,8 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val txnID = chiOpt.map(_ => UInt(TXNID_WIDTH.W))
   val homeNID = chiOpt.map(_ => UInt(SRCID_WIDTH.W))
   val dbID = chiOpt.map(_ => UInt(DBID_WIDTH.W))
+  val fwdNID = chiOpt.map(_ => UInt(FWDNID_WIDTH.W))
+  val fwdTxnID = chiOpt.map(_ => UInt(FWDTXNID_WIDTH.W))
   val chiOpcode = chiOpt.map(_ => UInt(OPCODE_WIDTH.W))
   val resp = chiOpt.map(_ => UInt(RESP_WIDTH.W))
   val fwdState = chiOpt.map(_ => UInt(FWDSTATE_WIDTH.W))
@@ -262,6 +264,7 @@ class FSMState(implicit p: Parameters) extends L2Bundle {
   val s_compack = chiOpt.map(_ => Bool())
   val s_cbwrdata = chiOpt.map(_ => Bool())
   val s_reissue = chiOpt.map(_ => Bool())
+  val s_dct = chiOpt.map(_ => Bool())
 }
 
 class SourceAReq(implicit p: Parameters) extends L2Bundle {

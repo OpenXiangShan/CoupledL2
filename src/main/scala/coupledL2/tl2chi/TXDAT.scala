@@ -110,6 +110,7 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module {
     dat.tgtID := task.tgtID.get
     dat.srcID := task.srcID.get
     dat.txnID := task.txnID.get
+    dat.homeNID := task.homeNID.get
     dat.dbID := task.dbID.get
     dat.opcode := task.chiOpcode.get
     dat.ccID := 0.U // TODO: consider critical chunk id

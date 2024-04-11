@@ -167,6 +167,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   val mshr_snpRespX_s3 = mshr_snpResp_s3 || mshr_snpRespFwded_s3
   val mshr_snpRespDataX_s3 = mshr_snpRespData_s3 || mshr_snpRespDataPtl_s3 || mshr_snpRespDataFwded_s3
 
+  val mshr_dct_s3               = mshr_req_s3 && req_s3.toTXDAT && req_s3.chiOpcode.get === DATOpcodes.CompData
+
   val mshr_writeBackFull_s3     = mshr_req_s3 && req_s3.toTXREQ && req_s3.chiOpcode.get === REQOpcodes.WriteBackFull
   val mshr_evict_s3             = mshr_req_s3 && req_s3.toTXREQ && req_s3.chiOpcode.get === REQOpcodes.Evict
   
@@ -207,18 +209,24 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
     *    clients when the state in L2 is TRUNK or BRANCH with clients.orR = 1
     * 
     */
-  val need_mshr_s3_b_snpOnceX = req_s3.fromB && SNPOpcodes.isSnpOnceX(req_s3.chiOpcode.get) &&
+  // whether L2 should do forwarding or not
+  val expectFwd = SNPOpcodes.isSnpXFwd(req_s3.chiOpcode.get)
+  val canFwd = dirResult_s3.hit
+  val doFwd = expectFwd && canFwd
+  val need_pprobe_s3_b_snpOnceX = req_s3.fromB && SNPOpcodes.isSnpOnceX(req_s3.chiOpcode.get) &&
     dirResult_s3.hit && meta_s3.state === TRUNK && meta_has_clients_s3
-  val need_mshr_s3_b_snpToB = req_s3.fromB && (
+  val need_pprobe_s3_b_snpToB = req_s3.fromB && (
     SNPOpcodes.isSnpToB(req_s3.chiOpcode.get) ||
     req_s3.chiOpcode.get === SNPOpcodes.SnpCleanShared
   ) && dirResult_s3.hit && meta_s3.state === TRUNK && meta_has_clients_s3
-  val need_mshr_s3_b_snpToN = req_s3.fromB && (
+  val need_pprobe_s3_b_snpToN = req_s3.fromB && (
     SNPOpcodes.isSnpUniqueX(req_s3.chiOpcode.get) ||
     req_s3.chiOpcode.get === SNPOpcodes.SnpCleanInvalid ||
     SNPOpcodes.isSnpMakeInvalidX(req_s3.chiOpcode.get)
   ) && dirResult_s3.hit && meta_s3.state =/= TIP && meta_has_clients_s3
-  val need_mshr_s3_b = need_mshr_s3_b_snpOnceX || need_mshr_s3_b_snpToB || need_mshr_s3_b_snpToN
+  val need_pprobe_s3_b = need_pprobe_s3_b_snpOnceX || need_pprobe_s3_b_snpToB || need_pprobe_s3_b_snpToN
+  val need_dct_s3_b = doFwd // DCT
+  val need_mshr_s3_b = need_pprobe_s3_b || need_dct_s3_b
 
   val need_mshr_s3 = need_mshr_s3_a || need_mshr_s3_b
 
@@ -240,11 +248,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   /* ======== Resps to SinkA/B/C Reqs ======== */
   val sink_resp_s3 = WireInit(0.U.asTypeOf(Valid(new TaskBundle)))
   val sink_resp_s3_a_promoteT = dirResult_s3.hit && isT(meta_s3.state)
-
-  // whether L2 should do forwarding or not
-  val expectFwd = SNPOpcodes.isSnpXFwd(req_s3.chiOpcode.get)
-  val canFwd = dirResult_s3.hit
-  val doFwd = expectFwd && canFwd
 
   // whether L2 should respond data to HN or not
   val retToSrc = req_s3.retToSrc.getOrElse(false.B)
@@ -313,7 +316,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
     sink_resp_s3.bits.tgtID.foreach(_ := task_s3.bits.srcID.get)
     sink_resp_s3.bits.srcID.foreach(_ := task_s3.bits.tgtID.get) // TODO: srcID should be fixed. FIX THIS!!!
     sink_resp_s3.bits.txnID.foreach(_ := task_s3.bits.txnID.get)
-    sink_resp_s3.bits.dbID.foreach(_ := 0.U) // TODO
+    sink_resp_s3.bits.dbID.foreach(_ := 0.U)
     sink_resp_s3.bits.pCrdType.foreach(_ := 0.U) // TODO
     sink_resp_s3.bits.chiOpcode.foreach(_ := MuxLookup(Cat(doFwd, doRespData), RSPOpcodes.SnpResp)(Seq(
       Cat(false.B, false.B) -> RSPOpcodes.SnpResp,
@@ -341,7 +344,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   val hasData_s3 = source_req_s3.opcode(0) || source_req_s3.toTXDAT
 
   val need_data_a = dirResult_s3.hit && (req_get_s3 || req_acquireBlock_s3)
-  val need_data_b = sinkB_req_s3 && (doRespData || dirResult_s3.hit && meta_s3.state === TRUNK) // TODO: consider forwarding
+  val need_data_b = sinkB_req_s3 && (doRespData || doFwd || dirResult_s3.hit && meta_s3.state === TRUNK) // TODO: consider forwarding
   val need_data_mshr_repl = mshr_refill_s3 && need_repl && !retry
   val ren = need_data_a || need_data_b || need_data_mshr_repl
 
@@ -468,7 +471,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   )
   val isTXDAT_s3 = Mux(
     mshr_req_s3,
-    mshr_snpRespDataX_s3 || mshr_cbWrData_s3,
+    mshr_snpRespDataX_s3 || mshr_cbWrData_s3 || mshr_dct_s3,
     req_s3.fromB && !need_mshr_s3 && doRespData && !data_unready_s3
   )
   val isTXREQ_s3 = mshr_req_s3 && (mshr_writeBackFull_s3 || mshr_evict_s3)
@@ -721,12 +724,18 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   }
 
   when (req_s3.fromB) {
-    // Only consider the situation when mshr needs to be allocated
-    alloc_state.s_pprobe := false.B
-    alloc_state.w_pprobeackfirst := false.B
-    alloc_state.w_pprobeacklast := false.B
-    alloc_state.w_pprobeack := false.B
     alloc_state.s_probeack := false.B
+    // need pprobe
+    when (need_pprobe_s3_b) {
+      alloc_state.s_pprobe := false.B
+      alloc_state.w_pprobeackfirst := false.B
+      alloc_state.w_pprobeacklast := false.B
+      alloc_state.w_pprobeack := false.B
+    }
+    // need forwarding response
+    when (need_dct_s3_b) {
+      alloc_state.s_dct.get := false.B
+    }
   }
 
   val d = Seq(d_s5, d_s4, d_s3)
