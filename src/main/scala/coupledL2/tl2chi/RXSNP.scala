@@ -55,6 +55,16 @@ class RXSNP(
   io.task.bits := task
   io.rxsnp.ready := io.task.ready && !stall
 
+  val stallCnt = RegInit(0.U(64.W))
+  when(io.rxsnp.fire) {
+    stallCnt := 0.U
+  }.elsewhen(io.rxsnp.valid && !io.rxsnp.ready) {
+    stallCnt := stallCnt + 1.U
+  }
+
+  val STALL_CNT_MAX = 28000.U
+  assert(stallCnt <= STALL_CNT_MAX, "stallCnt full! maybe there is a deadlock! addr => 0x%x req_opcode => %d txn_id => %d", io.rxsnp.bits.addr, io.rxsnp.bits.opcode, io.rxsnp.bits.txnID);
+
   assert(!(stall && io.rxsnp.fire))
   dontTouch(addrConflictMask)
   dontTouch(addrConflict)
