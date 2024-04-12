@@ -896,7 +896,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   io.msInfo.bits.w_releaseack := state.w_releaseack
 
   assert(!(c_resp.valid && !io.status.bits.w_c_resp))
-  assert(!(rxrsp.valid && !io.status.bits.w_d_resp))
+  assert(!(rxdat.valid && !io.status.bits.w_d_resp))
 
   /* ======== Handling Nested C ======== */
   // for A miss, only when replResp do we finally choose a way, allowing nested C
