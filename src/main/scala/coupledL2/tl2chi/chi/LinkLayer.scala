@@ -20,6 +20,7 @@ package coupledL2.tl2chi
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
+import utility.FastArbiter
 
 class ChannelIO[+T <: Data](gen: T) extends Bundle {
   // Flit Pending. Early indication that a flit might be transmitted in the following cycle
@@ -107,7 +108,8 @@ object LinkState {
 
 class LCredit2Decoupled[T <: Bundle](
   gen: T,
-  lcreditNum: Int = 4 // the number of L-Credits that a receiver can provide
+  lcreditNum: Int = 4, // the number of L-Credits that a receiver can provide
+  useArbiterEntry: Boolean = false
 ) extends Module {
   val io = IO(new Bundle() {
     val in = Flipped(ChannelIO(gen.cloneType))
@@ -118,8 +120,6 @@ class LCredit2Decoupled[T <: Bundle](
 
   require(lcreditNum <= 15)
 
-  val queue = Module(new Queue(gen.cloneType, entries = lcreditNum, pipe = true, flow = false))
-
   val state = io.state.state
   val enableLCredit = state === LinkStates.RUN
 
@@ -127,7 +127,7 @@ class LCredit2Decoupled[T <: Bundle](
   val lcreditInflight = RegInit(0.U(lcreditsWidth.W))
   val lcreditPool = RegInit(lcreditNum.U(lcreditsWidth.W))
   assert(lcreditInflight + lcreditPool === lcreditNum.U)
-  val lcreditOut = (lcreditPool > queue.io.count) && enableLCredit
+  val lcreditOut = WireInit(false.B)
 
   val ready = lcreditInflight =/= 0.U
   val accept = ready && io.in.flitv && RegNext(io.in.flitpend)
@@ -144,28 +144,93 @@ class LCredit2Decoupled[T <: Bundle](
     }
   }
 
-  queue.io.enq.valid := accept
-  // queue.io.enq.bits := io.in.bits
-  var lsb = 0
-  queue.io.enq.bits.getElements.reverse.foreach { case e =>
-    e := io.in.flit(lsb + e.asUInt.getWidth - 1, lsb).asTypeOf(e.cloneType)
-    lsb += e.asUInt.getWidth
-  }
+  if (!useArbiterEntry) {
+    val queue = Module(new Queue(gen.cloneType, entries = lcreditNum, pipe = true, flow = false))
 
-  assert(!accept || queue.io.enq.ready)
+    queue.io.enq.valid := accept
+    // queue.io.enq.bits := io.in.bits
+    var lsb = 0
+    queue.io.enq.bits.getElements.reverse.foreach { case e =>
+      e := io.in.flit(lsb + e.asUInt.getWidth - 1, lsb).asTypeOf(e.cloneType)
+      lsb += e.asUInt.getWidth
+    }
 
-  io.in.lcrdv := lcreditOut
+    lcreditOut := (lcreditPool > queue.io.count) && enableLCredit
 
-  io.out <> queue.io.deq
-  val opcodeElements = queue.io.deq.bits.elements.filter(_._1 == "opcode")
-  require (opcodeElements.size == 1)
-  for ((_, opcode) <- opcodeElements) {
-    when (queue.io.deq.valid && opcode === 0.U) {
-      // This is a *LCrdReturn flit
-      queue.io.deq.ready := true.B
-      io.out.valid := false.B
+    assert(!accept || queue.io.enq.ready)
+
+    io.out <> queue.io.deq
+    val opcodeElements = queue.io.deq.bits.elements.filter(_._1 == "opcode")
+    require (opcodeElements.size == 1)
+    for ((_, opcode) <- opcodeElements) {
+      when (queue.io.deq.valid && opcode === 0.U) {
+        // This is a *LCrdReturn flit
+        queue.io.deq.ready := true.B
+        io.out.valid := false.B
+      }
+    }
+  } else {
+    val buffers = RegInit(VecInit(Seq.fill(lcreditNum)(0.U.asTypeOf(Valid(gen.cloneType))))) 
+    val valids = VecInit(buffers.map(e => e.valid)).asUInt
+    val isEmpty = valids.andR
+    val validCnt = PopCount(valids)
+    val insertIdx = PriorityEncoder(~valids.asUInt)
+    dontTouch(valids)
+    dontTouch(isEmpty)
+    dontTouch(validCnt)
+    dontTouch(insertIdx)
+
+    lcreditOut := (lcreditPool > validCnt) && enableLCredit
+
+    assert(!accept || !isEmpty)
+
+    when(accept) {
+      buffers(insertIdx).valid := true.B
+
+      var lsb = 0
+      buffers(insertIdx).bits.getElements.reverse.foreach {
+        case e =>
+          e := io.in.flit(lsb + e.asUInt.getWidth - 1, lsb).asTypeOf(e.cloneType)
+          lsb += e.asUInt.getWidth
+      }
+    }
+
+    // 
+    // round robin check if any of the buffer entries can be issued
+    // 
+    val choice = RegInit(0.U(log2Ceil(lcreditNum).W))
+    val rdyMask = UIntToOH(choice)
+    require(rdyMask.getWidth == lcreditNum)
+
+    if(lcreditNum >= 8) {
+      println("[LCredit2Decoupled] issue latency of the IssueArb may be greater than 8 cycles! pay attention to the performance of Snp* transaction")
+    }
+
+    choice := choice + 1.U;
+    
+    val issueArb = Module(new FastArbiter(gen.cloneType, lcreditNum))
+    for(i <- 0 until lcreditNum) {
+      issueArb.io.in(i).valid := buffers(i).valid && rdyMask(i)
+      issueArb.io.in(i).bits := buffers(i).bits
+
+      when(issueArb.io.in(i).fire) {
+        buffers(i).valid := false.B
+      }
+    }
+
+    io.out <> issueArb.io.out
+    val opcodeElements = issueArb.io.out.bits.elements.filter(_._1 == "opcode")
+    require (opcodeElements.size == 1)
+    for ((_, opcode) <- opcodeElements) {
+      when (issueArb.io.out.valid && opcode === 0.U) {
+        // This is a *LCrdReturn flit
+        issueArb.io.out.ready := true.B
+        io.out.valid := false.B
+      }
     }
   }
+
+  io.in.lcrdv := lcreditOut
   io.reclaimLCredit := lcreditInflight === 0.U
 }
 
@@ -178,9 +243,10 @@ object LCredit2Decoupled {
     state: LinkState,
     reclaimLCredit: Bool,
     suggestName: Option[String] = None,
-    lcreditNum: Int = defaultLCreditNum
+    lcreditNum: Int = defaultLCreditNum,
+    useArbiterEntry: Boolean = false,
   ): Unit = {
-    val mod = Module(new LCredit2Decoupled(right.bits.cloneType, lcreditNum))
+    val mod = Module(new LCredit2Decoupled(right.bits.cloneType, lcreditNum, useArbiterEntry))
     suggestName.foreach(name => mod.suggestName(s"LCredit2Decoupled_${name}"))
 
     mod.io.in <> left
@@ -270,7 +336,7 @@ class LinkMonitor extends Module {
   Decoupled2LCredit(io.in.tx.req, io.out.tx.req, LinkState(txState), Some("txreq"))
   Decoupled2LCredit(io.in.tx.rsp, io.out.tx.rsp, LinkState(txState), Some("txrsp"))
   Decoupled2LCredit(io.in.tx.dat, io.out.tx.dat, LinkState(txState), Some("txdat"))
-  LCredit2Decoupled(io.out.rx.snp, io.in.rx.snp, LinkState(rxState), rxsnpDeact, Some("rxsnp"))
+  LCredit2Decoupled(io.out.rx.snp, io.in.rx.snp, LinkState(rxState), rxsnpDeact, Some("rxsnp"), useArbiterEntry = true)
   LCredit2Decoupled(io.out.rx.rsp, io.in.rx.rsp, LinkState(rxState), rxrspDeact, Some("rxrsp"))
   LCredit2Decoupled(io.out.rx.dat, io.in.rx.dat, LinkState(rxState), rxdatDeact, Some("rxdat"))
 
