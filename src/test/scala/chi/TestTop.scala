@@ -47,6 +47,7 @@ class TestTop_CHIL2()(implicit p: Parameters) extends LazyModule {
 
   val l2 = LazyModule(new TL2CHICoupledL2())
   val xbar = TLXbar()
+  val bankBinder = BankBinder(1, 64)
   // val ram = LazyModule(new TLRAM(AddressSet(0, 0xffffL), beatBytes = 32))
 
   for (l1d <- l1d_nodes) {
@@ -58,7 +59,11 @@ class TestTop_CHIL2()(implicit p: Parameters) extends LazyModule {
   //     TLFragmenter(32, 64) :=*
   //     TLCacheCork() :=*
   //     TLDelayer(delayFactor) :=*
-  l2.node :=* xbar
+  l2.managerNode :=
+    TLXbar() :=*
+    bankBinder :*=
+    l2.node :*=
+    xbar
 
   lazy val module = new LazyModuleImp(this){
     val timer = WireDefault(0.U(64.W))

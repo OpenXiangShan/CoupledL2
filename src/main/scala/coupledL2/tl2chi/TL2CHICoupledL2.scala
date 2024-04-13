@@ -39,6 +39,57 @@ abstract class TL2CHIL2Module(implicit val p: Parameters) extends Module
 
 class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
 
+  /**
+    * Make diplomacy happy:
+    * To implement multi-bank L2, a BankBinder must be placed downstream of L2,
+    * therefore a TLAdapterNode is implemented here.
+    */
+  val managerPortParams = (m: TLSlavePortParameters) => TLSlavePortParameters.v1(
+    m.managers.map { m =>
+      m.v2copy(
+        regionType = if (m.regionType >= RegionType.UNCACHED) RegionType.CACHED else m.regionType,
+        supports = TLMasterToSlaveTransferSizes(
+          acquireB = xfer,
+          acquireT = if (m.supportsAcquireT) xfer else TransferSizes.none,
+          arithmetic = if (m.supportsAcquireT) atom else TransferSizes.none,
+          logical = if (m.supportsAcquireT) atom else TransferSizes.none,
+          get = access,
+          putFull = if (m.supportsAcquireT) access else TransferSizes.none,
+          putPartial = if (m.supportsAcquireT) access else TransferSizes.none,
+          hint = access
+        ),
+        fifoId = None
+      )
+    },
+    beatBytes = 32,
+    minLatency = 2,
+    responseFields = cacheParams.respField,
+    requestKeys = cacheParams.reqKey,
+    endSinkId = idsAll
+  )
+  
+  val clientPortParams = (m: TLMasterPortParameters) => TLMasterPortParameters.v2(
+    Seq(
+      TLMasterParameters.v2(
+        name = cacheParams.name,
+        supports = TLSlaveToMasterTransferSizes(
+          probe = xfer
+        ),
+        sourceId = IdRange(0, idsAll)
+      )
+    ),
+    channelBytes = cacheParams.channelBytes,
+    minLatency = 1,
+    echoFields = cacheParams.echoField,
+    requestFields = cacheParams.reqField,
+    responseKeys = cacheParams.respKey
+  )
+
+  val node = TLAdapterNode(
+    clientFn = clientPortParams,
+    managerFn = managerPortParams
+  )
+
   val addressRange = AddressSet(0x00000000L, 0xfffffffffL).subtract(AddressSet(0x0L, 0x7fffffffL)) // TODO: parameterize this
   val managerParameters = TLSlavePortParameters.v1(
     managers = Seq(TLSlaveParameters.v1(
@@ -46,6 +97,12 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
       regionType = RegionType.CACHED,
       supportsAcquireT = xfer,
       supportsAcquireB = xfer,
+      supportsArithmetic = atom,
+      supportsLogical = atom,
+      supportsGet = access,
+      supportsPutFull = access,
+      supportsPutPartial = access,
+      supportsHint = access,
       fifoId = None
     )),
     beatBytes = 32,
@@ -54,8 +111,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
     requestKeys = cacheParams.reqKey,
     endSinkId = idsAll // TODO: Confirm this
   )
-  val node = TLManagerNode(Seq(managerParameters))
-
+  val managerNode = TLManagerNode(Seq(managerParameters))
   class CoupledL2Imp(wrapper: LazyModule) extends LazyModuleImp(wrapper) {
     val banks = node.in.size
     val bankBits = if (banks == 1) 0 else log2Up(banks)
@@ -77,7 +133,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
     val sizeBytes = cacheParams.toCacheParams.capacity.toDouble
     val sizeStr = sizeBytesToStr(sizeBytes)
     val prefetch = "prefetch: " + cacheParams.prefetch
-    println(s"====== Inclusive ${cacheParams.name} ($sizeStr * $banks-bank) $prefetch ======")
+    println(s"====== Inclusive TL-CHI ${cacheParams.name} ($sizeStr * $banks-bank) $prefetch ======")
     println(s"bankBits: ${bankBits}")
     println(s"replacement: ${cacheParams.replacement}")
     println(s"sets:${cacheParams.sets} ways:${cacheParams.ways} blockBytes:${cacheParams.blockBytes}")

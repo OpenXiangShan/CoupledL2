@@ -196,7 +196,10 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       io.req <> pipe.io.out
 
       // tpmeta interface
-      tp.io.tpmeta_port <> tpio.tpmeta_port.get
+      tpio.tpmeta_port match {
+        case Some(port) => tp.io.tpmeta_port <> port
+        case None => tp.io.tpmeta_port <> DontCare
+      }
 
       XSPerfAccumulate(cacheParams, "prefetch_req_fromSMS", pfRcv.io.req.valid)
       XSPerfAccumulate(cacheParams, "prefetch_req_fromBOP", l2_pf_en && bop.io.req.valid)

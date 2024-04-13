@@ -108,7 +108,7 @@ class TL2TLCoupledL2(implicit p: Parameters) extends CoupledL2Base {
     val sizeBytes = cacheParams.toCacheParams.capacity.toDouble
     val sizeStr = sizeBytesToStr(sizeBytes)
     val prefetch = "prefetch: " + cacheParams.prefetch
-    println(s"====== Inclusive ${cacheParams.name} ($sizeStr * $banks-bank) $prefetch ======")
+    println(s"====== Inclusive TL-TL ${cacheParams.name} ($sizeStr * $banks-bank) $prefetch ======")
     println(s"bankBits: ${bankBits}")
     println(s"replacement: ${cacheParams.replacement}")
     println(s"replace policy: ${cacheParams.releaseData}")
