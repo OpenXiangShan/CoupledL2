@@ -355,7 +355,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     mp_release.txnID.get := io.id
     mp_release.homeNID.get := 0.U
     mp_release.dbID.get := 0.U 
-    mp_release.chiOpcode.get := Mux(isT(meta.state) && meta.dirty, WriteBackFull, Evict)
+    mp_release.chiOpcode.get := Mux(isT(meta.state) && meta.dirty || probeDirty, WriteBackFull, Evict)
     mp_release.resp.get := 0.U // DontCare
     mp_release.fwdState.get := 0.U // DontCare
     mp_release.pCrdType.get := 0.U // DontCare // TODO: consider retry of WriteBackFull/Evict
@@ -700,7 +700,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       state.s_retry := true.B
     }.elsewhen (mp_release_valid) {
       state.s_release := true.B
-      state.s_cbwrdata.get := !(isT(meta.state) && meta.dirty)
+      state.s_cbwrdata.get := !(isT(meta.state) && meta.dirty || probeDirty)
       // meta.state := INVALID
     }.elsewhen (mp_cbwrdata_valid) {
       state.s_cbwrdata.get := true.B
