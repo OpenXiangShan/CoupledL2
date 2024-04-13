@@ -174,7 +174,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   val promoteT_L3     = !dirResult.hit && gotT
   val promoteT_alias  =  dirResult.hit && req.aliasTask.getOrElse(false.B) && (meta.state === TRUNK || meta.state === TIP)
   // under above circumstances, we grant T to L1 even if it wants B
-  val req_promoteT = (req_acquire || req_prefetch) && (promoteT_normal || promoteT_L3 || promoteT_alias)
+  val req_promoteT = (req_acquire || req_get || req_prefetch) && (promoteT_normal || promoteT_L3 || promoteT_alias)
 
   assert(!(req_valid && req_prefetch && dirResult.hit), "MSHR can not receive prefetch hit req")
 
@@ -932,7 +932,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 
   val mshrAddr = Cat(req.tag, req.set, 0.U(6.W)) // TODO: consider multibank
   val VALID_CNT_MAX = 30000.U
-  assert(validCnt <= VALID_CNT_MAX, "validCnt > 5000, may be there is a deadlock! addr => 0x%x req_opcode => %d channel => 0b%b", mshrAddr, req.opcode, req.channel)
+  assert(validCnt <= VALID_CNT_MAX, "validCnt full!, maybe there is a deadlock! addr => 0x%x req_opcode => %d channel => 0b%b", mshrAddr, req.opcode, req.channel)
 
 
   /* ======== Performance counters ======== */
