@@ -155,7 +155,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     * 2. When the snoop opcode is SnpCleanFwd, SnpNotSharedDirtyFwd or SnpSharedFwd, always echo SnpRespDataFwded
     *    if RetToSrc = 1 as long as the snooped block is valid.
     */
-  val doRespData = isT(meta.state) && meta.dirty && (
+  val doRespData = (isT(meta.state) && meta.dirty || probeDirty) && (
     req_chiOpcode === SnpOnce ||
     snpToB ||
     req_chiOpcode === SnpUnique ||
