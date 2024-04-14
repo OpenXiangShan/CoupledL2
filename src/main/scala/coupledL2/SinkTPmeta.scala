@@ -53,6 +53,7 @@ class SinkTPmeta(implicit p: Parameters) extends L2Module {
     task.vaddr.foreach(_ := 0.U)
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+    task.tpmeta := true.B
     task.tpmetaWen := req.wmode
     task.tpmetaWenRepl := false.B
     task

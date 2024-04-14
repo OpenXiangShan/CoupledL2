@@ -72,6 +72,7 @@ class DirRead(implicit p: Parameters) extends L2Bundle {
   // dirRead when refill
   val refill = Bool()
   val mshrId = UInt(mshrBits.W)
+  val tpmeta = Bool()
 }
 
 class DirResult(implicit p: Parameters) extends L2Bundle {
@@ -181,7 +182,8 @@ class Directory(implicit p: Parameters) extends L2Module {
   val tagAll_s3 = RegEnable(tagRead, 0.U.asTypeOf(tagRead), reqValid_s2)
 
   val tagMatchVec = tagAll_s3.map(_ (tagBits - 1, 0) === req_s3.tag)
-  val metaValidVec = metaAll_s3.map(_.state =/= MetaData.INVALID)
+  val metaValidVec = metaAll_s3.map(m =>
+    m.state =/= MetaData.INVALID && m.tpMeta.getOrElse(false.B) === req_s3.tpmeta)
   val hitVec = tagMatchVec.zip(metaValidVec).map(x => x._1 && x._2)
 
   val hitWay = OHToUInt(hitVec)

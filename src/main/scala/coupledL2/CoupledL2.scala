@@ -276,11 +276,13 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     val prefetchTrains = prefetchOpt.map(_ => Wire(Vec(banks, DecoupledIO(new PrefetchTrain()(pftParams)))))
     val prefetchResps = prefetchOpt.map(_ => Wire(Vec(banks, DecoupledIO(new PrefetchResp()(pftParams)))))
     val prefetchReqsReady = WireInit(VecInit(Seq.fill(banks)(false.B)))
+    val tpmetaResps = prefetchOpt.map(_ => Wire(Vec(banks, DecoupledIO(new TPmetaL2Resp()))))
     prefetchOpt.foreach {
       _ =>
         fastArb(prefetchTrains.get, prefetcher.get.io.train, Some("prefetch_train"))
         prefetcher.get.io.req.ready := Cat(prefetchReqsReady).orR
         fastArb(prefetchResps.get, prefetcher.get.io.resp, Some("prefetch_resp"))
+        fastArb(tpmetaResps.get, prefetcher.get.tpio.tpmeta_port.get.resp, Some("tpmetal2_resp"))
     }
     pf_recv_node match {
       case Some(x) =>
@@ -388,16 +390,17 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
             }
         }
 
-        (slice.io.tpMetaReq, prefetcher.get.tpio.tpmeta_port) match {
-          case (Some(sliceReq), Some(prefetcherPort)) =>
-            sliceReq <> prefetcherPort.req
-          case _ =>
+        slice.io.tpMetaReq.zip(prefetcher.get.tpio.tpmeta_port).foreach {
+          case(s, p) =>
+            s.valid := p.req.valid && bank_eq(p.req.bits.l2ReqBundle.set, i, bankBits)
+            s.bits := p.req.bits
+            p.req.ready := s.ready && bank_eq(p.req.bits.l2ReqBundle.set, i, bankBits)
         }
 
-        (slice.io.tpMetaResp, prefetcher.get.tpio.tpmeta_port) match {
-          case (Some(sliceResp), Some(prefetcherPort)) =>
-            sliceResp <> prefetcherPort.resp
-          case _ =>
+        slice.io.tpMetaResp.zip(prefetcher.get.tpio.tpmeta_port).foreach {
+          case(s, p) =>
+            val metaResp = Pipeline(s)
+            tpmetaResps.get(i) <> metaResp
         }
 
         slice

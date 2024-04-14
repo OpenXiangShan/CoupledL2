@@ -104,6 +104,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val aMergeTask = new MergeTaskBundle()
 
   // for TPmetaReq(read & write)
+  val tpmeta = Bool()
   val tpmetaWen = Bool()
   val tpmetaWenRepl = Bool()
 }

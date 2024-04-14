@@ -112,7 +112,7 @@ class tpmetaPortIO() extends Bundle {
 
 class tpmetaL2PortIO(implicit p: Parameters) extends Bundle {
   val req = DecoupledIO(new TPmetaL2Req())
-  val resp = Flipped(ValidIO(new TPmetaL2Resp))
+  val resp = Flipped(DecoupledIO(new TPmetaL2Resp))
 }
 
 class tpmetaL3PortIO(implicit p: Parameters) extends Bundle {
@@ -284,6 +284,8 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   /* Async Stage: get tpMeta and insert it into tpDataQueue */
   //TODO: disable invalid meta
+
+  io.tpmeta_port.resp.ready := true.B
 
   val tpmetaRespHartid = io.tpmeta_port.resp.bits.rawData(511, 508)
   val tpmetaRespRawData = VecInit((0 until 16).map(i => io.tpmeta_port.resp.bits.rawData(30 * (i + 1) - 1, 30 * i)))

@@ -152,6 +152,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   io.dirRead_s1.bits.replacerInfo.reqSource := task_s1.bits.reqSource
   io.dirRead_s1.bits.refill := s1_needs_replRead
   io.dirRead_s1.bits.mshrId := task_s1.bits.mshrId
+  io.dirRead_s1.bits.tpmeta := task_s1.bits.tpmeta
 
   // block same-set A req
   io.s1Entrance.valid := mshr_task_s1.valid && mshr_task_s1.bits.metaWen || io.sinkC.fire || io.sinkB.fire

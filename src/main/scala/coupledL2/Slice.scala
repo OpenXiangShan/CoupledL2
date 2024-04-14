@@ -37,7 +37,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
     val prefetch = prefetchOpt.map(_ => Flipped(new PrefetchIO))
     //TODO:link
     val tpMetaReq = prefetchOpt.map(_ => Flipped(DecoupledIO(new TPmetaL2Req)))
-    val tpMetaResp = prefetchOpt.map(_ => ValidIO(new TPmetaL2Resp))
+    val tpMetaResp = prefetchOpt.map(_ => DecoupledIO(new TPmetaL2Resp))
     val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
     val dirResult = topDownOpt.map(_ => ValidIO(new DirResult))
     val latePF = topDownOpt.map(_ => Output(Bool()))
@@ -162,6 +162,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
     r =>
       r.valid := mainPipe.io.tpMetaResp.get.valid
       r.bits := mainPipe.io.tpMetaResp.get.bits
+      mainPipe.io.tpMetaResp.get.ready := r.ready
   }
 
   /* input & output signals */
