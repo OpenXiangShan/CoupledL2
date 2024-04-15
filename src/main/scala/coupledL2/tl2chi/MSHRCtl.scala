@@ -186,7 +186,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
       m.io.resps.rxdat.valid := m.io.status.valid && io.resps.rxdat.valid && io.resps.rxdat.mshrId === i.U
       m.io.resps.rxdat.bits := io.resps.rxdat.respInfo
 
-      m.io.resps.rxrsp.valid := (m.io.status.valid && io.resps.rxrsp.valid && io.resps.rxrsp.mshrId === i.U) || (isPCrdGrant && pCrdPri === i.U)
+      m.io.resps.rxrsp.valid := (m.io.status.valid && io.resps.rxrsp.valid && !isPCrdGrant && io.resps.rxrsp.mshrId === i.U) || (isPCrdGrant && pCrdPri === i.U)
       m.io.resps.rxrsp.bits := io.resps.rxrsp.respInfo
 
       m.io.replResp.valid := io.replResp.valid && io.replResp.bits.mshrId === i.U
