@@ -20,6 +20,7 @@ package coupledL2.tl2chi
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
+import coupledL2.L2Module
 
 class ChannelIO[+T <: Data](gen: T) extends Bundle {
   // Flit Pending. Early indication that a flit might be transmitted in the following cycle
@@ -245,10 +246,11 @@ object Decoupled2LCredit {
   }
 }
 
-class LinkMonitor extends Module {
+class LinkMonitor(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val in = Flipped(new DecoupledPortIO())
     val out = new PortIO
+    val hartId = Input(UInt(hartIdLen.W))
   })
   // val s_stop :: s_activate :: s_run :: s_deactivate :: Nil = Enum(4)
 
@@ -267,9 +269,9 @@ class LinkMonitor extends Module {
   /* IO assignment */
   val rxsnpDeact, rxrspDeact, rxdatDeact = Wire(Bool())
   val rxDeact = rxsnpDeact && rxrspDeact && rxdatDeact
-  Decoupled2LCredit(io.in.tx.req, io.out.tx.req, LinkState(txState), Some("txreq"))
-  Decoupled2LCredit(io.in.tx.rsp, io.out.tx.rsp, LinkState(txState), Some("txrsp"))
-  Decoupled2LCredit(io.in.tx.dat, io.out.tx.dat, LinkState(txState), Some("txdat"))
+  Decoupled2LCredit(setSrcID(io.in.tx.req, io.hartId), io.out.tx.req, LinkState(txState), Some("txreq"))
+  Decoupled2LCredit(setSrcID(io.in.tx.rsp, io.hartId), io.out.tx.rsp, LinkState(txState), Some("txrsp"))
+  Decoupled2LCredit(setSrcID(io.in.tx.dat, io.hartId), io.out.tx.dat, LinkState(txState), Some("txdat"))
   LCredit2Decoupled(io.out.rx.snp, io.in.rx.snp, LinkState(rxState), rxsnpDeact, Some("rxsnp"))
   LCredit2Decoupled(io.out.rx.rsp, io.in.rx.rsp, LinkState(rxState), rxrspDeact, Some("rxrsp"))
   LCredit2Decoupled(io.out.rx.dat, io.in.rx.dat, LinkState(rxState), rxdatDeact, Some("rxdat"))
@@ -278,8 +280,12 @@ class LinkMonitor extends Module {
   io.out.tx.linkactivereq := !reset.asBool
   io.out.rx.linkactiveack := RegNext(io.out.rx.linkactivereq) || !rxDeact
 
-  dontTouch(io.out.tx.linkactivereq)
-  dontTouch(io.out.tx.linkactiveack)
-  dontTouch(io.out.rx.linkactivereq)
-  dontTouch(io.out.rx.linkactiveack)
+  dontTouch(io.out)
+
+  def setSrcID[T <: Bundle](in: DecoupledIO[T], srcID: UInt = 0.U): DecoupledIO[T] = {
+    val out = Wire(in.cloneType)
+    out <> in
+    out.bits.elements.filter(_._1 == "srcID").head._2 := srcID
+    out
+  }
 }

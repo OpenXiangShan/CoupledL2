@@ -88,7 +88,7 @@ class TestTop_CHIL2()(implicit p: Parameters) extends LazyModule {
     l2.module.io.chi <> io.chi
     dontTouch(l2.module.io)
 
-    l2.module.io.hartId := DontCare
+    l2.module.io.hartId := 0.U
   }
 
 }
