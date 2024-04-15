@@ -11,11 +11,14 @@ import coupledL2.prefetch._
 import coupledL2.tl2chi._
 import utility.{ChiselDB, FileRegisters, TLLogger}
 
-class TestTop_CHIL2()(implicit p: Parameters) extends LazyModule {
+class TestTop_CHIL2(numCores: Int = 1)(implicit p: Parameters) extends LazyModule {
 
-  /*   L1D
-   *    |
-   *   L2
+  /*   L1D  L1D ... L1D
+   *    |    |       |
+   *   L2   L2  ... L2
+   *     \   |      /
+   *      \  |     /
+   *      CMN or VIP
    */
 
   override lazy val desiredName: String = "TestTop"
@@ -42,28 +45,49 @@ class TestTop_CHIL2()(implicit p: Parameters) extends LazyModule {
     masterNode
   }
 
-  val l1d_nodes = (0 until 1) map( i => createClientNode(s"l1d$i", 32))
+  val l1d_nodes = (0 until numCores) map(i => createClientNode(s"l1d$i", 32))
   val master_nodes = l1d_nodes
 
-  val l2 = LazyModule(new TL2CHICoupledL2())
+  // val l2 = LazyModule(new TL2CHICoupledL2())
+  val l2_nodes = (0 until numCores).map(i => LazyModule(new TL2CHICoupledL2()(new Config((_, _, _) => {
+    case L2ParamKey => L2Param(
+      name = s"l2$i",
+      ways = 4,
+      sets = 128,
+      clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
+      // echoField = Seq(DirtyField),
+      hartIds = Seq{i}
+    )
+    case EnableCHI => true
+  }))))
+
   val xbar = TLXbar()
-  val bankBinder = BankBinder(1, 64)
+  val bankBinders = (0 until numCores).map(_ => BankBinder(1, 64))
   // val ram = LazyModule(new TLRAM(AddressSet(0, 0xffffL), beatBytes = 32))
 
-  for (l1d <- l1d_nodes) {
-    xbar := TLBuffer() := l1d
-  }
+  // for (l1d <- l1d_nodes) {
+  //   xbar := TLBuffer() := l1d
+  // }
+  // l1d_nodes.zip(l2_nodes).foreach { case (l1, l2) => l2 := l1 }
 
   // ram.node :=
   //   TLXbar() :=*
   //     TLFragmenter(32, 64) :=*
   //     TLCacheCork() :=*
   //     TLDelayer(delayFactor) :=*
-  l2.managerNode :=
-    TLXbar() :=*
-    bankBinder :*=
-    l2.node :*=
-    xbar
+  // l2.managerNode :=
+  //   TLXbar() :=*
+  //   bankBinder :*=
+  //   l2.node :*=
+  //   xbar
+
+  l1d_nodes.zip(l2_nodes).zipWithIndex.foreach { case ((l1, l2), i) =>
+    l2.managerNode :=
+      TLXbar() :=*
+      bankBinders(i) :*=
+      l2.node :*=
+      l1
+  }
 
   lazy val module = new LazyModuleImp(this){
     val timer = WireDefault(0.U(64.W))
@@ -81,14 +105,24 @@ class TestTop_CHIL2()(implicit p: Parameters) extends LazyModule {
         node.makeIOs()(ValName(s"master_port_$i"))
     }
 
-    val io = IO(new Bundle {
+    // val io = IO(new Bundle {
+    //   val chi = new PortIO
+    // })
+    val io = IO(Vec(numCores, new Bundle() {
       val chi = new PortIO
-    })
+    }))
 
-    l2.module.io.chi <> io.chi
-    dontTouch(l2.module.io)
+    // l2.module.io.chi <> io.chi
+    // dontTouch(l2.module.io)
 
-    l2.module.io.hartId := 0.U
+    // l2.module.io.hartId := 0.U
+    l2_nodes.zipWithIndex.foreach { case (l2, i) =>
+      l2.module.io.chi <> io(i).chi
+      dontTouch(l2.module.io)
+
+      l2.module.io.hartId := i.U
+      l2.module.io.debugTopDown := DontCare
+    }
   }
 
 }
@@ -112,7 +146,37 @@ object TestTop_CHIL2 extends App {
     case EnableCHI => true
   })
 
-  val top = DisableMonitors(p => LazyModule(new TestTop_CHIL2()(p)))(config)
+  val top = DisableMonitors(p => LazyModule(new TestTop_CHIL2(numCores = 1)(p)))(config)
+
+  (new ChiselStage).execute(args, Seq(
+    ChiselGeneratorAnnotation(() => top.module)
+  ))
+
+  ChiselDB.init(false)
+  ChiselDB.addToFileRegisters
+  FileRegisters.write("./build")
+}
+
+object TestTop_CHI_DualCore extends App {
+  val config = new Config((_, _, _) => {
+    case L2ParamKey => L2Param(
+      clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
+      echoField = Seq(DirtyField()),
+      enablePerf = false,
+      enableRollingDB = false,
+      enableMonitor = false,
+      elaboratedTopDown = false,
+      FPGAPlatform = true,
+      // SAM for CMN 2X2 Mesh
+      // sam = Seq(
+      //   AddressSet(0x0L,  0xfffffffbfL) -> 8,
+      //   AddressSet(0x40L, 0xfffffffbfL) -> 40
+      // )
+    )
+    case EnableCHI => true
+  })
+
+  val top = DisableMonitors(p => LazyModule(new TestTop_CHIL2(numCores = 2)(p)))(config)
 
   (new ChiselStage).execute(args, Seq(
     ChiselGeneratorAnnotation(() => top.module)

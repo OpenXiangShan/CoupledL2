@@ -23,6 +23,9 @@ test-top-fullsys:
 test-top-chil2:
 	mill -i CoupledL2.test.runMain coupledL2.TestTop_CHIL2 -td build
 
+test-top-chi-dualcore:
+	mill -i CoupledL2.test.runMain coupledL2.TestTop_CHI_DualCore -td build
+
 clean:
 	rm -rf ./build
 
