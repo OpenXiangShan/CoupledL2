@@ -72,7 +72,7 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0)(implicit p: Paramet
     )
     case EnableCHI => true
     case BankBitsKey => banks
-  }))))
+  }).alter(p))))
 
   // val xbar = TLXbar()
   val bankBinders = (0 until numCores).map(_ => BankBinder(banks, 64))
