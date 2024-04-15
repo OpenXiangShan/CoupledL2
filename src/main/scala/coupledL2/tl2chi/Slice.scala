@@ -70,6 +70,7 @@ class Slice()(implicit p: Parameters) extends TL2CHIL2Module {
   txreq.io.pipeReq <> mainPipe.io.toTXREQ
   txreq.io.mshrReq <> mshrCtl.io.toTXREQ
   txreq.io.pipeStatusVec := status_vec_toTX
+  txreq.io.sliceId := io.sliceId
 
   txdat.io.in <> mainPipe.io.toTXDAT
   txdat.io.pipeStatusVec := status_vec_toTX

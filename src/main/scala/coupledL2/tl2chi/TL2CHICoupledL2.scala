@@ -185,18 +185,6 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
     }
 
     // TODO: Remove this to utility or HasCoupledL2Parameters
-    def restoreAddress(x: UInt, idx: Int) = {
-      restoreAddressUInt(x, idx.U)
-    }
-    def restoreAddressUInt(x: UInt, idx: UInt) = {
-      if(bankBits == 0){
-        x
-      } else {
-        val high = x >> offsetBits
-        val low = x(offsetBits - 1, 0)
-        Cat(high, idx(bankBits - 1, 0), low)
-      }
-    }
     def bank_eq(set: UInt, bankId: Int, bankBits: Int): Bool = {
       if(bankBits == 0) true.B else set(bankBits - 1, 0) === bankId.U
     }

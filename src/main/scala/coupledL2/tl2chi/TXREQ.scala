@@ -37,6 +37,8 @@ class TXREQ(implicit p: Parameters) extends TL2CHIL2Module {
 
     val pipeStatusVec = Flipped(Vec(5, ValidIO(new PipeStatusWithCHI)))
     val toReqArb = Output(new TXBlockBundle)
+
+    val sliceId = Input(UInt(bankBits.W))
   })
 
   assert(!io.pipeReq.valid || io.pipeReq.ready, "TXREQ should always be ready for pipeline req")
@@ -70,4 +72,5 @@ class TXREQ(implicit p: Parameters) extends TL2CHIL2Module {
   io.out <> queue.io.deq
   io.out.bits.tgtID := SAM(sam).lookup(io.out.bits.addr)
   io.out.bits.size := log2Ceil(blockBytes).U(SIZE_WIDTH.W) // TODO
+  io.out.bits.addr := restoreAddressUInt(queue.io.deq.bits.addr, io.sliceId)
 }

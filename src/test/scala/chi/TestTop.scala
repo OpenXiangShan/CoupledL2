@@ -24,6 +24,7 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0)(implicit p: Paramet
   override lazy val desiredName: String = "TestTop"
   val delayFactor = 0.5
   val cacheParams = p(L2ParamKey)
+  val banks = 1
 
   def createClientNode(name: String, sources: Int) = {
     val masterNode = TLClientNode(Seq(
@@ -70,10 +71,11 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0)(implicit p: Paramet
       hartIds = Seq{i}
     )
     case EnableCHI => true
+    case BankBitsKey => banks
   }))))
 
   // val xbar = TLXbar()
-  val bankBinders = (0 until numCores).map(_ => BankBinder(1, 64))
+  val bankBinders = (0 until numCores).map(_ => BankBinder(banks, 64))
   // val ram = LazyModule(new TLRAM(AddressSet(0, 0xffffL), beatBytes = 32))
 
   // for (l1d <- l1d_nodes) {

@@ -30,7 +30,7 @@ import org.chipsalliance.cde.config.{Parameters, Field}
 import scala.math.max
 import coupledL2.prefetch._
 import coupledL2.utils.XSPerfAccumulate
-import huancun.{TPmetaReq, TPmetaResp}
+import huancun.{TPmetaReq, TPmetaResp, BankBitsKey}
 
 trait HasCoupledL2Parameters {
   val p: Parameters
@@ -146,6 +146,20 @@ trait HasCoupledL2Parameters {
     val set = offset >> (offsetBits + bankBits)
     val tag = set >> setBits
     (tag(tagBits - 1, 0), set(setBits - 1, 0), offset(offsetBits - 1, 0))
+  }
+
+  def restoreAddress(x: UInt, idx: Int) = {
+    restoreAddressUInt(x, idx.U)
+  }
+
+  def restoreAddressUInt(x: UInt, idx: UInt) = {
+    if(bankBits == 0){
+      x
+    } else {
+      val high = x >> offsetBits
+      val low = x(offsetBits - 1, 0)
+      Cat(high, idx(bankBits - 1, 0), low)
+    }
   }
 
   def getPPN(x: UInt): UInt = {
