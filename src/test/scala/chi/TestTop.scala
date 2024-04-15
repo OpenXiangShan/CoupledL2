@@ -11,14 +11,14 @@ import coupledL2.prefetch._
 import coupledL2.tl2chi._
 import utility.{ChiselDB, FileRegisters, TLLogger}
 
-class TestTop_CHIL2(numCores: Int = 1)(implicit p: Parameters) extends LazyModule {
+class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0)(implicit p: Parameters) extends LazyModule {
 
-  /*   L1D  L1D ... L1D
-   *    |    |       |
-   *   L2   L2  ... L2
-   *     \   |      /
-   *      \  |     /
-   *      CMN or VIP
+  /*   L1D(L1I)* L1D(L1I)* ... L1D(L1I)*
+   *       \         |          /
+   *       L2        L2   ...  L2
+   *         \       |        /
+   *          \      |       /
+   *             CMN or VIP
    */
 
   override lazy val desiredName: String = "TestTop"
@@ -45,8 +45,19 @@ class TestTop_CHIL2(numCores: Int = 1)(implicit p: Parameters) extends LazyModul
     masterNode
   }
 
-  val l1d_nodes = (0 until numCores) map(i => createClientNode(s"l1d$i", 32))
-  val master_nodes = l1d_nodes
+  val l1d_nodes = (0 until numCores).map(i => createClientNode(s"l1d$i", 32))
+  val l1i_nodes = (0 until numCores).map {i =>
+    (0 until numULAgents).map { j =>
+      TLClientNode(Seq(
+        TLMasterPortParameters.v1(
+          clients = Seq(TLMasterParameters.v1(
+            name = s"l1i${i}_${j}",
+            sourceId = IdRange(0, 32)
+          ))
+        )
+      ))
+    }
+  }
 
   // val l2 = LazyModule(new TL2CHICoupledL2())
   val l2_nodes = (0 until numCores).map(i => LazyModule(new TL2CHICoupledL2()(new Config((_, _, _) => {
@@ -61,7 +72,7 @@ class TestTop_CHIL2(numCores: Int = 1)(implicit p: Parameters) extends LazyModul
     case EnableCHI => true
   }))))
 
-  val xbar = TLXbar()
+  // val xbar = TLXbar()
   val bankBinders = (0 until numCores).map(_ => BankBinder(1, 64))
   // val ram = LazyModule(new TLRAM(AddressSet(0, 0xffffL), beatBytes = 32))
 
@@ -81,12 +92,15 @@ class TestTop_CHIL2(numCores: Int = 1)(implicit p: Parameters) extends LazyModul
   //   l2.node :*=
   //   xbar
 
-  l1d_nodes.zip(l2_nodes).zipWithIndex.foreach { case ((l1, l2), i) =>
+  l1d_nodes.zip(l2_nodes).zipWithIndex.foreach { case ((l1d, l2), i) =>
+    val l1xbar = TLXbar()
+    l1xbar := l1d
+    for (l1i <- l1i_nodes(i)) { l1xbar := l1i }
     l2.managerNode :=
       TLXbar() :=*
       bankBinders(i) :*=
       l2.node :*=
-      l1
+      l1xbar
   }
 
   lazy val module = new LazyModuleImp(this){
@@ -100,9 +114,16 @@ class TestTop_CHIL2(numCores: Int = 1)(implicit p: Parameters) extends LazyModul
     dontTouch(clean)
     dontTouch(dump)
 
-    master_nodes.zipWithIndex.foreach{
+    l1d_nodes.zipWithIndex.foreach{
       case (node, i) =>
         node.makeIOs()(ValName(s"master_port_$i"))
+    }
+    if (numULAgents != 0) {
+      l1i_nodes.zipWithIndex.foreach { case (core, i) =>
+        core.zipWithIndex.foreach { case (node, j) =>
+          node.makeIOs()(ValName(s"master_ul_port_${i}_${j}"))
+        }
+      }
     }
 
     // val io = IO(new Bundle {
@@ -176,7 +197,7 @@ object TestTop_CHI_DualCore extends App {
     case EnableCHI => true
   })
 
-  val top = DisableMonitors(p => LazyModule(new TestTop_CHIL2(numCores = 2)(p)))(config)
+  val top = DisableMonitors(p => LazyModule(new TestTop_CHIL2(numCores = 2/*, numULAgents = 1*/)(p)))(config)
 
   (new ChiselStage).execute(args, Seq(
     ChiselGeneratorAnnotation(() => top.module)
