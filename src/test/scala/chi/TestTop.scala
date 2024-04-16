@@ -74,25 +74,7 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0)(implicit p: Paramet
     case BankBitsKey => banks
   }).alter(p))))
 
-  // val xbar = TLXbar()
   val bankBinders = (0 until numCores).map(_ => BankBinder(banks, 64))
-  // val ram = LazyModule(new TLRAM(AddressSet(0, 0xffffL), beatBytes = 32))
-
-  // for (l1d <- l1d_nodes) {
-  //   xbar := TLBuffer() := l1d
-  // }
-  // l1d_nodes.zip(l2_nodes).foreach { case (l1, l2) => l2 := l1 }
-
-  // ram.node :=
-  //   TLXbar() :=*
-  //     TLFragmenter(32, 64) :=*
-  //     TLCacheCork() :=*
-  //     TLDelayer(delayFactor) :=*
-  // l2.managerNode :=
-  //   TLXbar() :=*
-  //   bankBinder :*=
-  //   l2.node :*=
-  //   xbar
 
   l1d_nodes.zip(l2_nodes).zipWithIndex.foreach { case ((l1d, l2), i) =>
     val l1xbar = TLXbar()
@@ -128,17 +110,10 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0)(implicit p: Paramet
       }
     }
 
-    // val io = IO(new Bundle {
-    //   val chi = new PortIO
-    // })
     val io = IO(Vec(numCores, new Bundle() {
       val chi = new PortIO
     }))
 
-    // l2.module.io.chi <> io.chi
-    // dontTouch(l2.module.io)
-
-    // l2.module.io.hartId := 0.U
     l2_nodes.zipWithIndex.foreach { case (l2, i) =>
       l2.module.io.chi <> io(i).chi
       dontTouch(l2.module.io)
