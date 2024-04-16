@@ -74,6 +74,16 @@ class DecoupledUpwardsLinkIO extends Bundle {
   val snp = DecoupledIO(new CHISNP)
 }
 
+class DecoupledDownwardsNoSnpLinkIO extends Bundle {
+  val req = DecoupledIO(new CHIREQ)
+  val dat = DecoupledIO(new CHIDAT)
+}
+
+class DecoupledUpwardsNoSnpLinkIO extends Bundle {
+  val rsp = DecoupledIO(new CHIRSP)
+  val dat = DecoupledIO(new CHIDAT)
+}
+
 class PortIO extends Bundle with HasPortSwitch {
   val tx = new DownwardsLinkIO
   val rx = Flipped(new UpwardsLinkIO)
@@ -82,6 +92,11 @@ class PortIO extends Bundle with HasPortSwitch {
 class DecoupledPortIO extends Bundle {
   val tx = new DecoupledDownwardsLinkIO
   val rx = Flipped(new DecoupledUpwardsLinkIO)
+}
+
+class DecoupledNoSnpPortIO extends Bundle {
+  val tx = new DecoupledDownwardsNoSnpLinkIO
+  val rx = Flipped(new DecoupledUpwardsNoSnpLinkIO)
 }
 
 object LinkStates {

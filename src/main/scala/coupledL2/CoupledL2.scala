@@ -64,6 +64,8 @@ trait HasCoupledL2Parameters {
 
   val releaseBufWPorts = 3 // sinkC & mainPipe s5 & mainPipe s3 (nested)
 
+  val mmioBridgeSize = cacheParams.mmioBridgeSize
+
   // Prefetch
   val prefetchOpt = cacheParams.prefetch
   val hasPrefetchBit = prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchBit

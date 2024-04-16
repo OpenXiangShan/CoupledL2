@@ -85,6 +85,17 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0)(implicit p: Paramet
       bankBinders(i) :*=
       l2.node :*=
       l1xbar
+    /**
+      * MMIO: make diplomacy happy
+      */
+    val mmioClientNode = TLClientNode(Seq(
+      TLMasterPortParameters.v1(
+        clients = Seq(TLMasterParameters.v1(
+          "uncache"
+        ))
+      )
+    ))
+    l2.mmioBridge.mmioNode := mmioClientNode
   }
 
   lazy val module = new LazyModuleImp(this){

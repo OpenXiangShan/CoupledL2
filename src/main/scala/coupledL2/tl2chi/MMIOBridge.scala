@@ -1,0 +1,236 @@
+
+/** *************************************************************************************
+  * Copyright (c) 2020-2021 Institute of Computing Technology, Chinese Academy of Sciences
+  * Copyright (c) 2020-2021 Peng Cheng Laboratory
+  *
+  * XiangShan is licensed under Mulan PSL v2.
+  * You can use this software according to the terms and conditions of the Mulan PSL v2.
+  * You may obtain a copy of Mulan PSL v2 at:
+  *          http://license.coscl.org.cn/MulanPSL2
+  *
+  * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+  * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+  *
+  * See the Mulan PSL v2 for more details.
+  * *************************************************************************************
+  */
+
+package coupledL2.tl2chi
+
+import chisel3._
+import chisel3.util._
+import utility._
+import org.chipsalliance.cde.config.Parameters
+import freechips.rocketchip.diplomacy._
+import freechips.rocketchip.tilelink._
+import freechips.rocketchip.tilelink.TLMessages._
+import coupledL2.HasCoupledL2Parameters
+import coupledL2.tl2chi.CHIOpcode._
+
+class MMIOBridge()(implicit p: Parameters) extends LazyModule
+  with HasCoupledL2Parameters
+  with HasCHIMsgParameters {
+
+  override def shouldBeInlined: Boolean = false
+
+  /**
+    * MMIO node
+    */
+  val onChipPeripheralRange = AddressSet(0x38000000L, 0x07ffffffL)
+  val uartRange = AddressSet(0x40600000, 0xf)
+  val uartDevice = new SimpleDevice("serial", Seq("xilinx,uartlite"))
+  val uartParams = TLSlaveParameters.v1(
+    address = Seq(uartRange),
+    resources = uartDevice.reg,
+    regionType = RegionType.UNCACHED,
+    supportsGet = TransferSizes(1, 8),
+    supportsPutFull = TransferSizes(1, 8),
+    supportsPutPartial = TransferSizes(1, 8)
+  )
+  val peripheralRange = AddressSet(
+    0x0, 0x7fffffff
+  ).subtract(onChipPeripheralRange).flatMap(x => x.subtract(uartRange))
+
+  val mmioNode = TLManagerNode(Seq(TLSlavePortParameters.v1(
+    managers = Seq(TLSlaveParameters.v1(
+      address = peripheralRange,
+      regionType = RegionType.UNCACHED,
+      supportsGet = TransferSizes(1, 8),
+      supportsPutFull = TransferSizes(1, 8),
+      supportsPutPartial = TransferSizes(1, 8)
+    ), uartParams),
+    beatBytes = 8
+  )))
+
+  lazy val module = new MMIOBridgeImp(this)
+
+}
+
+class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Module {
+  val io = IO(new Bundle() {
+    val req = Flipped(DecoupledIO(new TLBundleA(edge.bundle)))
+    val resp = DecoupledIO(new TLBundleD(edge.bundle))
+    val chi = new DecoupledNoSnpPortIO
+    val id = Input(UInt())
+  })
+
+  val s_txreq = RegInit(true.B)
+  val s_ncbwrdata = RegInit(true.B)
+  // val s_readrecript = RegInit(true.B) // TODO
+  // val s_compack = RegInit(true.B) // TODO
+  val s_resp = RegInit(true.B)
+  val w_comp = RegInit(true.B)
+  val w_dbidresp = RegInit(true.B)
+  val w_compdata = RegInit(true.B)
+
+  val no_schedule = s_txreq && s_ncbwrdata && s_resp
+  val no_wait = w_comp && w_dbidresp && w_compdata
+
+  val req = RegEnable(io.req.bits, io.req.fire)
+  val req_valid = !no_schedule || !no_wait
+  val rdata = Reg(UInt(DATA_WIDTH.W))
+  val srcID = Reg(UInt(SRCID_WIDTH.W))
+  val dbID = Reg(UInt(DBID_WIDTH.W))
+  val isRead = req.opcode === Get
+
+  val txreq = io.chi.tx.req
+  val txdat = io.chi.tx.dat
+  val rxdat = io.chi.rx.dat
+  val rxrsp = io.chi.rx.rsp
+  
+  /**
+    * Entry allocation
+    */
+  when (io.req.fire) {
+    s_txreq := false.B
+    s_resp := false.B
+    when (io.req.bits.opcode === Get) {
+      w_compdata := false.B
+    }.elsewhen (io.req.bits.opcode === PutFullData || io.req.bits.opcode === PutPartialData) {
+      w_comp := false.B
+      w_dbidresp := false.B
+      s_ncbwrdata := false.B
+    }
+  }
+
+  /**
+    * State flags recover
+    */
+  when (txreq.fire) {
+    s_txreq := true.B
+  }
+  when (rxdat.fire) {
+    w_compdata := true.B
+    rdata := rxdat.bits.data
+  }
+  when (io.resp.fire) {
+    s_resp := true.B
+  }
+  when (rxrsp.fire) {
+    when (rxrsp.bits.opcode === RSPOpcodes.CompDBIDResp || rxrsp.bits.opcode === RSPOpcodes.Comp) {
+      w_comp := true.B
+    }
+    when (rxrsp.bits.opcode === RSPOpcodes.CompDBIDResp || rxrsp.bits.opcode === RSPOpcodes.DBIDResp) {
+      w_dbidresp := true.B
+      srcID := rxrsp.bits.srcID
+      dbID := rxrsp.bits.dbID
+    }
+  }
+  when (txdat.fire) {
+    s_ncbwrdata := true.B
+  }
+
+  /**
+    * IO Assignment
+    */
+  io.req.ready := no_schedule && no_wait
+  txreq.valid := !s_txreq
+  txreq.bits := 0.U.asTypeOf(txreq.bits.cloneType)
+  txreq.bits.tgtID := SAM(sam).lookup(txreq.bits.addr)
+  txreq.bits.txnID := io.id
+  txreq.bits.opcode := ParallelLookUp(req.opcode, Seq(
+    Get -> REQOpcodes.ReadNoSnp,
+    PutFullData -> REQOpcodes.WriteNoSnpFull,
+    PutPartialData -> REQOpcodes.WriteNoSnpPtl
+  ))
+  txreq.bits.size := req.size
+  txreq.bits.addr := req.address
+  // TODO: consider retry
+  txreq.bits.order := OrderEncodings.None // TODO: To be confirmed
+  txreq.bits.memAttr := MemAttr(allocate = false.B, cacheable = false.B, device = true.B, ewa = false.B)
+  txreq.bits.expCompAck := false.B
+
+  io.resp.valid := !s_resp && Mux(isRead, w_compdata, w_comp && w_dbidresp && s_ncbwrdata)
+  io.resp.bits.opcode := Mux(isRead, AccessAckData, AccessAck)
+  io.resp.bits.param := 0.U // reserved
+  io.resp.bits.size := req.size
+  io.resp.bits.source := req.source
+  io.resp.bits.sink := 0.U // ignored
+  io.resp.bits.denied := false.B
+  io.resp.bits.corrupt := false.B
+  io.resp.bits.data := ParallelLookUp(
+    req.address(log2Up(beatBytes) - 1, 0),
+    (0 until beatBytes).map(i => i.U -> rdata(rdata.getWidth - 1, i*8))
+  ) // TODO: fix timing
+
+  txdat.valid := !s_ncbwrdata && w_dbidresp
+  txdat.bits := 0.U.asTypeOf(txdat.bits.cloneType)
+  txdat.bits.tgtID := srcID
+  txdat.bits.txnID := dbID
+  txdat.bits.opcode := DATOpcodes.NonCopyBackWrData
+  txdat.bits.ccID := 0.U
+  txdat.bits.dataID := 0.U
+  txdat.bits.be := req.mask << (req.address(log2Up(beatBytes) - 1, 0))
+  txdat.bits.data := ParallelLookUp(
+    req.address(log2Up(beatBytes) - 1, 0),
+    (0 until beatBytes).map(i => i.U -> (req.data << (i * 8)))
+  )
+
+  rxrsp.ready := (!w_comp || !w_dbidresp) && s_txreq
+  rxdat.ready := !w_compdata && s_txreq
+}
+
+class MMIOBridgeImp(outer: MMIOBridge) extends LazyModuleImp(outer)
+  with HasCoupledL2Parameters
+  with HasCHIMsgParameters {
+
+  val (bus, edge) = outer.mmioNode.in.head
+
+  val io = IO(new DecoupledNoSnpPortIO)
+
+  val entries = Seq.fill(mmioBridgeSize) { Module(new MMIOBridgeEntry(edge)) }
+  val readys = VecInit(entries.map(_.io.req.ready))
+  val selectOH = ParallelPriorityMux(readys.zipWithIndex.map { case (ready, i) =>
+    ready -> (1 << i).U
+  }).asBools
+
+  entries.zipWithIndex.foreach { case (entry, i) =>
+    entry.io.req.valid := bus.a.valid && selectOH(i)
+    entry.io.req.bits := bus.a.bits
+
+    entry.io.chi.rx.dat.valid := io.rx.dat.valid && io.rx.dat.bits.txnID === i.U
+    entry.io.chi.rx.dat.bits := io.rx.dat.bits
+
+    entry.io.chi.rx.rsp.valid := io.rx.rsp.valid && io.rx.rsp.bits.txnID === i.U
+    entry.io.chi.rx.rsp.bits := io.rx.rsp.bits
+
+    entry.io.id := i.U
+  }
+
+  arb(entries.map(_.io.chi.tx.req), io.tx.req, Some("mmio_txreq"))
+  arb(entries.map(_.io.chi.tx.dat), io.tx.dat, Some("mmio_txdat"))
+  arb(entries.map(_.io.resp), bus.d, Some("mmio_channel_D"))
+
+  bus.a.ready := Cat(readys).orR
+
+  io.rx.dat.ready := Cat(entries.zipWithIndex.map { case (entry, i) =>
+    entry.io.chi.rx.dat.ready && io.rx.dat.bits.txnID === i.U
+  }).orR
+  io.rx.rsp.ready := Cat(entries.zipWithIndex.map { case (entry, i) =>
+    entry.io.chi.rx.rsp.ready && io.rx.rsp.bits.txnID === i.U
+  }).orR
+
+  dontTouch(io)
+  dontTouch(bus)
+}
