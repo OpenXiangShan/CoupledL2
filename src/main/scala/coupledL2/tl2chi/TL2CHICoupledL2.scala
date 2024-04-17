@@ -335,7 +335,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
 
     // RXSNP
     val rxsnp = Wire(DecoupledIO(new CHISNP))
-    val rxsnpSliceID = if (banks <= 1) 0.U else rxsnp.bits.addr(bankBits - 1, 0)
+    val rxsnpSliceID = if (banks <= 1) 0.U else (rxsnp.bits.addr >> (offsetBits - 3))(bankBits - 1, 0)
     slices.zipWithIndex.foreach { case (s, i) =>
       s.io.out.rx.snp.valid := rxsnp.valid && rxsnpSliceID === i.U
       s.io.out.rx.snp.bits := rxsnp.bits

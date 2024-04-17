@@ -74,9 +74,11 @@ class RXSNP(
   def fromSnpToTaskBundle(snp: CHISNP): TaskBundle = {
     val task = WireInit(0.U.asTypeOf(new TaskBundle))
     task.channel := "b010".U
-    task.tag := parseAddress(snp.addr)._1
-    task.set := parseAddress(snp.addr)._2
-    task.off := parseAddress(snp.addr)._3
+    // Addr in CHI SNP channel has 3 fewer bits than full address
+    val snpFullAddr = Cat(snp.addr, 0.U(3.W))
+    task.tag := parseAddress(snpFullAddr)._1
+    task.set := parseAddress(snpFullAddr)._2
+    task.off := parseAddress(snpFullAddr)._3
     task.alias.foreach(_ := 0.U)
     task.vaddr.foreach(_ := 0.U)
     task.isKeyword.foreach(_ := false.B)
