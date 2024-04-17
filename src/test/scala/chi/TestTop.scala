@@ -11,7 +11,7 @@ import coupledL2.prefetch._
 import coupledL2.tl2chi._
 import utility.{ChiselDB, FileRegisters, TLLogger}
 
-class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0)(implicit p: Parameters) extends LazyModule {
+class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(implicit p: Parameters) extends LazyModule {
 
   /*   L1D(L1I)* L1D(L1I)* ... L1D(L1I)*
    *       \         |          /
@@ -24,7 +24,6 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0)(implicit p: Paramet
   override lazy val desiredName: String = "TestTop"
   val delayFactor = 0.5
   val cacheParams = p(L2ParamKey)
-  val banks = 1
 
   def createClientNode(name: String, sources: Int) = {
     val masterNode = TLClientNode(Seq(
@@ -71,7 +70,7 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0)(implicit p: Paramet
       hartIds = Seq{i}
     )
     case EnableCHI => true
-    case BankBitsKey => banks
+    case BankBitsKey => log2Ceil(banks)
   }).alter(p))))
 
   val bankBinders = (0 until numCores).map(_ => BankBinder(banks, 64))
@@ -137,6 +136,7 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0)(implicit p: Paramet
 }
 
 object TestTop_CHIL2 extends App {
+  val banks = 1
   val config = new Config((_, _, _) => {
     case L2ParamKey => L2Param(
       clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
@@ -153,9 +153,10 @@ object TestTop_CHIL2 extends App {
       // )
     )
     case EnableCHI => true
+    case BankBitsKey => log2Ceil(banks)
   })
 
-  val top = DisableMonitors(p => LazyModule(new TestTop_CHIL2(numCores = 1)(p)))(config)
+  val top = DisableMonitors(p => LazyModule(new TestTop_CHIL2(numCores = 1, banks = banks)(p)))(config)
 
   (new ChiselStage).execute(args, Seq(
     ChiselGeneratorAnnotation(() => top.module)
@@ -167,6 +168,7 @@ object TestTop_CHIL2 extends App {
 }
 
 object TestTop_CHI_DualCore extends App {
+  val banks = 1
   val config = new Config((_, _, _) => {
     case L2ParamKey => L2Param(
       clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
@@ -183,9 +185,10 @@ object TestTop_CHI_DualCore extends App {
       // )
     )
     case EnableCHI => true
+    case BankBitsKey => log2Ceil(banks)
   })
 
-  val top = DisableMonitors(p => LazyModule(new TestTop_CHIL2(numCores = 2/*, numULAgents = 1*/)(p)))(config)
+  val top = DisableMonitors(p => LazyModule(new TestTop_CHIL2(numCores = 2/*, numULAgents = 1*/, banks = banks)(p)))(config)
 
   (new ChiselStage).execute(args, Seq(
     ChiselGeneratorAnnotation(() => top.module)
