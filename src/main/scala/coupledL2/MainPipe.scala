@@ -588,6 +588,22 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     s.set === s1.b_set && (if(tag) s.tag === s1.b_tag else true.B)
   }
 
+  /*
+  val tp_block_valid = RegInit(false.B)
+  val tp_block_set = RegInit(0.U(setBits.W))
+  when(task_s3.valid && req_s3.fromTP && req_s3.tpmetaWen) {
+    when(!req_s3.tpmetaWenRepl) { // TPmeta need replace
+      tp_block_valid := true.B
+      tp_block_set := req_s3.set
+    }
+    when(req_s3.tpmetaWenRepl && (tp_block_set === req_s3.set)) { // TPmeta replaced
+      tp_block_valid := false.B
+    }
+  }
+  val tp_blockA_s1 = tp_block_valid && (tp_block_set === io.fromReqArb.status_s1.a_set)
+  val tp_blockC_s1 = tp_block_valid && (tp_block_set === io.fromReqArb.status_s1.c_set)
+   */
+
   io.toReqBuf(0) := task_s2.valid && s23Block('a', task_s2.bits)
   io.toReqBuf(1) := task_s3.valid && s23Block('a', task_s3.bits)
 
@@ -664,7 +680,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     alloc_state.s_probeack := false.B
   }
 
-  when(req_s3.fromTP) {
+  when(req_s3.fromTP /* && req_s3.tpmetaWen && !req_s3.tpmetaWenRepl */) {
     alloc_state.s_release := false.B
     alloc_state.w_releaseack := false.B
     when(dirResult_s3.meta.clients.orR) {

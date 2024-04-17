@@ -73,6 +73,7 @@ class DirRead(implicit p: Parameters) extends L2Bundle {
   val refill = Bool()
   val mshrId = UInt(mshrBits.W)
   val tpmeta = Bool()
+  val tpmetaWen = Bool()
 }
 
 class DirResult(implicit p: Parameters) extends L2Bundle {
@@ -259,10 +260,12 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   /* ====== Update ====== */
   // update replacer only when A hit or refill, at stage 3
+  // also update replacer when TPmeta req(write) valid
   val updateHit = reqValid_s3 && hit_s3 && req_s3.replacerInfo.channel(0) &&
     (req_s3.replacerInfo.opcode === AcquirePerm || req_s3.replacerInfo.opcode === AcquireBlock)
   val updateRefill = refillReqValid_s3 && !refillRetry
-  replacerWen := updateHit || updateRefill
+  val updateTPmetaReplace = reqValid_s3 && req_s3.tpmeta && req_s3.tpmetaWen
+  replacerWen := updateHit || updateRefill || updateTPmetaReplace
 
   // !!![TODO]!!! check this @CLS
   // hit-Promotion, miss-Insertion for RRIP, so refill should hit = false.B
