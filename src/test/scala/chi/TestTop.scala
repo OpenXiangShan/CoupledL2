@@ -77,8 +77,8 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(imp
 
   l1d_nodes.zip(l2_nodes).zipWithIndex.foreach { case ((l1d, l2), i) =>
     val l1xbar = TLXbar()
-    l1xbar := l1d
-    for (l1i <- l1i_nodes(i)) { l1xbar := l1i }
+    l1xbar := TLBuffer() := l1d
+    for (l1i <- l1i_nodes(i)) { l1xbar := TLBuffer() := l1i }
     l2.managerNode :=
       TLXbar() :=*
       bankBinders(i) :*=
