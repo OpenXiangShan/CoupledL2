@@ -155,19 +155,24 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     * 2. When the snoop opcode is SnpCleanFwd, SnpNotSharedDirtyFwd or SnpSharedFwd, always echo SnpRespDataFwded
     *    if RetToSrc = 1 as long as the snooped block is valid.
     */
-  val doRespData = (isT(meta.state) && meta.dirty || probeDirty) && (
-    req_chiOpcode === SnpOnce ||
-    snpToB ||
-    req_chiOpcode === SnpUnique ||
-    req_chiOpcode === SnpUniqueStash ||
-    req_chiOpcode === SnpCleanShared ||
-    req_chiOpcode === SnpCleanInvalid
-  ) || dirResult.hit && req.retToSrc.get && isSnpToBFwd(req_chiOpcode)
+  val doRespData = Mux(
+    dirResult.hit,
+    (isT(meta.state) && meta.dirty || probeDirty) && (
+      req_chiOpcode === SnpOnce ||
+      snpToB ||
+      req_chiOpcode === SnpUnique ||
+      req_chiOpcode === SnpUniqueStash ||
+      req_chiOpcode === SnpCleanShared ||
+      req_chiOpcode === SnpCleanInvalid
+    ) || req.retToSrc.get && isSnpToBFwd(req_chiOpcode),
+    req.snpHitRelease && req.snpHitReleaseWithData
+  )
   /**
     * About which snoop should echo SnpResp[Data]Fwded instead of SnpResp[Data]:
     * 1. When the snoop opcode is Snp*Fwd and the snooped block is valid.
     */
   val doFwd = isSnpXFwd(req_chiOpcode) && dirResult.hit
+  val doFwdHitRelease = isSnpXFwd(req_chiOpcode) && req.snpHitRelease && req.snpHitReleaseWithData
 
   val gotUD = meta.dirty & isT(meta.state) //TC/TTC -> UD
   val promoteT_normal =  dirResult.hit && meta_no_client && meta.state === TIP
@@ -460,7 +465,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       prefetch = !snpToN && meta_pft,
       accessed = !snpToN && meta.accessed
     )
-    mp_probeack.metaWen := true.B
+    mp_probeack.metaWen := !req.snpHitRelease
     mp_probeack.tagWen := false.B
     mp_probeack.dsWen := !snpToN && probeDirty
     mp_probeack.wayMask := 0.U(cacheParams.ways.W)
@@ -477,17 +482,27 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     // For SnpRespData or SnpRespData, DBID is set to the same value as the TxnID of the snoop.
     // For SnpRespDataFwded or SnpRespDataFwded, DBID is not defined and can be any value.
     mp_probeack.dbID.get := req.txnID.getOrElse(0.U)
-    mp_probeack.chiOpcode.get := MuxLookup(Cat(doFwd, doRespData), SnpResp)(Seq(
+    mp_probeack.chiOpcode.get := MuxLookup(
+      Cat(doFwd || doFwdHitRelease, doRespData),
+      SnpResp
+    )(Seq(
       Cat(false.B, false.B) -> SnpResp,
       Cat(true.B, false.B)  -> SnpRespFwded,
       Cat(false.B, true.B)  -> SnpRespData, // ignore SnpRespDataPtl for now
       Cat(true.B, true.B)   -> SnpRespDataFwded
     ))
-    mp_probeack.resp.get := setPD(respCacheState, respPassDirty)
+    mp_probeack.resp.get := Mux(
+      req.snpHitRelease && req.snpHitReleaseWithData,
+      I_PD,
+      setPD(respCacheState, respPassDirty)
+    )
     mp_probeack.fwdState.get := setPD(fwdCacheState, fwdPassDirty)
     mp_probeack.pCrdType.get := 0.U
     mp_probeack.retToSrc.get := req.retToSrc.get // DontCare
     mp_probeack.expCompAck.get := false.B
+    mp_probeack.snpHitRelease := req.snpHitRelease
+    mp_probeack.snpHitReleaseWithData := req.snpHitReleaseWithData
+    mp_probeack.snpHitReleaseIdx := req.snpHitReleaseIdx
 
     mp_probeack
   }
@@ -660,6 +675,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     mp_dct.pCrdType.get := 0.U // DontCare
     mp_dct.retToSrc.get := false.B // DontCare
     mp_dct.expCompAck.get := false.B // DontCare
+    mp_dct.snpHitRelease := req.snpHitRelease
+    mp_dct.snpHitReleaseWithData := req.snpHitReleaseWithData
+    mp_dct.snpHitReleaseIdx := req.snpHitReleaseIdx
 
     mp_dct
   }
@@ -857,9 +875,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     timer := 0.U
   }
 
-  // when grant not received, B can nest A
-  val nestB = !state.w_grantfirst
-
   // alias: should protect meta from being accessed or occupied
   val releaseNotSent = !state.s_release
   io.status.valid := req_valid
@@ -887,13 +902,16 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   io.msInfo.bits.dirHit := dirResult.hit
   io.msInfo.bits.metaTag := dirResult.tag
   io.msInfo.bits.willFree := will_free
-  io.msInfo.bits.nestB := nestB
   io.msInfo.bits.isAcqOrPrefetch := req_acquire || req_prefetch
   io.msInfo.bits.isPrefetch := req_prefetch
-  io.msInfo.bits.s_refill := state.s_refill
   io.msInfo.bits.param := req.param
   io.msInfo.bits.mergeA := mergeA
+  io.msInfo.bits.w_grantfirst := state.w_grantfirst
+  io.msInfo.bits.s_refill := state.s_refill
   io.msInfo.bits.w_releaseack := state.w_releaseack
+  io.msInfo.bits.w_replResp := state.w_replResp
+  io.msInfo.bits.w_rprobeacklast := state.w_rprobeacklast
+  io.msInfo.bits.replaceData := isT(meta.state) && meta.dirty || probeDirty
 
   assert(!(c_resp.valid && !io.status.bits.w_c_resp))
   assert(!(rxrsp.valid && !io.status.bits.w_d_resp))

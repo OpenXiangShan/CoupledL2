@@ -33,24 +33,49 @@ class RXSNP(
     val msInfo = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo())))
   })
 
-  val task = fromSnpToTaskBundle(io.rxsnp.bits)
+  val task = Wire(new TaskBundle)
 
-  // unable to accept incoming B req because same-addr as some MSHR REQ
-  val addrConflictMask = VecInit(io.msInfo.map(s =>
-    s.valid && s.bits.set === task.set && s.bits.reqTag === task.tag && !s.bits.willFree && !s.bits.nestB
+  /**
+    * When should an MSHR with Acquire address of X block/nest an incoming snoop with address X?
+    * 
+    * 1. Before MSHR receives the first beat of CompData, snoop should be **nested** because snoop has higher priority
+    *    than request according to CHI spec.
+    * 2. After MSHR receives the first beat of CompData, and before L2 receives GrantAck from L1, snoop of X should be
+    *    **blocked**, because a slave should not issue a Probe if there is a pending GrantAck on the block according
+    *    to TileLink spec.
+    * 3. Before MSHR sends out WriteBackFull/Evict to write refilled data into DS, snoop should be **blocked**, Because
+    *    the snooped block is still in RefillBuffer rather than DS.
+    * 4. After MSHR sends out WriteBackFull/Evict and write refilled data into DS, snoop should be **nested**, still
+    *    because snoop has higher priority than request.
+    */
+  val reqBlockSnpMask = VecInit(io.msInfo.map(s =>
+    s.valid && s.bits.set === task.set && s.bits.reqTag === task.tag &&
+    s.bits.w_grantfirst && (s.bits.blockRefill || s.bits.w_releaseack) && !s.bits.willFree
   )).asUInt
-  val addrConflict = addrConflictMask.orR
+  val reqBlockSnp = reqBlockSnpMask.orR
 
-  /*
-   1. For TL unable to accept incoming B req because same-addr as some MSHR replaced block and cannot nest
-   2. For CHI ignore this kind of block
-   */
-  val replaceConflictMask = VecInit(io.msInfo.map(s =>
-    s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && s.bits.blockRefill && !s.bits.w_releaseack
+  /**
+    * When should an MSHR that is goint to replace cacheline Y block/nest an incoming snoop with address Y?
+    * 
+    * 1. After MSHR decides which way to replace but before MSHR finished all the rProbes, the incoming snoop of Y
+    *    should be **blocked**, because Once the Probe is issued the slave should not issue further Probes on the block
+    *    until it receives a ProbeAck.
+    * 2. After MSHR receives all the ProbeAcks of rProbe, the snoop of Y should be nested.
+    */
+  val replaceBlockSnpMask = VecInit(io.msInfo.map(s =>
+    s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag &&
+    s.bits.w_replResp && (!s.bits.w_rprobeacklast || s.bits.w_releaseack)
   )).asUInt
-  val replaceConflict = replaceConflictMask.orR
+  val replaceBlockSnp = replaceBlockSnpMask.orR
+  val replaceNestSnpMask = VecInit(io.msInfo.map(s =>
+      s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag &&
+      s.bits.w_replResp && s.bits.w_rprobeacklast && !s.bits.w_releaseack
+    )).asUInt
+  val replaceDataMask = VecInit(io.msInfo.map(_.bits.replaceData)).asUInt
 
-  val stall = addrConflict || replaceConflict
+  task := fromSnpToTaskBundle(io.rxsnp.bits)
+
+  val stall = reqBlockSnp || replaceBlockSnp // addrConflict || replaceConflict
   io.task.valid := io.rxsnp.valid && !stall
   io.task.bits := task
   io.rxsnp.ready := io.task.ready && !stall
@@ -66,10 +91,10 @@ class RXSNP(
   assert(stallCnt <= STALL_CNT_MAX, "stallCnt full! maybe there is a deadlock! addr => 0x%x req_opcode => %d txn_id => %d", io.rxsnp.bits.addr, io.rxsnp.bits.opcode, io.rxsnp.bits.txnID);
 
   assert(!(stall && io.rxsnp.fire))
-  dontTouch(addrConflictMask)
-  dontTouch(addrConflict)
-  dontTouch(replaceConflictMask)
-  dontTouch(replaceConflict)
+  // dontTouch(addrConflictMask)
+  // dontTouch(addrConflict)
+  // dontTouch(replaceConflictMask)
+  // dontTouch(replaceConflict)
 
   def fromSnpToTaskBundle(snp: CHISNP): TaskBundle = {
     val task = WireInit(0.U.asTypeOf(new TaskBundle))
@@ -106,8 +131,9 @@ class RXSNP(
     task.replTask := false.B
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
-    // task.snpHitRelease := replaceConflict   //indicate read release buffer @s2 to get snoop data 
-    // task.snpHitReleaseIdx := replaceConflictMask  //the index of ReleaseBuffer that conflict 
+    task.snpHitRelease := replaceNestSnpMask.orR
+    task.snpHitReleaseWithData := (replaceNestSnpMask & replaceDataMask).orR
+    task.snpHitReleaseIdx := PriorityEncoder(replaceNestSnpMask)
     task.tgtID.foreach(_ := 0.U) // TODO
     task.srcID.foreach(_ := snp.srcID)
     task.txnID.foreach(_ := snp.txnID)

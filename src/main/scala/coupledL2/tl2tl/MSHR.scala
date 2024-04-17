@@ -517,9 +517,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
     timer := 0.U
   }
 
-  // when grant not received, B can nest A
-  val nestB = !state.w_grantfirst
-
   // alias: should protect meta from being accessed or occupied
   val releaseNotSent = !state.s_release
   io.status.valid := req_valid
@@ -546,13 +543,15 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.msInfo.bits.dirHit := dirResult.hit
   io.msInfo.bits.metaTag := dirResult.tag
   io.msInfo.bits.willFree := will_free
-  io.msInfo.bits.nestB := nestB
   io.msInfo.bits.isAcqOrPrefetch := req_acquire || req_prefetch
   io.msInfo.bits.isPrefetch := req_prefetch
-  io.msInfo.bits.s_refill := state.s_refill
   io.msInfo.bits.param := req.param
   io.msInfo.bits.mergeA := mergeA
+  io.msInfo.bits.w_grantfirst := state.w_grantfirst
+  io.msInfo.bits.s_refill := state.s_refill
   io.msInfo.bits.w_releaseack := state.w_releaseack
+  io.msInfo.bits.w_replResp := state.w_replResp
+  io.msInfo.bits.w_rprobeacklast := state.w_rprobeacklast
 
   assert(!(c_resp.valid && !io.status.bits.w_c_resp))
   assert(!(d_resp.valid && !io.status.bits.w_d_resp))
