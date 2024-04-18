@@ -64,7 +64,7 @@ class RXSNP(
     */
   val replaceBlockSnpMask = VecInit(io.msInfo.map(s =>
     s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag &&
-    s.bits.w_replResp && (!s.bits.w_rprobeacklast || s.bits.w_releaseack)
+    s.bits.w_replResp && (!s.bits.w_rprobeacklast || s.bits.w_releaseack) && !s.bits.willFree
   )).asUInt
   val replaceBlockSnp = replaceBlockSnpMask.orR
   val replaceNestSnpMask = VecInit(io.msInfo.map(s =>
