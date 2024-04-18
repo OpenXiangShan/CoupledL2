@@ -69,4 +69,5 @@ object MetaData {
       Seq(INVALID, INVALID, BRANCH)
     )
   }
+  def isValid(state: UInt): Bool = state > INVALID
 }

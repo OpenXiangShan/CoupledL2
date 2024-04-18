@@ -402,6 +402,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   // This serves as VALID signal
   // c_set_dirty is true iff Release has Data
   io.nestedwb.c_set_dirty := task_s3.valid && task_s3.bits.fromC && task_s3.bits.opcode === ReleaseData
+  io.nestedwb.b_inv_dirty := false.B
 
   io.nestedwbData := c_releaseData_s3.asTypeOf(new DSBlock)
 
