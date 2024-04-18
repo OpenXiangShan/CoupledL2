@@ -179,6 +179,7 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle {
   val way = UInt(wayBits.W)
   val reqTag = UInt(tagBits.W)
   val willFree = Bool()
+  val aliasTask = aliasBitsOpt.map(_ => Bool())
 
   // to block Acquire for to-be-replaced data until Release done (indicated by ReleaseAck received)
   val needRelease = Bool()

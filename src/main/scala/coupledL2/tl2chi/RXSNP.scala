@@ -50,7 +50,8 @@ class RXSNP(
     */
   val reqBlockSnpMask = VecInit(io.msInfo.map(s =>
     s.valid && s.bits.set === task.set && s.bits.reqTag === task.tag &&
-    s.bits.w_grantfirst && (s.bits.blockRefill || s.bits.w_releaseack) && !s.bits.willFree
+    (s.bits.w_grantfirst || s.bits.aliasTask.getOrElse(false.B) && !s.bits.w_rprobeacklast) &&
+    (s.bits.blockRefill || s.bits.w_releaseack) && !s.bits.willFree
   )).asUInt
   val reqBlockSnp = reqBlockSnpMask.orR
 
