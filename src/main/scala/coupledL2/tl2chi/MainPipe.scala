@@ -213,6 +213,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   val expectFwd = SNPOpcodes.isSnpXFwd(req_s3.chiOpcode.get)
   val canFwd = dirResult_s3.hit
   val doFwd = expectFwd && canFwd
+  val doFwdHitRelease = expectFwd && req_s3.snpHitRelease && req_s3.snpHitReleaseWithData
   val need_pprobe_s3_b_snpOnceX = req_s3.fromB && SNPOpcodes.isSnpOnceX(req_s3.chiOpcode.get) &&
     dirResult_s3.hit && meta_s3.state === TRUNK && meta_has_clients_s3
   val need_pprobe_s3_b_snpToB = req_s3.fromB && (
@@ -225,7 +226,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
     SNPOpcodes.isSnpMakeInvalidX(req_s3.chiOpcode.get)
   ) && dirResult_s3.hit && meta_s3.state =/= TIP && meta_has_clients_s3
   val need_pprobe_s3_b = need_pprobe_s3_b_snpOnceX || need_pprobe_s3_b_snpToB || need_pprobe_s3_b_snpToN
-  val need_dct_s3_b = doFwd // DCT
+  val need_dct_s3_b = doFwd || doFwdHitRelease // DCT
   val need_mshr_s3_b = need_pprobe_s3_b || need_dct_s3_b
 
   val need_mshr_s3 = need_mshr_s3_a || need_mshr_s3_b
@@ -258,6 +259,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
     SNPOpcodes.isSnpXFwd(req_s3.chiOpcode.get) && retToSrc
   )
   val doRespData = shouldRespData && !neverRespData
+  val doRespDataHitRelease = req_s3.snpHitRelease && req_s3.snpHitReleaseWithData && !neverRespData
   dontTouch(doRespData)
   dontTouch(shouldRespData)
   dontTouch(neverRespData)
@@ -318,15 +320,26 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
     sink_resp_s3.bits.txnID.foreach(_ := task_s3.bits.txnID.get)
     sink_resp_s3.bits.dbID.foreach(_ := 0.U)
     sink_resp_s3.bits.pCrdType.foreach(_ := 0.U) // TODO
-    sink_resp_s3.bits.chiOpcode.foreach(_ := MuxLookup(Cat(doFwd, doRespData), RSPOpcodes.SnpResp)(Seq(
+    sink_resp_s3.bits.chiOpcode.foreach(_ := MuxLookup(
+      Cat(doFwd || doFwdHitRelease, doRespData || doRespDataHitRelease),
+      RSPOpcodes.SnpResp
+    )(Seq(
       Cat(false.B, false.B) -> RSPOpcodes.SnpResp,
       Cat(true.B, false.B)  -> RSPOpcodes.SnpRespFwded,
       Cat(false.B, true.B)  -> DATOpcodes.SnpRespData, // ignore SnpRespDataPtl for now
       Cat(true.B, true.B)   -> DATOpcodes.SnpRespDataFwded
     )))
-    sink_resp_s3.bits.resp.foreach(_ := setPD(respCacheState, respPassDirty))
+    sink_resp_s3.bits.resp.foreach(_ := Mux(
+      req_s3.snpHitRelease && !SNPOpcodes.isSnpStashX(req_s3.chiOpcode.get),
+      setPD(I, req_s3.snpHitReleaseWithData && !SNPOpcodes.isSnpMakeInvalidX(req_s3.chiOpcode.get)),
+      setPD(respCacheState, respPassDirty)
+    ))
     sink_resp_s3.bits.fwdState.foreach(_ := setPD(fwdCacheState, fwdPassDirty))
-    sink_resp_s3.bits.txChannel := Cat(doRespData, !doRespData, false.B)//Mux(doRespData, "b100".U, "b010".U) // TODO: parameterize this
+    sink_resp_s3.bits.txChannel := Cat(
+      doRespData || doRespDataHitRelease,
+      !(doRespData || doRespDataHitRelease),
+      false.B
+    ) // TODO: parameterize this
     sink_resp_s3.bits.size := log2Ceil(blockBytes).U
 
   }.otherwise { // req_s3.fromC
@@ -472,7 +485,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   val isTXDAT_s3 = Mux(
     mshr_req_s3,
     mshr_snpRespDataX_s3 || mshr_cbWrData_s3 || mshr_dct_s3,
-    req_s3.fromB && !need_mshr_s3 && doRespData && !data_unready_s3
+    req_s3.fromB && !need_mshr_s3 && (doRespDataHitRelease || doRespData && !data_unready_s3)
   )
   val isTXREQ_s3 = mshr_req_s3 && (mshr_writeBackFull_s3 || mshr_evict_s3)
 
@@ -497,8 +510,11 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   // This serves as VALID signal
   // c_set_dirty is true iff Release has Data
   io.nestedwb.c_set_dirty := task_s3.valid && task_s3.bits.fromC && task_s3.bits.opcode === ReleaseData
+  io.nestedwb.b_inv_dirty := task_s3.valid && task_s3.bits.fromB && source_req_s3.snpHitRelease
 
   io.nestedwbData := c_releaseData_s3.asTypeOf(new DSBlock)
+  
+  // TODO: add nested writeback from Snoop
 
   /* ======== prefetch ======== */
   io.prefetchTrain.foreach {
@@ -591,7 +607,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
     isTXDAT_s5 := isTXDAT_s4 || pendingTXDAT_s4
   }
   val rdata_s5 = io.toDS.rdata_s5.data
-  val out_data_s5 = Mux(!task_s5.bits.mshrTask, rdata_s5, data_s5)
+  val out_data_s5 = Mux(task_s5.bits.mshrTask || task_s5.bits.snpHitReleaseWithData, data_s5, rdata_s5)
   val chnl_fire_s5 = d_s5.fire || txreq_s5.fire || txrsp_s5.fire || txdat_s5.fire
 
   // TODO: check this

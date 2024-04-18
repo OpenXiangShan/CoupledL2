@@ -210,12 +210,22 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val dctNeedData = if (enableCHI) {
     task_s2.bits.toTXDAT && task_s2.bits.chiOpcode.get === DATOpcodes.CompData
   } else false.B
-  io.releaseBufRead_s2.valid := mshrTask_s2 && (
+  val snpHitReleaseNeedData = if (enableCHI) {
+    !mshrTask_s2 && task_s2.bits.fromB && task_s2.bits.snpHitReleaseWithData
+  } else false.B
+  io.releaseBufRead_s2.valid := Mux(
+    mshrTask_s2,
     releaseNeedData ||
-    snoopNeedData ||
-    dctNeedData ||
-    mshrTask_s2_a_upwards && task_s2.bits.useProbeData)
-  io.releaseBufRead_s2.bits.id := task_s2.bits.mshrId
+      snoopNeedData ||
+      dctNeedData ||
+      mshrTask_s2_a_upwards && task_s2.bits.useProbeData,
+    snpHitReleaseNeedData
+  )
+  io.releaseBufRead_s2.bits.id := Mux(
+    task_s2.bits.snpHitRelease,
+    task_s2.bits.snpHitReleaseIdx,
+    task_s2.bits.mshrId
+  )
 
   require(beatSize == 2)
 

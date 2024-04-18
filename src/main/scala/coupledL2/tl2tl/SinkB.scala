@@ -74,7 +74,7 @@ class SinkB(implicit p: Parameters) extends L2Module {
 
   // unable to accept incoming B req because same-addr as some MSHR REQ
   val addrConflict = VecInit(io.msInfo.map(s =>
-    s.valid && s.bits.set === task.set && s.bits.reqTag === task.tag && !s.bits.willFree && !s.bits.nestB
+    s.valid && s.bits.set === task.set && s.bits.reqTag === task.tag && !s.bits.willFree && s.bits.w_grantfirst
   )).asUInt.orR
 
   // unable to accept incoming B req because same-addr Release to L3 and have not received ReleaseAck, and some MSHR replaced block and cannot nest

@@ -109,9 +109,10 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val mergeA = Bool()
   val aMergeTask = new MergeTaskBundle()
 
-  // //Used for get data from ReleaseBuf when snoop hit with same PA 
-  // val snpHitRelease = Bool()
-  // val snpHitReleaseIdx = UInt(bufIdxBits.W) 
+  // Used for get data from ReleaseBuf when snoop hit with same PA 
+  val snpHitRelease = Bool()
+  val snpHitReleaseWithData = Bool()
+  val snpHitReleaseIdx = UInt(mshrBits.W) 
   // CHI
   val tgtID = chiOpt.map(_ => UInt(TGTID_WIDTH.W))
   val srcID = chiOpt.map(_ => UInt(SRCID_WIDTH.W))
@@ -188,18 +189,21 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle {
   val metaTag = UInt(tagBits.W)
   val dirHit = Bool()
 
-  // decide whether can nest B (req same-addr)
-  val nestB = Bool()
-
   // to drop duplicate prefetch reqs
   val isAcqOrPrefetch = Bool()
   val isPrefetch = Bool()
 
   // whether the mshr_task already in mainpipe
-  val s_refill = Bool()
   val param = UInt(3.W)
   val mergeA = Bool() // whether the mshr already merge an acquire(avoid alias merge)
+
+  val w_grantfirst = Bool()
+  val s_refill = Bool()
   val w_releaseack = Bool()
+  val w_replResp = Bool()
+  val w_rprobeacklast = Bool()
+
+  val replaceData = Bool() // If there is a replace, WriteBackFull or Evict
 }
 
 class RespInfoBundle(implicit p: Parameters) extends L2Bundle
@@ -290,7 +294,10 @@ class BlockInfo(implicit p: Parameters) extends L2Bundle {
 class NestedWriteback(implicit p: Parameters) extends L2Bundle {
   val set = UInt(setBits.W)
   val tag = UInt(tagBits.W)
+  // Nested ReleaseData sets block dirty
   val c_set_dirty = Bool()
+  // Nested Snoop invalidates block
+  val b_inv_dirty = Bool()
 }
 
 class PrefetchRecv extends Bundle {
