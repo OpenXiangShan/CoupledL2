@@ -296,14 +296,11 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
       * +----------------+---------------------------+  
       *
       */
-    def setSliceID(txnID: UInt, sliceID: UInt = 0.U, mmio: Bool = false.B): UInt = {
-      Cat(
+    def setSliceID(txnID: UInt, sliceID: UInt, mmio: Bool): UInt = {
+      Mux(
         mmio,
-        Mux(
-          mmio || (banks <= 1).B,
-          txnID.tail(1),
-          Cat(sliceID, txnID.tail(bankBits + 1))
-        )
+        Cat(1.U(1.W), txnID.tail(1)),
+        Cat(0.U(1.W), if (banks <= 1) txnID.tail(1) else Cat(sliceID(bankBits - 1, 0), txnID.tail(bankBits + 1)))
       )
     }
     def getSliceID(txnID: UInt): UInt = if (banks <= 1) 0.U else txnID.tail(1).head(bankBits)
