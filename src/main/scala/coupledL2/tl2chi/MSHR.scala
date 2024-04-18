@@ -88,6 +88,17 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   initState.elements.foreach(_._2 := true.B)
   val state     = RegInit(new FSMState(), initState)
 
+  /**
+    * When all the ways are occupied with some mshr, other mshrs with the same set may retry to find a way to replace
+    * over and over again, which may block the entrance of main pipe and lead to potential deadlock. To resolve the
+    * problem, we allow mshr to retry immediately for 3 times (backoffThreshold). If it still fails to find a way, the
+    * mshr must back off for a period of time (backoffCycles) to yield the opportunity to access main pipe.
+    */
+  val backoffThreshold = 3
+  val backoffCycles = 20
+  val retryTimes = RegInit(0.U(log2Up(backoffThreshold).W))
+  val backoffTimer = RegInit(0.U(log2Up(backoffCycles).W))
+
   //for CHI
   val srcid = RegInit(0.U(NODEID_WIDTH.W))
   val homenid = RegInit(0.U(NODEID_WIDTH.W))
@@ -130,6 +141,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     srcid := 0.U
     dbid := 0.U
     pcrdtype := 0.U
+
+    retryTimes := 0.U
+    backoffTimer := 0.U
   }
 
   /* ======== Enchantment ======== */
@@ -193,7 +207,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
         state.w_replResp // release after Grant to L1 sent and replRead returns
   val mp_cbwrdata_valid = !state.s_cbwrdata.getOrElse(true.B) && state.w_releaseack
   val mp_probeack_valid = !state.s_probeack && state.w_pprobeacklast
-  val mp_grant_valid = !state.s_refill && state.w_grantlast && state.w_rprobeacklast // [Alias] grant after rprobe done
+  val pending_grant_valid = !state.s_refill && state.w_grantlast && state.w_rprobeacklast
+  val mp_grant_valid = pending_grant_valid && (retryTimes < backoffThreshold.U || backoffTimer === backoffCycles.U)
   val mp_dct_valid = !state.s_dct.getOrElse(true.B) && state.s_probeack
   io.tasks.mainpipe.valid :=
     mp_release_valid  ||
@@ -202,6 +217,14 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     mp_cbwrdata_valid ||
     mp_dct_valid
   // io.tasks.prefetchTrain.foreach(t => t.valid := !state.s_triggerprefetch.getOrElse(true.B))
+
+  when (
+    pending_grant_valid &&
+    backoffTimer < backoffCycles.U &&
+    retryTimes === backoffThreshold.U
+  ) {
+    backoffTimer := backoffTimer + 1.U
+  }
 
   // resp and fwdState
   val respCacheState = ParallelPriorityMux(Seq(
@@ -832,6 +855,10 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     state.s_refill := false.B
     state.s_retry := false.B
     dirResult.way := replResp.way
+    when (retryTimes < backoffThreshold.U) {
+      retryTimes := retryTimes + 1.U
+    }
+    backoffTimer := 0.U
   }
   when (io.replResp.valid && !replResp.retry) {
     state.w_replResp := true.B
