@@ -73,6 +73,10 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
     val resp = DecoupledIO(new TLBundleD(edge.bundle))
     val chi = new DecoupledNoSnpPortIO
     val id = Input(UInt())
+    val pCrdQuery = Output(ValidIO(new Bundle() {
+      val pCrdType = UInt(PCRDTYPE_WIDTH.W)
+    }))
+    val pCrdGrant = Input(Bool())
   })
 
   val s_txreq = RegInit(true.B)
@@ -83,15 +87,18 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   val w_comp = RegInit(true.B)
   val w_dbidresp = RegInit(true.B)
   val w_compdata = RegInit(true.B)
+  val w_pcrdgrant = RegInit(true.B)
 
   val no_schedule = s_txreq && s_ncbwrdata && s_resp
-  val no_wait = w_comp && w_dbidresp && w_compdata
+  val no_wait = w_comp && w_dbidresp && w_compdata && w_pcrdgrant
 
   val req = RegEnable(io.req.bits, io.req.fire)
   val req_valid = !no_schedule || !no_wait
   val rdata = Reg(UInt(DATA_WIDTH.W))
   val srcID = Reg(UInt(SRCID_WIDTH.W))
   val dbID = Reg(UInt(DBID_WIDTH.W))
+  val allowRetry = RegInit(true.B)
+  val pCrdType = Reg(UInt(PCRDTYPE_WIDTH.W))
   val isRead = req.opcode === Get
 
   val txreq = io.chi.tx.req
@@ -105,6 +112,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   when (io.req.fire) {
     s_txreq := false.B
     s_resp := false.B
+    allowRetry := true.B
     when (io.req.bits.opcode === Get) {
       w_compdata := false.B
     }.elsewhen (io.req.bits.opcode === PutFullData || io.req.bits.opcode === PutPartialData) {
@@ -136,16 +144,25 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
       srcID := rxrsp.bits.srcID
       dbID := rxrsp.bits.dbID
     }
+    when (rxrsp.bits.opcode === RSPOpcodes.RetryAck) {
+      s_txreq := false.B
+      w_pcrdgrant := false.B
+      allowRetry := false.B
+      pCrdType := rxrsp.bits.pCrdType
+    }
   }
   when (txdat.fire) {
     s_ncbwrdata := true.B
+  }
+  when (io.pCrdGrant) {
+    w_pcrdgrant := true.B
   }
 
   /**
     * IO Assignment
     */
   io.req.ready := no_schedule && no_wait
-  txreq.valid := !s_txreq
+  txreq.valid := !s_txreq && w_pcrdgrant
   txreq.bits := 0.U.asTypeOf(txreq.bits.cloneType)
   txreq.bits.tgtID := SAM(sam).lookup(txreq.bits.addr)
   txreq.bits.txnID := io.id
@@ -156,8 +173,9 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   ))
   txreq.bits.size := req.size
   txreq.bits.addr := req.address
-  // TODO: consider retry
+  txreq.bits.allowRetry := allowRetry
   txreq.bits.order := OrderEncodings.None // TODO: To be confirmed
+  txreq.bits.pCrdType := Mux(allowRetry, 0.U, pCrdType)
   txreq.bits.memAttr := MemAttr(allocate = false.B, cacheable = false.B, device = true.B, ewa = false.B)
   txreq.bits.expCompAck := false.B
 
@@ -189,6 +207,9 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
 
   rxrsp.ready := (!w_comp || !w_dbidresp) && s_txreq
   rxdat.ready := !w_compdata && s_txreq
+
+  io.pCrdQuery.valid := !w_pcrdgrant
+  io.pCrdQuery.bits.pCrdType := pCrdType
 }
 
 class MMIOBridgeImp(outer: MMIOBridge) extends LazyModuleImp(outer)
@@ -205,6 +226,34 @@ class MMIOBridgeImp(outer: MMIOBridge) extends LazyModuleImp(outer)
     ready -> (1 << i).U
   }).asBools
 
+  /**
+    * Protocol Retry
+    */
+  val pCrdValids = RegInit(VecInit(Seq.fill(mmioBridgeSize)(false.B)))
+  val pCrdTypes = Reg(Vec(mmioBridgeSize, UInt(PCRDTYPE_WIDTH.W)))
+  val pCrdInsertOH = PriorityEncoderOH(pCrdValids.map(!_))
+  val isPCrdGrant = io.rx.rsp.bits.opcode === RSPOpcodes.PCrdGrant
+  val pCrdMatch = Wire(Vec(mmioBridgeSize, Vec(mmioBridgeSize, Bool())))
+  val pCrdMatchEntryVec = pCrdMatch.map(_.asUInt.orR)
+  val pCrdMatchEntryOH = PriorityEncoderOH(pCrdMatchEntryVec)
+  val pCrdFreeOH = ParallelPriorityMux(
+    pCrdMatchEntryVec,
+    pCrdMatch.map(x => VecInit(PriorityEncoderOH(x)))
+  )
+
+  when (io.rx.rsp.valid && isPCrdGrant) {
+    pCrdValids.zip(pCrdInsertOH).foreach { case (v, insert) => 
+      when (insert) { v := true.B }
+      assert(!(v && insert), "P-Credit overflow")
+    }
+    pCrdTypes.zip(pCrdInsertOH).foreach { case (t, insert) =>
+      when (insert) { t := io.rx.rsp.bits.pCrdType }
+    }
+  }
+  pCrdFreeOH.zip(pCrdValids).foreach { case (free, v) =>
+    when (free) { v := false.B }
+  }
+
   entries.zipWithIndex.foreach { case (entry, i) =>
     entry.io.req.valid := bus.a.valid && selectOH(i)
     entry.io.req.bits := bus.a.bits
@@ -216,6 +265,12 @@ class MMIOBridgeImp(outer: MMIOBridge) extends LazyModuleImp(outer)
     entry.io.chi.rx.rsp.bits := io.rx.rsp.bits
 
     entry.io.id := i.U
+
+    pCrdMatch(i) := VecInit(pCrdValids.zip(pCrdTypes).map { case (v, t) => 
+      entry.io.pCrdQuery.valid && v &&
+      entry.io.pCrdQuery.bits.pCrdType === t
+    })
+    entry.io.pCrdGrant := pCrdMatchEntryOH(i)
   }
 
   arb(entries.map(_.io.chi.tx.req), io.tx.req, Some("mmio_txreq"))
@@ -229,7 +284,7 @@ class MMIOBridgeImp(outer: MMIOBridge) extends LazyModuleImp(outer)
   }).orR
   io.rx.rsp.ready := Cat(entries.zipWithIndex.map { case (entry, i) =>
     entry.io.chi.rx.rsp.ready && io.rx.rsp.bits.txnID === i.U
-  }).orR
+  }).orR || isPCrdGrant
 
   dontTouch(io)
   dontTouch(bus)
