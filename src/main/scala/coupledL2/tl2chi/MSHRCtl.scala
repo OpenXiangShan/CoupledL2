@@ -90,7 +90,10 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
 
     /* for TopDown Monitor */
     val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
-  })
+
+    /* to Slice Top for pCrd info.*/
+    val waitPCrdInfo  = Output(Vec(mshrsAll, new PCrdInfo))
+})
 
   /*MSHR allocation pointer gen -> to Mainpipe*/
   class MSHRSelector(implicit p: Parameters) extends L2Module {
@@ -129,9 +132,10 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
       isPCrdGrant && p.valid &&
       p.srcID.get === io.resps.rxrsp.respInfo.srcID.get &&
       p.pCrdType.get === io.resps.rxrsp.respInfo.pCrdType.get
-  )).asUInt
+  ))
 
-  val pCrdPri = PriorityEncoder(matchPCrdGrant.asUInt)
+  val pCrdPri = VecInit(PriorityEncoderOH(matchPCrdGrant))
+  val pCrdIsWait = OHToUInt(pCrdPri)
 
   /* when PCrdGrant come before RetryAck, 16 entry CAM used to:
    1. save {srcID, PCrdType} 
@@ -143,7 +147,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
   val pCamValids = Cat(pCam.map(_.valid))
   val enqIdx = PriorityEncoder(~pCamValids.asUInt)
 
-  when (isPCrdGrant && !pCrdPri.orR){
+  when (isPCrdGrant && !pCrdIsWait.orR){
     pCam(enqIdx).valid := true.B
     pCam(enqIdx).srcID.get := io.resps.rxrsp.respInfo.srcID.get
     pCam(enqIdx).pCrdType.get := io.resps.rxrsp.respInfo.pCrdType.get
@@ -186,7 +190,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
       m.io.resps.rxdat.valid := m.io.status.valid && io.resps.rxdat.valid && io.resps.rxdat.mshrId === i.U
       m.io.resps.rxdat.bits := io.resps.rxdat.respInfo
 
-      m.io.resps.rxrsp.valid := (m.io.status.valid && io.resps.rxrsp.valid && !isPCrdGrant && io.resps.rxrsp.mshrId === i.U) || (isPCrdGrant && pCrdPri === i.U)
+      m.io.resps.rxrsp.valid := (m.io.status.valid && io.resps.rxrsp.valid && !isPCrdGrant && io.resps.rxrsp.mshrId === i.U) || (isPCrdGrant && pCrdPri(i))
       m.io.resps.rxrsp.bits := io.resps.rxrsp.respInfo
 
       m.io.replResp.valid := io.replResp.valid && io.replResp.bits.mshrId === i.U
@@ -200,6 +204,8 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
       waitPCrdInfo(i) := m.io.waitPCrdInfo 
       m.io.pCamPri := (pCamPri === i.U) && waitPCrdInfo(i).valid
   }
+  /* Reserve 1 entry for SinkB */
+  io.waitPCrdInfo <> waitPCrdInfo
 
   /* Reserve 1 entry for SinkB */
   io.toReqArb.blockC_s1 := false.B
