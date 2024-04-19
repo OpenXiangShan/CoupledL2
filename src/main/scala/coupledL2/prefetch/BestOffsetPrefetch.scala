@@ -199,7 +199,6 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
 
   val prefetchOffset = RegInit(2.U(offsetWidth.W))
   val prefetchScore = RegInit(2.U(scoreBits.W))
-  val testScore = RegInit(2.U(scoreBits.W))
   val prefetchDisable = RegInit(false.B)
   // score table
   // val st = RegInit(VecInit(offsetList.map(off => (new ScoreTableEntry).apply(off.U, 0.U))))
@@ -213,6 +212,7 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
   val bestOffset = RegInit(2.U(offsetWidth.W)) // the entry with the highest score while traversing
   val bestScore = RegInit(10.U)
   val testOffset = offList(ptr)
+  val testScore = WireInit(0.U(scoreBits.W))
   // def winner(e1: ScoreTableEntry, e2: ScoreTableEntry): ScoreTableEntry = {
   //   val w = Wire(new ScoreTableEntry)
   //   w := Mux(e1.score > e2.score, e1, e2)
@@ -783,7 +783,7 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   data.best_offset := prefetchOffset
   data.cur_addr := s1_oldFullAddr
   data.old_addr := Mux(scoreTable.io.debug.test_score =/= 0.U,
-    s1_oldFullAddr - signedExtend((prefetchOffset << offsetBits), fullAddrBits),
+    s1_oldFullAddr - signedExtend((scoreTable.io.debug.test_offset << offsetBits), fullAddrBits),
     0.U
   )
   data.trainType := 0.U
@@ -873,7 +873,7 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   data.best_offset := prefetchOffset
   data.cur_addr := s1_oldAddr
   data.old_addr := Mux(scoreTable.io.debug.test_score =/= 0.U,
-    s1_oldAddr - signedExtend((prefetchOffset << offsetBits), fullAddrBits),
+    s1_oldAddr - signedExtend((scoreTable.io.debug.test_offset << offsetBits), fullAddrBits),
     0.U
   )
   data.trainType := 0.U
