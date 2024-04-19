@@ -30,6 +30,7 @@ class Slice()(implicit p: Parameters) extends TL2CHIL2Module {
     val out = new DecoupledPortIO
     val sliceId = Input(UInt(bankBits.W))
     val l1Hint = Decoupled(new L2ToL1Hint())
+    val waitPCrdInfo  = Output(Vec(mshrsAll, new PCrdInfo))
     val prefetch = prefetchOpt.map(_ => Flipped(new PrefetchIO))
     val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
     val dirResult = topDownOpt.map(_ => ValidIO(new DirResult))
@@ -166,6 +167,9 @@ class Slice()(implicit p: Parameters) extends TL2CHIL2Module {
     p.resp <> grantBuf.io.prefetchResp.get
     p.recv_addr := 0.U.asTypeOf(p.recv_addr)
   }
+
+  /* to Slice Top for pCrd info.*/
+  io.waitPCrdInfo <> mshrCtl.io.waitPCrdInfo
 
   /* IO Connection */
   io.l1Hint <> mainPipe.io.l1Hint
