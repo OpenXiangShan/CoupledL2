@@ -40,6 +40,7 @@ object PfSource extends Enumeration {
   val NoWhere = Value("NoWhere")
   val SMS     = Value("SMS")
   val BOP     = Value("BOP")
+  val PBOP     = Value("PBOP")
   val Stream  = Value("Stream")
   val Stride  = Value("Stride")
   val TP      = Value("TP")
@@ -51,6 +52,7 @@ object PfSource extends Enumeration {
     val pfsrc = WireInit(NoWhere.id.U.asTypeOf(UInt(pfSourceBits.W)))
     switch(s) {
       is (MemReqSource.Prefetch2L2BOP.id.U) { pfsrc := BOP.id.U }
+      is (MemReqSource.Prefetch2L2PBOP.id.U) { pfsrc := PBOP.id.U }
       is (MemReqSource.Prefetch2L2SMS.id.U) { pfsrc := SMS.id.U }
       is (MemReqSource.Prefetch2L2TP.id.U)  { pfsrc := TP.id.U  }
       is (MemReqSource.Prefetch2L2Stream.id.U) { pfsrc := Stream.id.U }
