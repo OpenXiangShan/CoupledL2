@@ -35,7 +35,6 @@ class Slice()(implicit p: Parameters) extends L2Module {
     val sliceId = Input(UInt(bankBits.W))
     val l1Hint = Decoupled(new L2ToL1Hint())
     val prefetch = prefetchOpt.map(_ => Flipped(new PrefetchIO))
-    //TODO:link
     val tpMetaReq = prefetchOpt.map(_ => Flipped(DecoupledIO(new TPmetaL2Req)))
     val tpMetaResp = prefetchOpt.map(_ => DecoupledIO(new TPmetaL2Resp))
     val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
@@ -151,6 +150,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
       p.recv_addr := 0.U.asTypeOf(p.recv_addr)
   }
 
+  /* connect TPReq/Resp */
   io.tpMetaReq.foreach {
     r =>
       sinkTPmeta.io.tpMetaReq.get.valid := r.valid

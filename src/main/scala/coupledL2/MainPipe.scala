@@ -376,7 +376,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   val metaW_s3_tp = MetaEntry(
     dirty = false.B,
-    state = TRUNK,
+    state = TIP,
     clients = 0.U,
     alias = Some(0.U),
     accessed = sinkTP_req_s3 && !tp_req_w_s3,
@@ -567,7 +567,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.tpMetaResp.get.bits.rawData := rdata_s5
 
   /* ======== BlockInfo ======== */
-  //TODO: block tp
   // if s2/s3 might write Dir, we must block s1 sink entrance
   // TODO:[Check] it seems that s3 Dir write will naturally block all s1 by dirRead.ready
   //        (an even stronger blocking than set blocking)
@@ -579,30 +578,16 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       case 'b' => s1.b_set
       case 'c' => s1.c_set
       case 'g' => s1.g_set
+      case 't' => s1.t_set
     }
-    s.set === s1_set && !(s.mshrTask && !s.metaWen) // if guaranteed not to write meta, no blocking needed
+    s.set === s1_set && (!(s.mshrTask && !s.metaWen) || s.tpmetaWen)
+    // if guaranteed not to write meta, no blocking needed (tp writes meta)
   }
   def bBlock(s: TaskBundle, tag: Boolean = false): Bool = {
     val s1 = io.fromReqArb.status_s1
     // tag true: compare tag + set
     s.set === s1.b_set && (if(tag) s.tag === s1.b_tag else true.B)
   }
-
-  /*
-  val tp_block_valid = RegInit(false.B)
-  val tp_block_set = RegInit(0.U(setBits.W))
-  when(task_s3.valid && req_s3.fromTP && req_s3.tpmetaWen) {
-    when(!req_s3.tpmetaWenRepl) { // TPmeta need replace
-      tp_block_valid := true.B
-      tp_block_set := req_s3.set
-    }
-    when(req_s3.tpmetaWenRepl && (tp_block_set === req_s3.set)) { // TPmeta replaced
-      tp_block_valid := false.B
-    }
-  }
-  val tp_blockA_s1 = tp_block_valid && (tp_block_set === io.fromReqArb.status_s1.a_set)
-  val tp_blockC_s1 = tp_block_valid && (tp_block_set === io.fromReqArb.status_s1.c_set)
-   */
 
   io.toReqBuf(0) := task_s2.valid && s23Block('a', task_s2.bits)
   io.toReqBuf(1) := task_s3.valid && s23Block('a', task_s3.bits)
@@ -618,6 +603,9 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.toReqArb.blockA_s1 := io.toReqBuf(0) || io.toReqBuf(1)
 
   io.toReqArb.blockG_s1 := task_s2.valid && s23Block('g', task_s2.bits)
+
+  io.toReqArb.blockTP_s1 := task_s2.valid && s23Block('t' , task_s2.bits ) ||
+                            task_s3.valid && s23Block('t' , task_s3.bits )
   /* ======== Pipeline Status ======== */
   require(io.status_vec_toD.size == 3)
   io.status_vec_toD(0).valid := task_s3.valid && Mux(
@@ -680,7 +668,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     alloc_state.s_probeack := false.B
   }
 
-  when(req_s3.fromTP /* && req_s3.tpmetaWen && !req_s3.tpmetaWenRepl */) {
+  when(req_s3.fromTP  && req_s3.tpmetaWen && !req_s3.tpmetaWenRepl) {
     alloc_state.s_release := false.B
     alloc_state.w_releaseack := false.B
     when(dirResult_s3.meta.clients.orR) {

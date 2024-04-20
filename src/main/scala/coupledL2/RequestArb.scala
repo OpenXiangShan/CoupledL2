@@ -115,16 +115,17 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val block_A = io.fromMSHRCtl.blockA_s1 || io.fromMainPipe.blockA_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockA_s1
   val block_B = io.fromMSHRCtl.blockB_s1 || io.fromMainPipe.blockB_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockB_s1 || io.fromSourceC.blockSinkBReqEntrance
   val block_C = io.fromMSHRCtl.blockC_s1 || io.fromMainPipe.blockC_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockC_s1
+  val block_TP = io.fromMSHRCtl.blockTP_s1 || io.fromMainPipe.blockTP_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockTP_s1
 
   val sinkValids = VecInit(Seq(
     io.sinkC.valid && !block_C,
     io.sinkB.valid && !block_B,
     io.sinkA.valid && !block_A,
-    io.sinkTPmeta.valid
+    io.sinkTPmeta.valid && !block_TP
   )).asUInt
 
   val sink_ready_basic = io.dirRead_s1.ready && resetFinish && !mshr_task_s1.valid
-  io.sinkTPmeta.ready := sink_ready_basic && !sinkValids(2) && !sinkValids(1) && !sinkValids(0) // SinkA & SinkB & SinkC prior to SinkTPmeta
+  io.sinkTPmeta.ready := sink_ready_basic && !block_TP && !sinkValids(2) && !sinkValids(1) && !sinkValids(0) // SinkA & SinkB & SinkC prior to SinkTPmeta
   io.sinkA.ready := sink_ready_basic && !block_A && !sinkValids(1) && !sinkValids(0) // SinkC prior to SinkA & SinkB
   io.sinkB.ready := sink_ready_basic && !block_B && !sinkValids(0) // SinkB prior to SinkA
   io.sinkC.ready := sink_ready_basic && !block_C
@@ -147,7 +148,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   // invalid way which causes mshr_retry
   // TODO: random waymask can be used to avoid multi-way conflict
   io.dirRead_s1.bits.wayMask := Mux(mshr_task_s1.valid && mshr_task_s1.bits.mshrRetry, (~(1.U(cacheParams.ways.W) << mshr_task_s1.bits.way)), Fill(cacheParams.ways, "b1".U))
-  io.dirRead_s1.bits.replacerInfo.opcode := task_s1.bits.opcode
+  io.dirRead_s1.bits.replacerInfo.opcode := task_s1.bits.opcod
   io.dirRead_s1.bits.replacerInfo.channel := task_s1.bits.channel
   io.dirRead_s1.bits.replacerInfo.reqSource := task_s1.bits.reqSource
   io.dirRead_s1.bits.refill := s1_needs_replRead
@@ -197,8 +198,8 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   require(beatSize == 2)
 
   /* status of each pipeline stage */
-  io.status_s1.sets := VecInit(Seq(C_task.set, B_task.set, io.ASet, mshr_task_s1.bits.set))
-  io.status_s1.tags := VecInit(Seq(C_task.tag, B_task.tag, io.ATag, mshr_task_s1.bits.tag))
+  io.status_s1.sets := VecInit(Seq(C_task.set, B_task.set, io.ASet, mshr_task_s1.bits.set, TPmeta_task.set))
+  io.status_s1.tags := VecInit(Seq(C_task.tag, B_task.tag, io.ATag, mshr_task_s1.bits.tag, TPmeta_task.tag))
   require(io.status_vec.size == 2)
   io.status_vec.zip(Seq(task_s1, task_s2)).foreach {
     case (status, task) =>

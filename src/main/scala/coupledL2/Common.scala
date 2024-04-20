@@ -112,18 +112,20 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
 class PipeStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits
 
 class PipeEntranceStatus(implicit p: Parameters) extends L2Bundle {
-  val tags = Vec(4, UInt(tagBits.W))
-  val sets = Vec(4, UInt(setBits.W))
+  val tags = Vec(5, UInt(tagBits.W))
+  val sets = Vec(5, UInt(setBits.W))
 
   def c_tag = tags(0)
   def b_tag = tags(1)
   def a_tag = tags(2)
   def g_tag = tags(3) // replRead-Grant
+  def t_tag = tags(4) // tpmeta
 
   def c_set = sets(0)
   def b_set = sets(1)
   def a_set = sets(2)
   def g_set = sets(3)
+  def t_set = sets(4)
 }
 
 // MSHR exposes signals to MSHRCtl
@@ -256,6 +258,7 @@ class BlockInfo(implicit p: Parameters) extends L2Bundle {
   val blockA_s1 = Bool()
   val blockB_s1 = Bool()
   val blockC_s1 = Bool()
+  val blockTP_s1 = Bool()
 }
 
 // used for nested C Release
