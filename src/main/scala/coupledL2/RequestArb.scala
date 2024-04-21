@@ -83,7 +83,10 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     resetFinish := true.B
   }
 
-  val mshr_task_s0 = Wire(Valid(new TaskBundle()))
+  val s0_fire   = Wire(Bool())
+  val s1_fire   = Wire(Bool())
+  val s1_cango  = Wire(Bool())
+  val s2_ready  = Wire(Bool())
   val mshr_task_s1 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
 
   val s1_needs_replRead = mshr_task_s1.valid && mshr_task_s1.bits.fromA && mshr_task_s1.bits.replTask && (
@@ -95,22 +98,23 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   /* ======== Stage 0 ======== */
   // if mshr_task_s1 is replRead, it might stall and wait for dirRead.ready, so we block new mshrTask from entering
   // TODO: will cause msTask path vacant for one-cycle after replRead, since not use Flow so as to avoid ready propagation
-  io.mshrTask.ready := !io.fromGrantBuffer.blockMSHRReqEntrance && !s1_needs_replRead &&
+  io.mshrTask.ready := !io.fromGrantBuffer.blockMSHRReqEntrance && !s1_needs_replRead && !(mshr_task_s1.valid && !s2_ready)
     (if (io.fromSourceC.isDefined) !io.fromSourceC.get.blockMSHRReqEntrance else true.B) &&
     (if (io.fromTXDAT.isDefined) !io.fromTXDAT.get.blockMSHRReqEntrance else true.B) &&
     (if (io.fromTXRSP.isDefined) !io.fromTXRSP.get.blockMSHRReqEntrance else true.B) &&
     (if (io.fromTXREQ.isDefined) !io.fromTXREQ.get.blockMSHRReqEntrance else true.B)
-  mshr_task_s0.valid := io.mshrTask.fire
-  mshr_task_s0.bits := io.mshrTask.bits
+  
+    s0_fire := io.mshrTask.valid && io.mshrTask.ready;
 
   /* ======== Stage 1 ======== */
   /* latch mshr_task from s0 to s1 */
   val mshr_replRead_stall = mshr_task_s1.valid && s1_needs_replRead && (!io.dirRead_s1.ready || io.fromMainPipe.blockG_s1)
+  mshr_task_s1.valid := mshr_task_s1.valid && !s1_fire || s0_fire
 
-  mshr_task_s1.valid := mshr_task_s0.valid || mshr_replRead_stall
-  when(mshr_task_s0.valid && !mshr_replRead_stall) {
-    mshr_task_s1.bits := mshr_task_s0.bits
+  when (s0_fire) {
+    mshr_task_s1.bits := io.mshrTask.bits
   }
+
 
   /* Channel interaction from s1 */
   val A_task = io.sinkA.bits
@@ -129,7 +133,10 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     io.sinkA.valid && !block_A
   )).asUInt
 
-  val sink_ready_basic = io.dirRead_s1.ready && resetFinish && !mshr_task_s1.valid
+  // TODO: A Hint is allowed to enter if !s2_ready for mcp2_stall
+
+  val sink_ready_basic = io.dirRead_s1.ready && resetFinish && !mshr_task_s1.valid && s2_ready
+
   io.sinkA.ready := sink_ready_basic && !block_A && !sinkValids(1) && !sinkValids(0) // SinkC prior to SinkA & SinkB
   io.sinkB.ready := sink_ready_basic && !block_B && !sinkValids(0) // SinkB prior to SinkA
   io.sinkC.ready := sink_ready_basic && !block_C
@@ -143,12 +150,15 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val task_s1 = Mux(mshr_task_s1.valid, mshr_task_s1, chnl_task_s1)
   val s1_to_s2_valid = task_s1.valid && !mshr_replRead_stall
 
+  s1_fire   := s1_cango && s2_ready;
+  s1_cango  := task_s1.valid && !mshr_replRead_stall;
+
   io.taskInfo_s1.valid := s1_to_s2_valid
   io.taskInfo_s1.bits := task_s1.bits
 
   /* Meta read request */
   // ^ only sinkA/B/C tasks need to read directory
-  io.dirRead_s1.valid := chnl_task_s1.valid && !mshr_task_s1.valid || s1_needs_replRead && !io.fromMainPipe.blockG_s1
+  io.dirRead_s1.valid := s2_ready && (chnl_task_s1.valid && !mshr_task_s1.valid || s1_needs_replRead && !io.fromMainPipe.blockG_s1)
   io.dirRead_s1.bits.set := task_s1.bits.set
   io.dirRead_s1.bits.tag := task_s1.bits.tag
   // invalid way which causes mshr_retry
@@ -161,7 +171,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   io.dirRead_s1.bits.mshrId := task_s1.bits.mshrId
 
   // block same-set A req
-  io.s1Entrance.valid := mshr_task_s1.valid && mshr_task_s1.bits.metaWen || io.sinkC.fire || io.sinkB.fire
+  io.s1Entrance.valid := mshr_task_s1.valid && s2_ready && mshr_task_s1.bits.metaWen || io.sinkC.fire || io.sinkB.fire
   io.s1Entrance.bits.set  := Mux(
     mshr_task_s1.valid && mshr_task_s1.bits.metaWen,
     mshr_task_s1.bits.set,
@@ -169,9 +179,15 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   )
 
   /* ========  Stage 2 ======== */
+  val s1_AHint_fire = io.sinkA.fire && io.sinkA.bits.opcode === Hint
+  // any req except AHint might access DS, and continuous DS accesses are prohibited
+  val ds_mcp2_stall = RegNext(s1_fire && !s1_AHint_fire)
+
+  s2_ready  := !ds_mcp2_stall;
+
   val task_s2 = RegInit(0.U.asTypeOf(task_s1))
-  task_s2.valid := s1_to_s2_valid
-  when(s1_to_s2_valid) { task_s2.bits := task_s1.bits }
+  task_s2.valid := s1_fire
+  when(s1_fire) { task_s2.bits := task_s1.bits }
 
   io.taskToPipe_s2 := task_s2
 
@@ -255,7 +271,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   dontTouch(io)
 
   // Performance counters
-  XSPerfAccumulate(cacheParams, "mshr_req", mshr_task_s0.valid)
+  XSPerfAccumulate(cacheParams, "mshr_req", s0_fire)
   XSPerfAccumulate(cacheParams, "mshr_req_stall", io.mshrTask.valid && !io.mshrTask.ready)
 
   XSPerfAccumulate(cacheParams, "sinkA_req", io.sinkA.fire)
