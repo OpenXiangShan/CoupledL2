@@ -60,7 +60,10 @@ class DataStorage(implicit p: Parameters) extends L2Module {
   array.io.w.apply(wen, io.wdata, arrayIdx, 1.U)
   array.io.r.apply(ren, arrayIdx)
 
-  // TODO: timing: we should not use reg here, instead set this as multicycle path
+  // for timing, we set this as multicycle path
   // s3 read, s4 pass and s5 to destination
   io.rdata := RegNextN(array.io.r.resp.data(0), 1)
+
+  assert(!io.req.valid || !RegNext(io.req.valid, false.B),
+    "Continuous SRAM req prohibited under MCP2!")
 }
