@@ -32,6 +32,18 @@ test-top-chi-quadcore-0ul:
 test-top-chi-quadcore-2ul:
 	mill -i CoupledL2.test.runMain coupledL2.TestTop_CHI_QuadCore_2UL -td build
 
+test-top-chi-octacore-0ul:
+	mill -i CoupledL2.test.runMain coupledL2.TestTop_CHI_OctaCore_0UL -td build
+
+test-top-chi-octacore-2ul:
+	mill -i CoupledL2.test.runMain coupledL2.TestTop_CHI_OctaCore_2UL -td build
+
+test-top-chi-hexacore-0ul:
+	mill -i CoupledL2.test.runMain coupledL2.TestTop_CHI_HexaCore_0UL -td build
+
+test-top-chi-hexacore-2ul:
+	mill -i CoupledL2.test.runMain coupledL2.TestTop_CHI_HexaCore_2UL -td build
+
 clean:
 	rm -rf ./build
 

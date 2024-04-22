@@ -210,6 +210,7 @@ object TestTop_CHI_DualCore extends App {
   FileRegisters.write("./build")
 }
 
+
 object TestTop_CHI_QuadCore_0UL extends App {
   val banks = 1
   val config = new Config((_, _, _) => {
@@ -268,6 +269,144 @@ object TestTop_CHI_QuadCore_2UL extends App {
   })
 
   val top = DisableMonitors(p => LazyModule(new TestTop_CHIL2(numCores = 4, numULAgents = 2, banks = banks)(p)))(config)
+
+  (new ChiselStage).execute(args, Seq(
+    ChiselGeneratorAnnotation(() => top.module)
+  ))
+
+  ChiselDB.init(false)
+  ChiselDB.addToFileRegisters
+  FileRegisters.write("./build")
+}
+
+
+object TestTop_CHI_OctaCore_0UL extends App {
+  val banks = 1
+  val config = new Config((_, _, _) => {
+    case L2ParamKey => L2Param(
+      clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
+      echoField = Seq(DirtyField()),
+      enablePerf = false,
+      enableRollingDB = false,
+      enableMonitor = false,
+      enableTLLog = false,
+      elaboratedTopDown = false,
+      FPGAPlatform = true,
+      // SAM for CMN 2X2 Mesh
+      // sam = Seq(
+      //   AddressSet(0x0L,  0xfffffffbfL) -> 8,
+      //   AddressSet(0x40L, 0xfffffffbfL) -> 40
+      // )
+      hartIds = (0 until 4)
+    )
+    case EnableCHI => true
+    case BankBitsKey => log2Ceil(banks)
+  })
+
+  val top = DisableMonitors(p => LazyModule(new TestTop_CHIL2(numCores = 8, numULAgents = 0, banks = banks)(p)))(config)
+
+  (new ChiselStage).execute(args, Seq(
+    ChiselGeneratorAnnotation(() => top.module)
+  ))
+
+  ChiselDB.init(false)
+  ChiselDB.addToFileRegisters
+  FileRegisters.write("./build")
+}
+
+object TestTop_CHI_OctaCore_2UL extends App {
+  val banks = 1
+  val config = new Config((_, _, _) => {
+    case L2ParamKey => L2Param(
+      clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
+      echoField = Seq(DirtyField()),
+      enablePerf = false,
+      enableRollingDB = false,
+      enableMonitor = false,
+      enableTLLog = false,
+      elaboratedTopDown = false,
+      FPGAPlatform = true,
+      // SAM for CMN 2X2 Mesh
+      // sam = Seq(
+      //   AddressSet(0x0L,  0xfffffffbfL) -> 8,
+      //   AddressSet(0x40L, 0xfffffffbfL) -> 40
+      // )
+      hartIds = (0 until 4)
+    )
+    case EnableCHI => true
+    case BankBitsKey => log2Ceil(banks)
+  })
+
+  val top = DisableMonitors(p => LazyModule(new TestTop_CHIL2(numCores = 8, numULAgents = 2, banks = banks)(p)))(config)
+
+  (new ChiselStage).execute(args, Seq(
+    ChiselGeneratorAnnotation(() => top.module)
+  ))
+
+  ChiselDB.init(false)
+  ChiselDB.addToFileRegisters
+  FileRegisters.write("./build")
+}
+
+
+object TestTop_CHI_HexaCore_0UL extends App {
+  val banks = 1
+  val config = new Config((_, _, _) => {
+    case L2ParamKey => L2Param(
+      clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
+      echoField = Seq(DirtyField()),
+      enablePerf = false,
+      enableRollingDB = false,
+      enableMonitor = false,
+      enableTLLog = false,
+      elaboratedTopDown = false,
+      FPGAPlatform = true,
+      // SAM for CMN 2X2 Mesh
+      // sam = Seq(
+      //   AddressSet(0x0L,  0xfffffffbfL) -> 8,
+      //   AddressSet(0x40L, 0xfffffffbfL) -> 40
+      // )
+      hartIds = (0 until 4)
+    )
+    case EnableCHI => true
+    case BankBitsKey => log2Ceil(banks)
+  })
+
+  val top = DisableMonitors(p => LazyModule(new TestTop_CHIL2(numCores = 16, numULAgents = 0, banks = banks)(p)))(config)
+
+  (new ChiselStage).execute(args, Seq(
+    ChiselGeneratorAnnotation(() => top.module)
+  ))
+
+  ChiselDB.init(false)
+  ChiselDB.addToFileRegisters
+  FileRegisters.write("./build")
+}
+
+object TestTop_CHI_HexaCore_2UL extends App {
+  val banks = 1
+  val config = new Config((_, _, _) => {
+    case L2ParamKey => L2Param(
+      clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
+      echoField = Seq(DirtyField()),
+      enablePerf = false,
+      enableRollingDB = false,
+      enableMonitor = false,
+      enableTLLog = false,
+      elaboratedTopDown = false,
+      FPGAPlatform = true,
+      // SAM for CMN 2X2 Mesh
+      // sam = Seq(
+      //   AddressSet(0x0L,  0xfffffffbfL) -> 8,
+      //   AddressSet(0x40L, 0xfffffffbfL) -> 40
+      // )
+      hartIds = (0 until 4)
+    )
+    case EnableCHI => true
+    case BankBitsKey => log2Ceil(banks)
+  })
+
+  val top = DisableMonitors(p => LazyModule(new TestTop_CHIL2(numCores = 16, numULAgents = 2, banks = banks)(p)))(config)
 
   (new ChiselStage).execute(args, Seq(
     ChiselGeneratorAnnotation(() => top.module)
