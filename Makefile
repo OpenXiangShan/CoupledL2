@@ -26,6 +26,12 @@ test-top-chil2:
 test-top-chi-dualcore:
 	mill -i CoupledL2.test.runMain coupledL2.TestTop_CHI_DualCore -td build
 
+test-top-chi-quadcore-0ul:
+	mill -i CoupledL2.test.runMain coupledL2.TestTop_CHI_QuadCore_0UL -td build
+
+test-top-chi-quadcore-2ul:
+	mill -i CoupledL2.test.runMain coupledL2.TestTop_CHI_QuadCore_2UL -td build
+
 clean:
 	rm -rf ./build
 
