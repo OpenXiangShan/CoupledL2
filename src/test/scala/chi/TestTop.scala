@@ -77,8 +77,16 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(imp
 
   l1d_nodes.zip(l2_nodes).zipWithIndex.foreach { case ((l1d, l2), i) =>
     val l1xbar = TLXbar()
-    l1xbar := TLBuffer() := l1d
-    for (l1i <- l1i_nodes(i)) { l1xbar := TLBuffer() := l1i }
+    l1xbar := 
+      TLLogger(s"L2_L1_CORE${i}_TLC", !cacheParams.FPGAPlatform && cacheParams.enableTLLog) := 
+      TLBuffer() := l1d
+
+    l1i_nodes(i).zipWithIndex.foreach { case (l1i, j) =>
+      l1xbar :=
+        TLLogger(s"L2_L1_CORE${i}_TLUL${j}", !cacheParams.FPGAPlatform && cacheParams.enableTLLog) :=
+        TLBuffer() := l1i
+    }
+    
     l2.managerNode :=
       TLXbar() :=*
       bankBinders(i) :*=
@@ -144,6 +152,7 @@ object TestTop_CHIL2 extends App {
       enablePerf = false,
       enableRollingDB = false,
       enableMonitor = false,
+      enableTLLog = false,
       elaboratedTopDown = false,
       FPGAPlatform = true,
       // SAM for CMN 2X2 Mesh
@@ -176,6 +185,7 @@ object TestTop_CHI_DualCore extends App {
       enablePerf = false,
       enableRollingDB = false,
       enableMonitor = false,
+      enableTLLog = false,
       elaboratedTopDown = false,
       FPGAPlatform = true,
       // SAM for CMN 2X2 Mesh

@@ -365,11 +365,15 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
   val ram = LazyModule(new TLRAM(AddressSet(0, 0xffffL), beatBytes = 32))
 
   l1d_nodes.zip(l2_nodes).zipWithIndex map {
-    case ((l1d, l2), i) => l2 := TLLogger(s"L2_L1_${i}", true) := TLBuffer() := l1d
+    case ((l1d, l2), i) => l2 := 
+        TLLogger(s"L2_L1_${i}", !cacheParams.FPGAPlatform && cacheParams.enableTLLog) := 
+        TLBuffer() := l1d
   }
 
   l2_nodes.zipWithIndex map {
-    case(l2, i) => xbar := TLLogger(s"L3_L2_${i}", true) := TLBuffer() := l2
+    case(l2, i) => xbar := 
+      TLLogger(s"L3_L2_${i}", !cacheParams.FPGAPlatform && cacheParams.enableTLLog) := 
+      TLBuffer() := l2
   }
 
   ram.node :=
@@ -377,7 +381,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
       TLFragmenter(32, 64) :=*
       TLCacheCork() :=*
       TLDelayer(delayFactor) :=*
-      TLLogger(s"MEM_L3", true) :=*
+      TLLogger(s"MEM_L3", !cacheParams.FPGAPlatform && cacheParams.enableTLLog) :=*
       l3.node :=* xbar
 
   lazy val module = new LazyModuleImp(this) {
