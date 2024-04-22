@@ -98,6 +98,8 @@ case class L2Param(
   enableRollingDB: Boolean = true,
   // Monitor
   enableMonitor: Boolean = true,
+  // TLLog
+  enableTLLog: Boolean = true,
   // TopDown
   elaboratedTopDown: Boolean = true,
   // env
