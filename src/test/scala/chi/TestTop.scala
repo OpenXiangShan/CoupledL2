@@ -67,7 +67,7 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(imp
       sets = 128,
       clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
       // echoField = Seq(DirtyField),
-      hartIds = Seq{i}
+      hartIds = (0 until numCores)
     )
     case EnableCHI => true
     case BankBitsKey => log2Ceil(banks)
@@ -193,6 +193,7 @@ object TestTop_CHI_DualCore extends App {
       //   AddressSet(0x0L,  0xfffffffbfL) -> 8,
       //   AddressSet(0x40L, 0xfffffffbfL) -> 40
       // )
+      hartIds = (0 until 2)
     )
     case EnableCHI => true
     case BankBitsKey => log2Ceil(banks)
@@ -226,6 +227,7 @@ object TestTop_CHI_QuadCore_0UL extends App {
       //   AddressSet(0x0L,  0xfffffffbfL) -> 8,
       //   AddressSet(0x40L, 0xfffffffbfL) -> 40
       // )
+      hartIds = (0 until 4)
     )
     case EnableCHI => true
     case BankBitsKey => log2Ceil(banks)
@@ -259,6 +261,7 @@ object TestTop_CHI_QuadCore_2UL extends App {
       //   AddressSet(0x0L,  0xfffffffbfL) -> 8,
       //   AddressSet(0x40L, 0xfffffffbfL) -> 40
       // )
+      hartIds = (0 until 4)
     )
     case EnableCHI => true
     case BankBitsKey => log2Ceil(banks)
