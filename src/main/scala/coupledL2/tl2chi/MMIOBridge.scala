@@ -209,7 +209,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   txdat.bits.dataID := 0.U
   txdat.bits.be := ParallelLookUp(
     reqWordIdx,
-    List.tabulate(words)(i => i.U -> (req.mask << (i * wordBytes)))
+    List.tabulate(words)(i => i.U -> (ZeroExt(req.mask, BE_WIDTH) << (i * wordBytes)))
   )
   txdat.bits.data := Fill(words, req.data)
 
