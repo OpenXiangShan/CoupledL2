@@ -120,19 +120,19 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val sinkValids = VecInit(Seq(
     io.sinkC.valid && !block_C,
     io.sinkB.valid && !block_B,
-    io.sinkA.valid && !block_A,
-    io.sinkTPmeta.valid && !block_TP
+    io.sinkTPmeta.valid && !block_TP,
+    io.sinkA.valid && !block_A
   )).asUInt
 
   val sink_ready_basic = io.dirRead_s1.ready && resetFinish && !mshr_task_s1.valid
-  io.sinkTPmeta.ready := sink_ready_basic && !block_TP && !sinkValids(2) && !sinkValids(1) && !sinkValids(0) // SinkA & SinkB & SinkC prior to SinkTPmeta
-  io.sinkA.ready := sink_ready_basic && !block_A && !sinkValids(1) && !sinkValids(0) // SinkC prior to SinkA & SinkB
+  io.sinkTPmeta.ready := sink_ready_basic && !block_TP /* && !sinkValids(2)*/ && !sinkValids(1) && !sinkValids(0) // SinkA & SinkB & SinkC prior to SinkTPmeta
+  io.sinkA.ready := sink_ready_basic && !block_A && !sinkValids(1) && !sinkValids(0) && !sinkValids(2)// SinkC prior to SinkA & SinkB
   io.sinkB.ready := sink_ready_basic && !block_B && !sinkValids(0) // SinkB prior to SinkA
   io.sinkC.ready := sink_ready_basic && !block_C
 
   val chnl_task_s1 = Wire(Valid(new TaskBundle()))
   chnl_task_s1.valid := io.dirRead_s1.ready && sinkValids.orR && resetFinish
-  chnl_task_s1.bits := ParallelPriorityMux(sinkValids, Seq(C_task, B_task, A_task, TPmeta_task))
+  chnl_task_s1.bits := ParallelPriorityMux(sinkValids, Seq(C_task, B_task, TPmeta_task, A_task))
 
   // mshr_task_s1 is s1_[reg]
   // task_s1 is [wire] to s2_reg
@@ -148,7 +148,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   // invalid way which causes mshr_retry
   // TODO: random waymask can be used to avoid multi-way conflict
   io.dirRead_s1.bits.wayMask := Mux(mshr_task_s1.valid && mshr_task_s1.bits.mshrRetry, (~(1.U(cacheParams.ways.W) << mshr_task_s1.bits.way)), Fill(cacheParams.ways, "b1".U))
-  io.dirRead_s1.bits.replacerInfo.opcode := task_s1.bits.opcod
+  io.dirRead_s1.bits.replacerInfo.opcode := task_s1.bits.opcode
   io.dirRead_s1.bits.replacerInfo.channel := task_s1.bits.channel
   io.dirRead_s1.bits.replacerInfo.reqSource := task_s1.bits.reqSource
   io.dirRead_s1.bits.refill := s1_needs_replRead
@@ -157,11 +157,13 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   io.dirRead_s1.bits.tpmetaWen := task_s1.bits.tpmetaWen
 
   // block same-set A req
-  io.s1Entrance.valid := mshr_task_s1.valid && mshr_task_s1.bits.metaWen || io.sinkC.fire || io.sinkB.fire
+  io.s1Entrance.valid := mshr_task_s1.valid && mshr_task_s1.bits.metaWen || io.sinkC.fire || io.sinkB.fire || io.sinkTPmeta.fire
   io.s1Entrance.bits.set  := Mux(
     mshr_task_s1.valid && mshr_task_s1.bits.metaWen,
     mshr_task_s1.bits.set,
-    Mux(io.sinkC.fire, C_task.set, B_task.set)
+    Mux(io.sinkC.fire, C_task.set,
+      Mux(io.sinkB.fire, B_task.set, TPmeta_task.set)
+    )
   )
 
   /* ========  Stage 2 ======== */
