@@ -107,7 +107,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   val wordIdxBits = log2Ceil(words)
   require(wordBits == 64)
   require(wordIdxBits == 2)
-  val reqWordIdx = (req.address >> log2Ceil(wordBytes)).tail(wordIdxBits)
+  val reqWordIdx = (req.address >> log2Ceil(wordBytes)).take(wordIdxBits)
 
   val txreq = io.chi.tx.req
   val txdat = io.chi.tx.dat
@@ -174,10 +174,10 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   txreq.bits := 0.U.asTypeOf(txreq.bits.cloneType)
   txreq.bits.tgtID := SAM(sam).lookup(txreq.bits.addr)
   txreq.bits.txnID := io.id
-  txreq.bits.opcode := ParallelPriorityMux(Seq(
-    (req.opcode === Get)            -> REQOpcodes.ReadNoSnp,
-    (req.opcode === PutFullData)    -> REQOpcodes.WriteNoSnpFull,
-    (req.opcode === PutPartialData) -> REQOpcodes.WriteNoSnpPtl
+  txreq.bits.opcode := ParallelLookUp(req.opcode, Seq(
+    Get -> REQOpcodes.ReadNoSnp,
+    PutFullData -> REQOpcodes.WriteNoSnpFull,
+    PutPartialData -> REQOpcodes.WriteNoSnpPtl
   ))
   txreq.bits.size := req.size
   txreq.bits.addr := req.address

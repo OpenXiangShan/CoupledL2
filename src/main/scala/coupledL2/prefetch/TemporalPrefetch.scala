@@ -296,7 +296,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   dataWriteQueue.io.enq.bits.set := tpTable_w_set
   dataWriteQueue.io.enq.bits.way := tpTable_w_way
   dataWriteQueue.io.enq.bits.hartid := io.hartid
-//  assert(dataWriteQueue.io.enq.ready === true.B) // TODO: support back-pressure
+  assert(dataWriteQueue.io.enq.ready === true.B) // TODO: support back-pressure
 
   when(resetIdx === 0.U) {
     resetFinish := true.B
