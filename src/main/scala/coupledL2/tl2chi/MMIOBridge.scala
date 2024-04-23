@@ -101,6 +101,14 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   val pCrdType = Reg(UInt(PCRDTYPE_WIDTH.W))
   val isRead = req.opcode === Get
 
+  val wordBits = io.req.bits.data.getWidth // 64
+  val wordBytes = wordBits / 8
+  val words = DATA_WIDTH / wordBits
+  val wordIdxBits = log2Ceil(words)
+  require(wordBits == 64)
+  require(wordIdxBits == 2)
+  val reqWordIdx = (req.address >> log2Ceil(wordBytes)).take(wordIdxBits)
+
   val txreq = io.chi.tx.req
   val txdat = io.chi.tx.dat
   val rxdat = io.chi.rx.dat
@@ -188,9 +196,9 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   io.resp.bits.denied := false.B
   io.resp.bits.corrupt := false.B
   io.resp.bits.data := ParallelLookUp(
-    req.address(log2Up(beatBytes) - 1, 0),
-    (0 until beatBytes).map(i => i.U -> rdata(rdata.getWidth - 1, i*8))
-  ) // TODO: fix timing
+    reqWordIdx,
+    List.tabulate(words)(i => i.U -> rdata((i + 1) * wordBits - 1, i * wordBits))
+  )
 
   txdat.valid := !s_ncbwrdata && w_dbidresp
   txdat.bits := 0.U.asTypeOf(txdat.bits.cloneType)
@@ -199,11 +207,11 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   txdat.bits.opcode := DATOpcodes.NonCopyBackWrData
   txdat.bits.ccID := 0.U
   txdat.bits.dataID := 0.U
-  txdat.bits.be := req.mask << (req.address(log2Up(beatBytes) - 1, 0))
-  txdat.bits.data := ParallelLookUp(
-    req.address(log2Up(beatBytes) - 1, 0),
-    (0 until beatBytes).map(i => i.U -> (req.data << (i * 8)))
+  txdat.bits.be := ParallelLookUp(
+    reqWordIdx,
+    List.tabulate(words)(i => i.U -> (ZeroExt(req.mask, BE_WIDTH) << (i * wordBytes)))
   )
+  txdat.bits.data := Fill(words, req.data)
 
   rxrsp.ready := (!w_comp || !w_dbidresp) && s_txreq
   rxdat.ready := !w_compdata && s_txreq
