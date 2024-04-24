@@ -472,6 +472,14 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   ) || mshr_refill_s3 && retry
 
   val data_unready_s3 = hasData_s3 && !mshr_req_s3
+  /**
+    * The combinational logic path of
+    *     Directory metaAll
+    * ->  Directory response
+    * ->  MainPipe judging whether to respond data
+    * is too long. Therefore the sinkB response may be latched to s4 for better timing.
+    */
+  val txdat_s3_latch = true
   val isD_s3 = Mux(
     mshr_req_s3,
     mshr_refill_s3 && !retry,
@@ -487,11 +495,16 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
     mshr_snpRespDataX_s3 || mshr_cbWrData_s3 || mshr_dct_s3,
     req_s3.fromB && !need_mshr_s3 && (doRespDataHitRelease || doRespData && !data_unready_s3)
   )
+  val isTXDAT_s3_ready = Mux(
+    mshr_req_s3,
+    mshr_snpRespDataX_s3 || mshr_cbWrData_s3 || mshr_dct_s3,
+    req_s3.fromB && !need_mshr_s3 && (doRespDataHitRelease || doRespData && !data_unready_s3) && !txdat_s3_latch.B
+  )
   val isTXREQ_s3 = mshr_req_s3 && (mshr_writeBackFull_s3 || mshr_evict_s3)
 
   txreq_s3.valid := task_s3.valid && isTXREQ_s3
   txrsp_s3.valid := task_s3.valid && isTXRSP_s3
-  txdat_s3.valid := task_s3.valid && isTXDAT_s3
+  txdat_s3.valid := task_s3.valid && isTXDAT_s3_ready
   d_s3.valid := task_s3.valid && isD_s3
   txreq_s3.bits := source_req_s3.toCHIREQBundle()
   txrsp_s3.bits := source_req_s3
