@@ -95,7 +95,7 @@ class sendBundle(implicit p: Parameters) extends TPBundle {
   val vaddr = UInt(vaddrBits.W)
 }
 
-class tpmetaPortIO() extends Bundle {
+class tpmetaPortIO(implicit p: Parameters) extends Bundle {
   val req = DecoupledIO(new TPmetaReq)
   val resp = Flipped(ValidIO(new TPmetaResp))
 }
@@ -107,6 +107,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     val req = DecoupledIO(new PrefetchReq)
     val resp = Flipped(DecoupledIO(new PrefetchResp))
     val tpmeta_port = new tpmetaPortIO()
+    val hartid = Input(UInt(hartIdLen.W))
   })
 
   def parseVaddr(x: UInt): (UInt, UInt) = {
@@ -219,7 +220,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   dataReadQueue.io.enq.bits.way := way_s2
   dataReadQueue.io.enq.bits.wmode := false.B
   dataReadQueue.io.enq.bits.rawData := DontCare
-  dataReadQueue.io.enq.bits.hartid := hartid.U
+  dataReadQueue.io.enq.bits.hartid := io.hartid
 
 
   /* Async Stage: try to fetch or write tpData */
@@ -238,7 +239,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   /* Async Stage: get tpMeta and insert it into tpDataQueue */
 
-  tpDataQueue.io.enq.valid := io.tpmeta_port.resp.valid && io.tpmeta_port.resp.bits.hartid === hartid.U
+  tpDataQueue.io.enq.valid := io.tpmeta_port.resp.valid && io.tpmeta_port.resp.bits.hartid === io.hartid
   tpDataQueue.io.enq.bits.rawData := io.tpmeta_port.resp.bits.rawData
   assert(tpDataQueue.io.enq.ready === true.B) // tpDataQueue is never full
 
@@ -294,7 +295,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   dataWriteQueue.io.enq.bits.rawData.zip(recorder_data).foreach(x => x._1 := x._2(35-6, 0))
   dataWriteQueue.io.enq.bits.set := tpTable_w_set
   dataWriteQueue.io.enq.bits.way := tpTable_w_way
-  dataWriteQueue.io.enq.bits.hartid := hartid.U
+  dataWriteQueue.io.enq.bits.hartid := io.hartid
   assert(dataWriteQueue.io.enq.ready === true.B) // TODO: support back-pressure
 
   when(resetIdx === 0.U) {

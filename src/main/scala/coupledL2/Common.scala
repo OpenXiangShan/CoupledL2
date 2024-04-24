@@ -185,6 +185,7 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle {
   val s_refill = Bool()
   val param = UInt(3.W)
   val mergeA = Bool() // whether the mshr already merge an acquire(avoid alias merge)
+  val w_releaseack = Bool()
 }
 
 class RespInfoBundle(implicit p: Parameters) extends L2Bundle {

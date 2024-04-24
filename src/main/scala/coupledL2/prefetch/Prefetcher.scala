@@ -231,8 +231,13 @@ class PrefetchQueue(implicit p: Parameters) extends PrefetchModule {
 class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val io = IO(new PrefetchIO)
   val tpio = IO(new Bundle() {
-    val tpmeta_port = prefetchOpt.map(_ => new tpmetaPortIO)
+    val tpmeta_port = prefetchOpt match {
+      case Some(param: PrefetchReceiverParams) =>
+        if (param.hasTPPrefetcher) Some(new tpmetaPortIO()) else None
+      case _ => None
+    }
   })
+  val hartId = IO(Input(UInt(hartIdLen.W)))
   /* io_l2_pf_en:
    * chicken bits for whether L2 prefetchers are enabled
    * it will control BOP and TP prefetchers
@@ -321,6 +326,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       pbop.io.resp.valid := io.resp.valid && io.resp.bits.isPBOP
       tp.io.train <> io.train
       tp.io.resp <> io.resp
+      tp.io.hartid := hartId
 
       pfRcv.io.req.ready := true.B
       vbop.io.req.ready := true.B

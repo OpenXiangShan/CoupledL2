@@ -107,8 +107,6 @@ class Slice()(implicit p: Parameters) extends L2Module {
   mainPipe.io.releaseBufResp_s3.valid := RegNext(releaseBuf.io.r.valid, false.B)
   mainPipe.io.releaseBufResp_s3.bits := releaseBuf.io.resp.data
   mainPipe.io.fromReqArb.status_s1 := reqArb.io.status_s1
-  mainPipe.io.grantBufferHint := grantBuf.io.l1Hint
-  mainPipe.io.globalCounter := grantBuf.io.globalCounter
   mainPipe.io.taskInfo_s1 <> reqArb.io.taskInfo_s1
 
   // priority: nested-ReleaseData / probeAckData [NEW] > mainPipe DS rdata [OLD]
@@ -129,6 +127,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
   io.l1Hint.valid := mainPipe.io.l1Hint.valid
   io.l1Hint.bits.sourceId := mainPipe.io.l1Hint.bits.sourceId
   io.l1Hint.bits.isKeyword := mainPipe.io.l1Hint.bits.isKeyword
+  mainPipe.io.l1Hint.ready := io.l1Hint.ready
   mshrCtl.io.grantStatus := grantBuf.io.grantStatus
 
   grantBuf.io.d_task <> mainPipe.io.toSourceD
@@ -198,11 +197,6 @@ class Slice()(implicit p: Parameters) extends L2Module {
     XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 500, 1000, 100, true, false)
   }
 
-  if (cacheParams.enableMonitor) {
-    val monitor = Module(new Monitor())
-    monitor.io.fromMainPipe <> mainPipe.io.toMonitor
-//  monitor.io.nestedWBValid := mshrCtl.io.nestedwbDataId.valid
-  } else {
-    mainPipe.io.toMonitor <> DontCare
-  }
+  val monitor = Module(new Monitor())
+  monitor.io.fromMainPipe <> mainPipe.io.toMonitor
 }
