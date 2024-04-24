@@ -127,6 +127,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val pCrdType = chiOpt.map(_ => UInt(PCRDTYPE_WIDTH.W))
   val retToSrc = chiOpt.map(_ => Bool()) // only used in snoop
   val expCompAck = chiOpt.map(_ => Bool())
+  val allowRetry = chiOpt.map(_ => Bool())
 
   def toCHIREQBundle(): CHIREQ = {
     val req = WireInit(0.U.asTypeOf(new CHIREQ()))
@@ -135,7 +136,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
     req.txnID := txnID.getOrElse(0.U)
     req.opcode := chiOpcode.getOrElse(0.U)
     req.addr := Cat(tag, set, 0.U(offsetBits.W))
-    req.allowRetry := true.B // TODO: consider retry
+    req.allowRetry := allowRetry.getOrElse(true.B)  //TODO: consider retry
     req.pCrdType := pCrdType.getOrElse(0.U)
     req.expCompAck := expCompAck.getOrElse(false.B)
     req.memAttr.allocate := true.B // TBD

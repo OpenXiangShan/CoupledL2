@@ -200,11 +200,13 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   /* ======== Task allocation ======== */
   // Theoretically, data to be released is saved in ReleaseBuffer, so Acquire can be sent as soon as req enters mshr
 //  io.tasks.txreq.valid := !state.s_acquire || !state.s_reissue
-  io.tasks.txreq.valid := !state.s_acquire || !state.s_reissue.getOrElse(false.B) && gotRetryAck && gotPCrdGrant
+  io.tasks.txreq.valid := !state.s_acquire ||
+                          !state.s_reissue.getOrElse(false.B) && !state.w_grant && gotRetryAck && gotPCrdGrant
   io.tasks.txrsp.valid := !state.s_compack.get && state.w_grantlast
   io.tasks.source_b.valid := !state.s_pprobe || !state.s_rprobe
-  val mp_release_valid = !state.s_release && state.w_rprobeacklast && state.w_grantlast &&
-        state.w_replResp // release after Grant to L1 sent and replRead returns
+  val mp_release_valid = !state.s_release && state.w_rprobeacklast && state.w_grantlast && state.w_replResp ||
+                         !state.s_reissue.getOrElse(false.B) && !state.w_releaseack && gotRetryAck && gotPCrdGrant
+                 // release after Grant to L1 sent and replRead returns
   val mp_cbwrdata_valid = !state.s_cbwrdata.getOrElse(true.B) && state.w_releaseack
   val mp_probeack_valid = !state.s_probeack && state.w_pprobeacklast
   val pending_grant_valid = !state.s_refill && state.w_grantlast && state.w_rprobeacklast
@@ -389,6 +391,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     mp_release.pCrdType.get := 0.U // DontCare // TODO: consider retry of WriteBackFull/Evict
     mp_release.retToSrc.get := req.retToSrc.get
     mp_release.expCompAck.get := false.B
+    mp_release.allowRetry.get := state.s_reissue.getOrElse(false.B)
     mp_release
   }
   
@@ -741,6 +744,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       state.s_retry := true.B
     }.elsewhen (mp_release_valid) {
       state.s_release := true.B
+      state.s_reissue.get := true.B
       state.s_cbwrdata.get := !(isT(meta.state) && meta.dirty || probeDirty)
       // meta.state := INVALID
     }.elsewhen (mp_cbwrdata_valid) {
@@ -835,6 +839,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       srcid := rxrsp.bits.srcID.getOrElse(0.U)
       pcrdtype := rxrsp.bits.pCrdType.getOrElse(0.U)
       gotRetryAck := true.B
+      gotReissued := false.B
     }
     when((rxrsp.bits.chiOpcode.get === PCrdGrant) && !gotReissued) {
       state.s_reissue.get := false.B
