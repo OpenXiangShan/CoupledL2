@@ -107,7 +107,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   val wordIdxBits = log2Ceil(words)
   require(wordBits == 64)
   require(wordIdxBits == 2)
-  val reqWordIdx = (req.address >> log2Ceil(wordBytes)).take(wordIdxBits)
+  val reqWordIdx = (req.address >> log2Ceil(wordBytes))(wordIdxBits - 1, 0)
 
   val txreq = io.chi.tx.req
   val txdat = io.chi.tx.dat

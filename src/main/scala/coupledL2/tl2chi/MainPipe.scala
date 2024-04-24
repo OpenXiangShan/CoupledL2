@@ -354,7 +354,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   /* ======== Interact with DS ======== */
   val data_s3 = Mux(io.releaseBufResp_s3.valid, io.releaseBufResp_s3.bits.data, io.refillBufResp_s3.bits.data)
   val c_releaseData_s3 = io.bufResp.data.asUInt
-  val hasData_s3 = source_req_s3.opcode(0) || source_req_s3.toTXDAT
+  val hasData_s3_tl = source_req_s3.opcode(0) // whether to respond data to TileLink-side
+  val hasData_s3_chi = source_req_s3.toTXDAT // whether to respond data to CHI-side
+  val hasData_s3 = hasData_s3_tl || hasData_s3_chi
 
   val need_data_a = dirResult_s3.hit && (req_get_s3 || req_acquireBlock_s3)
   val need_data_b = sinkB_req_s3 && (doRespData || doFwd || dirResult_s3.hit && meta_s3.state === TRUNK) // TODO: consider forwarding
@@ -472,10 +474,25 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   ) || mshr_refill_s3 && retry
 
   val data_unready_s3 = hasData_s3 && !mshr_req_s3
+  val data_unready_s3_tl = hasData_s3_tl && !mshr_req_s3
+  /**
+    * The combinational logic path of
+    *     Directory metaAll
+    * ->  Directory response
+    * ->  MainPipe judging whether to respond data
+    * is too long. Therefore the sinkB response may be latched to s4 for better timing.
+    */
+  val d_s3_latch = true
+  val txdat_s3_latch = true
   val isD_s3 = Mux(
     mshr_req_s3,
     mshr_refill_s3 && !retry,
-    req_s3.fromC || req_s3.fromA && !need_mshr_s3 && !data_unready_s3 && req_s3.opcode =/= Hint
+    req_s3.fromC || req_s3.fromA && !need_mshr_s3_a && !data_unready_s3_tl && req_s3.opcode =/= Hint
+  )
+  val isD_s3_ready = Mux(
+    mshr_req_s3,
+    mshr_refill_s3 && !retry,
+    req_s3.fromC || req_s3.fromA && !need_mshr_s3_a && !data_unready_s3_tl && req_s3.opcode =/= Hint && !d_s3_latch.B
   )
   val isTXRSP_s3 = Mux(
     mshr_req_s3,
@@ -487,12 +504,17 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
     mshr_snpRespDataX_s3 || mshr_cbWrData_s3 || mshr_dct_s3,
     req_s3.fromB && !need_mshr_s3 && (doRespDataHitRelease || doRespData && !data_unready_s3)
   )
+  val isTXDAT_s3_ready = Mux(
+    mshr_req_s3,
+    mshr_snpRespDataX_s3 || mshr_cbWrData_s3 || mshr_dct_s3,
+    req_s3.fromB && !need_mshr_s3 && (doRespDataHitRelease || doRespData && !data_unready_s3) && !txdat_s3_latch.B
+  )
   val isTXREQ_s3 = mshr_req_s3 && (mshr_writeBackFull_s3 || mshr_evict_s3)
 
   txreq_s3.valid := task_s3.valid && isTXREQ_s3
   txrsp_s3.valid := task_s3.valid && isTXRSP_s3
-  txdat_s3.valid := task_s3.valid && isTXDAT_s3
-  d_s3.valid := task_s3.valid && isD_s3
+  txdat_s3.valid := task_s3.valid && isTXDAT_s3_ready
+  d_s3.valid := task_s3.valid && isD_s3_ready
   txreq_s3.bits := source_req_s3.toCHIREQBundle()
   txrsp_s3.bits := source_req_s3
   txdat_s3.bits.task := source_req_s3
@@ -712,7 +734,16 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   io.status_vec_toTX.zip(tasks).foreach { case (status, task) =>
     status.valid := task.valid
     status.bits.channel := task.bits.channel
-    status.bits.txChannel := task.bits.txChannel
+    // To optimize timing, we restrict the blocking condition of TXRSP and TXDAT.
+    // This may be inaccurate, but it works.
+    status.bits.txChannel := Cat(
+      // TXDAT
+      !neverRespData,
+      // TXRSP
+      !doRespDataHitRelease,
+      // TXREQ
+      task.bits.toTXREQ
+    )
     status.bits.mshrTask := task.bits.mshrTask
   }
 
