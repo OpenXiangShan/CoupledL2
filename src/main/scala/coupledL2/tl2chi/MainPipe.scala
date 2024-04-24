@@ -725,7 +725,16 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   io.status_vec_toTX.zip(tasks).foreach { case (status, task) =>
     status.valid := task.valid
     status.bits.channel := task.bits.channel
-    status.bits.txChannel := task.bits.txChannel
+    // To optimize timing, we restrict the blocking condition of TXRSP and TXDAT.
+    // This may be inaccurate, but it works.
+    status.bits.txChannel := Cat(
+      // TXDAT
+      !neverRespData,
+      // TXRSP
+      !doRespDataHitRelease,
+      // TXREQ
+      task.bits.toTXREQ
+    )
     status.bits.mshrTask := task.bits.mshrTask
   }
 
