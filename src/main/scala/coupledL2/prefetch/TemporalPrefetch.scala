@@ -21,8 +21,7 @@ import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import utility.{ChiselDB, Constantin, MemReqSource, SRAMTemplate}
-import coupledL2.{HasCoupledL2Parameters, TPmetaL2Req, TPmetaL2Resp, TPmetaReq, TPmetaResp, L2Bundle, TPmetaL2ReqBundle, TPmetaL3Req, TPmetaL3Resp}
-import coupledL2.utils.{ReplacementPolicy, XSPerfAccumulate}
+import coupledL2.{HasCoupledL2Parameters, TPmetaL2Req, TPmetaL2Resp, TPmetaReq, TPmetaResp, L2Bundle, TPmetaL2ReqBundle /*, TPmetaL3Req, TPmetaL3Resp*/}
 import coupledL2.utils.{ReplacementPolicy, SplittedSRAM, XSPerfAccumulate}
 //import huancun.{TPmetaReq, TPmetaResp}
 
@@ -115,10 +114,13 @@ class tpmetaL2PortIO(implicit p: Parameters) extends Bundle {
   val resp = Flipped(DecoupledIO(new TPmetaL2Resp))
 }
 
+/*
 class tpmetaL3PortIO(implicit p: Parameters) extends Bundle {
   val req = DecoupledIO(new TPmetaL3Req())
   val resp = Flipped(ValidIO(new TPmetaL3Resp))
 }
+
+ */
 
 
 /* VIVT, Physical Data */
@@ -128,7 +130,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     val req = DecoupledIO(new PrefetchReq)
     val resp = Flipped(DecoupledIO(new PrefetchResp))
     val tpmeta_port = new tpmetaL2PortIO()
-    val tpmeta_l3port = new tpmetaL3PortIO()
+    // val tpmeta_l3port = new tpmetaL3PortIO()
   })
 
   def parseVaddr(x: UInt): (UInt, UInt) = {
@@ -419,13 +421,13 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
 
   /* Performance collection */
-  val triggerDB = ChiselDB.createTable("tptrigger", new triggerBundle(), basicDB = debug)
+  val triggerDB = ChiselDB.createTable("tptrigger", new triggerBundle(), basicDB = true)
   val triggerPt = Wire(new triggerBundle())
   triggerPt.paddr := write_record_trigger.paddr
   triggerPt.vaddr := recoverVaddr(write_record_trigger.vaddr)
   triggerPt.way := write_record_trigger.way
 
-  val trainDB = ChiselDB.createTable("tptrain", new trainBundle(), basicDB = debug)
+  val trainDB = ChiselDB.createTable("tptrain", new trainBundle(), basicDB = true)
   val trainPt = Wire(new trainBundle())
   trainPt.vaddr := recoverVaddr(train_s2.vaddr.getOrElse(0.U))
   trainPt.paddr := train_s2.addr
@@ -434,7 +436,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   trainPt.pfsource := train_s2.pfsource
   trainPt.metahit := hit_s2
 
-  val sendDB = ChiselDB.createTable("tpsend", new sendBundle(), basicDB = debug)
+  val sendDB = ChiselDB.createTable("tpsend", new sendBundle(), basicDB = true)
   val sendPt = Wire(new sendBundle())
   sendPt.paddr := current_sending_data
   sendPt.vaddr := 0.U
@@ -443,6 +445,6 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   trainDB.log(trainPt, s2_valid, "", clock, reset)
   sendDB.log(sendPt, io.req.fire, "", clock, reset)
 
-  io.tpmeta_l3port.req.valid := readReqValid || writeReqValid
-  io.tpmeta_l3port.req.bits := DontCare
+  // io.tpmeta_l3port.req.valid := readReqValid || writeReqValid
+  // io.tpmeta_l3port.req.bits := DontCare
 }

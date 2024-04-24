@@ -292,7 +292,6 @@ class TPmetaData extends Bundle {
 }
 
 class TPmetaReq(implicit p: Parameters) extends L2Bundle {
-  // TODO: Fix according to L2
   val hartid = UInt(4.W) // max 16 harts
   val l2ReqBundle = new TPmetaL2ReqBundle()
   val wmode = Bool()
@@ -315,8 +314,9 @@ class TPmetaL2Resp extends Bundle {
   val exist = Bool()
   val rawData = UInt(512.W)
 }
+
+/*
 class TPmetaL3Req(implicit p: Parameters) extends L2Bundle {
-  // TODO: Fix according to L2
   val hartid = UInt(4.W) // max 16 harts
   val set = UInt(32.W)
   val way = UInt(8.W)
@@ -328,3 +328,5 @@ class TPmetaL3Resp extends Bundle {
   val hartid = UInt(4.W)
   val rawData = Vec(16, UInt((36 - 6).W))
 }
+
+ */

@@ -299,7 +299,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
             p.io_l2_pf_en := false.B
         }
     }
-
+    /*
     tpmeta_source_node match {
       case Some(x) =>
         x.out.head._1 <> prefetcher.get.tpio.tpmeta_l3port.get.req
@@ -310,6 +310,8 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
         prefetcher.get.tpio.tpmeta_l3port.get.resp <> x.in.head._1
       case None =>
     }
+
+     */
 
     def restoreAddress(x: UInt, idx: Int) = {
       restoreAddressUInt(x, idx.U)

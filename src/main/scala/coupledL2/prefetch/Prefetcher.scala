@@ -126,7 +126,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val io = IO(new PrefetchIO)
   val tpio = IO(new Bundle() {
     val tpmeta_port = prefetchOpt.map(_ => new tpmetaL2PortIO)
-    val tpmeta_l3port = prefetchOpt.map(_ => new tpmetaL3PortIO)
+    // val tpmeta_l3port = prefetchOpt.map(_ => new tpmetaL3PortIO)
   })
   /* io_l2_pf_en:
    * chicken bits for whether L2 prefetchers are enabled
@@ -191,7 +191,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
 
       // tpmeta interface
       tp.io.tpmeta_port <> tpio.tpmeta_port.get
-      tp.io.tpmeta_l3port <> tpio.tpmeta_l3port.get
+      // tp.io.tpmeta_l3port <> tpio.tpmeta_l3port.get
 
       XSPerfAccumulate(cacheParams, "prefetch_req_fromSMS", pfRcv.io.req.valid)
       XSPerfAccumulate(cacheParams, "prefetch_req_fromBOP", l2_pf_en && bop.io.req.valid)

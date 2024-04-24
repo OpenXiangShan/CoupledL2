@@ -125,7 +125,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   )).asUInt
 
   val sink_ready_basic = io.dirRead_s1.ready && resetFinish && !mshr_task_s1.valid
-  io.sinkTPmeta.ready := sink_ready_basic && !block_TP /* && !sinkValids(2)*/ && !sinkValids(1) && !sinkValids(0) // SinkA & SinkB & SinkC prior to SinkTPmeta
+  io.sinkTPmeta.ready := sink_ready_basic && !block_TP && !sinkValids(1) && !sinkValids(0) // SinkB & SinkC prior to SinkTPmeta; SinkTPmeta prior t0 SinkA
   io.sinkA.ready := sink_ready_basic && !block_A && !sinkValids(1) && !sinkValids(0) && !sinkValids(2)// SinkC prior to SinkA & SinkB
   io.sinkB.ready := sink_ready_basic && !block_B && !sinkValids(0) // SinkB prior to SinkA
   io.sinkC.ready := sink_ready_basic && !block_C
