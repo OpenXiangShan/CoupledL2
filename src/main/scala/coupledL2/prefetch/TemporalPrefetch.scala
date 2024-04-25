@@ -447,4 +447,9 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   // io.tpmeta_l3port.req.valid := readReqValid || writeReqValid
   // io.tpmeta_l3port.req.bits := DontCare
+  XSPerfAccumulate(cacheParams, "tp_send", io.req.fire)
+  XSPerfAccumulate(cacheParams, "tp_meta_read", io.tpmeta_port.req.fire && !io.tpmeta_port.req.bits.wmode)
+  XSPerfAccumulate(cacheParams, "tp_meta_read_miss", io.tpmeta_port.resp.valid && !io.tpmeta_port.resp.bits.exist)
+  XSPerfAccumulate(cacheParams, "tp_meta_invalid", tpMetaRespValid_s2)
+  XSPerfAccumulate(cacheParams, "tp_meta_write", io.tpmeta_port.req.fire && io.tpmeta_port.req.bits.wmode)
 }

@@ -19,9 +19,11 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
+import chisel3.util.random.LFSR
+import freechips.rocketchip.util.{Random, UIntToAugmentedUInt}
 import freechips.rocketchip.util.SetAssocLRU
 import coupledL2.utils._
-import utility.{ParallelPriorityMux, RegNextN}
+import utility.{ParallelPriorityMux, RegNextN, ChiselDB}
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.prefetch.PfSource
 import freechips.rocketchip.tilelink.TLMessages._
@@ -107,6 +109,14 @@ class TagWrite(implicit p: Parameters) extends L2Bundle {
   val wtag = UInt(tagBits.W)
 }
 
+class tpmetaBundle(implicit  p: Parameters) extends L2Bundle {
+  val metaW = Bool()
+  val hit = Bool()
+  val tag = UInt(tagBits.W)
+  val sset = UInt(setBits.W)
+  val way = UInt(wayBits.W)
+}
+
 class Directory(implicit p: Parameters) extends L2Module {
 
   val io = IO(new Bundle() {
@@ -125,6 +135,30 @@ class Directory(implicit p: Parameters) extends L2Module {
     val way = ParallelPriorityMux(invalid_vec.zipWithIndex.map(x => x._1 -> x._2.U(wayBits.W)))
     (has_invalid_way, way)
   }
+
+  def tpmeta_way_sel(metaVec: Seq[MetaEntry]) = {
+    val tpmeta_vec = metaVec.map(entry =>
+      entry.state =/= MetaData.INVALID && entry.tpMeta.get)
+    val tpmeta_way_count = PopCount(tpmeta_vec)
+    val tpmeta_repl = tpmeta_way_count >= TPmetaL2Ways.asUInt
+    val replWay = WireInit(UInt(wayBits.W), 0.U)
+
+    when(tpmeta_repl) {
+      // use random replacement now
+      val lfsr = LFSR(16, true.B)
+      val random = Random(TPmetaL2Ways, lfsr)
+      (0 until cacheParams.ways).foldLeft(0.U(wayBits.W)) {
+        case (sum, way) =>
+          when(sum === random && tpmeta_vec(way)) {
+            replWay := way.asUInt
+          }
+          sum + tpmeta_vec(way)
+      }
+    }
+
+    (tpmeta_repl, replWay)
+  }
+
 
   val sets = cacheParams.sets
   val ways = cacheParams.ways
@@ -190,6 +224,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   val hitWay = OHToUInt(hitVec)
   val replaceWay = WireInit(UInt(wayBits.W), 0.U)
   val (inv, invalidWay) = invalid_way_sel(metaAll_s3, replaceWay)
+  val (tpmetaReplValid, tpmetaReplWay) = tpmeta_way_sel(metaAll_s3)
   val chosenWay = Mux(inv, invalidWay, replaceWay)
   // if chosenWay not in wayMask, then choose a way in wayMask
   // TODO: consider remove this is not used for better timing
@@ -200,8 +235,14 @@ class Directory(implicit p: Parameters) extends L2Module {
     PriorityEncoder(req_s3.wayMask)
   )
 
+  val tpReplaceWay = Mux(
+    tpmetaReplValid && req_s3.tpmetaWen,
+    tpmetaReplWay,
+    finalWay
+  )
+
   val hit_s3 = Cat(hitVec).orR
-  val way_s3 = Mux(hit_s3, hitWay, finalWay)
+  val way_s3 = Mux(hit_s3, hitWay, tpReplaceWay)
   val meta_s3 = metaAll_s3(way_s3)
   val tag_s3 = tagAll_s3(way_s3)
   val set_s3 = req_s3.set
@@ -251,10 +292,10 @@ class Directory(implicit p: Parameters) extends L2Module {
   replaceWay := repl.get_replace_way(repl_state_s3)
 
   io.replResp.valid := refillReqValid_s3
-  io.replResp.bits.tag := tagAll_s3(finalWay)
+  io.replResp.bits.tag := tagAll_s3(tpReplaceWay)
   io.replResp.bits.set := req_s3.set
-  io.replResp.bits.way := finalWay
-  io.replResp.bits.meta := metaAll_s3(finalWay)
+  io.replResp.bits.way := tpReplaceWay
+  io.replResp.bits.meta := metaAll_s3(tpReplaceWay)
   io.replResp.bits.mshrId := req_s3.mshrId
   io.replResp.bits.retry := refillRetry
 
@@ -329,4 +370,25 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   XSPerfAccumulate(cacheParams, "dirRead_cnt", io.read.fire)
   XSPerfAccumulate(cacheParams, "choose_busy_way", reqValid_s3 && !req_s3.wayMask(chosenWay))
+  XSPerfAccumulate(cacheParams, "tpmetaRepl", tpmetaReplValid && req_s3.tpmetaWen)
+  XSPerfHistogram(cacheParams, "tpmetaReplWayDist", tpReplaceWay, tpmetaReplValid && req_s3.tpmetaWen, 0, cacheParams.ways, 1)
+
+  val tpmetaReqDB = ChiselDB.createTable("tpmetaReq", new tpmetaBundle(), basicDB = true)
+  val tpmetaReqPt = Wire(new tpmetaBundle())
+  tpmetaReqPt.metaW := req_s3.tpmetaWen
+  tpmetaReqPt.tag := req_s3.tag
+  tpmetaReqPt.sset := req_s3.set
+  tpmetaReqPt.hit := io.resp.bits.hit
+  tpmetaReqPt.way := io.resp.bits.way
+
+  val tpmetaWDB = ChiselDB.createTable("tpmetaW", new tpmetaBundle(), basicDB = true)
+  val tpmetaWPt = Wire(new tpmetaBundle())
+  tpmetaWPt.metaW := io.metaWReq.valid
+  tpmetaWPt.tag := io.tagWReq.bits.wtag
+  tpmetaWPt.sset := io.metaWReq.bits.set
+  tpmetaWPt.hit := DontCare
+  tpmetaWPt.way := OHToUInt(io.metaWReq.bits.wayOH)
+
+  tpmetaReqDB.log(tpmetaReqPt, reqValid_s3 && req_s3.tpmeta, "", clock, reset)
+  tpmetaWDB.log(tpmetaWPt, io.metaWReq.valid && io.metaWReq.bits.wmeta.tpMeta.getOrElse(false.B), "", clock, reset)
 }

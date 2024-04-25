@@ -62,6 +62,7 @@ trait HasCoupledL2Parameters {
   val hasPrefetchBit = prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchBit
   val hasPrefetchSrc = prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchSrc
   val hasTP = prefetchOpt.nonEmpty && prefetchOpt.get.hasTP
+  val TPmetaL2Ways = 2
   val topDownOpt = if(cacheParams.elaboratedTopDown) Some(true) else None
 
   val enableHintGuidedGrant = true
