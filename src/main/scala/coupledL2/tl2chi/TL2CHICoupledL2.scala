@@ -344,11 +344,12 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
     val rxrsp = Wire(DecoupledIO(new CHIRSP))
     val rxrspIsMMIO = rxrsp.bits.txnID.head(1).asBool
     val isPCrdGrant = rxrsp.valid && (rxrsp.bits.opcode === PCrdGrant)
+    val pArb = Module(new RRArbiter(UInt(), banks))
     /*
      when PCrdGrant, give credit to one Slice that:
      1. got RetryAck and not Reissued
      2. match srcID and PCrdType
-     3. has priority if multi-Slice match
+     3. use Round-Robin arbiter if multi-Slice match
      */
     val matchPCrdGrant = Wire(Vec(banks, UInt(mshrsAll.W)))
     slices.zipWithIndex.foreach { case (s, i) =>
@@ -359,7 +360,15 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
       )).asUInt
     }
     val pCrdIsWait = VecInit(matchPCrdGrant.map(_.asUInt.orR)).asUInt
-    val pCrdSliceID = PriorityEncoder(pCrdIsWait)
+
+    pArb.io.in.zipWithIndex.foreach {
+      case (in, i) =>
+        in.valid := pCrdIsWait(i)
+        in.bits := 0.U
+    }
+    pArb.io.out.ready := true.B
+    val pCrdSliceID = pArb.io.chosen 
+//    val pCrdSliceID = PriorityEncoder(pCrdIsWait)
 //    val rxrspSliceID = getSliceID(rxrsp.bits.txnID)
     val rxrspSliceID = Mux(isPCrdGrant, pCrdSliceID, getSliceID(rxrsp.bits.txnID))
     slices.zipWithIndex.foreach { case (s, i) =>

@@ -123,10 +123,11 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
    when PCrdGrant, give credit to one entry that:
    1. got RetryAck and not Reissued
    2. match srcID and PCrdType
-   3. has priority if multi-entry match
+   3. use Round-Robin arbiter if multi-entry match
    */
   val isPCrdGrant = io.resps.rxrsp.valid && (io.resps.rxrsp.respInfo.chiOpcode.get === PCrdGrant)
   val waitPCrdInfo  = Wire(Vec(mshrsAll, new PCrdInfo))
+  val pArb = Module(new RRArbiter(UInt(), mshrsAll))
 
   val matchPCrdGrant = VecInit(waitPCrdInfo.map(p =>
       isPCrdGrant && p.valid &&
@@ -134,7 +135,15 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
       p.pCrdType.get === io.resps.rxrsp.respInfo.pCrdType.get
   ))
 
-  val pCrdPri = VecInit(PriorityEncoderOH(matchPCrdGrant))
+  pArb.io.in.zipWithIndex.foreach {
+      case (in, i) =>
+      in.valid := matchPCrdGrant(i)
+      in.bits := 0.U
+  }
+  pArb.io.out.ready := true.B
+  val pCrdRR = VecInit(UIntToOH(pArb.io.chosen))
+  val pCrdPri = VecInit((matchPCrdGrant.asUInt & pCrdRR.asUInt).asBools)
+//  val pCrdPri = VecInit(PriorityEncoderOH(matchPCrdGrant))
   val pCrdIsWait = OHToUInt(pCrdPri)
 
   /* when PCrdGrant come before RetryAck, 16 entry CAM used to:
