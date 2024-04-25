@@ -36,6 +36,7 @@ trait HasCoupledL2Parameters {
   val p: Parameters
   val cacheParams = p(L2ParamKey)
 
+  val XLEN = 64
   val blocks = cacheParams.sets * cacheParams.ways
   val blockBytes = cacheParams.blockBytes
   val beatBytes = cacheParams.channelBytes.d.get
@@ -48,8 +49,10 @@ trait HasCoupledL2Parameters {
   val stateBits = MetaData.stateBits
   val aliasBitsOpt = if(cacheParams.clientCaches.isEmpty) None
                   else cacheParams.clientCaches.head.aliasBitsOpt
+  // vaddr without offset bits
   val vaddrBitsOpt = if(cacheParams.clientCaches.isEmpty) None
                   else cacheParams.clientCaches.head.vaddrBitsOpt
+  val fullVAddrBits = vaddrBitsOpt.getOrElse(0) + offsetBits
   // from L1 load miss cache require
   val isKeywordBitsOpt = if(cacheParams.clientCaches.isEmpty) None
                   else cacheParams.clientCaches.head.isKeywordBitsOpt
@@ -233,11 +236,17 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
   class CoupledL2Imp(wrapper: LazyModule) extends LazyModuleImp(wrapper) {
     val banks = node.in.size
     val bankBits = if (banks == 1) 0 else log2Up(banks)
+    val l2TlbParams: Parameters = p.alterPartial {
+      case EdgeInKey => node.in.head._2
+      case EdgeOutKey => node.out.head._2
+      case BankBitsKey => bankBits
+    }
     val io = IO(new Bundle {
       val hartId = Input(UInt(hartIdLen.W))
-    //  val l2_hint = Valid(UInt(32.W))
       val l2_hint = ValidIO(new L2ToL1Hint())
+      val l2_tlb_req = new L2ToL1TlbIO(nRespDups = 1)(l2TlbParams)
       val debugTopDown = new Bundle {
+        val robTrueCommit = Input(UInt(64.W))
         val robHeadPaddr = Vec(cacheParams.hartIds.length, Flipped(Valid(UInt(36.W))))
         val l2MissMatch = Vec(cacheParams.hartIds.length, Output(Bool()))
       }
@@ -283,12 +292,14 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     val prefetchTrains = prefetchOpt.map(_ => Wire(Vec(banks, DecoupledIO(new PrefetchTrain()(pftParams)))))
     val prefetchResps = prefetchOpt.map(_ => Wire(Vec(banks, DecoupledIO(new PrefetchResp()(pftParams)))))
     val prefetchReqsReady = WireInit(VecInit(Seq.fill(banks)(false.B)))
+    io.l2_tlb_req <> DontCare
     prefetchOpt.foreach {
       _ =>
         fastArb(prefetchTrains.get, prefetcher.get.io.train, Some("prefetch_train"))
         prefetcher.get.io.req.ready := Cat(prefetchReqsReady).orR
         prefetcher.get.hartId := io.hartId
         fastArb(prefetchResps.get, prefetcher.get.io.resp, Some("prefetch_resp"))
+        prefetcher.get.io.tlb_req <> io.l2_tlb_req
     }
     pf_recv_node match {
       case Some(x) =>
@@ -402,6 +413,10 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
               prefetchResps.get(i).bits.tag := resp_tag
               prefetchResps.get(i).bits.set := resp_set
             }
+            s.tlb_req.req.valid := false.B
+            s.tlb_req.req.bits := DontCare
+            s.tlb_req.req_kill := DontCare
+            s.tlb_req.resp.ready := true.B
         }
 
         slice
