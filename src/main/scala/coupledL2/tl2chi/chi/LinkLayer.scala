@@ -261,11 +261,11 @@ object Decoupled2LCredit {
   }
 }
 
-class LinkMonitor(implicit p: Parameters) extends L2Module {
+class LinkMonitor(implicit p: Parameters) extends L2Module with HasCHIMsgParameters {
   val io = IO(new Bundle() {
     val in = Flipped(new DecoupledPortIO())
     val out = new PortIO
-    val hartId = Input(UInt(hartIdLen.W))
+    val nodeID = Input(UInt(NODEID_WIDTH.W))
   })
   // val s_stop :: s_activate :: s_run :: s_deactivate :: Nil = Enum(4)
 
@@ -284,9 +284,9 @@ class LinkMonitor(implicit p: Parameters) extends L2Module {
   /* IO assignment */
   val rxsnpDeact, rxrspDeact, rxdatDeact = Wire(Bool())
   val rxDeact = rxsnpDeact && rxrspDeact && rxdatDeact
-  Decoupled2LCredit(setSrcID(io.in.tx.req, io.hartId), io.out.tx.req, LinkState(txState), Some("txreq"))
-  Decoupled2LCredit(setSrcID(io.in.tx.rsp, io.hartId), io.out.tx.rsp, LinkState(txState), Some("txrsp"))
-  Decoupled2LCredit(setSrcID(io.in.tx.dat, io.hartId), io.out.tx.dat, LinkState(txState), Some("txdat"))
+  Decoupled2LCredit(setSrcID(io.in.tx.req, io.nodeID), io.out.tx.req, LinkState(txState), Some("txreq"))
+  Decoupled2LCredit(setSrcID(io.in.tx.rsp, io.nodeID), io.out.tx.rsp, LinkState(txState), Some("txrsp"))
+  Decoupled2LCredit(setSrcID(io.in.tx.dat, io.nodeID), io.out.tx.dat, LinkState(txState), Some("txdat"))
   LCredit2Decoupled(io.out.rx.snp, io.in.rx.snp, LinkState(rxState), rxsnpDeact, Some("rxsnp"))
   LCredit2Decoupled(io.out.rx.rsp, io.in.rx.rsp, LinkState(rxState), rxrspDeact, Some("rxrsp"))
   LCredit2Decoupled(io.out.rx.dat, io.in.rx.dat, LinkState(rxState), rxdatDeact, Some("rxdat"))

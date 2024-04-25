@@ -11,7 +11,8 @@ import coupledL2.prefetch._
 import coupledL2.tl2chi._
 import utility.{ChiselDB, FileRegisters, TLLogger}
 
-class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(implicit p: Parameters) extends LazyModule {
+class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(implicit p: Parameters) extends LazyModule
+  with HasCHIMsgParameters {
 
   /*   L1D(L1I)* L1D(L1I)* ... L1D(L1I)*
    *       \         |          /
@@ -137,6 +138,7 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(imp
       dontTouch(l2.module.io)
 
       l2.module.io.hartId := i.U
+      l2.module.io.nodeID := i.U(NODEID_WIDTH.W)
       l2.module.io.debugTopDown := DontCare
     }
   }

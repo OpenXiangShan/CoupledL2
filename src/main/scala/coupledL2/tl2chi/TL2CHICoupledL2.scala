@@ -129,6 +129,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         val l2MissMatch = Vec(cacheParams.hartIds.length, Output(Bool()))
       }
       val chi = new PortIO
+      val nodeID = Input(UInt())
     })
 
     // TODO
@@ -411,7 +412,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
     rxrsp <> linkMonitor.io.in.rx.rsp
     rxdat <> linkMonitor.io.in.rx.dat
     io.chi <> linkMonitor.io.out
-    linkMonitor.io.hartId := io.hartId
+    linkMonitor.io.nodeID := io.nodeID
 
     val topDown = topDownOpt.map(_ => Module(new TopDownMonitor()(p.alterPartial {
       case EdgeInKey => node.in.head._2
