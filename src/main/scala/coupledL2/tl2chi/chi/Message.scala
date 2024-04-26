@@ -49,11 +49,11 @@ object CHICohStates {
 object OrderEncodings {
   val width = 2
 
-  def None = "b00".U
-  def RequestAccepted = "b01".U
-  def RequestOrder = "b10".U
-  def OWO = "b10".U // Ordered Write Observation
-  def EndpointOrder = "b11".U
+  def None = "b00".U(width.W)
+  def RequestAccepted = "b01".U(width.W)
+  def RequestOrder = "b10".U(width.W)
+  def OWO = "b10".U(width.W) // Ordered Write Observation
+  def EndpointOrder = "b11".U(width.W)
 
   def isRequestOrder(order: UInt): Bool = order >= RequestOrder
 }

@@ -68,6 +68,10 @@ class MMIOBridge()(implicit p: Parameters) extends LazyModule
 }
 
 class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Module {
+
+  val needRR = true
+  val order = WireInit(if (needRR) OrderEncodings.EndpointOrder else OrderEncodings.None)
+
   val io = IO(new Bundle() {
     val req = Flipped(DecoupledIO(new TLBundleA(edge.bundle)))
     val resp = DecoupledIO(new TLBundleD(edge.bundle))
@@ -77,6 +81,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
       val pCrdType = UInt(PCRDTYPE_WIDTH.W)
     }))
     val pCrdGrant = Input(Bool())
+    val waitOnReadReceipt = Option.when(needRR)(Output(Bool()))
   })
 
   val s_txreq = RegInit(true.B)
@@ -88,9 +93,10 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   val w_dbidresp = RegInit(true.B)
   val w_compdata = RegInit(true.B)
   val w_pcrdgrant = RegInit(true.B)
+  val w_readreceipt = Option.when(needRR)(RegInit(true.B))
 
   val no_schedule = s_txreq && s_ncbwrdata && s_resp
-  val no_wait = w_comp && w_dbidresp && w_compdata && w_pcrdgrant
+  val no_wait = w_comp && w_dbidresp && w_compdata && w_pcrdgrant && w_readreceipt.getOrElse(true.B)
 
   val req = RegEnable(io.req.bits, io.req.fire)
   val req_valid = !no_schedule || !no_wait
@@ -123,6 +129,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
     allowRetry := true.B
     when (io.req.bits.opcode === Get) {
       w_compdata := false.B
+      w_readreceipt.foreach(_ := false.B)
     }.elsewhen (io.req.bits.opcode === PutFullData || io.req.bits.opcode === PutPartialData) {
       w_comp := false.B
       w_dbidresp := false.B
@@ -158,6 +165,9 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
       allowRetry := false.B
       pCrdType := rxrsp.bits.pCrdType
     }
+    when (rxrsp.bits.opcode === RSPOpcodes.ReadReceipt) {
+      w_readreceipt.foreach(_ := true.B)
+    }
   }
   when (txdat.fire) {
     s_ncbwrdata := true.B
@@ -182,7 +192,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   txreq.bits.size := req.size
   txreq.bits.addr := req.address
   txreq.bits.allowRetry := allowRetry
-  txreq.bits.order := OrderEncodings.None // TODO: To be confirmed
+  txreq.bits.order := order
   txreq.bits.pCrdType := Mux(allowRetry, 0.U, pCrdType)
   txreq.bits.memAttr := MemAttr(allocate = false.B, cacheable = false.B, device = true.B, ewa = false.B)
   txreq.bits.expCompAck := false.B
@@ -218,6 +228,8 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
 
   io.pCrdQuery.valid := !w_pcrdgrant
   io.pCrdQuery.bits.pCrdType := pCrdType
+
+  io.waitOnReadReceipt.foreach(_ := !w_readreceipt.get && (s_txreq || !allowRetry))
 }
 
 class MMIOBridgeImp(outer: MMIOBridge) extends LazyModuleImp(outer)
@@ -233,6 +245,13 @@ class MMIOBridgeImp(outer: MMIOBridge) extends LazyModuleImp(outer)
   val selectOH = ParallelPriorityMux(readys.zipWithIndex.map { case (ready, i) =>
     ready -> (1 << i).U
   }).asBools
+
+  /**
+    * When a ReadNoSnp requires RequestOrder or Endpoint Order, the requester requires a ReadReceipt to determine
+    * when it can send the next ordered request.
+    */
+  val waitOnReadReceiptVec = entries.map(e => e.io.waitOnReadReceipt.getOrElse(false.B))
+  val waitOnReadReceipt = Cat(waitOnReadReceiptVec).orR
 
   /**
     * Protocol Retry
@@ -281,7 +300,16 @@ class MMIOBridgeImp(outer: MMIOBridge) extends LazyModuleImp(outer)
     entry.io.pCrdGrant := pCrdMatchEntryOH(i)
   }
 
-  arb(entries.map(_.io.chi.tx.req), io.tx.req, Some("mmio_txreq"))
+  val txreqArb = Module(new Arbiter(chiselTypeOf(io.tx.req.bits), mmioBridgeSize))
+  for ((a, req) <- txreqArb.io.in.zip(entries.map(_.io.chi.tx.req))) {
+    a <> req
+    val isReadNoSnp = req.bits.opcode === REQOpcodes.ReadNoSnp
+    val block = isReadNoSnp && waitOnReadReceipt
+    req.ready := a.ready && !block
+    a.valid := req.valid && !block
+  }
+  io.tx.req <> txreqArb.io.out
+  // arb(entries.map(_.io.chi.tx.req), io.tx.req, Some("mmio_txreq"))
   arb(entries.map(_.io.chi.tx.dat), io.tx.dat, Some("mmio_txdat"))
   arb(entries.map(_.io.resp), bus.d, Some("mmio_channel_D"))
 
