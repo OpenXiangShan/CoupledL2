@@ -221,7 +221,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
     reqWordIdx,
     List.tabulate(words)(i => i.U -> (ZeroExt(req.mask, BE_WIDTH) << (i * wordBytes)))
   )
-  txdat.bits.data := Fill(words, req.data)
+  txdat.bits.data := Fill(words, req.data) & FillInterleaved(8, txdat.bits.be)
 
   rxrsp.ready := (!w_comp || !w_dbidresp) && s_txreq
   rxdat.ready := !w_compdata && s_txreq
