@@ -208,9 +208,9 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val trainPaddr_s1 = train_s1.addr
   val (vtag_s1, vset_s1) = if (vaddrBitsOpt.nonEmpty) parseVaddr(trainVaddr_s1) else (0.U, 0.U)
   val (ptag_s1, pset_s1) = parsePaddr(trainPaddr_s1)
-  val train_set_s1 = Mux(trainOnVaddr.orR, vset_s1, pset_s1)
+  val train_tag_s1 = Mux(trainOnVaddr.orR, vtag_s1, ptag_s1)
 
-  val tagMatchVec = metas.map(_.triggerTag === Mux(tpMetaRespValid_s1, tpMetaResp_s1.set, train_set_s1))
+  val tagMatchVec = metas.map(_.triggerTag === Mux(tpMetaRespValid_s1, tpMetaResp_s1.tag, train_tag_s1))
   val metaValidVec = metas.map(_.valid === true.B)
 
   /*
