@@ -92,10 +92,6 @@ class RXSNP(
   assert(stallCnt <= STALL_CNT_MAX, "stallCnt full! maybe there is a deadlock! addr => 0x%x req_opcode => %d txn_id => %d", io.rxsnp.bits.addr, io.rxsnp.bits.opcode, io.rxsnp.bits.txnID);
 
   assert(!(stall && io.rxsnp.fire))
-  // dontTouch(addrConflictMask)
-  // dontTouch(addrConflict)
-  // dontTouch(replaceConflictMask)
-  // dontTouch(replaceConflict)
 
   def fromSnpToTaskBundle(snp: CHISNP): TaskBundle = {
     val task = WireInit(0.U.asTypeOf(new TaskBundle))
