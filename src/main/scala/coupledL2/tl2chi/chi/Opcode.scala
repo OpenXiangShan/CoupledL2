@@ -172,6 +172,13 @@ object CHIOpcode {
       opcode === SnpCleanShared
     }
 
+    def isSnpToBNonFwd(opcode: UInt): Bool = {
+      widthCheck(opcode)
+      opcode === SnpClean ||
+      opcode === SnpNotSharedDirty ||
+      opcode === SnpShared
+    }
+
     def isSnpToBFwd(opcode: UInt): Bool = {
       widthCheck(opcode)
       opcode === SnpCleanFwd ||

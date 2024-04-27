@@ -168,17 +168,22 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     *    SnpOnceFwd, and SnpUniqueFwd.
     * 2. When the snoop opcode is SnpCleanFwd, SnpNotSharedDirtyFwd or SnpSharedFwd, always echo SnpRespDataFwded
     *    if RetToSrc = 1 as long as the snooped block is valid.
+    * 3. When the snoop opcode is non-forwarding non-stashing snoop, echo SnpRespData if RetToSrc = 1 as long as the
+    *    cache line is Shared Clean and the snoopee retains a copy of the cache line.
     */
+  val doRespData_dirty = (isT(meta.state) && meta.dirty || probeDirty) && (
+    req_chiOpcode === SnpOnce ||
+    snpToB ||
+    req_chiOpcode === SnpUnique ||
+    req_chiOpcode === SnpUniqueStash ||
+    req_chiOpcode === SnpCleanShared ||
+    req_chiOpcode === SnpCleanInvalid
+  )
+  val doRespData_retToSrc_fwd = req.retToSrc.get && isSnpToBFwd(req_chiOpcode)
+  val doRespData_retToSrc_nonFwd = req.retToSrc.get && meta.state === BRANCH && isSnpToBNonFwd(req_chiOpcode)
   val doRespData = Mux(
     dirResult.hit,
-    (isT(meta.state) && meta.dirty || probeDirty) && (
-      req_chiOpcode === SnpOnce ||
-      snpToB ||
-      req_chiOpcode === SnpUnique ||
-      req_chiOpcode === SnpUniqueStash ||
-      req_chiOpcode === SnpCleanShared ||
-      req_chiOpcode === SnpCleanInvalid
-    ) || req.retToSrc.get && isSnpToBFwd(req_chiOpcode),
+    doRespData_dirty || doRespData_retToSrc_fwd || doRespData_retToSrc_nonFwd,
     req.snpHitRelease && req.snpHitReleaseWithData
   )
   /**
