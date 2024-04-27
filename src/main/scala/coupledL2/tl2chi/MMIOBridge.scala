@@ -223,7 +223,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   )
   txdat.bits.data := Fill(words, req.data) & FillInterleaved(8, txdat.bits.be)
 
-  rxrsp.ready := (!w_comp || !w_dbidresp) && s_txreq
+  rxrsp.ready := (!w_comp || !w_dbidresp || !w_readreceipt.getOrElse(true.B)) && s_txreq
   rxdat.ready := !w_compdata && s_txreq
 
   io.pCrdQuery.valid := !w_pcrdgrant
