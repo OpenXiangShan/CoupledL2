@@ -37,16 +37,14 @@ class RXDAT(implicit p: Parameters) extends TL2CHIL2Module {
   val first = (io.out.bits.dataID === "b00".U)
   val last  = (io.out.bits.dataID === "b10".U)
 
-  //GrantBuf used to keep first half 256 bit data
-  val grantDataBuf = RegEnable(io.out.bits.data, 0.U((beatBytes * 8).W), io.out.valid && first)
-
   /* Write Refill Buffer*/
-  io.refillBufWrite.valid := io.out.valid && last
+  io.refillBufWrite.valid := io.out.valid
   io.refillBufWrite.bits.id := io.out.bits.txnID
-  io.refillBufWrite.bits.data.data := Cat(io.out.bits.data, grantDataBuf)
+  io.refillBufWrite.bits.data.data := Fill(beatSize, io.out.bits.data)
+  io.refillBufWrite.bits.beatMask := Cat(last, first)
 
   /* Response to MSHR */
-  io.in.valid := (first || last) && io.out.valid 
+  io.in.valid := (first || last) && io.out.valid
   io.in.mshrId := io.out.bits.txnID
   io.in.set := 0.U(setBits.W)
   io.in.tag := 0.U(tagBits.W)

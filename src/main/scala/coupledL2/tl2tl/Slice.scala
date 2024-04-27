@@ -115,6 +115,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
   releaseBuf.io.w(0).valid := mshrCtl.io.nestedwbDataId.valid
   releaseBuf.io.w(0).bits.data := mainPipe.io.nestedwbData
   releaseBuf.io.w(0).bits.id := mshrCtl.io.nestedwbDataId.bits
+  releaseBuf.io.w(0).bits.beatMask := Fill(beatSize, true.B)
   releaseBuf.io.w(1) <> sinkC.io.releaseBufWrite
   releaseBuf.io.w(1).bits.id := mshrCtl.io.releaseBufWriteId
   releaseBuf.io.w(2) <> mainPipe.io.releaseBufWrite

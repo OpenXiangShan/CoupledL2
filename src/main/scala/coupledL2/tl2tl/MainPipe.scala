@@ -505,6 +505,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.releaseBufWrite.valid      := task_s5.valid && need_write_releaseBuf_s5
   io.releaseBufWrite.bits.id    := task_s5.bits.mshrId
   io.releaseBufWrite.bits.data.data := rdata_s5
+  io.releaseBufWrite.bits.beatMask := Fill(beatSize, true.B)
 
   val c_d_valid_s5 = task_s5.valid && !RegNext(chnl_fire_s4, false.B) && !RegNextN(chnl_fire_s3, 2, Some(false.B))
   c_s5.valid := c_d_valid_s5 && isC_s5

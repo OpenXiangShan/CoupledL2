@@ -146,6 +146,7 @@ class Slice()(implicit p: Parameters) extends TL2CHIL2Module {
   nestedWriteReleaseBuf.valid := mshrCtl.io.nestedwbDataId.valid
   nestedWriteReleaseBuf.bits.data := mainPipe.io.nestedwbData
   nestedWriteReleaseBuf.bits.id := mshrCtl.io.nestedwbDataId.bits
+  nestedWriteReleaseBuf.bits.beatMask := Fill(beatSize, true.B)
   sinkCWriteReleaseBuf match { case x =>
     x := sinkC.io.releaseBufWrite
     x.bits.id := mshrCtl.io.releaseBufWriteId

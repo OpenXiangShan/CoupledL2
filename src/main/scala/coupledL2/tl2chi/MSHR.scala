@@ -797,9 +797,10 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   // RXDAT
   when (rxdat.valid) {
     when (rxdat.bits.chiOpcode.get === CompData) {
+      require(beatSize == 2) // TODO: This is ugly
       state.w_grantfirst := true.B
-      state.w_grantlast := rxdat.bits.last
-      state.w_grant := req.off === 0.U || rxdat.bits.last  // TODO? why offset?
+      state.w_grantlast := state.w_grantfirst
+      state.w_grant := req.off === 0.U || state.w_grantfirst  // TODO? why offset?
       gotT := rxdatIsU || rxdatIsU_PD
       gotDirty := gotDirty || rxdatIsU_PD
       gotGrantData := true.B

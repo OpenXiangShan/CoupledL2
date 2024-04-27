@@ -659,6 +659,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   io.releaseBufWrite.valid := task_s5.valid && need_write_releaseBuf_s5
   io.releaseBufWrite.bits.id := task_s5.bits.mshrId
   io.releaseBufWrite.bits.data.data := rdata_s5
+  io.releaseBufWrite.bits.beatMask := Fill(beatSize, true.B)
 
   val chnl_valid_s5 = task_s5.valid && !RegNext(chnl_fire_s4, false.B) && !RegNextN(chnl_fire_s3, 2, Some(false.B))
   d_s5.valid := chnl_valid_s5 && isD_s5

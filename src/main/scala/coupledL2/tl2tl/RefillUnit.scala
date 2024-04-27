@@ -61,6 +61,7 @@ class RefillUnit(implicit p: Parameters) extends L2Module {
   io.refillBufWrite.valid := io.sinkD.valid && hasData && last
   io.refillBufWrite.bits.id := io.sinkD.bits.source
   io.refillBufWrite.bits.data.data := Cat(io.sinkD.bits.data, grantDataBuf)
+  io.refillBufWrite.bits.beatMask := Fill(beatSize, true.B)
 
   io.resp.valid := (first || last) && io.sinkD.valid
   io.resp.mshrId := io.sinkD.bits.source
