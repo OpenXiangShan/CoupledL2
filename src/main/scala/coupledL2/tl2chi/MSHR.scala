@@ -179,13 +179,17 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     req_chiOpcode === SnpCleanShared ||
     req_chiOpcode === SnpCleanInvalid
   )
-  val doRespData_retToSrc_fwd = req.retToSrc.get && isSnpToBFwd(req_chiOpcode)
-  val doRespData_retToSrc_nonFwd = req.retToSrc.get && meta.state === BRANCH && isSnpToBNonFwd(req_chiOpcode)
+  val doRespData_retToSrc_fwd = req.retToSrc.get && (isSnpToBFwd(req_chiOpcode) || isSnpToNFwd(req_chiOpcode))
+  val doRespData_retToSrc_nonFwd = req.retToSrc.get && meta.state === BRANCH && (isSnpToBNonFwd(req_chiOpcode) || isSnpToNNonFwd(req_chiOpcode))
   val doRespData = Mux(
     dirResult.hit,
     doRespData_dirty || doRespData_retToSrc_fwd || doRespData_retToSrc_nonFwd,
     req.snpHitRelease && req.snpHitReleaseWithData
   )
+  dontTouch(doRespData_dirty)
+  dontTouch(doRespData_retToSrc_fwd)
+  dontTouch(doRespData_retToSrc_nonFwd)
+
   /**
     * About which snoop should echo SnpResp[Data]Fwded instead of SnpResp[Data]:
     * 1. When the snoop opcode is Snp*Fwd and the snooped block is valid.
