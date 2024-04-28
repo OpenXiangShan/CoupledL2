@@ -304,7 +304,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     oa.ns := false.B
     oa.likelyshared := false.B
     oa.allowRetry := state.s_reissue.getOrElse(false.B)
-    oa.order := OrderEncodings.None // TODO: To be confirmed
+    oa.order := OrderEncodings.None
     oa.pCrdType := Mux(!state.s_reissue.getOrElse(false.B), pcrdtype, 0.U)
     oa.expCompAck := true.B
     oa.memAttr := MemAttr(cacheable = true.B, allocate = true.B, device = false.B, ewa = true.B)
