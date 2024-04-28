@@ -186,6 +186,16 @@ object CHIOpcode {
       opcode === SnpSharedFwd
     }
 
+    def isSnpToNNonFwd(opcode: UInt): Bool = {
+     widthCheck(opcode) 
+     opcode === SnpUnique || opcode === SnpUniqueStash
+    }
+
+    def isSnpToNFwd(opcode: UInt): Bool = {
+     widthCheck(opcode) 
+     opcode === SnpUniqueFwd 
+    }
+
     def isSnpUniqueX(opcode: UInt): Bool = {
       widthCheck(opcode)
       opcode === SnpUnique || opcode === SnpUniqueFwd || opcode === SnpUniqueStash
