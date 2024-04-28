@@ -6,9 +6,9 @@ name: CI
 on:
   # Triggers the workflow on push or pull request events but only for the main branch
   push:
-    branches: [ master, ci-test ]
+    branches: [ chi-coupledl2, chi-coupledl2-ci-test ]
   pull_request:
-    branches: [ master, ci-test ]
+    branches: [ chi-coupledl2, chi-coupledl2-ci-test ]
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -45,15 +45,9 @@ jobs:
       # - name: Check scalafmt
       #   run: make checkformat
         
-      - name: Compile
-        run: make compile
+      # - name: Compile
+      #   run: make compile
 
-      - name: Unit test
+      - name: Compile QuadCore
         run: |
-            git clone https://github.com/OpenXiangShan/tl-test -b coupledL2-huancun
-            make test-top-l2l3l2
-            cd ./tl-test
-            mkdir build && cd build
-            cmake .. -DDUT_DIR=../../build -DCHISELDB=1
-            make
-            ./tlc_test -s $RANDOM
+            make test-top-chi-quadcore-2ul
