@@ -380,18 +380,20 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     mp_release.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
 
     // CHI
+    val isWriteBackFull = isT(meta.state) && meta.dirty || probeDirty
     mp_release.tgtID.get := 0.U
     mp_release.srcID.get := 0.U
     mp_release.txnID.get := io.id
     mp_release.homeNID.get := 0.U
     mp_release.dbID.get := 0.U 
-    mp_release.chiOpcode.get := Mux(isT(meta.state) && meta.dirty || probeDirty, WriteBackFull, Evict)
+    mp_release.chiOpcode.get := Mux(isWriteBackFull, WriteBackFull, Evict)
     mp_release.resp.get := 0.U // DontCare
     mp_release.fwdState.get := 0.U // DontCare
     mp_release.pCrdType.get := 0.U // DontCare // TODO: consider retry of WriteBackFull/Evict
     mp_release.retToSrc.get := req.retToSrc.get
     mp_release.expCompAck.get := false.B
     mp_release.allowRetry.get := state.s_reissue.getOrElse(false.B)
+    mp_release.memAttr.get := MemAttr(allocate = isWriteBackFull, cacheable = true.B, device = false.B, ewa = true.B)
     mp_release
   }
   

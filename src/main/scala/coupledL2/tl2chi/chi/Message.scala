@@ -82,6 +82,7 @@ object MemAttr extends HasCHIMsgParameters {
     memAttr.ewa := ewa
     memAttr
   }
+  def apply(): MemAttr = apply(false.B, false.B, false.B, false.B)
 }
 
 trait HasCHIMsgParameters {
