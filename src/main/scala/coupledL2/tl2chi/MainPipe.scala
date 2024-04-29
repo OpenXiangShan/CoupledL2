@@ -342,7 +342,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
     sink_resp_s3.bits.resp.foreach(_ := Mux(
       req_s3.snpHitRelease && !SNPOpcodes.isSnpStashX(req_s3.chiOpcode.get),
       setPD(I, req_s3.snpHitReleaseWithData && !SNPOpcodes.isSnpMakeInvalidX(req_s3.chiOpcode.get)),
-      setPD(respCacheState, respPassDirty)
+      setPD(respCacheState, respPassDirty && (doRespData || doRespDataHitRelease))
     ))
     sink_resp_s3.bits.fwdState.foreach(_ := setPD(fwdCacheState, fwdPassDirty))
     sink_resp_s3.bits.txChannel := Cat(
@@ -541,7 +541,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   io.nestedwb.tag := req_s3.tag
   // This serves as VALID signal
   // c_set_dirty is true iff Release has Data
-  io.nestedwb.c_set_dirty := task_s3.valid && task_s3.bits.fromC && task_s3.bits.opcode === ReleaseData
+  io.nestedwb.c_set_dirty := task_s3.valid && task_s3.bits.fromC && task_s3.bits.opcode === ReleaseData && task_s3.bits.param === TtoN
   io.nestedwb.b_inv_dirty := task_s3.valid && task_s3.bits.fromB && source_req_s3.snpHitRelease
 
   io.nestedwbData := c_releaseData_s3.asTypeOf(new DSBlock)
