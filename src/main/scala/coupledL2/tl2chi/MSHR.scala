@@ -531,7 +531,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     mp_probeack.resp.get := Mux(
       req.snpHitRelease && req.snpHitReleaseWithData,
       I_PD,
-      setPD(respCacheState, respPassDirty)
+      setPD(respCacheState, respPassDirty && doRespData)
     )
     mp_probeack.fwdState.get := setPD(fwdCacheState, fwdPassDirty)
     mp_probeack.pCrdType.get := 0.U
