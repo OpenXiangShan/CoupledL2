@@ -23,6 +23,7 @@ import utility._
 import org.chipsalliance.cde.config.Parameters
 import scala.collection.View.Fill
 import coupledL2.{TaskBundle, MSHRInfo, MetaEntry, MergeTaskBundle}
+import coupledL2.MetaData._
 
 class RXSNP(
   lCreditNum: Int = 4 // the number of L-Credits that a receiver can provide
@@ -69,7 +70,7 @@ class RXSNP(
   )).asUInt
   val replaceBlockSnp = replaceBlockSnpMask.orR
   val replaceNestSnpMask = VecInit(io.msInfo.map(s =>
-      s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && !s.bits.dirHit &&
+      s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && !s.bits.dirHit && s.bits.metaState =/= INVALID &&
       s.bits.w_replResp && s.bits.w_rprobeacklast && !s.bits.w_releaseack
     )).asUInt
   val replaceDataMask = VecInit(io.msInfo.map(_.bits.replaceData)).asUInt
