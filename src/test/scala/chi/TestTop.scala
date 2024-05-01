@@ -83,7 +83,7 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(imp
     )
     case EnableCHI => true
     case BankBitsKey => log2Ceil(banks)
-  }).alter(p))))
+  }))))
 
   val bankBinders = (0 until numCores).map(_ => BankBinder(banks, 64))
 
@@ -156,39 +156,16 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(imp
 
 }
 
-object TestTop_CHIL2 extends App {
-  val banks = 1
-  val config = new Config((_, _, _) => {
-    case L2ParamKey => L2Param(
-      clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
-      echoField = Seq(DirtyField()),
-      
-    )
-    case EnableCHI => true
-    case BankBitsKey => log2Ceil(banks)
-  })
-
-  val top = DisableMonitors(p => LazyModule(new TestTop_CHIL2(numCores = 1, banks = banks)(p)))(config)
-
-  (new ChiselStage).execute(args, Seq(
-    ChiselGeneratorAnnotation(() => top.module)
-  ))
-
-  ChiselDB.init(false)
-  ChiselDB.addToFileRegisters
-  FileRegisters.write("./build")
-}
-
 
 object TestTopCHIHelper {
   def gen(fTop: Parameters => TestTop_CHIL2)(args: Array[String]) = {
-    implicit val config = new Config((_, _, _) => {
+    val config = new Config((_, _, _) => {
       case L2ParamKey => L2Param(
         FPGAPlatform = true
       )
     })
 
-    val top = DisableMonitors(p => LazyModule(fTop(p)))
+    val top = DisableMonitors(p => LazyModule(fTop(p)))(config)
 
     (new ChiselStage).execute(args, Seq(
       ChiselGeneratorAnnotation(() => top.module)
