@@ -946,6 +946,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   io.msInfo.bits.blockRefill := releaseNotSent || RegNext(releaseNotSent,false.B) || RegNext(RegNext(releaseNotSent,false.B),false.B)
   io.msInfo.bits.dirHit := dirResult.hit
   io.msInfo.bits.metaTag := dirResult.tag
+  io.msInfo.bits.metaState := meta.state
   io.msInfo.bits.willFree := will_free
   io.msInfo.bits.isAcqOrPrefetch := req_acquire || req_prefetch
   io.msInfo.bits.isPrefetch := req_prefetch

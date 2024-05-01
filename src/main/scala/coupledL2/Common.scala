@@ -187,6 +187,7 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle {
   val blockRefill = Bool()
 
   val metaTag = UInt(tagBits.W)
+  val metaState = UInt(stateBits.W)
   val dirHit = Bool()
 
   // to drop duplicate prefetch reqs
