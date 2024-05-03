@@ -969,6 +969,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     dirResult.set === io.nestedwb.set &&
     dirResult.tag === io.nestedwb.tag &&
     state.w_replResp
+  val nestedwb_hit_match = req_valid && dirResult.hit &&
+    dirResult.set === io.nestedwb.set &&
+    dirResult.tag === io.nestedwb.tag
 
   when (nestedwb_match) {
     when (io.nestedwb.c_set_dirty) {
@@ -977,6 +980,17 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     when (io.nestedwb.b_inv_dirty) {
       meta.dirty := false.B
       meta.state := INVALID
+    }
+  }
+  when (nestedwb_hit_match) {
+    when (io.nestedwb.b_toB.get) {
+      meta.state := Mux(meta.state >= BRANCH, BRANCH, INVALID)
+      meta.dirty := false.B
+    }
+    when (io.nestedwb.b_toN.get) {
+      meta.state := INVALID
+      dirResult.hit := false.B
+      meta.dirty := false.B
     }
   }
   // let nested C write ReleaseData to the MSHRBuffer entry of this MSHR id
