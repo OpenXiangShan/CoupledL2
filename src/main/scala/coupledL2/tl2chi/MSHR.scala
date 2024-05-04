@@ -991,6 +991,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       meta.state := INVALID
       dirResult.hit := false.B
       meta.dirty := false.B
+      meta.clients := Fill(clientBits, false.B)
     }
   }
   // let nested C write ReleaseData to the MSHRBuffer entry of this MSHR id

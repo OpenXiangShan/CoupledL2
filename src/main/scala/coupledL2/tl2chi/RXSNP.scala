@@ -65,7 +65,7 @@ class RXSNP(
     * 2. After MSHR receives all the ProbeAcks of rProbe, the snoop of Y should be nested.
     */
   val replaceBlockSnpMask = VecInit(io.msInfo.map(s =>
-    s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && !s.bits.dirHit &&
+    s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && !s.bits.dirHit && isValid(s.bits.metaState) &&
     s.bits.w_replResp && (!s.bits.w_rprobeacklast || s.bits.w_releaseack) && !s.bits.willFree
   )).asUInt
   val replaceBlockSnp = replaceBlockSnpMask.orR
