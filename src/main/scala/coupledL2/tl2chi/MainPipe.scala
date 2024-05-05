@@ -542,7 +542,18 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   // This serves as VALID signal
   // c_set_dirty is true iff Release has Data
   io.nestedwb.c_set_dirty := task_s3.valid && task_s3.bits.fromC && task_s3.bits.opcode === ReleaseData && task_s3.bits.param === TtoN
+  /**
+    * Snoop nesting happens when:
+    * 1. snoop nests a copy-back request
+    * 2. snoop nests a Read/MakeUnique request
+    */
   io.nestedwb.b_inv_dirty := task_s3.valid && task_s3.bits.fromB && source_req_s3.snpHitRelease
+  io.nestedwb.b_toB.foreach(_ :=
+    task_s3.valid && task_s3.bits.fromB && source_req_s3.metaWen && source_req_s3.meta.state === BRANCH
+  )
+  io.nestedwb.b_toN.foreach(_ :=
+    task_s3.valid && task_s3.bits.fromB && source_req_s3.metaWen && source_req_s3.meta.state === INVALID
+  )
 
   io.nestedwbData := c_releaseData_s3.asTypeOf(new DSBlock)
   

@@ -299,6 +299,9 @@ class NestedWriteback(implicit p: Parameters) extends L2Bundle {
   val c_set_dirty = Bool()
   // Nested Snoop invalidates block
   val b_inv_dirty = Bool()
+
+  val b_toB = chiOpt.map(_ => Bool())
+  val b_toN = chiOpt.map(_ => Bool())
 }
 
 class PrefetchRecv extends Bundle {

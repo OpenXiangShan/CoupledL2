@@ -625,7 +625,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     mp_grant.dsWen := gotGrantData || probeDirty && (req_get || req.aliasTask.getOrElse(false.B))
     mp_grant.fromL2pft.foreach(_ := req.fromL2pft.get)
     mp_grant.needHint.foreach(_ := false.B)
-    mp_grant.replTask := !dirResult.hit // Get and Alias are hit that does not need replacement
+    mp_grant.replTask := !dirResult.hit && !state.w_replResp
     mp_grant.wayMask := 0.U(cacheParams.ways.W)
     mp_grant.mshrRetry := !state.s_retry
     mp_grant.reqSource := 0.U(MemReqSource.reqSourceBits.W)
@@ -969,6 +969,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     dirResult.set === io.nestedwb.set &&
     dirResult.tag === io.nestedwb.tag &&
     state.w_replResp
+  val nestedwb_hit_match = req_valid && dirResult.hit &&
+    dirResult.set === io.nestedwb.set &&
+    dirResult.tag === io.nestedwb.tag
 
   when (nestedwb_match) {
     when (io.nestedwb.c_set_dirty) {
@@ -977,6 +980,20 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     when (io.nestedwb.b_inv_dirty) {
       meta.dirty := false.B
       meta.state := INVALID
+    }
+  }
+  when (nestedwb_hit_match) {
+    when (io.nestedwb.b_toB.get) {
+      meta.state := Mux(meta.state >= BRANCH, BRANCH, INVALID)
+      meta.dirty := false.B
+    }
+    when (io.nestedwb.b_toN.get) {
+      meta.state := INVALID
+      dirResult.hit := false.B
+      meta.dirty := false.B
+      meta.clients := Fill(clientBits, false.B)
+      state.w_replResp := false.B
+      req.aliasTask.foreach(_ := false.B)
     }
   }
   // let nested C write ReleaseData to the MSHRBuffer entry of this MSHR id
