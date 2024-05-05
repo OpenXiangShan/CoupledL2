@@ -993,6 +993,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       meta.dirty := false.B
       meta.clients := Fill(clientBits, false.B)
       state.w_replResp := false.B
+      req.aliasTask.foreach(_ := false.B)
     }
   }
   // let nested C write ReleaseData to the MSHRBuffer entry of this MSHR id
