@@ -81,6 +81,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
   reqArb.io.fromMainPipe := mainPipe.io.toReqArb
   reqArb.io.fromGrantBuffer := grantBuf.io.toReqArb
   reqArb.io.fromSourceC.foreach(_ := sourceC.io.toReqArb)
+  reqArb.io.msInfo := mshrCtl.io.msInfo
 
   mshrCtl.io.fromReqArb.status_s1 := reqArb.io.status_s1
   mshrCtl.io.resps.sinkC := sinkC.io.resp

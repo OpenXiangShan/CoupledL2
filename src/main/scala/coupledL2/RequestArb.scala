@@ -70,6 +70,9 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     val fromTXDAT = if (enableCHI) Some(Input(new TXDATBlockBundle)) else None
     val fromTXRSP = if (enableCHI) Some(Input(new TXRSPBlockBundle)) else None
     val fromTXREQ = if (enableCHI) Some(Input(new TXBlockBundle)) else None
+
+    /* MSHR Status */
+    val msInfo = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo())))
   })
 
   /* ======== Reset ======== */
@@ -137,7 +140,9 @@ class RequestArb(implicit p: Parameters) extends L2Module {
 
   val sink_ready_basic = io.dirRead_s1.ready && resetFinish && !mshr_task_s1.valid && s2_ready
 
-  io.sinkA.ready := sink_ready_basic && !block_A && !sinkValids(1) && !sinkValids(0) // SinkC prior to SinkA & SinkB
+  val noFreeWay = Wire(Bool())
+
+  io.sinkA.ready := sink_ready_basic && !block_A && !sinkValids(1) && !sinkValids(0) && !noFreeWay // SinkC prior to SinkA & SinkB
   io.sinkB.ready := sink_ready_basic && !block_B && !sinkValids(0) // SinkB prior to SinkA
   io.sinkC.ready := sink_ready_basic && !block_C
 
@@ -188,6 +193,13 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val task_s2 = RegInit(0.U.asTypeOf(task_s1))
   task_s2.valid := s1_fire
   when(s1_fire) { task_s2.bits := task_s1.bits }
+
+  val sameSet_s2 = task_s2.valid && task_s2.bits.fromA && !task_s2.bits.mshrTask && task_s2.bits.set === A_task.set
+  val sameSet_s3 = RegNext(task_s2.valid && task_s2.bits.fromA && !task_s2.bits.mshrTask) &&
+    RegEnable(task_s2.bits.set, task_s2.valid) === A_task.set
+  val sameSetCnt = PopCount(VecInit(io.msInfo.map(s => s.valid && s.bits.set === A_task.set && s.bits.fromA) :+
+    sameSet_s2 :+ sameSet_s3).asUInt)
+  noFreeWay := sameSetCnt >= cacheParams.ways.U
 
   io.taskToPipe_s2 := task_s2
 
