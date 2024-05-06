@@ -19,6 +19,7 @@ package coupledL2.tl2chi
 
 import chisel3._
 import chisel3.util._
+import chisel3.util.random.LFSR
 import utility._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
@@ -127,7 +128,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
    */
   val isPCrdGrant = io.resps.rxrsp.valid && (io.resps.rxrsp.respInfo.chiOpcode.get === PCrdGrant)
   val waitPCrdInfo  = Wire(Vec(mshrsAll, new PCrdInfo))
-  val pArb = Module(new RRArbiter(UInt(), mshrsAll))
+//  val pArb = Module(new RRArbiter(UInt(), mshrsAll))
 
   val matchPCrdGrant = VecInit(waitPCrdInfo.map(p =>
       isPCrdGrant && p.valid &&
@@ -135,7 +136,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
       p.pCrdType.get === io.resps.rxrsp.respInfo.pCrdType.get
   ))
 
-  pArb.io.in.zipWithIndex.foreach {
+/*  pArb.io.in.zipWithIndex.foreach {
       case (in, i) =>
       in.valid := matchPCrdGrant(i)
       in.bits := 0.U
@@ -143,7 +144,21 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
   pArb.io.out.ready := true.B
   val pCrdRR = VecInit(UIntToOH(pArb.io.chosen))
   val pCrdPri = VecInit((matchPCrdGrant.asUInt & pCrdRR.asUInt).asBools)
-//  val pCrdPri = VecInit(PriorityEncoderOH(matchPCrdGrant))
+//val pCrdPri = VecInit(PriorityEncoderOH(matchPCrdGrant))
+  val pCrdIsWait = OHToUInt(pCrdPri)
+ */
+
+  /*
+   Random arbiter if multi-entry match
+   */
+  val lfsr = LFSR(16, true.B)
+  val idx = Random(16, lfsr)
+  val idxOH = VecInit(UIntToOH(idx))
+
+  val doubleReq = Fill(2, matchPCrdGrant.asUInt)
+  val doubleGnt = ~(doubleReq - idxOH.asUInt) & doubleReq
+  val gnt = doubleGnt(31,16) | doubleGnt(15,0)
+  val pCrdPri = VecInit(gnt.asBools)
   val pCrdIsWait = OHToUInt(pCrdPri)
 
   /* when PCrdGrant come before RetryAck, 16 entry CAM used to:
