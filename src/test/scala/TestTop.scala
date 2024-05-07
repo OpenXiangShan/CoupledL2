@@ -48,7 +48,9 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
   val l1d_nodes = (0 until 1) map( i => createClientNode(s"l1d$i", 32))
   val master_nodes = l1d_nodes
 
-  val l2 = LazyModule(new TL2TLCoupledL2())
+  val l2 = LazyModule(new TL2TLCoupledL2()(new Config((_, _, _) => {
+    case BankBitsKey => 0
+  })))
   val xbar = TLXbar()
   val ram = LazyModule(new TLRAM(AddressSet(0, 0xffffL), beatBytes = 32))
 
@@ -139,6 +141,7 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
         rrTagBits = 6
       ))
     )
+    case BankBitsKey => 0
   })))
 
   val l3 = LazyModule(new HuanCun()(new Config((_, _, _) => {
@@ -255,7 +258,9 @@ class TestTop_L2_Standalone()(implicit p: Parameters) extends LazyModule {
   val l1d_nodes = (0 until 1) map( i => createClientNode(s"l1d$i", 32))
   val master_nodes = l1d_nodes
 
-  val l2 = LazyModule(new TL2TLCoupledL2())
+  val l2 = LazyModule(new TL2TLCoupledL2()(new Config((_, _, _) => {
+    case BankBitsKey => 0
+  })))
   val xbar = TLXbar()
   val l3 = createManagerNode("Fake_L3", 16)
 
@@ -338,6 +343,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
       echoField = Seq(DirtyField()),
       hartIds = Seq{i}
     )
+    case BankBitsKey => 0
   }))))
   val l2_nodes = coupledL2.map(_.node)
 
@@ -399,6 +405,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
       case l2 => {
         l2.module.io.debugTopDown := DontCare
         l2.module.io.hartId := DontCare
+        l2.module.io.l2_tlb_req <> DontCare
       }
     }
 
@@ -474,6 +481,7 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
           rrTagBits = 6
         ))
       )
+      case BankBitsKey => 0
     })))
 
     l1xbar := TLBuffer() := l1i
