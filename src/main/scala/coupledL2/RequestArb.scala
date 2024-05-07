@@ -107,7 +107,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     (if (io.fromTXRSP.isDefined) !io.fromTXRSP.get.blockMSHRReqEntrance else true.B) &&
     (if (io.fromTXREQ.isDefined) !io.fromTXREQ.get.blockMSHRReqEntrance else true.B)
   
-    s0_fire := io.mshrTask.valid && io.mshrTask.ready;
+    s0_fire := io.mshrTask.valid && io.mshrTask.ready
 
   /* ======== Stage 1 ======== */
   /* latch mshr_task from s0 to s1 */
@@ -130,17 +130,17 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     (if (io.fromTXRSP.isDefined) io.fromTXRSP.get.blockSinkBReqEntrance else false.B)
   val block_C = io.fromMSHRCtl.blockC_s1 || io.fromMainPipe.blockC_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockC_s1
 
+  val noFreeWay = Wire(Bool())
+
   val sinkValids = VecInit(Seq(
     io.sinkC.valid && !block_C,
     io.sinkB.valid && !block_B,
-    io.sinkA.valid && !block_A
+    io.sinkA.valid && !block_A && !noFreeWay
   )).asUInt
 
   // TODO: A Hint is allowed to enter if !s2_ready for mcp2_stall
 
   val sink_ready_basic = io.dirRead_s1.ready && resetFinish && !mshr_task_s1.valid && s2_ready
-
-  val noFreeWay = Wire(Bool())
 
   io.sinkA.ready := sink_ready_basic && !block_A && !sinkValids(1) && !sinkValids(0) && !noFreeWay // SinkC prior to SinkA & SinkB
   io.sinkB.ready := sink_ready_basic && !block_B && !sinkValids(0) // SinkB prior to SinkA
@@ -155,8 +155,8 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val task_s1 = Mux(mshr_task_s1.valid, mshr_task_s1, chnl_task_s1)
   val s1_to_s2_valid = task_s1.valid && !mshr_replRead_stall
 
-  s1_fire   := s1_cango && s2_ready;
-  s1_cango  := task_s1.valid && !mshr_replRead_stall;
+  s1_cango  := task_s1.valid && !mshr_replRead_stall
+  s1_fire   := s1_cango && s2_ready
 
   io.taskInfo_s1.valid := s1_to_s2_valid
   io.taskInfo_s1.bits := task_s1.bits
@@ -188,7 +188,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   // any req except AHint might access DS, and continuous DS accesses are prohibited
   val ds_mcp2_stall = RegNext(s1_fire && !s1_AHint_fire)
 
-  s2_ready  := !ds_mcp2_stall;
+  s2_ready  := !ds_mcp2_stall
 
   val task_s2 = RegInit(0.U.asTypeOf(task_s1))
   task_s2.valid := s1_fire
