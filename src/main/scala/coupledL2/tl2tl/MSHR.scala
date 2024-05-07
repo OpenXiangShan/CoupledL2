@@ -558,6 +558,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.msInfo.bits.w_rprobeacklast := state.w_rprobeacklast
   io.msInfo.bits.replaceData := mp_release.opcode === ReleaseData
   io.msInfo.bits.metaState := meta.state
+  io.msInfo.bits.channel := req.channel
 
   assert(!(c_resp.valid && !io.status.bits.w_c_resp))
   assert(!(d_resp.valid && !io.status.bits.w_d_resp))

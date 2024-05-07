@@ -102,6 +102,7 @@ class Slice()(implicit p: Parameters) extends TL2CHIL2Module {
   reqArb.io.fromTXDAT.foreach(_ := txdat.io.toReqArb)
   reqArb.io.fromTXRSP.foreach(_ := txrsp.io.toReqArb)
   reqArb.io.fromTXREQ.foreach(_ := txreq.io.toReqArb)
+  reqArb.io.msInfo := mshrCtl.io.msInfo
 
   reqBuf.io.in <> sinkA.io.task
   reqBuf.io.mshrInfo := mshrCtl.io.msInfo

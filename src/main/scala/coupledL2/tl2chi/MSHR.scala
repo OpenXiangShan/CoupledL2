@@ -958,6 +958,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   io.msInfo.bits.w_replResp := state.w_replResp
   io.msInfo.bits.w_rprobeacklast := state.w_rprobeacklast
   io.msInfo.bits.replaceData := isT(meta.state) && meta.dirty || probeDirty
+  io.msInfo.bits.channel := req.channel
 
   assert(!(c_resp.valid && !io.status.bits.w_c_resp))
   assert(!(rxrsp.valid && !io.status.bits.w_d_resp))
