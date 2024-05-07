@@ -316,3 +316,48 @@ class L2ToL1Hint(implicit p: Parameters) extends Bundle {
   val sourceId = UInt(32.W)    // tilelink sourceID
   val isKeyword = Bool()       // miss entry keyword
 }
+
+// custom l2 - l1 tlb
+// FIXME lyq: Tlbcmd and TlbExceptionBundle, how to use L1 corresponding bundles?
+object TlbCmd {
+  def read  = "b00".U
+  def write = "b01".U
+  def exec  = "b10".U
+
+  def atom_read  = "b100".U // lr
+  def atom_write = "b101".U // sc / amo
+
+  def apply() = UInt(3.W)
+  def isRead(a: UInt) = a(1,0)===read
+  def isWrite(a: UInt) = a(1,0)===write
+  def isExec(a: UInt) = a(1,0)===exec
+
+  def isAtom(a: UInt) = a(2)
+  def isAmo(a: UInt) = a===atom_write // NOTE: sc mixed
+}
+class TlbExceptionBundle extends Bundle {
+  val ld = Output(Bool())
+  val st = Output(Bool())
+  val instr = Output(Bool())
+}
+class L2TlbReq(implicit p: Parameters) extends L2Bundle{
+  val vaddr = Output(UInt((fullVAddrBits+offsetBits).W))
+  val cmd = Output(TlbCmd())
+  val size = Output(UInt(log2Ceil(log2Ceil(XLEN/8) + 1).W))
+  val kill = Output(Bool()) // Use for blocked tlb that need sync with other module like icache
+  val no_translate = Output(Bool()) // do not translate, but still do pmp/pma check
+}
+class L2TlbResp(nDups: Int = 1)(implicit p: Parameters) extends L2Bundle {
+  val paddr = Vec(nDups, Output(UInt(fullAddressBits.W)))
+  val miss = Output(Bool())
+  val excp = Vec(nDups, new Bundle {
+    val gpf = new TlbExceptionBundle()
+    val pf = new TlbExceptionBundle()
+    val af = new TlbExceptionBundle()
+  })
+}
+class L2ToL1TlbIO(nRespDups: Int = 1)(implicit p: Parameters) extends L2Bundle{
+  val req = DecoupledIO(new L2TlbReq)
+  val req_kill = Output(Bool())
+  val resp = Flipped(DecoupledIO(new L2TlbResp(nRespDups)))
+}

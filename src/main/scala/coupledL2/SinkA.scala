@@ -93,8 +93,8 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.mshrId := 0.U(mshrBits.W)
     task.aliasTask.foreach(_ := false.B)
     task.useProbeData := false.B
+    task.fromL2pft.foreach(_ := req.needAck)
     task.mshrRetry := false.B
-    task.fromL2pft.foreach(_ := req.isBOP)
     task.needHint.foreach(_ := false.B)
     task.dirty := false.B
     task.way := 0.U(wayBits.W)
@@ -105,7 +105,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.wayMask := 0.U(cacheParams.ways.W)
     task.reqSource := req.pfSource
     task.replTask := false.B
-    task.vaddr.foreach(_ := 0.U)
+    task.vaddr.foreach(_ := req.vaddr.getOrElse(0.U))
     task.isKeyword.foreach(_ := false.B)
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
@@ -137,8 +137,8 @@ class SinkA(implicit p: Parameters) extends L2Module {
   prefetchOpt.foreach {
     _ =>
       XSPerfAccumulate(cacheParams, "sinkA_prefetch_req", io.prefetchReq.get.fire)
-      XSPerfAccumulate(cacheParams, "sinkA_prefetch_from_l2", io.prefetchReq.get.bits.isBOP && io.prefetchReq.get.fire)
-      XSPerfAccumulate(cacheParams, "sinkA_prefetch_from_l1", !io.prefetchReq.get.bits.isBOP && io.prefetchReq.get.fire)
+      XSPerfAccumulate(cacheParams, "sinkA_prefetch_from_l2", io.prefetchReq.get.bits.fromL2 && io.prefetchReq.get.fire)
+      XSPerfAccumulate(cacheParams, "sinkA_prefetch_from_l1", !io.prefetchReq.get.bits.fromL2 && io.prefetchReq.get.fire)
   }
 
   // cycels stalled by mainpipe

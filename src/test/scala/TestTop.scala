@@ -399,6 +399,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
       case l2 => {
         l2.module.io.debugTopDown := DontCare
         l2.module.io.hartId := DontCare
+        l2.module.io.l2_tlb_req <> DontCare
       }
     }
 

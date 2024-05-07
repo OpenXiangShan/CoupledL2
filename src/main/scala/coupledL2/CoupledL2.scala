@@ -38,6 +38,7 @@ trait HasCoupledL2Parameters {
   val enableCHI = p(EnableCHI)
   val cacheParams = p(L2ParamKey)
 
+  val XLEN = 64
   val blocks = cacheParams.sets * cacheParams.ways
   val blockBytes = cacheParams.blockBytes
   val beatBytes = cacheParams.channelBytes.d.get
@@ -51,8 +52,10 @@ trait HasCoupledL2Parameters {
   val chiOpt = if (enableCHI) Some(true) else None
   val aliasBitsOpt = if(cacheParams.clientCaches.isEmpty) None
                   else cacheParams.clientCaches.head.aliasBitsOpt
+  // vaddr without offset bits
   val vaddrBitsOpt = if(cacheParams.clientCaches.isEmpty) None
                   else cacheParams.clientCaches.head.vaddrBitsOpt
+  val fullVAddrBits = vaddrBitsOpt.getOrElse(0) + offsetBits
   // from L1 load miss cache require
   val isKeywordBitsOpt = if(cacheParams.clientCaches.isEmpty) None
                   else cacheParams.clientCaches.head.isKeywordBitsOpt
