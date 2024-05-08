@@ -167,6 +167,9 @@ class Slice()(implicit p: Parameters) extends TL2CHIL2Module {
     p.train <> mainPipe.io.prefetchTrain.get
     sinkA.io.prefetchReq.get <> p.req
     p.resp <> grantBuf.io.prefetchResp.get
+    p.tlb_req.req.ready := true.B
+    p.tlb_req.resp.valid := false.B
+    p.tlb_req.resp.bits := DontCare
     p.recv_addr := 0.U.asTypeOf(p.recv_addr)
   }
 
