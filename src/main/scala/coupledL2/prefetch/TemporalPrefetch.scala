@@ -324,20 +324,22 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   val (write_record_vtag, write_record_vset) = parseVaddr(write_record_trigger.vaddr)
   val (write_record_ptag, write_record_pset) = parsePaddr(write_record_trigger.paddr)
-  val (write_record_l2_vtag, write_record_l2_vset, write_record_l2_voff) = parseFullAddress(write_record_trigger.vaddr)
-  val (write_record_l2_ptag, write_record_l2_pset, write_record_l2_poff) = parseFullAddress(write_record_trigger.paddr)
+  val (write_record_l2_vtag, write_record_l2_vset, write_record_l2_vbank, write_record_l2_voff) = parseFullAddressWithBank(write_record_trigger.vaddr)
+  val (write_record_l2_ptag, write_record_l2_pset, write_record_l2_pbank, write_record_l2_poff) = parseFullAddressWithBank(write_record_trigger.paddr)
 
   val tpMeta_w_bits = Wire(new tpMetaEntry())
   tpMeta_w_bits.valid := Mux(tpMetaRespValid_s2, false.B, true.B)
   tpMeta_w_bits.triggerTag := Mux(trainOnVaddr.orR, write_record_vtag, write_record_ptag)
   tpMeta_w_bits.l2ReqBundle.tag := Mux(trainOnVaddr.orR, write_record_l2_vtag, write_record_l2_ptag)
   tpMeta_w_bits.l2ReqBundle.set := Mux(trainOnVaddr.orR, write_record_l2_vset, write_record_l2_pset)
+  tpMeta_w_bits.l2ReqBundle.bank := Mux(trainOnVaddr.orR, write_record_l2_vbank, write_record_l2_pbank)
   tpMeta_w_bits.l2ReqBundle.off := Mux(trainOnVaddr.orR, write_record_l2_voff, write_record_l2_poff)
   when(!resetFinish) {
     tpMeta_w_bits.valid := false.B
     tpMeta_w_bits.triggerTag := 0.U
     tpMeta_w_bits.l2ReqBundle.tag := 0.U
     tpMeta_w_bits.l2ReqBundle.set := 0.U
+    tpMeta_w_bits.l2ReqBundle.bank := 0.U
     tpMeta_w_bits.l2ReqBundle.off := 0.U
   }
 
@@ -352,6 +354,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   dataWriteQueue.io.enq.bits.rawData.zip(recorder_data).foreach(x => x._1 := x._2(35-6, 0))
   dataWriteQueue.io.enq.bits.l2ReqBundle.tag := Mux(trainOnVaddr.orR, write_record_l2_vtag, write_record_l2_ptag)
   dataWriteQueue.io.enq.bits.l2ReqBundle.set := Mux(trainOnVaddr.orR, write_record_l2_vset, write_record_l2_pset)
+  dataWriteQueue.io.enq.bits.l2ReqBundle.bank := Mux(trainOnVaddr.orR, write_record_l2_vbank, write_record_l2_pbank)
   dataWriteQueue.io.enq.bits.l2ReqBundle.off := Mux(trainOnVaddr.orR, write_record_l2_voff, write_record_l2_poff)
   dataWriteQueue.io.enq.bits.hartid := io.hartid
   assert(dataWriteQueue.io.enq.ready === true.B) // TODO: support back-pressure
