@@ -39,6 +39,9 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     val sinkC    = Flipped(DecoupledIO(new TaskBundle))
     val mshrTask = Flipped(DecoupledIO(new TaskBundle))
 
+    /* receive incoming TPmeta req */
+    val sinkTPmeta = Flipped(DecoupledIO(new TaskBundle))
+
     /* read/write directory */
     val dirRead_s1 = DecoupledIO(new DirRead())  // To directory, read meta/tag
 
@@ -108,24 +111,28 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val A_task = io.sinkA.bits
   val B_task = io.sinkB.bits
   val C_task = io.sinkC.bits
+  val TPmeta_task = io.sinkTPmeta.bits
   val block_A = io.fromMSHRCtl.blockA_s1 || io.fromMainPipe.blockA_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockA_s1
   val block_B = io.fromMSHRCtl.blockB_s1 || io.fromMainPipe.blockB_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockB_s1 || io.fromSourceC.blockSinkBReqEntrance
   val block_C = io.fromMSHRCtl.blockC_s1 || io.fromMainPipe.blockC_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockC_s1
+  val block_TP = io.fromMSHRCtl.blockTP_s1 || io.fromMainPipe.blockTP_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockTP_s1
 
   val sinkValids = VecInit(Seq(
     io.sinkC.valid && !block_C,
     io.sinkB.valid && !block_B,
+    io.sinkTPmeta.valid && !block_TP,
     io.sinkA.valid && !block_A
   )).asUInt
 
   val sink_ready_basic = io.dirRead_s1.ready && resetFinish && !mshr_task_s1.valid
-  io.sinkA.ready := sink_ready_basic && !block_A && !sinkValids(1) && !sinkValids(0) // SinkC prior to SinkA & SinkB
+  io.sinkTPmeta.ready := sink_ready_basic && !block_TP && !sinkValids(1) && !sinkValids(0) // SinkB & SinkC prior to SinkTPmeta; SinkTPmeta prior t0 SinkA
+  io.sinkA.ready := sink_ready_basic && !block_A && !sinkValids(1) && !sinkValids(0) && !sinkValids(2) // SinkC prior to SinkA & SinkB
   io.sinkB.ready := sink_ready_basic && !block_B && !sinkValids(0) // SinkB prior to SinkA
   io.sinkC.ready := sink_ready_basic && !block_C
 
   val chnl_task_s1 = Wire(Valid(new TaskBundle()))
   chnl_task_s1.valid := io.dirRead_s1.ready && sinkValids.orR && resetFinish
-  chnl_task_s1.bits := ParallelPriorityMux(sinkValids, Seq(C_task, B_task, A_task))
+  chnl_task_s1.bits := ParallelPriorityMux(sinkValids, Seq(C_task, B_task, TPmeta_task, A_task))
 
   // mshr_task_s1 is s1_[reg]
   // task_s1 is [wire] to s2_reg
@@ -136,7 +143,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   io.taskInfo_s1.bits := task_s1.bits
 
   /* Meta read request */
-  // ^ only sinkA/B/C tasks need to read directory
+  // ^ only sinkA/B/C/TPmeta tasks need to read directory
   io.dirRead_s1.valid := chnl_task_s1.valid && !mshr_task_s1.valid || s1_needs_replRead && !io.fromMainPipe.blockG_s1
   io.dirRead_s1.bits.set := task_s1.bits.set
   io.dirRead_s1.bits.tag := task_s1.bits.tag
@@ -149,13 +156,17 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   io.dirRead_s1.bits.replacerInfo.refill_prefetch := s1_needs_replRead && (mshr_task_s1.bits.opcode === HintAck && mshr_task_s1.bits.dsWen)
   io.dirRead_s1.bits.refill := s1_needs_replRead
   io.dirRead_s1.bits.mshrId := task_s1.bits.mshrId
+  io.dirRead_s1.bits.tpmeta := task_s1.bits.tpmeta
+  io.dirRead_s1.bits.tpmetaWen := task_s1.bits.tpmetaWen
 
   // block same-set A req
-  io.s1Entrance.valid := mshr_task_s1.valid && mshr_task_s1.bits.metaWen || io.sinkC.fire || io.sinkB.fire
+  io.s1Entrance.valid := mshr_task_s1.valid && mshr_task_s1.bits.metaWen || io.sinkC.fire || io.sinkB.fire || io.sinkTPmeta.fire
   io.s1Entrance.bits.set  := Mux(
     mshr_task_s1.valid && mshr_task_s1.bits.metaWen,
     mshr_task_s1.bits.set,
-    Mux(io.sinkC.fire, C_task.set, B_task.set)
+    Mux(io.sinkC.fire, C_task.set,
+      Mux(io.sinkB.fire, B_task.set, TPmeta_task.set)
+    )
   )
 
   /* ========  Stage 2 ======== */
@@ -184,14 +195,15 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   io.releaseBufRead_s2.valid := mshrTask_s2 && (
     task_s2.bits.opcode === ReleaseData ||
     task_s2.bits.fromB && task_s2.bits.opcode === ProbeAckData ||
-    mshrTask_s2_a_upwards && task_s2.bits.useProbeData)
+      mshrTask_s2_a_upwards && task_s2.bits.useProbeData ||
+      task_s2.bits.channel(3) && task_s2.bits.tpmetaWenRepl)
   io.releaseBufRead_s2.bits.id := task_s2.bits.mshrId
 
   require(beatSize == 2)
 
   /* status of each pipeline stage */
-  io.status_s1.sets := VecInit(Seq(C_task.set, B_task.set, io.ASet, mshr_task_s1.bits.set))
-  io.status_s1.tags := VecInit(Seq(C_task.tag, B_task.tag, io.ATag, mshr_task_s1.bits.tag))
+  io.status_s1.sets := VecInit(Seq(C_task.set, B_task.set, io.ASet, mshr_task_s1.bits.set, TPmeta_task.set))
+  io.status_s1.tags := VecInit(Seq(C_task.tag, B_task.tag, io.ATag, mshr_task_s1.bits.tag, TPmeta_task.tag))
  // io.status_s1.isKeyword := VecInit(Seq(C_task.isKeyword, B_task.isKeyword, io.isKeyword, mshr_task_s1.bits.isKeyword))
   require(io.status_vec.size == 2)
   io.status_vec.zip(Seq(task_s1, task_s2)).foreach {

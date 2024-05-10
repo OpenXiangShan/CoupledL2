@@ -111,7 +111,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.tasks.source_a.valid := !state.s_acquire
   io.tasks.source_b.valid := !state.s_pprobe || !state.s_rprobe
   val mp_release_valid = !state.s_release && state.w_rprobeacklast && state.w_grantlast &&
-    state.w_replResp // release after Grant to L1 sent and replRead returns
+    state.w_replResp && !meta.tpMeta.getOrElse(false.B)// release after Grant to L1 sent and replRead returns
 
   val mp_probeack_valid = !state.s_probeack && state.w_pprobeacklast
   val mp_grant_valid = !state.s_refill && state.w_grantlast && state.w_rprobeacklast // [Alias] grant after rprobe done
@@ -203,6 +203,9 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_release.reqSource := 0.U(MemReqSource.reqSourceBits.W)
     mp_release.mergeA := false.B
     mp_release.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+    mp_release.tpmeta := req.tpmeta
+    mp_release.tpmetaWen := req.tpmetaWen
+    mp_release.tpmetaWenRepl := req.tpmetaWenRepl
     mp_release
   }
 
@@ -264,6 +267,9 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_probeack.replTask := false.B
     mp_probeack.mergeA := false.B
     mp_probeack.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+    mp_probeack.tpmeta := false.B
+    mp_probeack.tpmetaWen := false.B
+    mp_probeack.tpmetaWenRepl := false.B
     mp_probeack
   }
 
@@ -386,6 +392,9 @@ class MSHR(implicit p: Parameters) extends L2Module {
       prefetch = false.B,
       accessed = true.B
     )
+    mp_grant.tpmeta := false.B
+    mp_grant.tpmetaWen := false.B
+    mp_grant.tpmetaWenRepl := false.B
 
     mp_grant
   }
@@ -488,7 +497,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     // 2. the same way, just release as normal (only now we set s_release)
     // 3. differet way, we need to update meta and release that way
     // if meta has client, rprobe client
-    when (replResp.meta.state =/= INVALID) {
+    when (replResp.meta.state =/= INVALID && !replResp.meta.tpMeta.getOrElse(false.B)) {
       // set release flags
       state.s_release := false.B
       state.w_releaseack := false.B

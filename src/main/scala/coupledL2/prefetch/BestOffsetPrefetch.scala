@@ -44,6 +44,7 @@ case class BOPParameters(
     extends PrefetchParameters {
   override val hasPrefetchBit:  Boolean = true
   override val hasPrefetchSrc:  Boolean = true
+  override val hasTP: Boolean = true
   override val inflightEntries: Int = 16
 }
 
