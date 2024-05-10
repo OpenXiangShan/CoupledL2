@@ -385,6 +385,7 @@ class L2ToL1TlbIO(nRespDups: Int = 1)(implicit p: Parameters) extends L2Bundle{
 class TPmetaL2ReqBundle(implicit p: Parameters) extends L2Bundle {
   val set = UInt(setBits.W)
   val tag = UInt(tagBits.W)
+  val bank = UInt(bankBits.W)
   val off = UInt(offsetBits.W)
 }
 
