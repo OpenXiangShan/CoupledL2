@@ -407,7 +407,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
                       (task_s3.valid && sinkTP_req_s3 && task_s3.bits.metaWen && !need_tp_repl_data) ||
                       (task_s3.valid && mshr_req_s3 && task_s3.bits.tpmetaWenRepl)
   io.tagWReq.bits.set  := req_s3.set
-  io.tagWReq.bits.way  := Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.way, req_s3.way)
+  io.tagWReq.bits.way := Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.way, // grant always use replResp way
+    Mux(mshr_req_s3, req_s3.way, dirResult_s3.way))
   io.tagWReq.bits.wtag := req_s3.tag
 
   /* ======== Interact with Channels (C & D) ======== */
