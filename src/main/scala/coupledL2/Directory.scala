@@ -250,10 +250,13 @@ class Directory(implicit p: Parameters) extends L2Module {
   )*/
   // for retry bug fixing: if the chosenway not in freewaymask, choose another way
   // TODO: req_s3.wayMask not take into consideration
+  val tpmetaVec_s3 = metaAll_s3.map(entry => entry.state =/= MetaData.INVALID && entry.tpMeta.get)
+  val tpmetaMask = VecInit(tpmetaVec_s3).asUInt
+  val finalFreeWayMask = freeWayMask_s3.asUInt & (~tpmetaMask).asUInt
   val finalWay = Mux(
-    freeWayMask_s3(chosenWay),
+    finalFreeWayMask(chosenWay),
     chosenWay,
-    PriorityEncoder(freeWayMask_s3)
+    PriorityEncoder(finalFreeWayMask)
   )
 
   val tpReplaceWay = Mux(
@@ -402,7 +405,35 @@ class Directory(implicit p: Parameters) extends L2Module {
       1.U
     )
   } else {
-    val next_state_s3 = repl.get_next_state(repl_state_s3, touch_way_s3)
+    val basic_next_state_s3 = repl.get_next_state(repl_state_s3, touch_way_s3)
+    //    val next_state_s3 = (0 until cacheParams.ways).foldLeft(basic_next_state_s3) {
+    //      case (new_state, way) =>
+    //        when(tpmetaVec_s3(way)) {
+    //          new_state := repl.get_next_state(new_state, way.U)
+    //        }
+    //        new_state
+    //    }
+    val tmpReplWay = WireInit(UInt(wayBits.W), 0.U)
+    val tmpCount = RegInit(0.U(log2Ceil(TPmetaL2Ways).W))
+    (0 until cacheParams.ways).foldLeft(0.U(log2Ceil(TPmetaL2Ways).W)) {
+      case (sum, way) =>
+        when(sum === tmpCount && tpmetaVec_s3(way)) {
+          tmpReplWay := way.asUInt
+        }
+        sum + tpmetaVec_s3(way)
+    }
+    val next_state_s3 = repl.get_next_state(basic_next_state_s3, tmpReplWay)
+
+
+    when(io.read.fire) {
+      when(tmpCount === (TPmetaL2Ways - 1).asUInt) {
+        tmpCount := 0.U
+      }.otherwise {
+        tmpCount := tmpCount + 1.U
+      }
+    }
+
+
     replacer_sram_opt.get.io.w(
       !resetFinish || replacerWen,
       Mux(resetFinish, next_state_s3, 0.U),
