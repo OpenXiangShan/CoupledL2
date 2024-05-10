@@ -158,7 +158,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   s1_cango  := task_s1.valid && !mshr_replRead_stall
   s1_fire   := s1_cango && s2_ready
 
-  io.taskInfo_s1.valid := s1_to_s2_valid
+  io.taskInfo_s1.valid := s1_fire
   io.taskInfo_s1.bits := task_s1.bits
 
   /* Meta read request */
