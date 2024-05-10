@@ -65,6 +65,8 @@ trait HasCoupledL2Parameters {
   val prefetchOpt = cacheParams.prefetch
   val hasPrefetchBit = prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchBit
   val hasPrefetchSrc = prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchSrc
+  val hasTP = prefetchOpt.nonEmpty && prefetchOpt.get.hasTP
+  val TPmetaL2Ways = 2
   val topDownOpt = if(cacheParams.elaboratedTopDown) Some(true) else None
 
   val enableHintGuidedGrant = true
@@ -283,12 +285,16 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     val prefetchTrains = prefetchOpt.map(_ => Wire(Vec(banks, DecoupledIO(new PrefetchTrain()(pftParams)))))
     val prefetchResps = prefetchOpt.map(_ => Wire(Vec(banks, DecoupledIO(new PrefetchResp()(pftParams)))))
     val prefetchReqsReady = WireInit(VecInit(Seq.fill(banks)(false.B)))
+    val tpmetaReqsReady = WireInit(VecInit(Seq.fill(banks)(false.B)))
+    val tpmetaResps = prefetchOpt.map(_ => Wire(Vec(banks, DecoupledIO(new TPmetaL2Resp()))))
     prefetchOpt.foreach {
       _ =>
         fastArb(prefetchTrains.get, prefetcher.get.io.train, Some("prefetch_train"))
         prefetcher.get.io.req.ready := Cat(prefetchReqsReady).orR
         prefetcher.get.hartId := io.hartId
         fastArb(prefetchResps.get, prefetcher.get.io.resp, Some("prefetch_resp"))
+        prefetcher.get.tpio.tpmeta_port.get.req.ready := Cat(tpmetaReqsReady).orR
+        fastArb(tpmetaResps.get, prefetcher.get.tpio.tpmeta_port.get.resp, Some("tpmetal2_resp"))
     }
     pf_recv_node match {
       case Some(x) =>
@@ -304,6 +310,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
         }
     }
 
+    /*
     tpmeta_source_node match {
       case Some(x) =>
         x.out.head._1 <> prefetcher.get.tpio.tpmeta_port.get.req
@@ -314,6 +321,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
         prefetcher.get.tpio.tpmeta_port.get.resp <> x.in.head._1
       case None =>
     }
+     */
 
     def restoreAddress(x: UInt, idx: Int) = {
       restoreAddressUInt(x, idx.U)
@@ -402,6 +410,19 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
               prefetchResps.get(i).bits.tag := resp_tag
               prefetchResps.get(i).bits.set := resp_set
             }
+        }
+
+        slice.io.tpMetaReq.zip(prefetcher.get.tpio.tpmeta_port).foreach {
+          case (s, p) =>
+            s.valid := p.req.valid && bank_eq(p.req.bits.l2ReqBundle.set, i, bankBits)
+            s.bits := p.req.bits
+            tpmetaReqsReady(i) := s.ready && bank_eq(p.req.bits.l2ReqBundle.set, i, bankBits)
+        }
+
+        slice.io.tpMetaResp.zip(prefetcher.get.tpio.tpmeta_port).foreach {
+          case (s, p) =>
+            val metaResp = Pipeline(s)
+            tpmetaResps.get(i) <> metaResp
         }
 
         slice

@@ -127,7 +127,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val tpio = IO(new Bundle() {
     val tpmeta_port = prefetchOpt match {
       case Some(param: PrefetchReceiverParams) =>
-        if (param.hasTPPrefetcher) Some(new tpmetaPortIO()) else None
+        if (param.hasTPPrefetcher) Some(new tpmetaL2PortIO()) else None
       case _ => None
     }
   })
