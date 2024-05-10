@@ -288,6 +288,7 @@ class L2ToL1Hint(implicit p: Parameters) extends Bundle {
 class TPmetaL2ReqBundle(implicit p: Parameters) extends L2Bundle {
   val set = UInt(setBits.W)
   val tag = UInt(tagBits.W)
+  val bank = UInt(bankBits.W)
   val off = UInt(offsetBits.W)
 }
 

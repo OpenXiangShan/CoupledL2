@@ -138,6 +138,14 @@ trait HasCoupledL2Parameters {
     (tag(fullTagBits - 1, 0), set(setBits - 1, 0), offset(offsetBits - 1, 0))
   }
 
+  def parseFullAddressWithBank(x: UInt): (UInt, UInt, UInt, UInt) = {
+    val offset = x // TODO: check address mapping
+    val bank = offset >> offsetBits
+    val set = bank >> bankBits
+    val tag = set >> setBits
+    (tag(tagBits - 1, 0), set(setBits - 1, 0), bank(bankBits - 1, 0), offset(offsetBits - 1, 0))
+  }
+
   def parseAddress(x: UInt): (UInt, UInt, UInt) = {
     val offset = x
     val set = offset >> (offsetBits + bankBits)
@@ -414,9 +422,9 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
 
         slice.io.tpMetaReq.zip(prefetcher.get.tpio.tpmeta_port).foreach {
           case (s, p) =>
-            s.valid := p.req.valid && bank_eq(p.req.bits.l2ReqBundle.set, i, bankBits)
+            s.valid := p.req.valid && bank_eq(p.req.bits.l2ReqBundle.bank, i, bankBits)
             s.bits := p.req.bits
-            tpmetaReqsReady(i) := s.ready && bank_eq(p.req.bits.l2ReqBundle.set, i, bankBits)
+            tpmetaReqsReady(i) := s.ready && bank_eq(p.req.bits.l2ReqBundle.bank, i, bankBits)
         }
 
         slice.io.tpMetaResp.zip(prefetcher.get.tpio.tpmeta_port).foreach {
