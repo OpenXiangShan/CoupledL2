@@ -200,8 +200,8 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
   val ptr = RegInit(0.U(scoreTableIdxBits.W))
   val round = RegInit(0.U(roundBits.W))
   
-  val badscoreConstant = WireInit(Constantin.createRecord(name+"BadScore", bopParams.badScore.U))
-  val initscoreConstant = WireInit(Constantin.createRecord(name+"InitScore", (bopParams.badScore+1).U))
+  val badscoreConstant = Constantin.createRecord(name+"BadScore", bopParams.badScore)
+  val initscoreConstant = Constantin.createRecord(name+"InitScore", bopParams.badScore + 1)
   val bestOffset = RegInit(2.U(offsetWidth.W)) // the entry with the highest score while traversing
   val bestScore = RegInit(10.U)
   val testOffset = offList(ptr)
@@ -404,7 +404,7 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
     val out_req = DecoupledIO(new PrefetchReq)
   })
 
-  val firstTlbReplayCnt = WireInit(Constantin.createRecord("firstTlbReplayCnt", bopParams.tlbReplayCnt.U))
+  val firstTlbReplayCnt = Constantin.createRecord("firstTlbReplayCnt", bopParams.tlbReplayCnt)
 
   def wayMap[T <: Data](f: Int => T) = VecInit((0 until REQ_FILTER_SIZE).map(f))
   def get_flag(vaddr: UInt) = get_block_vaddr(vaddr)
@@ -586,7 +586,7 @@ class DelayQueue(name: String = "")(implicit p: Parameters) extends  BOPModule{
   val outValid = !empty && !queue(head).cnt.orR && valids(head)
 
   /* In & Out */
-  var setDqLatency = WireInit(Constantin.createRecord("DelayQueueLatency"+name, dQLatency.U))
+  var setDqLatency = Constantin.createRecord("DelayQueueLatency"+name, dQLatency)
   when(io.in.valid && !full) {
     // if queue is full, we drop the new request
     queue(tail).addrNoOffset := io.in.bits
