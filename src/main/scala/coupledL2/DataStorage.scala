@@ -51,7 +51,8 @@ class DataStorage(implicit p: Parameters) extends L2Module {
     gen = new DSBlock,
     set = blocks,
     way = 1,
-    singlePort = true
+    singlePort = true,
+    holdRead = true
   ))
 
   val arrayIdx = Cat(io.req.bits.way, io.req.bits.set)
