@@ -23,6 +23,7 @@ import chisel3._
 import chisel3.util._
 import utility.{FastArbiter, ParallelMax, ParallelPriorityMux, Pipeline, RegNextN}
 import freechips.rocketchip.diplomacy._
+import freechips.rocketchip.tile.MaxHartIdBits
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.util._
@@ -83,7 +84,7 @@ trait HasCoupledL2Parameters {
   lazy val msgSizeBits = edgeIn.bundle.sizeBits
   lazy val sourceIdAll = 1 << sourceIdBits
 
-  lazy val hartIdLen: Int = log2Up(cacheParams.hartIds.length)
+  lazy val hartIdLen: Int = p(MaxHartIdBits)
 
   val mshrsAll = cacheParams.mshrs
   val idsAll = 256// ids of L2 //TODO: Paramterize like this: max(mshrsAll * 2, sourceIdAll * 2)
@@ -247,8 +248,8 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
       val l2_tlb_req = new L2ToL1TlbIO(nRespDups = 1)(l2TlbParams)
       val debugTopDown = new Bundle {
         val robTrueCommit = Input(UInt(64.W))
-        val robHeadPaddr = Vec(cacheParams.hartIds.length, Flipped(Valid(UInt(36.W))))
-        val l2MissMatch = Vec(cacheParams.hartIds.length, Output(Bool()))
+        val robHeadPaddr = Flipped(Valid(UInt(36.W)))
+        val l2MissMatch = Output(Bool())
       }
     })
 
@@ -465,7 +466,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
           case (in, s) => in := s.io.latePF.get
         }
         t.io.debugTopDown <> io.debugTopDown
-      case None => io.debugTopDown.l2MissMatch.foreach(_ := false.B)
+      case None => io.debugTopDown.l2MissMatch := false.B
     }
 
     // ==================== XSPerf Counters ====================
