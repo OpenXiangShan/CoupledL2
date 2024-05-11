@@ -65,16 +65,28 @@ class SinkTPmeta(implicit p: Parameters) extends L2Module {
     io.task.valid := io.tpMetaReq.get.valid
     io.task.bits := fromTPmetaReqtoTaskBundle(io.tpMetaReq.get.bits)
     io.tpMetaReq.get.ready := io.task.ready
+  } else {
+    io.task.valid := false.B
+    io.task.bits := DontCare
   }
 
   val tpMetaDataDataQueue = Module(new Queue(new TPmetaData(), 4, pipe = false, flow = false))
-  tpMetaDataDataQueue.io.enq.valid := io.tpMetaReq.get.fire
-  tpMetaDataDataQueue.io.enq.bits.hartid := io.tpMetaReq.get.bits.rawData(511, 508)
-  tpMetaDataDataQueue.io.enq.bits.rawData := io.tpMetaReq.get.bits.rawData
+  if(prefetchOpt.nonEmpty && hasTP) {
+    tpMetaDataDataQueue.io.enq.valid := io.tpMetaReq.get.fire
+    tpMetaDataDataQueue.io.enq.bits.hartid := io.tpMetaReq.get.bits.rawData(511, 508)
+    tpMetaDataDataQueue.io.enq.bits.rawData := io.tpMetaReq.get.bits.rawData
 
-  tpMetaDataDataQueue.io.deq.ready := io.tpMetaDataW.get.fire
+    tpMetaDataDataQueue.io.deq.ready := io.tpMetaDataW.get.fire
 
-  io.tpMetaDataW.get.valid := tpMetaDataDataQueue.io.deq.valid
-  io.tpMetaDataW.get.bits := tpMetaDataDataQueue.io.deq.bits
+    io.tpMetaDataW.get.valid := tpMetaDataDataQueue.io.deq.valid
+    io.tpMetaDataW.get.bits := tpMetaDataDataQueue.io.deq.bits
+  } else {
+    tpMetaDataDataQueue.io.enq.valid := false.B
+    tpMetaDataDataQueue.io.enq.bits.hartid := DontCare
+    tpMetaDataDataQueue.io.enq.bits.rawData := DontCare
+
+    tpMetaDataDataQueue.io.deq.ready := false.B
+  }
+
 
 }

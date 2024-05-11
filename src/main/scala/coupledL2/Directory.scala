@@ -138,7 +138,7 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   def tpmeta_way_sel(metaVec: Seq[MetaEntry]) = {
     val tpmeta_vec = metaVec.map(entry =>
-      entry.state =/= MetaData.INVALID && entry.tpMeta.get)
+      entry.state =/= MetaData.INVALID && entry.tpMeta.getOrElse(false.B))
     val tpmeta_way_count = PopCount(tpmeta_vec)
     val tpmeta_repl = tpmeta_way_count >= TPmetaL2Ways.asUInt
     val replWay = WireInit(UInt(wayBits.W), 0.U)
@@ -250,7 +250,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   )*/
   // for retry bug fixing: if the chosenway not in freewaymask, choose another way
   // TODO: req_s3.wayMask not take into consideration
-  val tpmetaVec_s3 = metaAll_s3.map(entry => entry.state =/= MetaData.INVALID && entry.tpMeta.get)
+  val tpmetaVec_s3 = metaAll_s3.map(entry => entry.state =/= MetaData.INVALID && entry.tpMeta.getOrElse(false.B))
   val tpmetaMask = VecInit(tpmetaVec_s3).asUInt
   val finalFreeWayMask = freeWayMask_s3.asUInt & (~tpmetaMask).asUInt
   val finalWay = Mux(

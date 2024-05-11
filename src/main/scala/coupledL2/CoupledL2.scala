@@ -420,17 +420,19 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
             }
         }
 
-        slice.io.tpMetaReq.zip(prefetcher.get.tpio.tpmeta_port).foreach {
-          case (s, p) =>
-            s.valid := p.req.valid && bank_eq(p.req.bits.l2ReqBundle.bank, i, bankBits)
-            s.bits := p.req.bits
-            tpmetaReqsReady(i) := s.ready && bank_eq(p.req.bits.l2ReqBundle.bank, i, bankBits)
-        }
+        if (prefetchOpt.nonEmpty && hasTP) {
+          slice.io.tpMetaReq.zip(prefetcher.get.tpio.tpmeta_port).foreach {
+            case (s, p) =>
+              s.valid := p.req.valid && bank_eq(p.req.bits.l2ReqBundle.bank, i, bankBits)
+              s.bits := p.req.bits
+              tpmetaReqsReady(i) := s.ready && bank_eq(p.req.bits.l2ReqBundle.bank, i, bankBits)
+          }
 
-        slice.io.tpMetaResp.zip(prefetcher.get.tpio.tpmeta_port).foreach {
-          case (s, p) =>
-            val metaResp = Pipeline(s)
-            tpmetaResps.get(i) <> metaResp
+          slice.io.tpMetaResp.zip(prefetcher.get.tpio.tpmeta_port).foreach {
+            case (s, p) =>
+              val metaResp = Pipeline(s)
+              tpmetaResps.get(i) <> metaResp
+          }
         }
 
         slice
