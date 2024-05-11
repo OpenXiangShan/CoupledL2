@@ -7,15 +7,8 @@ import chisel3.util._
 // 1. use lower-bits of set to select bank
 // 2. split ways and parallel access
 // 3. split data and parallel access
+// * a simple graph is shown below
 
-// * an example of "setSplit 2, waySplit 2, dataSplit 4"
-// ==================================================================
-//                   |- way 0  -- [data 0] [data 1] [data 2] [data 3]
-//  set[0] == 0.U -> |- way 1  -- [data 0] [data 1] [data 2] [data 3]
-// ------------------------------------------------------------------
-//  set[0] == 1.U -> |- way 0  -- [data 0] [data 1] [data 2] [data 3]
-//                   |- way 1  -- [data 0] [data 1] [data 2] [data 3]
-// ==================================================================
 class SplittedSRAM[T <: Data]
 (
   gen: T, sets: Int, ways: Int,
@@ -69,7 +62,8 @@ class SplittedSRAM[T <: Data]
         array(i)(j)(k).io.r.req.bits.apply(r_setIdx)
         array(i)(j)(k).io.w.req.valid := io.w.req.valid && wen // && needWrite
         array(i)(j)(k).io.w.req.bits.apply(
-          io.w.req.bits.data.asUInt(innerWidth * (k+1) - 1, innerWidth * k), w_setIdx, waymask
+          VecInit(io.w.req.bits.data.slice(innerWays * j, innerWays * (j+1)).map(_.asUInt(innerWidth * (k+1) - 1, innerWidth * k))),
+          w_setIdx, waymask
         )
       }
     }
@@ -86,21 +80,36 @@ class SplittedSRAM[T <: Data]
 
   // TODO: we should consider the readys of all sram to be accessed, and orR them
   // but since waySplitted and dataSplitted smaller srams should have the same behavior
-  // we can just use one of them for ready, for better timing
+  // we just use one of them for ready, for better timing
   io.r.req.ready := VecInit((0 until setSplit).map(i => array(i).head.head.io.r.req.ready))(r_bankSel)
   io.w.req.ready := VecInit((0 until setSplit).map(i => array(i).head.head.io.w.req.ready))(w_bankSel)
 
 
-  // aggregate data first, then way, finally use set to select
-  val rdata = Mux1H(ren_vec,
-    (0 until setSplit).map(i =>
-      (0 until waySplit).map(j =>
-        (0 until innerWays).map(w =>
-          Cat((0 until dataSplit).map(k => array(i)(j)(k).io.r.resp.data(w)).reverse)
-        )
-      ).flatten
-    ).flatten
+  // * an example of "setSplit 2, waySplit 2, dataSplit 4" of an SRAM with way 2 *
+  // =========================================================================================
+  //                               / way 0  -- [data 3] | [data 2] | [data 1] | [data 0]
+  //  set[0] == 0.U -> waySplit 0 |- way 1  -- [data 3] | [data 2] | [data 1] | [data 0]
+  // -----------------------------------------------------------------------------------------
+  //                   waySplit 1 |- way 0  -- [data 3] | [data 2] | [data 1] | [data 0]
+  //                               \ way 1  -- [data 3] | [data 2] | [data 1] | [data 0]
+  // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+  //                               / way 0  -- [data 3] | [data 2] | [data 1] | [data 0]
+  //  set[0] == 0.U -> waySplit 0 |- way 1  -- [data 3] | [data 2] | [data 1] | [data 0]
+  // -----------------------------------------------------------------------------------------
+  //                   waySplit 1 |- way 0  -- [data 3] | [data 2] | [data 1] | [data 0]
+  //                               \ way 1  -- [data 3] | [data 2] | [data 1] | [data 0]
+  // =========================================================================================
+  // 1. aggregate data of the same line first
+  // 2. collect all data lines in the same `WaySplit`
+  // 3. use flatMap to collect all `WaySplit`, and we can get the targetData (Vec[T])
+  // 4. use ren_vec to select the certain set
+  val allData = (0 until setSplit).map(i =>
+    VecInit((0 until waySplit).flatMap(j =>
+      (0 until innerWays).map(w =>
+        Cat((0 until dataSplit).map(k => array(i)(j)(k).io.r.resp.data(w)).reverse)
+      )
+    ))
   )
 
-  io.r.resp.data := VecInit(Seq.fill(ways)(rdata.asTypeOf(gen)))
+  io.r.resp.data := Mux1H(ren_vec, allData).asTypeOf(Vec(ways, gen))
 }
