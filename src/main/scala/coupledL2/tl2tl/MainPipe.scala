@@ -309,21 +309,34 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     Mux(mshr_req_s3, req_s3.way, dirResult_s3.way))
   io.toDS.req_s3.bits.set := Mux(mshr_req_s3, req_s3.set, dirResult_s3.set)
   io.toDS.req_s3.bits.wen := wen
-  io.toDS.wdata_s3.data := Mux(
-    !mshr_req_s3,
-    Mux(
-      !sinkTP_req_s3,
-      c_releaseData_s3, // Among all sinkTasks, only C-Release writes DS
-      io.tpMetaReqData.get.bits.rawData
-    ),
-    Mux(
-      req_s3.useProbeData,
-      io.releaseBufResp_s3.bits.data,
-      io.refillBufResp_s3.bits.data
+  if (prefetchOpt.nonEmpty && hasTP) {
+    io.toDS.wdata_s3.data := Mux(
+      !mshr_req_s3,
+      Mux(
+        !sinkTP_req_s3,
+        c_releaseData_s3, // Among all sinkTasks, only C-Release writes DS
+        io.tpMetaReqData.get.bits.rawData
+      ),
+      Mux(
+        req_s3.useProbeData,
+        io.releaseBufResp_s3.bits.data,
+        io.refillBufResp_s3.bits.data
+      )
     )
-  )
 
-  io.tpMetaReqData.get.ready := wen_tpmeta
+    io.tpMetaReqData.get.ready := wen_tpmeta
+  } else {
+    io.toDS.wdata_s3.data := Mux(
+      !mshr_req_s3, c_releaseData_s3, // Among all sinkTasks, only C-Release writes DS
+      Mux(
+        req_s3.useProbeData,
+        io.releaseBufResp_s3.bits.data,
+        io.refillBufResp_s3.bits.data
+      )
+    )
+  }
+
+
 
   /* ======== Read DS and store data in Buffer ======== */
   // A: need_write_releaseBuf indicates that DS should be read and the data will be written into ReleaseBuffer
@@ -564,9 +577,11 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   d_s5.bits.task := task_s5.bits
   d_s5.bits.data.data := out_data_s5
 
-  io.tpMetaResp.get.valid := task_s5.valid && task_s5.bits.channel(3) && !task_s5.bits.tpmetaWen
-  io.tpMetaResp.get.bits.exist := hit_s5
-  io.tpMetaResp.get.bits.rawData := rdata_s5
+  if (prefetchOpt.nonEmpty && hasTP) {
+    io.tpMetaResp.get.valid := task_s5.valid && task_s5.bits.channel(3) && !task_s5.bits.tpmetaWen
+    io.tpMetaResp.get.bits.exist := hit_s5
+    io.tpMetaResp.get.bits.rawData := rdata_s5
+  }
 
   /* ======== BlockInfo ======== */
   // if s2/s3 might write Dir, we must block s1 sink entrance
