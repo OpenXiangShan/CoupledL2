@@ -89,7 +89,7 @@ case class L2Param(
     e = BufferParams.default
   ),
 
-  hartIds: Seq[Int] = Seq[Int](),
+  hartId: Int = 0,
   // Prefetch
   prefetch: Option[PrefetchParameters] = None,
   // Performance analysis

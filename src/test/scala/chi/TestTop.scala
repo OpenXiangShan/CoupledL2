@@ -6,6 +6,7 @@ import org.chipsalliance.cde.config._
 import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
+import freechips.rocketchip.tile.MaxHartIdBits
 import huancun._
 import coupledL2.prefetch._
 import coupledL2.tl2chi._
@@ -79,10 +80,11 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(imp
       //   AddressSet(0x0L,  0xfffffffbfL) -> 8,
       //   AddressSet(0x40L, 0xfffffffbfL) -> 40
       // )
-      hartIds = (0 until numCores)
+      hartId = i
     )
     case EnableCHI => true
     case BankBitsKey => log2Ceil(banks)
+    case MaxHartIdBits => log2Up(numCores)
   }))))
 
   val bankBinders = (0 until numCores).map(_ => BankBinder(banks, 64))

@@ -132,8 +132,8 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
       val l2_tlb_req = new L2ToL1TlbIO(nRespDups = 1)(l2TlbParams)
       val debugTopDown = new Bundle {
         val robTrueCommit = Input(UInt(64.W))
-        val robHeadPaddr = Vec(cacheParams.hartIds.length, Flipped(Valid(UInt(36.W))))
-        val l2MissMatch = Vec(cacheParams.hartIds.length, Output(Bool()))
+        val robHeadPaddr = Flipped(Valid(UInt(36.W)))
+        val l2MissMatch = Output(Bool())
       }
       val chi = new PortIO
       val nodeID = Input(UInt())
@@ -454,7 +454,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
           case (in, s) => in := s.io.latePF.get
         }
         t.io.debugTopDown <> io.debugTopDown
-      case None => io.debugTopDown.l2MissMatch.foreach(_ := false.B)
+      case None => io.debugTopDown.l2MissMatch := false.B
     }
 
     // ==================== XSPerf Counters ====================

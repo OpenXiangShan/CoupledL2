@@ -33,31 +33,29 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     val latePF    = Vec(banks, Input(Bool()))
     val debugTopDown = new Bundle {
       val robTrueCommit = Input(UInt(64.W))
-      val robHeadPaddr = Vec(cacheParams.hartIds.length, Flipped(Valid(UInt(36.W))))
-      val l2MissMatch = Vec(cacheParams.hartIds.length, Output(Bool()))
+      val robHeadPaddr = Flipped(Valid(UInt(36.W)))
+      val l2MissMatch = Output(Bool())
     }
   })
 
   /* ====== PART ONE ======
    * Check whether the Addr given by core is a Miss in Cache
    */
-  for (((hartId, pAddr), addrMatch) <- cacheParams.hartIds zip io.debugTopDown.robHeadPaddr zip io.debugTopDown.l2MissMatch) {
-    val addrMatchVec = io.msStatus.zipWithIndex.map {
-      case(slice, i) =>
-        slice.map {
-          ms =>
-            val msBlockAddr = if(bankBits == 0) Cat(ms.bits.reqTag, ms.bits.set)
-              else Cat(ms.bits.reqTag, ms.bits.set, i.U(bankBits-1, 0))
-            val pBlockAddr  = (pAddr.bits >> 6.U).asUInt
-            val isMiss = ms.valid && ms.bits.is_miss
+  val addrMatchVec = io.msStatus.zipWithIndex.map {
+    case(slice, i) =>
+      slice.map {
+        ms =>
+          val msBlockAddr = if(bankBits == 0) Cat(ms.bits.reqTag, ms.bits.set)
+            else Cat(ms.bits.reqTag, ms.bits.set, i.U(bankBits-1, 0))
+          val pBlockAddr  = (io.debugTopDown.robHeadPaddr.bits >> 6.U).asUInt
+          val isMiss = ms.valid && ms.bits.is_miss
 
-            pAddr.valid && (msBlockAddr === pBlockAddr) && isMiss
-        }
-    }
-
-    addrMatch := Cat(addrMatchVec.flatten).orR
-    XSPerfAccumulate(cacheParams, s"${cacheParams.name}MissMatch_${hartId}", addrMatch)
+          io.debugTopDown.robHeadPaddr.valid && (msBlockAddr === pBlockAddr) && isMiss
+      }
   }
+
+  io.debugTopDown.l2MissMatch := Cat(addrMatchVec.flatten).orR
+  XSPerfAccumulate(cacheParams, s"${cacheParams.name}MissMatch_${cacheParams.hartId}", io.debugTopDown.l2MissMatch)
 
   /* ====== PART TWO ======
    * Count the parallel misses, and divide them into CPU/Prefetch

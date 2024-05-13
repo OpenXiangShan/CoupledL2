@@ -23,6 +23,7 @@ import chisel3._
 import chisel3.util._
 import utility.{FastArbiter, ParallelMax, ParallelPriorityMux, Pipeline, RegNextN}
 import freechips.rocketchip.diplomacy._
+import freechips.rocketchip.tile.MaxHartIdBits
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.util._
@@ -88,7 +89,7 @@ trait HasCoupledL2Parameters {
   lazy val msgSizeBits = edgeIn.bundle.sizeBits
   lazy val sourceIdAll = 1 << sourceIdBits
 
-  lazy val hartIdLen: Int = log2Up(cacheParams.hartIds.length)
+  lazy val hartIdLen: Int = p(MaxHartIdBits)
 
   val mshrsAll = cacheParams.mshrs
   val idsAll = 256// ids of L2 //TODO: Paramterize like this: max(mshrsAll * 2, sourceIdAll * 2)

@@ -5,6 +5,7 @@ import chisel3.util._
 import org.chipsalliance.cde.config._
 import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
 import freechips.rocketchip.diplomacy._
+import freechips.rocketchip.tile.MaxHartIdBits
 import freechips.rocketchip.tilelink._
 import huancun._
 import coupledL2.prefetch._
@@ -13,6 +14,14 @@ import utility.{ChiselDB, FileRegisters, TLLogger}
 
 
 import scala.collection.mutable.ArrayBuffer
+
+object baseConfig {
+  def apply(maxHartIdBits: Int) = {
+    new Config((_, _, _) => {
+      case MaxHartIdBits => maxHartIdBits
+    })
+  }
+}
 
 class TestTop_L2()(implicit p: Parameters) extends LazyModule {
 
@@ -129,7 +138,7 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
   ))
   val master_nodes = Seq(l1d, l1i)
 
-  val l2 = LazyModule(new TL2TLCoupledL2()(new Config((_, _, _) => {
+  val l2 = LazyModule(new TL2TLCoupledL2()(baseConfig(1).alterPartial({
     case L2ParamKey => L2Param(
       name = s"l2",
       ways = 4,
@@ -144,7 +153,7 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
     case BankBitsKey => 0
   })))
 
-  val l3 = LazyModule(new HuanCun()(new Config((_, _, _) => {
+  val l3 = LazyModule(new HuanCun()(baseConfig(1).alterPartial({
     case HCCacheParamsKey => HCCacheParameters(
       name = "l3",
       level = 3,
@@ -334,20 +343,20 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
   val l1d_nodes = (0 until nrL2).map(i => createClientNode(s"l1d$i", 32))
   val master_nodes = l1d_nodes
 
-  val coupledL2 = (0 until nrL2).map(i => LazyModule(new TL2TLCoupledL2()(new Config((_, _, _) => {
+  val coupledL2 = (0 until nrL2).map(i => LazyModule(new TL2TLCoupledL2()(baseConfig(1).alterPartial({
     case L2ParamKey => L2Param(
       name = s"l2$i",
       ways = 4,
       sets = 128,
       clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
       echoField = Seq(DirtyField()),
-      hartIds = Seq{i}
+      hartId = i
     )
     case BankBitsKey => 0
   }))))
   val l2_nodes = coupledL2.map(_.node)
 
-  val l3 = LazyModule(new HuanCun()(new Config((_, _, _) => {
+  val l3 = LazyModule(new HuanCun()(baseConfig(1).alterPartial({
     case HCCacheParamsKey => HCCacheParameters(
       name = "L3",
       level = 3,
@@ -468,8 +477,7 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
     master_nodes = master_nodes ++ Seq(l1d, l1i) // TODO
 
     val l1xbar = TLXbar()
-
-    val l2 = LazyModule(new TL2TLCoupledL2()(new Config((_, _, _) => {
+    val l2 = LazyModule(new TL2TLCoupledL2()(baseConfig(1).alterPartial({
       case L2ParamKey => L2Param(
         name = s"l2$i",
         ways = 4,
@@ -494,7 +502,7 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
     }
   }
 
-  val l3 = LazyModule(new HuanCun()(new Config((_, _, _) => {
+  val l3 = LazyModule(new HuanCun()(baseConfig(1).alterPartial({
     case HCCacheParamsKey => HCCacheParameters(
       name = "L3",
       level = 3,
@@ -540,7 +548,7 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
 }
 
 object TestTop_L2 extends App {
-  val config = new Config((_, _, _) => {
+  val config = baseConfig(1).alterPartial({
     case L2ParamKey => L2Param(
       clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
       echoField = Seq(DirtyField())
@@ -558,7 +566,7 @@ object TestTop_L2 extends App {
 }
 
 object TestTop_L2_Standalone extends App {
-  val config = new Config((_, _, _) => {
+  val config = baseConfig(1).alterPartial({
     case L2ParamKey => L2Param(
       clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
       echoField = Seq(DirtyField())
@@ -576,7 +584,7 @@ object TestTop_L2_Standalone extends App {
 }
 
 object TestTop_L2L3 extends App {
-  val config = new Config((_, _, _) => {
+  val config = baseConfig(1).alterPartial({
     case L2ParamKey => L2Param(
       clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
       echoField = Seq(DirtyField())
@@ -597,7 +605,7 @@ object TestTop_L2L3 extends App {
 }
 
 object TestTop_L2L3L2 extends App {
-  val config = new Config((_, _, _) => {
+  val config = baseConfig(1).alterPartial({
     case L2ParamKey => L2Param(
       clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
      // echoField = Seq(DirtyField())
@@ -618,7 +626,7 @@ object TestTop_L2L3L2 extends App {
 }
 
 object TestTop_fullSys extends App {
-  val config = new Config((_, _, _) => {
+  val config = baseConfig(1).alterPartial({
     case L2ParamKey => L2Param(
       clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
       echoField = Seq(DirtyField())
