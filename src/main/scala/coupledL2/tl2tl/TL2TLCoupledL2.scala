@@ -19,7 +19,7 @@ package coupledL2.tl2tl
 
 import chisel3._
 import chisel3.util._
-import utility.{FastArbiter, Pipeline, ParallelPriorityMux}
+import utility.{FastArbiter, Pipeline, ParallelPriorityMux, RegNextN}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
@@ -177,13 +177,6 @@ class TL2TLCoupledL2(implicit p: Parameters) extends CoupledL2Base {
 
     def bank_eq(set: UInt, bankId: Int, bankBits: Int): Bool = {
       if(bankBits == 0) true.B else set(bankBits - 1, 0) === bankId.U
-    }
-
-    def RegNextN[T <: Data](data: T, n: Int): T = {
-      if(n == 1)
-        RegNext(data)
-      else
-        RegNextN(data, n - 1)
     }
 
     // ** WARNING:TODO: this depends on where the latch is
