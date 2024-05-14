@@ -53,7 +53,7 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   }
 
   io.debugTopDown.l2MissMatch := Cat(addrMatchVec.flatten).orR
-  XSPerfAccumulate(cacheParams, s"${cacheParams.name}MissMatch_${cacheParams.hartId}", io.debugTopDown.l2MissMatch)
+  XSPerfAccumulate(cacheParams, s"${cacheParams.name}MissMatch", io.debugTopDown.l2MissMatch)
 
   /* ====== PART TWO ======
    * Count the parallel misses, and divide them into CPU/Prefetch
