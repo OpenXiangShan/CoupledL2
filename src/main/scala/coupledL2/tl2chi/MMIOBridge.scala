@@ -215,8 +215,8 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   txdat.bits.tgtID := srcID
   txdat.bits.txnID := dbID
   txdat.bits.opcode := DATOpcodes.NonCopyBackWrData
-  txdat.bits.ccID := 0.U
-  txdat.bits.dataID := 0.U
+  txdat.bits.ccID := Cat(req.address(log2Ceil(beatBytes)), 0.U(1.W))
+  txdat.bits.dataID := Cat(req.address(log2Ceil(beatBytes)), 0.U(1.W))
   txdat.bits.be := ParallelLookUp(
     reqWordIdx,
     List.tabulate(words)(i => i.U -> (ZeroExt(req.mask, BE_WIDTH) << (i * wordBytes)))
