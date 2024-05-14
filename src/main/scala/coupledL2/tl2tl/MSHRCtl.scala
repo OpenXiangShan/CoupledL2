@@ -15,7 +15,7 @@
  * *************************************************************************************
  */
 
-package coupledL2
+package coupledL2.tl2tl
 
 import chisel3._
 import chisel3.util._
@@ -23,6 +23,7 @@ import utility._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
+import coupledL2._
 import coupledL2.prefetch.PrefetchTrain
 import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram, XSPerfMax}
 

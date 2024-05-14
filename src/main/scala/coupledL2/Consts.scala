@@ -30,6 +30,11 @@ object MetaData {
   def TRUNK:   UInt = 2.U(stateBits.W) // unique inner master cache is trunk
   def TIP:     UInt = 3.U(stateBits.W) // we are trunk, inner masters are branch
 
+  def needB(opcode: UInt, param: UInt): Bool = {
+    opcode === TLMessages.Get ||
+    opcode === TLMessages.AcquireBlock && param === TLPermissions.NtoB ||
+    opcode === TLMessages.Hint && param === TLHints.PREFETCH_READ
+  }
   // Does a request need trunk to be handled?
   def needT(opcode: UInt, param: UInt): Bool = {
     !opcode(2) ||
@@ -64,4 +69,5 @@ object MetaData {
       Seq(INVALID, INVALID, BRANCH)
     )
   }
+  def isValid(state: UInt): Bool = state > INVALID
 }

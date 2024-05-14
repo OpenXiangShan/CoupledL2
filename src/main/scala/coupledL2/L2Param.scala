@@ -19,7 +19,7 @@ package coupledL2
 
 import chisel3._
 import chisel3.util.log2Ceil
-import freechips.rocketchip.diplomacy.BufferParams
+import freechips.rocketchip.diplomacy.{BufferParams, AddressSet}
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util._
 import org.chipsalliance.cde.config.Field
@@ -27,8 +27,7 @@ import huancun.{AliasKey, CacheParameters, IsHitKey, PrefetchKey}
 import coupledL2.prefetch._
 import utility.{MemReqSource, ReqSourceKey}
 
-// General parameter key of CoupledL2
-case object L2ParamKey extends Field[L2Param](L2Param())
+case object EnableCHI extends Field[Boolean](false)
 
 // L1 Cache Params, used for TestTop generation
 case class L1Param
@@ -55,8 +54,7 @@ case class VaddrField(width: Int) extends BundleField[UInt](VaddrKey, Output(UIn
 case object IsKeywordKey extends ControlKey[Bool]("isKeyword")
 case class IsKeywordField() extends BundleField[Bool](IsKeywordKey, Output(Bool()), _ := false.B)
 
-case class L2Param
-(
+case class L2Param(
   name: String = "L2",
   ways: Int = 4,
   sets: Int = 128,
@@ -72,8 +70,9 @@ case class L2Param
    * 2 for all except prefetch & !accessed
    * 3 for all
    */
+  mmioBridgeSize: Int = 8,
 
-  // Client (these are set in Configs.scala in XiangShan)
+  // Client
   echoField: Seq[BundleFieldBase] = Nil,
   reqField: Seq[BundleFieldBase] = Nil,
   respKey: Seq[BundleKeyBase] = Seq(IsHitKey),
@@ -99,10 +98,15 @@ case class L2Param
   enableRollingDB: Boolean = true,
   // Monitor
   enableMonitor: Boolean = true,
+  // TLLog
+  enableTLLog: Boolean = true,
   // TopDown
   elaboratedTopDown: Boolean = true,
   // env
-  FPGAPlatform: Boolean = false
+  FPGAPlatform: Boolean = false,
+
+  // Network layer SAM
+  sam: Seq[(AddressSet, Int)] = Seq(AddressSet.everything -> 33)
 ) {
   def toCacheParams: CacheParameters = CacheParameters(
     name = name,
@@ -113,10 +117,14 @@ case class L2Param
   )
 }
 
+case object L2ParamKey extends Field[L2Param](L2Param())
+
 case object EdgeInKey extends Field[TLEdgeIn]
 
 case object EdgeOutKey extends Field[TLEdgeOut]
 
 case object BankBitsKey extends Field[Int]
+
+case object L2NBanksKey extends Field[Int]
 
 case object SliceIdKey extends Field[Int]

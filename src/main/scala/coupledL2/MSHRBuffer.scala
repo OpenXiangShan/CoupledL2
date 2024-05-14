@@ -21,7 +21,6 @@ import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.utils._
-import java.util.ResourceBundle
 
 class MSHRBufRead(implicit p: Parameters) extends L2Bundle {
   val id = Output(UInt(mshrBits.W))
@@ -34,6 +33,7 @@ class MSHRBufResp(implicit p: Parameters) extends L2Bundle {
 class MSHRBufWrite(implicit p: Parameters) extends L2Bundle {
   val id = Output(UInt(mshrBits.W))
   val data = Output(new DSBlock)
+  val beatMask = Output(UInt(beatSize.W))
 }
 
 // MSHR Buffer is used when MSHR needs to save data, so each buffer entry corresponds to an MSHR
@@ -44,7 +44,7 @@ class MSHRBuffer(wPorts: Int = 1)(implicit p: Parameters) extends L2Module {
     val w = Vec(wPorts, Flipped(ValidIO(new MSHRBufWrite)))
   })
 
-  val buffer = Reg(Vec(mshrsAll, new DSBlock))
+  val buffer = Reg(Vec(mshrsAll, Vec(beatSize, UInt((beatBytes * 8).W))))
 
   buffer.zipWithIndex.foreach {
     case (block, i) =>
@@ -52,13 +52,17 @@ class MSHRBuffer(wPorts: Int = 1)(implicit p: Parameters) extends L2Module {
       assert(PopCount(wens) <= 2.U, "triple write to the same MSHR buffer entry")
 
       val w_data = PriorityMux(wens, io.w.map(_.bits.data))
+      val w_beatSel = PriorityMux(wens, io.w.map(_.bits.beatMask))
       when(wens.orR) {
-        block := w_data
+        // block := w_data
+        block.zip(w_beatSel.asBools).zipWithIndex.foreach { case ((beat, sel), i) =>
+          when (sel) { beat := w_data.data((i+1) * beatBytes * 8 - 1, i * beatBytes * 8) }
+        }
       }
   }
 
   val ridReg = RegEnable(io.r.bits.id, 0.U(mshrBits.W), io.r.valid)
-  io.resp.data := buffer(ridReg)
+  io.resp.data.data := buffer(ridReg).asUInt
 }
 
 // may consider just choose an empty entry to insert

@@ -15,7 +15,7 @@
  * *************************************************************************************
  */
 
-package coupledL2
+package coupledL2.tl2tl
 
 import chisel3._
 import chisel3.util._
@@ -25,6 +25,7 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
 import org.chipsalliance.cde.config.Parameters
+import coupledL2._
 import coupledL2.prefetch.{PfSource, PrefetchTrain}
 import coupledL2.utils.XSPerfAccumulate
 
@@ -160,6 +161,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   }
   val mp_release, mp_probeack, mp_grant = Wire(new TaskBundle)
   val mp_release_task = {
+    mp_release := 0.U.asTypeOf(new TaskBundle)
     mp_release.channel := req.channel
     mp_release.tag := dirResult.tag
     mp_release.set := req.set
@@ -203,10 +205,12 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_release.reqSource := 0.U(MemReqSource.reqSourceBits.W)
     mp_release.mergeA := false.B
     mp_release.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+    mp_release.txChannel := 0.U
     mp_release
   }
 
   val mp_probeack_task = {
+    mp_probeack := 0.U.asTypeOf(new TaskBundle)
     mp_probeack.channel := req.channel
     mp_probeack.tag := req.tag
     mp_probeack.set := req.set
@@ -264,6 +268,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_probeack.replTask := false.B
     mp_probeack.mergeA := false.B
     mp_probeack.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+    mp_probeack.txChannel := 0.U
     mp_probeack
   }
 
@@ -275,6 +280,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mergeA := false.B
   }
   val mp_grant_task    = {
+    mp_grant := 0.U.asTypeOf(new TaskBundle)
     mp_grant.channel := req.channel
     mp_grant.tag := req.tag
     mp_grant.set := req.set
@@ -386,6 +392,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
       prefetch = false.B,
       accessed = true.B
     )
+    mp_grant.txChannel := 0.U
 
     mp_grant
   }
@@ -513,9 +520,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
     timer := 0.U
   }
 
-  // when grant not received, B can nest A
-  val nestB = !state.w_grantfirst
-
   // alias: should protect meta from being accessed or occupied
   val releaseNotSent = !state.s_release
   io.status.valid := req_valid
@@ -536,19 +540,25 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.msInfo.bits.set := req.set
   io.msInfo.bits.way := dirResult.way
   io.msInfo.bits.reqTag := req.tag
+  io.msInfo.bits.aliasTask.foreach(_ := req.aliasTask.getOrElse(false.B))
   io.msInfo.bits.needRelease := !state.w_releaseack
   // if releaseTask is already in mainpipe_s1/s2, while a refillTask in mainpipe_s3, the refill should also be blocked and retry
   io.msInfo.bits.blockRefill := releaseNotSent || RegNext(releaseNotSent,false.B) || RegNext(RegNext(releaseNotSent,false.B),false.B)
   io.msInfo.bits.dirHit := dirResult.hit
   io.msInfo.bits.metaTag := dirResult.tag
   io.msInfo.bits.willFree := will_free
-  io.msInfo.bits.nestB := nestB
   io.msInfo.bits.isAcqOrPrefetch := req_acquire || req_prefetch
   io.msInfo.bits.isPrefetch := req_prefetch
-  io.msInfo.bits.s_refill := state.s_refill
   io.msInfo.bits.param := req.param
   io.msInfo.bits.mergeA := mergeA
+  io.msInfo.bits.w_grantfirst := state.w_grantfirst
+  io.msInfo.bits.s_refill := state.s_refill
   io.msInfo.bits.w_releaseack := state.w_releaseack
+  io.msInfo.bits.w_replResp := state.w_replResp
+  io.msInfo.bits.w_rprobeacklast := state.w_rprobeacklast
+  io.msInfo.bits.replaceData := mp_release.opcode === ReleaseData
+  io.msInfo.bits.metaState := meta.state
+  io.msInfo.bits.channel := req.channel
 
   assert(!(c_resp.valid && !io.status.bits.w_c_resp))
   assert(!(d_resp.valid && !io.status.bits.w_d_resp))

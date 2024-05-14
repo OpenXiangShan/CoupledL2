@@ -15,7 +15,7 @@
   * *************************************************************************************
   */
 
-package coupledL2
+package coupledL2.tl2tl
 
 import chisel3._
 import chisel3.util._
@@ -23,6 +23,7 @@ import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
+import coupledL2._
 import coupledL2.utils.XSPerfAccumulate
 import utility.MemReqSource
 
@@ -36,6 +37,7 @@ class SinkB(implicit p: Parameters) extends L2Module {
   def fromTLBtoTaskBundle(b: TLBundleB): TaskBundle = {
     val task = Wire(new TaskBundle)
     task.channel := "b010".U
+    task.txChannel := 0.U
     task.tag := parseAddress(b.address)._1
     task.set := parseAddress(b.address)._2
     task.off := parseAddress(b.address)._3
@@ -66,13 +68,16 @@ class SinkB(implicit p: Parameters) extends L2Module {
     task.replTask := false.B
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+    task.snpHitRelease := false.B
+    task.snpHitReleaseWithData := false.B
+    task.snpHitReleaseIdx := 0.U
     task
   }
   val task = fromTLBtoTaskBundle(io.b.bits)
 
   // unable to accept incoming B req because same-addr as some MSHR REQ
   val addrConflict = VecInit(io.msInfo.map(s =>
-    s.valid && s.bits.set === task.set && s.bits.reqTag === task.tag && !s.bits.willFree && !s.bits.nestB
+    s.valid && s.bits.set === task.set && s.bits.reqTag === task.tag && !s.bits.willFree && s.bits.w_grantfirst
   )).asUInt.orR
 
   // unable to accept incoming B req because same-addr Release to L3 and have not received ReleaseAck, and some MSHR replaced block and cannot nest

@@ -67,7 +67,9 @@ class SinkC(implicit p: Parameters) extends L2Module {
 
   def toTaskBundle(c: TLBundleC): TaskBundle = {
     val task = Wire(new TaskBundle)
+    task := 0.U.asTypeOf(new TaskBundle)
     task.channel := "b100".U
+    task.txChannel := 0.U
     task.tag := parseAddress(c.address)._1
     task.set := parseAddress(c.address)._2
     task.off := parseAddress(c.address)._3
@@ -145,6 +147,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
   io.resp.mshrId := 0.U // DontCare
   io.resp.tag := parseAddress(io.c.bits.address)._1
   io.resp.set := parseAddress(io.c.bits.address)._2
+  io.resp.respInfo := 0.U.asTypeOf(io.resp.respInfo.cloneType)
   io.resp.respInfo.opcode := io.c.bits.opcode
   io.resp.respInfo.param := io.c.bits.param
   io.resp.respInfo.last := last
@@ -158,6 +161,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
   io.releaseBufWrite.valid := io.c.valid && io.c.bits.opcode === ProbeAckData && last
   io.releaseBufWrite.bits.id := 0.U(mshrBits.W) // id is given by MSHRCtl by comparing address to the MSHRs
   io.releaseBufWrite.bits.data.data := Cat(io.c.bits.data, probeAckDataBuf)
+  io.releaseBufWrite.bits.beatMask := Fill(beatSize, true.B)
 
   // C-Release, with new data, comes before repl-Release writes old refill data back to DS
   val newdataMask = VecInit(io.msInfo.map(s =>
@@ -174,6 +178,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
   io.refillBufWrite.valid := RegNext(io.task.fire && io.task.bits.opcode === ReleaseData && newdataMask.orR, false.B)
   io.refillBufWrite.bits.id := RegNext(OHToUInt(newdataMask))
   io.refillBufWrite.bits.data.data := dataBuf(RegNext(io.task.bits.bufIdx)).asUInt
+  io.refillBufWrite.bits.beatMask := Fill(beatSize, true.B)
 
   io.c.ready := !isRelease || !first || !full
 

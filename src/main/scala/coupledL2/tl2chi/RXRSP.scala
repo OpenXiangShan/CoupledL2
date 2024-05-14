@@ -15,39 +15,39 @@
  * *************************************************************************************
  */
 
-package coupledL2
+package coupledL2.tl2chi
 
 import chisel3._
 import chisel3.util._
 import utility._
-import freechips.rocketchip.tilelink._
-import freechips.rocketchip.tilelink.TLMessages._
 import org.chipsalliance.cde.config.Parameters
-import huancun.{DirtyKey, PreferCacheKey}
+import coupledL2.RespBundle
 
-class AcquireUnit(implicit p: Parameters) extends L2Module {
+class RXRSP(implicit p: Parameters) extends TL2CHIL2Module {
   val io = IO(new Bundle() {
-    val sourceA = DecoupledIO(new TLBundleA(edgeOut.bundle))
-    val task = Flipped(DecoupledIO(new SourceAReq))
+    val out = Flipped(DecoupledIO(new CHIRSP()))
+    val in = Output(new RespBundle())
   })
 
-  val a = io.sourceA
-  val task = io.task.bits
+  /* RXRSP for Transactions:
+   1. Comp 
+   2. CompDBIDResp
+   3. RetryAck
+   4. PCrdGrant
+   */
+  io.in.valid := io.out.valid 
+  io.in.mshrId := io.out.bits.txnID
+  io.in.set := 0.U(setBits.W)
+  io.in.tag := 0.U(tagBits.W)
 
-  a.bits.opcode := task.opcode
-  a.bits.param := task.param
-  a.bits.size := offsetBits.U
-  a.bits.source := task.source
-  a.bits.address := Cat(task.tag, task.set, 0.U(offsetBits.W))
-  a.bits.mask := Fill(edgeOut.manager.beatBytes, 1.U(1.W))
-  a.bits.data := DontCare
-  a.bits.echo.lift(DirtyKey).foreach(_ := true.B)
-  a.bits.user.lift(PreferCacheKey).foreach(_ := false.B)
-  a.bits.user.lift(utility.ReqSourceKey).foreach(_ := task.reqSource)
-  a.bits.corrupt := false.B
+  io.in.respInfo               := 0.U.asTypeOf(io.in.respInfo.cloneType)
+  io.in.respInfo.chiOpcode.get := io.out.bits.opcode
+  io.in.respInfo.txnID.get     := io.out.bits.txnID
+  io.in.respInfo.srcID.get     := io.out.bits.srcID
+  io.in.respInfo.dbID.get      := io.out.bits.dbID
+  io.in.respInfo.pCrdType.get  := io.out.bits.pCrdType
+  io.in.respInfo.last          := true.B
 
-  a.valid := io.task.valid
-  io.task.ready := a.ready
+  io.out.ready := true.B
 
-  dontTouch(io)
 }

@@ -15,7 +15,7 @@
   * *************************************************************************************
   */
 
-package coupledL2
+package coupledL2.tl2tl
 
 import chisel3._
 import chisel3.util._
@@ -23,6 +23,7 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.util.leftOR
 import org.chipsalliance.cde.config.Parameters
+import coupledL2._
 import coupledL2.utils._
 import coupledL2.debug._
 import coupledL2.prefetch.PrefetchIO
@@ -79,7 +80,8 @@ class Slice()(implicit p: Parameters) extends L2Module {
   reqArb.io.fromMSHRCtl := mshrCtl.io.toReqArb
   reqArb.io.fromMainPipe := mainPipe.io.toReqArb
   reqArb.io.fromGrantBuffer := grantBuf.io.toReqArb
-  reqArb.io.fromSourceC := sourceC.io.toReqArb
+  reqArb.io.fromSourceC.foreach(_ := sourceC.io.toReqArb)
+  reqArb.io.msInfo := mshrCtl.io.msInfo
 
   mshrCtl.io.fromReqArb.status_s1 := reqArb.io.status_s1
   mshrCtl.io.resps.sinkC := sinkC.io.resp
@@ -114,6 +116,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
   releaseBuf.io.w(0).valid := mshrCtl.io.nestedwbDataId.valid
   releaseBuf.io.w(0).bits.data := mainPipe.io.nestedwbData
   releaseBuf.io.w(0).bits.id := mshrCtl.io.nestedwbDataId.bits
+  releaseBuf.io.w(0).bits.beatMask := Fill(beatSize, true.B)
   releaseBuf.io.w(1) <> sinkC.io.releaseBufWrite
   releaseBuf.io.w(1).bits.id := mshrCtl.io.releaseBufWriteId
   releaseBuf.io.w(2) <> mainPipe.io.releaseBufWrite
@@ -133,7 +136,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
   grantBuf.io.d_task <> mainPipe.io.toSourceD
   grantBuf.io.fromReqArb.status_s1 := reqArb.io.status_s1
   grantBuf.io.pipeStatusVec := reqArb.io.status_vec ++ mainPipe.io.status_vec_toD
-  mshrCtl.io.pipeStatusVec(0) := reqArb.io.status_vec(1) // s2 status
+  mshrCtl.io.pipeStatusVec(0) := (reqArb.io.status_vec)(1) // s2 status
   mshrCtl.io.pipeStatusVec(1) := mainPipe.io.status_vec_toD(0) // s3 status
 
   io.prefetch.foreach {

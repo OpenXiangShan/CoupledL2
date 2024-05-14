@@ -15,10 +15,11 @@
   * *************************************************************************************
   */
 
-package coupledL2
+package coupledL2.tl2tl
 
 import chisel3._
 import chisel3.util._
+import coupledL2._
 import coupledL2.utils._
 import freechips.rocketchip.tilelink._
 import org.chipsalliance.cde.config.Parameters

@@ -109,8 +109,9 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   }))
 
   val dtaskOpcode = io.d_task.bits.task.opcode
-  val mergeAtask = Wire(new TaskBundle())
+  val mergeAtask = WireInit(0.U.asTypeOf(new TaskBundle()))
   mergeAtask.channel := io.d_task.bits.task.channel
+  mergeAtask.txChannel := io.d_task.bits.task.txChannel
   mergeAtask.off := io.d_task.bits.task.aMergeTask.off
   mergeAtask.alias.foreach(_ := io.d_task.bits.task.aMergeTask.alias.getOrElse(0.U))
   mergeAtask.opcode := io.d_task.bits.task.aMergeTask.opcode
@@ -275,10 +276,16 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   val noSpaceForSinkReq = PopCount(VecInit(io.pipeStatusVec.tail.map { case s =>
     s.valid && (s.bits.fromA || s.bits.fromC)
   }).asUInt) + grantQueueCnt >= mshrsAll.U
+  val noSpaceWaitSinkEForSinkReq = PopCount(VecInit(io.pipeStatusVec.tail.map { case s =>
+    s.valid && s.bits.fromA
+  }).asUInt) + PopCount(VecInit(inflightGrant.map(x => x.valid))) >= mshrsAll.U
   // for timing consideration, drop s1 info, so always reserve one entry for it
   val noSpaceForMSHRReq = PopCount(VecInit(io.pipeStatusVec.tail.map { case s =>
     s.valid && (s.bits.fromA || s.bits.fromC)
   }).asUInt) + grantQueueCnt >= (mshrsAll-1).U
+  val noSpaceWaitSinkEForMSHRReq = PopCount(VecInit(io.pipeStatusVec.tail.map { case s =>
+    s.valid && s.bits.fromA
+  }).asUInt) + PopCount(VecInit(inflightGrant.map(x => x.valid))) >= (mshrsAll - 1).U
   // pftRespQueue also requires back pressure to ensure that it will not exceed capacity
   // Ideally, it should only block Prefetch from entering MainPipe
   // But since it is extremely rare that pftRespQueue of 10 would be full, we just block all Entrance here, simpler logic
@@ -290,14 +297,14 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     s.valid && s.bits.fromA
   }).asUInt) + pftRespQueue.get.io.count >= (pftQueueLen-1).U)
 
-  io.toReqArb.blockSinkReqEntrance.blockA_s1 := noSpaceForSinkReq || noSpaceForSinkPft.getOrElse(false.B)
+  io.toReqArb.blockSinkReqEntrance.blockA_s1 := noSpaceForSinkReq || noSpaceWaitSinkEForSinkReq || noSpaceForSinkPft.getOrElse(false.B)
   io.toReqArb.blockSinkReqEntrance.blockB_s1 := Cat(inflightGrant.map(g => g.valid &&
     g.bits.set === io.fromReqArb.status_s1.b_set && g.bits.tag === io.fromReqArb.status_s1.b_tag)).orR
   //TODO: or should we still Stall B req?
   // A-replace related rprobe is handled in SourceB
   io.toReqArb.blockSinkReqEntrance.blockC_s1 := noSpaceForSinkReq
   io.toReqArb.blockSinkReqEntrance.blockG_s1 := false.B // this is not used
-  io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq || noSpaceForMSHRPft.getOrElse(false.B)
+  io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq || noSpaceWaitSinkEForMSHRReq || noSpaceForMSHRPft.getOrElse(false.B)
 
   // =========== XSPerf ===========
   if (cacheParams.enablePerf) {

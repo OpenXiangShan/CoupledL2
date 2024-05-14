@@ -22,6 +22,7 @@ import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink.TLPermissions._
 import utility.MemReqSource
+import tl2chi.{HasCHIMsgParameters, HasCHIChannelBits, CHIREQ, MemAttr, OrderEncodings}
 
 abstract class L2Module(implicit val p: Parameters) extends Module with HasCoupledL2Parameters
 abstract class L2Bundle(implicit val p: Parameters) extends Bundle with HasCoupledL2Parameters
@@ -32,7 +33,7 @@ class ReplacerInfo(implicit p: Parameters) extends L2Bundle {
   val reqSource = UInt(MemReqSource.reqSourceBits.W)
 }
 
-trait HasChannelBits { this: Bundle =>
+trait HasTLChannelBits { this: Bundle =>
   val channel = UInt(3.W)
   def fromA = channel(0).asBool
   def fromB = channel(1).asBool
@@ -52,7 +53,10 @@ class MergeTaskBundle(implicit p: Parameters) extends L2Bundle {
 
 // We generate a Task for every TL request
 // this is the info that flows in Mainpipe
-class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
+class TaskBundle(implicit p: Parameters) extends L2Bundle
+  with HasTLChannelBits
+  with HasCHIMsgParameters
+  with HasCHIChannelBits {
   val set = UInt(setBits.W)
   val tag = UInt(tagBits.W)
   val off = UInt(offsetBits.W)
@@ -104,9 +108,47 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   // for merged MSHR tasks(Acquire & late Prefetch)
   val mergeA = Bool()
   val aMergeTask = new MergeTaskBundle()
+
+  // Used for get data from ReleaseBuf when snoop hit with same PA 
+  val snpHitRelease = Bool()
+  val snpHitReleaseWithData = Bool()
+  val snpHitReleaseIdx = UInt(mshrBits.W) 
+  // CHI
+  val tgtID = chiOpt.map(_ => UInt(TGTID_WIDTH.W))
+  val srcID = chiOpt.map(_ => UInt(SRCID_WIDTH.W))
+  val txnID = chiOpt.map(_ => UInt(TXNID_WIDTH.W))
+  val homeNID = chiOpt.map(_ => UInt(SRCID_WIDTH.W))
+  val dbID = chiOpt.map(_ => UInt(DBID_WIDTH.W))
+  val fwdNID = chiOpt.map(_ => UInt(FWDNID_WIDTH.W))
+  val fwdTxnID = chiOpt.map(_ => UInt(FWDTXNID_WIDTH.W))
+  val chiOpcode = chiOpt.map(_ => UInt(OPCODE_WIDTH.W))
+  val resp = chiOpt.map(_ => UInt(RESP_WIDTH.W))
+  val fwdState = chiOpt.map(_ => UInt(FWDSTATE_WIDTH.W))
+  val pCrdType = chiOpt.map(_ => UInt(PCRDTYPE_WIDTH.W))
+  val retToSrc = chiOpt.map(_ => Bool()) // only used in snoop
+  val expCompAck = chiOpt.map(_ => Bool())
+  val allowRetry = chiOpt.map(_ => Bool())
+  val memAttr = chiOpt.map(_ => new MemAttr)
+
+  def toCHIREQBundle(): CHIREQ = {
+    val req = WireInit(0.U.asTypeOf(new CHIREQ()))
+    req.tgtID := tgtID.getOrElse(0.U)
+    req.srcID := srcID.getOrElse(0.U)
+    req.txnID := txnID.getOrElse(0.U)
+    req.opcode := chiOpcode.getOrElse(0.U)
+    req.addr := Cat(tag, set, 0.U(offsetBits.W))
+    req.allowRetry := allowRetry.getOrElse(true.B)  //TODO: consider retry
+    req.pCrdType := pCrdType.getOrElse(0.U)
+    req.expCompAck := expCompAck.getOrElse(false.B)
+    req.memAttr := memAttr.getOrElse(MemAttr())
+    req.snpAttr := true.B
+    req.order := OrderEncodings.None
+    req
+  }
 }
 
-class PipeStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits
+class PipeStatus(implicit p: Parameters) extends L2Bundle
+  with HasTLChannelBits
 
 class PipeEntranceStatus(implicit p: Parameters) extends L2Bundle {
   val tags = Vec(4, UInt(tagBits.W))
@@ -123,34 +165,6 @@ class PipeEntranceStatus(implicit p: Parameters) extends L2Bundle {
   def g_set = sets(3)
 }
 
-// MSHR exposes signals to MSHRCtl
-class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits {
-  val set         = UInt(setBits.W)
-  val reqTag      = UInt(tagBits.W)
-  val metaTag     = UInt(tagBits.W)
-  val needsRepl = Bool()
-  val w_c_resp = Bool()
-  val w_d_resp = Bool()
-  val will_free = Bool()
-
-  //  val way = UInt(wayBits.W)
-//  val off = UInt(offsetBits.W)
-//  val opcode = UInt(3.W)
-//  val param = UInt(3.W)
-//  val size = UInt(msgSizeBits.W)
-//  val source = UInt(sourceIdBits.W)
-//  val alias = aliasBitsOpt.map(_ => UInt(aliasBitsOpt.get.W))
-//  val aliasTask = aliasBitsOpt.map(_ => Bool())
-//  val needProbeAckData = Bool() // only for B reqs
-//  val fromL2pft = prefetchOpt.map(_ => Bool())
-//  val needHint = prefetchOpt.map(_ => Bool())
-
-  // for TopDown usage
-  val reqSource = UInt(MemReqSource.reqSourceBits.W)
-  val is_miss = Bool()
-  val is_prefetch = Bool()
-}
-
 // MSHR Task that MainPipe sends to MSHRCtl
 class MSHRRequest(implicit p: Parameters) extends L2Bundle {
   val dirResult = new DirResult()
@@ -159,11 +173,12 @@ class MSHRRequest(implicit p: Parameters) extends L2Bundle {
 }
 
 // MSHR info to ReqBuf and SinkB
-class MSHRInfo(implicit p: Parameters) extends L2Bundle {
+class MSHRInfo(implicit p: Parameters) extends L2Bundle with HasTLChannelBits {
   val set = UInt(setBits.W)
   val way = UInt(wayBits.W)
   val reqTag = UInt(tagBits.W)
   val willFree = Bool()
+  val aliasTask = aliasBitsOpt.map(_ => Bool())
 
   // to block Acquire for to-be-replaced data until Release done (indicated by ReleaseAck received)
   val needRelease = Bool()
@@ -172,28 +187,42 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle {
   val blockRefill = Bool()
 
   val metaTag = UInt(tagBits.W)
+  val metaState = UInt(stateBits.W)
   val dirHit = Bool()
-
-  // decide whether can nest B (req same-addr)
-  val nestB = Bool()
 
   // to drop duplicate prefetch reqs
   val isAcqOrPrefetch = Bool()
   val isPrefetch = Bool()
 
   // whether the mshr_task already in mainpipe
-  val s_refill = Bool()
   val param = UInt(3.W)
   val mergeA = Bool() // whether the mshr already merge an acquire(avoid alias merge)
+
+  val w_grantfirst = Bool()
+  val s_refill = Bool()
   val w_releaseack = Bool()
+  val w_replResp = Bool()
+  val w_rprobeacklast = Bool()
+
+  val replaceData = Bool() // If there is a replace, WriteBackFull or Evict
 }
 
-class RespInfoBundle(implicit p: Parameters) extends L2Bundle {
+class RespInfoBundle(implicit p: Parameters) extends L2Bundle
+    with HasCHIMsgParameters
+{
   val opcode = UInt(3.W)
   val param = UInt(3.W)
   val last = Bool() // last beat
   val dirty = Bool() // only used for sinkD resps
   val isHit = Bool() // only used for sinkD resps
+ //CHI
+  val chiOpcode = chiOpt.map(_ => UInt(OPCODE_WIDTH.W))
+  val txnID = chiOpt.map(_ => UInt(TXNID_WIDTH.W))
+  val srcID = chiOpt.map(_ => UInt(SRCID_WIDTH.W))
+  val homeNID = chiOpt.map(_ => UInt(SRCID_WIDTH.W))
+  val dbID = chiOpt.map(_ => UInt(DBID_WIDTH.W))
+  val resp = chiOpt.map(_ => UInt(RESP_WIDTH.W))
+  val pCrdType = chiOpt.map(_ => UInt(PCRDTYPE_WIDTH.W))
 }
 
 class RespBundle(implicit p: Parameters) extends L2Bundle {
@@ -227,6 +256,12 @@ class FSMState(implicit p: Parameters) extends L2Bundle {
   val w_grant = Bool()
   val w_releaseack = Bool()
   val w_replResp = Bool()
+
+  // CHI
+  val s_compack = chiOpt.map(_ => Bool())
+  val s_cbwrdata = chiOpt.map(_ => Bool())
+  val s_reissue = chiOpt.map(_ => Bool())
+  val s_dct = chiOpt.map(_ => Bool())
 }
 
 class SourceAReq(implicit p: Parameters) extends L2Bundle {
@@ -260,7 +295,13 @@ class BlockInfo(implicit p: Parameters) extends L2Bundle {
 class NestedWriteback(implicit p: Parameters) extends L2Bundle {
   val set = UInt(setBits.W)
   val tag = UInt(tagBits.W)
+  // Nested ReleaseData sets block dirty
   val c_set_dirty = Bool()
+  // Nested Snoop invalidates block
+  val b_inv_dirty = Bool()
+
+  val b_toB = chiOpt.map(_ => Bool())
+  val b_toN = chiOpt.map(_ => Bool())
 }
 
 class PrefetchRecv extends Bundle {

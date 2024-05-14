@@ -15,13 +15,14 @@
   * *************************************************************************************
   */
 
-package coupledL2
+package coupledL2.tl2tl
 
 import chisel3._
 import chisel3.util._
 import utility._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
+import coupledL2._
 import coupledL2.utils.XSPerfAccumulate
 import huancun.DirtyKey
 
@@ -116,6 +117,13 @@ import huancun.DirtyKey
 //  XSPerfAccumulate(cacheParams, "sourceC_full", full)
 //}
 
+class SourceCBlockBundle(implicit p: Parameters) extends L2Bundle {
+  val blockSinkBReqEntrance = Bool()
+  val blockMSHRReqEntrance = Bool()
+
+  def apply() = 0.U.asTypeOf(this)
+}
+
 class SourceC(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val in = Flipped(DecoupledIO(new Bundle() {
@@ -125,10 +133,7 @@ class SourceC(implicit p: Parameters) extends L2Module {
     val out = DecoupledIO(new TLBundleC(edgeOut.bundle))
     val resp = Output(new RespBundle)
     val pipeStatusVec = Flipped(Vec(5, ValidIO(new PipeStatus)))
-    val toReqArb = Output(new Bundle() {
-      val blockSinkBReqEntrance = Bool()
-      val blockMSHRReqEntrance = Bool()
-    })
+    val toReqArb = Output(new SourceCBlockBundle)
   })
 
   // We must keep SourceC FIFO, so a queue is used
