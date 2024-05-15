@@ -128,6 +128,8 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     val tpmeta_port = prefetchOpt match {
       case Some(param: PrefetchReceiverParams) =>
         if (param.hasTPPrefetcher) Some(new tpmetaL2PortIO()) else None
+      case Some(param: TPParameters) =>
+        if (param.hasTP) Some(new tpmetaL2PortIO()) else None
       case _ => None
     }
   })
@@ -149,6 +151,19 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       pftQueue.io.enq <> pft.io.req
       pipe.io.in <> pftQueue.io.deq
       io.req <> pipe.io.out
+    case tp: TPParameters =>
+      val pft = Module(new TemporalPrefetch)
+      val pftQueue = Module(new PrefetchQueue)
+      val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
+      pft.io.train <> io.train
+      pft.io.resp <> io.resp
+      pftQueue.io.enq <> pft.io.req
+      pipe.io.in <> pftQueue.io.deq
+      io.req <> pipe.io.out
+      pft.io.tpmeta_port <> tpio.tpmeta_port.get
+      pft.io.hartid := hartId
+      val l2_pf_en = RegNextN(io_l2_pf_en, 2, Some(true.B))
+      XSPerfAccumulate(cacheParams, "prefetch_req_fromTP", l2_pf_en && pft.io.req.valid)
     case receiver: PrefetchReceiverParams =>
       val pfRcv = Module(new PrefetchReceiver())
       val bop = Module(new BestOffsetPrefetch()(p.alterPartial({

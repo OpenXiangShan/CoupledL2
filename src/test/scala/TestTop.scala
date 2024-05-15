@@ -47,9 +47,23 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
   val l1d_nodes = (0 until 1) map( i => createClientNode(s"l1d$i", 32))
   val master_nodes = l1d_nodes
 
-  val l2 = LazyModule(new CoupledL2())
+//  val l2 = LazyModule(new CoupledL2())
+  val l2 = LazyModule(new CoupledL2()(new Config((_, _, _) => {
+    case L2ParamKey => L2Param(
+      ways = 8,
+      sets = 32,
+//      hartIds = Seq(0),
+      prefetch = Some(TPParameters(tpTableEntries = 32 * 4, tpTableAssoc = 4))
+    )
+  })))
+//  for (i <- 0 until cacheParams.hartIds.length) {
+//    l2.module.io.debugTopDown.robHeadPaddr(i).valid := false.B
+//    l2.module.io.debugTopDown.robHeadPaddr(i).bits := 0.U(36.W)
+//  }
   val xbar = TLXbar()
-  val ram = LazyModule(new TLRAM(AddressSet(0, 0xffffL), beatBytes = 32))
+//  println(BigInt(1L) << 64)
+  val maxAddr = (BigInt(1L) << 16) - 1
+  val ram = LazyModule(new TLRAM(AddressSet(0, maxAddr), beatBytes = 32)) // 0xfffffffffL
 
   for (l1d <- l1d_nodes) {
     xbar := TLBuffer() := l1d
@@ -133,10 +147,12 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
       sets = 128,
       clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
       echoField = Seq(DirtyField()),
-      prefetch = Some(BOPParameters(
-        rrTableEntries = 16,
-        rrTagBits = 6
-      ))
+//      hartIds = Seq(0),
+//      prefetch = Some(BOPParameters(
+//        rrTableEntries = 16,
+//        rrTagBits = 6
+//      ))
+      prefetch = Some(TPParameters())
     )
   })))
 
@@ -161,7 +177,7 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
   })))
 
   val xbar = TLXbar()
-  val ram = LazyModule(new TLRAM(AddressSet(0, 0xffffL), beatBytes = 32))
+  val ram = LazyModule(new TLRAM(AddressSet(0, 0xfffffffffL), beatBytes = 32))
 
   xbar := TLBuffer() := l1i
   xbar := TLBuffer() := l1d
