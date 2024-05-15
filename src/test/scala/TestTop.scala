@@ -61,7 +61,7 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
 //    l2.module.io.debugTopDown.robHeadPaddr(i).bits := 0.U(36.W)
 //  }
   val xbar = TLXbar()
-  val ram = LazyModule(new TLRAM(AddressSet(0, 0xfffffffffL), beatBytes = 32))
+  val ram = LazyModule(new TLRAM(AddressSet(0, 0xffffL), beatBytes = 32))
 
   for (l1d <- l1d_nodes) {
     xbar := TLBuffer() := l1d

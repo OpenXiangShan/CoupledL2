@@ -26,8 +26,8 @@ import coupledL2.utils.{ReplacementPolicy, XSPerfAccumulate}
 //import huancun.{TPmetaReq, TPmetaResp}
 
 case class TPParameters(
-    tpTableEntries: Int = 16384,
-    tpTableAssoc: Int = 16,
+    tpTableEntries: Int = 16384 / 32,
+    tpTableAssoc: Int = 16 / 8,
     vaddrBits: Int = 39,
     blockOffBits: Int = 6,
     dataReadQueueDepth: Int = 8,
@@ -58,6 +58,7 @@ trait HasTPParams extends HasCoupledL2Parameters {
   val dataWriteQueueDepth = tpParams.dataWriteQueueDepth
   val tpDataQueueDepth = tpParams.tpDataQueueDepth
   val triggerQueueDepth = tpParams.triggerQueueDepth
+  val metaDataLength = fullAddressBits - offsetBits
 //  val tpThrottleCycles = tpParams.throttleCycles
 //  require(tpThrottleCycles > 0, "tpThrottleCycles must be greater than 0")
 }
@@ -141,7 +142,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   }
 
   def recoverVaddr(x: UInt): UInt = {
-    (x << 6.U).asUInt
+    (x << offsetBits.U).asUInt
   }
 
   val tpMetaTable = Module(
@@ -284,7 +285,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   io.tpmeta_port.resp.ready := true.B
 
   val tpmetaRespHartid = io.tpmeta_port.resp.bits.rawData(511, 508)
-  val tpmetaRespRawData = VecInit((0 until 16).map(i => io.tpmeta_port.resp.bits.rawData(30 * (i + 1) - 1, 30 * i)))
+  val tpmetaRespRawData = VecInit((0 until 16).map(i => io.tpmeta_port.resp.bits.rawData(metaDataLength * (i + 1) - 1, metaDataLength * i)))
   tpDataQueue.io.enq.valid := io.tpmeta_port.resp.valid && tpmetaRespHartid === hartid.U && io.tpmeta_port.resp.bits.exist
   tpDataQueue.io.enq.bits.rawData := tpmetaRespRawData
   assert(tpDataQueue.io.enq.ready === true.B) // tpDataQueue is never full
@@ -295,7 +296,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   /* Recorder logic TODO: compress data based on max delta */
 
-  val recorder_idx = RegInit(0.U(6.W))
+  val recorder_idx = RegInit(0.U(offsetBits.W))
   val recorder_data = Reg(Vec(tpEntryMaxLen, UInt(fullAddressBits.W)))
   // val recorder_data_debug = Reg(Vec(tpEntryMaxLen, UInt(vaddrBits.W)))
   val record_data_in = train_s2.addr
@@ -305,8 +306,8 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   when(dorecord_s2) {
     recorder_idx := recorder_idx + 1.U
-    recorder_data(recorder_idx) := record_data_in >> 6.U // eliminate cacheline offset
-    assert((record_data_in >> 6.U)(35, 30) === 0.U)
+    recorder_data(recorder_idx) := record_data_in >> offsetBits.U // eliminate cacheline offset
+    assert((record_data_in >> offsetBits.U)(fullAddressBits - 1, metaDataLength) === 0.U)
     when(recorder_idx === (recordThres-1.U)) {
       write_record := true.B
       recorder_idx := 0.U
@@ -351,7 +352,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   dataWriteQueue.io.enq.valid := tpTable_w_valid
   dataWriteQueue.io.enq.bits.wmode := true.B
-  dataWriteQueue.io.enq.bits.rawData.zip(recorder_data).foreach(x => x._1 := x._2(35-6, 0))
+  dataWriteQueue.io.enq.bits.rawData.zip(recorder_data).foreach(x => x._1 := x._2(fullAddressBits - offsetBits - 1, 0))
   dataWriteQueue.io.enq.bits.l2ReqBundle.tag := Mux(trainOnVaddr.orR, write_record_l2_vtag, write_record_l2_ptag)
   dataWriteQueue.io.enq.bits.l2ReqBundle.set := Mux(trainOnVaddr.orR, write_record_l2_vset, write_record_l2_pset)
   dataWriteQueue.io.enq.bits.l2ReqBundle.bank := Mux(trainOnVaddr.orR, write_record_l2_vbank, write_record_l2_pbank)
@@ -371,14 +372,14 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   /* Send prefetch request */
 
   val do_sending = RegInit(false.B)
-  val sending_idx = RegInit(0.U(6.W))
+  val sending_idx = RegInit(0.U(offsetBits.W))
   val sending_data = Reg(Vec(tpEntryMaxLen, UInt(fullAddressBits.W)))
   // val sending_data_debug = Reg(Vec(tpEntryMaxLen, UInt(vaddrBits.W)))
   val sending_throttle = RegInit(0.U(4.W))
   val tpDataQFull = tpDataQueue.io.count === tpDataQueueDepth.U
 
   val sending_valid = do_sending && !tpDataQFull && sending_throttle === tpThrottleCycles
-  val current_sending_data = Cat(sending_data(sending_idx), 0.U(6.W))
+  val current_sending_data = Cat(sending_data(sending_idx), 0.U(offsetBits.W))
   val (sendingTag, sendingSet, _) = parseFullAddress(current_sending_data)
 
   tpDataQueue.io.deq.ready := tpDataQFull || !do_sending
