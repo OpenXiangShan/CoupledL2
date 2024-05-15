@@ -253,7 +253,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     entry.bits.tag    := io.d_task.bits.task.tag
   }
   val inflight_full = Cat(inflightGrant.map(_.valid)).andR
-  assert(!inflight_full, "inflightGrant entries should not be full")
+  assert(!(inflight_full & (io.d_task.fire && (dtaskOpcode(2, 1) === Grant(2, 1) || io.d_task.bits.task.mergeA))), "inflightGrant entries overflow")
 
   // report status to SourceB to block same-addr Probe
   io.grantStatus zip inflightGrant foreach {
