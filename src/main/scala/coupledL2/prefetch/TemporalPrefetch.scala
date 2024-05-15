@@ -161,8 +161,8 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   /* Constantin Parameters */
 
-  require(cacheParams.hartIds.size == 1)
-  val hartid = cacheParams.hartIds.head
+//  require(cacheParams.hartIds.size == 1)
+  val hartid = if (cacheParams.hartIds.size == 0)  {0} else {cacheParams.hartIds.head}
   // 0 / 1: whether to enable temporal prefetcher
   private val enableTP = WireInit(Constantin.createRecord("enableTP"+hartid.toString, initValue = 1.U))
   // 0 ~ N: throttle cycles for each prefetch request
