@@ -1,5 +1,6 @@
-# These owners will be the default owners for everything in
-# the repo. Unless a later match takes precedence,
-# @global-owner1 and @global-owner2 will be requested for
-# review when someone opens a pull request.
 *       @Ivyfeather @linjuanZ
+src/main/scala/coupledL2/Directory.scala @cailuoshan
+src/main/scala/coupledL2/utils/ @cailuoshan
+src/main/scala/coupledL2/prefetch/ @Maxpicca-Li
+src/main/scala/coupledL2/prefetch/ @wakafa1
+src/test/scala/ @Kumonda221-CrO3
