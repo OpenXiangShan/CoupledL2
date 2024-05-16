@@ -165,19 +165,26 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 //  require(cacheParams.hartIds.size == 1)
   val hartid = if (cacheParams.hartIds.size == 0)  {0} else {cacheParams.hartIds.head}
   // 0 / 1: whether to enable temporal prefetcher
-  private val enableTP = WireInit(Constantin.createRecord("enableTP"+hartid.toString, initValue = 1.U))
+//  private val enableTP = WireInit(Constantin.createRecord("enableTP"+hartid.toString, initValue = 1.U))
+  private val enableTP = WireInit(1.U)
   // 0 ~ N: throttle cycles for each prefetch request
-  private val tpThrottleCycles = WireInit(Constantin.createRecord("tp_throttleCycles"+hartid.toString, initValue = 4.U(3.W)))
+//  private val tpThrottleCycles = WireInit(Constantin.createRecord("tp_throttleCycles"+hartid.toString, initValue = 4.U(3.W)))
+  private val tpThrottleCycles = WireInit(4.U(3.W))
   // 0 / 1: whether request to set as trigger on meta hit
-  private val hitAsTrigger = WireInit(Constantin.createRecord("tp_hitAsTrigger"+hartid.toString, initValue = 1.U))
+//  private val hitAsTrigger = WireInit(Constantin.createRecord("tp_hitAsTrigger"+hartid.toString, initValue = 1.U))
+  private val hitAsTrigger = WireInit(1.U)
   // 1 ~ triggerQueueDepth: enqueue threshold for triggerQueue
-  private val triggerThres = WireInit(Constantin.createRecord("tp_triggerThres"+hartid.toString, initValue = 1.U(3.W)))
+//  private val triggerThres = WireInit(Constantin.createRecord("tp_triggerThres"+hartid.toString, initValue = 1.U(3.W)))
+  private val triggerThres = WireInit(1.U(3.W))
   // 1 ~ tpEntryMaxLen: record threshold for recorder and sender (storage size will not be affected)
-  private val recordThres = WireInit(Constantin.createRecord("tp_recordThres"+hartid.toString, initValue = tpEntryMaxLen.U))
+//  private val recordThres = WireInit(Constantin.createRecord("tp_recordThres"+hartid.toString, initValue = tpEntryMaxLen.U))
+  private val recordThres = WireInit(tpEntryMaxLen.U)
   // 0 / 1: whether to train on vaddr
-  private val trainOnVaddr = WireInit(Constantin.createRecord("tp_trainOnVaddr"+hartid.toString, initValue = 0.U))
+//  private val trainOnVaddr = WireInit(Constantin.createRecord("tp_trainOnVaddr"+hartid.toString, initValue = 0.U))
+  private val trainOnVaddr = WireInit(0.U)
   // 0 / 1: whether to eliminate L1 prefetch request training
-  private val trainOnL1PF = WireInit(Constantin.createRecord("tp_trainOnL1PF"+hartid.toString, initValue = 0.U))
+//  private val trainOnL1PF = WireInit(Constantin.createRecord("tp_trainOnL1PF"+hartid.toString, initValue = 0.U))
+  private val trainOnL1PF = WireInit(0.U)
 
   if (vaddrBitsOpt.isEmpty) {
     assert(!trainOnVaddr)
