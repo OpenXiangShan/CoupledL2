@@ -52,11 +52,13 @@ case class BOPParameters(
     90, 96, 100, 108, 120, 125, 128, 135,
     144, 150, 160, 162, 180, 192, 200, 216,
     225, 240, 243, 250/*, 256*/
-  ))
+  ),
+  hastp: Boolean = true)
     extends PrefetchParameters {
   override val hasPrefetchBit:  Boolean = true
   override val hasPrefetchSrc:  Boolean = true
   override val inflightEntries: Int = 16
+  override val hasTPPrefetcher: Boolean = hastp
 }
 
 trait HasBOPParams extends HasPrefetcherHelper {

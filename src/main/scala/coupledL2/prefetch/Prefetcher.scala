@@ -260,6 +260,11 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       val pfRcv = Module(new PrefetchReceiver())
       val pbop = Module(new PBestOffsetPrefetch()(p.alterPartial({
         case L2ParamKey => p(L2ParamKey).copy(prefetch = Some(BOPParameters(
+          hastp = prefetchOpt match {
+            case Some(param: PrefetchReceiverParams) =>
+              if (param.hasTPPrefetcher) true else false
+            case _ => false
+          },
           virtualTrain = false,
           badScore = 1,
           offsetList = Seq(
@@ -267,10 +272,16 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
             -12, -10, -9, -8, -6, -5, -4, -3, -2, -1,
             1, 2, 3, 4, 5, 6, 8, 9, 10,
             12, 15, 16, 18, 20, 24, 25, 27, 30
-          ))))
+          )
+        )))
       })))
       val vbop = Module(new VBestOffsetPrefetch()(p.alterPartial({
         case L2ParamKey => p(L2ParamKey).copy(prefetch = Some(BOPParameters(
+          hastp = prefetchOpt match {
+            case Some(param: PrefetchReceiverParams) =>
+              if (param.hasTPPrefetcher) true else false
+            case _ => false
+          },
           badScore = 2,
           offsetList = Seq(
             -117,-147,-91,117,147,91,
@@ -295,7 +306,11 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
         case Some(param: PrefetchReceiverParams) =>
           if (param.hasTPPrefetcher) {
             Some(Module(new TemporalPrefetch()(p.alterPartial({
-              case L2ParamKey => p(L2ParamKey).copy(prefetch = Some(TPParameters()))
+              case L2ParamKey => p(L2ParamKey).copy(prefetch = Some(TPParameters(hastp = prefetchOpt match {
+                case Some(param: PrefetchReceiverParams) =>
+                  if (param.hasTPPrefetcher) true else false
+                case _ => false
+              })))
             }))))
           } else None
         case _ => None
@@ -343,7 +358,9 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       io.req <> pipe.io.out
 
       // tpmeta interface
-      tp.foreach(_.io.tpmeta_port <> tpio.tpmeta_port.get)
+      if (hasTPPrefetcher) {
+        tp.foreach(_.io.tpmeta_port <> tpio.tpmeta_port.get)
+      }
 
       /* pri vbop */
       pftQueue.io.enq.valid := pfRcv.io.req.valid ||

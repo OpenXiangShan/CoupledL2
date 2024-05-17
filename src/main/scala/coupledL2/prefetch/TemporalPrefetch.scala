@@ -36,11 +36,13 @@ case class TPParameters(
     triggerQueueDepth: Int = 4,
     throttleCycles: Int = 4,  // unused yet
     replacementPolicy: String = "random",
-    debug: Boolean = false
+    debug: Boolean = false,
+    hastp: Boolean = true
 ) extends PrefetchParameters {
-  override val hasPrefetchBit:  Boolean = true
-  override val hasPrefetchSrc:  Boolean = true
+  override val hasPrefetchBit: Boolean = true
+  override val hasPrefetchSrc: Boolean = true
   override val inflightEntries: Int = 16
+  override val hasTPPrefetcher: Boolean = hastp
 }
 
 trait HasTPParams extends HasCoupledL2Parameters {
