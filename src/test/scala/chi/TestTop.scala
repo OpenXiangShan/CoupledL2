@@ -63,24 +63,9 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(imp
 
   // val l2 = LazyModule(new TL2CHICoupledL2())
   val l2_nodes = (0 until numCores).map(i => LazyModule(new TL2CHICoupledL2()(new Config((_, _, _) => {
-    case L2ParamKey => L2Param(
-      name = s"l2$i",
-      ways = 4,
-      sets = 128,
-      clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
-      // echoField = Seq(DirtyField),
-      enablePerf = false,
-      enableRollingDB = false,
-      enableMonitor = false,
-      enableTLLog = false,
-      elaboratedTopDown = false,
-      FPGAPlatform = false,
-      // SAM for CMN 2X2 Mesh
-      // sam = Seq(
-      //   AddressSet(0x0L,  0xfffffffbfL) -> 8,
-      //   AddressSet(0x40L, 0xfffffffbfL) -> 40
-      // )
-      hartId = i
+    case L2ParamKey => cacheParams.copy(
+      name                = s"L2_$i",
+      hartId              = i,
     )
     case EnableCHI => true
     case BankBitsKey => log2Ceil(banks)
@@ -92,13 +77,15 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(imp
   l1d_nodes.zip(l2_nodes).zipWithIndex.foreach { case ((l1d, l2), i) =>
     val l1xbar = TLXbar()
     l1xbar := 
-      TLLogger(s"L2_L1_CORE${i}_TLC", !cacheParams.FPGAPlatform && cacheParams.enableTLLog) := 
-      TLBuffer() := l1d
+      TLBuffer() :=
+      TLLogger(s"L2_L1[${i}].C[0]", !cacheParams.FPGAPlatform && cacheParams.enableTLLog) := 
+      l1d
 
     l1i_nodes(i).zipWithIndex.foreach { case (l1i, j) =>
       l1xbar :=
-        TLLogger(s"L2_L1_CORE${i}_TLUL${j}", !cacheParams.FPGAPlatform && cacheParams.enableTLLog) :=
-        TLBuffer() := l1i
+        TLBuffer() :=
+        TLLogger(s"L2_L1[${i}].UL[${j}]", !cacheParams.FPGAPlatform && cacheParams.enableTLLog) :=
+        l1i
     }
     
     l2.managerNode :=
@@ -162,11 +149,28 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(imp
 
 object TestTopCHIHelper {
   def gen(fTop: Parameters => TestTop_CHIL2)(args: Array[String]) = {
+    val FPGAPlatform    = false
+    val enableChiselDB  = !FPGAPlatform && true
+    
     val config = new Config((_, _, _) => {
       case L2ParamKey => L2Param(
-        FPGAPlatform = true
+        ways                = 4,
+        sets                = 128,
+        clientCaches        = Seq(L1Param(aliasBitsOpt = Some(2))),
+        // echoField        = Seq(DirtyField),
+        enablePerf          = false,
+        enableRollingDB     = enableChiselDB && true,
+        enableMonitor       = enableChiselDB && true,
+        enableTLLog         = enableChiselDB && true,
+        elaboratedTopDown   = false,
+        FPGAPlatform        = FPGAPlatform,
+
+        // SAM for tester ICN: Home Node ID = 33
+        sam                 = Seq(AddressSet.everything -> 33)
       )
     })
+
+    ChiselDB.init(enableChiselDB)
 
     val top = DisableMonitors(p => LazyModule(fTop(p)))(config)
 
@@ -174,7 +178,6 @@ object TestTopCHIHelper {
       ChiselGeneratorAnnotation(() => top.module)
     ))
 
-    ChiselDB.init(false)
     ChiselDB.addToFileRegisters
     FileRegisters.write("./build")
   }

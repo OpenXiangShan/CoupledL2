@@ -106,7 +106,7 @@ case class L2Param(
   FPGAPlatform: Boolean = false,
 
   // Network layer SAM
-  sam: Seq[(AddressSet, Int)] = Seq(AddressSet.everything -> 33)
+  sam: Seq[(AddressSet, Int)] = Seq(AddressSet.everything -> 0)
 ) {
   def toCacheParams: CacheParameters = CacheParameters(
     name = name,
