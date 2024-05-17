@@ -36,6 +36,8 @@ class CPL2S3Info(implicit p: Parameters) extends L2Bundle {
 
   val metaWvalid = Bool()
   val metaWway = UInt(wayBits.W)
+
+  val pc = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W))
 }
 
 class Monitor(implicit p: Parameters) extends L2Module {
@@ -102,6 +104,7 @@ class Monitor(implicit p: Parameters) extends L2Module {
     s3Info.mshrId := req_s3.mshrId
     s3Info.metaWvalid := mp.metaW_s3.valid
     s3Info.metaWway := OHToUInt(mp.metaW_s3.bits.wayOH)
+    s3Info.pc.foreach(_ := req_s3.pc.getOrElse(0.U))
 
     table.log(s3Info, s3_valid, s"L2${hartId}_${p(SliceIdKey)}", clock, reset)
   }

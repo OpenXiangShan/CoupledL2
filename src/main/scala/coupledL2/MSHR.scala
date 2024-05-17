@@ -166,6 +166,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_release.off := 0.U
     mp_release.alias.foreach(_ := 0.U)
     mp_release.vaddr.foreach(_ := 0.U)
+    mp_release.pc.foreach(_ := 0.U)
     // if dirty, we must ReleaseData
     // if accessed, we ReleaseData to keep the data in L3, for future access to be faster
     // [Access] TODO: consider use a counter
@@ -212,6 +213,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_probeack.off := req.off
     mp_probeack.alias.foreach(_ := 0.U)
     mp_probeack.vaddr.foreach(_ := 0.U)
+    mp_probeack.pc.foreach(_ := 0.U)
     mp_probeack.opcode := Mux(
       meta.dirty && isT(meta.state) || probeDirty || req.needProbeAckData,
       ProbeAckData,
@@ -279,6 +281,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_grant.sourceId := req.sourceId
     mp_grant.alias.foreach(_ := 0.U)
     mp_grant.vaddr.foreach(_ := 0.U)
+    mp_grant.pc.foreach(_ := 0.U)
     mp_grant.opcode := odOpGen(req.opcode)
     mp_grant.param := Mux(
       req_get || req_prefetch,
@@ -356,6 +359,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_grant.aMergeTask.off := merge_task.off
     mp_grant.aMergeTask.alias.foreach(_ := merge_task.alias.getOrElse(0.U))
     mp_grant.aMergeTask.vaddr.foreach(_ := merge_task.vaddr.getOrElse(0.U))
+    mp_grant.aMergeTask.pc.foreach(_ := merge_task.pc.getOrElse(0.U))
     mp_grant.aMergeTask.opcode := odOpGen(merge_task.opcode)
     mp_grant.aMergeTask.param := MuxLookup( // Acquire -> Grant
       merge_task.param,
