@@ -27,6 +27,7 @@ trait PrefetchParameters {
   val hasPrefetchBit:  Boolean
   val hasPrefetchSrc:  Boolean
   val inflightEntries: Int // max num of inflight prefetch reqs
+  val hasTPPrefetcher: Boolean
 }
 
 trait HasPrefetchParameters extends HasCoupledL2Parameters {
