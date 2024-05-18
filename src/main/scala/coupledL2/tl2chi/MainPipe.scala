@@ -224,7 +224,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
     SNPOpcodes.isSnpUniqueX(req_s3.chiOpcode.get) ||
     req_s3.chiOpcode.get === SNPOpcodes.SnpCleanInvalid ||
     SNPOpcodes.isSnpMakeInvalidX(req_s3.chiOpcode.get)
-  ) && dirResult_s3.hit && meta_s3.state =/= TIP && meta_has_clients_s3
+  ) && dirResult_s3.hit && meta_has_clients_s3
   val need_pprobe_s3_b = need_pprobe_s3_b_snpOnceX || need_pprobe_s3_b_snpToB || need_pprobe_s3_b_snpToN
   val need_dct_s3_b = doFwd || doFwdHitRelease // DCT
   val need_mshr_s3_b = need_pprobe_s3_b || need_dct_s3_b
