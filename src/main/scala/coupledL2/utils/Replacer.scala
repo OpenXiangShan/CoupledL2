@@ -58,6 +58,7 @@ object ReplacementPolicy {
     case "srrip"   => new StaticRRIP(n_ways)
     case "brrip"   => new BRRIP(n_ways)
     case "drrip"   => new DRRIP(n_ways)
+    case "hawkeye"   => new HawkeyeRRIP(n_ways)
     case t => throw new IllegalArgumentException(s"unknown Replacement Policy type $t")
   }
 }
@@ -471,4 +472,59 @@ class DRRIP(n_ways: Int) extends ReplacementPolicy {
     PriorityEncoder(lrrWayVec)
   }
   
+}
+
+// Hawkeye, use 3-bits improved RRIP for replacement
+class HawkeyeRRIP(n_ways: Int) extends ReplacementPolicy {
+  def nBits = 3 * n_ways
+  def perSet = true
+
+  private val state_reg = RegInit(0.U(nBits.W))
+  def state_read = WireDefault(state_reg)
+
+  def access(touch_way: UInt) = {}
+  def access(touch_ways: Seq[Valid[UInt]]) = {}
+  def get_next_state(state: UInt, touch_way: UInt) = 0.U //DontCare
+
+  override def get_next_state(state: UInt, touch_way: UInt, hit: Bool, req_type: UInt): UInt = {
+    val State  = Wire(Vec(n_ways, UInt(3.W)))
+    val nextState  = Wire(Vec(n_ways, UInt(3.W)))
+    State.zipWithIndex.map { case (e, i) =>
+      e := state(3*i+2,3*i)
+    }
+    // hit-Promotion, miss-Insertion & Aging
+    // req_type[2]: 0-cache-averse, 1-cache-friendly;
+    // req_type[1]: 0-acquire, 1-release; req_type[0]: 0-non-prefetch, 1-prefetch;
+    // rrpv: cache-averse + acquire = 7; cache-friendly + acquire = 0; pf/release = 3;
+    // miss aging +=1;
+    nextState.zipWithIndex.map { case (e, i) =>
+      e := Mux(i.U === touch_way, 
+              Mux(req_type === 0.U, 7.U,
+                  Mux(req_type === 4.U, 0.U, 3.U)),
+              Mux(hit || (State(i)===7.U), State(i), State(i)+1.U) 
+            )
+    }
+    Cat(nextState.map(x=>x).reverse)
+  }
+
+  def get_replace_way(state: UInt): UInt = {
+    val RRPVVec  = Wire(Vec(n_ways, UInt(3.W)))
+    RRPVVec.zipWithIndex.map { case (e, i) =>
+        e := state(3*i+2,3*i)
+    }
+    // scan each way's rrpv, find the least re-referenced way
+    val lrrWayVec = Wire(Vec(n_ways,Bool()))
+    lrrWayVec.zipWithIndex.map { case (e, i) =>
+      val isLarger = Wire(Vec(n_ways,Bool()))
+      for (j <- 0 until n_ways) {
+        isLarger(j) := RRPVVec(j) > RRPVVec(i)
+      }
+      e := !(isLarger.contains(true.B))
+    }
+    PriorityEncoder(lrrWayVec)
+  }
+
+  def way = get_replace_way(state_reg)
+  def miss = access(way)
+  def hit = {}
 }

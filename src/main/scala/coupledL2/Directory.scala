@@ -265,7 +265,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   /* ====== Update ====== */
   // PLRU: update replacer only when A hit or refill, at stage 3
   // RRIP: update replacer when A/C hit or refill
-  val updateHit = if(cacheParams.replacement == "drrip" || cacheParams.replacement == "srrip"){
+  val updateHit = if(cacheParams.replacement == "drrip" || cacheParams.replacement == "srrip" || cacheParams.replacement == "hawkeye"){
     reqValid_s3 && hit_s3 &&
     ((req_s3.replacerInfo.channel(0) && (req_s3.replacerInfo.opcode === AcquirePerm || req_s3.replacerInfo.opcode === AcquireBlock || req_s3.replacerInfo.opcode === Hint)) ||
      (req_s3.replacerInfo.channel(2) && (req_s3.replacerInfo.opcode === Release || req_s3.replacerInfo.opcode === ReleaseData)))
@@ -349,6 +349,42 @@ class Directory(implicit p: Parameters) extends L2Module {
 
     val repl_init = Wire(Vec(ways, UInt(2.W)))
     repl_init.foreach(_ := 2.U(2.W))
+    replacer_sram_opt.get.io.w(
+      !resetFinish || replacerWen,
+      Mux(resetFinish, next_state_s3, repl_init.asUInt),
+      Mux(resetFinish, set_s3, resetIdx),
+      1.U
+    )
+  } else if(cacheParams.replacement == "hawkeye"){
+    /* Hawkeye Tables */
+    val hawkeye = Module(new Hawkeye)
+    hawkeye.io.resetFinish := resetFinish
+    hawkeye.io.resetIdx := resetIdx
+    hawkeye.io.predict.valid := replacerWen
+    // TODO: hawkeye.io.predict.pc :=
+    hawkeye.io.predict.pc := 0.U
+    val hawkeye_prediction = hawkeye.io.predict.cachefriendly
+    hawkeye.io.train.valid := reqValid_s3 && !refillReqValid_s3 &&
+     ((req_s3.replacerInfo.channel(0) && (req_s3.replacerInfo.opcode === AcquirePerm || req_s3.replacerInfo.opcode === AcquireBlock || req_s3.replacerInfo.opcode === Hint)) ||
+      (req_s3.replacerInfo.channel(2) && (req_s3.replacerInfo.opcode === Release || req_s3.replacerInfo.opcode === ReleaseData)))   // train hawkeye when first req, not refill
+    hawkeye.io.train.bits.tag := tag_s3
+    hawkeye.io.train.bits.set := set_s3
+    // TODO: hawkeye.io.train.bits.pc := 
+    hawkeye.io.train.bits.pc := 0.U
+    hawkeye.io.train.bits.isAcquire := req_s3.replacerInfo.channel(0) && (req_s3.replacerInfo.opcode === AcquirePerm || req_s3.replacerInfo.opcode === AcquireBlock)
+    
+    /* Update RRIP State */
+    // req_type[2]: 0-cache-averse, 1-cache-friendly;
+    // req_type[1]: 0-acquire, 1-release; req_type[0]: 0-non-prefetch, 1-prefetch;
+    val req_type = WireInit(0.U(2.W))
+    req_type := Cat(hawkeye_prediction,
+                    req_s3.replacerInfo.channel(2),
+                    (req_s3.replacerInfo.channel(0) && req_s3.replacerInfo.opcode === Hint) || req_s3.replacerInfo.refill_prefetch || (req_s3.replacerInfo.channel(2) && metaAll_s3(touch_way_s3).prefetch.getOrElse(false.B)),
+                   )
+    
+    val next_state_s3 = repl.get_next_state(repl_state_s3, touch_way_s3, rrip_hit_s3, req_type)
+    val repl_init = Wire(Vec(ways, UInt(3.W)))
+    repl_init.foreach(_ := 0.U(3.W))
     replacer_sram_opt.get.io.w(
       !resetFinish || replacerWen,
       Mux(resetFinish, next_state_s3, repl_init.asUInt),
