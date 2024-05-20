@@ -231,11 +231,7 @@ class PrefetchQueue(implicit p: Parameters) extends PrefetchModule {
 class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val io = IO(new PrefetchIO)
   val tpio = IO(new Bundle() {
-    val tpmeta_port = prefetchOpt match {
-      case Some(param: PrefetchReceiverParams) =>
-        if (param.hasTPPrefetcher) Some(new tpmetaPortIO()) else None
-      case _ => None
-    }
+    val tpmeta_port = if (hasTPPrefetcher) Some(new tpmetaPortIO()) else None
   })
   val hartId = IO(Input(UInt(hartIdLen.W)))
 
@@ -244,147 +240,134 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
    * it will control BOP and TP prefetchers
    */
   val io_l2_pf_en = IO(Input(Bool()))
+  val l2_pf_en = RegNextN(io_l2_pf_en, 2, Some(true.B))
 
-  prefetchOpt.get match {
-    case bop: BOPParameters =>
-      val pft = Module(new VBestOffsetPrefetch)
-      val pftQueue = Module(new PrefetchQueue)
-      val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
-      pft.io.train <> io.train
-      pft.io.resp <> io.resp
-      pft.io.tlb_req <> io.tlb_req
-      pftQueue.io.enq <> pft.io.req
-      pipe.io.in <> pftQueue.io.deq
-      io.req <> pipe.io.out
-    case receiver: PrefetchReceiverParams =>
-      val pfRcv = Module(new PrefetchReceiver())
-      val pbop = Module(new PBestOffsetPrefetch()(p.alterPartial({
-        case L2ParamKey => p(L2ParamKey).copy(prefetch = Some(BOPParameters(
-          hastp = prefetchOpt match {
-            case Some(param: PrefetchReceiverParams) =>
-              if (param.hasTPPrefetcher) true else false
-            case _ => false
-          },
-          virtualTrain = false,
-          badScore = 1,
-          offsetList = Seq(
-            -32, -30, -27, -25, -24, -20, -18, -16, -15,
-            -12, -10, -9, -8, -6, -5, -4, -3, -2, -1,
-            1, 2, 3, 4, 5, 6, 8, 9, 10,
-            12, 15, 16, 18, 20, 24, 25, 27, 30
-          )
-        )))
-      })))
-      val vbop = Module(new VBestOffsetPrefetch()(p.alterPartial({
-        case L2ParamKey => p(L2ParamKey).copy(prefetch = Some(BOPParameters(
-          hastp = prefetchOpt match {
-            case Some(param: PrefetchReceiverParams) =>
-              if (param.hasTPPrefetcher) true else false
-            case _ => false
-          },
-          badScore = 2,
-          offsetList = Seq(
-            -117,-147,-91,117,147,91,
-            -256, -250, -243, -240, -225, -216, -200,
-            -192, -180, -162, -160, -150, -144, -135, -128,
-            -125, -120, -108, -100, -96, -90, -81, -80,
-            -75, -72, -64, -60, -54, -50, -48, -45,
-            -40, -36, -32, -30, -27, -25, -24, -20,
-            -18, -16, -15, -12, -10, -9, -8, -6,
-            -5, -4, -3, -2, -1,
-            1, 2, 3, 4, 5, 6, 8,
-            9, 10, 12, 15, 16, 18, 20, 24,
-            25, 27, 30, 32, 36, 40, 45, 48,
-            50, 54, 60, 64, 72, 75, 80, 81,
-            90, 96, 100, 108, 120, 125, 128, 135,
-            144, 150, 160, 162, 180, 192, 200, 216,
-            225, 240, 243, 250/*, 256*/
-          )
-        )))
-      })))
-      val tp = prefetchOpt match {
-        case Some(param: PrefetchReceiverParams) =>
-          if (param.hasTPPrefetcher) {
-            Some(Module(new TemporalPrefetch()(p.alterPartial({
-              case L2ParamKey => p(L2ParamKey).copy(prefetch = Some(TPParameters(hastp = prefetchOpt match {
-                case Some(param: PrefetchReceiverParams) =>
-                  if (param.hasTPPrefetcher) true else false
-                case _ => false
-              })))
-            }))))
-          } else None
-        case _ => None
-      }
-      val pftQueue = Module(new PrefetchQueue)
-      val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
-      val l2_pf_en = RegNextN(io_l2_pf_en, 2, Some(true.B))
+  // =================== Prefetchers =====================
+  // TODO: consider separate VBOP and PBOP in prefetch param
+  val pbop = if (hasBOP) Some(
+    Module(new PBestOffsetPrefetch()(p.alterPartial({
+      case L2ParamKey => p(L2ParamKey).copy(prefetch = Seq(BOPParameters(
+        virtualTrain = false,
+        badScore = 1,
+        offsetList = Seq(
+          -32, -30, -27, -25, -24, -20, -18, -16, -15,
+          -12, -10, -9, -8, -6, -5, -4, -3, -2, -1,
+          1, 2, 3, 4, 5, 6, 8, 9, 10,
+          12, 15, 16, 18, 20, 24, 25, 27, 30
+        )
+      )))
+    })))
+  ) else None
 
-      // prefetch from upper level
-      pfRcv.io.recv_addr := ValidIODelay(io.recv_addr, 2)
-      pfRcv.io.train.valid := false.B
-      pfRcv.io.train.bits := 0.U.asTypeOf(new PrefetchTrain)
-      pfRcv.io.resp.valid := false.B
-      pfRcv.io.resp.bits := 0.U.asTypeOf(new PrefetchResp)
-      pfRcv.io.tlb_req.req.ready := true.B
-      pfRcv.io.tlb_req.resp.valid := false.B
-      pfRcv.io.tlb_req.resp.bits := DontCare
-      assert(!pfRcv.io.req.valid ||
-        pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2SMS.id.U ||
-        pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2Stream.id.U ||
-        pfRcv.io.req.bits.pfSource === MemReqSource.Prefetch2L2Stride.id.U
-      )
+  val vbop = if (hasBOP) Some(
+    Module(new VBestOffsetPrefetch()(p.alterPartial({
+      case L2ParamKey => p(L2ParamKey).copy(prefetch = Seq(BOPParameters(
+        badScore = 2,
+        offsetList = Seq(
+          -117, -147, -91, 117, 147, 91,
+          -256, -250, -243, -240, -225, -216, -200,
+          -192, -180, -162, -160, -150, -144, -135, -128,
+          -125, -120, -108, -100, -96, -90, -81, -80,
+          -75, -72, -64, -60, -54, -50, -48, -45,
+          -40, -36, -32, -30, -27, -25, -24, -20,
+          -18, -16, -15, -12, -10, -9, -8, -6,
+          -5, -4, -3, -2, -1,
+          1, 2, 3, 4, 5, 6, 8,
+          9, 10, 12, 15, 16, 18, 20, 24,
+          25, 27, 30, 32, 36, 40, 45, 48,
+          50, 54, 60, 64, 72, 75, 80, 81,
+          90, 96, 100, 108, 120, 125, 128, 135,
+          144, 150, 160, 162, 180, 192, 200, 216,
+          225, 240, 243, 250 /*, 256*/
+        )
+      )))
+    })))
+  ) else None
 
-      // prefetch from local prefetchers: BOP & TP
-      vbop.io.train <> io.train
-      vbop.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
-      vbop.io.resp <> io.resp
-      vbop.io.resp.valid := io.resp.valid && io.resp.bits.isBOP
-      vbop.io.tlb_req <> io.tlb_req
-      vbop.io.pbopCrossPage := true.B // pbop.io.pbopCrossPage // let vbop have noting to do with pbop
+  val tp = if (hasTPPrefetcher) Some(Module(new TemporalPrefetch())) else None
+  // prefetch from upper level
+  val pfRcv = if (hasReceiver) Some(Module(new PrefetchReceiver())) else None
 
-      pbop.io.train <> io.train
-      pbop.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
-      pbop.io.resp <> io.resp
-      pbop.io.resp.valid := io.resp.valid && io.resp.bits.isPBOP
-      tp.foreach(_.io.train <> io.train)
-      tp.foreach(_.io.resp <> io.resp)
-      tp.foreach(_.io.hartid := hartId)
+  // =================== Connection for each Prefetcher =====================
+  if (hasBOP) {
+    vbop.get.io.req.ready := true.B
+    vbop.get.io.train <> io.train
+    vbop.get.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
+    vbop.get.io.resp <> io.resp
+    vbop.get.io.resp.valid := io.resp.valid && io.resp.bits.isBOP
+    vbop.get.io.tlb_req <> io.tlb_req
+    vbop.get.io.pbopCrossPage := true.B // pbop.io.pbopCrossPage // let vbop have noting to do with pbop
 
-      pfRcv.io.req.ready := true.B
-      vbop.io.req.ready := true.B
-      pbop.io.req.ready := true.B
-      tp.foreach(_.io.req.ready := !pfRcv.io.req.valid && !vbop.io.req.valid)
-      pipe.io.in <> pftQueue.io.deq
-      io.req <> pipe.io.out
-
-      // tpmeta interface
-      if (hasTPPrefetcher) {
-        tp.foreach(_.io.tpmeta_port <> tpio.tpmeta_port.get)
-      }
-
-      /* pri vbop */
-      pftQueue.io.enq.valid := pfRcv.io.req.valid ||
-        (l2_pf_en && (vbop.io.req.valid || pbop.io.req.valid || (if (tp.isDefined) tp.get.io.req.valid else false.B)))
-      pftQueue.io.enq.bits := ParallelPriorityMux(Seq(
-        pfRcv.io.req.valid -> pfRcv.io.req.bits,
-        vbop.io.req.valid -> vbop.io.req.bits,
-        pbop.io.req.valid -> pbop.io.req.bits,
-        if (tp.isDefined) { tp.get.io.req.valid -> tp.get.io.req.bits }
-        else { false.B -> DontCare }
-      ))
-      XSPerfAccumulate(cacheParams, "prefetch_req_fromL1", l2_pf_en && pfRcv.io.req.valid)
-      XSPerfAccumulate(cacheParams, "prefetch_req_fromBOP", l2_pf_en && vbop.io.req.valid)
-      XSPerfAccumulate(cacheParams, "prefetch_req_fromPBOP", l2_pf_en && pbop.io.req.valid)
-      if (tp.isDefined)
-        XSPerfAccumulate(cacheParams, "prefetch_req_fromTP", l2_pf_en && tp.get.io.req.valid)
-      XSPerfAccumulate(cacheParams, "prefetch_req_selectL1", l2_pf_en && pfRcv.io.req.valid)
-      XSPerfAccumulate(cacheParams, "prefetch_req_selectBOP", l2_pf_en && !pfRcv.io.req.valid && vbop.io.req.valid)
-      XSPerfAccumulate(cacheParams, "prefetch_req_selectPBOP", l2_pf_en && !pfRcv.io.req.valid && !vbop.io.req.valid && pbop.io.req.valid)
-      if (tp.isDefined)
-        XSPerfAccumulate(cacheParams, "prefetch_req_selectTP", l2_pf_en && !pfRcv.io.req.valid && !vbop.io.req.valid && !pbop.io.req.valid && tp.get.io.req.valid)
-      XSPerfAccumulate(cacheParams, "prefetch_req_SMS_other_overlapped",
-        pfRcv.io.req.valid && l2_pf_en && (vbop.io.req.valid || (if (tp.isDefined) tp.get.io.req.valid else false.B)))
-
-    case _ => assert(cond = false, "Unknown prefetcher")
+    pbop.get.io.req.ready := true.B
+    pbop.get.io.train <> io.train
+    pbop.get.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
+    pbop.get.io.resp <> io.resp
+    pbop.get.io.resp.valid := io.resp.valid && io.resp.bits.isPBOP
   }
+  if (hasReceiver) {
+    pfRcv.get.io.req.ready := true.B
+    pfRcv.get.io.recv_addr := ValidIODelay(io.recv_addr, 2)
+    pfRcv.get.io.train.valid := false.B
+    pfRcv.get.io.train.bits := 0.U.asTypeOf(new PrefetchTrain)
+    pfRcv.get.io.resp.valid := false.B
+    pfRcv.get.io.resp.bits := 0.U.asTypeOf(new PrefetchResp)
+    pfRcv.get.io.tlb_req.req.ready := true.B
+    pfRcv.get.io.tlb_req.resp.valid := false.B
+    pfRcv.get.io.tlb_req.resp.bits := DontCare
+    assert(!pfRcv.get.io.req.valid ||
+      pfRcv.get.io.req.bits.pfSource === MemReqSource.Prefetch2L2SMS.id.U ||
+      pfRcv.get.io.req.bits.pfSource === MemReqSource.Prefetch2L2Stream.id.U ||
+      pfRcv.get.io.req.bits.pfSource === MemReqSource.Prefetch2L2Stride.id.U
+    )
+  }
+  if (hasTPPrefetcher) {
+    tp.get.io.train <> io.train
+    tp.get.io.resp <> io.resp
+    tp.get.io.hartid := hartId
+    tp.get.io.req.ready := (if(hasReceiver) !pfRcv.get.io.req.valid else true.B) &&
+      (if(hasBOP) !vbop.get.io.req.valid && !pbop.get.io.req.valid else true.B)
+
+    tp.get.io.tpmeta_port <> tpio.tpmeta_port.get
+  }
+
+  // =================== Connection of all Prefetchers =====================
+  /* prefetchers -> pftQueue -> pipe -> Slices.SinkA */
+
+  val pftQueue = Module(new PrefetchQueue)
+  val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
+
+  pftQueue.io.enq.valid :=
+    (if (hasReceiver)       pfRcv.get.io.req.valid                         else false.B) ||
+    (l2_pf_en && (
+      (if (hasBOP)          vbop.get.io.req.valid || pbop.get.io.req.valid else false.B) ||
+      (if (hasTPPrefetcher) tp.get.io.req.valid                            else false.B))
+    )
+  pftQueue.io.enq.bits := ParallelPriorityMux(Seq(
+    if (hasReceiver)     pfRcv.get.io.req.valid -> pfRcv.get.io.req.bits else false.B -> 0.U.asTypeOf(io.req.bits),
+    if (hasBOP)          vbop.get.io.req.valid -> vbop.get.io.req.bits   else false.B -> 0.U.asTypeOf(io.req.bits),
+    if (hasBOP)          pbop.get.io.req.valid -> pbop.get.io.req.bits   else false.B -> 0.U.asTypeOf(io.req.bits),
+    if (hasTPPrefetcher) tp.get.io.req.valid -> tp.get.io.req.bits       else false.B -> 0.U.asTypeOf(io.req.bits)
+  ))
+
+  pipe.io.in <> pftQueue.io.deq
+  io.req <> pipe.io.out
+
+  val hasReceiverReq = if (hasReceiver) pfRcv.get.io.req.valid else false.B
+  val hasVBOPReq = if (hasBOP) vbop.get.io.req.valid else false.B
+  val hasPBOPReq = if (hasBOP) pbop.get.io.req.valid else false.B
+  val hasTPReq = if (hasTPPrefetcher) tp.get.io.req.valid else false.B
+
+  XSPerfAccumulate(cacheParams, "prefetch_req_fromL1", hasReceiverReq)
+  XSPerfAccumulate(cacheParams, "prefetch_req_fromVBOP", hasVBOPReq)
+  XSPerfAccumulate(cacheParams, "prefetch_req_fromPBOP", hasPBOPReq)
+  XSPerfAccumulate(cacheParams, "prefetch_req_fromBOP", hasVBOPReq || hasPBOPReq)
+  XSPerfAccumulate(cacheParams, "prefetch_req_fromTP",  hasTPReq)
+
+  XSPerfAccumulate(cacheParams, "prefetch_req_selectL1", hasReceiverReq)
+  XSPerfAccumulate(cacheParams, "prefetch_req_selectVBOP", hasVBOPReq && !hasReceiverReq)
+  XSPerfAccumulate(cacheParams, "prefetch_req_selectPBOP", hasPBOPReq && !hasReceiverReq && !hasVBOPReq)
+  XSPerfAccumulate(cacheParams, "prefetch_req_selectBOP", (hasPBOPReq || hasVBOPReq) && !hasReceiverReq)
+  XSPerfAccumulate(cacheParams, "prefetch_req_selectTP", hasTPReq && !hasReceiverReq && !hasVBOPReq && !hasPBOPReq)
+  XSPerfAccumulate(cacheParams, "prefetch_req_SMS_other_overlapped",
+    hasReceiverReq && (hasVBOPReq || hasPBOPReq || hasTPReq))
 }

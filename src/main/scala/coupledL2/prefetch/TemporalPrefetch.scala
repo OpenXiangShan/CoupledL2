@@ -36,17 +36,18 @@ case class TPParameters(
     triggerQueueDepth: Int = 4,
     throttleCycles: Int = 4,  // unused yet
     replacementPolicy: String = "random",
-    debug: Boolean = false,
-    hastp: Boolean = true
+    debug: Boolean = false
 ) extends PrefetchParameters {
   override val hasPrefetchBit: Boolean = true
   override val hasPrefetchSrc: Boolean = true
   override val inflightEntries: Int = 16
-  override val hasTPPrefetcher: Boolean = hastp
 }
 
 trait HasTPParams extends HasCoupledL2Parameters {
-  val tpParams = prefetchOpt.get.asInstanceOf[TPParameters]
+  val tpParams = prefetchers.find {
+    case p: TPParameters => true
+    case _ => false
+  }.get.asInstanceOf[TPParameters]
   val tpTableAssoc = tpParams.tpTableAssoc
   val tpTableNrSet = tpParams.tpTableEntries / tpTableAssoc
   val tpTableSetBits = log2Ceil(tpTableNrSet)
