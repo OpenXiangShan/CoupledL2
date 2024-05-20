@@ -282,14 +282,14 @@ class Directory(implicit p: Parameters) extends L2Module {
   val rrip_hit_s3 = Mux(refillReqValid_s3, false.B, hit_s3)
   // origin-bit marks whether the data_block is reused
   val origin_bit_opt = if(random_repl) None else
-    Some(Module(new SRAMTemplate(Bool(), sets, ways, singlePort = true)))
+    Some(Module(new SRAMTemplate(Bool(), sets, ways, singlePort = true, shouldReset = true)))
   val origin_bits_r = origin_bit_opt.get.io.r(io.read.fire, io.read.bits.set).resp.data
   val origin_bits_hold = Wire(Vec(ways, Bool()))
   origin_bits_hold := HoldUnless(origin_bits_r, RegNext(io.read.fire, false.B))
   origin_bit_opt.get.io.w(
-      replacerWen,
-      rrip_hit_s3,
-      req_s3.set,
+      !resetFinish || replacerWen,
+      Mux(resetFinish, rrip_hit_s3, false.B),
+      Mux(resetFinish, req_s3.set, resetIdx),
       UIntToOH(touch_way_s3)
   )
 
