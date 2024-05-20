@@ -59,6 +59,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val off = UInt(offsetBits.W)
   val alias = aliasBitsOpt.map(_ => UInt(aliasBitsOpt.get.W)) // color bits in cache-alias issue
   val vaddr = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W)) // vaddr passed by client cache
+  val pc    = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W)) // pc passed by client cache
   // from L1 load miss require 
   val isKeyword = isKeywordBitsOpt.map(_ => Bool())
   val opcode = UInt(3.W)                  // type of the task operation
