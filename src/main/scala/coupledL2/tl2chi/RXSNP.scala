@@ -34,6 +34,10 @@ class RXSNP(
     val msInfo = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo())))
   })
 
+  val rxsnp = Wire(io.rxsnp.cloneType)
+  val queue = Module(new Queue(io.rxsnp.bits.cloneType, 2, flow = false))
+  rxsnp <> queue.io.deq
+  queue.io.enq <> io.rxsnp
   val task = Wire(new TaskBundle)
 
   /**
@@ -75,24 +79,24 @@ class RXSNP(
     )).asUInt
   val replaceDataMask = VecInit(io.msInfo.map(_.bits.replaceData)).asUInt
 
-  task := fromSnpToTaskBundle(io.rxsnp.bits)
+  task := fromSnpToTaskBundle(rxsnp.bits)
 
   val stall = reqBlockSnp || replaceBlockSnp // addrConflict || replaceConflict
-  io.task.valid := io.rxsnp.valid && !stall
+  io.task.valid := rxsnp.valid && !stall
   io.task.bits := task
-  io.rxsnp.ready := io.task.ready && !stall
+  rxsnp.ready := io.task.ready && !stall
 
   val stallCnt = RegInit(0.U(64.W))
-  when(io.rxsnp.fire) {
+  when(rxsnp.fire) {
     stallCnt := 0.U
-  }.elsewhen(io.rxsnp.valid && !io.rxsnp.ready) {
+  }.elsewhen(rxsnp.valid && !rxsnp.ready) {
     stallCnt := stallCnt + 1.U
   }
 
   val STALL_CNT_MAX = 28000.U
-  assert(stallCnt <= STALL_CNT_MAX, "stallCnt full! maybe there is a deadlock! addr => 0x%x req_opcode => %d txn_id => %d", io.rxsnp.bits.addr, io.rxsnp.bits.opcode, io.rxsnp.bits.txnID);
+  assert(stallCnt <= STALL_CNT_MAX, "stallCnt full! maybe there is a deadlock! addr => 0x%x req_opcode => %d txn_id => %d", rxsnp.bits.addr, rxsnp.bits.opcode, rxsnp.bits.txnID);
 
-  assert(!(stall && io.rxsnp.fire))
+  assert(!(stall && rxsnp.fire))
 
   def fromSnpToTaskBundle(snp: CHISNP): TaskBundle = {
     val task = WireInit(0.U.asTypeOf(new TaskBundle))
