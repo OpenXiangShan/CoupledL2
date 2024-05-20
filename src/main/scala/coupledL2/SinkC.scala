@@ -184,7 +184,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
 
   io.bufResp.data := RegNext(RegEnable(dataBuf(io.task.bits.bufIdx), io.task.fire))
   when(RegNext(io.task.fire)) {
-    beatValids(io.task.bits.bufIdx).foreach(_ := false.B)
+    beatValids(RegNext(io.task.bits.bufIdx)).foreach(_ := false.B)
   }
 
   // Performance counters
