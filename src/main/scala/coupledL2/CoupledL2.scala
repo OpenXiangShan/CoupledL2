@@ -36,85 +36,85 @@ import huancun.{TPmetaReq, TPmetaResp, BankBitsKey}
 trait HasCoupledL2Parameters {
   val p: Parameters
   // val tl2tlParams: HasTLL2Parameters = p(L2ParamKey)
-  val enableCHI = p(EnableCHI)
-  val cacheParams = p(L2ParamKey)
+  def enableCHI = p(EnableCHI)
+  def cacheParams = p(L2ParamKey)
 
-  val XLEN = 64
-  val blocks = cacheParams.sets * cacheParams.ways
-  val blockBytes = cacheParams.blockBytes
-  val beatBytes = cacheParams.channelBytes.d.get
-  val beatSize = blockBytes / beatBytes
+  def XLEN = 64
+  def blocks = cacheParams.sets * cacheParams.ways
+  def blockBytes = cacheParams.blockBytes
+  def beatBytes = cacheParams.channelBytes.d.get
+  def beatSize = blockBytes / beatBytes
 
-  val wayBits = log2Ceil(cacheParams.ways)
-  val setBits = log2Ceil(cacheParams.sets)
-  val offsetBits = log2Ceil(blockBytes)
-  val beatBits = offsetBits - log2Ceil(beatBytes)
-  val stateBits = MetaData.stateBits
-  val chiOpt = if (enableCHI) Some(true) else None
-  val aliasBitsOpt = if(cacheParams.clientCaches.isEmpty) None
+  def wayBits = log2Ceil(cacheParams.ways)
+  def setBits = log2Ceil(cacheParams.sets)
+  def offsetBits = log2Ceil(blockBytes)
+  def beatBits = offsetBits - log2Ceil(beatBytes)
+  def stateBits = MetaData.stateBits
+  def chiOpt = if (enableCHI) Some(true) else None
+  def aliasBitsOpt = if(cacheParams.clientCaches.isEmpty) None
                   else cacheParams.clientCaches.head.aliasBitsOpt
   // vaddr without offset bits
-  val vaddrBitsOpt = if(cacheParams.clientCaches.isEmpty) None
+  def vaddrBitsOpt = if(cacheParams.clientCaches.isEmpty) None
                   else cacheParams.clientCaches.head.vaddrBitsOpt
-  val fullVAddrBits = vaddrBitsOpt.getOrElse(0) + offsetBits
+  def fullVAddrBits = vaddrBitsOpt.getOrElse(0) + offsetBits
   // from L1 load miss cache require
-  val isKeywordBitsOpt = if(cacheParams.clientCaches.isEmpty) None
+  def isKeywordBitsOpt = if(cacheParams.clientCaches.isEmpty) None
                   else cacheParams.clientCaches.head.isKeywordBitsOpt
-         
-  val pageOffsetBits = log2Ceil(cacheParams.pageBytes)
 
-  val bufBlocks = 4 // hold data that flows in MainPipe
-  val bufIdxBits = log2Up(bufBlocks)
+  def pageOffsetBits = log2Ceil(cacheParams.pageBytes)
 
-  val releaseBufWPorts = 3 // sinkC & mainPipe s5 & mainPipe s3 (nested)
+  def bufBlocks = 4 // hold data that flows in MainPipe
+  def bufIdxBits = log2Up(bufBlocks)
 
-  val mmioBridgeSize = cacheParams.mmioBridgeSize
+  def releaseBufWPorts = 3 // sinkC & mainPipe s5 & mainPipe s3 (nested)
+
+  def mmioBridgeSize = cacheParams.mmioBridgeSize
 
   // Prefetch
-  val prefetchers = cacheParams.prefetch
-  val prefetchOpt = if(prefetchers.nonEmpty) Some(true) else None
-  val hasBOP = prefetchers.exists(_.isInstanceOf[BOPParameters])
-  val hasReceiver = prefetchers.exists(_.isInstanceOf[PrefetchReceiverParams])
-  val hasTPPrefetcher = prefetchers.exists(_.isInstanceOf[TPParameters])
-  val hasPrefetchBit = prefetchers.exists(_.hasPrefetchBit) // !! TODO.test this
-  val hasPrefetchSrc = prefetchers.exists(_.hasPrefetchSrc)
-  val topDownOpt = if(cacheParams.elaboratedTopDown) Some(true) else None
+  def prefetchers = cacheParams.prefetch
+  def prefetchOpt = if(prefetchers.nonEmpty) Some(true) else None
+  def hasBOP = prefetchers.exists(_.isInstanceOf[BOPParameters])
+  def hasReceiver = prefetchers.exists(_.isInstanceOf[PrefetchReceiverParams])
+  def hasTPPrefetcher = prefetchers.exists(_.isInstanceOf[TPParameters])
+  def hasPrefetchBit = prefetchers.exists(_.hasPrefetchBit) // !! TODO.test this
+  def hasPrefetchSrc = prefetchers.exists(_.hasPrefetchSrc)
+  def topDownOpt = if(cacheParams.elaboratedTopDown) Some(true) else None
 
-  val enableHintGuidedGrant = true
+  def enableHintGuidedGrant = true
 
-  val hintCycleAhead = 3 // how many cycles the hint will send before grantData
+  def hintCycleAhead = 3 // how many cycles the hint will send before grantData
 
-  lazy val edgeIn = p(EdgeInKey)
-  lazy val edgeOut = p(EdgeOutKey)
-  lazy val bankBits = p(BankBitsKey)
+  def edgeIn = p(EdgeInKey)
+  def edgeOut = p(EdgeOutKey)
+  def bankBits = p(BankBitsKey)
 
-  lazy val clientBits = edgeIn.client.clients.count(_.supports.probe)
-  lazy val sourceIdBits = edgeIn.bundle.sourceBits // ids of L1
-  lazy val msgSizeBits = edgeIn.bundle.sizeBits
-  lazy val sourceIdAll = 1 << sourceIdBits
+  def clientBits = edgeIn.client.clients.count(_.supports.probe)
+  def sourceIdBits = edgeIn.bundle.sourceBits // ids of L1
+  def msgSizeBits = edgeIn.bundle.sizeBits
+  def sourceIdAll = 1 << sourceIdBits
 
-  lazy val hartIdLen: Int = p(MaxHartIdBits)
+  def hartIdLen: Int = p(MaxHartIdBits)
 
-  val mshrsAll = cacheParams.mshrs
-  val idsAll = 256// ids of L2 //TODO: Paramterize like this: max(mshrsAll * 2, sourceIdAll * 2)
-  val mshrBits = log2Up(idsAll)
+  def mshrsAll = cacheParams.mshrs
+  def idsAll = 256// ids of L2 //TODO: Paramterize like this: max(mshrsAll * 2, sourceIdAll * 2)
+  def mshrBits = log2Up(idsAll)
   // id of 0XXXX refers to mshrId
   // id of 1XXXX refers to reqs that do not enter mshr
   // require(isPow2(idsAll))
 
-  val grantBufSize = mshrsAll
-  val grantBufInflightSize = mshrsAll //TODO: lack or excessive? !! WARNING
+  def grantBufSize = mshrsAll
+  def grantBufInflightSize = mshrsAll //TODO: lack or excessive? !! WARNING
 
   // width params with bank idx (used in prefetcher / ctrl unit)
-  lazy val fullAddressBits = edgeIn.bundle.addressBits
-  lazy val fullTagBits = fullAddressBits - setBits - offsetBits
+  def fullAddressBits = edgeIn.bundle.addressBits
+  def fullTagBits = fullAddressBits - setBits - offsetBits
   // width params without bank idx (used in slice)
-  lazy val addressBits = fullAddressBits - bankBits
-  lazy val tagBits = fullTagBits - bankBits
+  def addressBits = fullAddressBits - bankBits
+  def tagBits = fullTagBits - bankBits
 
-  lazy val outerSinkBits = edgeOut.bundle.sinkBits
+  def outerSinkBits = edgeOut.bundle.sinkBits
 
-  val sam = cacheParams.sam
+  def sam = cacheParams.sam
 
   def getClientBitOH(sourceId: UInt): UInt = {
     if (clientBits == 0) {
