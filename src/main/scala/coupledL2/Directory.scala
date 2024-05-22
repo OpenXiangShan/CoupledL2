@@ -443,7 +443,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   XSPerfAccumulate("dirRead_cnt", io.read.fire)
   XSPerfAccumulate("choose_busy_way", reqValid_s3 && !req_s3.wayMask(chosenWay))
   XSPerfAccumulate("tpmetaRepl", tpmetaReplValid && req_s3.tpmetaWen)
-  XSPerfAccumulate("tpmeta_repl_tpmeta", io.replResp.valid && io.replResp.bits.meta.tpMeta.getOrElse(false.B) && req_s3.tpmetaWen)
-  XSPerfAccumulate("normal_repl_tpmeta", io.replResp.valid && io.replResp.bits.meta.tpMeta.getOrElse(false.B) && !req_s3.tpmetaWen)
+  XSPerfAccumulate("tpmeta_repl_tpmeta", io.resp.valid && io.resp.bits.meta.tpMeta.getOrElse(false.B) && req_s3.tpmetaWen)
+  XSPerfAccumulate("normal_repl_tpmeta", io.resp.valid && io.resp.bits.meta.tpMeta.getOrElse(false.B) && io.tagWReq.valid && !req_s3.tpmetaWen)
   XSPerfHistogram("tpmetaReplWayDist", tpReplaceWay, tpmetaReplValid && req_s3.tpmetaWen, 0, cacheParams.ways, 1)
 }
