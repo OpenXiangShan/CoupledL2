@@ -70,6 +70,8 @@ class DirRead(implicit p: Parameters) extends L2Bundle {
   // dirRead when refill
   val refill = Bool()
   val mshrId = UInt(mshrBits.W)
+  // pc for replacer train
+  val pc = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W))
 }
 
 class DirResult(implicit p: Parameters) extends L2Bundle {
@@ -361,8 +363,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     hawkeye.io.resetFinish := resetFinish
     hawkeye.io.resetIdx := resetIdx
     hawkeye.io.predict.valid := replacerWen
-    // TODO: hawkeye.io.predict.pc := when acquire refill, no pc? should save in train_hist_table
-    hawkeye.io.predict.pc := 0.U
+    hawkeye.io.predict.pc := req_s3.pc.getOrElse(0.U)
     val hawkeye_prediction = hawkeye.io.predict.cachefriendly
     hawkeye.io.train.valid := reqValid_s3 && !refillReqValid_s3 &&
      ((req_s3.replacerInfo.channel(0) && (req_s3.replacerInfo.opcode === AcquirePerm || req_s3.replacerInfo.opcode === AcquireBlock || req_s3.replacerInfo.opcode === Hint)) ||

@@ -284,7 +284,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_grant.sourceId := req.sourceId
     mp_grant.alias.foreach(_ := 0.U)
     mp_grant.vaddr.foreach(_ := 0.U)
-    mp_grant.pc.foreach(_ := 0.U)
+    mp_grant.pc.foreach(_ := req.pc.getOrElse(0.U))
     mp_grant.isKeyword.foreach(_ := req.isKeyword.getOrElse(false.B))
     mp_grant.opcode := odOpGen(req.opcode)
     mp_grant.param := Mux(
