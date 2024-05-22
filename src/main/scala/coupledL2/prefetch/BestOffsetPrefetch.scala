@@ -61,39 +61,39 @@ case class BOPParameters(
 }
 
 trait HasBOPParams extends HasPrefetcherHelper {
-  def bopParams = prefetchers.find {
+  val bopParams = prefetchers.find {
       case p: BOPParameters => true
       case _ => false
     }.get.asInstanceOf[BOPParameters]
 
   // train address space: virtual or physical
-  def virtualTrain = bopParams.virtualTrain
-  def fullAddrBits = if(virtualTrain) fullVAddrBits else fullAddressBits
-  def noOffsetAddrBits = fullAddrBits - offsetBits
+  val virtualTrain = bopParams.virtualTrain
+  val fullAddrBits = if(virtualTrain) fullVAddrBits else fullAddressBits
+  val noOffsetAddrBits = fullAddrBits - offsetBits
   override val REQ_FILTER_SIZE = 16
 
   // Best offset
-  def defaultMinAddrBits = offsetBits + log2Up(bopParams.rrTableEntries) + bopParams.rrTagBits
-  def defaultConfig = fullAddrBits >= defaultMinAddrBits
+  val defaultMinAddrBits = offsetBits + log2Up(bopParams.rrTableEntries) + bopParams.rrTagBits
+  val defaultConfig = fullAddrBits >= defaultMinAddrBits
 
-  def rrTableEntries = if (defaultConfig) bopParams.rrTableEntries else 2
-  def rrIdxBits = log2Up(rrTableEntries)
-  def rrTagBits = if (defaultConfig) bopParams.rrTagBits else (fullAddrBits - offsetBits - rrIdxBits)
-  def scoreBits = bopParams.scoreBits
-  def roundMax = bopParams.roundMax
-  def badScore = bopParams.badScore
-  def initScore = bopParams.badScore + 1
-  def offsetList = bopParams.offsetList
-  def inflightEntries = bopParams.inflightEntries
-  def dQEntries = bopParams.dQEntries
-  def dQLatency = bopParams.dQLatency
-  def dQMaxLatency = bopParams.dQMaxLatency
+  val rrTableEntries = if (defaultConfig) bopParams.rrTableEntries else 2
+  val rrIdxBits = log2Up(rrTableEntries)
+  val rrTagBits = if (defaultConfig) bopParams.rrTagBits else (fullAddrBits - offsetBits - rrIdxBits)
+  val scoreBits = bopParams.scoreBits
+  val roundMax = bopParams.roundMax
+  val badScore = bopParams.badScore
+  val initScore = bopParams.badScore + 1
+  val offsetList = bopParams.offsetList
+  val inflightEntries = bopParams.inflightEntries
+  val dQEntries = bopParams.dQEntries
+  val dQLatency = bopParams.dQLatency
+  val dQMaxLatency = bopParams.dQMaxLatency
 
-  def scores = offsetList.length
-  def offsetWidth = log2Up(offsetList.max) + 2 // -32 <= offset <= 31
-  def roundBits = log2Up(roundMax)
-  def scoreMax = (1 << scoreBits) - 1
-  def scoreTableIdxBits = log2Up(scores)
+  val scores = offsetList.length
+  val offsetWidth = log2Up(offsetList.max) + 2 // -32 <= offset <= 31
+  val roundBits = log2Up(roundMax)
+  val scoreMax = (1 << scoreBits) - 1
+  val scoreTableIdxBits = log2Up(scores)
   // val prefetchIdWidth = log2Up(inflightEntries)
 
   def signedExtend(x: UInt, width: Int): UInt = {
