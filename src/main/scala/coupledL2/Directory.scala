@@ -453,8 +453,8 @@ class Directory(implicit p: Parameters) extends L2Module {
   XSPerfAccumulate(cacheParams, "dirRead_cnt", io.read.fire)
   XSPerfAccumulate(cacheParams, "choose_busy_way", reqValid_s3 && !req_s3.wayMask(chosenWay))
   XSPerfAccumulate(cacheParams, "tpmetaRepl", tpmetaReplValid && req_s3.tpmetaWen)
-  XSPerfAccumulate(cacheParams, "tpmeta_repl_tpmeta", io.replResp.valid && io.replResp.bits.meta.tpMeta.getOrElse(false.B) && req_s3.tpmetaWen)
-  XSPerfAccumulate(cacheParams, "normal_repl_tpmeta", io.replResp.valid && io.replResp.bits.meta.tpMeta.getOrElse(false.B) && !req_s3.tpmetaWen)
+  XSPerfAccumulate(cacheParams, "tpmeta_repl_tpmeta", io.resp.valid && io.resp.bits.meta.tpMeta.getOrElse(false.B) && req_s3.tpmetaWen)
+  XSPerfAccumulate(cacheParams, "normal_repl_tpmeta", io.resp.valid && io.resp.bits.meta.tpMeta.getOrElse(false.B) && io.tagWReq.valid && !req_s3.tpmetaWen)
   XSPerfHistogram(cacheParams, "tpmetaReplWayDist", tpReplaceWay, tpmetaReplValid && req_s3.tpmetaWen, 0, cacheParams.ways, 1)
 
   val tpmetaReqDB = ChiselDB.createTable("tpmetaReq", new tpmetaBundle(), basicDB = true)
