@@ -57,9 +57,9 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
   val l1d_nodes = (0 until 1) map( i => createClientNode(s"l1d$i", 32))
   val master_nodes = l1d_nodes
 
-  val l2 = LazyModule(new TL2TLCoupledL2()(new Config((_, _, _) => {
+  val l2 = LazyModule(new TL2TLCoupledL2()((baseConfig(1).alterPartial({
     case BankBitsKey => 0
-  })))
+  }))))
   val xbar = TLXbar()
   val ram = LazyModule(new TLRAM(AddressSet(0, 0xffffL), beatBytes = 32))
 
@@ -91,6 +91,8 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
     }
 
     l2.module.io.hartId := DontCare
+    l2.module.io.debugTopDown <> DontCare
+    l2.module.io.l2_tlb_req <> DontCare
   }
 
 }
@@ -143,9 +145,9 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
       name = s"l2",
       ways = 4,
       sets = 128,
-      clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
+      clientCaches = Seq(L1Param(aliasBitsOpt = Some(2), vaddrBitsOpt = Some(16))),
       echoField = Seq(DirtyField()),
-      prefetch = Some(BOPParameters(
+      prefetch = Seq(BOPParameters(
         rrTableEntries = 16,
         rrTagBits = 6
       ))
@@ -205,6 +207,8 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
     }
 
     l2.module.io.hartId := DontCare
+    l2.module.io.debugTopDown <> DontCare
+    l2.module.io.l2_tlb_req <> DontCare
   }
 
 }
@@ -299,10 +303,10 @@ class TestTop_L2_Standalone()(implicit p: Parameters) extends LazyModule {
         node.makeIOs()(ValName(s"master_port_$i"))
     }
     l3.makeIOs()(ValName(s"slave_port"))
-
     l2.module.io.hartId := DontCare
+    l2.module.io.debugTopDown <> DontCare
+    l2.module.io.l2_tlb_req <> DontCare
   }
-
 }
 
 class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
@@ -412,7 +416,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
 
     coupledL2.foreach {
       case l2 => {
-        l2.module.io.debugTopDown := DontCare
+        l2.module.io.debugTopDown <> DontCare
         l2.module.io.hartId := DontCare
         l2.module.io.l2_tlb_req <> DontCare
       }
@@ -425,6 +429,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
   }
 }
 
+// This is not yet applicable, just reference
 class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
 
   /* L1D L1I L1D L1I (L1I sends Get)
@@ -484,7 +489,7 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
         sets = 128,
         clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
         echoField = Seq(DirtyField()),
-        prefetch = Some(BOPParameters(
+        prefetch = Seq(BOPParameters(
           rrTableEntries = 16,
           rrTagBits = 6
         ))
@@ -554,13 +559,13 @@ object TestTop_L2 extends App {
       echoField = Seq(DirtyField())
     )
   })
-  val top = DisableMonitors(p => LazyModule(new TestTop_L2()(p)) )(config)
+  ChiselDB.init(false)
 
+  val top = DisableMonitors(p => LazyModule(new TestTop_L2()(p)) )(config)
   (new ChiselStage).execute(args, Seq(
     ChiselGeneratorAnnotation(() => top.module)
   ))
 
-  ChiselDB.init(false)
   ChiselDB.addToFileRegisters
   FileRegisters.write("./build")
 }
@@ -572,13 +577,13 @@ object TestTop_L2_Standalone extends App {
       echoField = Seq(DirtyField())
     )
   })
-  val top = DisableMonitors(p => LazyModule(new TestTop_L2_Standalone()(p)) )(config)
+  ChiselDB.init(false)
 
+  val top = DisableMonitors(p => LazyModule(new TestTop_L2_Standalone()(p)) )(config)
   (new ChiselStage).execute(args, Seq(
     ChiselGeneratorAnnotation(() => top.module)
   ))
 
-  ChiselDB.init(false)
   ChiselDB.addToFileRegisters
   FileRegisters.write("./build")
 }
@@ -593,13 +598,13 @@ object TestTop_L2L3 extends App {
       echoField = Seq(DirtyField())
     )
   })
-  val top = DisableMonitors(p => LazyModule(new TestTop_L2L3()(p)) )(config)
+  ChiselDB.init(false)
 
+  val top = DisableMonitors(p => LazyModule(new TestTop_L2L3()(p)) )(config)
   (new ChiselStage).execute(args, Seq(
     ChiselGeneratorAnnotation(() => top.module)
   ))
 
-  ChiselDB.init(false)
   ChiselDB.addToFileRegisters
   FileRegisters.write("./build")
 }
@@ -614,13 +619,13 @@ object TestTop_L2L3L2 extends App {
       echoField = Seq(DirtyField())
     )
   })
-  val top = DisableMonitors(p => LazyModule(new TestTop_L2L3L2()(p)))(config)
+  ChiselDB.init(true)
 
+  val top = DisableMonitors(p => LazyModule(new TestTop_L2L3L2()(p)))(config)
   (new ChiselStage).execute(args, Seq(
     ChiselGeneratorAnnotation(() => top.module)
   ))
 
-  ChiselDB.init(false)
   ChiselDB.addToFileRegisters
   FileRegisters.write("./build")
 }
@@ -635,13 +640,13 @@ object TestTop_fullSys extends App {
       echoField = Seq(DirtyField())
     )
   })
-  val top = DisableMonitors(p => LazyModule(new TestTop_fullSys()(p)))(config)
+  ChiselDB.init(false)
 
+  val top = DisableMonitors(p => LazyModule(new TestTop_fullSys()(p)))(config)
   (new ChiselStage).execute(args, Seq(
     ChiselGeneratorAnnotation(() => top.module)
   ))
 
-  ChiselDB.init(false)
   ChiselDB.addToFileRegisters
   FileRegisters.write("./build")
 }

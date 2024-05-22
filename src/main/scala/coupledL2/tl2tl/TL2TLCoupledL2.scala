@@ -79,16 +79,8 @@ class TL2TLCoupledL2(implicit p: Parameters) extends CoupledL2Base {
     managerFn = managerPortParams
   )
 
-  val tpmeta_source_node = prefetchOpt match {
-    case Some(param: PrefetchReceiverParams) =>
-      if (param.hasTPPrefetcher) Some(BundleBridgeSource(() => DecoupledIO(new TPmetaReq))) else None
-    case _ => None
-  }
-  val tpmeta_sink_node = prefetchOpt match {
-    case Some(param: PrefetchReceiverParams) =>
-      if (param.hasTPPrefetcher) Some(BundleBridgeSink(Some(() => ValidIO(new TPmetaResp)))) else None
-    case _ => None
-  }
+  val tpmeta_source_node = if(hasTPPrefetcher) Some(BundleBridgeSource(() => DecoupledIO(new TPmetaReq))) else None
+  val tpmeta_sink_node = if(hasTPPrefetcher) Some(BundleBridgeSink(Some(() => ValidIO(new TPmetaResp)))) else None
 
   class CoupledL2Imp(wrapper: LazyModule) extends LazyModuleImp(wrapper) {
 

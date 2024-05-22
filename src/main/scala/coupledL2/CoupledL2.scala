@@ -71,11 +71,14 @@ trait HasCoupledL2Parameters {
   val mmioBridgeSize = cacheParams.mmioBridgeSize
 
   // Prefetch
-  val prefetchOpt = cacheParams.prefetch
-  val hasPrefetchBit = prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchBit
-  val hasPrefetchSrc = prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchSrc
+  val prefetchers = cacheParams.prefetch
+  val prefetchOpt = if(prefetchers.nonEmpty) Some(true) else None
+  val hasBOP = prefetchers.exists(_.isInstanceOf[BOPParameters])
+  val hasReceiver = prefetchers.exists(_.isInstanceOf[PrefetchReceiverParams])
+  val hasTPPrefetcher = prefetchers.exists(_.isInstanceOf[TPParameters])
+  val hasPrefetchBit = prefetchers.exists(_.hasPrefetchBit) // !! TODO.test this
+  val hasPrefetchSrc = prefetchers.exists(_.hasPrefetchSrc)
   val topDownOpt = if(cacheParams.elaboratedTopDown) Some(true) else None
-  val hasTPPrefetcher = prefetchOpt.nonEmpty && prefetchOpt.get.hasTPPrefetcher
 
   val enableHintGuidedGrant = true
 
@@ -213,9 +216,6 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
   val atom = TransferSizes(1, cacheParams.channelBytes.d.get)
   val access = TransferSizes(1, blockBytes)
 
-  val pf_recv_node: Option[BundleBridgeSink[PrefetchRecv]] = prefetchOpt match {
-    case Some(_: PrefetchReceiverParams) =>
-      Some(BundleBridgeSink(Some(() => new PrefetchRecv)))
-    case _ => None
-  }
+  val pf_recv_node: Option[BundleBridgeSink[PrefetchRecv]] =
+    if(hasReceiver) Some(BundleBridgeSink(Some(() => new PrefetchRecv))) else None
 }

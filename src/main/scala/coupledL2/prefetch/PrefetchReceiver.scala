@@ -27,11 +27,10 @@ import utility.{MemReqSource, Pipeline}
 // TODO: PrefetchReceiver is temporarily used since L1&L2 do not support Hint.
 // TODO: Delete this after Hint is accomplished.
 
-case class PrefetchReceiverParams(n: Int = 32, tp: Boolean = true) extends PrefetchParameters {
+case class PrefetchReceiverParams(n: Int = 32) extends PrefetchParameters {
   override val hasPrefetchBit:  Boolean = true
   override val hasPrefetchSrc:  Boolean = true
   override val inflightEntries: Int = n
-  override val hasTPPrefetcher: Boolean = tp
 }
 
 class PrefetchReceiver()(implicit p: Parameters) extends PrefetchModule {

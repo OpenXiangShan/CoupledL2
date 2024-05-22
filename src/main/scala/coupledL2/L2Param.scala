@@ -91,7 +91,7 @@ case class L2Param(
 
   hartId: Int = 0,
   // Prefetch
-  prefetch: Option[PrefetchParameters] = None,
+  prefetch: Seq[PrefetchParameters] = Nil,
   // Performance analysis
   enablePerf: Boolean = true,
   // RollingDB
