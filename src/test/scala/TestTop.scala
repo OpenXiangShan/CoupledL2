@@ -559,13 +559,13 @@ object TestTop_L2 extends App {
       echoField = Seq(DirtyField())
     )
   })
-  val top = DisableMonitors(p => LazyModule(new TestTop_L2()(p)) )(config)
+  ChiselDB.init(false)
 
+  val top = DisableMonitors(p => LazyModule(new TestTop_L2()(p)) )(config)
   (new ChiselStage).execute(args, Seq(
     ChiselGeneratorAnnotation(() => top.module)
   ))
 
-  ChiselDB.init(false)
   ChiselDB.addToFileRegisters
   FileRegisters.write("./build")
 }
@@ -577,13 +577,13 @@ object TestTop_L2_Standalone extends App {
       echoField = Seq(DirtyField())
     )
   })
-  val top = DisableMonitors(p => LazyModule(new TestTop_L2_Standalone()(p)) )(config)
+  ChiselDB.init(false)
 
+  val top = DisableMonitors(p => LazyModule(new TestTop_L2_Standalone()(p)) )(config)
   (new ChiselStage).execute(args, Seq(
     ChiselGeneratorAnnotation(() => top.module)
   ))
 
-  ChiselDB.init(false)
   ChiselDB.addToFileRegisters
   FileRegisters.write("./build")
 }
@@ -598,13 +598,13 @@ object TestTop_L2L3 extends App {
       echoField = Seq(DirtyField())
     )
   })
-  val top = DisableMonitors(p => LazyModule(new TestTop_L2L3()(p)) )(config)
+  ChiselDB.init(false)
 
+  val top = DisableMonitors(p => LazyModule(new TestTop_L2L3()(p)) )(config)
   (new ChiselStage).execute(args, Seq(
     ChiselGeneratorAnnotation(() => top.module)
   ))
 
-  ChiselDB.init(false)
   ChiselDB.addToFileRegisters
   FileRegisters.write("./build")
 }
@@ -619,13 +619,13 @@ object TestTop_L2L3L2 extends App {
       echoField = Seq(DirtyField())
     )
   })
-  val top = DisableMonitors(p => LazyModule(new TestTop_L2L3L2()(p)))(config)
+  ChiselDB.init(true)
 
+  val top = DisableMonitors(p => LazyModule(new TestTop_L2L3L2()(p)))(config)
   (new ChiselStage).execute(args, Seq(
     ChiselGeneratorAnnotation(() => top.module)
   ))
 
-  ChiselDB.init(false)
   ChiselDB.addToFileRegisters
   FileRegisters.write("./build")
 }
@@ -640,13 +640,13 @@ object TestTop_fullSys extends App {
       echoField = Seq(DirtyField())
     )
   })
-  val top = DisableMonitors(p => LazyModule(new TestTop_fullSys()(p)))(config)
+  ChiselDB.init(false)
 
+  val top = DisableMonitors(p => LazyModule(new TestTop_fullSys()(p)))(config)
   (new ChiselStage).execute(args, Seq(
     ChiselGeneratorAnnotation(() => top.module)
   ))
 
-  ChiselDB.init(false)
   ChiselDB.addToFileRegisters
   FileRegisters.write("./build")
 }
