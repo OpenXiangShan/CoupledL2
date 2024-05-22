@@ -311,16 +311,16 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.toDS.req_s3.bits.wen := wen
   if (prefetchOpt.nonEmpty && hasTPPrefetcher) {
     io.toDS.wdata_s3.data := Mux(
-      !mshr_req_s3,
+      wen_tpmeta,
+      io.tpMetaReqData.get.bits.rawData,
       Mux(
-        !sinkTP_req_s3,
+        !mshr_req_s3,
         c_releaseData_s3, // Among all sinkTasks, only C-Release writes DS
-        io.tpMetaReqData.get.bits.rawData
-      ),
-      Mux(
-        req_s3.useProbeData,
-        io.releaseBufResp_s3.bits.data,
-        io.refillBufResp_s3.bits.data
+        Mux(
+          req_s3.useProbeData,
+          io.releaseBufResp_s3.bits.data,
+          io.refillBufResp_s3.bits.data
+        )
       )
     )
 
