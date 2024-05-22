@@ -361,7 +361,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     hawkeye.io.resetFinish := resetFinish
     hawkeye.io.resetIdx := resetIdx
     hawkeye.io.predict.valid := replacerWen
-    // TODO: hawkeye.io.predict.pc :=
+    // TODO: hawkeye.io.predict.pc := when acquire refill, no pc? should save in train_hist_table
     hawkeye.io.predict.pc := 0.U
     val hawkeye_prediction = hawkeye.io.predict.cachefriendly
     hawkeye.io.train.valid := reqValid_s3 && !refillReqValid_s3 &&
@@ -369,8 +369,7 @@ class Directory(implicit p: Parameters) extends L2Module {
       (req_s3.replacerInfo.channel(2) && (req_s3.replacerInfo.opcode === Release || req_s3.replacerInfo.opcode === ReleaseData)))   // train hawkeye when first req, not refill
     hawkeye.io.train.bits.tag := tag_s3
     hawkeye.io.train.bits.set := set_s3
-    // TODO: hawkeye.io.train.bits.pc := 
-    hawkeye.io.train.bits.pc := 0.U
+    hawkeye.io.train.bits.pc := req_s3.pc.getOrElse(0.U)
     hawkeye.io.train.bits.isAcquire := req_s3.replacerInfo.channel(0) && (req_s3.replacerInfo.opcode === AcquirePerm || req_s3.replacerInfo.opcode === AcquireBlock)
     
     /* Update RRIP State */
