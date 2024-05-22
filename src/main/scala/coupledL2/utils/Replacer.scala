@@ -38,8 +38,8 @@ abstract class ReplacementPolicy {
   def get_next_state(state: UInt, touch_ways: Seq[Valid[UInt]]): UInt = {
     touch_ways.foldLeft(state)((prev, touch_way) => Mux(touch_way.valid, get_next_state(prev, touch_way.bits), prev))
   }
-  def get_next_state(state: UInt, touch_way: UInt, hit: Bool, req_type: UInt): UInt = {0.U}
-  def get_next_state(state: UInt, touch_way: UInt, hit: Bool, chosen_type: Bool, req_type: UInt): UInt = {0.U}
+  def get_next_state(state: UInt, touch_way: UInt, hit: Bool, invalid: Bool, req_type: UInt): UInt = {0.U}
+  def get_next_state(state: UInt, touch_way: UInt, hit: Bool, invalid: Bool, chosen_type: Bool, req_type: UInt): UInt = {0.U}
 
   def get_replace_way(state: UInt): UInt
 }
@@ -322,7 +322,7 @@ class StaticRRIP(n_ways: Int) extends ReplacementPolicy {
   def access(touch_ways: Seq[Valid[UInt]]) = {}
   def get_next_state(state: UInt, touch_way: UInt) = 0.U //DontCare
 
-  override def get_next_state(state: UInt, touch_way: UInt, hit: Bool, req_type: UInt): UInt = {
+  override def get_next_state(state: UInt, touch_way: UInt, hit: Bool, invalid: Bool, req_type: UInt): UInt = {
     val State  = Wire(Vec(n_ways, UInt(2.W)))
     val nextState  = Wire(Vec(n_ways, UInt(2.W)))
     State.zipWithIndex.map { case (e, i) =>
@@ -340,7 +340,7 @@ class StaticRRIP(n_ways: Int) extends ReplacementPolicy {
                   Mux(req_type(2,0) === 3.U, 1.U,
                       Mux(req_type === 4.U || req_type(2,0) === 6.U, 2.U, State(i)))),
               //Mux(hit, 0.U(2.W), 2.U(2.W)),
-              Mux(hit, State(i), State(i)+increcement) 
+              Mux(hit || invalid, State(i), State(i)+increcement) 
             )
     }
     Cat(nextState.map(x=>x).reverse)
@@ -381,7 +381,7 @@ class BRRIP(n_ways: Int) extends ReplacementPolicy {
   def access(touch_ways: Seq[Valid[UInt]]) = {}
   def get_next_state(state: UInt, touch_way: UInt) = 0.U //DontCare
 
-  override def get_next_state(state: UInt, touch_way: UInt, hit: Bool, req_type: UInt): UInt = {
+  override def get_next_state(state: UInt, touch_way: UInt, hit: Bool, invalid: Bool, req_type: UInt): UInt = {
     val State  = Wire(Vec(n_ways, UInt(2.W)))
     val nextState  = Wire(Vec(n_ways, UInt(2.W)))
     State.zipWithIndex.map { case (e, i) =>
@@ -400,7 +400,7 @@ class BRRIP(n_ways: Int) extends ReplacementPolicy {
                   Mux(req_type(2,0) === 3.U, 1.U,
                       Mux(req_type === 4.U || req_type(2,0) === 6.U, 3.U, State(i)))),
               //Mux(hit, 0.U(2.W), 3.U(2.W)), 
-              Mux(hit, State(i), State(i)+increcement) 
+              Mux(hit || invalid, State(i), State(i)+increcement) 
             )
     }
     /* val random = (rand.nextInt(32)).U 
@@ -451,8 +451,8 @@ class DRRIP(n_ways: Int) extends ReplacementPolicy {
   def hit = {}
 
   def get_next_state(state: UInt, touch_way: UInt) = 0.U //DontCare
-  override def get_next_state(state: UInt, touch_way: UInt, hit: Bool, chosen_type: Bool, req_type: UInt): UInt = {
-    Mux(chosen_type, repl_BRRIP.get_next_state(state, touch_way, hit, req_type), repl_SRRIP.get_next_state(state, touch_way, hit, req_type))
+  override def get_next_state(state: UInt, touch_way: UInt, hit: Bool, invalid: Bool, chosen_type: Bool, req_type: UInt): UInt = {
+    Mux(chosen_type, repl_BRRIP.get_next_state(state, touch_way, hit, invalid, req_type), repl_SRRIP.get_next_state(state, touch_way, hit, invalid, req_type))
   }
   def get_replace_way(state: UInt): UInt = {
     val RRPVVec  = Wire(Vec(n_ways, UInt(2.W)))
