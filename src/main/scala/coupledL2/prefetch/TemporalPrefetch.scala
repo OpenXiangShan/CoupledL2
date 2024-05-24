@@ -26,8 +26,8 @@ import coupledL2.utils.{ReplacementPolicy, XSPerfAccumulate}
 //import huancun.{TPmetaReq, TPmetaResp}
 
 case class TPParameters(
-    tpTableEntries: Int = 16384,
-    tpTableAssoc: Int = 16,
+    tpTableEntries: Int = 16384 / 2,
+    tpTableAssoc: Int = 16 / 4,
     vaddrBits: Int = 39,
     blockOffBits: Int = 6,
     dataReadQueueDepth: Int = 8,
