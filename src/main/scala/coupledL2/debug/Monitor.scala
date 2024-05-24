@@ -23,7 +23,7 @@ class MainpipeMoni(implicit p: Parameters) extends L2Bundle {
 class CPL2S3Info(implicit p: Parameters) extends L2Bundle {
   val mshrTask = Bool()
 
-  val channel = UInt(3.W)
+  val channel = UInt(4.W)
   val opcode = UInt(3.W)
   val tag = UInt(tagBits.W)
   val sset = UInt(setBits.W) // set is C++ common word
