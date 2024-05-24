@@ -61,7 +61,7 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
     case BankBitsKey => 0
   }))))
   val xbar = TLXbar()
-  val ram = LazyModule(new TLRAM(AddressSet(0, 0xffffL), beatBytes = 32))
+  val ram = LazyModule(new TLRAM(AddressSet(0, 0xff_ffffL), beatBytes = 32))
 
   for (l1d <- l1d_nodes) {
     xbar := TLBuffer() := l1d
@@ -176,7 +176,7 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
   })))
 
   val xbar = TLXbar()
-  val ram = LazyModule(new TLRAM(AddressSet(0, 0xffffL), beatBytes = 32))
+  val ram = LazyModule(new TLRAM(AddressSet(0, 0xff_ffffL), beatBytes = 32))
 
   xbar := TLBuffer() := l1i
   xbar := TLBuffer() := l1d
@@ -381,7 +381,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
   })))
 
   val xbar = TLXbar()
-  val ram = LazyModule(new TLRAM(AddressSet(0, 0xffffL), beatBytes = 32))
+  val ram = LazyModule(new TLRAM(AddressSet(0, 0xff_ffffL), beatBytes = 32))
 
   l1d_nodes.zip(l2_nodes).zipWithIndex map {
     case ((l1d, l2), i) => l2 := 
@@ -466,7 +466,7 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
   }
 
   val l2xbar = TLXbar()
-  val ram = LazyModule(new TLRAM(AddressSet(0, 0xffffL), beatBytes = 32))
+  val ram = LazyModule(new TLRAM(AddressSet(0, 0xff_ffffL), beatBytes = 32))
   var master_nodes: Seq[TLClientNode] = Seq() // TODO
 
   (0 until nrL2).map{i =>
