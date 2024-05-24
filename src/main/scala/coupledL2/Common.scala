@@ -27,7 +27,7 @@ abstract class L2Module(implicit val p: Parameters) extends Module with HasCoupl
 abstract class L2Bundle(implicit val p: Parameters) extends Bundle with HasCoupledL2Parameters
 
 class ReplacerInfo(implicit p: Parameters) extends L2Bundle {
-  val channel = UInt(3.W)
+  val channel = UInt(4.W)
   val opcode = UInt(3.W)
   val reqSource = UInt(MemReqSource.reqSourceBits.W)
   val refill_prefetch = Bool()
