@@ -385,13 +385,13 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
 
   l1d_nodes.zip(l2_nodes).zipWithIndex map {
     case ((l1d, l2), i) => l2 := 
-        TLLogger(s"L2_L1_${i}", !cacheParams.FPGAPlatform && cacheParams.enableTLLog) := 
+        TLLogger(s"L2_L1[${i}].C[0]", !cacheParams.FPGAPlatform && cacheParams.enableTLLog) := 
         TLBuffer() := l1d
   }
 
   l2_nodes.zipWithIndex map {
     case(l2, i) => xbar := 
-      TLLogger(s"L3_L2_${i}", !cacheParams.FPGAPlatform && cacheParams.enableTLLog) := 
+      TLLogger(s"L3_L2[${i}]", !cacheParams.FPGAPlatform && cacheParams.enableTLLog) := 
       TLBuffer() := l2
   }
 
