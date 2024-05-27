@@ -50,13 +50,10 @@ jobs:
       
       - name: Unit test for TileLink version
         run: |
-            git clone https://github.com/OpenXiangShan/tl-test -b coupledL2-huancun
-            make test-top-l2l3l2
-            cd ./tl-test
-            mkdir build && cd build
-            cmake .. -DDUT_DIR=../../build -DCHISELDB=1
-            make
-            ./tlc_test -s $RANDOM
+            git clone https://github.com/OpenXiangShan/tl-test-new
+            cd ./tl-test-new
+            rm -rf ./dut/CoupledL2 && ln -s ../.. ./dut/CoupledL2
+            make coupledL2-test-l2l3l2 run
 
       - name: Compile CHI QuadCore
         run: |
