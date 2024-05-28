@@ -240,6 +240,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   val s2_valid = RegNext(s1_valid, false.B)
   val tpMetaRespValid_s2 = RegEnable(tpMetaRespValid_s1, s1_valid)
+  val tpMetaResp_s2 = RegEnable(tpMetaResp_s0, s1_valid)
   val hit_s2 = RegEnable(hit_s1, false.B, s1_valid)
   val way_s2 = RegEnable(way_s1, s1_valid)
   val vset_s2 = RegEnable(vset_s1, s1_valid)
@@ -249,8 +250,8 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val train_s2 = RegEnable(train_s1, s1_valid)
   val l2ReqBundle_s2 = RegEnable(l2ReqBundle_s1, s1_valid)
 
-  val triggerEnq_s2 = s2_valid && !triggerQFull && (Mux(hitAsTrigger.orR, hit_s2, false.B) || (triggerQueue.io.count < triggerThres))
-  val dorecord_s2 = s2_valid && !triggerEnq_s2 && !triggerQEmpty // && !hit_s2
+  val triggerEnq_s2 = s2_valid && !tpMetaRespValid_s2 && !triggerQFull && (Mux(hitAsTrigger.orR, hit_s2, false.B) || (triggerQueue.io.count < triggerThres))
+  val dorecord_s2 = s2_valid && !tpMetaRespValid_s2 && !triggerEnq_s2 && !triggerQEmpty // && !hit_s2
 
   triggerQueue.io.enq.valid := triggerEnq_s2
   triggerQueue.io.enq.bits.vaddr := train_s2.vaddr.getOrElse(0.U)
@@ -259,7 +260,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   triggerQueue.io.deq.ready := false.B // will be override
 
   // dataReadQueue enqueue
-  dataReadQueue.io.enq.valid := s2_valid && hit_s2
+  dataReadQueue.io.enq.valid := s2_valid && !tpMetaRespValid_s2 && hit_s2
   dataReadQueue.io.enq.bits.l2ReqBundle := l2ReqBundle_s2
   dataReadQueue.io.enq.bits.wmode := false.B
   dataReadQueue.io.enq.bits.rawData := DontCare
@@ -327,7 +328,8 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     write_record := false.B
   }
 
-  val tpTable_w_valid = write_record
+  val tpmetaInvalidate = tpMetaRespValid_s2 && hit_s2
+  val tpTable_w_valid = write_record || tpmetaInvalidate
   assert(RegNext(s2_valid, false.B) || !tpTable_w_valid, "tpTable_w_valid can only be true in s3")
 
   val (write_record_vtag, write_record_vset) = parseVaddr(write_record_trigger.vaddr)
@@ -351,13 +353,14 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     tpMeta_w_bits.l2ReqBundle.off := 0.U
   }
 
-  val tpTable_w_set = Mux(resetFinish, Mux(trainOnVaddr.orR, write_record_vset, write_record_pset), resetIdx)
-  val tpTable_w_way = write_record_trigger.way
-  val tpTable_w_wayOH = Mux(resetFinish, UIntToOH(write_record_trigger.way), Fill(tpTableAssoc, true.B))
+  val tpTable_w_set = Mux(resetFinish, Mux(tpmetaInvalidate, tpMetaResp_s2.set,
+                        Mux(trainOnVaddr.orR, write_record_vset, write_record_pset)), resetIdx)
+  val tpTable_w_way = Mux(tpmetaInvalidate, way_s2, write_record_trigger.way)
+  val tpTable_w_wayOH = Mux(resetFinish, UIntToOH(tpTable_w_way), Fill(tpTableAssoc, true.B))
 
   tpMetaTable.io.w.apply(tpTable_w_valid || !resetFinish, tpMeta_w_bits, tpTable_w_set, tpTable_w_wayOH)
 
-  dataWriteQueue.io.enq.valid := tpTable_w_valid
+  dataWriteQueue.io.enq.valid := tpTable_w_valid && !tpMetaRespValid_s2
   dataWriteQueue.io.enq.bits.wmode := true.B
   dataWriteQueue.io.enq.bits.rawData.zip(recorder_data).foreach(x => x._1 := x._2(fullAddressBits - offsetBits - 1, 0))
   dataWriteQueue.io.enq.bits.l2ReqBundle.tag := Mux(trainOnVaddr.orR, write_record_l2_vtag, write_record_l2_ptag)
