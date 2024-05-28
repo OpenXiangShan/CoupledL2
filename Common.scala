@@ -21,12 +21,60 @@ import chisel3._
 import chisel3.util._
 import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.tl2chi.HasCHIMsgParameters
+import coupledL2.tl2chi._
 
-abstract class OpenLLCModule(implicit val p: Parameters) extends Module
+abstract class LLCModule(implicit val p: Parameters) extends Module
   with HasOpenLLCParameters
   with HasCHIMsgParameters
-abstract class OpenLLCBundle(implicit val p: Parameters) extends Bundle
+abstract class LLCBundle(implicit val p: Parameters) extends Bundle
   with HasOpenLLCParameters
   with HasCHIMsgParameters
 
+class Task(implicit p: Parameters) extends LLCBundle {
+  val set = UInt(setBits.W)
+  val tag = UInt(tagBits.W)
+  val off = UInt(offsetBits.W)
+  val size = UInt(SIZE_WIDTH.W)
+
+  // MSHR task
+  val mshrTask = Bool()             // is task from mshr
+  val mshrId = UInt(mshrBits.W)     // mshr entry index (used only in mshr-task)
+  val metaWen = Bool()
+  val tagWen = Bool()
+  val dataWen = Bool()
+
+  // CHI
+  val tgtID = UInt(TGTID_WIDTH.W)
+  val srcID = UInt(SRCID_WIDTH.W)
+  val txnID = UInt(TXNID_WIDTH.W)
+  val homeNID = UInt(SRCID_WIDTH.W) // TODO: required?
+  val dbID = UInt(DBID_WIDTH.W)
+  val fwdNID = UInt(FWDNID_WIDTH.W)
+  val fwdTxnID = UInt(FWDTXNID_WIDTH.W)
+  val chiOpcode = UInt(OPCODE_WIDTH.W)
+  val resp = UInt(RESP_WIDTH.W)
+  val fwdState = UInt(FWDSTATE_WIDTH.W)
+  val pCrdType = UInt(PCRDTYPE_WIDTH.W)
+  val retToSrc = Bool() // only used in snoop
+  val expCompAck = Bool()
+  val allowRetry = Bool()
+  val order = UInt(ORDER_WIDTH.W)
+  val memAttr = new MemAttr
+  val snpAttr = Bool()
+
+  def toCHIREQBundle(): CHIREQ = {
+    val req = WireInit(0.U.asTypeOf(new CHIREQ()))
+    req.tgtID := tgtID
+    req.srcID := srcID
+    req.txnID := txnID
+    req.opcode := chiOpcode
+    req.addr := Cat(tag, set, 0.U(offsetBits.W))
+    req.allowRetry := allowRetry //TODO: consider retry
+    req.pCrdType := pCrdType
+    req.expCompAck := expCompAck
+    req.memAttr := memAttr
+    req.snpAttr := true.B
+    req.order := OrderEncodings.None
+    req
+  }
+}

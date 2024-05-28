@@ -22,26 +22,11 @@ import chisel3.util._
 import freechips.rocketchip.amba.axi4._
 import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.Parameters
+import coupledL2.tl2chi.{PortIO}
 
-trait HasOpenLLCParameters {
-  val p: Parameters
-  def cacheParams = p(OpenLLCParamKey)
+class OpenLLC(implicit p: Parameters) extends LazyModule with HasOpenLLCParameters {
 
-  def blockBytes = cacheParams.blockBytes
-  def beatBytes = cacheParams.beatBytes
-  def beatSize = blockBytes / beatBytes
-
-  def wayBits = log2Ceil(cacheParams.ways)
-  def setBits = log2Ceil(cacheParams.sets)
-  def offsetBits = log2Ceil(blockBytes)
-  def beatBits = offsetBits - log2Ceil(beatBytes)
-
-  def sam = cacheParams.sam
-}
-
-class OpenLLC(implicit p: Parameters) extends LazyModule {
-
-  val node = AXI4MasterNode(Seq(AXI4MasterPortParameters(
+  val axi4node = AXI4MasterNode(Seq(AXI4MasterPortParameters(
     Seq(AXI4MasterParameters(
       name = "L3",
       id = IdRange(0, 1 << 14)
@@ -49,11 +34,18 @@ class OpenLLC(implicit p: Parameters) extends LazyModule {
   )))
 
   class OpenLLCImp(wrapper: LazyModule) extends LazyModuleImp(wrapper) {
-    node.out.map {
-      case (out, edgeOut) =>
-        dontTouch(out)
-    }
+    val io = IO(new Bundle {
+      val chi = Flipped(new PortIO)
+    })
 
+
+    val slice = Module(new Slice()(p.alterPartial {
+      case EdgeOutKey => axi4node.out.head._2
+    }))
+
+
+    dontTouch(axi4node.out)
+    dontTouch(io)
   }
   lazy val module = new OpenLLCImp(this)
 }

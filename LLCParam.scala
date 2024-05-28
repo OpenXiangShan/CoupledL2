@@ -19,8 +19,9 @@ package openLLC
 
 import chisel3._
 import chisel3.util._
+import freechips.rocketchip.amba.axi4.AXI4EdgeParameters
 import freechips.rocketchip.diplomacy._
-import org.chipsalliance.cde.config.{Parameters, Field}
+import org.chipsalliance.cde.config.{Field, Parameters}
 
 case class OpenLLCParam
 (
@@ -38,3 +39,39 @@ case class OpenLLCParam
 }
 
 case object OpenLLCParamKey extends Field[OpenLLCParam](OpenLLCParam())
+
+case object EdgeOutKey extends Field[AXI4EdgeParameters]
+
+// common parameters used inside LLC
+trait HasOpenLLCParameters {
+  val p: Parameters
+  def cacheParams = p(OpenLLCParamKey)
+
+  def blockBytes = cacheParams.blockBytes
+  def beatBytes = cacheParams.beatBytes
+  def beatSize = blockBytes / beatBytes
+
+  def wayBits = log2Ceil(cacheParams.ways)
+  def setBits = log2Ceil(cacheParams.sets)
+  def offsetBits = log2Ceil(blockBytes)
+  def beatBits = offsetBits - log2Ceil(beatBytes)
+
+  def edgeOut = p(EdgeOutKey)
+  def fullAddressBits = edgeOut.bundle.addrBits
+  def tagBits = fullAddressBits - setBits - offsetBits
+
+  def mshrs = cacheParams.mshrs
+  def mshrBits = log2Up(mshrs)  // TODO: check this
+
+
+
+  def sam = cacheParams.sam
+
+  def parseAddress(x: UInt): (UInt, UInt, UInt) = {
+    val offset = x  // TODO: check address mapping
+    val set = offset >> offsetBits
+    val tag = set >> setBits
+    (tag(tagBits - 1, 0), set(setBits - 1, 0), offset(offsetBits - 1, 0))
+  }
+
+}
