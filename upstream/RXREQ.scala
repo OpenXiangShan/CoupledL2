@@ -21,7 +21,42 @@ import chisel3._
 import chisel3.util._
 import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.Parameters
+import coupledL2.tl2chi.CHIREQ
 
-class RXREQ (implicit p: Parameters) extends OpenLLCModule{
+// receive task from upwards and convert to inner task
+class RXREQ (implicit p: Parameters) extends LLCModule{
+  val io = IO(new Bundle() {
+    val rxreq = Flipped(DecoupledIO(new CHIREQ()))
+    val task = DecoupledIO(new Task())
+  })
 
+  io.task.valid := io.rxreq.valid
+  io.rxreq.ready := io.task.ready
+
+  def fromCHIREQtoTaskBundle(r: CHIREQ): Task = {
+    val task = Wire(new Task)
+    task := 0.U.asTypeOf(new Task)
+    task.tag := parseAddress(r.addr)._1
+    task.set := parseAddress(r.addr)._2
+    task.off := parseAddress(r.addr)._3
+    task.size := r.size
+    task.mshrTask := false.B
+    task.mshrId := 0.U(mshrBits.W)
+    task.metaWen := false.B
+    task.tagWen := false.B
+    task.dataWen := false.B
+    // this follows coupledL2.tl2chi.TaskBundle.toCHIReqBundle
+    task.tgtID := r.tgtID
+    task.srcID := r.srcID
+    task.txnID := r.txnID
+    task.chiOpcode := r.opcode // chiOpcode-width is larger than req-opcode-width
+    task.allowRetry := r.allowRetry
+    task.pCrdType := r.pCrdType
+    task.expCompAck := r.expCompAck
+    task.memAttr := r.memAttr
+    task.snpAttr := r.snpAttr
+    task.order := r.order
+    task
+  }
+  io.task.bits := fromCHIREQtoTaskBundle(io.rxreq.bits)
 }

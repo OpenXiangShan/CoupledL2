@@ -19,9 +19,23 @@ package openLLC
 
 import chisel3._
 import chisel3.util._
+import coupledL2.tl2chi.CHIREQ
+import freechips.rocketchip.amba.axi4.{AXI4BundleAW, AXI4BundleW, AXI4BundleB}
 import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.Parameters
 
-class WRITE(implicit p: Parameters) extends OpenLLCModule{
+class WRITE(implicit p: Parameters) extends LLCModule{
+  val io = IO(new Bundle() {
+    // downstream
+    val aw = DecoupledIO(new AXI4BundleAW(edgeOut.bundle))
+    val w = DecoupledIO(new AXI4BundleW(edgeOut.bundle))
+    val b = Flipped(DecoupledIO(new AXI4BundleB(edgeOut.bundle)))
+
+    // receive inner task
+    val task = Flipped(DecoupledIO(new CHIREQ()))
+
+    // response
+    // val resp =
+  })
 
 }

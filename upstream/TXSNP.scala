@@ -21,7 +21,10 @@ import chisel3._
 import chisel3.util._
 import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.Parameters
+import coupledL2.tl2chi.CHISNP
 
-class TXSNP (implicit p: Parameters) extends OpenLLCModule{
-
+// receive inner task and send Snoop upwards
+class TXSNP (implicit p: Parameters) extends LLCModule{
+  val task = Flipped(DecoupledIO(new Task()))
+  val txsnp = DecoupledIO(new CHISNP())
 }
