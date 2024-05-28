@@ -16,7 +16,7 @@ class TestTop_L3()(implicit p: Parameters) extends LazyModule {
   val l3 = LazyModule(new OpenLLC())
   val ram = LazyModule(new AXI4RAM(AddressSet(0, 0xffffL), beatBytes = 32))
 
-  ram.node := l3.node
+  ram.node := l3.axi4node
 
   lazy val module = new LazyModuleImp(this){
 
