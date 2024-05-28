@@ -315,7 +315,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     write_record := false.B
   }
 
-  val tpmetaInvalidate = tpMetaRespValid_s2 && hit_s2
+  val tpmetaInvalidate = RegEnable(tpMetaRespValid_s2 && hit_s2, s2_valid)
   val tpTable_w_valid = write_record || tpmetaInvalidate
   assert(RegNext(s2_valid, false.B) || !tpTable_w_valid, "tpTable_w_valid can only be true in s3")
 
@@ -347,7 +347,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   tpMetaTable.io.w.apply(tpTable_w_valid || !resetFinish, tpMeta_w_bits, tpTable_w_set, tpTable_w_wayOH)
 
-  dataWriteQueue.io.enq.valid := tpTable_w_valid && !tpMetaRespValid_s2
+  dataWriteQueue.io.enq.valid := tpTable_w_valid && !tpmetaInvalidate
   dataWriteQueue.io.enq.bits.wmode := true.B
   dataWriteQueue.io.enq.bits.rawData.zip(recorder_data).foreach(x => x._1 := x._2(35-6, 0))
   dataWriteQueue.io.enq.bits.l2ReqBundle.tag := Mux(trainOnVaddr.orR, write_record_l2_vtag, write_record_l2_ptag)
