@@ -22,6 +22,6 @@ import chisel3.util._
 import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.Parameters
 
-class TXRSP (implicit p: Parameters) extends OpenLLCModule{
+class TXRSP (implicit p: Parameters) extends LLCModule{
 
 }
