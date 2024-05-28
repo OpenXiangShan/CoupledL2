@@ -335,16 +335,13 @@ class StaticRRIP(n_ways: Int) extends ReplacementPolicy {
     // rrpv: non-pref_hit/non-pref_refill(miss)/non-pref_release_reuse = 0;
     // pref_hit do nothing; pref_refill = 1; non-pref_release_firstuse/pref_release = 2;
     nextState.zipWithIndex.map { case (e, i) =>
-      e := Mux(i.U === touch_way,
-        // for touch_way
-        MuxCase(State(i), Seq(
-          ((req_type(2,0) === 0.U && hit) || req_type(2,0) === 1.U || req_type === 12.U) -> 0.U,
-          (req_type(2,0) === 3.U) -> 1.U,
-          (req_type === 4.U || req_type(2,0) === 6.U) -> 2.U
-        )),
-        // for other ways
-        Mux(hit || invalid, State(i), State(i)+increcement)
-      )
+      e := Mux(i.U === touch_way, 
+              Mux(req_type === 15.U, 0.U,
+                  Mux(req_type(2,0) === 3.U || (req_type(2,0) === 0.U && hit) || req_type(2,0) === 1.U || req_type === 12.U, 1.U,
+                      Mux(req_type === 4.U || req_type(2,0) === 6.U, 2.U, State(i)))),
+              //Mux(hit, 0.U(2.W), 2.U(2.W)),
+              Mux(hit || invalid, State(i), State(i)+increcement) 
+            )
     }
     Cat(nextState.map(x=>x).reverse)
   }
@@ -399,15 +396,12 @@ class BRRIP(n_ways: Int) extends ReplacementPolicy {
     // pref_hit do nothing; pref_refill = 1; non-pref_release_firstuse/pref_release = 3;
     nextState.zipWithIndex.map { case (e, i) =>
       e := Mux(i.U === touch_way,
-        // for touch_way
-        MuxCase(State(i), Seq(
-          ((req_type(2,0) === 0.U && hit) || req_type(2,0) === 1.U || req_type === 12.U) -> 0.U,
-          (req_type(2,0) === 3.U) -> 1.U,
-          (req_type === 4.U || req_type(2,0) === 6.U) -> 3.U
-        )),
-        // for other ways
-        Mux(hit || invalid, State(i), State(i)+increcement)
-      )
+              Mux(req_type === 15.U, 0.U,
+                  Mux(req_type(2,0) === 3.U || (req_type(2,0) === 0.U && hit) || req_type(2,0) === 1.U || req_type === 12.U, 1.U,
+                      Mux(req_type === 4.U || req_type(2,0) === 6.U, 3.U, State(i)))),
+              //Mux(hit, 0.U(2.W), 3.U(2.W)), 
+              Mux(hit || invalid, State(i), State(i)+increcement) 
+            )
     }
     /* val random = (rand.nextInt(32)).U 
     nextState.zipWithIndex.map { case (e, i) =>
