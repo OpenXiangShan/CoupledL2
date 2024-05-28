@@ -354,9 +354,10 @@ class Directory(implicit p: Parameters) extends L2Module {
   if(cacheParams.replacement == "srrip"){
     // req_type[3]: 0-firstuse, 1-reuse; req_type[2]: 0-acquire, 1-release;
     // req_type[1]: 0-non-prefetch, 1-prefetch; req_type[0]: 0-not-refill, 1-refill
+    // tpmeta use 1111
     val req_type = WireInit(0.U(4.W))
-    req_type := Cat(origin_bits_hold(touch_way_s3),
-                    req_s3.replacerInfo.channel(2),
+    req_type := Cat(origin_bits_hold(touch_way_s3) || updateTPmetaReplace,
+                    req_s3.replacerInfo.channel(2) || updateTPmetaReplace,
                     (req_s3.replacerInfo.channel(0) && req_s3.replacerInfo.opcode === Hint) || (req_s3.replacerInfo.channel(2) && metaAll_s3(touch_way_s3).prefetch.getOrElse(false.B)) || req_s3.replacerInfo.refill_prefetch || updateTPmetaReplace,
                     req_s3.refill || updateTPmetaReplace
                     )
@@ -375,8 +376,8 @@ class Directory(implicit p: Parameters) extends L2Module {
     // req_type[3]: 0-firstuse, 1-reuse; req_type[2]: 0-acquire, 1-release;
     // req_type[1]: 0-non-prefetch, 1-prefetch; req_type[0]: 0-not-refill, 1-refill
     val req_type = WireInit(0.U(4.W))
-    req_type := Cat(origin_bits_hold(touch_way_s3),
-      req_s3.replacerInfo.channel(2),
+    req_type := Cat(origin_bits_hold(touch_way_s3) || updateTPmetaReplace,
+      req_s3.replacerInfo.channel(2) || updateTPmetaReplace,
       (req_s3.replacerInfo.channel(0) && req_s3.replacerInfo.opcode === Hint) || (req_s3.replacerInfo.channel(2) && metaAll_s3(touch_way_s3).prefetch.getOrElse(false.B)) || req_s3.replacerInfo.refill_prefetch || updateTPmetaReplace,
       req_s3.refill || updateTPmetaReplace
     )
