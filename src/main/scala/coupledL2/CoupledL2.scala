@@ -222,6 +222,8 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
 
   val pf_recv_node: Option[BundleBridgeSink[PrefetchRecv]] =
     if(hasReceiver) Some(BundleBridgeSink(Some(() => new PrefetchRecv))) else None
+  val tpmeta_source_node = if(hasTPPrefetcher) Some(BundleBridgeSource(() => DecoupledIO(new TPmetaReq))) else None
+  val tpmeta_sink_node = if(hasTPPrefetcher) Some(BundleBridgeSink(Some(() => ValidIO(new TPmetaResp)))) else None
   
   val managerPortParams = (m: TLSlavePortParameters) => TLSlavePortParameters.v1(
     m.managers.map { m =>
@@ -344,6 +346,16 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
             p.io.recv_addr := 0.U.asTypeOf(p.io.recv_addr)
             p.io_l2_pf_en := false.B
         }
+    }
+    tpmeta_source_node match {
+      case Some(x) =>
+        x.out.head._1 <> prefetcher.get.tpio.tpmeta_port.get.req
+      case None =>
+    }
+    tpmeta_sink_node match {
+      case Some(x) =>
+        prefetcher.get.tpio.tpmeta_port.get.resp <> x.in.head._1
+      case None =>
     }
 
     // ** WARNING:TODO: this depends on where the latch is

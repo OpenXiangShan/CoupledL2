@@ -33,22 +33,7 @@ import huancun.{TPmetaReq, TPmetaResp}
 
 class TL2TLCoupledL2(implicit p: Parameters) extends CoupledL2Base {
 
-  val tpmeta_source_node = if(hasTPPrefetcher) Some(BundleBridgeSource(() => DecoupledIO(new TPmetaReq))) else None
-  val tpmeta_sink_node = if(hasTPPrefetcher) Some(BundleBridgeSink(Some(() => ValidIO(new TPmetaResp)))) else None
-
-  class CoupledL2Imp(wrapper: LazyModule) extends BaseCoupledL2Imp(wrapper) {
-
-    tpmeta_source_node match {
-      case Some(x) =>
-        x.out.head._1 <> prefetcher.get.tpio.tpmeta_port.get.req
-      case None =>
-    }
-    tpmeta_sink_node match {
-      case Some(x) =>
-        prefetcher.get.tpio.tpmeta_port.get.resp <> x.in.head._1
-      case None =>
-    }
-  }
+  class CoupledL2Imp(wrapper: LazyModule) extends BaseCoupledL2Imp(wrapper)
 
   lazy val module = new CoupledL2Imp(this)
 }
