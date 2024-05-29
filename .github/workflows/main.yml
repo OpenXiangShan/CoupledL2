@@ -35,7 +35,9 @@ jobs:
         uses: coursier/cache-action@v5
 
       - name: Verilator
-        run: sudo apt install verilator
+        run: |
+          wget https://raw.githubusercontent.com/OpenXiangShan/xs-env/master/install-verilator.sh
+          bash install-verilator.sh
 
       - name: Setup Mill
         uses: jodersky/setup-mill@v0.2.3
