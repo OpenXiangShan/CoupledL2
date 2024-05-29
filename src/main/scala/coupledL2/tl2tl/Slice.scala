@@ -29,17 +29,13 @@ import coupledL2.debug._
 import coupledL2.prefetch.PrefetchIO
 import utility.RegNextN
 
-class Slice()(implicit p: Parameters) extends L2Module {
-  val io = IO(new Bundle {
-    val in = Flipped(TLBundle(edgeIn.bundle))
-    val out = TLBundle(edgeOut.bundle)
-    val sliceId = Input(UInt(bankBits.W))
-    val l1Hint = Decoupled(new L2ToL1Hint())
-    val prefetch = prefetchOpt.map(_ => Flipped(new PrefetchIO))
-    val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
-    val dirResult = topDownOpt.map(_ => ValidIO(new DirResult))
-    val latePF = topDownOpt.map(_ => Output(Bool()))
+class OuterBundle(params: TLBundleParameters) extends TLBundle(params) with BaseOuterBundle
+
+class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
+  val io = IO(new BaseSliceIO[OuterBundle] {
+    override val out: OuterBundle = new OuterBundle(edgeOut.bundle)
   })
+  val io_msStatus = topDownOpt.map(_ => IO(Vec(mshrsAll, ValidIO(new MSHRStatus))))
 
   val reqArb = Module(new RequestArb())
   val a_reqBuf = Module(new RequestBuffer)
@@ -173,7 +169,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
 
   topDownOpt.foreach (
     _ => {
-      io.msStatus.get        := mshrCtl.io.msStatus.get
+      io_msStatus.get        := mshrCtl.io.msStatus.get
       io.dirResult.get.valid := directory.io.resp.valid && !directory.io.replResp.valid // exclude MSHR-Grant read-dir
       io.dirResult.get.bits  := directory.io.resp.bits
       io.latePF.get          := a_reqBuf.io.hasLatePF
