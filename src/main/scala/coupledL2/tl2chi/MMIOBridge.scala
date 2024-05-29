@@ -37,20 +37,10 @@ class MMIOBridge()(implicit p: Parameters) extends LazyModule
   /**
     * MMIO node
     */
-  val onChipPeripheralRange = AddressSet(0x38000000L, 0x07ffffffL)
-  val uartRange = AddressSet(0x40600000, 0xf)
-  val uartDevice = new SimpleDevice("serial", Seq("xilinx,uartlite"))
-  val uartParams = TLSlaveParameters.v1(
-    address = Seq(uartRange),
-    resources = uartDevice.reg,
-    regionType = RegionType.UNCACHED,
-    supportsGet = TransferSizes(1, 8),
-    supportsPutFull = TransferSizes(1, 8),
-    supportsPutPartial = TransferSizes(1, 8)
-  )
+  val beuRange = AddressSet(0x38010000, 4096 - 1)
   val peripheralRange = AddressSet(
     0x0, 0x7fffffff
-  ).subtract(onChipPeripheralRange).flatMap(x => x.subtract(uartRange))
+  ).subtract(beuRange)
 
   val mmioNode = TLManagerNode(Seq(TLSlavePortParameters.v1(
     managers = Seq(TLSlaveParameters.v1(
@@ -59,7 +49,7 @@ class MMIOBridge()(implicit p: Parameters) extends LazyModule
       supportsGet = TransferSizes(1, 8),
       supportsPutFull = TransferSizes(1, 8),
       supportsPutPartial = TransferSizes(1, 8)
-    ), uartParams),
+    )),
     beatBytes = 8
   )))
 
