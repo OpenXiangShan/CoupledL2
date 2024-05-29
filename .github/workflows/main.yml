@@ -27,6 +27,12 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Clang 17
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod u+x llvm.sh
+          sudo ./llvm.sh 17
+
       - name: Setup Scala
         uses: olafurpg/setup-scala@v10
 
@@ -37,6 +43,11 @@ jobs:
       - name: Verilator
         run: |
           wget https://raw.githubusercontent.com/OpenXiangShan/xs-env/master/install-verilator.sh
+          chmod u+x install-verilator.sh
+          sed -i 's/CC=clang/CC=clang-17/g' install-verilator.sh
+          sed -i 's/CXX=clang++/CXX=clang++-17/g' install-verilator.sh
+          sed -i 's/LINK=clang++/LINK=clang++-17/g' install-verilator.sh
+          sed -i 's/make -j8/make -j4/g' install-verilator.sh
           bash install-verilator.sh
 
       - name: Setup Mill
@@ -55,7 +66,7 @@ jobs:
             git clone https://github.com/OpenXiangShan/tl-test-new
             cd ./tl-test-new
             rm -rf ./dut/CoupledL2 && ln -s ../.. ./dut/CoupledL2
-            make coupledL2-test-l2l3l2 run THREADS_BUILD=4 CXX_COMPILER=clang++
+            make coupledL2-test-l2l3l2 run THREADS_BUILD=4 CXX_COMPILER=clang++-17
 
       - name: Compile CHI QuadCore
         run: |
