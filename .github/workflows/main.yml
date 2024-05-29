@@ -27,20 +27,13 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Clang 17
+      - name: Setup Clang 17
         run: |
           wget https://apt.llvm.org/llvm.sh
           chmod u+x llvm.sh
           sudo ./llvm.sh 17
 
-      - name: Setup Scala
-        uses: olafurpg/setup-scala@v10
-
-      - name: Cache
-        id: cache
-        uses: coursier/cache-action@v5
-
-      - name: Verilator
+      - name: Setup Verilator
         run: |
           wget https://raw.githubusercontent.com/OpenXiangShan/xs-env/master/install-verilator.sh
           chmod u+x install-verilator.sh
@@ -49,6 +42,13 @@ jobs:
           sed -i 's/LINK=clang++/LINK=clang++-17/g' install-verilator.sh
           sed -i 's/make -j8/make -j4/g' install-verilator.sh
           bash install-verilator.sh
+
+      - name: Setup Scala
+        uses: olafurpg/setup-scala@v10
+
+      - name: Cache
+        id: cache
+        uses: coursier/cache-action@v5
 
       - name: Setup Mill
         uses: jodersky/setup-mill@v0.2.3
