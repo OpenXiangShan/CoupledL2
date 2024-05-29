@@ -65,6 +65,7 @@ jobs:
         run: |
             git clone https://github.com/OpenXiangShan/tl-test-new
             cd ./tl-test-new
+            sed -i 's/ari.target.*/ari.target = 240/g' ./configs/user.tltest.ini
             rm -rf ./dut/CoupledL2 && ln -s ../.. ./dut/CoupledL2
             make coupledL2-test-l2l3l2 run THREADS_BUILD=4 CXX_COMPILER=clang++-17
 
