@@ -134,11 +134,11 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(imp
     }))
 
     l2_nodes.zipWithIndex.foreach { case (l2, i) =>
-      l2.module.io.chi <> io(i).chi
+      l2.module.io_chi <> io(i).chi
       dontTouch(l2.module.io)
 
       l2.module.io.hartId := i.U
-      l2.module.io.nodeID := i.U(NODEID_WIDTH.W)
+      l2.module.io_nodeID := i.U(NODEID_WIDTH.W)
       l2.module.io.debugTopDown := DontCare
       l2.module.io.l2_tlb_req <> DontCare
     }

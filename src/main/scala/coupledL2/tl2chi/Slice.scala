@@ -24,18 +24,17 @@ import org.chipsalliance.cde.config.Parameters
 import coupledL2._
 import coupledL2.prefetch.PrefetchIO
 
-class Slice()(implicit p: Parameters) extends TL2CHIL2Module {
-  val io = IO(new Bundle() {
-    val in = Flipped(TLBundle(edgeIn.bundle))
-    val out = new DecoupledPortIO
-    val sliceId = Input(UInt(bankBits.W))
-    val l1Hint = Decoupled(new L2ToL1Hint())
-    val waitPCrdInfo  = Output(Vec(mshrsAll, new PCrdInfo))
-    val prefetch = prefetchOpt.map(_ => Flipped(new PrefetchIO))
-    val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
-    val dirResult = topDownOpt.map(_ => ValidIO(new DirResult))
-    val latePF = topDownOpt.map(_ => Output(Bool()))
+class OuterBundle extends DecoupledPortIO with BaseOuterBundle
+
+class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
+  with HasCoupledL2Parameters
+  with HasCHIMsgParameters {
+
+  val io = IO(new BaseSliceIO[OuterBundle] {
+    override val out: OuterBundle = new OuterBundle
   })
+  val io_waitPCrdInfo = IO(Output(Vec(mshrsAll, new PCrdInfo)))
+  val io_msStatus = topDownOpt.map(_ => IO(Vec(mshrsAll, ValidIO(new MSHRStatus))))
 
   /* Upwards TileLink-related modules */
   val sinkA = Module(new SinkA)
@@ -174,13 +173,13 @@ class Slice()(implicit p: Parameters) extends TL2CHIL2Module {
   }
 
   /* to Slice Top for pCrd info.*/
-  io.waitPCrdInfo <> mshrCtl.io.waitPCrdInfo
+  io_waitPCrdInfo <> mshrCtl.io.waitPCrdInfo
 
   /* IO Connection */
   io.l1Hint <> mainPipe.io.l1Hint
   topDownOpt.foreach (
     _ => {
-      io.msStatus.get := mshrCtl.io.msStatus.get
+      io_msStatus.get := mshrCtl.io.msStatus.get
       io.dirResult.get.valid := directory.io.resp.valid && !directory.io.replResp.valid // exclude MSHR-Grant read-dir
       io.dirResult.get.bits := directory.io.resp.bits
       io.latePF.get := reqBuf.io.hasLatePF
