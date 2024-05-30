@@ -25,7 +25,7 @@ import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLHints._
 import coupledL2.prefetch.PrefetchReq
 import coupledL2.utils.XSPerfAccumulate
-import huancun.{AliasKey, PrefetchKey}
+import huancun.{PrefetchKey}
 import utility.MemReqSource
 
 class SinkA(implicit p: Parameters) extends L2Module {

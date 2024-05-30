@@ -23,7 +23,7 @@ import freechips.rocketchip.diplomacy.{BufferParams, AddressSet}
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util._
 import org.chipsalliance.cde.config.Field
-import huancun.{AliasKey, CacheParameters, IsHitKey, PrefetchKey}
+import huancun.{CacheParameters, IsHitKey, PrefetchKey}
 import coupledL2.prefetch._
 import utility.{MemReqSource, ReqSourceKey}
 
@@ -53,6 +53,9 @@ case class VaddrField(width: Int) extends BundleField[UInt](VaddrKey, Output(UIn
 // Pass load_miss_acquire_keyword of upper level cache (L1)
 case object IsKeywordKey extends ControlKey[Bool]("isKeyword")
 case class IsKeywordField() extends BundleField[Bool](IsKeywordKey, Output(Bool()), _ := false.B)
+
+case object AliasKey extends ControlKey[UInt]("alias")
+case class AliasField(width: Int) extends BundleField[UInt](AliasKey, Output(UInt(width.W)), _ := 0.U(width.W))
 
 case class L2Param(
   name: String = "L2",
