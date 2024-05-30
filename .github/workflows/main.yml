@@ -27,15 +27,28 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Setup Clang 17
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod u+x llvm.sh
+          sudo ./llvm.sh 17
+
+      - name: Setup Verilator
+        run: |
+          wget https://raw.githubusercontent.com/OpenXiangShan/xs-env/master/install-verilator.sh
+          chmod u+x install-verilator.sh
+          sed -i 's/CC=clang/CC=clang-17/g' install-verilator.sh
+          sed -i 's/CXX=clang++/CXX=clang++-17/g' install-verilator.sh
+          sed -i 's/LINK=clang++/LINK=clang++-17/g' install-verilator.sh
+          sed -i 's/make -j8/make -j4/g' install-verilator.sh
+          bash install-verilator.sh
+
       - name: Setup Scala
         uses: olafurpg/setup-scala@v10
 
       - name: Cache
         id: cache
         uses: coursier/cache-action@v5
-
-      - name: Verilator
-        run: sudo apt install verilator
 
       - name: Setup Mill
         uses: jodersky/setup-mill@v0.2.3
@@ -50,13 +63,11 @@ jobs:
       
       - name: Unit test for TileLink version
         run: |
-            git clone https://github.com/OpenXiangShan/tl-test -b coupledL2-huancun
-            make test-top-l2l3l2
-            cd ./tl-test
-            mkdir build && cd build
-            cmake .. -DDUT_DIR=../../build -DCHISELDB=1
-            make
-            ./tlc_test -s $RANDOM
+            git clone https://github.com/OpenXiangShan/tl-test-new
+            cd ./tl-test-new
+            sed -i 's/ari.target.*/ari.target = 240/g' ./configs/user.tltest.ini
+            rm -rf ./dut/CoupledL2 && ln -s ../.. ./dut/CoupledL2
+            make coupledL2-test-l2l3l2 run THREADS_BUILD=4 CXX_COMPILER=clang++-17
 
       - name: Compile CHI QuadCore
         run: |
