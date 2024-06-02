@@ -269,7 +269,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   // RRIP: update replacer when A/C hit or refill
   val updateHit = if(cacheParams.replacement == "drrip" || cacheParams.replacement == "srrip" || cacheParams.replacement == "hawkeye"){
     reqValid_s3 && hit_s3 &&
-    ((req_s3.replacerInfo.channel(0) && (req_s3.replacerInfo.opcode === AcquirePerm || req_s3.replacerInfo.opcode === AcquireBlock || req_s3.replacerInfo.opcode === Hint)) ||
+    ((req_s3.replacerInfo.channel(0) && (req_s3.replacerInfo.opcode === AcquirePerm || req_s3.replacerInfo.opcode === AcquireBlock || req_s3.replacerInfo.opcode === Hint || req_s3.replacerInfo.opcode === Get)) ||
      (req_s3.replacerInfo.channel(2) && (req_s3.replacerInfo.opcode === Release || req_s3.replacerInfo.opcode === ReleaseData)))
   } else {
     reqValid_s3 && hit_s3 && req_s3.replacerInfo.channel(0) &&
