@@ -376,7 +376,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     /* Update RRIP State */
     // req_type[2]: 0-cache-averse, 1-cache-friendly;
     // req_type[1]: 0-acquire, 1-release; req_type[0]: 0-non-prefetch, 1-prefetch;
-    val req_type = WireInit(0.U(2.W))
+    val req_type = WireInit(0.U(3.W))
     req_type := Cat(hawkeye_prediction,
                     req_s3.replacerInfo.channel(2),
                     (req_s3.replacerInfo.channel(0) && req_s3.replacerInfo.opcode === Hint) || req_s3.replacerInfo.refill_prefetch || (req_s3.replacerInfo.channel(2) && metaAll_s3(touch_way_s3).prefetch.getOrElse(false.B)),
