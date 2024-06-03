@@ -315,7 +315,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     write_record := false.B
   }
 
-  val tpmetaInvalidate = RegEnable(tpMetaRespValid_s2 && hit_s2, s2_valid)
+  val tpmetaInvalidate = RegEnable(tpMetaRespValid_s2 && hit_s2, s2_valid) && RegNext(s2_valid, false.B)
   val tpTable_w_valid = write_record || tpmetaInvalidate
   assert(RegNext(s2_valid, false.B) || !tpTable_w_valid, "tpTable_w_valid can only be true in s3")
 
