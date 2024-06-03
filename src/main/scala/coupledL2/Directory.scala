@@ -297,7 +297,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     val req_type = WireInit(0.U(4.W))
     req_type := Cat(origin_bits_hold(way_s3),
                     req_s3.replacerInfo.channel(2),
-                    (req_s3.replacerInfo.channel(0) && req_s3.replacerInfo.opcode === Hint) || (req_s3.replacerInfo.channel(2) && metaAll_s3(way_s3).prefetch.getOrElse(false.B)) || req_s3.replacerInfo.refill_prefetch,
+                    (!refillReqValid_s3 && req_s3.replacerInfo.channel(0) && req_s3.replacerInfo.opcode === Hint) || (req_s3.replacerInfo.channel(2) && metaAll_s3(way_s3).prefetch.getOrElse(false.B)) || (refillReqValid_s3 && req_s3.replacerInfo.refill_prefetch),
                     req_s3.refill
                     )
     
@@ -316,10 +316,10 @@ class Directory(implicit p: Parameters) extends L2Module {
     // req_type[1]: 0-non-prefetch, 1-prefetch; req_type[0]: 0-not-refill, 1-refill
     val req_type = WireInit(0.U(4.W))
     req_type := Cat(origin_bits_hold(way_s3),
-      req_s3.replacerInfo.channel(2),
-      (req_s3.replacerInfo.channel(0) && req_s3.replacerInfo.opcode === Hint) || (req_s3.replacerInfo.channel(2) && metaAll_s3(way_s3).prefetch.getOrElse(false.B)) || req_s3.replacerInfo.refill_prefetch,
-      req_s3.refill
-    )
+                    req_s3.replacerInfo.channel(2),
+                    (!refillReqValid_s3 && req_s3.replacerInfo.channel(0) && req_s3.replacerInfo.opcode === Hint) || (req_s3.replacerInfo.channel(2) && metaAll_s3(way_s3).prefetch.getOrElse(false.B)) || (refillReqValid_s3 && req_s3.replacerInfo.refill_prefetch),
+                    req_s3.refill
+                   )
     
     // Set Dueling
     val PSEL = RegInit(512.U(10.W)) //32-monitor sets, 10-bits psel
