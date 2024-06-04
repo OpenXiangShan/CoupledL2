@@ -115,6 +115,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val tpmeta = Bool()
   val tpmetaWen = Bool()
   val tpmetaWenRepl = Bool()
+  val tpReplTag = UInt(tagBits.W)
 
   // Used for get data from ReleaseBuf when snoop hit with same PA 
   val snpHitRelease = Bool()

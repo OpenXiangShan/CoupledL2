@@ -76,6 +76,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.tpmeta := false.B
     task.tpmetaWen := false.B
     task.tpmetaWenRepl := false.B
+    task.tpReplTag := 0.U(tagBits.W)
     task
   }
   def fromPrefetchReqtoTaskBundle(req: PrefetchReq): TaskBundle = {
@@ -116,6 +117,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.tpmeta := false.B
     task.tpmetaWen := false.B
     task.tpmetaWenRepl := false.B
+    task.tpReplTag := 0.U(tagBits.W)
     task
   }
   if (prefetchOpt.nonEmpty) {

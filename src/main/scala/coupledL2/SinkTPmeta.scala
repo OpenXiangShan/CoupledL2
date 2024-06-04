@@ -62,6 +62,7 @@ class SinkTPmeta(implicit p: Parameters) extends L2Module {
     task.tpmeta := true.B
     task.tpmetaWen := req.wmode
     task.tpmetaWenRepl := false.B
+    task.tpReplTag := req.l2ReqBundle.tag
     task
   }
 

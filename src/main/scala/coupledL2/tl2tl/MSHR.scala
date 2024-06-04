@@ -208,6 +208,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_release.tpmeta := req.tpmeta
     mp_release.tpmetaWen := req.tpmetaWen
     mp_release.tpmetaWenRepl := req.tpmetaWenRepl
+    mp_release.tpReplTag := req.tpReplTag
     mp_release
   }
 
@@ -274,6 +275,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_probeack.tpmeta := false.B
     mp_probeack.tpmetaWen := false.B
     mp_probeack.tpmetaWenRepl := false.B
+    mp_probeack.tpReplTag := 0.U(tagBits.W)
     mp_probeack
   }
 
@@ -402,6 +404,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_grant.tpmeta := false.B
     mp_grant.tpmetaWen := false.B
     mp_grant.tpmetaWenRepl := false.B
+    mp_grant.tpReplTag := 0.U(tagBits.W)
 
     mp_grant
   }

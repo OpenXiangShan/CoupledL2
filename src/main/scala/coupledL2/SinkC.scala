@@ -102,6 +102,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
     task.tpmeta := false.B
     task.tpmetaWen := false.B
     task.tpmetaWenRepl := false.B
+    task.tpReplTag := 0.U(tagBits.W)
     task
   }
 
