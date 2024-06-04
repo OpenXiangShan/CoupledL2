@@ -356,7 +356,9 @@ class Directory(implicit p: Parameters) extends L2Module {
     updateTPmetaReplace,
     origin_bits_hold(way_s3),
     req_s3.replacerInfo.channel(2),
-    (!refillReqValid_s3 && req_s3.replacerInfo.channel(0) && req_s3.replacerInfo.opcode === Hint) || (req_s3.replacerInfo.channel(2) && metaAll_s3(way_s3).prefetch.getOrElse(false.B)) || (refillReqValid_s3 && req_s3.replacerInfo.refill_prefetch),
+    (!refillReqValid_s3 && req_s3.replacerInfo.channel(0) && req_s3.replacerInfo.opcode === Hint) ||
+      (req_s3.replacerInfo.channel(2) && metaAll_s3(way_s3).prefetch.getOrElse(false.B)) || 
+      (refillReqValid_s3 && req_s3.replacerInfo.refill_prefetch),
     req_s3.refill
   )
   val rrpvBits = 3
