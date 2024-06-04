@@ -111,6 +111,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val tpmeta = Bool()
   val tpmetaWen = Bool()
   val tpmetaWenRepl = Bool()
+  val tpReplTag = UInt(tagBits.W)
 }
 
 class PipeStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits

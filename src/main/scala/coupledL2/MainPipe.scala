@@ -239,6 +239,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   ms_task.tpmeta := req_s3.tpmeta
   ms_task.tpmetaWen := req_s3.tpmetaWen
   ms_task.tpmetaWenRepl := need_mshr_s3_tp
+  ms_task.tpReplTag := req_s3.tpReplTag
 
   /* ======== Resps to SinkA/B/C Reqs ======== */
   val sink_resp_s3 = WireInit(0.U.asTypeOf(Valid(new TaskBundle))) // resp for sinkA/B/C request that does not need to alloc mshr
@@ -422,7 +423,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.tagWReq.bits.set  := req_s3.set
   io.tagWReq.bits.way := Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.way, // grant always use replResp way
     Mux(mshr_req_s3, req_s3.way, dirResult_s3.way))
-  io.tagWReq.bits.wtag := req_s3.tag
+  io.tagWReq.bits.wtag := Mux(task_s3.valid && mshr_req_s3 && task_s3.bits.tpmetaWenRepl, req_s3.tpReplTag, req_s3.tag)
 
   /* ======== Interact with Channels (C & D) ======== */
   // do not need s4 & s5
