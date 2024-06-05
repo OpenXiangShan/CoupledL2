@@ -36,16 +36,21 @@ class OpenLLC(implicit p: Parameters) extends LazyModule with HasOpenLLCParamete
   class OpenLLCImp(wrapper: LazyModule) extends LazyModuleImp(wrapper) {
     val io = IO(new Bundle {
       val chi = Flipped(new PortIO)
+      val nodeID = Input(UInt())
     })
-
 
     val slice = Module(new Slice()(p.alterPartial {
       case EdgeOutKey => axi4node.out.head._2
     }))
+    val linkMonitor = Module(new LLCLinkMonitor)
 
-
-    dontTouch(axi4node.out)
+    dontTouch(axi4node.out.head._1)
     dontTouch(io)
+
+    linkMonitor.io.in <> slice.io.in
+    linkMonitor.io.nodeID := io.nodeID
+    io.chi <> linkMonitor.io.out
+    axi4node.out.head._1 <> slice.io.out
   }
   lazy val module = new OpenLLCImp(this)
 }

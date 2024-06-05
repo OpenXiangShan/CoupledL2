@@ -24,7 +24,7 @@ import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2chi.CHIREQ
 
 // receive task from upwards and convert to inner task
-class RXREQ (implicit p: Parameters) extends LLCModule{
+class RXREQ (implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {
     val rxreq = Flipped(DecoupledIO(new CHIREQ()))
     val task = DecoupledIO(new Task())
