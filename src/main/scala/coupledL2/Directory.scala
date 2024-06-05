@@ -361,12 +361,12 @@ class Directory(implicit p: Parameters) extends L2Module {
       (refillReqValid_s3 && req_s3.replacerInfo.refill_prefetch),
     req_s3.refill
   )
-  val rrpvBits = 3
 
+  val rrpvBits = 6
   if(cacheParams.replacement == "srrip"){
     val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3, hit_s3, inv, rrip_req_type)
     val repl_init = Wire(Vec(ways, UInt(rrpvBits.W)))
-    repl_init.foreach(_ := Cat(1.U(1.W), 0.U((rrpvBits-1).W)))
+    repl_init.foreach(_ := Fill(rrpvBits, 1.U(1.W)))
     replacer_sram_opt.get.io.w(
       !resetFinish || replacerWen,
       Mux(resetFinish, next_state_s3, repl_init.asUInt),
@@ -400,7 +400,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3, hit_s3, inv, repl_type, rrip_req_type)
 
     val repl_init = Wire(Vec(ways, UInt(rrpvBits.W)))
-    repl_init.foreach(_ := Cat(1.U(1.W), 0.U((rrpvBits-1).W)))
+    repl_init.foreach(_ := Fill(rrpvBits, 1.U(1.W)))
     replacer_sram_opt.get.io.w(
       !resetFinish || replacerWen,
       Mux(resetFinish, next_state_s3, repl_init.asUInt),
