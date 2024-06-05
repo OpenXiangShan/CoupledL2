@@ -38,6 +38,8 @@ trait HasCoupledL2Parameters {
   def enableCHI = p(EnableCHI)
   def cacheParams = p(L2ParamKey)
 
+  def rrpvBits = 6
+
   def XLEN = 64
   def blocks = cacheParams.sets * cacheParams.ways
   def blockBytes = cacheParams.blockBytes
