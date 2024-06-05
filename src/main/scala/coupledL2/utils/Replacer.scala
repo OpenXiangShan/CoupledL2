@@ -310,6 +310,17 @@ class SetAssocReplacer(n_sets: Int, n_ways: Int, policy: String) extends SetAsso
   def way(set: UInt) = logic.get_replace_way(state_vec(set))
 }
 
+// separate UInt to Vec[UInt] for each way
+object getStates4RRIP {
+  def apply(n_ways: Int, rrpvBits: Int, stateAll: UInt): Vec[UInt] = {
+    val states = Wire(Vec(n_ways, UInt(rrpvBits.W)))
+    states.zipWithIndex.map { case (e, i) =>
+      e := stateAll(rrpvBits * (i + 1) - 1, rrpvBits * i)
+    }
+    states
+  }
+}
+
  // 3-bit static Re-Reference Interval Prediction
 class StaticRRIP(n_ways: Int, rrpvBits: Int = 6) extends ReplacementPolicy {
   def nBits = rrpvBits * n_ways
@@ -323,11 +334,8 @@ class StaticRRIP(n_ways: Int, rrpvBits: Int = 6) extends ReplacementPolicy {
   def get_next_state(state: UInt, touch_way: UInt) = 0.U //DontCare
 
   override def get_next_state(state: UInt, touch_way: UInt, hit: Bool, invalid: Bool, req_type: UInt): UInt = {
-    val State  = Wire(Vec(n_ways, UInt(rrpvBits.W)))
+    val State = getStates4RRIP(n_ways, rrpvBits, state)
     val nextState  = Wire(Vec(n_ways, UInt(rrpvBits.W)))
-    State.zipWithIndex.map { case (e, i) =>
-      e := state(rrpvBits*i + 1, rrpvBits*i)
-    }
     // hit-Promotion, miss-Insertion & Aging
     val increcement = Fill(rrpvBits, 1.U(1.W)) - State(touch_way)
     val baseRRPV4data = Fill(rrpvBits, 1.U(1.W)) - 4.U
@@ -352,10 +360,7 @@ class StaticRRIP(n_ways: Int, rrpvBits: Int = 6) extends ReplacementPolicy {
   }
 
   def get_replace_way(state: UInt): UInt = {
-    val RRPVVec  = Wire(Vec(n_ways, UInt(rrpvBits.W)))
-    RRPVVec.zipWithIndex.map { case (e, i) =>
-      e := state(rrpvBits * i + 1, rrpvBits * i)
-    }
+    val RRPVVec = getStates4RRIP(n_ways, rrpvBits, state)
     // scan each way's rrpv, find the least re-referenced way
     val lrrWayVec = Wire(Vec(n_ways,Bool()))
     lrrWayVec.zipWithIndex.map { case (e, i) =>
@@ -387,12 +392,9 @@ class BRRIP(n_ways: Int, rrpvBits: Int = 6) extends ReplacementPolicy {
   def get_next_state(state: UInt, touch_way: UInt) = 0.U //DontCare
 
   override def get_next_state(state: UInt, touch_way: UInt, hit: Bool, invalid: Bool, req_type: UInt): UInt = {
-    val State = Wire(Vec(n_ways, UInt(rrpvBits.W)))
+    val State = getStates4RRIP(n_ways, rrpvBits, state)
     val nextState = Wire(Vec(n_ways, UInt(rrpvBits.W)))
-    State.zipWithIndex.map { case (e, i) =>
-      e := state(rrpvBits * i + 1, rrpvBits * i)
-    }
-    
+
     // hit-Promotion, miss-Insertion & Aging
     val increcement = Fill(rrpvBits, 1.U(1.W)) - State(touch_way)
     val baseRRPV4data = Fill(rrpvBits, 1.U(1.W)) - 4.U
@@ -424,10 +426,7 @@ class BRRIP(n_ways: Int, rrpvBits: Int = 6) extends ReplacementPolicy {
   }
 
   def get_replace_way(state: UInt): UInt = {
-    val RRPVVec = Wire(Vec(n_ways, UInt(rrpvBits.W)))
-    RRPVVec.zipWithIndex.map { case (e, i) =>
-      e := state(rrpvBits * i + 1, rrpvBits * i)
-    }
+    val RRPVVec = getStates4RRIP(n_ways, rrpvBits, state)
     // scan each way's rrpv, find the least re-referenced way
     val lrrWayVec = Wire(Vec(n_ways,Bool()))
     lrrWayVec.zipWithIndex.map { case (e, i) =>
@@ -465,10 +464,7 @@ class DRRIP(n_ways: Int, rrpvBits: Int = 6) extends ReplacementPolicy {
     Mux(chosen_type, repl_BRRIP.get_next_state(state, touch_way, hit, invalid, req_type), repl_SRRIP.get_next_state(state, touch_way, hit, invalid, req_type))
   }
   def get_replace_way(state: UInt): UInt = {
-    val RRPVVec  = Wire(Vec(n_ways, UInt(rrpvBits.W)))
-    RRPVVec.zipWithIndex.map { case (e, i) =>
-      e := state(rrpvBits * i + 1, rrpvBits * i)
-    }
+    val RRPVVec = getStates4RRIP(n_ways, rrpvBits, state)
     // scan each way's rrpv, find the least re-referenced way
     val lrrWayVec = Wire(Vec(n_ways,Bool()))
     lrrWayVec.zipWithIndex.map { case (e, i) =>
