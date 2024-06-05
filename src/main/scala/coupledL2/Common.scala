@@ -399,12 +399,12 @@ class TPmetaReq(implicit p: Parameters) extends L2Bundle {
   val hartid = UInt(4.W) // max 16 harts
   val l2ReqBundle = new TPmetaL2ReqBundle()
   val wmode = Bool()
-  val rawData = Vec(16, UInt((36-6).W))
+  val rawData = Vec(16, UInt((fullAddressBits - offsetBits).W))
 }
 
-class TPmetaResp extends Bundle {
+class TPmetaResp(implicit p: Parameters)  extends L2Bundle {
   val hartid = UInt(4.W)
-  val rawData = Vec(16, UInt((36-6).W))
+  val rawData = Vec(16, UInt((fullAddressBits - offsetBits).W))
 }
 
 class TPmetaL2Req(implicit p: Parameters) extends L2Bundle {
