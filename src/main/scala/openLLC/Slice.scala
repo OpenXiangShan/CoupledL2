@@ -32,18 +32,34 @@ class Slice()(implicit p: Parameters) extends LLCModule {
     val waitPCrdInfo = Output(Vec(mshrs, new PCrdInfo))
   })
 
+  val tx = io.in.rx
+  val rx = io.in.tx
+
   /* UpStream CHI-related modules */
-  val rxreq = Module(new RXREQ())
   val txrsp = Module(new TXRSP())
   val txdat = Module(new TXDAT())
-
   val txsnp = Module(new TXSNP())
+
+  val rxreq = Module(new RXREQ())
   val rxrsp = Module(new RXRSP())
   val rxdat = Module(new RXDAT())
 
   /* Data path and control path */
   val mainPipe = Module(new MainPipe())
 
+  tx.dat <> txdat.io.txdat
+  tx.rsp <> txrsp.io.txrsp
+  tx.snp <> txsnp.io.txsnp
+
+  rx.req <> rxreq.io.rxreq
+  rx.rsp <> rxrsp.io.rxrsp
+  rx.dat <> rxdat.io.rxdat
+
+  txsnp.io.task := DontCare
+  rxreq.io.task := DontCare
+
+  io.out := DontCare
+  io.waitPCrdInfo := DontCare
 
   println(s"addrBits $fullAddressBits")
 

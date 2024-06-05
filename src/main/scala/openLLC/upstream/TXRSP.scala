@@ -21,7 +21,12 @@ import chisel3._
 import chisel3.util._
 import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.Parameters
+import coupledL2.tl2chi.CHIRSP
 
-class TXRSP (implicit p: Parameters) extends LLCModule{
+class TXRSP (implicit p: Parameters) extends LLCModule {
+  val io = IO(new Bundle() {
+    val txrsp = DecoupledIO(new CHIRSP())
 
+  })
+  io.txrsp := DontCare
 }
