@@ -58,6 +58,71 @@ object OrderEncodings {
   def isRequestOrder(order: UInt): Bool = order >= RequestOrder
 }
 
+object RespErrEncodings {
+  val width = 2
+
+  def OK = "b00".U(width.W) // Okay
+  def EXOK = "b01".U(width.W) // Exclusive Okay
+  def DERR = "b10".U(width.W) // Data Error
+  def NDERR = "b11".U(width.W) // Non-data Error
+}
+
+trait HasCHIMsgParameters {
+  def NODEID_WIDTH = 7
+  require(NODEID_WIDTH >= 7 && NODEID_WIDTH <= 11)
+
+  // Transaction request fields
+  def QOS_WIDTH = 4
+  def TGTID_WIDTH = NODEID_WIDTH
+  def SRCID_WIDTH = NODEID_WIDTH
+  def TXNID_WIDTH = 8 // An 8-bit field is defined for the TxnID to accommodate up to 256 outstanding transactions
+  def LPID_WIDTH = 5
+  def RETURNNID_WIDTH = NODEID_WIDTH
+  def RETURNTXNID_WIDTH = TXNID_WIDTH
+  def STASHNID_WIDTH = NODEID_WIDTH
+  def STASHLPID_WIDTH = LPID_WIDTH
+
+
+  def REQ_OPCODE_WIDTH = CHIOpcode.REQOpcodes.width
+  def RSP_OPCODE_WIDTH = CHIOpcode.RSPOpcodes.width
+  def SNP_OPCODE_WIDTH = CHIOpcode.SNPOpcodes.width
+  def DAT_OPCODE_WIDTH = CHIOpcode.DATOpcodes.width
+  def OPCODE_WIDTH = max(REQ_OPCODE_WIDTH, max(RSP_OPCODE_WIDTH, max(SNP_OPCODE_WIDTH, DAT_OPCODE_WIDTH)))
+
+  def ADDR_WIDTH = 48
+  def SNP_ADDR_WIDTH = ADDR_WIDTH - 3
+  def SIZE_WIDTH = 3
+  def PCRDTYPE_WIDTH = 4
+  def MEMATTR_WIDTH = 4
+  def ORDER_WIDTH = OrderEncodings.width
+
+  // Snoop request fields
+  def FWDNID_WIDTH = NODEID_WIDTH
+  def FWDTXNID_WIDTH = TXNID_WIDTH
+  def VMIDEXT_WIDTH = 8
+
+  // Data fields && Response fields
+  def HOMENID_WIDTH = NODEID_WIDTH
+  def DBID_WIDTH = TXNID_WIDTH
+  def RESPERR_WIDTH = RespErrEncodings.width
+  def RESP_WIDTH = CHICohStates.width
+  def FWDSTATE_WIDTH = CHICohStates.width
+  def DATAPULL_WIDTH = 3
+  def DATASOURCE_WIDTH = 3
+  def CCID_WIDTH = 2
+  def DATAID_WIDTH = 2
+  def BE_WIDTH = DATA_WIDTH / 8
+  def DATA_WIDTH = 256
+  def DATACHECK_WIDTH = DATA_WIDTH / 8
+
+  // User defined
+  /*
+  * Currently don't care about *::RSVDC, and the width is tied to 4.
+  */
+  def REQ_RSVDC_WIDTH = 4 // Permitted RSVDC bus widths X = 0, 4, 12, 16, 24, 32
+  def DAT_RSVDC_WIDTH = 4 // Permitted RSVDC bus widths Y = 0, 4, 12, 16, 24, 32
+}
+
 class MemAttr extends Bundle {
   // The Allocate attribute is a an allocation hint.
   // It indicates the recommended allocation policy for a transaction.
@@ -83,64 +148,6 @@ object MemAttr extends HasCHIMsgParameters {
     memAttr
   }
   def apply(): MemAttr = apply(false.B, false.B, false.B, false.B)
-}
-
-trait HasCHIMsgParameters {
-  // TODO: Comfirm the fields and their corresponding width
-  def NODEID_WIDTH = 7
-  require(NODEID_WIDTH >= 7 && NODEID_WIDTH <= 11)
-
-  // Transaction request fields
-  def QOS_WIDTH = 4
-  def TGTID_WIDTH = NODEID_WIDTH
-  def SRCID_WIDTH = NODEID_WIDTH
-  def TXNID_WIDTH = 8 // An 8-bit field is defined for the TxnID to accommodate up to 256 outstanding transactions
-  def LPID_WIDTH = 5 // TODO: To be confirmed
-  def RETURNNID_WIDTH = NODEID_WIDTH
-  def RETURNTXNID_WIDTH = TXNID_WIDTH
-  def STASHNID_WIDTH = NODEID_WIDTH
-  def STASHLPID_WIDTH = LPID_WIDTH
-  // def STASHINFO_WIDTH = 2 //TODO
-
-
-  def REQ_OPCODE_WIDTH = CHIOpcode.REQOpcodes.width
-  def RSP_OPCODE_WIDTH = CHIOpcode.RSPOpcodes.width
-  def SNP_OPCODE_WIDTH = CHIOpcode.SNPOpcodes.width
-  def DAT_OPCODE_WIDTH = CHIOpcode.DATOpcodes.width
-  def OPCODE_WIDTH = max(REQ_OPCODE_WIDTH, max(RSP_OPCODE_WIDTH, max(SNP_OPCODE_WIDTH, DAT_OPCODE_WIDTH)))
-
-  def ADDR_WIDTH = 48 // TODO: To be confirmed
-  def SNP_ADDR_WIDTH = ADDR_WIDTH - 3
-  def SIZE_WIDTH = 3
-  def PCRDTYPE_WIDTH = 4
-  def MEMATTR_WIDTH = 4
-  def ORDER_WIDTH = OrderEncodings.width
-
-  // Snoop request fields
-  def FWDNID_WIDTH = NODEID_WIDTH
-  def FWDTXNID_WIDTH = TXNID_WIDTH
-  def VMIDEXT_WIDTH = 8 // TODO: To be confirmed
-
-  // Data fields && Response fields
-  def HOMENID_WIDTH = NODEID_WIDTH
-  def DBID_WIDTH = TXNID_WIDTH
-  def RESPERR_WIDTH = 2
-  def RESP_WIDTH = CHICohStates.width
-  def FWDSTATE_WIDTH = CHICohStates.width
-  def DATAPULL_WIDTH = 3
-  def DATASOURCE_WIDTH = 3
-  def CCID_WIDTH = 2 // TODO: To be confirmed
-  def DATAID_WIDTH = 2 // TODO: To be confirmed
-  def BE_WIDTH = DATA_WIDTH / 8
-  def DATA_WIDTH = 256
-  def DATACHECK_WIDTH = DATA_WIDTH / 8
-
-  // User defined
-  /*
-  * Currently don't care about *::RSVDC, and the width is tied to 4.
-  */
-  def REQ_RSVDC_WIDTH = 4 // Permitted RSVDC bus widths X = 0, 4, 12, 16, 24, 32
-  def DAT_RSVDC_WIDTH = 4 // Permitted RSVDC bus widths Y = 0, 4, 12, 16, 24, 32
 }
 
 abstract class CHIBundle extends Bundle with HasCHIMsgParameters
@@ -237,7 +244,6 @@ class CHIDAT extends CHIBundle {
   val rsvdc = UInt(DAT_RSVDC_WIDTH.W)
   val be = UInt(BE_WIDTH.W)
   val data = UInt(DATA_WIDTH.W)
-  // TODO: maybe Data Check and Poison
 
   /* MSB */
 }
