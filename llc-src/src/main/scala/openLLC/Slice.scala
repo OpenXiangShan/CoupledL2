@@ -22,28 +22,59 @@ import chisel3.util._
 import freechips.rocketchip.amba.axi4._
 import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.tl2chi.{DecoupledPortIO, PCrdInfo}
+import coupledL2.tl2chi.{DecoupledPortIO, PCrdInfo, DecoupledNoSnpPortIO}
 
 class Slice()(implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {
     val in = Flipped(new DecoupledPortIO)
-    val out = AXI4Bundle(edgeOut.bundle)
+    val out = new DecoupledNoSnpPortIO
 
     val waitPCrdInfo = Output(Vec(mshrs, new PCrdInfo))
   })
 
-  /* UpStream CHI-related modules */
-  val rxreq = Module(new RXREQ())
-  val txrsp = Module(new TXRSP())
-  val txdat = Module(new TXDAT())
+  val txUp = io.in.rx
+  val rxUp = io.in.tx
+  val txDown = io.out.tx
+  val rxDown = io.out.rx
 
-  val txsnp = Module(new TXSNP())
-  val rxrsp = Module(new RXRSP())
-  val rxdat = Module(new RXDAT())
+  /* UpStream CHI-related modules */
+  val txrspUp = Module(new UpTXRSP())
+  val txdatUp = Module(new UpTXDAT())
+  val txsnpUp = Module(new UpTXSNP())
+
+  val rxreqUp = Module(new UpRXREQ())
+  val rxrspUp = Module(new UpRXRSP())
+  val rxdatUp = Module(new UpRXDAT())
+
+  /* DownStream CHI-related modules */
+  val txreqDown = Module(new DownTXREQ())
+  val txdatDown = Module(new DownTXDAT())
+
+  val rxrspDown = Module(new DownRXRSP())
+  val rxdatDown = Module(new DownRXDAT())
 
   /* Data path and control path */
   val mainPipe = Module(new MainPipe())
 
+  txUp.dat <> txdatUp.io.dat
+  txUp.rsp <> txrspUp.io.rsp
+  txUp.snp <> txsnpUp.io.snp
+
+  rxUp.req <> rxreqUp.io.req
+  rxUp.rsp <> rxrspUp.io.rsp
+  rxUp.dat <> rxdatUp.io.dat
+
+  txDown.req <> txreqDown.io.req
+  txDown.dat <> txdatDown.io.dat
+
+  rxDown.rsp <> rxrspDown.io.rsp
+  rxDown.dat <> rxdatDown.io.dat
+
+  txsnpUp.io.task := DontCare
+  rxreqUp.io.task := DontCare
+  txreqDown.io.task := DontCare
+
+  io.waitPCrdInfo := DontCare
 
   println(s"addrBits $fullAddressBits")
 
