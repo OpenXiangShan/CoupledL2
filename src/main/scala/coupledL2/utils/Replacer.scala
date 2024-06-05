@@ -51,13 +51,13 @@ abstract class SetAssocReplacementPolicy {
 }
 
 object ReplacementPolicy {
-  def fromString(s: String, n_ways: Int): ReplacementPolicy = s.toLowerCase match {
+  def fromString(s: String, n_ways: Int, rrpvBits: Int = 6): ReplacementPolicy = s.toLowerCase match {
     case "random" => new RandomReplacement(n_ways)
     case "lru"    => new TrueLRU(n_ways)
     case "plru"   => new PseudoLRU(n_ways)
-    case "srrip"   => new StaticRRIP(n_ways)
-    case "brrip"   => new BRRIP(n_ways)
-    case "drrip"   => new DRRIP(n_ways)
+    case "srrip"   => new StaticRRIP(n_ways, rrpvBits)
+    case "brrip"   => new BRRIP(n_ways, rrpvBits)
+    case "drrip"   => new DRRIP(n_ways, rrpvBits)
     case t => throw new IllegalArgumentException(s"unknown Replacement Policy type $t")
   }
 }
