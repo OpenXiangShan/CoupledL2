@@ -311,7 +311,7 @@ class SetAssocReplacer(n_sets: Int, n_ways: Int, policy: String) extends SetAsso
 }
 
  // 3-bit static Re-Reference Interval Prediction
-class StaticRRIP(n_ways: Int, rrpvBits: Int = 3) extends ReplacementPolicy {
+class StaticRRIP(n_ways: Int, rrpvBits: Int = 6) extends ReplacementPolicy {
   def nBits = rrpvBits * n_ways
   def perSet = true
 
@@ -339,9 +339,9 @@ class StaticRRIP(n_ways: Int, rrpvBits: Int = 3) extends ReplacementPolicy {
       when(i.U === touch_way) { // update touch way
         e := MuxCase(State(i), Seq(
           (req_type(4)) -> 0.U,
-          ((req_type(2, 0) === 0.U && hit) || req_type(2, 0) === 1.U || req_type === 12.U) -> 4.U,
-          (req_type(2, 0) === 3.U) -> 5.U,
-          (req_type === 4.U || req_type(2, 0) === 6.U) -> 6.U
+          ((req_type(2, 0) === 0.U && hit) || req_type(2, 0) === 1.U || req_type === 12.U) -> (Fill(rrpvBits, 1.U(1.W)) - 3.U),
+          (req_type(2, 0) === 3.U) -> (Fill(rrpvBits, 1.U(1.W)) - 2.U),
+          (req_type === 4.U || req_type(2, 0) === 6.U) -> (Fill(rrpvBits, 1.U(1.W)) - 1.U)
         ))
       }.otherwise { // update other way
         e := Mux(hit || invalid, State(i), State(i) + increcement)
@@ -373,7 +373,7 @@ class StaticRRIP(n_ways: Int, rrpvBits: Int = 3) extends ReplacementPolicy {
 }
 
 //BRRIP, 2-bit bimodal rrip
-class BRRIP(n_ways: Int, rrpvBits: Int = 3) extends ReplacementPolicy {
+class BRRIP(n_ways: Int, rrpvBits: Int = 6) extends ReplacementPolicy {
   def nBits = rrpvBits * n_ways
   def perSet = true
 
@@ -403,9 +403,9 @@ class BRRIP(n_ways: Int, rrpvBits: Int = 3) extends ReplacementPolicy {
       when(i.U === touch_way) { // update touch way
         e := MuxCase(State(i), Seq(
           (req_type(4)) -> 0.U,
-          ((req_type(2,0) === 0.U && hit) || req_type(2,0) === 1.U || req_type === 12.U) -> 4.U,
-          (req_type(2,0) === 3.U) -> 5.U,
-          (req_type === 4.U || req_type(2,0) === 6.U) -> 7.U
+          ((req_type(2,0) === 0.U && hit) || req_type(2,0) === 1.U || req_type === 12.U) -> (Fill(rrpvBits, 1.U(1.W)) - 3.U),
+          (req_type(2,0) === 3.U) -> (Fill(rrpvBits, 1.U(1.W)) - 2.U),
+          (req_type === 4.U || req_type(2,0) === 6.U) -> (Fill(rrpvBits, 1.U(1.W)) - 0.U)
         ))
       }.otherwise { // update other way
         e := Mux(hit || invalid, State(i), State(i) + increcement)
