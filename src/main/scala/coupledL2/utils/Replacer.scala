@@ -330,6 +330,7 @@ class StaticRRIP(n_ways: Int, rrpvBits: Int = 6) extends ReplacementPolicy {
     }
     // hit-Promotion, miss-Insertion & Aging
     val increcement = Fill(rrpvBits, 1.U(1.W)) - State(touch_way)
+    val baseRRPV4data = Fill(rrpvBits, 1.U(1.W)) - 4.U
     // req_type[3]: 0-firstuse, 1-reuse; req_type[2]: 0-acquire, 1-release;
     // req_type[1]: 0-non-prefetch, 1-prefetch; req_type[0]: 0-not-refill, 1-refill
     // rrpv: tp = 0;
@@ -339,9 +340,9 @@ class StaticRRIP(n_ways: Int, rrpvBits: Int = 6) extends ReplacementPolicy {
       when(i.U === touch_way) { // update touch way
         e := MuxCase(State(i), Seq(
           (req_type(4)) -> 0.U,
-          ((req_type(2, 0) === 0.U && hit) || req_type(2, 0) === 1.U || req_type === 12.U) -> (Fill(rrpvBits, 1.U(1.W)) - 3.U),
-          (req_type(2, 0) === 3.U) -> (Fill(rrpvBits, 1.U(1.W)) - 2.U),
-          (req_type === 4.U || req_type(2, 0) === 6.U) -> (Fill(rrpvBits, 1.U(1.W)) - 1.U)
+          ((req_type(2, 0) === 0.U && hit) || req_type(2, 0) === 1.U || req_type === 12.U) -> (baseRRPV4data + 0.U),
+          (req_type(2, 0) === 3.U) -> (baseRRPV4data + 1.U),
+          (req_type === 4.U || req_type(2, 0) === 6.U) -> (baseRRPV4data + 2.U)
         ))
       }.otherwise { // update other way
         e := Mux(hit || invalid, State(i), State(i) + increcement)
@@ -394,6 +395,7 @@ class BRRIP(n_ways: Int, rrpvBits: Int = 6) extends ReplacementPolicy {
     
     // hit-Promotion, miss-Insertion & Aging
     val increcement = Fill(rrpvBits, 1.U(1.W)) - State(touch_way)
+    val baseRRPV4data = Fill(rrpvBits, 1.U(1.W)) - 4.U
     // req_type[3]: 0-firstuse, 1-reuse; req_type[2]: 0-acquire, 1-release;
     // req_type[1]: 0-non-prefetch, 1-prefetch; req_type[0]: 0-not-refill, 1-refill
     // rrpv: tp = 0;
@@ -403,9 +405,9 @@ class BRRIP(n_ways: Int, rrpvBits: Int = 6) extends ReplacementPolicy {
       when(i.U === touch_way) { // update touch way
         e := MuxCase(State(i), Seq(
           (req_type(4)) -> 0.U,
-          ((req_type(2,0) === 0.U && hit) || req_type(2,0) === 1.U || req_type === 12.U) -> (Fill(rrpvBits, 1.U(1.W)) - 3.U),
-          (req_type(2,0) === 3.U) -> (Fill(rrpvBits, 1.U(1.W)) - 2.U),
-          (req_type === 4.U || req_type(2,0) === 6.U) -> (Fill(rrpvBits, 1.U(1.W)) - 0.U)
+          ((req_type(2,0) === 0.U && hit) || req_type(2,0) === 1.U || req_type === 12.U) -> (baseRRPV4data + 0.U),
+          (req_type(2,0) === 3.U) -> (baseRRPV4data + 1.U),
+          (req_type === 4.U || req_type(2,0) === 6.U) -> (baseRRPV4data + 3.U)
         ))
       }.otherwise { // update other way
         e := Mux(hit || invalid, State(i), State(i) + increcement)
@@ -444,7 +446,7 @@ class BRRIP(n_ways: Int, rrpvBits: Int = 6) extends ReplacementPolicy {
 }
 
 // DRRIP, a hybrid of SRRIP and BRRIP by set dueling
-class DRRIP(n_ways: Int, rrpvBits: Int = 3) extends ReplacementPolicy {
+class DRRIP(n_ways: Int, rrpvBits: Int = 6) extends ReplacementPolicy {
   private val repl_SRRIP = new StaticRRIP(n_ways, rrpvBits)
   private val repl_BRRIP = new BRRIP(n_ways, rrpvBits)
 
