@@ -95,6 +95,8 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   val dbID = Reg(UInt(DBID_WIDTH.W))
   val allowRetry = RegInit(true.B)
   val pCrdType = Reg(UInt(PCRDTYPE_WIDTH.W))
+  val denied = Reg(Bool())
+  val corrupt = Reg(Bool())
   val isRead = req.opcode === Get
 
   val wordBits = io.req.bits.data.getWidth // 64
@@ -117,6 +119,8 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
     s_txreq := false.B
     s_resp := false.B
     allowRetry := true.B
+    denied := false.B
+    corrupt := false.B
     when (io.req.bits.opcode === Get) {
       w_compdata := false.B
       w_readreceipt.foreach(_ := false.B)
@@ -136,6 +140,8 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   when (rxdat.fire) {
     w_compdata := true.B
     rdata := rxdat.bits.data
+    denied := denied || rxdat.bits.respErr === RespErrEncodings.NDERR
+    corrupt := corrupt || rxdat.bits.respErr === RespErrEncodings.DERR
   }
   when (io.resp.fire) {
     s_resp := true.B
@@ -148,6 +154,10 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
       w_dbidresp := true.B
       srcID := rxrsp.bits.srcID
       dbID := rxrsp.bits.dbID
+    }
+    when (rxrsp.bits.opcode === RSPOpcodes.CompDBIDResp || rxrsp.bits.opcode === RSPOpcodes.Comp) {
+      denied := denied || rxrsp.bits.respErr === RespErrEncodings.NDERR
+      // TODO: d_corrupt is reserved and must be 0 in TileLink
     }
     when (rxrsp.bits.opcode === RSPOpcodes.RetryAck) {
       s_txreq := false.B
@@ -193,8 +203,8 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   io.resp.bits.size := req.size
   io.resp.bits.source := req.source
   io.resp.bits.sink := 0.U // ignored
-  io.resp.bits.denied := false.B
-  io.resp.bits.corrupt := false.B
+  io.resp.bits.denied := denied
+  io.resp.bits.corrupt := isRead && corrupt
   io.resp.bits.data := ParallelLookUp(
     reqWordIdx,
     List.tabulate(words)(i => i.U -> rdata((i + 1) * wordBits - 1, i * wordBits))
