@@ -36,72 +36,74 @@ trait HasCoupledL2Parameters {
   val p: Parameters
   val cacheParams = p(L2ParamKey)
 
-  val blocks = cacheParams.sets * cacheParams.ways
-  val blockBytes = cacheParams.blockBytes
-  val beatBytes = cacheParams.channelBytes.d.get
-  val beatSize = blockBytes / beatBytes
+  def rrpvBits = 6
 
-  val wayBits = log2Ceil(cacheParams.ways)
-  val setBits = log2Ceil(cacheParams.sets)
-  val offsetBits = log2Ceil(blockBytes)
-  val beatBits = offsetBits - log2Ceil(beatBytes)
-  val stateBits = MetaData.stateBits
-  val aliasBitsOpt = if(cacheParams.clientCaches.isEmpty) None
+  def blocks = cacheParams.sets * cacheParams.ways
+  def blockBytes = cacheParams.blockBytes
+  def beatBytes = cacheParams.channelBytes.d.get
+  def beatSize = blockBytes / beatBytes
+
+  def wayBits = log2Ceil(cacheParams.ways)
+  def setBits = log2Ceil(cacheParams.sets)
+  def offsetBits = log2Ceil(blockBytes)
+  def beatBits = offsetBits - log2Ceil(beatBytes)
+  def stateBits = MetaData.stateBits
+  def aliasBitsOpt = if(cacheParams.clientCaches.isEmpty) None
                   else cacheParams.clientCaches.head.aliasBitsOpt
-  val vaddrBitsOpt = if(cacheParams.clientCaches.isEmpty) None
+  def vaddrBitsOpt = if(cacheParams.clientCaches.isEmpty) None
                   else cacheParams.clientCaches.head.vaddrBitsOpt
   // from L1 load miss cache require
-  val isKeywordBitsOpt = if(cacheParams.clientCaches.isEmpty) None
+  def isKeywordBitsOpt = if(cacheParams.clientCaches.isEmpty) None
                   else cacheParams.clientCaches.head.isKeywordBitsOpt
          
-  val pageOffsetBits = log2Ceil(cacheParams.pageBytes)
+  def pageOffsetBits = log2Ceil(cacheParams.pageBytes)
 
-  val bufBlocks = 4 // hold data that flows in MainPipe
-  val bufIdxBits = log2Up(bufBlocks)
+  def bufBlocks = 4 // hold data that flows in MainPipe
+  def bufIdxBits = log2Up(bufBlocks)
 
-  val releaseBufWPorts = 3 // sinkC & mainPipe s5 & mainPipe s3 (nested)
+  def releaseBufWPorts = 3 // sinkC & mainPipe s5 & mainPipe s3 (nested)
 
   // Prefetch
-  val prefetchOpt = cacheParams.prefetch
-  val hasPrefetchBit = prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchBit
-  val hasPrefetchSrc = prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchSrc
-  val hasTP = prefetchOpt.nonEmpty && prefetchOpt.get.hasTP
-  val TPmetaL2Ways = 2
-  val topDownOpt = if(cacheParams.elaboratedTopDown) Some(true) else None
+  def prefetchOpt = cacheParams.prefetch
+  def hasPrefetchBit = prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchBit
+  def hasPrefetchSrc = prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchSrc
+  def hasTP = prefetchOpt.nonEmpty && prefetchOpt.get.hasTP
+  def TPmetaL2Ways = 2
+  def topDownOpt = if(cacheParams.elaboratedTopDown) Some(true) else None
 
-  val enableHintGuidedGrant = true
+  def enableHintGuidedGrant = true
 
-  val hintCycleAhead = 3 // how many cycles the hint will send before grantData
+  def hintCycleAhead = 3 // how many cycles the hint will send before grantData
 
-  lazy val edgeIn = p(EdgeInKey)
-  lazy val edgeOut = p(EdgeOutKey)
-  lazy val bankBits = p(BankBitsKey)
+  def edgeIn = p(EdgeInKey)
+  def edgeOut = p(EdgeOutKey)
+  def bankBits = p(BankBitsKey)
 
-  lazy val clientBits = edgeIn.client.clients.count(_.supports.probe)
-  lazy val sourceIdBits = edgeIn.bundle.sourceBits // ids of L1
-  lazy val msgSizeBits = edgeIn.bundle.sizeBits
-  lazy val sourceIdAll = 1 << sourceIdBits
+  def clientBits = edgeIn.client.clients.count(_.supports.probe)
+  def sourceIdBits = edgeIn.bundle.sourceBits // ids of L1
+  def msgSizeBits = edgeIn.bundle.sizeBits
+  def sourceIdAll = 1 << sourceIdBits
 
-  lazy val hartIdLen: Int = log2Up(cacheParams.hartIds.length)
+  def hartIdLen: Int = log2Up(cacheParams.hartIds.length)
 
-  val mshrsAll = cacheParams.mshrs
-  val idsAll = 256// ids of L2 //TODO: Paramterize like this: max(mshrsAll * 2, sourceIdAll * 2)
-  val mshrBits = log2Up(idsAll)
+  def mshrsAll = cacheParams.mshrs
+  def idsAll = 256// ids of L2 //TODO: Paramterize like this: max(mshrsAll * 2, sourceIdAll * 2)
+  def mshrBits = log2Up(idsAll)
   // id of 0XXXX refers to mshrId
   // id of 1XXXX refers to reqs that do not enter mshr
   // require(isPow2(idsAll))
 
-  val grantBufSize = mshrsAll
-  val grantBufInflightSize = mshrsAll //TODO: lack or excessive? !! WARNING
+  def grantBufSize = mshrsAll
+  def grantBufInflightSize = mshrsAll //TODO: lack or excessive? !! WARNING
 
   // width params with bank idx (used in prefetcher / ctrl unit)
-  lazy val fullAddressBits = edgeOut.bundle.addressBits
-  lazy val fullTagBits = fullAddressBits - setBits - offsetBits
+  def fullAddressBits = edgeOut.bundle.addressBits
+  def fullTagBits = fullAddressBits - setBits - offsetBits
   // width params without bank idx (used in slice)
-  lazy val addressBits = fullAddressBits - bankBits
-  lazy val tagBits = fullTagBits - bankBits
+  def addressBits = fullAddressBits - bankBits
+  def tagBits = fullTagBits - bankBits
 
-  lazy val outerSinkBits = edgeOut.bundle.sinkBits
+  def outerSinkBits = edgeOut.bundle.sinkBits
 
   def getClientBitOH(sourceId: UInt): UInt = {
     if (clientBits == 0) {

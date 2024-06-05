@@ -364,7 +364,6 @@ class Directory(implicit p: Parameters) extends L2Module {
     req_s3.refill
   )
 
-  val rrpvBits = 6
   if(cacheParams.replacement == "srrip"){
     val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3, hit_s3, inv, req_type)
     val repl_init = Wire(Vec(ways, UInt(rrpvBits.W)))
