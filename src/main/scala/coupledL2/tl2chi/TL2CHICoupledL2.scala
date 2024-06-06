@@ -59,7 +59,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
     minLatency = 2,
     responseFields = cacheParams.respField,
     requestKeys = cacheParams.reqKey,
-    endSinkId = idsAll // TODO: Confirm this
+    endSinkId = idsAll * (1 << bankBits)
   )
   val managerNode = TLManagerNode(Seq(managerParameters))
 
