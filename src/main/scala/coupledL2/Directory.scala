@@ -290,18 +290,19 @@ class Directory(implicit p: Parameters) extends L2Module {
       Mux(resetFinish, req_s3.set, resetIdx),
       UIntToOH(way_s3)
   )
+  val rrip_req_type = WireInit(0.U(4.W))
+  // [3]: 0-firstuse, 1-reuse;
+  // [2]: 0-acquire, 1-release;
+  // [1]: 0-non-prefetch, 1-prefetch;
+  // [0]: 0-not-refill, 1-refill
+  rrip_req_type := Cat(origin_bits_hold(way_s3),
+    req_s3.replacerInfo.channel(2),
+    (!refillReqValid_s3 && req_s3.replacerInfo.channel(0) && req_s3.replacerInfo.opcode === Hint) || (req_s3.replacerInfo.channel(2) && metaAll_s3(way_s3).prefetch.getOrElse(false.B)) || (refillReqValid_s3 && req_s3.replacerInfo.refill_prefetch),
+    req_s3.refill
+  )
 
   if(cacheParams.replacement == "srrip"){
-    // req_type[3]: 0-firstuse, 1-reuse; req_type[2]: 0-acquire, 1-release;
-    // req_type[1]: 0-non-prefetch, 1-prefetch; req_type[0]: 0-not-refill, 1-refill
-    val req_type = WireInit(0.U(4.W))
-    req_type := Cat(origin_bits_hold(way_s3),
-                    req_s3.replacerInfo.channel(2),
-                    (req_s3.replacerInfo.channel(0) && req_s3.replacerInfo.opcode === Hint) || (req_s3.replacerInfo.channel(2) && metaAll_s3(way_s3).prefetch.getOrElse(false.B)) || req_s3.replacerInfo.refill_prefetch,
-                    req_s3.refill
-                    )
-    
-    val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3, hit_s3, inv, req_type)
+    val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3, hit_s3, inv, rrip_req_type)
     val repl_init = Wire(Vec(ways, UInt(2.W)))
     repl_init.foreach(_ := 2.U(2.W))
     replacer_sram_opt.get.io.w(
@@ -312,15 +313,6 @@ class Directory(implicit p: Parameters) extends L2Module {
     )
     
   } else if(cacheParams.replacement == "drrip"){
-    // req_type[3]: 0-firstuse, 1-reuse; req_type[2]: 0-acquire, 1-release;
-    // req_type[1]: 0-non-prefetch, 1-prefetch; req_type[0]: 0-not-refill, 1-refill
-    val req_type = WireInit(0.U(4.W))
-    req_type := Cat(origin_bits_hold(way_s3),
-      req_s3.replacerInfo.channel(2),
-      (req_s3.replacerInfo.channel(0) && req_s3.replacerInfo.opcode === Hint) || (req_s3.replacerInfo.channel(2) && metaAll_s3(way_s3).prefetch.getOrElse(false.B)) || req_s3.replacerInfo.refill_prefetch,
-      req_s3.refill
-    )
-    
     // Set Dueling
     val PSEL = RegInit(512.U(10.W)) //32-monitor sets, 10-bits psel
     // track monitor sets' hit rate for each policy
@@ -343,7 +335,7 @@ class Directory(implicit p: Parameters) extends L2Module {
                     Mux(match_b, true.B,
                       Mux(PSEL(9)===0.U, false.B, true.B)))    // false.B - srrip, true.B - brrip
 
-    val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3, hit_s3, inv, repl_type, req_type)
+    val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3, hit_s3, inv, repl_type, rrip_req_type)
 
     val repl_init = Wire(Vec(ways, UInt(2.W)))
     repl_init.foreach(_ := 2.U(2.W))
