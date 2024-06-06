@@ -233,7 +233,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     )
   )).reduceTree(_ | _)
   
-  val freeWayMask_s3 = RegEnable(~occWayMask_s2, refillReqValid_s2)
+  val freeWayMask_s3 = RegEnable(~occWayMask_s2, reqValid_s2)
   val refillRetry = !(freeWayMask_s3.orR)
 
   val hitWay = OHToUInt(hitVec)
@@ -332,7 +332,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     (req_s3.replacerInfo.opcode === AcquirePerm || req_s3.replacerInfo.opcode === AcquireBlock)
   }
   val updateRefill = refillReqValid_s3 && !refillRetry
-  val updateTPmetaReplace = reqValid_s3 && req_s3.tpmeta && req_s3.tpmetaWen
+  val updateTPmetaReplace = reqValid_s3 && req_s3.tpmeta
   replacerWen := updateHit || updateRefill || updateTPmetaReplace
 
   // origin-bit marks whether the data_block is reused
