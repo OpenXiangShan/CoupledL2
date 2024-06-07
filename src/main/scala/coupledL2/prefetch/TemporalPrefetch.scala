@@ -86,6 +86,7 @@ class triggerBundle(implicit p: Parameters) extends TPBundle {
   val vaddr = UInt(vaddrBits.W)
   val paddr = UInt(fullAddressBits.W)
   val way = UInt(log2Ceil(tpTableAssoc).W)
+  val replTag = UInt(tagBits.W)
 }
 
 class trainBundle(implicit p: Parameters) extends TPBundle {
@@ -223,6 +224,9 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val way_s1 = Mux(hit_s1, hitWay, victimWay)
   val l2ReqBundle_s1 = metas(way_s1).l2ReqBundle
 
+  val replTag_s1 = metas(way_s1 /*dont care hit*/).triggerTag
+  val replTagValid_s1 = metas(way_s1 /*dont care hit*/).valid
+
 
   /* Stage 2: access tpData on meta hit, record it on meta miss */
 
@@ -237,6 +241,8 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val ptag_s2 = RegEnable(ptag_s1, s1_valid)
   val train_s2 = RegEnable(train_s1, s1_valid)
   val l2ReqBundle_s2 = RegEnable(l2ReqBundle_s1, s1_valid)
+  val replTag_s2 = RegEnable(replTag_s1, s1_valid)
+  val replTagValid_s2 = RegEnable(replTagValid_s1, s1_valid)
 
   val triggerEnq_s2 = s2_valid && !tpMetaRespValid_s2 && !triggerQFull && (Mux(hitAsTrigger.orR, hit_s2, false.B) || (triggerQueue.io.count < triggerThres))
   val dorecord_s2 = s2_valid && !tpMetaRespValid_s2 && !triggerEnq_s2 && !triggerQEmpty // && !hit_s2
@@ -245,6 +251,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   triggerQueue.io.enq.bits.vaddr := train_s2.vaddr.getOrElse(0.U)
   triggerQueue.io.enq.bits.paddr := train_s2.addr
   triggerQueue.io.enq.bits.way := way_s2
+  triggerQueue.io.enq.bits.replTag := Mux(replTagValid_s2, replTag_s2, Mux(trainOnVaddr.orR, vtag_s2, ptag_s2))
   triggerQueue.io.deq.ready := false.B // will be override
 
   // dataReadQueue enqueue
@@ -253,6 +260,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   dataReadQueue.io.enq.bits.wmode := false.B
   dataReadQueue.io.enq.bits.rawData := DontCare
   dataReadQueue.io.enq.bits.hartid := io.hartid
+  dataReadQueue.io.enq.bits.replTag := DontCare
 
   tpMetaReadQueue.io.enq.valid := dataReadQueue.io.deq.fire
   tpMetaReadQueue.io.enq.bits.set := Mux(trainOnVaddr.orR, vset_s2, pset_s2)
@@ -274,6 +282,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   io.tpmeta_port.req.bits.l2ReqBundle := Mux(writeReqValid, dataWriteQueue.io.deq.bits.l2ReqBundle, dataReadQueue.io.deq.bits.l2ReqBundle)
   io.tpmeta_port.req.bits.wmode := Mux(writeReqValid, dataWriteQueue.io.deq.bits.wmode, dataReadQueue.io.deq.bits.wmode)
   io.tpmeta_port.req.bits.rawData := Mux(writeReqValid, writeReqRawData, readReqRawData)
+  io.tpmeta_port.req.bits.replTag := Mux(writeReqValid, dataWriteQueue.io.deq.bits.replTag, dataReadQueue.io.deq.bits.replTag)
 
 
   /* Async Stage: get tpMeta and insert it into tpDataQueue */
@@ -356,6 +365,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   dataWriteQueue.io.enq.bits.l2ReqBundle.bank := Mux(trainOnVaddr.orR, write_record_l2_vbank, write_record_l2_pbank)
   dataWriteQueue.io.enq.bits.l2ReqBundle.off := Mux(trainOnVaddr.orR, write_record_l2_voff, write_record_l2_poff)
   dataWriteQueue.io.enq.bits.hartid := io.hartid
+  dataWriteQueue.io.enq.bits.replTag := write_record_trigger.replTag
   assert(dataWriteQueue.io.enq.ready === true.B) // TODO: support back-pressure
 
   when(resetIdx === 0.U) {
@@ -420,6 +430,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   triggerPt.paddr := write_record_trigger.paddr
   triggerPt.vaddr := recoverVaddr(write_record_trigger.vaddr)
   triggerPt.way := write_record_trigger.way
+  triggerPt.replTag := write_record_trigger.replTag
 
   val trainDB = ChiselDB.createTable("tptrain", new trainBundle(), basicDB = true)
   val trainPt = Wire(new trainBundle())

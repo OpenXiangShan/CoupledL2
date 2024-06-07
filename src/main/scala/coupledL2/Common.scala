@@ -115,7 +115,10 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val tpmeta = Bool()
   val tpmetaWen = Bool()
   val tpmetaWenRepl = Bool()
+  // for MSHR release tagW
   val tpReplTag = UInt(tagBits.W)
+  // for tpMetaTable repl
+  val tpmetaReplTag = UInt(tagBits.W)
 
   // Used for get data from ReleaseBuf when snoop hit with same PA 
   val snpHitRelease = Bool()
@@ -400,6 +403,7 @@ class TPmetaReq(implicit p: Parameters) extends L2Bundle {
   val l2ReqBundle = new TPmetaL2ReqBundle()
   val wmode = Bool()
   val rawData = Vec(16, UInt((fullAddressBits - offsetBits).W))
+  val replTag = UInt(tagBits.W)
 }
 
 class TPmetaResp(implicit p: Parameters)  extends L2Bundle {
@@ -412,6 +416,7 @@ class TPmetaL2Req(implicit p: Parameters) extends L2Bundle {
   val wmode = Bool()
   // [511, 508] = hartid; [479, 0] = rawData
   val rawData = UInt(512.W)
+  val replTag = UInt(tagBits.W)
 }
 
 class TPmetaL2Resp extends Bundle {
