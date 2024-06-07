@@ -240,6 +240,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   ms_task.tpmetaWen := req_s3.tpmetaWen
   ms_task.tpmetaWenRepl := need_mshr_s3_tp
   ms_task.tpReplTag := req_s3.tpReplTag
+  ms_task.tpmetaReplTag := 0.U(tagBits.W)
 
   /* ======== Resps to SinkA/B/C Reqs ======== */
   val sink_resp_s3 = WireInit(0.U.asTypeOf(Valid(new TaskBundle))) // resp for sinkA/B/C request that does not need to alloc mshr

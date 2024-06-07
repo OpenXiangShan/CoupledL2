@@ -144,9 +144,10 @@ class RequestArb(implicit p: Parameters) extends L2Module {
 
   /* Meta read request */
   // ^ only sinkA/B/C/TPmeta tasks need to read directory
+  // for tpmetaWReq, tag use tpmetaReplTag
   io.dirRead_s1.valid := chnl_task_s1.valid && !mshr_task_s1.valid || s1_needs_replRead && !io.fromMainPipe.blockG_s1
   io.dirRead_s1.bits.set := task_s1.bits.set
-  io.dirRead_s1.bits.tag := task_s1.bits.tag
+  io.dirRead_s1.bits.tag := Mux(task_s1.bits.tpmeta && task_s1.bits.tpmetaWen && !task_s1.bits.tpmetaWenRepl, task_s1.bits.tpmetaReplTag, task_s1.bits.tag)
   // invalid way which causes mshr_retry
   // TODO: random waymask can be used to avoid multi-way conflict
   io.dirRead_s1.bits.wayMask := Mux(mshr_task_s1.valid && mshr_task_s1.bits.mshrRetry, (~(1.U(cacheParams.ways.W) << mshr_task_s1.bits.way)), Fill(cacheParams.ways, "b1".U))
