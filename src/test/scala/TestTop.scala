@@ -10,15 +10,12 @@ import freechips.rocketchip.tile.MaxHartIdBits
 import org.chipsalliance.cde.config._
 import coupledL2._
 import coupledL2.tl2chi._
-import utility.{FileRegisters}
+import utility.{FileRegisters, TLLogger, ChiselDB}
 
 class TestTop_L3()(implicit p: Parameters) extends LazyModule {
   override lazy val desiredName: String = "TestTop_L3"
 
   val l3 = LazyModule(new OpenLLC())
-  val ram = LazyModule(new AXI4RAM(AddressSet(0, 0xffffL), beatBytes = 32))
-
-  ram.node := l3.axi4node
 
   lazy val module = new LazyModuleImp(this){
 
@@ -72,6 +69,8 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule with HasCHIMsgPa
       name = s"L2",
       ways = 4,
       sets = 128,
+      enableRollingDB = false,
+      enablePerf = false,
       clientCaches = Seq(L1Param(aliasBitsOpt = Some(2)))
     )
     case BankBitsKey => 1
@@ -82,10 +81,15 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule with HasCHIMsgPa
   val l3 = LazyModule(new OpenLLC())
 
   val l1xbar = TLXbar()
-  val ram = LazyModule(new AXI4RAM(AddressSet(0, 0xffffL), beatBytes = 32))
 
-  l1xbar := TLBuffer() := l1d
-  l1xbar := TLBuffer() := l1i
+  l1xbar :=
+    TLLogger(s"L2_L1D", !cacheParams.FPGAPlatform && cacheParams.enableTLLog) :=
+    TLBuffer() :=
+    l1d
+  l1xbar :=
+    TLLogger(s"L2_L1I", !cacheParams.FPGAPlatform && cacheParams.enableTLLog) :=
+    TLBuffer() :=
+    l1i
 
   l2.managerNode :=
     TLXbar() :=*
@@ -101,7 +105,6 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule with HasCHIMsgPa
   ))
   l2.mmioBridge.mmioNode := mmioClientNode
 
-  ram.node := l3.axi4node
 
   lazy val module = new LazyModuleImp(this) {
     val timer = WireDefault(0.U(64.W))
@@ -123,9 +126,10 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule with HasCHIMsgPa
     l2.module.io.debugTopDown <> DontCare
     l2.module.io.l2_tlb_req <> DontCare
     l2.module.io_nodeID := 0.U(NODEID_WIDTH.W)
-    l2.module.io_chi <> l3.module.io.chi
+    l2.module.io_chi <> l3.module.io.chi_upwards
 
     l3.module.io.nodeID := 1.U(NODEID_WIDTH.W)
+    l3.module.io.chi_downwards := DontCare
   }
 }
 object TestTop_L3 extends App {
@@ -146,9 +150,13 @@ object TestTop_L2L3 extends App {
     )
   })
 
+  ChiselDB.init(true)
+
   val top = DisableMonitors(p => LazyModule(new TestTop_L2L3()(p)))(config)
   (new ChiselStage).execute(args, Seq(
     ChiselGeneratorAnnotation(() => top.module)
   ))
+
+  ChiselDB.addToFileRegisters
   FileRegisters.write("./build")
 }

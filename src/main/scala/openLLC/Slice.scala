@@ -22,43 +22,58 @@ import chisel3.util._
 import freechips.rocketchip.amba.axi4._
 import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.tl2chi.{DecoupledPortIO, PCrdInfo}
+import coupledL2.tl2chi.{DecoupledPortIO, PCrdInfo, DecoupledNoSnpPortIO}
 
 class Slice()(implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {
     val in = Flipped(new DecoupledPortIO)
-    val out = AXI4Bundle(edgeOut.bundle)
+    val out = new DecoupledNoSnpPortIO
 
     val waitPCrdInfo = Output(Vec(mshrs, new PCrdInfo))
   })
 
-  val tx = io.in.rx
-  val rx = io.in.tx
+  val txUp = io.in.rx
+  val rxUp = io.in.tx
+  val txDown = io.out.tx
+  val rxDown = io.out.rx
 
   /* UpStream CHI-related modules */
-  val txrsp = Module(new TXRSP())
-  val txdat = Module(new TXDAT())
-  val txsnp = Module(new TXSNP())
+  val txrspUp = Module(new UpTXRSP())
+  val txdatUp = Module(new UpTXDAT())
+  val txsnpUp = Module(new UpTXSNP())
 
-  val rxreq = Module(new RXREQ())
-  val rxrsp = Module(new RXRSP())
-  val rxdat = Module(new RXDAT())
+  val rxreqUp = Module(new UpRXREQ())
+  val rxrspUp = Module(new UpRXRSP())
+  val rxdatUp = Module(new UpRXDAT())
+
+  /* DownStream CHI-related modules */
+  val txreqDown = Module(new DownTXREQ())
+  val txdatDown = Module(new DownTXDAT())
+
+  val rxrspDown = Module(new DownRXRSP())
+  val rxdatDown = Module(new DownRXDAT())
 
   /* Data path and control path */
   val mainPipe = Module(new MainPipe())
 
-  tx.dat <> txdat.io.txdat
-  tx.rsp <> txrsp.io.txrsp
-  tx.snp <> txsnp.io.txsnp
+  txUp.dat <> txdatUp.io.dat
+  txUp.rsp <> txrspUp.io.rsp
+  txUp.snp <> txsnpUp.io.snp
 
-  rx.req <> rxreq.io.rxreq
-  rx.rsp <> rxrsp.io.rxrsp
-  rx.dat <> rxdat.io.rxdat
+  rxUp.req <> rxreqUp.io.req
+  rxUp.rsp <> rxrspUp.io.rsp
+  rxUp.dat <> rxdatUp.io.dat
 
-  txsnp.io.task := DontCare
-  rxreq.io.task := DontCare
+  txDown.req <> txreqDown.io.req
+  txDown.dat <> txdatDown.io.dat
 
-  io.out := DontCare
+  rxDown.rsp <> rxrspDown.io.rsp
+  rxDown.dat <> rxdatDown.io.dat
+
+  txsnpUp.io.task := DontCare
+  rxreqUp.io.task := DontCare
+  txreqDown.io.task := DontCare
+
   io.waitPCrdInfo := DontCare
 
   println(s"addrBits $fullAddressBits")

@@ -20,8 +20,12 @@ package openLLC
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.tl2chi._
+import coupledL2.tl2chi.CHIDAT
 
-class MSHR(implicit p: Parameters) extends LLCModule {
+class UpTXDAT (implicit p: Parameters) extends LLCModule {
+  val io = IO(new Bundle() {
+    val dat = DecoupledIO(new CHIDAT())
 
+  })
+  io.dat := DontCare
 }

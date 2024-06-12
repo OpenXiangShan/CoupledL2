@@ -20,8 +20,14 @@ package openLLC
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.tl2chi._
+import coupledL2.tl2chi.CHIREQ
 
-class MSHR(implicit p: Parameters) extends LLCModule {
+class DownTXREQ (implicit p: Parameters) extends LLCModule {
+  val io = IO(new Bundle() {
+    val req = DecoupledIO(new CHIREQ())
+    val task = Flipped(DecoupledIO(new Task()))
+  })
 
+  io.req := DontCare
+  io.task.ready := DontCare
 }
