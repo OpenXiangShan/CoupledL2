@@ -19,14 +19,13 @@ package openLLC
 
 import chisel3._
 import chisel3.util._
-import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2chi.CHIRSP
 
-class RXRSP (implicit p: Parameters) extends LLCModule {
+class UpTXRSP (implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {
-    val rxrsp = Flipped(DecoupledIO(new CHIRSP()))
+    val rsp = DecoupledIO(new CHIRSP())
 
   })
-  io.rxrsp := DontCare
+  io.rsp := DontCare
 }

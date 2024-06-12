@@ -19,7 +19,6 @@ package openLLC
 
 import chisel3._
 import chisel3.util._
-import freechips.rocketchip.amba.axi4.AXI4EdgeParameters
 import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.{Field, Parameters}
 
@@ -31,6 +30,7 @@ case class OpenLLCParam
   blockBytes: Int = 64,
   beatBytes: Int = 32,
   mshrs: Int = 16,
+  fullAddressBits: Int = 16,
 
   // Network layer SAM
   sam: Seq[(AddressSet, Int)] = Seq(AddressSet.everything -> 0)
@@ -40,7 +40,6 @@ case class OpenLLCParam
 
 case object OpenLLCParamKey extends Field[OpenLLCParam](OpenLLCParam())
 
-case object EdgeOutKey extends Field[AXI4EdgeParameters]
 
 // common parameters used inside LLC
 trait HasOpenLLCParameters {
@@ -56,8 +55,7 @@ trait HasOpenLLCParameters {
   def offsetBits = log2Ceil(blockBytes)
   def beatBits = offsetBits - log2Ceil(beatBytes)
 
-  def edgeOut = p(EdgeOutKey)
-  def fullAddressBits = edgeOut.bundle.addrBits
+  def fullAddressBits = cacheParams.fullAddressBits
   def tagBits = fullAddressBits - setBits - offsetBits
 
   def mshrs = cacheParams.mshrs

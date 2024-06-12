@@ -19,19 +19,18 @@ package openLLC
 
 import chisel3._
 import chisel3.util._
-import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2chi.CHIREQ
 
 // receive task from upwards and convert to inner task
-class RXREQ (implicit p: Parameters) extends LLCModule {
+class UpRXREQ (implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {
-    val rxreq = Flipped(DecoupledIO(new CHIREQ()))
+    val req = Flipped(DecoupledIO(new CHIREQ()))
     val task = DecoupledIO(new Task())
   })
 
-  io.task.valid := io.rxreq.valid
-  io.rxreq.ready := io.task.ready
+  io.task.valid := io.req.valid
+  io.req.ready := io.task.ready
 
   def fromCHIREQtoTaskBundle(r: CHIREQ): Task = {
     val task = Wire(new Task)
@@ -58,5 +57,5 @@ class RXREQ (implicit p: Parameters) extends LLCModule {
     task.order := r.order
     task
   }
-  io.task.bits := fromCHIREQtoTaskBundle(io.rxreq.bits)
+  io.task.bits := fromCHIREQtoTaskBundle(io.req.bits)
 }

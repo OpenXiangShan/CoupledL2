@@ -19,38 +19,31 @@ package openLLC
 
 import chisel3._
 import chisel3.util._
-import freechips.rocketchip.amba.axi4._
 import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2chi.{PortIO}
 
 class OpenLLC(implicit p: Parameters) extends LazyModule with HasOpenLLCParameters {
 
-  val axi4node = AXI4MasterNode(Seq(AXI4MasterPortParameters(
-    Seq(AXI4MasterParameters(
-      name = "L3",
-      id = IdRange(0, 1 << 14)
-    ))
-  )))
-
   class OpenLLCImp(wrapper: LazyModule) extends LazyModuleImp(wrapper) {
     val io = IO(new Bundle {
-      val chi = Flipped(new PortIO)
+      val chi_upwards = Flipped(new PortIO)
+      val chi_downwards = new NoSnpPortIO
       val nodeID = Input(UInt())
     })
 
-    val slice = Module(new Slice()(p.alterPartial {
-      case EdgeOutKey => axi4node.out.head._2
-    }))
-    val linkMonitor = Module(new LLCLinkMonitor)
+    val slice = Module(new Slice)
+    val upwardsLinkMonitor = Module(new UpwardsLinkMonitor)
+    val downwardsLinkMonitor = Module(new DownwardsLinkMonitor)
 
-    dontTouch(axi4node.out.head._1)
     dontTouch(io)
 
-    linkMonitor.io.in <> slice.io.in
-    linkMonitor.io.nodeID := io.nodeID
-    io.chi <> linkMonitor.io.out
-    axi4node.out.head._1 <> slice.io.out
+    upwardsLinkMonitor.io.in <> slice.io.in
+    upwardsLinkMonitor.io.nodeID := io.nodeID
+    downwardsLinkMonitor.io.in <> slice.io.out
+    downwardsLinkMonitor.io.nodeID := io.nodeID
+    io.chi_upwards <> upwardsLinkMonitor.io.out
+    io.chi_downwards <> downwardsLinkMonitor.io.out
   }
   lazy val module = new OpenLLCImp(this)
 }
