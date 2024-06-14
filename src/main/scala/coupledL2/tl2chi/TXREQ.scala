@@ -45,7 +45,7 @@ class TXREQ(implicit p: Parameters) extends TL2CHIL2Module {
   require(chiOpt.isDefined)
 
   // TODO: an mshrsAll-entry queue is too much, evaluate for a proper size later
-  val queue = Module(new Queue(new CHIREQ, entries = mshrsAll, flow = true))
+  val queue = Module(new Queue(new CHIREQ, entries = mshrsAll, flow = false))
   
   // Back pressure logic from TXREQ
   val queueCnt = queue.io.count
@@ -53,11 +53,14 @@ class TXREQ(implicit p: Parameters) extends TL2CHIL2Module {
   val pipeStatus_s1_s5 = io.pipeStatusVec
   val pipeStatus_s2_s5 = pipeStatus_s1_s5.tail
   val pipeStatus_s1 = pipeStatus_s1_s5.head
-  // inflightCnt equals the number of reqs on s2~s5 that may flow into TXREQ soon, plus queueCnt.
+  val pipeStatus_s2 = pipeStatus_s1_s5(1)
+  val s2ReturnCredit = pipeStatus_s2.valid && !(pipeStatus_s2.bits.mshrTask && pipeStatus_s2.bits.toTXREQ)
+   // inflightCnt equals the number of reqs on s2~s5 that may flow into TXREQ soon, plus queueCnt.
   // The calculation of inflightCnt might be imprecise and leads to false positive back pressue.
   val inflightCnt = PopCount(Cat(pipeStatus_s2_s5.map(s => s.valid && s.bits.mshrTask && s.bits.toTXREQ))) +
-    pipeStatus_s1.valid.asUInt +
+//    pipeStatus_s1.valid.asUInt +
     queueCnt
+    s2ReturnCredit.asUInt + 1.U //Fix Timing: s1 always take credit and s2 return if not take 
   val noSpace = inflightCnt >= mshrsAll.U
 
   io.toReqArb.blockMSHRReqEntrance := noSpace

@@ -121,14 +121,24 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
   io.toMainPipe.mshr_alloc_ptr := OHToUInt(selectedMSHROH)
 
   /*
+   rxrsp for PCredit timing is quite critical and break it here
+   */
+  val rxrspValid = RegNext(io.resps.rxrsp.valid)
+  val rxrspInfo = RegNext(io.resps.rxrsp.respInfo)
+  val rxrspMshrId = RegNext( io.resps.rxrsp.mshrId)
+
+  /*
    when PCrdGrant, give credit to one entry that:
    1. got RetryAck and not Reissued
    2. match srcID and PCrdType
-   3. use Round-Robin arbiter if multi-entry match
+   3. use fix priority mux if multi-entry match
+   4. use time out protection if up to 7 not granted
    */
   val isPCrdGrant = io.resps.rxrsp.valid && (io.resps.rxrsp.respInfo.chiOpcode.get === PCrdGrant)
+  val isPCrdGrantReg = RegNext(isPCrdGrant)
   val waitPCrdInfo  = Wire(Vec(mshrsAll, new PCrdInfo))
-//  val pArb = Module(new RRArbiter(UInt(), mshrsAll))
+  val timeOutPri = VecInit(Seq.fill(16)(false.B))
+  val pCrdPri = VecInit(Seq.fill(16)(false.B))
 
   val matchPCrdGrant = VecInit(waitPCrdInfo.map(p =>
       isPCrdGrant && p.valid &&
@@ -136,30 +146,34 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
       p.pCrdType.get === io.resps.rxrsp.respInfo.pCrdType.get
   ))
 
-/*  pArb.io.in.zipWithIndex.foreach {
-      case (in, i) =>
-      in.valid := matchPCrdGrant(i)
-      in.bits := 0.U
+  val matchPCrdGrantReg = RegNext(matchPCrdGrant)
+  val pCrdFixPri = VecInit(PriorityEncoderOH(matchPCrdGrantReg)) //fix priority arbiter
+
+  // timeout protect
+  val counter = RegInit(VecInit(Seq.fill(mshrsAll)(0.U(log2Ceil(mshrsAll).W))))
+
+  for(i <- 0 until 16) {
+    when(matchPCrdGrantReg(i)) {
+      when(pCrdFixPri(i) || timeOutPri(i)) {
+        counter(i):=0.U
+      }.otherwise {
+        counter(i):= counter(i) + 1.U
+      }
+    }
   }
-  pArb.io.out.ready := true.B
-  val pCrdRR = VecInit(UIntToOH(pArb.io.chosen))
-  val pCrdPri = VecInit((matchPCrdGrant.asUInt & pCrdRR.asUInt).asBools)
-//val pCrdPri = VecInit(PriorityEncoderOH(matchPCrdGrant))
-  val pCrdIsWait = OHToUInt(pCrdPri)
- */
+  val timeOutOH = PriorityEncoderOH(counter.map(_>=7.U))
+  timeOutPri := VecInit(timeOutOH)
 
-  /*
-   Random arbiter if multi-entry match
-   */
-  val lfsr = LFSR(16, true.B)
-  val idx = Random(16, lfsr)
-  val idxOH = VecInit(UIntToOH(idx))
+  val timeOutHit = VecInit.tabulate(16)(i=>matchPCrdGrantReg(i) && timeOutPri(i))
+  val timeOutSel = timeOutHit.reduce(_|_)
+  pCrdPri := Mux(timeOutSel, timeOutPri, pCrdFixPri)
 
-  val doubleReq = Fill(2, matchPCrdGrant.asUInt)
-  val doubleGnt = ~(doubleReq - idxOH.asUInt) & doubleReq
-  val gnt = doubleGnt(31,16) | doubleGnt(15,0)
-  val pCrdPri = VecInit(gnt.asBools)
-  val pCrdIsWait = OHToUInt(pCrdPri)
+  dontTouch (timeOutPri)
+  dontTouch (timeOutHit)
+  dontTouch (timeOutSel)
+  dontTouch (pCrdPri)
+
+
 
   /* when PCrdGrant come before RetryAck, 16 entry CAM used to:
    1. save {srcID, PCrdType} 
@@ -171,7 +185,8 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
   val pCamValids = Cat(pCam.map(_.valid))
   val enqIdx = PriorityEncoder(~pCamValids.asUInt)
 
-  when (isPCrdGrant && !pCrdIsWait.orR){
+//  when (isPCrdGrant && !pCrdIsWait.orR){
+  when (isPCrdGrant){
     pCam(enqIdx).valid := true.B
     pCam(enqIdx).srcID.get := io.resps.rxrsp.respInfo.srcID.get
     pCam(enqIdx).pCrdType.get := io.resps.rxrsp.respInfo.pCrdType.get
@@ -214,8 +229,10 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
       m.io.resps.rxdat.valid := m.io.status.valid && io.resps.rxdat.valid && io.resps.rxdat.mshrId === i.U
       m.io.resps.rxdat.bits := io.resps.rxdat.respInfo
 
-      m.io.resps.rxrsp.valid := (m.io.status.valid && io.resps.rxrsp.valid && !isPCrdGrant && io.resps.rxrsp.mshrId === i.U) || (isPCrdGrant && pCrdPri(i))
-      m.io.resps.rxrsp.bits := io.resps.rxrsp.respInfo
+//      m.io.resps.rxrsp.valid := (m.io.status.valid && io.resps.rxrsp.valid && !isPCrdGrant && io.resps.rxrsp.mshrId === i.U) || (isPCrdGrant && pCrdPri(i))
+//      m.io.resps.rxrsp.bits := io.resps.rxrsp.respInfo
+      m.io.resps.rxrsp.valid := (m.io.status.valid && rxrspValid && !isPCrdGrantReg && rxrspMshrId === i.U) || (isPCrdGrantReg && pCrdPri(i))
+      m.io.resps.rxrsp.bits := rxrspInfo
 
       m.io.replResp.valid := io.replResp.valid && io.replResp.bits.mshrId === i.U
       m.io.replResp.bits := io.replResp.bits
@@ -226,7 +243,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
       m.io.aMergeTask.bits := io.aMergeTask.bits.task
 
       waitPCrdInfo(i) := m.io.waitPCrdInfo 
-      m.io.pCamPri := (pCamPri === i.U) && waitPCrdInfo(i).valid
+      m.io.pCamPri := 0.U /*(pCamPri === i.U) && waitPCrdInfo(i).valid*/
   }
   /* Reserve 1 entry for SinkB */
   io.waitPCrdInfo <> waitPCrdInfo

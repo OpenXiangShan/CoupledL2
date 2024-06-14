@@ -75,6 +75,8 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     val mshrInfo  = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo)))
     val aMergeTask = ValidIO(new AMergeTask)
     val mainPipeBlock = Input(Vec(2, Bool()))
+    /* Snoop task from arbiter at stage 2 */
+    val taskFromArb_s2 = Flipped(ValidIO(new TaskBundle()))
 
     val ATag        = Output(UInt(tagBits.W))
     val ASet        = Output(UInt(setBits.W))
@@ -143,8 +145,20 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   io.aMergeTask.bits.id := mergeAId
   io.aMergeTask.bits.task := in
 
+  /*
+   noFreeWay check: s2 + s3 + mshrs >= ways(L2)
+   */
+  val task_s2 = io.taskFromArb_s2
+  val sameSet_s2 = task_s2.valid && task_s2.bits.fromA && !task_s2.bits.mshrTask && task_s2.bits.set === io.ASet
+  val sameSet_s3 = RegNext(task_s2.valid && task_s2.bits.fromA && !task_s2.bits.mshrTask) &&
+    RegEnable(task_s2.bits.set, task_s2.valid) === io.ASet
+  val sameSetCnt = PopCount(VecInit(io.mshrInfo.map(s => s.valid && s.bits.set === io.ASet && s.bits.fromA) :+
+    sameSet_s2 :+ sameSet_s3).asUInt)
+  val noFreeWay = sameSetCnt >= cacheParams.ways.U
+
+
   // flow not allowed when full, or entries might starve
-  val canFlow = flow.B && !full && !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR
+  val canFlow = flow.B && !full && !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay
   val doFlow  = canFlow && io.out.ready
   io.hasLatePF := latePrefetch(in) && io.in.valid && !sameAddr(in, RegNext(in))
   io.hasMergeA := mergeA && io.in.valid && !sameAddr(in, RegNext(in))
@@ -177,7 +191,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
     entry.valid   := true.B
     // when Addr-Conflict / Same-Addr-Dependent / MainPipe-Block / noFreeWay-in-Set, entry not ready
-    entry.rdy     := !conflict(in) && !mpBlock && !s1Block // && !Cat(depMask).orR
+    entry.rdy     := !conflict(in) && !mpBlock && !s1Block && !noFreeWay// && !Cat(depMask).orR
     entry.task    := io.in.bits
     entry.waitMP  := Cat(
       s1Block,
