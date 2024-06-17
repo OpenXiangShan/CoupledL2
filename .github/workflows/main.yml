@@ -20,6 +20,10 @@ jobs:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
 
+    # Environments
+    env:
+      RUN_ARCHIVE: coupledL2-tilelink-run-${{ github.sha }}.tar.gz
+
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
@@ -61,7 +65,7 @@ jobs:
       - name: Compile
         run: make compile
       
-      - name: Unit test for TileLink version
+      - name: Unit Test for TileLink version
         run: |
             git clone https://github.com/OpenXiangShan/tl-test-new
             cd ./tl-test-new
@@ -69,6 +73,16 @@ jobs:
             rm -rf ./dut/CoupledL2 && ln -s ../.. ./dut/CoupledL2
             make coupledL2-test-l2l3l2 run THREADS_BUILD=4 CXX_COMPILER=clang++-17
 
+      - name: Tar up artifacts of Unit Test for TileLink version
+        run: |
+            tar -zcf ${{ env.RUN_ARCHIVE }} ./tl-test-new/run
+
+      - name: Upload artifacts of Unit Test for TileLink version
+        uses: actions/upload-artifact@v4
+        with:
+          path: ${{ github.workspace }}/${{ env.RUN_ARCHIVE }}
+          name: ${{ env.RUN_ARCHIVE }}
+            
       - name: Compile CHI QuadCore
         run: |
             make test-top-chi-quadcore-2ul
