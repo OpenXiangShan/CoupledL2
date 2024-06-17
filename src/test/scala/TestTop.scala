@@ -10,7 +10,7 @@ import freechips.rocketchip.tilelink._
 import huancun._
 import coupledL2.prefetch._
 import coupledL2.tl2tl._
-import utility.{ChiselDB, FileRegisters, TLLogger}
+import utility.{ChiselDB, FileRegisters, TLLogger, Constantin}
 
 
 import scala.collection.mutable.ArrayBuffer
@@ -598,7 +598,8 @@ object TestTop_L2L3 extends App {
       echoField = Seq(DirtyField())
     )
   })
-  ChiselDB.init(false)
+  ChiselDB.init(true)
+  Constantin.init(false)
 
   val top = DisableMonitors(p => LazyModule(new TestTop_L2L3()(p)) )(config)
   (new ChiselStage).execute(args, Seq(
@@ -606,6 +607,7 @@ object TestTop_L2L3 extends App {
   ))
 
   ChiselDB.addToFileRegisters
+  Constantin.addToFileRegisters
   FileRegisters.write("./build")
 }
 
@@ -620,6 +622,7 @@ object TestTop_L2L3L2 extends App {
     )
   })
   ChiselDB.init(true)
+  Constantin.init(false)
 
   val top = DisableMonitors(p => LazyModule(new TestTop_L2L3L2()(p)))(config)
   (new ChiselStage).execute(args, Seq(
@@ -627,6 +630,7 @@ object TestTop_L2L3L2 extends App {
   ))
 
   ChiselDB.addToFileRegisters
+  Constantin.addToFileRegisters
   FileRegisters.write("./build")
 }
 
