@@ -221,9 +221,9 @@ class DummyLLCImp(numRNs: Int)(wrapper: DummyLLC) extends LazyModuleImp(wrapper)
     dat.homeNID := req.tgtID
     dat.dbID := 0.U
     dat.resp := Mux(
-      snpGotDirty,
-      CHICohStates.UD_PD,
-      Mux(req.opcode === ReadUnique, CHICohStates.UC, CHICohStates.SC)
+      req.opcode === ReadUnique,
+      Mux(snpGotDirty, CHICohStates.UD_PD, CHICohStates.UC),
+      CHICohStates.SC
     )
   }
 
@@ -269,6 +269,15 @@ class DummyLLCImp(numRNs: Int)(wrapper: DummyLLC) extends LazyModuleImp(wrapper)
 
       when (snpBeatCnt(i) === (beatSize - 1).U) {
         w_snpresp(i) := true.B
+
+        when (resp === CHICohStates.SC_PD) {
+          // SD state is not supported on RNs because we adopt MESI coherency rather than MOESI for now.
+          // Therefore when other peer-RNs are snooped to Shared state and pass dirty to HN, HN is reponsible
+          // for either caching dirty copy in local cache of HN, or copying back the dirty data into SN.
+          s_aw := false.B
+          s_w := false.B
+          w_b := false.B
+        }
       }
 
       when ((resp & CHICohStates.PassDirty) =/= 0.U) {
