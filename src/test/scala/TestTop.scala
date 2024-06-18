@@ -159,11 +159,11 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(implic
     }
 
     l2_nodes.zipWithIndex.foreach { case (l2, i) =>
-      l3.module.io.rn(i) <> l2.module.io.chi
+      l3.module.io.rn(i) <> l2.module.io_chi
       dontTouch(l2.module.io)
 
       l2.module.io.hartId := i.U
-      l2.module.io.nodeID := i.U(NODEID_WIDTH.W)
+      l2.module.io_nodeID := i.U(NODEID_WIDTH.W)
       l2.module.io.debugTopDown := DontCare
       l2.module.io.l2_tlb_req <> DontCare
     }
