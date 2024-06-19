@@ -29,6 +29,17 @@ import coupledL2.utils._
 import coupledL2.debug._
 import coupledL2.prefetch.{PfSource, PrefetchTrain}
 
+class tpPrefetch(implicit  p: Parameters) extends L2Bundle {
+  val lateP = Bool()
+}
+
+class requestRecord(implicit  p: Parameters) extends L2Bundle {
+  val prefetch = if (hasPrefetchBit) Some(Bool()) else None // whether block is prefetched
+  val prefetchSrc = if (hasPrefetchSrc) Some(UInt(PfSource.pfSourceBits.W)) else None
+  val tpHit = Bool()
+  val miss = Bool()
+}
+
 class MainPipe(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     /* receive task from arbiter at stage 2 */
@@ -766,6 +777,21 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   }
 
   XSPerfAccumulate(cacheParams, "early_prefetch", meta_s3.prefetch.getOrElse(false.B) && !meta_s3.accessed && !dirResult_s3.hit && task_s3.valid)
+
+  val tpLatePDB = ChiselDB.createTable("tpHit", new tpPrefetch(), basicDB = true)
+  val tpLatePPt = Wire(new tpPrefetch())
+  tpLatePPt.lateP := dirResult_s3.hit && task_s3.valid
+
+  tpLatePDB.log(tpLatePPt, task_s3.valid && (task_s3.bits.reqSource === MemReqSource.Prefetch2L2TP.id.U), "", clock, reset)
+
+  val tpHitDB = ChiselDB.createTable("requestR", new requestRecord(), basicDB = true)
+  val tpHitPt = Wire(new requestRecord())
+  tpHitPt.prefetch.get := meta_s3.prefetch.get
+  tpHitPt.prefetchSrc.get := meta_s3.prefetchSrc.get
+  tpHitPt.tpHit := (meta_s3.prefetchSrc.get === PfSource.TP.id.U) && hit_s3
+  tpHitPt.miss := ~hit_s3
+
+  tpHitDB.log(tpHitPt, task_s3.valid && req_acquire_s3, "", clock, reset)
 
   /* ===== Monitor ===== */
   io.toMonitor.task_s2 := task_s2
