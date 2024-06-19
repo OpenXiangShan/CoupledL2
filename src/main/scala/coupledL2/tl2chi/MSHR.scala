@@ -491,7 +491,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
         * 3. If the snoop is SnpCleanShared
         * Otherwise, the dirty bit should stay the same as before.
         */
-      dirty = !snpToN && !snpToB && req_chiOpcode =/= SnpCleanShared && meta.dirty,
+      dirty = !snpToN && !snpToB && req_chiOpcode =/= SnpCleanShared && meta.dirty ||
+        isSnpOnceX(req_chiOpcode) && probeDirty,
       state = Mux(
         snpToN,
         INVALID,
