@@ -21,7 +21,7 @@ import chisel3._
 import chisel3.util._
 import utility._
 import org.chipsalliance.cde.config.Parameters
-import utility.{ChiselDB, Constantin, MemReqSource, SRAMTemplate}
+import utility.{ChiselDB, Constantin, MemReqSource, SRAMTemplate, ParallelPriorityMux}
 import coupledL2.{HasCoupledL2Parameters, TPmetaL2Req, TPmetaL2Resp, TPmetaReq, TPmetaResp, L2Bundle, TPmetaL2ReqBundle /*, TPmetaL3Req, TPmetaL3Resp*/}
 import coupledL2.utils.ReplacementPolicy
 //import huancun.{TPmetaReq, TPmetaResp}
@@ -120,6 +120,19 @@ class tpmetaL2PortIO(implicit p: Parameters) extends Bundle {
   val resp = Flipped(DecoupledIO(new TPmetaL2Resp))
 }
 
+class tpmetaRepl(implicit p: Parameters) extends Bundle {
+  val hit = Bool()
+  val replValid = Bool()
+  val replEmpty = Bool()
+}
+
+/*
+class tpmetaL3PortIO(implicit p: Parameters) extends Bundle {
+  val req = DecoupledIO(new TPmetaL3Req())
+  val resp = Flipped(ValidIO(new TPmetaL3Resp))
+}
+ */
+
 /* VIVT, Physical Data */
 class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val io = IO(new Bundle() {
@@ -154,6 +167,9 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val triggerQEmpty = !triggerQueue.io.deq.valid
   val triggerQFull = !triggerQueue.io.enq.ready
   val repl = ReplacementPolicy.fromString(tpTableReplacementPolicy, tpTableAssoc)
+  val random_repl = tpTableReplacementPolicy == "random"
+  val replacer_sram_opt = if (random_repl) None else
+    Some(Module(new SRAMTemplate(UInt(repl.nBits.W), tpTableNrSet, 1, singlePort = true)))
   val resetFinish = RegInit(false.B)
   val resetIdx = RegInit((tpTableNrSet - 1).U)
 
@@ -208,6 +224,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   val tagMatchVec = metas.map(_.triggerTag === Mux(tpMetaRespValid_s1, tpMetaResp_s1.tag, train_tag_s1))
   val metaValidVec = metas.map(_.valid === true.B)
+  val metaInvalidVec = metas.map(_.valid === false.B)
 
   /*
   val debug_metaValidVec = VecInit(metaValidVec.map(_ && s1_valid))
@@ -216,17 +233,34 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   dontTouch(debug_tagVec)
   */
 
+  /* Replacement logic */
+  val repl_state_s1 = if(random_repl) {
+    0.U
+  } else {
+    val repl_sram_r = replacer_sram_opt.get.io.r(s0_valid, Mux(trainOnVaddr.orR, vset_s1, pset_s1)).resp.data(0)
+    val repl_state = RegEnable(repl_sram_r, 0.U(repl.nBits.W), s0_valid)
+    repl_state
+  }
+
   val hitVec = tagMatchVec.zip(metaValidVec).map(x => x._1 && x._2)
   val hitWay = OHToUInt(hitVec)
-  val victimWay = repl.get_replace_way(0.U /*never mind for random*/)
+  val victimWay = repl.get_replace_way(repl_state_s1 /*never mind for random*/)
+  val invalidWay = ParallelPriorityMux(metaInvalidVec.zipWithIndex.map(x => x._1 -> x._2.U(log2Ceil(tpTableAssoc).W)))
 
   val hit_s1 = Cat(hitVec).orR
-  val way_s1 = Mux(hit_s1, hitWay, victimWay)
+  val hasInvalidWay_s1 = Cat(metaInvalidVec).orR
+  val way_s1 = Mux(hit_s1, hitWay, Mux(hasInvalidWay_s1, invalidWay, victimWay))
   val l2ReqBundle_s1 = metas(way_s1).l2ReqBundle
 
   val replTag_s1 = metas(way_s1 /*dont care hit*/).triggerTag
   val replTagValid_s1 = metas(way_s1 /*dont care hit*/).valid
 
+    // /* test
+  val repl_s1 = Wire(new tpmetaRepl())
+  repl_s1.hit := hit_s1
+  repl_s1.replValid := ~hit_s1 && metas(way_s1).valid
+  repl_s1.replEmpty := ~hit_s1 && ~metas(way_s1).valid
+  // */
 
   /* Stage 2: access tpData on meta hit, record it on meta miss */
 
@@ -234,7 +268,9 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val tpMetaRespValid_s2 = RegEnable(tpMetaRespValid_s1, s1_valid)
   val tpMetaResp_s2 = RegEnable(tpMetaResp_s0, s1_valid)
   val hit_s2 = RegEnable(hit_s1, false.B, s1_valid)
+  val hasInvalidWay_s2 = RegEnable(hasInvalidWay_s1, false.B, s1_valid)
   val way_s2 = RegEnable(way_s1, s1_valid)
+  val repl_state_s2 = RegEnable(repl_state_s1, s1_valid)
   val vset_s2 = RegEnable(vset_s1, s1_valid)
   val pset_s2 = RegEnable(pset_s1, s1_valid)
   val vtag_s2 = RegEnable(vtag_s1, s1_valid)
@@ -243,9 +279,66 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val l2ReqBundle_s2 = RegEnable(l2ReqBundle_s1, s1_valid)
   val replTag_s2 = RegEnable(replTag_s1, s1_valid)
   val replTagValid_s2 = RegEnable(replTagValid_s1, s1_valid)
+  val repl_s2 = RegEnable(repl_s1, s1_valid)
 
   val triggerEnq_s2 = s2_valid && !tpMetaRespValid_s2 && !triggerQFull && (Mux(hitAsTrigger.orR, hit_s2, false.B) || (triggerQueue.io.count < triggerThres))
   val dorecord_s2 = s2_valid && !tpMetaRespValid_s2 && !triggerEnq_s2 && !triggerQEmpty // && !hit_s2
+
+  /* Update replacer*/
+  val replacerWen = triggerEnq_s2
+
+  val req_type = WireInit(0.U(5.W)) //same as Directory, wait for change
+  // req_type[2]: hit
+  // req_type[1]: replInvalid
+  // req_type[0]: replValid
+  req_type := Cat(0.U(1.W), 0.U(1.W), hit_s2, hasInvalidWay_s2, triggerEnq_s2)
+  val set_s2 = Mux(trainOnVaddr.orR, vset_s2, pset_s2)
+
+  if (tpTableReplacementPolicy == "srrip") {
+    val next_state_s2 = repl.get_next_state(repl_state_s2, way_s2, hit_s2, hasInvalidWay_s2, req_type)
+    val repl_init = Wire(Vec(tpTableAssoc, UInt(rrpvBits.W)))
+    repl_init.foreach(_ := Fill(rrpvBits, 1.U(1.W)))
+    replacer_sram_opt.get.io.w(
+      !resetFinish || replacerWen,
+      Mux(resetFinish, next_state_s2, repl_init.asUInt),
+      Mux(resetFinish, set_s2, resetIdx),
+      1.U
+    )
+  } else if (tpTableReplacementPolicy == "drrip") {
+    val PSEL = RegInit(512.U(10.W))
+    val setBits = log2Ceil(tpTableNrSet)
+    val half_setBits = setBits >> 1
+    val match_a = set_s2(setBits-1,setBits-half_setBits-1)===set_s2(setBits-half_setBits-1,0)
+    val match_b = set_s2(setBits-1,setBits-half_setBits-1)===(~set_s2(setBits-half_setBits-1,0))
+    when(triggerEnq_s2 && match_a && !hit_s2 && (PSEL =/= 1023.U)) {
+      PSEL := PSEL + 1.U
+    }.elsewhen(triggerEnq_s2 && match_b && !hit_s2 && (PSEL =/= 0.U)) {
+      PSEL := PSEL - 1.U
+    }
+    val repl_type = WireInit(false.B)
+    repl_type := Mux(match_a, false.B,
+                  Mux(match_b, true.B,
+                    Mux(PSEL(9) === 0.U, false.B, true.B))) // false.B - srrip, true.B - brrip
+
+    val next_state_s2 = repl.get_next_state(repl_state_s2, way_s2, hit_s2, hasInvalidWay_s2, repl_type, req_type)
+
+    val repl_init = Wire(Vec(tpTableAssoc, UInt(rrpvBits.W)))
+    repl_init.foreach(_ := Fill(rrpvBits, 1.U(1.W)))
+    replacer_sram_opt.get.io.w(
+      !resetFinish || replacerWen,
+      Mux(resetFinish, next_state_s2, repl_init.asUInt),
+      Mux(resetFinish, set_s2, resetIdx),
+      1.U
+    )
+  } else if (tpTableReplacementPolicy != "random"){
+    val next_state_s2 = repl.get_next_state(repl_state_s2, way_s2)
+    replacer_sram_opt.get.io.w(
+      !resetFinish || replacerWen,
+      Mux(resetFinish, next_state_s2, 0.U),
+      Mux(resetFinish, set_s2, resetIdx),
+      1.U
+    )
+  }
 
   triggerQueue.io.enq.valid := triggerEnq_s2
   triggerQueue.io.enq.bits.vaddr := train_s2.vaddr.getOrElse(0.U)
@@ -446,9 +539,14 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   sendPt.paddr := current_sending_data
   sendPt.vaddr := 0.U
 
+  val replDB = ChiselDB.createTable("tprepl", new tpmetaRepl(), basicDB = true)
+  val replPt = Wire(new tpmetaRepl())
+  replPt := repl_s2
+
   triggerDB.log(triggerPt, tpTable_w_valid, "", clock, reset)
   trainDB.log(trainPt, s2_valid, "", clock, reset)
   sendDB.log(sendPt, io.req.fire, "", clock, reset)
+  replDB.log(replPt, triggerEnq_s2, "", clock, reset)
 
   XSPerfAccumulate("tp_send", io.req.fire)
   XSPerfAccumulate("tp_meta_read", io.tpmeta_port.req.fire && !io.tpmeta_port.req.bits.wmode)
