@@ -29,6 +29,11 @@ abstract class LLCBundle(implicit val p: Parameters) extends Bundle
   with HasOpenLLCParameters
   with HasCHIMsgParameters
 
+class ReplacerInfo(implicit p: Parameters) extends LLCBundle {
+  val opcode = UInt(REQ_OPCODE_WIDTH.W)
+  val refill = Bool()
+}
+
 class Task(implicit p: Parameters) extends LLCBundle {
   val set = UInt(setBits.W)
   val tag = UInt(tagBits.W)
@@ -76,4 +81,30 @@ class Task(implicit p: Parameters) extends LLCBundle {
     req.order := OrderEncodings.None
     req
   }
+}
+
+class TaskWithData(implicit p: Parameters) extends LLCBundle {
+  val task = new Task()
+  val data = new DSBlock()
+}
+
+class Resp(implicit p: Parameters) extends LLCBundle {
+  val set = UInt(setBits.W)
+  val tag = UInt(tagBits.W)
+}
+
+class FSMState(implicit p: Parameters) extends LLCBundle {
+  // schedule
+  val s_refill = Bool()   // write to DS, and evict the old block if necessary
+  val s_retry = Bool()    // need retry when conflict
+
+  // wait
+  val w_snpresp = Bool()  // wait for the clients to return the snoop response
+}
+
+// MSHR allocation request that MainPipe sends to MSHRCtl
+class MSHRRequest(implicit p: Parameters) extends LLCBundle {
+  val dirResult = new DirResult()
+  val state = new FSMState()
+  val task = new Task()
 }
