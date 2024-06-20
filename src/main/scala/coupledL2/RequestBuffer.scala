@@ -261,7 +261,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       // update info
       e.waitMS  := waitMSUpdate
 //      e.depMask := depMaskUpdate
-      e.rdy     := !waitMSUpdate.orR && !e.waitMP && !s1_Block
+      e.rdy     := !waitMSUpdate.orR && !e.waitMP && !s1_Block && !noFreeWay
     }
   }
 
