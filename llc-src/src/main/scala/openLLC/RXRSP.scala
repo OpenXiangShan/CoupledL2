@@ -22,10 +22,11 @@ import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2chi.CHIRSP
 
-class DownRXRSP (implicit p: Parameters) extends LLCModule {
+class RXRSP (implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {
-    val rsp = Flipped(DecoupledIO(new CHIRSP()))
+    val in = Flipped(DecoupledIO(new CHIRSP()))
+    val out = ValidIO(new Resp())
   })
-
-  io.rsp := DontCare
+  io.in := DontCare
+  io.out := DontCare
 }

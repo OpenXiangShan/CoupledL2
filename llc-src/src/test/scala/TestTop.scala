@@ -13,19 +13,30 @@ import coupledL2._
 import coupledL2.tl2chi._
 import utility._
 
-class TestTop_L3()(implicit p: Parameters) extends LazyModule {
+class TestTop_L3()(implicit p: Parameters) extends LazyModule with HasCHIMsgParameters {
   override lazy val desiredName: String = "TestTop_L3"
 
   val l3 = LazyModule(new OpenLLC())
 
   lazy val module = new LazyModuleImp(this){
-
+    val io = IO(new Bundle {
+      val chi_upwards = Flipped(new PortIO)
+      val chi_downwards = new NoSnpPortIO
+      val nodeID = Input(UInt(NODEID_WIDTH.W))
+    })    
+    l3.module.io.nodeID := io.nodeID
+    l3.module.io.chi_downwards <> io.chi_downwards
+    l3.module.io.chi_upwards <> io.chi_upwards
   }
 }
 
 object TestTop_L3 extends App {
   val config = new Config((_, _, _) => {
-    case _ => 0
+    case OpenLLCParamKey => OpenLLCParam(
+      clientCaches = (0 until 1).map(i => 
+        L2Param()
+      )
+    )
   })
 
   val top = DisableMonitors(p => LazyModule(new TestTop_L3()(p)))(config)

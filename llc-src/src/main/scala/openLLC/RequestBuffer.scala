@@ -20,12 +20,13 @@ package openLLC
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.tl2chi.CHIDAT
 
-class DownTXDAT (implicit p: Parameters) extends LLCModule {
+class RequestBuffer(implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {
-    val dat = DecoupledIO(new CHIDAT())
+    val in = Flipped(DecoupledIO(new Task()))
+    val out = DecoupledIO(new Task())
   })
 
-  io.dat := DontCare
+  // TODO: buffer incoming CHI-requests
+  io.in <> io.out
 }
