@@ -21,21 +21,31 @@ import chisel3._
 import chisel3.util._
 import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.{Field, Parameters}
+import coupledL2.L2Param
+import huancun.CacheParameters
 
 case class OpenLLCParam
 (
-  name: String = "L2",
+  name: String = "L3",
   ways: Int = 8,
   sets: Int = 256,
   blockBytes: Int = 64,
   beatBytes: Int = 32,
   mshrs: Int = 16,
   fullAddressBits: Int = 16,
+  replacement: String = "plru",
+  clientCaches: Seq[L2Param] = Nil,
 
   // Network layer SAM
   sam: Seq[(AddressSet, Int)] = Seq(AddressSet.everything -> 0)
 ) {
-
+  def toCacheParams: CacheParameters = CacheParameters(
+    name = name,
+    sets = sets,
+    ways = ways,
+    blockGranularity = log2Ceil(sets),
+    blockBytes = blockBytes
+  )
 }
 
 case object OpenLLCParamKey extends Field[OpenLLCParam](OpenLLCParam())
@@ -49,6 +59,7 @@ trait HasOpenLLCParameters {
   def blockBytes = cacheParams.blockBytes
   def beatBytes = cacheParams.beatBytes
   def beatSize = blockBytes / beatBytes
+  def blocks = cacheParams.ways * cacheParams.sets
 
   def wayBits = log2Ceil(cacheParams.ways)
   def setBits = log2Ceil(cacheParams.sets)
@@ -61,7 +72,7 @@ trait HasOpenLLCParameters {
   def mshrs = cacheParams.mshrs
   def mshrBits = log2Up(mshrs)  // TODO: check this
 
-
+  def clientBits = cacheParams.clientCaches.size
 
   def sam = cacheParams.sam
 
@@ -70,6 +81,12 @@ trait HasOpenLLCParameters {
     val set = offset >> offsetBits
     val tag = set >> setBits
     (tag(tagBits - 1, 0), set(setBits - 1, 0), offset(offsetBits - 1, 0))
+  }
+
+  def sizeBytesToStr(sizeBytes: Double): String = sizeBytes match {
+    case _ if sizeBytes >= 1024 * 1024 => (sizeBytes / 1024 / 1024) + "MB"
+    case _ if sizeBytes >= 1024        => (sizeBytes / 1024) + "KB"
+    case _                             => "B"
   }
 
 }
