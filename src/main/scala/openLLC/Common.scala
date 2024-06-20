@@ -29,6 +29,11 @@ abstract class LLCBundle(implicit val p: Parameters) extends Bundle
   with HasOpenLLCParameters
   with HasCHIMsgParameters
 
+class ReplacerInfo(implicit p: Parameters) extends LLCBundle {
+  val opcode = UInt(REQ_OPCODE_WIDTH.W)
+  val refill = Bool()
+}
+
 class Task(implicit p: Parameters) extends LLCBundle {
   val set = UInt(setBits.W)
   val tag = UInt(tagBits.W)

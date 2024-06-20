@@ -55,25 +55,28 @@ class Slice()(implicit p: Parameters) extends LLCModule {
 
   /* Data path and control path */
   val mainPipe = Module(new MainPipe())
+  val directory = Module(new Directory())
+  val dataStorage = Module(new DataStorage())
+
+  rxreqUp.io.req <> rxUp.req
+  rxrspUp.io.rsp <> rxUp.rsp
+  rxdatUp.io.dat <> rxUp.dat
+
+  rxrspDown.io.rsp <> rxDown.rsp
+  rxdatDown.io.dat <> rxDown.dat
 
   txUp.dat <> txdatUp.io.dat
   txUp.rsp <> txrspUp.io.rsp
   txUp.snp <> txsnpUp.io.snp
 
-  rxUp.req <> rxreqUp.io.req
-  rxUp.rsp <> rxrspUp.io.rsp
-  rxUp.dat <> rxdatUp.io.dat
-
   txDown.req <> txreqDown.io.req
   txDown.dat <> txdatDown.io.dat
-
-  rxDown.rsp <> rxrspDown.io.rsp
-  rxDown.dat <> rxdatDown.io.dat
 
   txsnpUp.io.task := DontCare
   rxreqUp.io.task := DontCare
   txreqDown.io.task := DontCare
-
+  directory.io := DontCare
+  dataStorage.io := DontCare
   io.waitPCrdInfo := DontCare
 
   println(s"addrBits $fullAddressBits")
