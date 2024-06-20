@@ -162,15 +162,13 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
       }
     }
   }
-  val timeOutOH = PriorityEncoderOH(counter.map(_>=12.U))
+  val timeOutOH = PriorityEncoderOH(counter.map(_>=12.U) zip matchPCrdGrantReg map {case(a,b) => a&&b})
   timeOutPri := VecInit(timeOutOH)
 
-  val timeOutHit = VecInit.tabulate(16)(i=>matchPCrdGrantReg(i) && timeOutPri(i))
-  timeOutSel := timeOutHit.reduce(_|_)
+  timeOutSel := timeOutPri.reduce(_|_)
   pCrdPri := Mux(timeOutSel, timeOutPri, pCrdFixPri)
 
   dontTouch (timeOutPri)
-  dontTouch (timeOutHit)
   dontTouch (timeOutSel)
   dontTouch (pCrdPri)
 
