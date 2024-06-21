@@ -329,8 +329,8 @@ class Directory(implicit p: Parameters) extends L2Module {
     // basic SDMs complement-selection policy: srrip--set_idx[group-:]==set_idx[group_offset-:]; brrip--set_idx[group-:]==!set_idx[group_offset-:]
     val setBits = log2Ceil(sets)
     val half_setBits = setBits >> 1
-    val match_a = set_s3(setBits-1,setBits-half_setBits-1)===set_s3(setBits-half_setBits-1,0)  // 512 sets [8:4][4:0]
-    val match_b = set_s3(setBits-1,setBits-half_setBits-1)===(~set_s3(setBits-half_setBits-1,0))
+    val match_a = set_s3(setBits-1,setBits-half_setBits)===set_s3(half_setBits-1,0)  // 512 sets [8:5][3:0]
+    val match_b = set_s3(setBits-1,setBits-half_setBits)===(~set_s3(half_setBits-1,0))
     when(refillReqValid_s3 && match_a && !hit_s3 && (PSEL=/=1023.U)){  //SDMs_srrip miss
       PSEL := PSEL + 1.U
     } .elsewhen(refillReqValid_s3 && match_b && !hit_s3 && (PSEL=/=0.U)){ //SDMs_brrip miss
