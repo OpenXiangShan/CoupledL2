@@ -36,7 +36,7 @@ case class TPParameters(
     tpDataQueueDepth: Int = 8,
     triggerQueueDepth: Int = 4,
     throttleCycles: Int = 4,  // unused yet
-    replacementPolicy: String = "random",
+    replacementPolicy: String = "tpbrrip",
     debug: Boolean = false
 ) extends PrefetchParameters {
   override val hasPrefetchBit: Boolean = true
@@ -330,14 +330,24 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
       Mux(resetFinish, set_s2, resetIdx),
       1.U
     )
-  } else if (tpTableReplacementPolicy != "random"){
-    val next_state_s2 = repl.get_next_state(repl_state_s2, way_s2)
+  } else if (tpTableReplacementPolicy == "tpbrrip") {
+    val next_state_s2 = repl.get_next_state(repl_state_s2, way_s2, hit_s2, hasInvalidWay_s2, req_type)
+    val repl_init = Wire(Vec(tpTableAssoc, UInt(rrpvBits.W)))
+    repl_init.foreach(_ := Fill(rrpvBits, 1.U(1.W)))
     replacer_sram_opt.get.io.w(
       !resetFinish || replacerWen,
-      Mux(resetFinish, next_state_s2, 0.U),
+      Mux(resetFinish, next_state_s2, repl_init.asUInt),
       Mux(resetFinish, set_s2, resetIdx),
       1.U
     )
+  } else {
+      val next_state_s2 = repl.get_next_state(repl_state_s2, way_s2)
+      replacer_sram_opt.get.io.w(
+        !resetFinish || replacerWen,
+        Mux(resetFinish, next_state_s2, 0.U),
+        Mux(resetFinish, set_s2, resetIdx),
+        1.U
+      )
   }
 
   triggerQueue.io.enq.valid := triggerEnq_s2

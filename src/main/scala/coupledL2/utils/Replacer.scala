@@ -58,6 +58,7 @@ object ReplacementPolicy {
     case "srrip"   => new StaticRRIP(n_ways, rrpvBits)
     case "brrip"   => new BRRIP(n_ways, rrpvBits)
     case "drrip"   => new DRRIP(n_ways, rrpvBits)
+    case "tpbrrip" => new TPBRRIP(n_ways, rrpvBits)
     case t => throw new IllegalArgumentException(s"unknown Replacement Policy type $t")
   }
 }
@@ -422,6 +423,57 @@ class BRRIP(n_ways: Int, rrpvBits: Int = 6) extends ReplacementPolicy {
               Mux(hit, State(i), State(i)+increcement) 
             )
     } */
+    Cat(nextState.map(x=>x).reverse)
+  }
+
+  def get_replace_way(state: UInt): UInt = {
+    val RRPVVec = getStates4RRIP(n_ways, rrpvBits, state)
+    // scan each way's rrpv, find the least re-referenced way
+    val lrrWayVec = Wire(Vec(n_ways,Bool()))
+    lrrWayVec.zipWithIndex.map { case (e, i) =>
+      val isLarger = Wire(Vec(n_ways,Bool()))
+      for (j <- 0 until n_ways) {
+        isLarger(j) := RRPVVec(j) > RRPVVec(i)
+      }
+      e := !(isLarger.contains(true.B))
+    }
+    PriorityEncoder(lrrWayVec)
+  }
+
+  def way = get_replace_way(state_reg)
+  def miss = access(way)
+  def hit = {}
+}
+
+class TPBRRIP(n_ways: Int, rrpvBits: Int = 6) extends ReplacementPolicy {
+  def nBits = rrpvBits * n_ways
+  def perSet = true
+
+  private val state_reg = RegInit(0.U(nBits.W))
+  def state_read = WireDefault(state_reg)
+
+  def access(touch_way: UInt) = {}
+  def access(touch_ways: Seq[Valid[UInt]]) = {}
+  def get_next_state(state: UInt, touch_way: UInt) = 0.U //DontCare
+
+  override def get_next_state(state: UInt, touch_way: UInt, hit: Bool, invalid: Bool, req_type: UInt): UInt = {
+    val State = getStates4RRIP(n_ways, rrpvBits, state)
+    val nextState = Wire(Vec(n_ways, UInt(rrpvBits.W)))
+
+    // hit-Promotion, miss-Insertion & Aging
+    val increcement = Fill(rrpvBits, 1.U(1.W)) - State(touch_way)
+    val baseRRPV4data = Fill(rrpvBits, 1.U(1.W)) - 4.U
+    nextState.zipWithIndex.map { case (e, i) =>
+      when(i.U === touch_way) { // update touch way
+        e := MuxCase(State(i), Seq(
+          (req_type(2) -> (baseRRPV4data + 0.U)),
+          (req_type(1) -> (baseRRPV4data + 2.U)),
+          (req_type(0) -> (baseRRPV4data + 3.U)))
+        )
+      }.otherwise { // update other way
+        e := Mux(hit || invalid, State(i), State(i) + increcement)
+      }
+    }
     Cat(nextState.map(x=>x).reverse)
   }
 
