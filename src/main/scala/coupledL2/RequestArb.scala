@@ -207,7 +207,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   // MSHR task
   val mshrTask_s2 = task_s2.valid && task_s2.bits.mshrTask
   val mshrTask_s2_a_upwards = task_s2.bits.fromA &&
-    (task_s2.bits.opcode === GrantData || task_s2.bits.opcode === Grant ||
+    (task_s2.bits.opcode === GrantData || task_s2.bits.opcode === Grant && task_s2.bits.dsWen ||
       task_s2.bits.opcode === AccessAckData || task_s2.bits.opcode === HintAck && task_s2.bits.dsWen)
   // For GrantData, read refillBuffer
   // Caution: GrantData-alias may read DataStorage or ReleaseBuf instead
