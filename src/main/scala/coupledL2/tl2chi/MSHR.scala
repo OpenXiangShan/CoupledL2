@@ -106,7 +106,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   val pcrdtype = RegInit(0.U(PCRDTYPE_WIDTH.W))
   val gotRetryAck = RegInit(false.B)
   val gotPCrdGrant = RegInit(false.B)
-  val gotReissued = RegInit(false.B)
   val metaChi = ParallelLookUp(
     Cat(meta.dirty, meta.state),
     Seq(
@@ -118,12 +117,12 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       Cat( true.B, TIP)   -> UD
     ))
   //for PCrdGrant info. search
-  io.waitPCrdInfo.valid := gotRetryAck && !gotReissued
+  io.waitPCrdInfo.valid := gotRetryAck
   io.waitPCrdInfo.srcID.get := srcid
   io.waitPCrdInfo.pCrdType.get := pcrdtype
 
   /* Allocation */
-  when(io.alloc.valid) {
+  when (io.alloc.valid) {
     req_valid := true.B
     state     := io.alloc.bits.state
     dirResult := io.alloc.bits.dirResult
@@ -137,7 +136,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 
     gotRetryAck := false.B
     gotPCrdGrant := false.B
-    gotReissued := false.B
     srcid := 0.U
     dbid := 0.U
     pcrdtype := 0.U
@@ -547,9 +545,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 
 
   val mergeA = RegInit(false.B)
-  when(io.aMergeTask.valid) {
+  when (io.aMergeTask.valid) {
     mergeA := true.B
-  }.elsewhen(io.alloc.valid) {
+  }.elsewhen (io.alloc.valid) {
     mergeA := false.B
   }
   val mp_grant_task    = {
@@ -740,8 +738,12 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 
   /* ======== Task update ======== */
   when (io.tasks.txreq.fire) {
-    state.s_acquire := true.B 
-    state.s_reissue.get := true.B 
+    state.s_acquire := true.B
+    when (!state.s_reissue.get) {
+      state.s_reissue.get := true.B
+      gotRetryAck := false.B
+      gotPCrdGrant := false.B
+    }
   }
   when (io.tasks.txrsp.fire) {
     state.s_compack.get := true.B
@@ -756,9 +758,12 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       state.s_retry := true.B
     }.elsewhen (mp_release_valid) {
       state.s_release := true.B
-      state.s_reissue.get := true.B
+      when (!state.s_reissue.get) {
+        state.s_reissue.get := true.B
+        gotRetryAck := false.B
+        gotPCrdGrant := false.B
+      }
       state.s_cbwrdata.get := !(isT(meta.state) && meta.dirty || probeDirty)
-      // meta.state := INVALID
     }.elsewhen (mp_cbwrdata_valid) {
       state.s_cbwrdata.get := true.B
       meta.state := INVALID
@@ -843,28 +848,25 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       dbid := rxrsp.bits.dbID.getOrElse(0.U)
       srcid := rxrsp.bits.srcID.getOrElse(0.U)
     }
-    when(rxrsp.bits.chiOpcode.get === CompDBIDResp) {
+    when (rxrsp.bits.chiOpcode.get === CompDBIDResp) {
       state.w_releaseack := true.B
       srcid := rxrsp.bits.srcID.getOrElse(0.U)
       dbid := rxrsp.bits.dbID.getOrElse(0.U)
     }
-    when(rxrsp.bits.chiOpcode.get === RetryAck) {
+    when (rxrsp.bits.chiOpcode.get === RetryAck) {
       srcid := rxrsp.bits.srcID.getOrElse(0.U)
       pcrdtype := rxrsp.bits.pCrdType.getOrElse(0.U)
       gotRetryAck := true.B
-      gotReissued := false.B
     }
-    when((rxrsp.bits.chiOpcode.get === PCrdGrant) && !gotReissued) {
+    when (rxrsp.bits.chiOpcode.get === PCrdGrant) {
       state.s_reissue.get := false.B
       gotPCrdGrant := true.B
-      gotReissued := true.B
     }
   }
  // when there is this type of pCredit in pCam -> reissue
   when (io.pCamPri) {
     state.s_reissue.get := false.B
     gotPCrdGrant := true.B
-    gotReissued := true.B
   }
 
   // replay
@@ -1009,11 +1011,11 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   // deadlock check
   // 
   val validCnt = RegInit(0.U(64.W))
-  when(io.alloc.valid) {
+  when (io.alloc.valid) {
     validCnt := 0.U
   }
 
-  when(req_valid) {
+  when (req_valid) {
     validCnt := validCnt + 1.U
   }
 
