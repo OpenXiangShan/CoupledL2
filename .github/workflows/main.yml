@@ -73,6 +73,8 @@ jobs:
         run: |
             cd tl-test-new/dut
             git clone https://github.com/OpenXiangShan/OpenLLC
-            cd OpenLLC && make init && cd ..
+            cd OpenLLC && make init
+            rm -rf ./coupledL2 && ln -s ../../.. ./coupledL2
+            cd ..
             rm -rf ./CoupledL2 && ln -s ./OpenLLC ./CoupledL2 && cd ..
             make coupledL2-test-l2l3l2 run THREADS_BUILD=4 CXX_COMPILER=clang++-17
