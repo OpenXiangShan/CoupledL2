@@ -25,36 +25,70 @@ import org.chipsalliance.cde.config.Parameters
 class DSRequest(implicit p: Parameters) extends LLCBundle {
   val way = UInt(wayBits.W)
   val set = UInt(setBits.W)
-  val wen = Bool()
 }
 
 class DSBlock(implicit p: Parameters) extends LLCBundle {
   val data = UInt((blockBytes * 8).W)
 }
 
+class WBEntry(implicit p: Parameters) extends LLCBundle {
+  val blockIdx = UInt(blockBits.W)
+  val data = new DSBlock
+}
+
 class DataStorage(implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {
-    val req = Flipped(ValidIO(new DSRequest))
-    val rdata = Output(new DSBlock)
-    val wdata = Input(new DSBlock)
+    /**
+      * Support read and write request in the same cycle.
+      * When reading and writing the same address,
+      * the data before writing is returned
+      */
+    val read  = Flipped(ValidIO(new DSRequest()))
+    val write = Flipped(ValidIO(new DSRequest()))
+    val rdata = Output(new DSBlock())
+    val wdata = Input(new DSBlock())
   })
 
   val array = Module(new SRAMTemplate(
     gen = new DSBlock,
     set = blocks,
     way = 1,
-    singlePort = true,
-    holdRead = true
+    singlePort = false
   ))
 
-  val arrayIdx = Cat(io.req.bits.way, io.req.bits.set)
-  val wen = io.req.valid && io.req.bits.wen
-  val ren = io.req.valid && !io.req.bits.wen
-  array.io.w.apply(wen, io.wdata, arrayIdx, 1.U)
-  array.io.r.apply(ren, arrayIdx)
+  val ren = io.read.valid
+  val wen = io.write.valid
+  val readIdx = Cat(io.read.bits.way, io.read.bits.set)
+  val writeIdx = Cat(io.write.bits.way, io.write.bits.set)
 
-  io.rdata := array.io.r.resp.data(0)
+  val writeBuffer = RegInit(0.U.asTypeOf(new WBEntry()))
 
-  assert(!io.req.valid || !RegNext(io.req.valid, false.B),
-    "Continuous SRAM req prohibited under MCP2!")
+  /* WriteBuffer update logic */
+  /**
+    * New write requests are not written directly to SRAM,
+    * but are written to the buffer first.
+    */
+  when (wen) {
+    writeBuffer.blockIdx := writeIdx
+    writeBuffer.data := io.wdata
+  }
+
+  /* SRAM write logic */
+  // SRAM is written when the data block of the buffer is replaced
+  val writeHit = writeIdx === writeBuffer.blockIdx
+  val writeBack = !writeHit && wen
+  array.io.w.apply(writeBack, writeBuffer.data, writeIdx, 1.U)
+
+  /* Read request response */
+  val readHit = readIdx === writeBuffer.blockIdx
+  val readBuffer = readHit && ren
+  array.io.r.apply(!readBuffer, readIdx)
+  val rdata_s1 = Mux(
+    RegNext(readBuffer, false.B), 
+    RegEnable(writeBuffer.data, 0.U.asTypeOf(new DSBlock), readBuffer),
+    array.io.r.resp.data(0)
+  )
+  val rdata_s2 = RegEnable(rdata_s1, 0.U.asTypeOf(new DSBlock), RegNext(ren, false.B))
+  io.rdata := rdata_s2
+
 }
