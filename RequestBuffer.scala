@@ -20,14 +20,13 @@ package openLLC
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.tl2chi._
 
-class MainPipe(implicit p: Parameters) extends LLCModule {
+class RequestBuffer(implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {
-    /* receive incoming task from arbiter at stage 2 */
-    val taskFromArb_s2 = Flipped(ValidIO(new Task()))
-
-    /* get meta at stage 3 */
-    val dirResp_s3 = Input(new DirResult())
+    val in = Flipped(DecoupledIO(new Task()))
+    val out = DecoupledIO(new Task())
   })
+
+  // TODO: buffer incoming CHI-requests
+  io.in <> io.out
 }
