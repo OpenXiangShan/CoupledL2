@@ -63,6 +63,7 @@ trait HasOpenLLCParameters {
 
   def wayBits = log2Ceil(cacheParams.ways)
   def setBits = log2Ceil(cacheParams.sets)
+  def blockBits = log2Ceil(blocks)
   def offsetBits = log2Ceil(blockBytes)
   def beatBits = offsetBits - log2Ceil(beatBytes)
 
