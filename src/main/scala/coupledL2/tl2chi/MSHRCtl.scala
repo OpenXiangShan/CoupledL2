@@ -139,7 +139,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
   val timeOutPri = VecInit(Seq.fill(16)(false.B))
   val timeOutSel = WireInit(false.B)
   val pCrdPri = VecInit(Seq.fill(16)(false.B))
-//  val pArb = Module(new RRArbiter(UInt(), mshrsAll))
+  val pArb = Module(new RRArbiter(UInt(), mshrsAll))
 
   val matchPCrdGrant = VecInit(waitPCrdInfo.map(p =>
       isPCrdGrant && p.valid &&
@@ -148,7 +148,16 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
   ))
 
   val matchPCrdGrantReg = RegNext(matchPCrdGrant)
-  val pCrdFixPri = VecInit(PriorityEncoderOH(matchPCrdGrantReg)) //fix priority arbiter
+  pArb.io.in.zipWithIndex.foreach {
+    case (in, i) =>
+      in.valid := matchPCrdGrantReg(i)
+      in.bits := 0.U
+  }
+  pArb.io.out.ready := true.B
+
+  val pCrdOH = VecInit(UIntToOH(pArb.io.chosen).asBools)
+  val pCrdFixPri = VecInit(pCrdOH zip matchPCrdGrantReg map {case(a,b) => a && b})
+//val pCrdFixPri = VecInit(PriorityEncoderOH(matchPCrdGrantReg)) //fix priority arbiter
 
   // timeout protect
   val counter = RegInit(VecInit(Seq.fill(mshrsAll)(0.U((log2Ceil(mshrsAll)+1).W))))
@@ -170,6 +179,8 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
 
   dontTouch (timeOutPri)
   dontTouch (timeOutSel)
+  dontTouch (pCrdOH)
+  dontTouch (pCrdFixPri)
   dontTouch (pCrdPri)
 
   /* when PCrdGrant come before RetryAck, 16 entry CAM used to:
