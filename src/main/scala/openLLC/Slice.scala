@@ -54,6 +54,8 @@ class Slice()(implicit p: Parameters) extends LLCModule {
   val rxdatDown = Module(new DownRXDAT())
 
   /* Data path and control path */
+  val reqBuf = Module(new RequestBuffer())
+  val reqArb = Module(new RequestArb())
   val mainPipe = Module(new MainPipe())
   val directory = Module(new Directory())
   val dataStorage = Module(new DataStorage())
@@ -75,9 +77,19 @@ class Slice()(implicit p: Parameters) extends LLCModule {
   txsnpUp.io.task := DontCare
   rxreqUp.io.task := DontCare
   txreqDown.io.task := DontCare
-  directory.io := DontCare
   dataStorage.io := DontCare
   io.waitPCrdInfo := DontCare
+
+  reqBuf.io.in <> rxreqUp.io.task
+
+  reqArb.io.busTask_s1 <> reqBuf.io.out
+  reqArb.io.mshrTask_s1 := DontCare
+
+  mainPipe.io.taskFromArb_s2 <> reqArb.io.taskToPipe_s2
+  mainPipe.io.dirResp_s3 <> directory.io.resp.bits
+
+  directory.io := DontCare
+  directory.io.read <> reqArb.io.dirRead_s1
 
   println(s"addrBits $fullAddressBits")
 
