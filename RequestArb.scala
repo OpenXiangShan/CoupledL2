@@ -32,6 +32,9 @@ class RequestArb(implicit p: Parameters) extends LLCModule {
 
     /* send task to mainPipe */
     val taskToPipe_s2 = ValidIO(new Task())
+
+    /* send refillBuf read request */
+    val refillBufRead_s2 = ValidIO(new MSHRBufRead)
   })
 
   val task_s1 = Wire(Valid(new Task()))
@@ -64,5 +67,8 @@ class RequestArb(implicit p: Parameters) extends LLCModule {
   io.mshrTask_s1.ready := io.dirRead_s1.ready
 
   io.taskToPipe_s2 := task_s2
+
+  io.refillBufRead_s2.valid := DontCare
+  io.refillBufRead_s2.bits.id := task_s2.bits.mshrId
 
 }

@@ -22,7 +22,7 @@ import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2chi.CHIREQ
 
-class DownTXREQ (implicit p: Parameters) extends LLCModule {
+class TXREQ (implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {
     val req = DecoupledIO(new CHIREQ())
     val task = Flipped(DecoupledIO(new Task()))

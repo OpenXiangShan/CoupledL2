@@ -20,15 +20,13 @@ package openLLC
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.tl2chi.CHISNP
+import coupledL2.tl2chi.CHIRSP
 
-// receive inner task and send Snoop upwards
-class UpTXSNP (implicit p: Parameters) extends LLCModule {
+class TXRSP (implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {
     val task = Flipped(DecoupledIO(new Task()))
-    val snp = DecoupledIO(new CHISNP())    
-
+    val rsp = DecoupledIO(new CHIRSP())
   })
-  io.snp := DontCare
+  io.rsp := DontCare
   io.task := DontCare
 }
