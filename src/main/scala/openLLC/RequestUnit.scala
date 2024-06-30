@@ -20,12 +20,22 @@ package openLLC
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.tl2chi.CHIDAT
 
-class DownTXDAT (implicit p: Parameters) extends LLCModule {
+class RequestUnit(implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {
-    val dat = DecoupledIO(new CHIDAT())
+    val fromMainPipe = new Bundle() {
+      val task_s4 = Flipped(DecoupledIO(new Task()))
+    }
+    val rdataFromDS_s6 = Input(new DSBlock())
+    val rspFromRXRSP = Flipped(ValidIO(new Resp()))
+
+    /* generate requests sent to the Slave Node. */
+    val taskToTXREQ = DecoupledIO(new Task())
+    val taskToTXDAT = DecoupledIO(new TaskWithData())
   })
 
-  io.dat := DontCare
+  io.fromMainPipe := DontCare
+
+  io.taskToTXREQ := DontCare
+  io.taskToTXDAT := DontCare
 }

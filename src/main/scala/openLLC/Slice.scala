@@ -38,34 +38,53 @@ class Slice()(implicit p: Parameters) extends LLCModule {
   val rxDown = io.out.rx
 
   /* UpStream CHI-related modules */
-  val txrspUp = Module(new UpTXRSP())
-  val txdatUp = Module(new UpTXDAT())
-  val txsnpUp = Module(new UpTXSNP())
+  val txrspUp = Module(new TXRSP())
+  val txdatUp = Module(new TXDAT())
+  val txsnpUp = Module(new TXSNP())
 
-  val rxreqUp = Module(new UpRXREQ())
-  val rxrspUp = Module(new UpRXRSP())
-  val rxdatUp = Module(new UpRXDAT())
+  val rxreqUp = Module(new RXREQ())
+  val rxrspUp = Module(new RXRSP())
+  val rxdatUp = Module(new RXDAT())
 
   /* DownStream CHI-related modules */
-  val txreqDown = Module(new DownTXREQ())
-  val txdatDown = Module(new DownTXDAT())
+  val txreqDown = Module(new TXREQ())
+  val txdatDown = Module(new TXDAT())
 
-  val rxrspDown = Module(new DownRXRSP())
-  val rxdatDown = Module(new DownRXDAT())
+  val rxrspDown = Module(new RXRSP())
+  val rxdatDown = Module(new RXDAT())
 
   /* Data path and control path */
+  val directory = Module(new Directory())
+  val dataStorage = Module(new DataStorage())
+  val refillBuf = Module(new MSHRBuffer())
+
   val reqBuf = Module(new RequestBuffer())
   val reqArb = Module(new RequestArb())
   val mainPipe = Module(new MainPipe())
-  val directory = Module(new Directory())
-  val dataStorage = Module(new DataStorage())
-
+  val mshrCtl = Module(new MSHRCtl())
+  val requestUnit = Module(new RequestUnit())
+  val responseUnit = Module(new ResponseUnit())
+  
   rxreqUp.io.req <> rxUp.req
-  rxrspUp.io.rsp <> rxUp.rsp
-  rxdatUp.io.dat <> rxUp.dat
 
-  rxrspDown.io.rsp <> rxDown.rsp
+  rxrspUp.io.in <> rxUp.rsp
+
+  rxdatUp.io.dat <> rxUp.dat
+  rxdatUp.io.task.ready := false.B
+
+  txsnpUp.io.task <> mainPipe.io.toTXSNP.task_s4
+
+  txrspUp.io.task <> responseUnit.io.taskToTXRSP
+
+  txdatUp.io.task <> responseUnit.io.taskToTXDAT
+
+  rxrspDown.io.in <> rxDown.rsp
+
   rxdatDown.io.dat <> rxDown.dat
+
+  txreqDown.io.task <> requestUnit.io.taskToTXREQ
+
+  txdatDown.io.task <> requestUnit.io.taskToTXDAT
 
   txUp.dat <> txdatUp.io.dat
   txUp.rsp <> txrspUp.io.rsp
@@ -74,22 +93,43 @@ class Slice()(implicit p: Parameters) extends LLCModule {
   txDown.req <> txreqDown.io.req
   txDown.dat <> txdatDown.io.dat
 
-  txsnpUp.io.task := DontCare
   rxreqUp.io.task := DontCare
   txreqDown.io.task := DontCare
-  dataStorage.io := DontCare
   io.waitPCrdInfo := DontCare
 
   reqBuf.io.in <> rxreqUp.io.task
 
   reqArb.io.busTask_s1 <> reqBuf.io.out
-  reqArb.io.mshrTask_s1 := DontCare
+  reqArb.io.mshrTask_s1 <> mshrCtl.io.mshrTask
 
   mainPipe.io.taskFromArb_s2 <> reqArb.io.taskToPipe_s2
   mainPipe.io.dirResp_s3 <> directory.io.resp.bits
+  mainPipe.io.refillBufResp_s4 := RegEnable(
+    refillBuf.io.resp,
+    0.U.asTypeOf(new MSHRBufResp()),
+    RegNext(refillBuf.io.r.valid, false.B)
+  )
+  mainPipe.io.rdataFromDS_s6 <> dataStorage.io.rdata
 
   directory.io := DontCare
   directory.io.read <> reqArb.io.dirRead_s1
+
+  dataStorage.io.read <> mainPipe.io.toDS.read_s4
+  dataStorage.io.write <> mainPipe.io.toDS.write_s4
+  dataStorage.io.wdata <> mainPipe.io.toDS.wdata_s4
+
+  refillBuf.io.r <> reqArb.io.refillBufRead_s2
+  refillBuf.io.w <> rxdatUp.io.refillBufWrite
+
+  mshrCtl.io.fromMainPipe <> mainPipe.io.toMSHRCtl
+
+  requestUnit.io.fromMainPipe <> mainPipe.io.toRequestUnit
+  requestUnit.io.rspFromRXRSP <> rxrspDown.io.out
+  requestUnit.io.rdataFromDS_s6 <>dataStorage.io.rdata
+
+  responseUnit.io.fromMainPipe <> mainPipe.io.toResponseUnit
+  responseUnit.io.taskFromRXDAT <> rxdatDown.io.task
+  responseUnit.io.rspFromRXRSP <> rxrspUp.io.out
 
   println(s"addrBits $fullAddressBits")
 

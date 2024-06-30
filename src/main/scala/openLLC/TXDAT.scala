@@ -20,12 +20,14 @@ package openLLC
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.tl2chi.CHIRSP
+import coupledL2.tl2chi.CHIDAT
 
-class UpTXRSP (implicit p: Parameters) extends LLCModule {
+class TXDAT (implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {
-    val rsp = DecoupledIO(new CHIRSP())
+    val dat = DecoupledIO(new CHIDAT())
+    val task = Flipped(DecoupledIO(new TaskWithData()))
 
   })
-  io.rsp := DontCare
+  io.dat := DontCare
+  io.task := DontCare
 }
