@@ -34,7 +34,9 @@ class DummyLLC(numRNs: Int = 1)(implicit p: Parameters) extends LazyModule with 
   val axi4node = AXI4MasterNode(Seq(AXI4MasterPortParameters(
     Seq(AXI4MasterParameters(
       name = "LLC",
-      id = IdRange(0, 16)
+      id = IdRange(0, 16),
+      aligned = true,
+      maxFlight = Some(1)
     ))
   )))
 
@@ -47,6 +49,7 @@ class DummyLLCImp(numRNs: Int)(wrapper: DummyLLC) extends LazyModuleImp(wrapper)
   })
 
   println(s"====== DummyLLC ======")
+  dontTouch(io.rn)
 
   val (bus, edge) = wrapper.axi4node.out.head
   val aw = bus.aw
