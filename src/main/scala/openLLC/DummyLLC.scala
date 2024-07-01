@@ -60,9 +60,9 @@ class DummyLLCImp(numRNs: Int)(wrapper: DummyLLC) extends LazyModuleImp(wrapper)
 
   val s_ar, w_r, s_aw, s_w, w_b = RegInit(true.B)
   val s_snp, w_snpresp = RegInit(VecInit(Seq.fill(numRNs)(true.B)))
-  val s_comp, s_compdata, w_compack, w_cbwrdata = RegInit(true.B)
-  val noSchedule = s_ar && s_aw && s_w && s_snp.asUInt.andR && s_comp && s_compdata
-  val noWait = w_r && w_b && w_snpresp.asUInt.andR && w_compack && w_cbwrdata
+  val s_readreceipt, s_comp, s_compdata, w_compack, w_wrdata = RegInit(true.B)
+  val noSchedule = s_ar && s_aw && s_w && s_snp.asUInt.andR && s_comp && s_compdata && s_readreceipt
+  val noWait = w_r && w_b && w_snpresp.asUInt.andR && w_compack && w_wrdata
 
   // LinkMonitor: transform between LCredit handshake and Decouple handshake
   val rn = Wire(Vec(numRNs, new DecoupledPortIO))
@@ -82,6 +82,8 @@ class DummyLLCImp(numRNs: Int)(wrapper: DummyLLC) extends LazyModuleImp(wrapper)
 
   val snpGotData = RegInit(false.B)
   val snpGotDirty = RegInit(false.B)
+
+  val be = Reg(UInt(beatBytes.W))
 
   // 1. Choose a request from all the RNs
   val reqArb = Module(new RRArbiter(new CHIREQ, numRNs))
@@ -114,14 +116,23 @@ class DummyLLCImp(numRNs: Int)(wrapper: DummyLLC) extends LazyModuleImp(wrapper)
     val isDataless = opcode === MakeUnique
     val isWriteBackFull = opcode === WriteBackFull
     val isEvict = opcode === Evict
-    assert(isSnoopableRead || isDataless || isWriteBackFull || isEvict, "Unsupported opcode")
+    val isReadNoSnp = opcode === ReadNoSnp
+    val isWriteNoSnp = opcode === WriteNoSnpFull || opcode === WriteNoSnpPtl
+    val isNoSnp = isReadNoSnp || isWriteNoSnp
+    val isRead = isSnoopableRead || isReadNoSnp
+    val isWrite = isWriteBackFull || isWriteNoSnp
+    assert(isSnoopableRead || isDataless || isWriteBackFull || isEvict || isNoSnp, "Unsupported opcode")
 
-    when (isSnoopableRead) {
+    when (isNoSnp) {
+      assert((1.U << reqArb.io.out.bits.size) <= beatBytes.U)
+    }
+
+    when (isRead) {
       s_ar := false.B
       w_r := false.B
     }
     
-    when (isWriteBackFull) {
+    when (isWrite) {
       s_aw := false.B
       s_w := false.B
       w_b := false.B
@@ -132,57 +143,71 @@ class DummyLLCImp(numRNs: Int)(wrapper: DummyLLC) extends LazyModuleImp(wrapper)
       w_snpresp := chosenOH
     }
 
-    when (isSnoopableRead) {
+    when (isReadNoSnp && reqArb.io.out.bits.order =/= OrderEncodings.None) {
+      s_readreceipt := false.B
+    }
+
+    when (isRead) {
       s_compdata := false.B
     }
 
-    when (isDataless || isWriteBackFull || isEvict) {
+    when (isDataless || isWrite || isEvict) {
       s_comp := false.B
     }
 
-    when (isSnoopableRead || isDataless) {
+    when (isSnoopableRead || isDataless || isReadNoSnp && reqArb.io.out.bits.expCompAck) {
       w_compack := false.B
     }
 
-    when (isWriteBackFull) {
-      w_cbwrdata := false.B
+    when (isWrite) {
+      w_wrdata := false.B
     }
   }
 
   // 3. Send out s_* tasks
   ar.valid := !s_ar
   aw.valid := !s_aw
-  w.valid := !s_w && w_cbwrdata
+  w.valid := !s_w && w_wrdata
 
   for (i <- 0 until numRNs) {
     rn(i).rx.snp.valid := !s_snp(i)
-    rn(i).rx.rsp.valid := !s_comp && w_snpresp.asUInt.andR && chosenIdx === i.U
+    rn(i).rx.rsp.valid := (!s_comp && w_snpresp.asUInt.andR || !s_readreceipt) && chosenIdx === i.U
     rn(i).rx.dat.valid := !s_compdata && w_snpresp.asUInt.andR && w_r && chosenIdx === i.U
   }
 
+  val isReadNoSnp = req.opcode === ReadNoSnp
   ar.bits.id := 0.U
   ar.bits.addr := req.addr
-  ar.bits.len := (beatSize - 1).U
-  ar.bits.size := log2Ceil(beatBytes).U
+  ar.bits.len := Mux(isReadNoSnp, 0.U, (beatSize - 1).U)
+  ar.bits.size := Mux(isReadNoSnp, req.size, log2Ceil(beatBytes).U)
   ar.bits.burst := BURST_INCR
   ar.bits.lock := 0.U
-  ar.bits.cache := CACHE_MODIFIABLE
+  ar.bits.cache := Mux(
+    isReadNoSnp,
+    0.U,
+    CACHE_RALLOCATE | CACHE_WALLOCATE | CACHE_MODIFIABLE | CACHE_BUFFERABLE
+  )
   ar.bits.prot := 0.U
   ar.bits.qos := 0.U
 
+  val isWriteNoSnp = req.opcode === WriteNoSnpFull || req.opcode === WriteNoSnpPtl
   aw.bits.id := 0.U
   aw.bits.addr := req.addr
-  aw.bits.len := (beatSize - 1).U
-  aw.bits.size := log2Ceil(beatBytes).U
+  aw.bits.len := Mux(isWriteNoSnp, 0.U, (beatSize - 1).U)
+  aw.bits.size := Mux(isWriteNoSnp, req.size, log2Ceil(beatBytes).U)
   aw.bits.burst := BURST_INCR
   aw.bits.lock := 0.U
-  aw.bits.cache := CACHE_MODIFIABLE
+  aw.bits.cache := Mux(
+    isWriteNoSnp,
+    0.U,
+    CACHE_RALLOCATE | CACHE_WALLOCATE | CACHE_MODIFIABLE | CACHE_BUFFERABLE
+  )
   aw.bits.prot := 0.U
   aw.bits.qos := 0.U
 
   w.bits.data := releaseBuf(wBeatCnt)
-  w.bits.strb := Fill(beatBytes, true.B)
-  w.bits.last := wBeatCnt === (beatSize - 1).U
+  w.bits.strb := Mux(isWriteNoSnp, be, Fill(beatBytes, true.B))
+  w.bits.last := isWriteNoSnp || wBeatCnt === (beatSize - 1).U
 
   for (i <- 0 until numRNs) {
     val snp = rn(i).rx.snp.bits
@@ -200,18 +225,30 @@ class DummyLLCImp(numRNs: Int)(wrapper: DummyLLC) extends LazyModuleImp(wrapper)
     val rsp = rn(i).rx.rsp.bits
     rsp := 0.U.asTypeOf(new CHIRSP)
     rsp.txnID := req.txnID
-    rsp.opcode := ParallelLookUp(req.opcode, Seq(
-      MakeUnique -> Comp,
-      Evict -> Comp,
-      WriteBackFull -> CompDBIDResp
-    ))
+    rsp.opcode := Mux(
+      !s_readreceipt,
+      ReadReceipt,
+      ParallelLookUp(req.opcode, Seq(
+        MakeUnique -> Comp,
+        Evict -> Comp,
+        WriteBackFull -> CompDBIDResp,
+        WriteNoSnpFull -> CompDBIDResp,
+        WriteNoSnpPtl -> CompDBIDResp
+      ))
+    )
     rsp.srcID := req.tgtID
     rsp.dbID := 0.U
-    rsp.resp := ParallelLookUp(req.opcode, Seq(
-      MakeUnique -> CHICohStates.UC,
-      Evict -> CHICohStates.I,
-      WriteBackFull -> CHICohStates.I
-    ))
+    rsp.resp := Mux(
+      !s_readreceipt,
+      0.U,
+      ParallelLookUp(req.opcode, Seq(
+        MakeUnique -> CHICohStates.UC,
+        Evict -> CHICohStates.I,
+        WriteBackFull -> CHICohStates.I,
+        WriteNoSnpFull -> CHICohStates.I,
+        WriteNoSnpPtl -> CHICohStates.I
+      ))
+    )
 
     val dat = rn(i).rx.dat.bits
     val buf = Mux(snpGotData, releaseBuf, refillBuf)
@@ -226,7 +263,7 @@ class DummyLLCImp(numRNs: Int)(wrapper: DummyLLC) extends LazyModuleImp(wrapper)
     dat.resp := Mux(
       req.opcode === ReadUnique,
       Mux(snpGotDirty, CHICohStates.UD_PD, CHICohStates.UC),
-      CHICohStates.SC
+      Mux(isReadNoSnp, CHICohStates.I, CHICohStates.SC)
     )
   }
 
@@ -239,10 +276,15 @@ class DummyLLCImp(numRNs: Int)(wrapper: DummyLLC) extends LazyModuleImp(wrapper)
 
   for (i <- 0 until numRNs) {
     when (rn(i).rx.snp.fire) { s_snp(i) := true.B }
-    when (rn(i).rx.rsp.fire) { s_comp := true.B }
+    when (rn(i).rx.rsp.fire) {
+      s_comp := true.B
+      s_readreceipt := true.B
+    }
     when (rn(i).rx.dat.fire) {
       refillBeatCnt := refillBeatCnt + 1.U
-      when (refillBeatCnt === (beatSize - 1).U) { s_compdata := true.B }
+      when (isReadNoSnp || refillBeatCnt === (beatSize - 1).U) {
+        s_compdata := true.B
+      }
     }
   }
 
@@ -299,8 +341,14 @@ class DummyLLCImp(numRNs: Int)(wrapper: DummyLLC) extends LazyModuleImp(wrapper)
         val data = rn(i).tx.dat.bits.data
         releaseBuf(beatIdx) := data
         when (releaseBeatCnt === (beatSize - 1).U) {
-          w_cbwrdata := true.B
+          w_wrdata := true.B
         }
+      }
+
+      when (rn(i).tx.dat.fire && rn(i).tx.dat.bits.opcode === NonCopyBackWrData) {
+        releaseBuf(0) := rn(i).tx.dat.bits.data
+        be := rn(i).tx.dat.bits.be
+        w_wrdata := true.B
       }
     }
   }
@@ -309,7 +357,7 @@ class DummyLLCImp(numRNs: Int)(wrapper: DummyLLC) extends LazyModuleImp(wrapper)
   b.ready := !w_b
   for (i <- 0 until numRNs) {
     rn(i).tx.rsp.ready := Mux(chosenIdx === i.U, !w_compack, !w_snpresp(i))
-    rn(i).tx.dat.ready := Mux(chosenIdx === i.U, !w_cbwrdata, !w_snpresp(i))
+    rn(i).tx.dat.ready := Mux(chosenIdx === i.U, !w_wrdata, !w_snpresp(i))
   }
 }
 
