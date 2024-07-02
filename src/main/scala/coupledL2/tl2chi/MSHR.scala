@@ -117,7 +117,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       Cat( true.B, TIP)   -> UD
     ))
   //for PCrdGrant info. search
-  io.waitPCrdInfo.valid := gotRetryAck
+  io.waitPCrdInfo.valid := gotRetryAck && !gotPCrdGrant
   io.waitPCrdInfo.srcID.get := srcid
   io.waitPCrdInfo.pCrdType.get := pcrdtype
 
