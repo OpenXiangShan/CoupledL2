@@ -24,17 +24,23 @@ import org.chipsalliance.cde.config.{Field, Parameters}
 import coupledL2.L2Param
 import huancun.CacheParameters
 
+case class ResourceConfig(refill: Int, response: Int, snoop: Int, memory: Int)
+
 case class OpenLLCParam
 (
-  name: String = "L3",
-  ways: Int = 8,
-  sets: Int = 256,
+  name: String = "LLC",
+  ways: Int = 4,
+  sets: Int = 128,
   blockBytes: Int = 64,
   beatBytes: Int = 32,
-  mshrs: Int = 16,
+  mshrs: ResourceConfig = ResourceConfig(16, 16, 16, 16),
   fullAddressBits: Int = 16,
   replacement: String = "plru",
   clientCaches: Seq[L2Param] = Nil,
+  banks: Int = 4,
+
+  // Performance analysis
+  enablePerf: Boolean = true,
 
   // Network layer SAM
   sam: Seq[(AddressSet, Int)] = Seq(AddressSet.everything -> 0)
@@ -60,28 +66,33 @@ trait HasOpenLLCParameters {
   def beatBytes = cacheParams.beatBytes
   def beatSize = blockBytes / beatBytes
   def blocks = cacheParams.ways * cacheParams.sets
+  def banks = cacheParams.banks
 
   def wayBits = log2Ceil(cacheParams.ways)
   def setBits = log2Ceil(cacheParams.sets)
+  def bankBits = log2Ceil(banks)
   def blockBits = log2Ceil(blocks)
   def offsetBits = log2Ceil(blockBytes)
   def beatBits = offsetBits - log2Ceil(beatBytes)
 
   def fullAddressBits = cacheParams.fullAddressBits
-  def tagBits = fullAddressBits - setBits - offsetBits
+  def tagBits = fullAddressBits - setBits - bankBits - offsetBits
 
   def mshrs = cacheParams.mshrs
-  def mshrBits = log2Up(mshrs)  // TODO: check this
 
-  def clientBits = cacheParams.clientCaches.size
+  def numRNs = cacheParams.clientCaches.size
+
+  def timeoutThreshold = 20000
 
   def sam = cacheParams.sam
 
-  def parseAddress(x: UInt): (UInt, UInt, UInt) = {
+  def parseAddress(x: UInt): (UInt, UInt, UInt, UInt) = {
     val offset = x  // TODO: check address mapping
-    val set = offset >> offsetBits
+    val bank = offset >> offsetBits
+    val set = bank >> bankBits
     val tag = set >> setBits
-    (tag(tagBits - 1, 0), set(setBits - 1, 0), offset(offsetBits - 1, 0))
+    (tag(tagBits - 1, 0), set(setBits - 1, 0), if (bankBits == 0) 0.U(0.W) else bank(bankBits - 1, 0),
+      offset(offsetBits - 1, 0))
   }
 
   def sizeBytesToStr(sizeBytes: Double): String = sizeBytes match {

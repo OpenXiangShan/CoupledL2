@@ -43,6 +43,7 @@ class UpwardsLinkMonitor(implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {
     val in = new DecoupledPortIO()
     val out = Flipped(new PortIO)
+    val entranceID = Input(UInt(NODEID_WIDTH.W))
     val nodeID = Input(UInt(NODEID_WIDTH.W))
   })
 
@@ -70,9 +71,18 @@ class UpwardsLinkMonitor(implicit p: Parameters) extends LLCModule {
   Decoupled2LCredit(setSrcID(txIn.snp, io.nodeID), txOut.snp, LinkState(txState), Some("txsnp"))
   Decoupled2LCredit(setSrcID(txIn.rsp, io.nodeID), txOut.rsp, LinkState(txState), Some("txrsp"))
   Decoupled2LCredit(setSrcID(txIn.dat, io.nodeID), txOut.dat, LinkState(txState), Some("txdat"))
-  LCredit2Decoupled(rxOut.req, rxIn.req, LinkState(rxState), rxreqDeact, Some("rxreq"), maxLCreditNum)
-  LCredit2Decoupled(rxOut.rsp, rxIn.rsp, LinkState(rxState), rxrspDeact, Some("rxrsp"), maxLCreditNum)
-  LCredit2Decoupled(rxOut.dat, rxIn.dat, LinkState(rxState), rxdatDeact, Some("rxdat"), maxLCreditNum)
+  LCredit2Decoupled(
+    setSrcID(
+      setTgtID(rxOut.req, new CHIREQ(), rxOut.req.flit.asTypeOf(new CHIREQ()).srcID),
+      new CHIREQ(),
+      io.entranceID
+    ),
+    rxIn.req, LinkState(rxState), rxreqDeact, Some("rxreq"), maxLCreditNum
+  )
+  LCredit2Decoupled(setSrcID(rxOut.rsp, new CHIRSP(), io.entranceID), rxIn.rsp,
+    LinkState(rxState), rxrspDeact, Some("rxrsp"), maxLCreditNum)
+  LCredit2Decoupled(setSrcID(rxOut.dat, new CHIRSP(), io.entranceID), rxIn.dat,
+    LinkState(rxState), rxdatDeact, Some("rxdat"), maxLCreditNum)
 
   txsactive := true.B
   txOut.linkactivereq := !reset.asBool
@@ -80,10 +90,24 @@ class UpwardsLinkMonitor(implicit p: Parameters) extends LLCModule {
 
   dontTouch(io.out)
 
-  def setSrcID[T <: Bundle](in: DecoupledIO[T], srcID: UInt = 0.U): DecoupledIO[T] = {
+  def setSrcID[T <: Bundle](in: DecoupledIO[T], srcID: UInt): DecoupledIO[T] = {
     val out = Wire(in.cloneType)
     out <> in
     out.bits.elements.filter(_._1 == "srcID").head._2 := srcID
+    out
+  }
+
+  def setSrcID[T <: Bundle](in: ChannelIO[T], gen: T, srcID: UInt): ChannelIO[T] = {
+    val out = Wire(in.cloneType)
+    out <> in
+    out.flit.asTypeOf(gen).elements.filter(_._1 == "srcID").head._2 := srcID
+    out
+  }
+
+  def setTgtID[T <: Bundle](in: ChannelIO[T], gen: T, tgtID: UInt): ChannelIO[T] = {
+    val out = Wire(in.cloneType)
+    out <> in
+    out.flit.asTypeOf(gen).elements.filter(_._1 == "tgtID").head._2 := tgtID
     out
   }
 }

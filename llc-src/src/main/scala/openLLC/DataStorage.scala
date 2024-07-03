@@ -27,8 +27,12 @@ class DSRequest(implicit p: Parameters) extends LLCBundle {
   val set = UInt(setBits.W)
 }
 
+class DSBeat(implicit p: Parameters) extends LLCBundle {
+  val data = UInt((beatBytes * 8).W)
+}
+
 class DSBlock(implicit p: Parameters) extends LLCBundle {
-  val data = UInt((blockBytes * 8).W)
+  val data = Vec(beatSize, new DSBeat())
 }
 
 class WBEntry(implicit p: Parameters) extends LLCBundle {
@@ -77,7 +81,7 @@ class DataStorage(implicit p: Parameters) extends LLCModule {
   // SRAM is written when the data block of the buffer is replaced
   val writeHit = writeIdx === writeBuffer.blockIdx
   val writeBack = !writeHit && wen
-  array.io.w.apply(writeBack, writeBuffer.data, writeIdx, 1.U)
+  array.io.w.apply(writeBack, writeBuffer.data, writeBuffer.blockIdx, 1.U)
 
   /* Read request response */
   val readHit = readIdx === writeBuffer.blockIdx

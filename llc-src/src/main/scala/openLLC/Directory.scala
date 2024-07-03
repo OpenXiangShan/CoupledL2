@@ -32,7 +32,7 @@ trait HasClientInfo { this: HasOpenLLCParameters =>
   def clientWays = clientCacheParams.map(_.ways).max
   def clientSetBits = log2Ceil(clientSets)
   def clientWayBits = log2Ceil(clientWays)
-  def fullClientTagBits = fullAddressBits - clientSetBits - offsetBits
+  def clientTagBits = fullAddressBits - clientSetBits - bankBits - offsetBits
 }
 
 class SelfMetaEntry(implicit p: Parameters) extends Bundle {
@@ -72,30 +72,31 @@ object ClientMetaEntry {
 class SubDirRead(tagBits: Int, setBits: Int, ways: Int)(implicit p: Parameters) extends LLCBundle {
   val tag = UInt(tagBits.W)
   val set = UInt(setBits.W)
-  val wayMask = UInt(ways.W)
   val replacerInfo = new ReplacerInfo()
-  val mshrId = UInt(mshrBits.W)
 }
 
 class DirRead(implicit p: Parameters) extends LLCBundle with HasClientInfo {
   val self = new SubDirRead(tagBits, setBits, cacheParams.ways)
-  val clients = new SubDirRead(fullClientTagBits, clientSetBits, clientWays)
+  val clients = new SubDirRead(clientTagBits, clientSetBits, clientWays)
 }
 
-class SubDirResult[T <: Data](tagBits: Int, wayBits: Int, gen: T)(implicit p: Parameters) extends LLCBundle {
+class SubDirResult[T <: Data](tagBits: Int, setBits: Int, wayBits: Int, gen: T)
+  (implicit p: Parameters) extends LLCBundle {
   val hit = Bool()
   val tag = UInt(tagBits.W)
+  val set = UInt(setBits.W)
   val way = UInt(wayBits.W)
   val meta = gen.cloneType
   val error = Bool()
 }
 
 class DirResult(implicit p: Parameters) extends LLCBundle with HasClientInfo {
-  val self = new SubDirResult[SelfMetaEntry](tagBits, wayBits, SelfMetaEntry())
+  val self = new SubDirResult[SelfMetaEntry](tagBits, setBits, wayBits, SelfMetaEntry())
   val clients = new SubDirResult[Vec[ClientMetaEntry]](
-    fullClientTagBits,
+    clientTagBits,
+    clientSetBits,
     clientWayBits,
-    VecInit(Seq.fill(clientBits)(ClientMetaEntry()))
+    VecInit(Seq.fill(numRNs)(ClientMetaEntry()))
   )
 }
 
@@ -103,12 +104,26 @@ class MetaWrite[T <: Data](setBits: Int, ways: Int, gen: T)(implicit p: Paramete
   val set = UInt(setBits.W)
   val wayOH = UInt(ways.W)
   val wmeta = gen.cloneType
+
+  def apply(lineAddr: UInt, wayOH: UInt, data: T) = {
+    require(lineAddr.getWidth > setBits)
+    this.set    := lineAddr(setBits - 1, 0)
+    this.wayOH  := wayOH
+    this.wmeta  := data
+  }
 }
 
 class TagWrite(setBits: Int, wayBits: Int, tagBits: Int)(implicit p: Parameters) extends LLCBundle {
   val set = UInt(setBits.W)
   val way = UInt(wayBits.W)
   val wtag = UInt(tagBits.W)
+
+  def apply(lineAddr: UInt, way: UInt) = {
+    require(lineAddr.getWidth == setBits + tagBits)
+    this.set  := lineAddr(setBits - 1, 0)
+    this.way  := way
+    this.wtag := lineAddr(tagBits + setBits - 1, setBits)
+  }
 }
 
 class SubDirectory[T <: Data](
@@ -116,7 +131,7 @@ class SubDirectory[T <: Data](
   ways:         Int,
   tagBits:      Int,
   meta_init_fn: () => T,
-  meta_hit_fn:  T => Bool,
+  meta_valid_fn: T => Bool,
   invalid_way_sel: (Seq[T], UInt) => (Bool, UInt), // try to find a invalid way
   replacement: String)(implicit p: Parameters) extends Module {
 
@@ -127,7 +142,7 @@ class SubDirectory[T <: Data](
 
   val io = IO(new Bundle() {
     val read = Flipped(DecoupledIO(new SubDirRead(tagBits, setBits, ways)))
-    val resp = ValidIO(new SubDirResult[T](tagBits, wayBits, meta_init))
+    val resp = ValidIO(new SubDirResult[T](tagBits, setBits, wayBits, meta_init))
     val tagWReq = Flipped(ValidIO(new TagWrite(setBits, wayBits, tagBits)))
     val metaWReq = Flipped(ValidIO(new MetaWrite[T](setBits, ways, meta_init)))
   })
@@ -186,7 +201,7 @@ class SubDirectory[T <: Data](
 
   /* Way selection logic */
   val tagMatchVec = tagAll_s3.map(_ (tagBits - 1, 0) === req_s3.tag)
-  val metaValidVec = metaAll_s3.map(meta_hit_fn)
+  val metaValidVec = metaAll_s3.map(meta_valid_fn)
   val hitVec = tagMatchVec.zip(metaValidVec).map(x => x._1 && x._2)
 
   val hitWay = OHToUInt(hitVec)
@@ -239,6 +254,7 @@ class SubDirectory[T <: Data](
   io.resp.bits.way   := way_s3
   io.resp.bits.meta  := meta_s3
   io.resp.bits.tag   := tag_s3
+  io.resp.bits.set   := set_s3
   io.resp.bits.error := false.B
 
   dontTouch(io)
@@ -255,31 +271,34 @@ class SubDirectory[T <: Data](
 
 }
 
+class DirWriteIO(implicit p: Parameters) extends LLCBundle with HasClientInfo {
+  val selfMetaWReq = ValidIO(
+    new MetaWrite[SelfMetaEntry](setBits, cacheParams.ways, SelfMetaEntry())
+  )
+  val selfTagWReq = ValidIO(
+    new TagWrite(setBits, wayBits, tagBits)
+  )
+  val clientMetaWReq = ValidIO(
+    new MetaWrite[Vec[ClientMetaEntry]](
+      clientSetBits,
+      clientWays,
+      VecInit(Seq.fill(numRNs)(ClientMetaEntry()))
+    )
+  )
+  val clientTagWReq = ValidIO(
+    new TagWrite(clientSetBits, clientWayBits, clientTagBits)
+  )
+}
+
 class Directory(implicit p: Parameters) extends LLCModule with HasClientInfo {
   private val selfSets = cacheParams.sets
   private val selfWays = cacheParams.ways
   private val selfWayBits = wayBits
-  private val selfSetBits = setBits
-  private val selfTagBits = tagBits
-
-  def client_meta_init_fn() = VecInit(Seq.fill(clientBits)(ClientMetaEntry()))
-  def self_meta_init_fn() = SelfMetaEntry()
 
   val io = IO(new Bundle() {
     val read = Flipped(DecoupledIO(new DirRead()))
     val resp = ValidIO(new DirResult())
-    val selfMetaWReq = Flipped(ValidIO(
-      new MetaWrite[SelfMetaEntry](selfSetBits, selfWays, self_meta_init_fn())
-    ))
-    val selfTagWReq = Flipped(ValidIO(
-      new TagWrite(selfSetBits, selfWayBits, selfTagBits)
-    ))
-    val clientMetaWReq = Flipped(ValidIO(
-      new MetaWrite[Vec[ClientMetaEntry]](clientSetBits, clientWays, client_meta_init_fn())
-    ))
-    val clientTagWReq = Flipped(ValidIO(
-      new TagWrite(clientSetBits, clientWayBits, fullClientTagBits)
-    ))
+    val write = Flipped(new DirWriteIO())
   })
 
   def client_invalid_way_sel(metaVec: Seq[Vec[ClientMetaEntry]], repl: UInt): (Bool, UInt) = {
@@ -294,9 +313,9 @@ class Directory(implicit p: Parameters) extends LLCModule with HasClientInfo {
     new SubDirectory[Vec[ClientMetaEntry]](
       sets = clientSets,
       ways = clientWays,
-      tagBits = fullClientTagBits,
-      meta_init_fn = client_meta_init_fn,
-      meta_hit_fn = metas => Cat(metas.map(_.valid)).orR,
+      tagBits = clientTagBits,
+      meta_init_fn = () => VecInit(Seq.fill(numRNs)(ClientMetaEntry())),
+      meta_valid_fn = metas => Cat(metas.map(_.valid)).orR,
       invalid_way_sel = client_invalid_way_sel,
       replacement = "random"
     )
@@ -314,8 +333,8 @@ class Directory(implicit p: Parameters) extends LLCModule with HasClientInfo {
       sets = selfSets,
       ways = selfWays,
       tagBits = tagBits,
-      meta_init_fn = self_meta_init_fn,
-      meta_hit_fn = meta => meta.valid,
+      meta_init_fn = () => SelfMetaEntry(),
+      meta_valid_fn = meta => meta.valid,
       invalid_way_sel = self_invalid_way_sel,
       replacement = cacheParams.replacement
     )
@@ -323,13 +342,13 @@ class Directory(implicit p: Parameters) extends LLCModule with HasClientInfo {
 
   selfDir.io.read.valid := io.read.valid
   selfDir.io.read.bits <> io.read.bits.self
-  selfDir.io.metaWReq <> io.selfMetaWReq
-  selfDir.io.tagWReq <> io.selfTagWReq
+  selfDir.io.metaWReq <> io.write.selfMetaWReq
+  selfDir.io.tagWReq <> io.write.selfTagWReq
 
   clientDir.io.read.valid := io.read.valid
   clientDir.io.read.bits <> io.read.bits.clients
-  clientDir.io.metaWReq <> io.clientMetaWReq
-  clientDir.io.tagWReq <> io.clientTagWReq
+  clientDir.io.metaWReq <> io.write.clientMetaWReq
+  clientDir.io.tagWReq <> io.write.clientTagWReq
   
   io.read.ready := selfDir.io.read.ready && clientDir.io.read.ready
   io.resp.bits.self <> selfDir.io.resp.bits

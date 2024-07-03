@@ -29,21 +29,25 @@ class RXREQ (implicit p: Parameters) extends LLCModule {
     val task = DecoupledIO(new Task())
   })
 
+  val id_pool = RegInit(0.U((TXNID_WIDTH - bankBits).W))
+  when(io.task.fire) {
+    id_pool := id_pool + 1.U // maybe fail if in-flight transactions exceed (256/banks) ?
+  }
+
   io.task.valid := io.req.valid
   io.req.ready := io.task.ready
 
   def fromCHIREQtoTaskBundle(r: CHIREQ): Task = {
     val task = Wire(new Task)
+    val (tag, set, bank, off) = parseAddress(r.addr)
     task := 0.U.asTypeOf(new Task)
-    task.tag := parseAddress(r.addr)._1
-    task.set := parseAddress(r.addr)._2
-    task.off := parseAddress(r.addr)._3
+    task.tag := tag
+    task.set := set
+    task.bank := bank
+    task.off := off
     task.size := r.size
-    task.mshrTask := false.B
-    task.mshrId := 0.U(mshrBits.W)
-    task.metaWen := false.B
-    task.tagWen := false.B
-    task.dataWen := false.B
+    task.refillTask := false.B
+    task.reqID := Cat(bank, id_pool)
     // this follows coupledL2.tl2chi.TaskBundle.toCHIReqBundle
     task.tgtID := r.tgtID
     task.srcID := r.srcID

@@ -36,16 +36,21 @@ class ReplacerInfo(implicit p: Parameters) extends LLCBundle {
 
 class Task(implicit p: Parameters) extends LLCBundle {
   val set = UInt(setBits.W)
+  val bank = UInt(bankBits.W)
   val tag = UInt(tagBits.W)
   val off = UInt(offsetBits.W)
   val size = UInt(SIZE_WIDTH.W)
 
-  // MSHR task
-  val mshrTask = Bool()             // is task from mshr
-  val mshrId = UInt(mshrBits.W)     // mshr entry index (used only in mshr-task)
-  val metaWen = Bool()
-  val tagWen = Bool()
-  val dataWen = Bool()
+  // Refill task
+  val refillTask = Bool() // is task from RefillUnit
+  val bufID = UInt(log2Ceil(mshrs.refill).W)
+
+  // Identify the transaction from LLC
+  val reqID = UInt(TXNID_WIDTH.W)
+
+  // Snoop Info
+  val replSnp = Bool() // indicates whether the snoop is caused by a replacement
+  val snpVec  = Vec(numRNs, Bool())
 
   // CHI
   val tgtID = UInt(TGTID_WIDTH.W)
@@ -60,6 +65,7 @@ class Task(implicit p: Parameters) extends LLCBundle {
   val fwdState = UInt(FWDSTATE_WIDTH.W)
   val pCrdType = UInt(PCRDTYPE_WIDTH.W)
   val retToSrc = Bool() // only used in snoop
+  val doNotGoToSD = Bool() // only used in snoop
   val expCompAck = Bool()
   val allowRetry = Bool()
   val order = UInt(ORDER_WIDTH.W)
@@ -72,39 +78,112 @@ class Task(implicit p: Parameters) extends LLCBundle {
     req.srcID := srcID
     req.txnID := txnID
     req.opcode := chiOpcode
-    req.addr := Cat(tag, set, 0.U(offsetBits.W))
+    req.size := size
+    req.addr := Cat(tag, set, bank, 0.U(offsetBits.W))
     req.allowRetry := allowRetry //TODO: consider retry
     req.pCrdType := pCrdType
     req.expCompAck := expCompAck
     req.memAttr := memAttr
-    req.snpAttr := true.B
-    req.order := OrderEncodings.None
+    req.snpAttr := snpAttr
+    req.order := order
     req
   }
+
+  def toCHISNPBundle(): CHISNP = {
+    val snp = WireInit(0.U.asTypeOf(new CHISNP()))
+    snp.srcID := srcID
+    snp.txnID := txnID
+    snp.fwdNID := fwdNID
+    snp.fwdTxnID := fwdTxnID
+    snp.opcode := chiOpcode
+    snp.addr := Cat(tag, set, bank, 0.U(offsetBits.W)) >> 3 // SNP channel: Addr[(MPA-1):3]
+    snp.doNotGoToSD := doNotGoToSD
+    snp.retToSrc := retToSrc
+    snp
+  }
+
+  def toCHIRSPBundle(): CHIRSP = {
+    val rsp = WireInit(0.U.asTypeOf(new CHIRSP()))
+    rsp.tgtID := tgtID
+    rsp.srcID := srcID
+    rsp.txnID := txnID
+    rsp.opcode := chiOpcode
+    rsp.resp := resp
+    rsp.dbID := dbID
+    rsp.pCrdType := pCrdType
+    rsp.fwdState := fwdState
+    rsp
+  }
+
 }
 
 class TaskWithData(implicit p: Parameters) extends LLCBundle {
   val task = new Task()
   val data = new DSBlock()
+
+  def toCHIDATBundle(beatId: Int): CHIDAT = {
+    val dat = WireInit(0.U.asTypeOf(new CHIDAT()))
+    dat.tgtID := task.tgtID
+    dat.srcID := task.srcID
+    dat.txnID := task.txnID
+    dat.homeNID := task.homeNID
+    dat.fwdState := task.fwdState
+    dat.opcode := task.chiOpcode
+    dat.resp := task.resp
+    dat.dbID := task.dbID
+    dat.be := Fill(BE_WIDTH, true.B)
+    dat.data := data.data(beatId).data
+    dat.dataID := (beatBytes * beatId * 8).U(log2Ceil(blockBytes * 8) - 1, log2Ceil(blockBytes * 8) - 2)
+    dat
+  }
 }
 
 class Resp(implicit p: Parameters) extends LLCBundle {
+  val txnID = UInt(TXNID_WIDTH.W)
+  val dbID = UInt(DBID_WIDTH.W)
+  val opcode = UInt(OPCODE_WIDTH.W)
+  val resp  = UInt(RESP_WIDTH.W)
+  val srcID = UInt(SRCID_WIDTH.W)
+}
+
+class RespWithData(implicit p: Parameters) extends Resp {
+  val dataID = UInt(DATAID_WIDTH.W)
+  val data = new DSBeat()
+}
+
+class TaskEntry(implicit p: Parameters) extends LLCBundle {
+  val valid = Bool()
+  val ready = Bool()
+  val task  = new Task()
+}
+
+class PipeStatus(implicit p: Parameters) extends LLCBundle {
+  val tags = Vec(5, UInt(tagBits.W))
+  val sets = Vec(5, UInt(setBits.W))
+  val valids = Vec(5, Bool())
+
+  def s2_tag = tags(0)
+  def s3_tag = tags(1)
+  def s4_tag = tags(2)
+  def s5_tag = tags(3)
+  def s6_tag = tags(4)
+
+  def s2_set = sets(0)
+  def s3_set = sets(1)
+  def s4_set = sets(2)
+  def s5_set = sets(3)
+  def s6_set = sets(4)
+
+  def s2_valid = valids(0)
+  def s3_valid = valids(1)
+  def s4_valid = valids(2)
+  def s5_valid = valids(3)
+  def s6_valid = valids(4)
+}
+
+class BlockInfo(implicit p: Parameters) extends LLCBundle {
   val set = UInt(setBits.W)
   val tag = UInt(tagBits.W)
-}
-
-class FSMState(implicit p: Parameters) extends LLCBundle {
-  // schedule
-  val s_refill = Bool()   // write to DS, and evict the old block if necessary
-  val s_retry = Bool()    // need retry when conflict
-
-  // wait
-  val w_snpresp = Bool()  // wait for the clients to return the snoop response
-}
-
-// MSHR allocation request that MainPipe sends to MSHRCtl
-class MSHRRequest(implicit p: Parameters) extends LLCBundle {
-  val dirResult = new DirResult()
-  val state = new FSMState()
-  val task = new Task()
+  val opcode = UInt(REQ_OPCODE_WIDTH.W)
+  val reqID = UInt(TXNID_WIDTH.W)
 }

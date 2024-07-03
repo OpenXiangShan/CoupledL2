@@ -27,6 +27,19 @@ class RXRSP (implicit p: Parameters) extends LLCModule {
     val in = Flipped(DecoupledIO(new CHIRSP()))
     val out = ValidIO(new Resp())
   })
-  io.in := DontCare
-  io.out := DontCare
+
+  io.out.valid := io.in.valid
+  io.in.ready := true.B
+
+  def fromCHIRSPtoResp(r: CHIRSP): Resp = {
+    val rsp = Wire(new Resp())
+    rsp.txnID := r.txnID
+    rsp.dbID := r.dbID
+    rsp.opcode := r.opcode
+    rsp.resp := r.resp
+    rsp.srcID := r.srcID
+    rsp
+  }
+  io.out.bits := fromCHIRSPtoResp(io.in.bits)
+
 }
