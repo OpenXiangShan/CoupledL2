@@ -22,14 +22,13 @@ import chisel3.util._
 import freechips.rocketchip.amba.axi4._
 import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.tl2chi.{DecoupledPortIO, PCrdInfo, DecoupledNoSnpPortIO}
+import coupledL2.tl2chi.{DecoupledPortIO, DecoupledNoSnpPortIO}
 
 class Slice()(implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {
     val in = Flipped(new DecoupledPortIO)
     val out = new DecoupledNoSnpPortIO
-
-    val waitPCrdInfo = Output(Vec(mshrs, new PCrdInfo))
+    val snpMask = Output(Vec(numRNs, Bool()))
   })
 
   val txUp = io.in.rx
@@ -56,81 +55,82 @@ class Slice()(implicit p: Parameters) extends LLCModule {
   /* Data path and control path */
   val directory = Module(new Directory())
   val dataStorage = Module(new DataStorage())
-  val refillBuf = Module(new MSHRBuffer())
 
   val reqBuf = Module(new RequestBuffer())
   val reqArb = Module(new RequestArb())
   val mainPipe = Module(new MainPipe())
-  val mshrCtl = Module(new MSHRCtl())
-  val requestUnit = Module(new RequestUnit())
+  val refillUnit = Module(new RefillUnit())
+  val memUnit = Module(new MemUnit())
   val responseUnit = Module(new ResponseUnit())
+  val snpUnit = Module(new SnoopUnit())
   
+  /* Connect upwards channels */
   rxreqUp.io.req <> rxUp.req
-
   rxrspUp.io.in <> rxUp.rsp
-
-  rxdatUp.io.dat <> rxUp.dat
-  rxdatUp.io.task.ready := false.B
-
-  txsnpUp.io.task <> mainPipe.io.toTXSNP.task_s4
-
-  txrspUp.io.task <> responseUnit.io.taskToTXRSP
-
-  txdatUp.io.task <> responseUnit.io.taskToTXDAT
-
-  rxrspDown.io.in <> rxDown.rsp
-
-  rxdatDown.io.dat <> rxDown.dat
-
-  txreqDown.io.task <> requestUnit.io.taskToTXREQ
-
-  txdatDown.io.task <> requestUnit.io.taskToTXDAT
-
+  rxdatUp.io.in <> rxUp.dat
   txUp.dat <> txdatUp.io.dat
   txUp.rsp <> txrspUp.io.rsp
   txUp.snp <> txsnpUp.io.snp
 
+  /* Connect downwards channels */
   txDown.req <> txreqDown.io.req
   txDown.dat <> txdatDown.io.dat
+  rxrspDown.io.in <> rxDown.rsp
+  rxdatDown.io.in <> rxDown.dat
 
-  rxreqUp.io.task := DontCare
-  txreqDown.io.task := DontCare
-  io.waitPCrdInfo := DontCare
+  txsnpUp.io.task <> snpUnit.io.out
+  txrspUp.io.task <> responseUnit.io.txrsp
+  txdatUp.io.task <> responseUnit.io.txdat
+  txreqDown.io.task <> memUnit.io.txreq
+  txdatDown.io.task <> memUnit.io.txdat
+  txreqDown.io.task <> memUnit.io.txreq
 
   reqBuf.io.in <> rxreqUp.io.task
 
   reqArb.io.busTask_s1 <> reqBuf.io.out
-  reqArb.io.mshrTask_s1 <> mshrCtl.io.mshrTask
+  reqArb.io.refillTask_s1 <> refillUnit.io.task_out
+  reqArb.io.pipeInfo <> mainPipe.io.pipeInfo
+  reqArb.io.refillInfo <> refillUnit.io.refillInfo
+  reqArb.io.respInfo <> responseUnit.io.respInfo
+  reqArb.io.snpInfo <> snpUnit.io.snpInfo
+  reqArb.io.memInfo <> memUnit.io.memInfo
 
   mainPipe.io.taskFromArb_s2 <> reqArb.io.taskToPipe_s2
   mainPipe.io.dirResp_s3 <> directory.io.resp.bits
   mainPipe.io.refillBufResp_s4 := RegEnable(
-    refillBuf.io.resp,
-    0.U.asTypeOf(new MSHRBufResp()),
-    RegNext(refillBuf.io.r.valid, false.B)
+    refillUnit.io.data,
+    0.U.asTypeOf(new DSBlock()),
+    RegNext(refillUnit.io.read.valid, false.B)
   )
   mainPipe.io.rdataFromDS_s6 <> dataStorage.io.rdata
 
-  directory.io := DontCare
   directory.io.read <> reqArb.io.dirRead_s1
+  directory.io.write <> mainPipe.io.dirWReq_s3
 
-  dataStorage.io.read <> mainPipe.io.toDS.read_s4
-  dataStorage.io.write <> mainPipe.io.toDS.write_s4
-  dataStorage.io.wdata <> mainPipe.io.toDS.wdata_s4
+  dataStorage.io.read <> mainPipe.io.toDS_s4.read
+  dataStorage.io.write <> mainPipe.io.toDS_s4.write
+  dataStorage.io.wdata <> mainPipe.io.toDS_s4.wdata
 
-  refillBuf.io.r <> reqArb.io.refillBufRead_s2
-  refillBuf.io.w <> rxdatUp.io.refillBufWrite
+  refillUnit.io.read <> reqArb.io.refillBufRead_s2
+  refillUnit.io.respData <> rxdatUp.io.out
+  refillUnit.io.resp <> rxrspUp.io.out
+  refillUnit.io.task_in <> mainPipe.io.refillTask_s4
 
-  mshrCtl.io.fromMainPipe <> mainPipe.io.toMSHRCtl
-
-  requestUnit.io.fromMainPipe <> mainPipe.io.toRequestUnit
-  requestUnit.io.rspFromRXRSP <> rxrspDown.io.out
-  requestUnit.io.rdataFromDS_s6 <>dataStorage.io.rdata
+  memUnit.io.fromMainPipe <> mainPipe.io.toMemUnit
+  memUnit.io.urgentRead <> responseUnit.io.urgentRead
+  memUnit.io.respInfo <> responseUnit.io.respInfo
+  memUnit.io.resp <> rxrspDown.io.out
 
   responseUnit.io.fromMainPipe <> mainPipe.io.toResponseUnit
-  responseUnit.io.taskFromRXDAT <> rxdatDown.io.task
-  responseUnit.io.rspFromRXRSP <> rxrspUp.io.out
+  responseUnit.io.bypassData <> memUnit.io.bypassData
+  responseUnit.io.memData <> rxdatDown.io.out
+  responseUnit.io.snpData <> rxdatUp.io.out
+  responseUnit.io.response <> rxrspUp.io.out
 
-  println(s"addrBits $fullAddressBits")
+  snpUnit.io.in <> mainPipe.io.snoopTask_s4
+  snpUnit.io.respInfo <> responseUnit.io.respInfo
+  snpUnit.io.ack <> rxrspUp.io.out
+
+  io.snpMask := txsnpUp.io.snpMask
 
 }

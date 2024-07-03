@@ -24,12 +24,24 @@ import coupledL2.tl2chi.CHIDAT
 
 class RXDAT (implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {
-    val dat = Flipped(DecoupledIO(new CHIDAT()))
-    val task = DecoupledIO(new TaskWithData())
-    val refillBufWrite = ValidIO(new MSHRBufWrite())
+    val in  = Flipped(DecoupledIO(new CHIDAT()))
+    val out = ValidIO(new RespWithData())
   })
 
-  io.dat := DontCare
-  io.refillBufWrite := DontCare
-  io.task := DontCare
+  io.out.valid := io.in.valid
+  io.in.ready := true.B
+
+  def fromCHIRSPtoRespWithData(r: CHIDAT): RespWithData = {
+    val rsp = Wire(new RespWithData())
+    rsp.txnID := r.txnID
+    rsp.dbID := r.dbID
+    rsp.opcode := r.opcode
+    rsp.resp := r.resp
+    rsp.srcID := r.srcID
+    rsp.data.data := r.data
+    rsp.dataID := r.dataID
+    rsp
+  }
+  io.out.bits := fromCHIRSPtoRespWithData(io.in.bits)
+
 }
