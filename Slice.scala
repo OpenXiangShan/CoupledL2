@@ -111,8 +111,8 @@ class Slice()(implicit p: Parameters) extends LLCModule {
   )
   mainPipe.io.rdataFromDS_s6 <> dataStorage.io.rdata
 
-  directory.io := DontCare
   directory.io.read <> reqArb.io.dirRead_s1
+  directory.io.write <> mainPipe.io.dirWReq_s3
 
   dataStorage.io.read <> mainPipe.io.toDS.read_s4
   dataStorage.io.write <> mainPipe.io.toDS.write_s4
