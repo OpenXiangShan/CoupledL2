@@ -205,15 +205,17 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   assert(!(req_valid && req_prefetch && dirResult.hit), "MSHR can not receive prefetch hit req")
 
   /* ======== Task allocation ======== */
+  // The first Release with AllowRetry = 1 is sent to main pipe, because the task needs to write DS.
+  // The second Release with AllowRetry = 0 is sent to TXREQ directly, because DS is already written.
+  val release_valid1 = !state.s_release && state.w_rprobeacklast && state.w_grantlast && state.w_replResp
+  val release_valid2 = !state.s_reissue.getOrElse(false.B) && !state.w_releaseack && gotRetryAck && gotPCrdGrant
   // Theoretically, data to be released is saved in ReleaseBuffer, so Acquire can be sent as soon as req enters mshr
-//  io.tasks.txreq.valid := !state.s_acquire || !state.s_reissue
   io.tasks.txreq.valid := !state.s_acquire ||
-                          !state.s_reissue.getOrElse(false.B) && !state.w_grant && gotRetryAck && gotPCrdGrant
+                          !state.s_reissue.getOrElse(false.B) && !state.w_grant && gotRetryAck && gotPCrdGrant ||
+                          release_valid2
   io.tasks.txrsp.valid := !state.s_compack.get && state.w_grantlast
   io.tasks.source_b.valid := !state.s_pprobe || !state.s_rprobe
-  val mp_release_valid = !state.s_release && state.w_rprobeacklast && state.w_grantlast && state.w_replResp ||
-                         !state.s_reissue.getOrElse(false.B) && !state.w_releaseack && gotRetryAck && gotPCrdGrant
-                 // release after Grant to L1 sent and replRead returns
+  val mp_release_valid = release_valid1
   val mp_cbwrdata_valid = !state.s_cbwrdata.getOrElse(true.B) && state.w_releaseack
   val mp_probeack_valid = !state.s_probeack && state.w_pprobeacklast
   val pending_grant_valid = !state.s_refill && state.w_grantlast && state.w_rprobeacklast
@@ -301,20 +303,31 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       *  PrefetchRead         |  ReadNotSharedDirty
       *  PrefetchWrite        |  ReadUnique
       */
-    oa.opcode := ParallelPriorityMux(Seq(
-      (req.opcode === AcquirePerm && req.param === NtoT) -> MakeUnique,
-      req_needT                                          -> ReadUnique,
-      req_needB /* Default */                            -> ReadNotSharedDirty
-    ))
+    val isWriteBackFull = isT(meta.state) && meta.dirty || probeDirty
+    val isEvict = !isWriteBackFull
+    oa.opcode := Mux(
+      release_valid2,
+      Mux(isWriteBackFull, WriteBackFull, Evict),
+      ParallelPriorityMux(Seq(
+        (req.opcode === AcquirePerm && req.param === NtoT) -> MakeUnique,
+        req_needT                                          -> ReadUnique,
+        req_needB /* Default */                            -> ReadNotSharedDirty
+      ))
+    )
     oa.size := log2Ceil(blockBytes).U
-    oa.addr := Cat(req.tag, req.set, 0.U(offsetBits.W)) //TODO 36bit -> 48bit
+    oa.addr := Cat(Mux(release_valid2, dirResult.tag, req.tag), req.set, 0.U(offsetBits.W))
     oa.ns := false.B
     oa.likelyshared := false.B
     oa.allowRetry := state.s_reissue.getOrElse(false.B)
     oa.order := OrderEncodings.None
     oa.pCrdType := Mux(!state.s_reissue.getOrElse(false.B), pcrdtype, 0.U)
-    oa.expCompAck := true.B
-    oa.memAttr := MemAttr(cacheable = true.B, allocate = true.B, device = false.B, ewa = true.B)
+    oa.expCompAck := !release_valid2
+    oa.memAttr := MemAttr(
+      cacheable = true.B,
+      allocate = !(release_valid2 && isEvict),
+      device = false.B,
+      ewa = true.B
+    )
     oa.snpAttr := true.B
     oa.lpID := 0.U
     oa.excl := false.B
@@ -759,11 +772,11 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       state.s_retry := true.B
     }.elsewhen (mp_release_valid) {
       state.s_release := true.B
-      when (!state.s_reissue.get) {
-        state.s_reissue.get := true.B
-        gotRetryAck := false.B
-        gotPCrdGrant := false.B
-      }
+      // when (!state.s_reissue.get) {
+      //   state.s_reissue.get := true.B
+      //   gotRetryAck := false.B
+      //   gotPCrdGrant := false.B
+      // }
       state.s_cbwrdata.get := !(isT(meta.state) && meta.dirty || probeDirty)
     }.elsewhen (mp_cbwrdata_valid) {
       state.s_cbwrdata.get := true.B
