@@ -705,6 +705,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     mp_dct.srcID.get := 0.U
     mp_dct.txnID.get := req.fwdTxnID.get
     mp_dct.homeNID.get := req.srcID.get
+    mp_dct.dbID.get := req.txnID.get
     mp_dct.chiOpcode.get := CompData
     mp_dct.resp.get := setPD(fwdCacheState, fwdPassDirty)
     mp_dct.fwdState.get := 0.U
