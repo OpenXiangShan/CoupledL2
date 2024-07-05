@@ -132,6 +132,13 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
         if (param.hasTP) Some(new tpmetaL2PortIO()) else None
       case _ => None
     }
+    val tpHitFeedback = prefetchOpt match {
+      case Some(param: PrefetchReceiverParams) =>
+        if (param.hasTPPrefetcher) Some(Flipped(DecoupledIO(new TPHitFeedback()))) else None
+      case Some(param: TPParameters) =>
+        if (param.hasTP) Some(Flipped(DecoupledIO(new TPHitFeedback()))) else None
+      case _ => None
+    }
   })
   val hartId = IO(Input(UInt(hartIdLen.W)))
 
@@ -161,6 +168,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       pipe.io.in <> pftQueue.io.deq
       io.req <> pipe.io.out
       pft.io.tpmeta_port <> tpio.tpmeta_port.get
+      pft.io.tpHitFeedback <> tpio.tpHitFeedback.get
       pft.io.hartid := hartId
       val l2_pf_en = RegNextN(io_l2_pf_en, 2, Some(true.B))
       XSPerfAccumulate(cacheParams, "prefetch_req_fromTP", l2_pf_en && pft.io.req.valid)
@@ -212,6 +220,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
 
       // tpmeta interface
       tp.io.tpmeta_port <> tpio.tpmeta_port.get
+      tp.io.tpHitFeedback <> tpio.tpHitFeedback.get
 
       XSPerfAccumulate(cacheParams, "prefetch_req_fromSMS", pfRcv.io.req.valid)
       XSPerfAccumulate(cacheParams, "prefetch_req_fromBOP", l2_pf_en && bop.io.req.valid)

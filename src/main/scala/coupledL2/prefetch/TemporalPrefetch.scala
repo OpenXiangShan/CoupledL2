@@ -19,9 +19,11 @@ package coupledL2.prefetch
 
 import chisel3._
 import chisel3.util._
+import chisel3.util.random.LFSR
+import freechips.rocketchip.util.Random
 import org.chipsalliance.cde.config.Parameters
 import utility.{ChiselDB, Constantin, MemReqSource, ParallelPriorityMux, SRAMTemplate}
-import coupledL2.{HasCoupledL2Parameters, L2Bundle, TPmetaL2Req, TPmetaL2ReqBundle, TPmetaL2Resp, TPmetaReq, TPmetaResp}
+import coupledL2.{HasCoupledL2Parameters, L2Bundle, TPHitFeedback, TPmetaL2Req, TPmetaL2ReqBundle, TPmetaL2Resp, TPmetaReq, TPmetaResp}
 import coupledL2.utils.{ReplacementPolicy, XSPerfAccumulate}
 //import huancun.{TPmetaReq, TPmetaResp}
 
@@ -59,6 +61,7 @@ trait HasTPParams extends HasCoupledL2Parameters {
   val tpDataQueueDepth = tpParams.tpDataQueueDepth
   val triggerQueueDepth = tpParams.triggerQueueDepth
   val metaDataLength = fullAddressBits - offsetBits
+  val tpPfEntries = log2Ceil(tpParams.tpTableEntries * tpParams.inflightEntries) // actually less
 //  val tpThrottleCycles = tpParams.throttleCycles
 //  require(tpThrottleCycles > 0, "tpThrottleCycles must be greater than 0")
 }
@@ -139,6 +142,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     val resp = Flipped(DecoupledIO(new PrefetchResp))
     val tpmeta_port = new tpmetaL2PortIO()
     val hartid = Input(UInt(hartIdLen.W))
+    val tpHitFeedback = Flipped(DecoupledIO(new TPHitFeedback()))
   })
 
   def parseVaddr(x: UInt): (UInt, UInt) = {
@@ -201,9 +205,30 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     assert(!trainOnVaddr)
   }
 
+  /* hit feedback regulation  */
+  val tpFbCtrl = RegInit((1 << tpPfEntries/2).asUInt(tpPfEntries.W))
+  val tpFbResetCount = RegInit(0.U((tpPfEntries).W))
+  val tpFbReset = tpFbResetCount(tpPfEntries - 2)
+  val tpFbHit = Mux(tpFbCtrl.andR, false.B, io.tpHitFeedback.bits.latepf | io.tpHitFeedback.bits.hit)
+  val tpFbMiss = Mux(tpFbCtrl.orR, io.tpHitFeedback.bits.replMiss, false.B)
+  val tpDisable = !(tpFbCtrl(tpPfEntries - 1) | tpFbCtrl(tpPfEntries - 2))
+  when (io.tpHitFeedback.valid) {
+    tpFbCtrl := Mux(tpFbHit, tpFbCtrl + 1.U, Mux(tpFbMiss, tpFbCtrl - 1.U, tpFbCtrl))
+  }.elsewhen (tpFbReset) {
+    tpFbCtrl := (1 << tpPfEntries/2).asUInt
+  }
+  when (tpDisable && io.train.fire) {
+    tpFbResetCount := tpFbResetCount + 1.U
+  }.elsewhen(tpFbReset) {
+    tpFbResetCount := 0.U
+  }
+
+  io.tpHitFeedback.ready := true.B
+
   /* Stage 0: query tpMetaTable */
 
-  val s0_valid = io.train.fire && Mux(trainOnVaddr.orR, io.train.bits.vaddr.getOrElse(0.U) =/= 0.U, true.B) &&
+  val s0_valid = io.train.fire && !tpDisable &&
+    Mux(trainOnVaddr.orR, io.train.bits.vaddr.getOrElse(0.U) =/= 0.U, true.B) &&
     Mux(trainOnL1PF.orR, true.B, io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U) || tpMetaRespQueue.io.deq.fire
   val trainVaddr = io.train.bits.vaddr.getOrElse(0.U)
   val trainPaddr = io.train.bits.addr
@@ -297,6 +322,9 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   // req_type[2]: hit
   // req_type[1]: replInvalid
   // req_type[0]: replValid
+//  val lfsr = LFSR(16, true.B)
+//  val random = Random(16, lfsr)
+//  req_type := Cat(0.U(1.W), 0.U(1.W), hit_s2, hasInvalidWay_s2 && random.andR, triggerEnq_s2)
   req_type := Cat(0.U(1.W), 0.U(1.W), hit_s2, hasInvalidWay_s2, triggerEnq_s2)
   val set_s2 = Mux(trainOnVaddr.orR, vset_s2, pset_s2)
 
@@ -568,4 +596,9 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   XSPerfAccumulate(cacheParams, "tp_meta_read_miss", io.tpmeta_port.resp.valid && !io.tpmeta_port.resp.bits.exist)
   XSPerfAccumulate(cacheParams, "tp_meta_invalid", tpMetaRespValid_s2)
   XSPerfAccumulate(cacheParams, "tp_meta_write", io.tpmeta_port.req.fire && io.tpmeta_port.req.bits.wmode)
+  XSPerfAccumulate(cacheParams, "tp_close", tpDisable)
+  XSPerfAccumulate(cacheParams, "tp_reset", tpFbReset)
+  XSPerfAccumulate(cacheParams, "tp_hit", io.tpHitFeedback.valid && io.tpHitFeedback.bits.hit)
+  XSPerfAccumulate(cacheParams, "tp_latepf", io.tpHitFeedback.valid && io.tpHitFeedback.bits.latepf)
+  XSPerfAccumulate(cacheParams, "tp_miss", io.tpHitFeedback.valid && io.tpHitFeedback.bits.replMiss)
 }
