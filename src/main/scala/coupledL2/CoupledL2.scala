@@ -32,6 +32,8 @@ import scala.math.max
 import coupledL2.prefetch._
 import coupledL2.utils.XSPerfAccumulate
 import huancun.{TPmetaReq, TPmetaResp, BankBitsKey}
+import utility.mbist.{MbistInterface, MbistPipeline}
+import utility.sram.SramHelper
 
 trait HasCoupledL2Parameters {
   val p: Parameters
@@ -441,6 +443,32 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         }
 
         slice
+    }
+    private val mbistPl = MbistPipeline.PlaceMbistPipeline(Int.MaxValue, "L2Cache", cacheParams.hasMbist)
+
+    private val sigFromSrams = if (cacheParams.hasMbist) Some(SramHelper.genBroadCastBundleTop()) else None
+    val dft = if (cacheParams.hasMbist) Some(IO(sigFromSrams.get.cloneType)) else None
+    if (cacheParams.hasMbist) {
+      dft.get <> sigFromSrams.get
+      dontTouch(dft.get)
+    }
+
+    private val l2MbistIntf = if (cacheParams.hasMbist) {
+      val params = mbistPl.get.nodeParams
+      val intf = Some(Module(new MbistInterface(
+        params = Seq(params),
+        ids = Seq(mbistPl.get.childrenIds),
+        name = s"MBIST_intf_l2",
+        pipelineNum = 1
+      )))
+      intf.get.toPipeline.head <> mbistPl.get.mbist
+      if (cacheParams.hartId == 0) mbistPl.get.registerCSV(intf.get.info, "MBIST_L2")
+      intf.get.mbist := DontCare
+      dontTouch(intf.get.mbist)
+      //TODO: add mbist controller connections here
+      intf
+    } else {
+      None
     }
 
     // Refill hint
