@@ -22,6 +22,11 @@ import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2chi._
 import coupledL2.tl2chi.CHIOpcode.REQOpcodes._
+import coupledL2.tl2chi.CHIOpcode.SNPOpcodes._
+import coupledL2.tl2chi.CHIOpcode.RSPOpcodes._
+import coupledL2.tl2chi.CHIOpcode.DATOpcodes._
+import coupledL2.tl2chi.CHICohStates._
+import utility._
 
 class MainPipe(implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {
@@ -38,34 +43,41 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
     val refillBufResp_s4 = Flipped(new MSHRBufResp())
 
     /* send allocation request to MSHRCtl at stage 4 */
-    val toMSHRCtl = new Bundle() {
-      val mshr_alloc_s4 = ValidIO(new MSHRRequest())
-    }
+    val mshrAlloc_s4 = ValidIO(new MSHRRequest())
 
     /* send Snoop request via upstream TXSNP channel */
-    val toTXSNP = new Bundle() {
-      val task_s4 = DecoupledIO(new Task())
-    }
+    val snoopTask_s4 = DecoupledIO(new Task())
 
     /* send ReadNoSnp/WriteNoSnp task to RequestUnit */
     val toRequestUnit = new Bundle() {
-      val task_s4 = DecoupledIO(new Task())
+      val task_s4 = ValidIO(new Task())
+      val task_s6 = ValidIO(new TaskWithData())
     }
 
     /* send CompDBIDResp/CompData task to ResponseUnit */
     val toResponseUnit = new Bundle() {
-      val compDBIDResp_s4 = DecoupledIO(new Task())
-      val compData_s6 = DecoupledIO(new TaskWithData())
+      val task_s4 = ValidIO(new Task())
+      val task_s6 = ValidIO(new TaskWithData())
     }
 
     /* interact with datastorage */
-    val toDS = new Bundle() {
-      val read_s4 = ValidIO(new DSRequest())
-      val write_s4 = ValidIO(new DSRequest())
-      val wdata_s4 = Output(new DSBlock())
+    val toDS_s4 = new Bundle() {
+      val read  = ValidIO(new DSRequest())
+      val write = ValidIO(new DSRequest())
+      val wdata = Output(new DSBlock())
     }
     val rdataFromDS_s6 = Input(new DSBlock())
   })
+
+  val snpTask_s4    = io.snoopTask_s4
+  val refillTask_s4 = io.mshrAlloc_s4
+  val readTask_s4   = io.toRequestUnit.task_s4
+  val compTask_s4   = io.toResponseUnit.task_s4
+  val writeTask_s6  = io.toRequestUnit.task_s6
+  val compTask_s6   = io.toResponseUnit.task_s6
+
+  val refillData_s4 = io.refillBufResp_s4
+  val rdata_s6      = io.rdataFromDS_s6
 
   /* Stage 2 */
   val task_s2 = io.taskFromArb_s2
@@ -89,10 +101,11 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
   val passDirty_s3   = req_s3.resp(2) // Resp[2: 0] = {PassDirty, CacheState[1: 0]}
 
   val self_hit_s3       = selfDirResp_s3.hit
-  val originalRN_hit_s3 = clientsDirResp_s3.hit && clients_meta_s3(srcID_s3).valid
+  val clients_hit_s3    = clientsDirResp_s3.hit
+  val originalRN_hit_s3 = clients_hit_s3 && clients_meta_s3(srcID_s3).valid
   val peerRNs_hit_s3    = Cat(clients_meta_s3.zipWithIndex.map { case (meta, i) =>
     Mux(i.U =/= srcID_s3, clients_meta_s3(i).valid, false.B) 
-  }).orR && clientsDirResp_s3.hit
+  }).orR && clients_hit_s3
 
   val readNotSharedDirty_s3 = !refill_task_s3 && opcode_s3 === ReadNotSharedDirty
   val readUnique_s3         = !refill_task_s3 && opcode_s3 === ReadUnique
@@ -136,7 +149,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
 
   /*** Client directory update ***/
   // tagArray is updated when directory access of an exclusive request does not hit
-  clientsTagW_s3.valid := task_s3.valid && exclusiveReq_s3 && !clientsDirResp_s3.hit
+  clientsTagW_s3.valid := task_s3.valid && exclusiveReq_s3 && !clients_hit_s3
   clientsTagW_s3.bits.apply(
     lineAddr = reqLineAddr_s3,
     way = clientsDirResp_s3.way
@@ -187,9 +200,185 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
     reqLineAddr_s3
   )
 
-  io.toDS := DontCare
-  io.toMSHRCtl := DontCare
-  io.toTXSNP := DontCare
-  io.toRequestUnit := DontCare
-  io.toResponseUnit := DontCare
+  /* Stage 4 */
+  val task_s4 = RegInit(0.U.asTypeOf(Valid(new Task())))
+  task_s4.valid := task_s3.valid
+  when(task_s3.valid) {
+    task_s4.bits := task_s3.bits
+  }
+
+  val selfDirResp_s4    = RegEnable(selfDirResp_s3, 0.U.asTypeOf(selfDirResp_s3), task_s3.valid)
+  val clientsDirResp_s4 = RegEnable(clientsDirResp_s3, 0.U.asTypeOf(clientsDirResp_s3), task_s3.valid)
+
+  val readNotSharedDirty_s4 = RegNext(readNotSharedDirty_s3, false.B)
+  val readUnique_s4         = RegNext(readUnique_s3, false.B)
+  val makeUnique_s4         = RegNext(makeUnique_s3, false.B)
+  val writeBackFull_s4      = RegNext(writeBackFull_s3, false.B)
+  val evict_s4              = RegNext(evict_s3, false.B)
+  val sharedReq_s4          = RegNext(sharedReq_s3, false.B)
+  val exclusiveReq_s4       = RegNext(exclusiveReq_s3, false.B)
+  val releaseReq_s4         = RegNext(releaseReq_s3, false.B)
+  val peersRNs_hit_s4       = RegNext(peerRNs_hit_s3, false.B)
+
+  val req_s4          = task_s4.bits
+  val refill_task_s4  = req_s4.mshrTask
+  val srcID_s4        = req_s4.srcID
+  val opcode_s4       = req_s4.chiOpcode
+  val self_hit_s4     = selfDirResp_s4.hit
+  val self_meta_s4    = selfDirResp_s4.meta
+  val clients_hit_s4  = clientsDirResp_s4.hit
+  val clients_meta_s4 = clientsDirResp_s4.meta
+  val selfDirty_s4    = self_meta_s4.dirty
+
+  /** Send Snoop task **/
+  val clients_valids_vec_s4 = VecInit(clients_meta_s4.map(_.valid))
+  val peerRNs_valids_vec_s4 = clients_valids_vec_s4.zipWithIndex.map { case (valid, i) =>
+    Mux(i.U === srcID_s4, false.B, valid)
+  }
+
+  val clients_meta_conflict_s4 = !clients_hit_s4 && clients_valids_vec_s4.asUInt.orR &&
+    (readNotSharedDirty_s4 || readUnique_s4)
+  /**
+    * snoop occurs when:
+    * 1. conflict miss of client directory
+    * 2. exclusive read where peer-RNs have required block
+    * 3. shared read where local cache miss
+    */
+  val need_snoop_s4 = clients_meta_conflict_s4 ||
+    exclusiveReq_s4 && peersRNs_hit_s4 ||
+    sharedReq_s4 && !self_hit_s4
+  val snoop_vec_s4 = VecInit(
+    Mux(clients_meta_conflict_s4, Cat(clients_valids_vec_s4), Cat(peerRNs_valids_vec_s4))
+  )
+  val snp_address_s4 = Mux(
+    clients_meta_conflict_s4,
+    Cat(clientsDirResp_s4.tag, clientsDirResp_s4.set, req_s4.off),
+    Cat(req_s4.tag, req_s4.set, req_s4.off)
+  )
+
+  val snp_task_s4 = WireInit(0.U.asTypeOf(req_s4))
+  snp_task_s4.tag := parseAddress(snp_address_s4)._1
+  snp_task_s4.set := parseAddress(snp_address_s4)._2
+  snp_task_s4.srcID := req_s4.tgtID
+  snp_task_s4.doNotGoToSD := true.B
+  snp_task_s4.snpVec := snoop_vec_s4
+  snp_task_s4.chiOpcode := Mux(
+    clients_meta_conflict_s4,
+    SnpUnique,
+    MuxLookup(
+      Cat(readUnique_s4, readNotSharedDirty_s4, makeUnique_s4),
+      SnpUnique
+    )(
+      Seq(
+        Cat(false.B, false.B, true.B) -> SnpMakeInvalid,
+        Cat(false.B, true.B, false.B) -> SnpNotSharedDirty,
+        Cat(true.B, false.B, false.B) -> SnpUnique
+      )
+    )
+  )
+  snp_task_s4.retToSrc := Mux(
+    !clients_meta_conflict_s4,
+    Mux(makeUnique_s4, false.B, !self_hit_s4),
+    true.B
+  )
+
+  snpTask_s4.valid := task_s4.valid && need_snoop_s4
+  snpTask_s4.bits := snp_task_s4
+
+  /** Send refill task **/
+  // Cache allocation policy: EXCLUSIVE for single-core,  and INCLUSIVE for multi-core
+  // Data blocks are written to local cache only when an upper-level cache writes them back,
+  // or when they are shared among multiple cores
+  refillTask_s4.valid := task_s4.valid && (sharedReq_s4 || writeBackFull_s4) && !self_hit_s4
+  refillTask_s4.bits.task := req_s4
+  refillTask_s4.bits.dirResult.self := selfDirResp_s4
+  refillTask_s4.bits.dirResult.clients := clientsDirResp_s4
+
+  /** Comp task to ResponseUnit **/
+  val respSC_s4 = sharedReq_s4
+  val respUC_s4 = makeUnique_s4 || !makeUnique_s4 && exclusiveReq_s4 && !selfDirty_s4
+  val respUD_s4 = !makeUnique_s4 && exclusiveReq_s4 && self_hit_s4 && selfDirty_s4
+  val respI_s4  = releaseReq_s4
+  val comp_task_s4 = WireInit(req_s4)
+  comp_task_s4.tgtID := srcID_s4
+  comp_task_s4.srcID := req_s4.tgtID
+  comp_task_s4.homeNID := req_s4.tgtID
+  comp_task_s4.chiOpcode := MuxLookup(
+    Cat(writeBackFull_s4, evict_s4 || makeUnique_s4),
+    CompData
+  )(
+    Seq(
+      Cat(false.B, true.B) -> Comp,
+      Cat(true.B, false.B) -> CompDBIDResp
+    )
+  )
+  comp_task_s4.resp := ParallelPriorityMux(
+    Seq(respSC_s4, respUC_s4, respUD_s4, respI_s4),
+    Seq(SC, UC, UD_PD, I)
+  )
+
+  compTask_s4.valid := task_s4.valid &&
+    (releaseReq_s4 || (exclusiveReq_s4 || sharedReq_s4) && !self_hit_s4)
+  compTask_s4.bits := comp_task_s4
+
+  /**  Read task to RequestUnit **/
+  val mem_task_s4 = WireInit(req_s4)
+  mem_task_s4.tag := Mux(refill_task_s4, selfDirResp_s4.tag, req_s4.tag)
+  mem_task_s4.set := Mux(refill_task_s4, selfDirResp_s4.set, req_s4.set)
+  mem_task_s4.srcID := req_s4.tgtID
+  mem_task_s4.homeNID := req_s4.tgtID
+  mem_task_s4.chiOpcode := Mux(refill_task_s4, WriteNoSnpFull, ReadNoSnp)
+  mem_task_s4.size := log2Ceil(64).U
+  mem_task_s4.allowRetry := false.B
+  mem_task_s4.order := OrderEncodings.None // TODO: order requirement?
+  mem_task_s4.memAttr := MemAttr()
+  mem_task_s4.snpAttr := false.B
+  mem_task_s4.expCompAck := false.B
+
+  // need ReadNoSnp downwards
+  readTask_s4.valid := task_s4.valid && (readNotSharedDirty_s4 || readUnique_s4) &&
+    !self_hit_s4 && !clients_hit_s4
+  readTask_s4.bits := mem_task_s4
+
+  /** DS read/write **/
+  val dataUnready_s4      = (readNotSharedDirty_s4 || readUnique_s4) && self_hit_s4
+  val repl_dirty_block_s4 = refill_task_s4 && !self_hit_s4 && self_meta_s4.valid && selfDirty_s4
+
+  io.toDS_s4.read.valid := task_s4.valid && (dataUnready_s4 || repl_dirty_block_s4)
+  io.toDS_s4.read.bits.way := selfDirResp_s4.way
+  io.toDS_s4.read.bits.set := selfDirResp_s4.set
+  io.toDS_s4.write.valid := task_s4.valid && refill_task_s4
+  io.toDS_s4.write.bits.way := selfDirResp_s4.way
+  io.toDS_s4.write.bits.set := selfDirResp_s4.set
+  io.toDS_s4.wdata := refillData_s4.data
+
+  val req_drop_s4 = !dataUnready_s4 && !repl_dirty_block_s4
+
+  /* Stage 5 */
+  val task_s5 = RegInit(0.U.asTypeOf(Valid(new Task())))
+  task_s5.valid := task_s4.valid && !req_drop_s4
+  when(task_s4.valid && !req_drop_s4) {
+    task_s5.bits := Mux(dataUnready_s4, comp_task_s4, mem_task_s4)
+  }
+
+  /* Stage 6 */
+  val task_s6 = RegInit(0.U.asTypeOf(Valid(new Task())))
+  val repl_dirty_block_s6 = RegNextN(repl_dirty_block_s4, 2, Some(false.B))
+  task_s6.valid := task_s5.valid
+  when(task_s5.valid) {
+    task_s6.bits := task_s5.bits
+  }
+
+  val req_s6 = task_s6.bits
+
+  // Return CompData when local cache access hits
+  compTask_s6.valid := task_s6.valid && !repl_dirty_block_s6
+  compTask_s6.bits.task := req_s6
+  compTask_s6.bits.data := rdata_s6
+
+  // Update memory when a dirty block is replaced
+  writeTask_s6.valid := task_s6.valid && repl_dirty_block_s6
+  writeTask_s6.bits.task := req_s6
+  writeTask_s6.bits.data := rdata_s6
+
 }

@@ -72,7 +72,7 @@ class Slice()(implicit p: Parameters) extends LLCModule {
   rxdatUp.io.dat <> rxUp.dat
   rxdatUp.io.task.ready := false.B
 
-  txsnpUp.io.task <> mainPipe.io.toTXSNP.task_s4
+  txsnpUp.io.task <> mainPipe.io.snoopTask_s4
 
   txrspUp.io.task <> responseUnit.io.taskToTXRSP
 
@@ -114,18 +114,17 @@ class Slice()(implicit p: Parameters) extends LLCModule {
   directory.io.read <> reqArb.io.dirRead_s1
   directory.io.write <> mainPipe.io.dirWReq_s3
 
-  dataStorage.io.read <> mainPipe.io.toDS.read_s4
-  dataStorage.io.write <> mainPipe.io.toDS.write_s4
-  dataStorage.io.wdata <> mainPipe.io.toDS.wdata_s4
+  dataStorage.io.read <> mainPipe.io.toDS_s4.read
+  dataStorage.io.write <> mainPipe.io.toDS_s4.write
+  dataStorage.io.wdata <> mainPipe.io.toDS_s4.wdata
 
   refillBuf.io.r <> reqArb.io.refillBufRead_s2
   refillBuf.io.w <> rxdatUp.io.refillBufWrite
 
-  mshrCtl.io.fromMainPipe <> mainPipe.io.toMSHRCtl
+  mshrCtl.io.fromMainPipe.mshr_alloc_s4 <> mainPipe.io.mshrAlloc_s4
 
   requestUnit.io.fromMainPipe <> mainPipe.io.toRequestUnit
   requestUnit.io.rspFromRXRSP <> rxrspDown.io.out
-  requestUnit.io.rdataFromDS_s6 <>dataStorage.io.rdata
 
   responseUnit.io.fromMainPipe <> mainPipe.io.toResponseUnit
   responseUnit.io.taskFromRXDAT <> rxdatDown.io.task

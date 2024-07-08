@@ -82,18 +82,21 @@ class DirRead(implicit p: Parameters) extends LLCBundle with HasClientInfo {
   val clients = new SubDirRead(fullClientTagBits, clientSetBits, clientWays)
 }
 
-class SubDirResult[T <: Data](tagBits: Int, wayBits: Int, gen: T)(implicit p: Parameters) extends LLCBundle {
+class SubDirResult[T <: Data](tagBits: Int, setBits: Int, wayBits: Int, gen: T)
+  (implicit p: Parameters) extends LLCBundle {
   val hit = Bool()
   val tag = UInt(tagBits.W)
+  val set = UInt(setBits.W)
   val way = UInt(wayBits.W)
   val meta = gen.cloneType
   val error = Bool()
 }
 
 class DirResult(implicit p: Parameters) extends LLCBundle with HasClientInfo {
-  val self = new SubDirResult[SelfMetaEntry](tagBits, wayBits, SelfMetaEntry())
+  val self = new SubDirResult[SelfMetaEntry](tagBits, setBits, wayBits, SelfMetaEntry())
   val clients = new SubDirResult[Vec[ClientMetaEntry]](
     fullClientTagBits,
+    clientSetBits,
     clientWayBits,
     VecInit(Seq.fill(clientBits)(ClientMetaEntry()))
   )
@@ -141,7 +144,7 @@ class SubDirectory[T <: Data](
 
   val io = IO(new Bundle() {
     val read = Flipped(DecoupledIO(new SubDirRead(tagBits, setBits, ways)))
-    val resp = ValidIO(new SubDirResult[T](tagBits, wayBits, meta_init))
+    val resp = ValidIO(new SubDirResult[T](tagBits, setBits, wayBits, meta_init))
     val tagWReq = Flipped(ValidIO(new TagWrite(setBits, wayBits, tagBits)))
     val metaWReq = Flipped(ValidIO(new MetaWrite[T](setBits, ways, meta_init)))
   })
@@ -253,6 +256,7 @@ class SubDirectory[T <: Data](
   io.resp.bits.way   := way_s3
   io.resp.bits.meta  := meta_s3
   io.resp.bits.tag   := tag_s3
+  io.resp.bits.set   := set_s3
   io.resp.bits.error := false.B
 
   dontTouch(io)
