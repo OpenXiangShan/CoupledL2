@@ -24,8 +24,8 @@ import org.chipsalliance.cde.config.Parameters
 class ResponseUnit(implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {
     val fromMainPipe = new Bundle() {
-      val compDBIDResp_s4 = Flipped(DecoupledIO(new Task()))
-      val compData_s6 = Flipped(DecoupledIO(new TaskWithData()))
+      val task_s4 = Flipped(ValidIO(new Task()))
+      val task_s6 = Flipped(ValidIO(new TaskWithData()))
     }
     val taskFromRXDAT = Flipped(DecoupledIO(new TaskWithData()))
     val rspFromRXRSP = Flipped(ValidIO(new Resp()))

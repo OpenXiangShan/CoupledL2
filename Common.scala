@@ -47,6 +47,9 @@ class Task(implicit p: Parameters) extends LLCBundle {
   val tagWen = Bool()
   val dataWen = Bool()
 
+  // Snoop Fliter Info
+  val snpVec = Vec(clientBits, Bool())
+
   // CHI
   val tgtID = UInt(TGTID_WIDTH.W)
   val srcID = UInt(SRCID_WIDTH.W)
@@ -60,6 +63,7 @@ class Task(implicit p: Parameters) extends LLCBundle {
   val fwdState = UInt(FWDSTATE_WIDTH.W)
   val pCrdType = UInt(PCRDTYPE_WIDTH.W)
   val retToSrc = Bool() // only used in snoop
+  val doNotGoToSD = Bool() // only used in snoop
   val expCompAck = Bool()
   val allowRetry = Bool()
   val order = UInt(ORDER_WIDTH.W)
@@ -72,20 +76,65 @@ class Task(implicit p: Parameters) extends LLCBundle {
     req.srcID := srcID
     req.txnID := txnID
     req.opcode := chiOpcode
+    req.size := size
     req.addr := Cat(tag, set, 0.U(offsetBits.W))
     req.allowRetry := allowRetry //TODO: consider retry
     req.pCrdType := pCrdType
     req.expCompAck := expCompAck
     req.memAttr := memAttr
-    req.snpAttr := true.B
-    req.order := OrderEncodings.None
+    req.snpAttr := snpAttr
+    req.order := order
     req
   }
+
+  def toCHISNPBundle(): CHISNP = {
+    val snp = WireInit(0.U.asTypeOf(new CHISNP()))
+    snp.srcID := srcID
+    snp.txnID := txnID
+    snp.fwdNID := fwdNID
+    snp.fwdTxnID := fwdTxnID
+    snp.opcode := chiOpcode
+    snp.addr := Cat(tag, set, 0.U(offsetBits.W))
+    snp.doNotGoToSD := doNotGoToSD
+    snp.retToSrc := retToSrc
+    snp
+  }
+
+  def toCHIRSPBundle(): CHIRSP = {
+    val rsp = WireInit(0.U.asTypeOf(new CHIRSP()))
+    rsp.tgtID := tgtID
+    rsp.srcID := srcID
+    rsp.txnID := txnID
+    rsp.opcode := chiOpcode
+    rsp.resp := resp
+    rsp.dbID := dbID
+    rsp.pCrdType := pCrdType
+    rsp.fwdState := fwdState
+    rsp
+  }
+
 }
 
 class TaskWithData(implicit p: Parameters) extends LLCBundle {
   val task = new Task()
   val data = new DSBlock()
+
+  def toCHIDATBundle(beatId: Int): CHIDAT = {
+    val dat = WireInit(0.U.asTypeOf(new CHIDAT()))
+    dat.tgtID := task.tgtID
+    dat.srcID := task.srcID
+    dat.txnID := task.txnID
+    dat.homeNID := task.homeNID
+    dat.fwdState := task.fwdState
+    dat.opcode := task.chiOpcode
+    dat.resp := task.resp
+    dat.dbID := task.dbID
+    dat.be := Fill(BE_WIDTH, true.B)
+    dat.data := Seq.tabulate(beatSize)(
+      i => data.data((i + 1) * beatBytes * 8 - 1, i * beatBytes * 8)
+    )(beatId)
+    dat
+  }
 }
 
 class Resp(implicit p: Parameters) extends LLCBundle {
@@ -105,6 +154,5 @@ class FSMState(implicit p: Parameters) extends LLCBundle {
 // MSHR allocation request that MainPipe sends to MSHRCtl
 class MSHRRequest(implicit p: Parameters) extends LLCBundle {
   val dirResult = new DirResult()
-  val state = new FSMState()
   val task = new Task()
 }

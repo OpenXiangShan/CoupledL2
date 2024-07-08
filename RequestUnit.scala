@@ -24,9 +24,9 @@ import org.chipsalliance.cde.config.Parameters
 class RequestUnit(implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {
     val fromMainPipe = new Bundle() {
-      val task_s4 = Flipped(DecoupledIO(new Task()))
+      val task_s4 = Flipped(ValidIO(new Task()))
+      val task_s6 = Flipped(ValidIO(new TaskWithData()))
     }
-    val rdataFromDS_s6 = Input(new DSBlock())
     val rspFromRXRSP = Flipped(ValidIO(new Resp()))
 
     /* generate requests sent to the Slave Node. */
