@@ -36,6 +36,9 @@ case class OpenLLCParam
   replacement: String = "plru",
   clientCaches: Seq[L2Param] = Nil,
 
+  // Performance analysis
+  enablePerf: Boolean = true,
+
   // Network layer SAM
   sam: Seq[(AddressSet, Int)] = Seq(AddressSet.everything -> 0)
 ) {

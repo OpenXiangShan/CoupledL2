@@ -27,7 +27,7 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
       val task_s4 = Flipped(ValidIO(new Task()))
       val task_s6 = Flipped(ValidIO(new TaskWithData()))
     }
-    val taskFromRXDAT = Flipped(DecoupledIO(new TaskWithData()))
+    val rspFromRXDAT = Flipped(ValidIO(new RespWithData()))
     val rspFromRXRSP = Flipped(ValidIO(new Resp()))
 
     /* generate responses sent to the Request Node. */
@@ -35,7 +35,7 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
     val taskToTXDAT = DecoupledIO(new TaskWithData())
   })
   io.fromMainPipe := DontCare
-  io.taskFromRXDAT := DontCare
+  io.rspFromRXDAT := DontCare
 
   io.taskToTXRSP := DontCare
   io.taskToTXDAT := DontCare

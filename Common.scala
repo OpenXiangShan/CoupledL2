@@ -40,12 +40,12 @@ class Task(implicit p: Parameters) extends LLCBundle {
   val off = UInt(offsetBits.W)
   val size = UInt(SIZE_WIDTH.W)
 
-  // MSHR task
-  val mshrTask = Bool()             // is task from mshr
-  val mshrId = UInt(mshrBits.W)     // mshr entry index (used only in mshr-task)
-  val metaWen = Bool()
-  val tagWen = Bool()
-  val dataWen = Bool()
+  // Refill task
+  val refillTask = Bool() // is task from RefillUnit
+  val bufId = UInt(mshrBits.W)
+
+  // Identify the transaction from LLC
+  val reqId = UInt(TXNID_WIDTH.W)
 
   // Snoop Fliter Info
   val snpVec = Vec(clientBits, Bool())
@@ -138,21 +138,17 @@ class TaskWithData(implicit p: Parameters) extends LLCBundle {
 }
 
 class Resp(implicit p: Parameters) extends LLCBundle {
-  val set = UInt(setBits.W)
-  val tag = UInt(tagBits.W)
+  val txnId = UInt(TXNID_WIDTH.W)
+  val resp  = UInt(RESP_WIDTH.W)
 }
 
-class FSMState(implicit p: Parameters) extends LLCBundle {
-  // schedule
-  val s_refill = Bool()   // write to DS, and evict the old block if necessary
-  val s_retry = Bool()    // need retry when conflict
-
-  // wait
-  val w_snpresp = Bool()  // wait for the clients to return the snoop response
+class RespWithData(implicit p: Parameters) extends Resp {
+  val data = new DSBlock()
 }
 
-// MSHR allocation request that MainPipe sends to MSHRCtl
-class MSHRRequest(implicit p: Parameters) extends LLCBundle {
-  val dirResult = new DirResult()
-  val task = new Task()
+class TaskEntry(implicit p: Parameters) extends LLCBundle {
+  val valid = Bool()
+  val ready = Bool()
+  val task  = new Task()
+  val data  = new DSBlock()
 }

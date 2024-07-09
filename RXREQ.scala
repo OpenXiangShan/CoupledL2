@@ -29,6 +29,11 @@ class RXREQ (implicit p: Parameters) extends LLCModule {
     val task = DecoupledIO(new Task())
   })
 
+  val id_pool = RegInit(0.U(TXNID_WIDTH.W))
+  when(io.task.fire) {
+    id_pool := id_pool + 1.U // maybe fail if in-flight transactions exceed 256?
+  }
+
   io.task.valid := io.req.valid
   io.req.ready := io.task.ready
 
@@ -39,11 +44,8 @@ class RXREQ (implicit p: Parameters) extends LLCModule {
     task.set := parseAddress(r.addr)._2
     task.off := parseAddress(r.addr)._3
     task.size := r.size
-    task.mshrTask := false.B
-    task.mshrId := 0.U(mshrBits.W)
-    task.metaWen := false.B
-    task.tagWen := false.B
-    task.dataWen := false.B
+    task.refillTask := false.B
+    task.reqId := id_pool
     // this follows coupledL2.tl2chi.TaskBundle.toCHIReqBundle
     task.tgtID := r.tgtID
     task.srcID := r.srcID

@@ -39,11 +39,11 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
     /* update self/client directory at stage 3 */
     val dirWReq_s3 = new DirWriteIO()
 
-    /* get RefillBuffer read result at stage 4 */
-    val refillBufResp_s4 = Flipped(new MSHRBufResp())
+    /* get refill data at stage 4 */
+    val refillBufResp_s4 = Input(new DSBlock())
 
-    /* send allocation request to MSHRCtl at stage 4 */
-    val mshrAlloc_s4 = ValidIO(new MSHRRequest())
+    /* send allocation request to RefillUnit at stage 4 */
+    val refillTask_s4 = ValidIO(new Task())
 
     /* send Snoop request via upstream TXSNP channel */
     val snoopTask_s4 = DecoupledIO(new Task())
@@ -70,7 +70,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
   })
 
   val snpTask_s4    = io.snoopTask_s4
-  val refillTask_s4 = io.mshrAlloc_s4
+  val refillTask_s4 = io.refillTask_s4
   val readTask_s4   = io.toRequestUnit.task_s4
   val compTask_s4   = io.toResponseUnit.task_s4
   val writeTask_s6  = io.toRequestUnit.task_s6
@@ -96,7 +96,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
 
   val req_s3         = task_s3.bits
   val opcode_s3      = req_s3.chiOpcode
-  val refill_task_s3 = req_s3.mshrTask
+  val refill_task_s3 = req_s3.refillTask
   val srcID_s3       = req_s3.srcID
   val passDirty_s3   = req_s3.resp(2) // Resp[2: 0] = {PassDirty, CacheState[1: 0]}
 
@@ -221,7 +221,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
   val peersRNs_hit_s4       = RegNext(peerRNs_hit_s3, false.B)
 
   val req_s4          = task_s4.bits
-  val refill_task_s4  = req_s4.mshrTask
+  val refill_task_s4  = req_s4.refillTask
   val srcID_s4        = req_s4.srcID
   val opcode_s4       = req_s4.chiOpcode
   val self_hit_s4     = selfDirResp_s4.hit
@@ -290,9 +290,8 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
   // Data blocks are written to local cache only when an upper-level cache writes them back,
   // or when they are shared among multiple cores
   refillTask_s4.valid := task_s4.valid && (sharedReq_s4 || writeBackFull_s4) && !self_hit_s4
-  refillTask_s4.bits.task := req_s4
-  refillTask_s4.bits.dirResult.self := selfDirResp_s4
-  refillTask_s4.bits.dirResult.clients := clientsDirResp_s4
+  refillTask_s4.bits := req_s4
+  refillTask_s4.bits.refillTask := true.B
 
   /** Comp task to ResponseUnit **/
   val respSC_s4 = sharedReq_s4
@@ -350,7 +349,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
   io.toDS_s4.write.valid := task_s4.valid && refill_task_s4
   io.toDS_s4.write.bits.way := selfDirResp_s4.way
   io.toDS_s4.write.bits.set := selfDirResp_s4.set
-  io.toDS_s4.wdata := refillData_s4.data
+  io.toDS_s4.wdata := refillData_s4
 
   val req_drop_s4 = !dataUnready_s4 && !repl_dirty_block_s4
 
