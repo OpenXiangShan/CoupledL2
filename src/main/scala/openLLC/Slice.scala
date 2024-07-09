@@ -56,12 +56,11 @@ class Slice()(implicit p: Parameters) extends LLCModule {
   /* Data path and control path */
   val directory = Module(new Directory())
   val dataStorage = Module(new DataStorage())
-  val refillBuf = Module(new MSHRBuffer())
 
   val reqBuf = Module(new RequestBuffer())
   val reqArb = Module(new RequestArb())
   val mainPipe = Module(new MainPipe())
-  val mshrCtl = Module(new MSHRCtl())
+  val refillUnit = Module(new RefillUnit())
   val requestUnit = Module(new RequestUnit())
   val responseUnit = Module(new ResponseUnit())
   
@@ -69,8 +68,7 @@ class Slice()(implicit p: Parameters) extends LLCModule {
 
   rxrspUp.io.in <> rxUp.rsp
 
-  rxdatUp.io.dat <> rxUp.dat
-  rxdatUp.io.task.ready := false.B
+  rxdatUp.io.in <> rxUp.dat
 
   txsnpUp.io.task <> mainPipe.io.snoopTask_s4
 
@@ -80,7 +78,7 @@ class Slice()(implicit p: Parameters) extends LLCModule {
 
   rxrspDown.io.in <> rxDown.rsp
 
-  rxdatDown.io.dat <> rxDown.dat
+  rxdatDown.io.in <> rxDown.dat
 
   txreqDown.io.task <> requestUnit.io.taskToTXREQ
 
@@ -93,21 +91,20 @@ class Slice()(implicit p: Parameters) extends LLCModule {
   txDown.req <> txreqDown.io.req
   txDown.dat <> txdatDown.io.dat
 
-  rxreqUp.io.task := DontCare
   txreqDown.io.task := DontCare
   io.waitPCrdInfo := DontCare
 
   reqBuf.io.in <> rxreqUp.io.task
 
   reqArb.io.busTask_s1 <> reqBuf.io.out
-  reqArb.io.mshrTask_s1 <> mshrCtl.io.mshrTask
+  reqArb.io.refillTask_s1 <> refillUnit.io.task_out
 
   mainPipe.io.taskFromArb_s2 <> reqArb.io.taskToPipe_s2
   mainPipe.io.dirResp_s3 <> directory.io.resp.bits
   mainPipe.io.refillBufResp_s4 := RegEnable(
-    refillBuf.io.resp,
-    0.U.asTypeOf(new MSHRBufResp()),
-    RegNext(refillBuf.io.r.valid, false.B)
+    refillUnit.io.data,
+    0.U.asTypeOf(new DSBlock()),
+    RegNext(refillUnit.io.read.valid, false.B)
   )
   mainPipe.io.rdataFromDS_s6 <> dataStorage.io.rdata
 
@@ -118,16 +115,16 @@ class Slice()(implicit p: Parameters) extends LLCModule {
   dataStorage.io.write <> mainPipe.io.toDS_s4.write
   dataStorage.io.wdata <> mainPipe.io.toDS_s4.wdata
 
-  refillBuf.io.r <> reqArb.io.refillBufRead_s2
-  refillBuf.io.w <> rxdatUp.io.refillBufWrite
+  refillUnit.io.read <> reqArb.io.refillBufRead_s2
+  refillUnit.io.resp <> rxdatUp.io.out
 
-  mshrCtl.io.fromMainPipe.mshr_alloc_s4 <> mainPipe.io.mshrAlloc_s4
+  refillUnit.io.task_in <> mainPipe.io.refillTask_s4
 
   requestUnit.io.fromMainPipe <> mainPipe.io.toRequestUnit
   requestUnit.io.rspFromRXRSP <> rxrspDown.io.out
 
   responseUnit.io.fromMainPipe <> mainPipe.io.toResponseUnit
-  responseUnit.io.taskFromRXDAT <> rxdatDown.io.task
+  responseUnit.io.rspFromRXDAT <> rxdatDown.io.out
   responseUnit.io.rspFromRXRSP <> rxrspUp.io.out
 
   println(s"addrBits $fullAddressBits")
