@@ -97,6 +97,13 @@ class SRAMWriteBus[T <: Data](private val gen: T, val set: Int, val way: Int = 1
   }
 }
 
+/*
+  shouldReset: set all data in SRAM to zero at Reset
+  holdRead: hold read data until next read comes
+  singlePort: single port
+  bypassWrite: (used for dual port) bypass write data to read data
+  clk_div_by_2: SRAM clock cycle is half of L2 clock cycle
+ */
 class SRAMTemplate[T <: Data]
 (
   gen: T, set: Int, way: Int = 1,
@@ -152,10 +159,9 @@ class SRAMTemplate[T <: Data]
     })
   }
 
-  // hold read data for SRAMs
   val rdata = (
-    if(clk_div_by_2){
-      DelayTwoCycle(mem_rdata, realRen)
+    if(clk_div_by_2) {
+      DelayTwoCycle(mem_rdata, realRen) // this holdRead as well
     } else if (holdRead) {
       HoldUnless(mem_rdata, RegNext(realRen))
     } else {

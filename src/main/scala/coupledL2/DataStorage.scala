@@ -19,8 +19,8 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import coupledL2.utils.SRAMTemplate
-import utility.RegNextN
+import coupledL2.utils.{HoldUnless, SRAMTemplate}
+import utility.ClockGate
 import org.chipsalliance.cde.config.Parameters
 
 class DSRequest(implicit p: Parameters) extends L2Bundle {
@@ -47,19 +47,29 @@ class DataStorage(implicit p: Parameters) extends L2Module {
     val wdata = Input(new DSBlock)
   })
 
+  // read data is set MultiCycle Path 2
   val array = Module(new SRAMTemplate(
     gen = new DSBlock,
     set = blocks,
     way = 1,
-    singlePort = true,
-    holdRead = true
+    singlePort = true
   ))
 
-  val arrayIdx = Cat(io.req.bits.way, io.req.bits.set)
+  val masked_clock = ClockGate(false.B, io.req.valid, clock)
+  array.clock := masked_clock
+
   val wen = io.req.valid && io.req.bits.wen
   val ren = io.req.valid && !io.req.bits.wen
-  array.io.w.apply(wen, io.wdata, arrayIdx, 1.U)
-  array.io.r.apply(ren, arrayIdx)
+
+  // make sure SRAM input signals will not change during the two cycles
+  val holdWen = wen || RegNext(wen)
+  val holdRen = ren || RegNext(ren)
+  val req = HoldUnless(io.req.bits, io.req.valid)
+  val wdata = HoldUnless(io.wdata, io.req.valid)
+  val arrayIdx = Cat(req.way, req.set)
+
+  array.io.w.apply(holdWen, wdata, arrayIdx, 1.U)
+  array.io.r.apply(holdRen, arrayIdx)
 
   // for timing, we set this as multicycle path
   // s3 read, s4 pass and s5 to destination
