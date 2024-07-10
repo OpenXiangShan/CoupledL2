@@ -72,9 +72,9 @@ class Slice()(implicit p: Parameters) extends LLCModule {
 
   txsnpUp.io.task <> mainPipe.io.snoopTask_s4
 
-  txrspUp.io.task <> responseUnit.io.taskToTXRSP
+  txrspUp.io.task <> responseUnit.io.txrsp
 
-  txdatUp.io.task <> responseUnit.io.taskToTXDAT
+  txdatUp.io.task <> responseUnit.io.txdat
 
   rxrspDown.io.in <> rxDown.rsp
 
@@ -124,8 +124,9 @@ class Slice()(implicit p: Parameters) extends LLCModule {
   requestUnit.io.rspFromRXRSP <> rxrspDown.io.out
 
   responseUnit.io.fromMainPipe <> mainPipe.io.toResponseUnit
-  responseUnit.io.rspFromRXDAT <> rxdatDown.io.out
-  responseUnit.io.rspFromRXRSP <> rxrspUp.io.out
+  responseUnit.io.memResp <> rxdatDown.io.out
+  responseUnit.io.snpResp <> rxdatUp.io.out
+  responseUnit.io.compack <> rxrspUp.io.out
 
   println(s"addrBits $fullAddressBits")
 
