@@ -24,7 +24,6 @@ import coupledL2.tl2chi._
 import coupledL2.tl2chi.CHIOpcode.REQOpcodes._
 import coupledL2.tl2chi.CHIOpcode.SNPOpcodes._
 import coupledL2.tl2chi.CHIOpcode.RSPOpcodes._
-import coupledL2.tl2chi.CHIOpcode.DATOpcodes._
 import coupledL2.tl2chi.CHICohStates._
 import utility._
 
@@ -302,15 +301,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
   comp_task_s4.tgtID := srcID_s4
   comp_task_s4.srcID := req_s4.tgtID
   comp_task_s4.homeNID := req_s4.tgtID
-  comp_task_s4.chiOpcode := MuxLookup(
-    Cat(writeBackFull_s4, evict_s4 || makeUnique_s4),
-    CompData
-  )(
-    Seq(
-      Cat(false.B, true.B) -> Comp,
-      Cat(true.B, false.B) -> CompDBIDResp
-    )
-  )
+  comp_task_s4.dbID := req_s4.reqId
   comp_task_s4.resp := ParallelPriorityMux(
     Seq(respSC_s4, respUC_s4, respUD_s4, respI_s4),
     Seq(SC, UC, UD_PD, I)
