@@ -45,7 +45,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
     val refillTask_s4 = ValidIO(new Task())
 
     /* send Snoop request via upstream TXSNP channel */
-    val snoopTask_s4 = DecoupledIO(new Task())
+    val snoopTask_s4 = ValidIO(new Task())
 
     /* send ReadNoSnp/WriteNoSnp task to RequestUnit */
     val toRequestUnit = new Bundle() {
@@ -236,7 +236,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
   }
 
   val clients_meta_conflict_s4 = !clients_hit_s4 && clients_valids_vec_s4.asUInt.orR &&
-    (readNotSharedDirty_s4 || readUnique_s4)
+    (readNotSharedDirty_s4 || readUnique_s4 || makeUnique_s4)
   /**
     * snoop occurs when:
     * 1. conflict miss of client directory
@@ -258,7 +258,9 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
   val snp_task_s4 = WireInit(0.U.asTypeOf(req_s4))
   snp_task_s4.tag := parseAddress(snp_address_s4)._1
   snp_task_s4.set := parseAddress(snp_address_s4)._2
+  snp_task_s4.replSnp := clients_meta_conflict_s4
   snp_task_s4.srcID := req_s4.tgtID
+  snp_task_s4.txnID := req_s4.reqId
   snp_task_s4.doNotGoToSD := true.B
   snp_task_s4.snpVec := snoop_vec_s4
   snp_task_s4.chiOpcode := Mux(

@@ -47,8 +47,9 @@ class Task(implicit p: Parameters) extends LLCBundle {
   // Identify the transaction from LLC
   val reqId = UInt(TXNID_WIDTH.W)
 
-  // Snoop Fliter Info
-  val snpVec = Vec(clientBits, Bool())
+  // Snoop Info
+  val replSnp = Bool() // indicates whether the snoop is caused by a replacement
+  val snpVec  = Vec(clientBits, Bool())
 
   // CHI
   val tgtID = UInt(TGTID_WIDTH.W)
@@ -139,6 +140,7 @@ class TaskWithData(implicit p: Parameters) extends LLCBundle {
 
 class Resp(implicit p: Parameters) extends LLCBundle {
   val txnId = UInt(TXNID_WIDTH.W)
+  val opcode = UInt(OPCODE_WIDTH.W)
   val resp  = UInt(RESP_WIDTH.W)
 }
 

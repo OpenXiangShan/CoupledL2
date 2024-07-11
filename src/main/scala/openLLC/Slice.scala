@@ -63,6 +63,7 @@ class Slice()(implicit p: Parameters) extends LLCModule {
   val refillUnit = Module(new RefillUnit())
   val requestUnit = Module(new RequestUnit())
   val responseUnit = Module(new ResponseUnit())
+  val snpUnit = Module(new SnoopUnit())
   
   rxreqUp.io.req <> rxUp.req
 
@@ -70,7 +71,7 @@ class Slice()(implicit p: Parameters) extends LLCModule {
 
   rxdatUp.io.in <> rxUp.dat
 
-  txsnpUp.io.task <> mainPipe.io.snoopTask_s4
+  txsnpUp.io.task <> snpUnit.io.out
 
   txrspUp.io.task <> responseUnit.io.txrsp
 
@@ -127,6 +128,10 @@ class Slice()(implicit p: Parameters) extends LLCModule {
   responseUnit.io.memResp <> rxdatDown.io.out
   responseUnit.io.snpResp <> rxdatUp.io.out
   responseUnit.io.compack <> rxrspUp.io.out
+
+  snpUnit.io.in <> mainPipe.io.snoopTask_s4
+  snpUnit.io.respInfo <> responseUnit.io.respInfo
+  snpUnit.io.ack <> rxrspUp.io.out
 
   println(s"addrBits $fullAddressBits")
 

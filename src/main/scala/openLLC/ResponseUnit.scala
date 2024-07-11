@@ -29,6 +29,13 @@ class ResponseEntry(implicit p: Parameters) extends TaskEntry {
   val inflight = Bool() // Only use in CompData
 }
 
+class ResponseInfo(implicit p: Parameters) extends LLCBundle {
+  val set = UInt(setBits.W)
+  val tag = UInt(tagBits.W)
+  val opcode = UInt(REQ_OPCODE_WIDTH.W)
+  val reqID = UInt(TXNID_WIDTH.W)
+}
+
 class ResponseUnit(implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {
     /* Comp(DBIDResp/Data) task from MainPipe */
@@ -49,6 +56,9 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
     /* generate responses sent to the Request Node. */
     val txrsp = DecoupledIO(new Task()) // Comp(DBIDResp)
     val txdat = DecoupledIO(new TaskWithData()) // CompData
+
+    /* Response info to SnoopUnit */
+    val respInfo = Vec(mshrs, ValidIO(new ResponseInfo()))
   })
 
   val task1  = io.fromMainPipe.task_s6
@@ -99,15 +109,15 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
   /* Update ready */
   def handleResponse(response: Valid[RespWithData]): Unit = {
     when(response.valid) {
-      val id_match_vec = buffer.map(e =>
+      val wakeUp_vec = buffer.map(e =>
         (e.task.reqId === response.bits.txnId) && e.valid && !e.ready && !e.inflight
       )
-      assert(PopCount(id_match_vec) < 2.U, "Response task repeated")
-      val idMatch = Cat(id_match_vec).orR
-      when(idMatch) {
-        val pendingId = PriorityEncoder(id_match_vec)
-        buffer(pendingId).ready := true.B
-        buffer(pendingId).data := response.bits.data
+      assert(PopCount(wakeUp_vec) < 2.U, "Response task repeated")
+      val canWakeUp = Cat(wakeUp_vec).orR
+      val wakeUp_id = PriorityEncoder(wakeUp_vec)
+      when(canWakeUp) {
+        buffer(wakeUp_id).ready := true.B
+        buffer(wakeUp_id).data := response.bits.data
       }
     }
   }
@@ -147,25 +157,29 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
   }
 
   /* Dealloc */
-  when(txrsp.fire) {
-    val entry = buffer(txrspArb.io.chosen)
-    entry.valid := false.B
-    entry.ready := false.B
-    entry.inflight := false.B
+  val arb_free_vec = buffer.zipWithIndex.map { case (e, i) =>
+    txrsp.fire && txrspArb.io.chosen === i.U
+  }
+  val ack_free_vec = buffer.map(e => (e.task.reqId === ack.bits.txnId) && e.valid && e.ready && e.inflight)
+  assert(PopCount(ack_free_vec) < 2.U, "Response task repeated")
+
+  val will_free_vec = (Cat(arb_free_vec) | Cat(ack_free_vec)).asBools
+  buffer.zip(will_free_vec).foreach { case (e, v) =>
+    when(v) {
+      e.valid := false.B
+      e.ready := false.B
+      e.inflight := false.B
+    }
   }
 
-  when(ack.valid) {
-    val id_match_vec = buffer.map(e =>
-      (e.task.reqId === ack.bits.txnId) && e.valid && e.ready && e.inflight
-    )
-    assert(PopCount(id_match_vec) < 2.U, "Response task repeated")
-    val idMatch = Cat(id_match_vec).orR
-    when(idMatch) {
-      val pendingId = PriorityEncoder(id_match_vec)
-      buffer(pendingId).valid := false.B
-      buffer(pendingId).ready := false.B
-      buffer(pendingId).inflight := false.B
-    }
+  /* block info */
+  io.respInfo.zipWithIndex.foreach { case (m, i) =>
+    val will_free = will_free_vec(i)
+    m.valid := buffer(i).valid && !will_free
+    m.bits.tag := buffer(i).task.tag
+    m.bits.set := buffer(i).task.set
+    m.bits.opcode := buffer(i).task.chiOpcode
+    m.bits.reqID := buffer(i).task.reqId
   }
 
   /* Performance Counter */
