@@ -22,7 +22,7 @@ import chisel3.util._
 import coupledL2.prefetch.PfSource
 import coupledL2.utils._
 import coupledL2.tl2tl.MSHRStatus
-import utility.MemReqSource
+import utility._
 
 // TODO: Accommodate CHI
 class TopDownMonitor()(implicit p: Parameters) extends L2Module {
@@ -55,7 +55,7 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   }
 
   io.debugTopDown.l2MissMatch := Cat(addrMatchVec.flatten).orR
-  XSPerfAccumulate(cacheParams, s"${cacheParams.name}MissMatch", io.debugTopDown.l2MissMatch)
+  XSPerfAccumulate(s"${cacheParams.name}MissMatch", io.debugTopDown.l2MissMatch)
 
   /* ====== PART TWO ======
    * Count the parallel misses, and divide them into CPU/Prefetch
@@ -74,9 +74,9 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   // val missVecAll = allMSHRMatchVec(s => s.fromA && s.is_miss)
 
   val totalMSHRs = banks * mshrsAll
-  XSPerfHistogram(cacheParams, "parallel_misses_CPU" , PopCount(missVecCPU), true.B, 0, totalMSHRs, 1)
-  XSPerfHistogram(cacheParams, "parallel_misses_Pref", PopCount(missVecPref), true.B, 0, totalMSHRs, 1)
-  XSPerfHistogram(cacheParams, "parallel_misses_All" , PopCount(missVecCPU)+PopCount(missVecPref), true.B, 0, 32, 1)
+  XSPerfHistogram("parallel_misses_CPU" , PopCount(missVecCPU), true.B, 0, totalMSHRs, 1)
+  XSPerfHistogram("parallel_misses_Pref", PopCount(missVecPref), true.B, 0, totalMSHRs, 1)
+  XSPerfHistogram("parallel_misses_All" , PopCount(missVecCPU)+PopCount(missVecPref), true.B, 0, 32, 1)
 
   /* ====== PART THREE ======
    * Distinguish req sources and count num & miss
@@ -102,8 +102,8 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     val sourceMatchVecMiss = dirResultMatchVec(r => r.replacerInfo.reqSource === i.U && !r.hit)
 
     val sourceName = MemReqSource.apply(i).toString
-    XSPerfAccumulate(cacheParams, s"E2_${cacheParams.name}AReqSource_${sourceName}_Total", PopCount(sourceMatchVec))
-    XSPerfAccumulate(cacheParams, s"E2_${cacheParams.name}AReqSource_${sourceName}_Miss", PopCount(sourceMatchVecMiss))
+    XSPerfAccumulate(s"E2_${cacheParams.name}AReqSource_${sourceName}_Total", PopCount(sourceMatchVec))
+    XSPerfAccumulate(s"E2_${cacheParams.name}AReqSource_${sourceName}_Miss", PopCount(sourceMatchVecMiss))
   }
 
   /* ====== MISC ======
@@ -173,107 +173,107 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
 
   // PF Accuracy
   XSPerfRolling(
-    cacheParams, "L2PrefetchAccuracy",
+    "L2PrefetchAccuracy",
     PopCount(l2prefetchUseful), PopCount(l2prefetchSent),
     1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
-    cacheParams, "L2PrefetchAccuracyBOP",
+    "L2PrefetchAccuracyBOP",
     PopCount(l2prefetchUsefulBOP), PopCount(l2prefetchSentBOP),
     1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
-    cacheParams, "L2PrefetchAccuracyPBOP",
+    "L2PrefetchAccuracyPBOP",
     PopCount(l2prefetchUsefulPBOP), PopCount(l2prefetchSentPBOP),
     1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
-    cacheParams, "L2PrefetchAccuracySMS",
+    "L2PrefetchAccuracySMS",
     PopCount(l2prefetchUsefulSMS), PopCount(l2prefetchSentSMS),
     1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
-    cacheParams, "L2PrefetchAccuracyTP",
+    "L2PrefetchAccuracyTP",
     PopCount(l2prefetchUsefulTP), PopCount(l2prefetchSentTP),
     1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
-    cacheParams, "L2PrefetchAccuracyStride",
+    "L2PrefetchAccuracyStride",
     PopCount(l2prefetchUsefulStride), PopCount(l2prefetchSentStride),
     1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
-    cacheParams, "L2PrefetchAccuracyStream",
+    "L2PrefetchAccuracyStream",
     PopCount(l2prefetchUsefulStream), PopCount(l2prefetchSentStream),
     1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
-    cacheParams, "L2PrefetchAccuracyTP",
+    "L2PrefetchAccuracyTP",
     PopCount(l2prefetchUsefulTP), PopCount(l2prefetchSentTP),
     1000, io.debugTopDown.robTrueCommit, clock, reset
   )
 
   // PF Late
   XSPerfRolling(
-    cacheParams, "L2PrefetchLate",
+    "L2PrefetchLate",
     PopCount(l2prefetchLate), PopCount(l2prefetchUseful),
     1000, io.debugTopDown.robTrueCommit, clock, reset
   )
 
   // PF Coverage
   XSPerfRolling(
-    cacheParams, "L2PrefetchCoverage",
+    "L2PrefetchCoverage",
     PopCount(l2prefetchUseful), PopCount(l2demandRequest),
     1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
-    cacheParams, "L2PrefetchCoverageBOP",
+    "L2PrefetchCoverageBOP",
     PopCount(l2prefetchUsefulBOP), PopCount(l2demandRequest),
     1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
-    cacheParams, "L2PrefetchCoveragePBOP",
+    "L2PrefetchCoveragePBOP",
     PopCount(l2prefetchUsefulPBOP), PopCount(l2demandRequest),
     1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
-    cacheParams, "L2PrefetchCoverageSMS",
+    "L2PrefetchCoverageSMS",
     PopCount(l2prefetchUsefulSMS), PopCount(l2demandRequest),
     1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
-    cacheParams, "L2PrefetchCoverageTP",
+    "L2PrefetchCoverageTP",
     PopCount(l2prefetchUsefulTP), PopCount(l2demandRequest),
     1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
-    cacheParams, "L2PrefetchCoverageStride",
+    "L2PrefetchCoverageStride",
     PopCount(l2prefetchUsefulStride), PopCount(l2demandRequest),
     1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
-    cacheParams, "L2PrefetchCoverageStream",
+    "L2PrefetchCoverageStream",
     PopCount(l2prefetchUsefulStream), PopCount(l2demandRequest),
     1000, io.debugTopDown.robTrueCommit, clock, reset
   )
   XSPerfRolling(
-    cacheParams, "L2PrefetchCoverageTP",
+    "L2PrefetchCoverageTP",
     PopCount(l2prefetchUsefulTP), PopCount(l2demandRequest),
     1000, io.debugTopDown.robTrueCommit, clock, reset
   )
 
-  XSPerfAccumulate(cacheParams, "l2prefetchSent", PopCount(l2prefetchSent))
-  XSPerfAccumulate(cacheParams, "l2prefetchSentBOP", PopCount(l2prefetchSentBOP))
-  XSPerfAccumulate(cacheParams, "l2prefetchSentSMS", PopCount(l2prefetchSentSMS))
-  XSPerfAccumulate(cacheParams, "l2prefetchSentStride", PopCount(l2prefetchSentStride))
-  XSPerfAccumulate(cacheParams, "l2prefetchSentStream", PopCount(l2prefetchSentStream))
-  XSPerfAccumulate(cacheParams, "l2prefetchSentTP", PopCount(l2prefetchSentTP))
-  XSPerfAccumulate(cacheParams, "l2prefetchUseful", PopCount(l2prefetchUseful))
-  XSPerfAccumulate(cacheParams, "l2prefetchUsefulBOP", PopCount(l2prefetchUsefulBOP))
-  XSPerfAccumulate(cacheParams, "l2prefetchUsefulSMS", PopCount(l2prefetchUsefulSMS))
-  XSPerfAccumulate(cacheParams, "l2prefetchUsefulStride", PopCount(l2prefetchUsefulStride))
-  XSPerfAccumulate(cacheParams, "l2prefetchUsefulStream", PopCount(l2prefetchUsefulStream))
-  XSPerfAccumulate(cacheParams, "l2prefetchUsefulTP", PopCount(l2prefetchUsefulTP))
-  XSPerfAccumulate(cacheParams, "l2demandRequest", PopCount(l2demandRequest))
-  XSPerfAccumulate(cacheParams, "l2prefetchLate", PopCount(l2prefetchLate))
+  XSPerfAccumulate("l2prefetchSent", PopCount(l2prefetchSent))
+  XSPerfAccumulate("l2prefetchSentBOP", PopCount(l2prefetchSentBOP))
+  XSPerfAccumulate("l2prefetchSentSMS", PopCount(l2prefetchSentSMS))
+  XSPerfAccumulate("l2prefetchSentStride", PopCount(l2prefetchSentStride))
+  XSPerfAccumulate("l2prefetchSentStream", PopCount(l2prefetchSentStream))
+  XSPerfAccumulate("l2prefetchSentTP", PopCount(l2prefetchSentTP))
+  XSPerfAccumulate("l2prefetchUseful", PopCount(l2prefetchUseful))
+  XSPerfAccumulate("l2prefetchUsefulBOP", PopCount(l2prefetchUsefulBOP))
+  XSPerfAccumulate("l2prefetchUsefulSMS", PopCount(l2prefetchUsefulSMS))
+  XSPerfAccumulate("l2prefetchUsefulStride", PopCount(l2prefetchUsefulStride))
+  XSPerfAccumulate("l2prefetchUsefulStream", PopCount(l2prefetchUsefulStream))
+  XSPerfAccumulate("l2prefetchUsefulTP", PopCount(l2prefetchUsefulTP))
+  XSPerfAccumulate("l2demandRequest", PopCount(l2demandRequest))
+  XSPerfAccumulate("l2prefetchLate", PopCount(l2prefetchLate))
 }

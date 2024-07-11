@@ -27,7 +27,7 @@ import coupledL2._
 import coupledL2.utils._
 import coupledL2.debug._
 import coupledL2.prefetch.PrefetchIO
-import utility.RegNextN
+import utility.{RegNextN, XSPerfHistogram}
 
 class OuterBundle(params: TLBundleParameters) extends TLBundle(params) with BaseOuterBundle
 
@@ -192,10 +192,10 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
     val delay = timer - a_begin_times(d_source)
     val (first, _, _, _) = edgeIn.count(grantBuf.io.d)
     val delay_sample = grantBuf.io.d.fire && grantBuf.io.d.bits.opcode =/= ReleaseAck && first
-    XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 0, 20, 1, true, true)
-    XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 20, 300, 10, true, true)
-    XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 300, 500, 20, true, true)
-    XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 500, 1000, 100, true, false)
+    XSPerfHistogram("a_to_d_delay", delay, delay_sample, 0, 20, 1, true, true)
+    XSPerfHistogram("a_to_d_delay", delay, delay_sample, 20, 300, 10, true, true)
+    XSPerfHistogram("a_to_d_delay", delay, delay_sample, 300, 500, 20, true, true)
+    XSPerfHistogram("a_to_d_delay", delay, delay_sample, 500, 1000, 100, true, false)
   }
 
   val monitor = Module(new Monitor())

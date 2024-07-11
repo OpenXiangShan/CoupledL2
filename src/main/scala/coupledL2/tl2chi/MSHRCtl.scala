@@ -25,7 +25,6 @@ import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.prefetch.PrefetchTrain
-import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram, XSPerfMax}
 import coupledL2._
 import tl2chi.{HasCHIMsgParameters}
 import coupledL2.tl2chi.CHIOpcode.RSPOpcodes._
@@ -295,9 +294,9 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
     }
   )
   /* Performance counters */
-/*  XSPerfAccumulate(cacheParams, "capacity_conflict_to_sinkA", a_mshrFull)
-  XSPerfAccumulate(cacheParams, "capacity_conflict_to_sinkB", mshrFull)
-  XSPerfHistogram(cacheParams, "mshr_alloc", io.toMainPipe.mshr_alloc_ptr,
+/*  XSPerfAccumulate("capacity_conflict_to_sinkA", a_mshrFull)
+  XSPerfAccumulate("capacity_conflict_to_sinkB", mshrFull)
+  XSPerfHistogram("mshr_alloc", io.toMainPipe.mshr_alloc_ptr,
     enable = io.fromMainPipe.mshr_alloc_s3.valid,
     start = 0, stop = mshrsAll, step = 1)
   if (cacheParams.enablePerf) {
@@ -312,9 +311,9 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
     val release_period_en = io.resps.rxdat.valid && io.resps.rxdat.respInfo.opcode === ReleaseAck
     val probe_period_en = io.resps.sinkC.valid &&
       (io.resps.sinkC.respInfo.opcode === ProbeAck || io.resps.sinkC.respInfo.opcode === ProbeAckData)
-    XSPerfHistogram(cacheParams, "acquire_period", acquire_period, acquire_period_en, start, stop, step)
-    XSPerfHistogram(cacheParams, "release_period", release_period, release_period_en, start, stop, step)
-    XSPerfHistogram(cacheParams, "probe_period", probe_period, probe_period_en, start, stop, step)
+    XSPerfHistogram("acquire_period", acquire_period, acquire_period_en, start, stop, step)
+    XSPerfHistogram("release_period", release_period, release_period_en, start, stop, step)
+    XSPerfHistogram("probe_period", probe_period, probe_period_en, start, stop, step)
  
     val timers = RegInit(VecInit(Seq.fill(mshrsAll)(0.U(64.W))))
     for (((timer, m), i) <- timers.zip(mshrs).zipWithIndex) {
@@ -324,9 +323,9 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
         timer := timer + 1.U
       }
       val enable = m.io.status.valid && m.io.status.bits.will_free
-      XSPerfHistogram(cacheParams, "mshr_latency_" + Integer.toString(i, 10),
+      XSPerfHistogram("mshr_latency_" + Integer.toString(i, 10),
         timer, enable, 0, 300, 10)
-      XSPerfMax(cacheParams, "mshr_latency", timer, enable)
+      XSPerfMax("mshr_latency", timer, enable)
     }
   }*/
 }
