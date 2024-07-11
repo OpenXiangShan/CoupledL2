@@ -206,16 +206,16 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   }
 
   /* hit feedback regulation  */
-  val tpFbCtrl = RegInit((1 << tpPfEntries/2).asUInt(tpPfEntries.W))
-  val tpFbResetCount = RegInit(0.U((tpPfEntries).W))
-  val tpFbReset = tpFbResetCount(tpPfEntries - 2)
+  val tpFbCtrl = RegInit((1 << (tpPfEntries - 1)).asUInt(tpPfEntries.W))
+  val tpFbResetCount = RegInit(0.U((tpPfEntries + 1).W))
+  val tpFbReset = (tpFbResetCount(tpPfEntries - 1) && tpFbResetCount(tpPfEntries - 2)) | !resetFinish
   val tpFbHit = Mux(tpFbCtrl.andR, false.B, io.tpHitFeedback.bits.latepf | io.tpHitFeedback.bits.hit)
   val tpFbMiss = Mux(tpFbCtrl.orR, io.tpHitFeedback.bits.replMiss, false.B)
   val tpDisable = !(tpFbCtrl(tpPfEntries - 1) | tpFbCtrl(tpPfEntries - 2))
   when (io.tpHitFeedback.valid) {
     tpFbCtrl := Mux(tpFbHit, tpFbCtrl + 1.U, Mux(tpFbMiss, tpFbCtrl - 1.U, tpFbCtrl))
   }.elsewhen (tpFbReset) {
-    tpFbCtrl := (1 << tpPfEntries/2).asUInt
+    tpFbCtrl := (1 << (tpPfEntries - 1)).asUInt
   }
   when (tpDisable && io.train.fire) {
     tpFbResetCount := tpFbResetCount + 1.U
@@ -596,7 +596,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   XSPerfAccumulate(cacheParams, "tp_meta_read_miss", io.tpmeta_port.resp.valid && !io.tpmeta_port.resp.bits.exist)
   XSPerfAccumulate(cacheParams, "tp_meta_invalid", tpMetaRespValid_s2)
   XSPerfAccumulate(cacheParams, "tp_meta_write", io.tpmeta_port.req.fire && io.tpmeta_port.req.bits.wmode)
-  XSPerfAccumulate(cacheParams, "tp_close", tpDisable)
+  XSPerfAccumulate(cacheParams, "tp_close", tpDisable && !tpFbResetCount.orR)
   XSPerfAccumulate(cacheParams, "tp_reset", tpFbReset)
   XSPerfAccumulate(cacheParams, "tp_hit", io.tpHitFeedback.valid && io.tpHitFeedback.bits.hit)
   XSPerfAccumulate(cacheParams, "tp_latepf", io.tpHitFeedback.valid && io.tpHitFeedback.bits.latepf)

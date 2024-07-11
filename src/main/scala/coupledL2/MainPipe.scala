@@ -788,11 +788,23 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   XSPerfAccumulate(cacheParams, "early_prefetch", meta_s3.prefetch.getOrElse(false.B) && !meta_s3.accessed && !dirResult_s3.hit && task_s3.valid)
 
-  val tpLatePDB = ChiselDB.createTable("tpHit", new tpPrefetch(), basicDB = true)
-  val tpLatePPt = Wire(new tpPrefetch())
-  tpLatePPt.lateP := dirResult_s3.hit && task_s3.valid
-
-  tpLatePDB.log(tpLatePPt, task_s3.valid && (task_s3.bits.reqSource === MemReqSource.Prefetch2L2TP.id.U), "", clock, reset)
+  XSPerfAccumulate(cacheParams, "tp_late_prefetch", dirResult_s3.hit && task_s3.valid &&
+    (task_s3.bits.reqSource === MemReqSource.Prefetch2L2TP.id.U))
+  XSPerfAccumulate(cacheParams, "tp_late_prefetch_bop", dirResult_s3.hit && task_s3.valid &&
+    (task_s3.bits.reqSource === MemReqSource.Prefetch2L2TP.id.U) &&
+    meta_s3.prefetch.getOrElse(false.B) && (meta_s3.prefetchSrc.get === PfSource.BOP.id.U))
+  XSPerfAccumulate(cacheParams, "tp_late_prefetch_sms", dirResult_s3.hit && task_s3.valid &&
+    (task_s3.bits.reqSource === MemReqSource.Prefetch2L2TP.id.U) &&
+    meta_s3.prefetch.getOrElse(false.B) && (meta_s3.prefetchSrc.get === PfSource.SMS.id.U))
+  XSPerfAccumulate(cacheParams, "tp_late_prefetch_stride", dirResult_s3.hit && task_s3.valid &&
+    (task_s3.bits.reqSource === MemReqSource.Prefetch2L2TP.id.U) &&
+    meta_s3.prefetch.getOrElse(false.B) && (meta_s3.prefetchSrc.get === PfSource.Stride.id.U))
+  XSPerfAccumulate(cacheParams, "tp_late_prefetch_stream", dirResult_s3.hit && task_s3.valid &&
+    (task_s3.bits.reqSource === MemReqSource.Prefetch2L2TP.id.U) &&
+    meta_s3.prefetch.getOrElse(false.B) && (meta_s3.prefetchSrc.get === PfSource.Stream.id.U))
+  XSPerfAccumulate(cacheParams, "bop_late_prefetch_tp", dirResult_s3.hit && task_s3.valid &&
+    (task_s3.bits.reqSource === MemReqSource.Prefetch2L2BOP.id.U) &&
+    meta_s3.prefetch.getOrElse(false.B) && (meta_s3.prefetchSrc.get === PfSource.TP.id.U))
 
   val tpHitDB = ChiselDB.createTable("requestR", new requestRecord(), basicDB = true)
   val tpHitPt = Wire(new requestRecord())
