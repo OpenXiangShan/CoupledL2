@@ -21,7 +21,7 @@ import chisel3._
 import chisel3.util._
 import freechips.rocketchip.util.SetAssocLRU
 import coupledL2.utils._
-import utility.{ParallelPriorityMux, RegNextN}
+import utility.{ParallelPriorityMux, RegNextN, XSPerfAccumulate}
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.prefetch.PfSource
 import freechips.rocketchip.tilelink.TLMessages._
@@ -363,6 +363,6 @@ class Directory(implicit p: Parameters) extends L2Module {
     resetIdx := resetIdx - 1.U
   }
 
-  XSPerfAccumulate(cacheParams, "dirRead_cnt", io.read.fire)
-  XSPerfAccumulate(cacheParams, "choose_busy_way", reqValid_s3 && !req_s3.wayMask(chosenWay))
+  XSPerfAccumulate("dirRead_cnt", io.read.fire)
+  XSPerfAccumulate("choose_busy_way", reqValid_s3 && !req_s3.wayMask(chosenWay))
 }

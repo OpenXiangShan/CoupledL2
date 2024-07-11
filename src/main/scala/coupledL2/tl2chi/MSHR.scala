@@ -26,7 +26,6 @@ import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.prefetch.{PfSource, PrefetchTrain}
-import coupledL2.utils.XSPerfAccumulate
 import coupledL2.tl2chi.CHIOpcode._
 import coupledL2.tl2chi.CHIOpcode.DATOpcodes._
 import coupledL2.tl2chi.CHIOpcode.REQOpcodes._

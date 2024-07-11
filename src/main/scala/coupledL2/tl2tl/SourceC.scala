@@ -23,7 +23,6 @@ import utility._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import coupledL2._
-import coupledL2.utils.XSPerfAccumulate
 import huancun.DirtyKey
 
 //class SourceC(implicit p: Parameters) extends L2Module {
@@ -114,7 +113,7 @@ import huancun.DirtyKey
 //  io.resp.tag := parseFullAddress(io.out.bits.address)._1
 //  io.resp.respInfo := 0.U.asTypeOf(new RespInfoBundle)
 //
-//  XSPerfAccumulate(cacheParams, "sourceC_full", full)
+//  XSPerfAccumulate("sourceC_full", full)
 //}
 
 class SourceCBlockBundle(implicit p: Parameters) extends L2Bundle {

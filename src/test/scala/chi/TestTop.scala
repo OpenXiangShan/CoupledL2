@@ -10,7 +10,7 @@ import freechips.rocketchip.tile.MaxHartIdBits
 import huancun._
 import coupledL2.prefetch._
 import coupledL2.tl2chi._
-import utility.{ChiselDB, FileRegisters, TLLogger}
+import utility._
 
 class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(implicit p: Parameters) extends LazyModule
   with HasCHIMsgParameters {
@@ -62,7 +62,7 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(imp
   }
 
   // val l2 = LazyModule(new TL2CHICoupledL2())
-  val l2_nodes = (0 until numCores).map(i => LazyModule(new TL2CHICoupledL2()(new Config((_, _, _) => {
+  val l2_nodes = (0 until numCores).map(i => LazyModule(new TL2CHICoupledL2()(new Config((site, here, up) => {
     case L2ParamKey => cacheParams.copy(
       name                = s"L2_$i",
       hartId              = i,
@@ -70,6 +70,16 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(imp
     case EnableCHI => true
     case BankBitsKey => log2Ceil(banks)
     case MaxHartIdBits => log2Up(numCores)
+    case LogUtilsOptionsKey => LogUtilsOptions(
+      false,
+      here(L2ParamKey).enablePerf,
+      here(L2ParamKey).FPGAPlatform
+    )
+    case PerfCounterOptionsKey => PerfCounterOptions(
+      here(L2ParamKey).enablePerf && !here(L2ParamKey).FPGAPlatform,
+      here(L2ParamKey).enableRollingDB && !here(L2ParamKey).FPGAPlatform,
+      i
+    )
   }))))
 
   val bankBinders = (0 until numCores).map(_ => BankBinder(banks, 64))
