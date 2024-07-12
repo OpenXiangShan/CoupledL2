@@ -756,6 +756,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       state.s_reissue.get := true.B
       gotRetryAck := false.B
       gotPCrdGrant := false.B
+      when (release_valid2) {
+        state.s_cbwrdata.get := !(isT(meta.state) && meta.dirty || probeDirty)
+      }
     }
   }
   when (io.tasks.txrsp.fire) {
@@ -997,6 +1000,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     when (io.nestedwb.b_inv_dirty) {
       meta.dirty := false.B
       meta.state := INVALID
+      probeDirty := false.B
     }
   }
   when (nestedwb_hit_match) {
@@ -1036,6 +1040,12 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   val VALID_CNT_MAX = 200000.U
   assert(validCnt <= VALID_CNT_MAX, "validCnt full!, maybe there is a deadlock! addr => 0x%x req_opcode => %d channel => 0b%b", mshrAddr, req.opcode, req.channel)
 
+  val evictFire = io.tasks.txreq.fire && io.tasks.txreq.bits.opcode === Evict ||
+    io.tasks.mainpipe.fire && io.tasks.mainpipe.bits.opcode === Evict && io.tasks.mainpipe.bits.toTXREQ
+  val wbFire = io.tasks.txreq.fire && io.tasks.txreq.bits.opcode === WriteBackFull ||
+    io.tasks.mainpipe.fire && io.tasks.mainpipe.bits.opcode === WriteBackFull && io.tasks.mainpipe.bits.toTXREQ
+  assert(!RegNext(evictFire) || state.s_cbwrdata.get, "There should be no CopyBackWrData after Evict")
+  assert(!RegNext(wbFire) || !state.s_cbwrdata.get, "There must be a CopyBackWrData after WriteBack")
 
   /* ======== Performance counters ======== */
   // time stamp
