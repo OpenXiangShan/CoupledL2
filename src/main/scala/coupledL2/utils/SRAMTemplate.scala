@@ -28,6 +28,10 @@ object HoldUnless {
   def apply[T <: Data](x: T, en: Bool): T = Mux(en, x, RegEnable(x, 0.U.asTypeOf(x), en))
 }
 
+// sample the signal [one cycle after read fire] and latch, then output the latched signal at 3rd cycle
+// s0: read fire (en valid)
+// s1: get sram output and latch (en1 and x valid)
+// s2: output latched signal (en2 and data_reg valid)
 object DelayTwoCycle {
   def apply[T <: Data](x: T, en: Bool): T = {
     val en1 = RegNext(en)
@@ -103,13 +107,14 @@ class SRAMWriteBus[T <: Data](private val gen: T, val set: Int, val way: Int = 1
   singlePort: single port
   bypassWrite: (used for dual port) bypass write data to read data
   clk_div_by_2: SRAM clock cycle is half of L2 clock cycle
+  readMCP2: SRAM read data is multi-cycle path 2
  */
 class SRAMTemplate[T <: Data]
 (
   gen: T, set: Int, way: Int = 1,
   shouldReset: Boolean = false, holdRead: Boolean = false,
   singlePort: Boolean = false, bypassWrite: Boolean = false,
-  clk_div_by_2: Boolean = false
+  clk_div_by_2: Boolean = false, readMCP2: Boolean = false
 ) extends Module {
   val io = IO(new Bundle {
     val r = Flipped(new SRAMReadBus(gen, set, way))
@@ -173,6 +178,9 @@ class SRAMTemplate[T <: Data]
   }
   if(!isPow2(set)){
     CustomAnnotations.annotateSpecialDepth(this)
+  }
+  if(readMCP2) {
+    array.suggestName("array_mcp2")
   }
 
   io.r.resp.data := VecInit(rdata)

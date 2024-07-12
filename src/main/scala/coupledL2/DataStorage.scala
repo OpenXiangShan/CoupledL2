@@ -52,7 +52,8 @@ class DataStorage(implicit p: Parameters) extends L2Module {
     gen = new DSBlock,
     set = blocks,
     way = 1,
-    singlePort = true
+    singlePort = true,
+    readMCP2 = true
   ))
 
   val masked_clock = ClockGate(false.B, io.req.valid, clock)
