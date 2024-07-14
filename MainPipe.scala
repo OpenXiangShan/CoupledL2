@@ -47,8 +47,8 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
     /* send Snoop request via upstream TXSNP channel */
     val snoopTask_s4 = ValidIO(new Task())
 
-    /* send ReadNoSnp/WriteNoSnp task to RequestUnit */
-    val toRequestUnit = new Bundle() {
+    /* send ReadNoSnp/WriteNoSnp task to MemUnit */
+    val toMemUnit = new Bundle() {
       val task_s4 = ValidIO(new Task())
       val task_s6 = ValidIO(new TaskWithData())
     }
@@ -70,9 +70,9 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
 
   val snpTask_s4    = io.snoopTask_s4
   val refillTask_s4 = io.refillTask_s4
-  val readTask_s4   = io.toRequestUnit.task_s4
+  val readTask_s4   = io.toMemUnit.task_s4
   val compTask_s4   = io.toResponseUnit.task_s4
-  val writeTask_s6  = io.toRequestUnit.task_s6
+  val writeTask_s6  = io.toMemUnit.task_s6
   val compTask_s6   = io.toResponseUnit.task_s6
 
   val refillData_s4 = io.refillBufResp_s4
@@ -243,14 +243,11 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
     * 2. exclusive read where peer-RNs have required block
     * 3. shared read where local cache miss
     */
-  val need_snoop_s4 = clients_meta_conflict_s4 ||
-    exclusiveReq_s4 && peersRNs_hit_s4 ||
-    sharedReq_s4 && !self_hit_s4
-  val snoop_vec_s4 = VecInit(
-    Mux(clients_meta_conflict_s4, Cat(clients_valids_vec_s4), Cat(peerRNs_valids_vec_s4))
-  )
+  val replace_snoop_s4 = clients_meta_conflict_s4
+  val read_snoop_s4    = exclusiveReq_s4 && peersRNs_hit_s4 || sharedReq_s4 && !self_hit_s4
+  val need_snoop_s4    = replace_snoop_s4 || read_snoop_s4
   val snp_address_s4 = Mux(
-    clients_meta_conflict_s4,
+    replace_snoop_s4,
     Cat(clientsDirResp_s4.tag, clientsDirResp_s4.set, req_s4.off),
     Cat(req_s4.tag, req_s4.set, req_s4.off)
   )
@@ -258,13 +255,15 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
   val snp_task_s4 = WireInit(0.U.asTypeOf(req_s4))
   snp_task_s4.tag := parseAddress(snp_address_s4)._1
   snp_task_s4.set := parseAddress(snp_address_s4)._2
-  snp_task_s4.replSnp := clients_meta_conflict_s4
+  snp_task_s4.replSnp := replace_snoop_s4
   snp_task_s4.srcID := req_s4.tgtID
-  snp_task_s4.txnID := req_s4.reqId
+  snp_task_s4.txnID := req_s4.reqID
   snp_task_s4.doNotGoToSD := true.B
-  snp_task_s4.snpVec := snoop_vec_s4
+  snp_task_s4.snpVec := VecInit(
+    Mux(replace_snoop_s4, Cat(clients_valids_vec_s4), Cat(peerRNs_valids_vec_s4)).asBools
+  )
   snp_task_s4.chiOpcode := Mux(
-    clients_meta_conflict_s4,
+    replace_snoop_s4,
     SnpUnique,
     MuxLookup(
       Cat(readUnique_s4, readNotSharedDirty_s4, makeUnique_s4),
@@ -278,7 +277,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
     )
   )
   snp_task_s4.retToSrc := Mux(
-    !clients_meta_conflict_s4,
+    !replace_snoop_s4,
     Mux(makeUnique_s4, false.B, !self_hit_s4),
     true.B
   )
@@ -287,12 +286,29 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
   snpTask_s4.bits := snp_task_s4
 
   /** Send refill task **/
-  // Cache allocation policy: EXCLUSIVE for single-core,  and INCLUSIVE for multi-core
+  // Cache allocation policy: EXCLUSIVE for single-core, and INCLUSIVE for multi-core
   // Data blocks are written to local cache only when an upper-level cache writes them back,
   // or when they are shared among multiple cores
-  refillTask_s4.valid := task_s4.valid && (sharedReq_s4 || writeBackFull_s4) && !self_hit_s4
+  refillTask_s4.valid := task_s4.valid && (
+    (sharedReq_s4 || writeBackFull_s4) && !self_hit_s4 ||
+    replace_snoop_s4
+  )
   refillTask_s4.bits := req_s4
+  refillTask_s4.bits.tag := parseAddress(snp_address_s4)._1
+  refillTask_s4.bits.set := parseAddress(snp_address_s4)._2
   refillTask_s4.bits.refillTask := true.B
+  refillTask_s4.bits.snpVec := VecInit(
+    Mux(
+      replace_snoop_s4,
+      Cat(clients_valids_vec_s4),
+      Mux(
+        sharedReq_s4,
+        Cat(peerRNs_valids_vec_s4),
+        Cat(Seq.fill(clientBits)(false.B))
+      )
+    ).asBools
+  )
+  refillTask_s4.bits.replSnp := replace_snoop_s4
 
   /** Comp task to ResponseUnit **/
   val respSC_s4 = sharedReq_s4
@@ -300,10 +316,17 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
   val respUD_s4 = !makeUnique_s4 && exclusiveReq_s4 && self_hit_s4 && selfDirty_s4
   val respI_s4  = releaseReq_s4
   val comp_task_s4 = WireInit(req_s4)
+  comp_task_s4.snpVec := VecInit(
+    Mux(
+      read_snoop_s4,
+      Cat(peerRNs_valids_vec_s4),
+      Cat(Seq.fill(clientBits)(false.B))
+    ).asBools
+  )
   comp_task_s4.tgtID := srcID_s4
   comp_task_s4.srcID := req_s4.tgtID
   comp_task_s4.homeNID := req_s4.tgtID
-  comp_task_s4.dbID := req_s4.reqId
+  comp_task_s4.dbID := req_s4.reqID
   comp_task_s4.resp := ParallelPriorityMux(
     Seq(respSC_s4, respUC_s4, respUD_s4, respI_s4),
     Seq(SC, UC, UD_PD, I)
@@ -313,11 +336,12 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
     (releaseReq_s4 || (exclusiveReq_s4 || sharedReq_s4) && !self_hit_s4)
   compTask_s4.bits := comp_task_s4
 
-  /**  Read task to RequestUnit **/
+  /**  Read task to MemUnit **/
   val mem_task_s4 = WireInit(req_s4)
   mem_task_s4.tag := Mux(refill_task_s4, selfDirResp_s4.tag, req_s4.tag)
   mem_task_s4.set := Mux(refill_task_s4, selfDirResp_s4.set, req_s4.set)
   mem_task_s4.srcID := req_s4.tgtID
+  mem_task_s4.txnID := req_s4.reqID
   mem_task_s4.homeNID := req_s4.tgtID
   mem_task_s4.chiOpcode := Mux(refill_task_s4, WriteNoSnpFull, ReadNoSnp)
   mem_task_s4.size := log2Ceil(64).U

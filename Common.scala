@@ -42,10 +42,10 @@ class Task(implicit p: Parameters) extends LLCBundle {
 
   // Refill task
   val refillTask = Bool() // is task from RefillUnit
-  val bufId = UInt(mshrBits.W)
+  val bufID = UInt(mshrBits.W)
 
   // Identify the transaction from LLC
-  val reqId = UInt(TXNID_WIDTH.W)
+  val reqID = UInt(TXNID_WIDTH.W)
 
   // Snoop Info
   val replSnp = Bool() // indicates whether the snoop is caused by a replacement
@@ -139,9 +139,11 @@ class TaskWithData(implicit p: Parameters) extends LLCBundle {
 }
 
 class Resp(implicit p: Parameters) extends LLCBundle {
-  val txnId = UInt(TXNID_WIDTH.W)
+  val txnID = UInt(TXNID_WIDTH.W)
+  val dbID = UInt(DBID_WIDTH.W)
   val opcode = UInt(OPCODE_WIDTH.W)
   val resp  = UInt(RESP_WIDTH.W)
+  val srcID = UInt(SRCID_WIDTH.W)
 }
 
 class RespWithData(implicit p: Parameters) extends Resp {
@@ -152,5 +154,4 @@ class TaskEntry(implicit p: Parameters) extends LLCBundle {
   val valid = Bool()
   val ready = Bool()
   val task  = new Task()
-  val data  = new DSBlock()
 }

@@ -57,7 +57,7 @@ class SnoopUnit(implicit p: Parameters) extends LLCModule {
   /* Enchantment */
   def sameAddr(a: Task, b: ResponseInfo): Bool = Cat(a.tag, a.set) === Cat(b.tag, b.set)
   def snpConflictMask(a: Task): UInt = VecInit(io.respInfo.map(s =>
-    s.valid && a.replSnp && sameAddr(a, s.bits) &&
+    s.valid && a.replSnp && sameAddr(a, s.bits) && !s.bits.w_compack &&
     (s.bits.opcode === ReadNotSharedDirty || s.bits.opcode === ReadUnique || s.bits.opcode === MakeUnique)
   )).asUInt
   def snpConflict(a: Task): Bool = snpConflictMask(a).orR
@@ -86,7 +86,7 @@ class SnoopUnit(implicit p: Parameters) extends LLCModule {
   /* Update ready */
   when(ack.valid) {
     val wakeUp_vec = buffer.map(e =>
-      e.valid && !e.ready && ack.bits.opcode === CompAck && ack.bits.txnId === e.waitID
+      e.valid && !e.ready && ack.bits.opcode === CompAck && ack.bits.txnID === e.waitID
     )
     assert(PopCount(wakeUp_vec) < 2.U, "Snoop task repeated")
     val canWakeUp = Cat(wakeUp_vec).orR
@@ -119,7 +119,7 @@ class SnoopUnit(implicit p: Parameters) extends LLCModule {
     val bufferTimer = RegInit(VecInit(Seq.fill(mshrs)(0.U(16.W))))
     buffer.zip(bufferTimer).map { case (e, t) =>
         when(e.valid) { t := t + 1.U }
-        when(RegNext(e.valid) && !e.valid) { t := 0.U }
+        when(RegNext(e.valid, false.B) && !e.valid) { t := 0.U }
         assert(t < 20000.U, "SnoopBuf Leak")
     }
   }
