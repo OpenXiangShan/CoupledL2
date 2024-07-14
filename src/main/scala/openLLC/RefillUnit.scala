@@ -27,6 +27,10 @@ class RefillBufRead(implicit p: Parameters) extends LLCBundle {
   val id = Output(UInt(mshrBits.W))
 }
 
+class RefillEntry(implicit p: Parameters) extends TaskEntry {
+  val data = new DSBlock()
+}
+
 class RefillUnit(implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {
     /* receive refill requests from mainpipe */
@@ -46,7 +50,7 @@ class RefillUnit(implicit p: Parameters) extends LLCModule {
   val rsp = io.resp
 
   /* Data Structure */
-  val buffer   = RegInit(VecInit(Seq.fill(mshrs)(0.U.asTypeOf(new TaskEntry()))))
+  val buffer   = RegInit(VecInit(Seq.fill(mshrs)(0.U.asTypeOf(new RefillEntry()))))
   val issueArb = Module(new FastArbiter(new Task(), mshrs))
 
   val full = Cat(buffer.map(_.valid)).andR
@@ -59,13 +63,13 @@ class RefillUnit(implicit p: Parameters) extends LLCModule {
     entry.valid := true.B
     entry.ready := false.B
     entry.task := io.task_in.bits
-    entry.task.bufId := insertIdx
+    entry.task.bufID := insertIdx
   }
   assert(!full || !io.task_in.valid, "RefillBuf overflow")
 
   /* Update ready */
   when(rsp.valid) {
-    val id_match_vec = buffer.map(e => (e.task.reqId === rsp.bits.txnId) && e.valid && !e.ready)
+    val id_match_vec = buffer.map(e => (e.task.reqID === rsp.bits.txnID) && e.valid && !e.ready)
     assert(PopCount(id_match_vec) < 2.U, "Refill task repeated")
     val idMatch = Cat(id_match_vec).orR
     when(idMatch) {
@@ -102,7 +106,7 @@ class RefillUnit(implicit p: Parameters) extends LLCModule {
     val bufferTimer = RegInit(VecInit(Seq.fill(mshrs)(0.U(16.W))))
     buffer.zip(bufferTimer).map { case (e, t) =>
         when(e.valid) { t := t + 1.U }
-        when(RegNext(e.valid) && !e.valid) { t := 0.U }
+        when(RegNext(e.valid, false.B) && !e.valid) { t := 0.U }
         assert(t < 20000.U, "RefillBuf Leak")
     }
   }

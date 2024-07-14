@@ -45,7 +45,7 @@ class RXREQ (implicit p: Parameters) extends LLCModule {
     task.off := parseAddress(r.addr)._3
     task.size := r.size
     task.refillTask := false.B
-    task.reqId := id_pool
+    task.reqID := id_pool
     // this follows coupledL2.tl2chi.TaskBundle.toCHIReqBundle
     task.tgtID := r.tgtID
     task.srcID := r.srcID

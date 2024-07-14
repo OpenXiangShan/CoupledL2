@@ -61,7 +61,7 @@ class Slice()(implicit p: Parameters) extends LLCModule {
   val reqArb = Module(new RequestArb())
   val mainPipe = Module(new MainPipe())
   val refillUnit = Module(new RefillUnit())
-  val requestUnit = Module(new RequestUnit())
+  val memUnit = Module(new MemUnit())
   val responseUnit = Module(new ResponseUnit())
   val snpUnit = Module(new SnoopUnit())
   
@@ -81,9 +81,9 @@ class Slice()(implicit p: Parameters) extends LLCModule {
 
   rxdatDown.io.in <> rxDown.dat
 
-  txreqDown.io.task <> requestUnit.io.taskToTXREQ
+  txreqDown.io.task <> memUnit.io.txreq
 
-  txdatDown.io.task <> requestUnit.io.taskToTXDAT
+  txdatDown.io.task <> memUnit.io.txdat
 
   txUp.dat <> txdatUp.io.dat
   txUp.rsp <> txrspUp.io.rsp
@@ -121,13 +121,15 @@ class Slice()(implicit p: Parameters) extends LLCModule {
 
   refillUnit.io.task_in <> mainPipe.io.refillTask_s4
 
-  requestUnit.io.fromMainPipe <> mainPipe.io.toRequestUnit
-  requestUnit.io.rspFromRXRSP <> rxrspDown.io.out
+  memUnit.io.fromMainPipe <> mainPipe.io.toMemUnit
+  memUnit.io.urgentRead <> responseUnit.io.urgentRead
+  memUnit.io.resp <> rxrspDown.io.out
 
   responseUnit.io.fromMainPipe <> mainPipe.io.toResponseUnit
-  responseUnit.io.memResp <> rxdatDown.io.out
-  responseUnit.io.snpResp <> rxdatUp.io.out
-  responseUnit.io.compack <> rxrspUp.io.out
+  responseUnit.io.bypassData <> memUnit.io.bypassData
+  responseUnit.io.memData <> rxdatDown.io.out
+  responseUnit.io.snpData <> rxdatUp.io.out
+  responseUnit.io.response <> rxrspUp.io.out
 
   snpUnit.io.in <> mainPipe.io.snoopTask_s4
   snpUnit.io.respInfo <> responseUnit.io.respInfo

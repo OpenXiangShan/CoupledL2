@@ -69,6 +69,6 @@ class RequestArb(implicit p: Parameters) extends LLCModule {
   io.taskToPipe_s2 := task_s2
 
   io.refillBufRead_s2.valid := DontCare
-  io.refillBufRead_s2.bits.id := task_s2.bits.bufId
+  io.refillBufRead_s2.bits.id := task_s2.bits.bufID
 
 }
