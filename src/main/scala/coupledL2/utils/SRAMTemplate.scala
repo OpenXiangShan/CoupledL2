@@ -106,7 +106,7 @@ class SRAMWriteBus[T <: Data](private val gen: T, val set: Int, val way: Int = 1
   holdRead: hold read data until next read comes
   singlePort: single port
   bypassWrite: (used for dual port) bypass write data to read data
-  clk_div_by_2: SRAM clock cycle is half of L2 clock cycle
+  clkDivBy2: SRAM clock cycle is half of L2 clock cycle
   readMCP2: SRAM read data is multi-cycle path 2
  */
 class SRAMTemplate[T <: Data]
@@ -114,7 +114,7 @@ class SRAMTemplate[T <: Data]
   gen: T, set: Int, way: Int = 1,
   shouldReset: Boolean = false, holdRead: Boolean = false,
   singlePort: Boolean = false, bypassWrite: Boolean = false,
-  clk_div_by_2: Boolean = false, readMCP2: Boolean = false
+  clkDivBy2: Boolean = false, readMCP2: Boolean = false
 ) extends Module {
   val io = IO(new Bundle {
     val r = Flipped(new SRAMReadBus(gen, set, way))
@@ -165,7 +165,7 @@ class SRAMTemplate[T <: Data]
   }
 
   val rdata = (
-    if(clk_div_by_2) {
+    if(clkDivBy2) {
       DelayTwoCycle(mem_rdata, realRen) // this holdRead as well
     } else if (holdRead) {
       HoldUnless(mem_rdata, RegNext(realRen))
@@ -173,7 +173,7 @@ class SRAMTemplate[T <: Data]
       mem_rdata
     }).map(_.asTypeOf(gen))
 
-  if(clk_div_by_2){
+  if(clkDivBy2){
     CustomAnnotations.annotateClkDivBy2(this)
   }
   if(!isPow2(set)){

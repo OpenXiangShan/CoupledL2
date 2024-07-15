@@ -11,7 +11,7 @@ class BankedSRAM[T <: Data]
   gen: T, sets: Int, ways: Int, n: Int = 1,
   shouldReset: Boolean = false, holdRead: Boolean = false,
   singlePort: Boolean = false, bypassWrite: Boolean = false,
-  clk_div_by_2: Boolean = false
+  clkDivBy2: Boolean = false
 ) extends Module {
   val io = IO(new Bundle() {
     val r = Flipped(new SRAMReadBus(gen, sets, ways))
@@ -33,7 +33,7 @@ class BankedSRAM[T <: Data]
       gen, innerSet, ways,
       shouldReset = shouldReset, holdRead = holdRead,
       singlePort = true, bypassWrite = bypassWrite,
-      clk_div_by_2 = clk_div_by_2
+      clkDivBy2 = clkDivBy2
     ))
     sram.io.r.req.valid := io.r.req.valid && ren
     sram.io.r.req.bits.apply(r_setIdx)
@@ -44,7 +44,7 @@ class BankedSRAM[T <: Data]
 
   val ren_vec_0 = VecInit(banks.map(_.io.r.req.fire))
   val ren_vec_1 = RegNext(ren_vec_0, 0.U.asTypeOf(ren_vec_0))
-  val ren_vec = if(clk_div_by_2){
+  val ren_vec = if(clkDivBy2){
     RegNext(ren_vec_1, 0.U.asTypeOf(ren_vec_0))
   } else ren_vec_1
 
