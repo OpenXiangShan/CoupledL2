@@ -67,20 +67,47 @@ object RespErrEncodings {
   def NDERR = "b11".U(width.W) // Non-data Error
 }
 
+object CHIIssue {
+  val B = "issueB"
+  val Eb = "issueEb"
+  val curr_issue = Eb
+}
+
 trait HasCHIMsgParameters {
-  def NODEID_WIDTH = 7
+  val ISSUE_B_CONFIG = Map(
+    "NODEID_WIDTH" -> 7,
+    "TXNID_WIDTH" -> 8,
+    "LPID_WIDTH" -> 5,
+  )
+
+  val ISSUE_Eb_CONFIG = Map(
+    "NODEID_WIDTH" -> 11,
+    "TXNID_WIDTH" -> 12,
+    "LPID_WIDTH" -> 8,
+  )
+
+  val SUPPORT_ISSUE_CONFIG = Map(
+    CHIIssue.B -> ISSUE_B_CONFIG,
+    CHIIssue.Eb -> ISSUE_Eb_CONFIG
+  )
+
+  def issue_config(key: String) = SUPPORT_ISSUE_CONFIG(CHIIssue.curr_issue)(key)
+
+  def NODEID_WIDTH = issue_config("NODEID_WIDTH")
   require(NODEID_WIDTH >= 7 && NODEID_WIDTH <= 11)
 
   // Transaction request fields
   def QOS_WIDTH = 4
   def TGTID_WIDTH = NODEID_WIDTH
   def SRCID_WIDTH = NODEID_WIDTH
-  def TXNID_WIDTH = 8 // An 8-bit field is defined for the TxnID to accommodate up to 256 outstanding transactions
-  def LPID_WIDTH = 5
+  def TXNID_WIDTH = issue_config("TXNID_WIDTH") // An 8-bit field is defined for the TxnID to accommodate up to 256 outstanding transactions
+  def LPID_WIDTH = issue_config("LPID_WIDTH")
+  def LPID_LEGACY_WIDTH = 5
   def RETURNNID_WIDTH = NODEID_WIDTH
   def RETURNTXNID_WIDTH = TXNID_WIDTH
   def STASHNID_WIDTH = NODEID_WIDTH
   def STASHLPID_WIDTH = LPID_WIDTH
+  def TAGOP_WIDTH = 2
 
 
   def REQ_OPCODE_WIDTH = CHIOpcode.REQOpcodes.width
@@ -114,6 +141,8 @@ trait HasCHIMsgParameters {
   def BE_WIDTH = DATA_WIDTH / 8
   def DATA_WIDTH = 256
   def DATACHECK_WIDTH = DATA_WIDTH / 8
+  def TAG_WIDTH = DATA_WIDTH / 32
+  def TAG_UPDATE_WIDTH = DATA_WIDTH / 128
 
   // User defined
   /*
@@ -121,6 +150,8 @@ trait HasCHIMsgParameters {
   */
   def REQ_RSVDC_WIDTH = 4 // Permitted RSVDC bus widths X = 0, 4, 12, 16, 24, 32
   def DAT_RSVDC_WIDTH = 4 // Permitted RSVDC bus widths Y = 0, 4, 12, 16, 24, 32
+  def CBUSY_WIDTH = 3 // E.b field. The width is tied to 3. Custom completer state indicator.
+  def MPAM_WIDTH = 11 // E.b field. Optional, width 0 or 11. Memory Performance and Monitoring.
 }
 
 class MemAttr extends Bundle {
@@ -163,9 +194,11 @@ class CHIREQ extends CHIBundle {
 
   val returnNID = UInt(RETURNNID_WIDTH.W) // Used for DMT
   def stashNID = returnNID // Used for Stash
+  def slcRepHint = returnTxnID(6, 0)  // E.b field
 
   val stashNIDValid = Bool() // Used for Stash
   def endian = stashNIDValid // Used for Atomic
+  def deep = stashNIDValid // E.b field
 
   val returnTxnID = UInt(RETURNTXNID_WIDTH.W)
   def stashLPID = returnTxnID(STASHLPID_WIDTH - 1, 0)
@@ -181,13 +214,20 @@ class CHIREQ extends CHIBundle {
   val pCrdType = UInt(PCRDTYPE_WIDTH.W)
   val memAttr = new MemAttr()
   val snpAttr = Bool()
+  def doDWT = snpAttr // E.b field
   val lpID = UInt(LPID_WIDTH.W)
+  def lpIDreal = lpID(LPID_WIDTH - 1, 0) // E.b field
+  def pGroupID = lpID // E.b field
+  def stashGroupID = lpID // E.b field
+  def tagGroupID = lpID // E.b field
 
   val snoopMe = Bool() // Used for Atomic
   def excl = snoopMe // Used for Exclusive transactions
 
   val expCompAck = Bool()
+  val tagOp = UInt(TAGOP_WIDTH.W) // E.b field
   val traceTag = Bool()
+  val mpam = UInt(MPAM_WIDTH.W) // E.b field
   val rsvdc = UInt(REQ_RSVDC_WIDTH.W)
 
   /* MSB */
@@ -216,6 +256,7 @@ class CHISNP extends CHIBundle {
 
   val retToSrc = Bool()
   val traceTag = Bool()
+  val mpam = UInt(MPAM_WIDTH.W) // E.b field
 
   /* MSB */
 }
@@ -237,9 +278,16 @@ class CHIDAT extends CHIBundle {
   def dataPull = fwdState // Used for Stash
   def dataSource = fwdState // Indicates Data source in a response
 
+  val cBusy = UInt(CBUSY_WIDTH.W) // E.b field
+
   val dbID = UInt(DBID_WIDTH.W)
   val ccID = UInt(CCID_WIDTH.W)
   val dataID = UInt(DATAID_WIDTH.W)
+
+  val tagOp = UInt(TAGOP_WIDTH.W) // E.b field
+  val tag = UInt(TAG_WIDTH.W) // E.b field
+  val tu = UInt(TAG_UPDATE_WIDTH.W) // E.b field
+
   val traceTag = Bool()
   val rsvdc = UInt(DAT_RSVDC_WIDTH.W)
   val be = UInt(BE_WIDTH.W)
@@ -263,8 +311,17 @@ class CHIRSP extends CHIBundle {
   val fwdState = UInt(FWDSTATE_WIDTH.W)
   def dataPull = fwdState
 
+  val cBusy = UInt(CBUSY_WIDTH.W) // E.b field
+
   val dbID = UInt(DBID_WIDTH.W)
+  def pGroupID = dbID(LPID_WIDTH - 1, 0)
+  def stashGroupID = dbID(LPID_WIDTH - 1, 0)
+  def tagGroupID = dbID(LPID_WIDTH - 1, 0)
+
   val pCrdType = UInt(PCRDTYPE_WIDTH.W)
+
+  val tagOp = UInt(TAGOP_WIDTH.W) // E.b field
+
   val traceTag = Bool()
   /* MSB */
 }

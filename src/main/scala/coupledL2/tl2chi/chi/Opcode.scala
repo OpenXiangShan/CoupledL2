@@ -23,7 +23,12 @@ import chisel3.util._
 object CHIOpcode {
 
   object REQOpcodes {
-    val width = 6
+    val width_map = Map(
+      CHIIssue.B -> 6,
+      CHIIssue.Eb -> 7,
+    )
+
+    val width = width_map(CHIIssue.curr_issue)
 
     def ReqLCrdReturn         = 0x00.U(width.W)
     def ReadShared            = 0x01.U(width.W)
@@ -82,7 +87,12 @@ object CHIOpcode {
   }
 
   object RSPOpcodes {
-    val width = 4
+    val width_map = Map(
+      CHIIssue.B -> 4,
+      CHIIssue.Eb -> 5,
+    )
+
+    val width = width_map(CHIIssue.curr_issue)
 
     def RespLCrdReturn  = 0x0.U(width.W)
     def SnpResp         = 0x1.U(width.W)
@@ -97,7 +107,12 @@ object CHIOpcode {
   }
 
   object SNPOpcodes {
-    val width = 5
+    val width_map = Map(
+      CHIIssue.B -> 5,
+      CHIIssue.Eb -> 6,
+    )
+
+    val width = width_map(CHIIssue.curr_issue)
 
     def SnpLCrdReturn         = 0x00.U(width.W)
     def SnpShared             = 0x01.U(width.W)
@@ -208,7 +223,12 @@ object CHIOpcode {
   }
 
   object DATOpcodes {
-    val width = 3
+    val width_map = Map(
+      CHIIssue.B -> 3,
+      CHIIssue.Eb -> 4,
+    )
+
+    val width = width_map(CHIIssue.curr_issue)
 
     def DataLCrdReturn    = 0x0.U(width.W)
     def SnpRespData       = 0x1.U(width.W)
