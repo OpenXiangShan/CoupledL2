@@ -482,7 +482,9 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
     pf_fired(i) := s0_pf_fire_oh(i)
     exp_drop(i) := s2_tlb_fire_oh(i) && io.tlb_req.resp.valid && !io.tlb_req.resp.bits.miss &&
       ((e.needT && (io.tlb_req.resp.bits.excp.head.pf.st || io.tlb_req.resp.bits.excp.head.af.st)) ||
-      (!e.needT && (io.tlb_req.resp.bits.excp.head.pf.ld || io.tlb_req.resp.bits.excp.head.af.ld)))
+      (!e.needT && (io.tlb_req.resp.bits.excp.head.pf.ld || io.tlb_req.resp.bits.excp.head.af.ld)) ||
+      io.tlb_req.pmp_resp.mmio
+    )
     val miss = s2_tlb_fire_oh(i) && io.tlb_req.resp.valid && io.tlb_req.resp.bits.miss
     tlb_fired(i) := s2_tlb_fire_oh(i) && io.tlb_req.resp.valid && !io.tlb_req.resp.bits.miss && !exp_drop(i)
     miss_drop(i) := miss && e.replayEn
