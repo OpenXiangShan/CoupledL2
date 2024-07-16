@@ -117,7 +117,8 @@ class Slice()(implicit p: Parameters) extends LLCModule {
   dataStorage.io.wdata <> mainPipe.io.toDS_s4.wdata
 
   refillUnit.io.read <> reqArb.io.refillBufRead_s2
-  refillUnit.io.resp <> rxdatUp.io.out
+  refillUnit.io.respData <> rxdatUp.io.out
+  refillUnit.io.resp <> rxrspUp.io.out
 
   refillUnit.io.task_in <> mainPipe.io.refillTask_s4
 

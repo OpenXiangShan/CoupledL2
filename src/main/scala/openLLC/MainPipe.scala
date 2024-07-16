@@ -42,7 +42,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
     val refillBufResp_s4 = Input(new DSBlock())
 
     /* send allocation request to RefillUnit at stage 4 */
-    val refillTask_s4 = ValidIO(new Task())
+    val refillTask_s4 = ValidIO(new RefillTask())
 
     /* send Snoop request via upstream TXSNP channel */
     val snoopTask_s4 = ValidIO(new Task())
@@ -293,11 +293,13 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
     (sharedReq_s4 || writeBackFull_s4) && !self_hit_s4 ||
     replace_snoop_s4
   )
-  refillTask_s4.bits := req_s4
-  refillTask_s4.bits.tag := parseAddress(snp_address_s4)._1
-  refillTask_s4.bits.set := parseAddress(snp_address_s4)._2
-  refillTask_s4.bits.refillTask := true.B
-  refillTask_s4.bits.snpVec := VecInit(
+  refillTask_s4.bits.dirResult.self := selfDirResp_s4
+  refillTask_s4.bits.dirResult.clients := clientsDirResp_s4
+  refillTask_s4.bits.task := req_s4
+  refillTask_s4.bits.task.tag := parseAddress(snp_address_s4)._1
+  refillTask_s4.bits.task.set := parseAddress(snp_address_s4)._2
+  refillTask_s4.bits.task.refillTask := true.B
+  refillTask_s4.bits.task.snpVec := VecInit(
     Mux(
       replace_snoop_s4,
       Cat(clients_valids_vec_s4),
@@ -308,7 +310,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
       )
     ).asBools
   )
-  refillTask_s4.bits.replSnp := replace_snoop_s4
+  refillTask_s4.bits.task.replSnp := replace_snoop_s4
 
   /** Comp task to ResponseUnit **/
   val respSC_s4 = sharedReq_s4
