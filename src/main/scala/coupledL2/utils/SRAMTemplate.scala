@@ -173,12 +173,6 @@ class SRAMTemplate[T <: Data]
       mem_rdata
     }).map(_.asTypeOf(gen))
 
-  if(clkDivBy2){
-    CustomAnnotations.annotateClkDivBy2(this)
-  }
-  if(!isPow2(set)){
-    CustomAnnotations.annotateSpecialDepth(this)
-  }
   if(readMCP2) {
     array.suggestName("array_mcp2")
   }

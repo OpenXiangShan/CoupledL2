@@ -19,7 +19,10 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import coupledL2.utils.{HoldUnless, SRAMTemplate}
+import coupledL2.utils.HoldUnless
+import utility.SRAMTemplate
+import utility.mbist.MbistPipeline
+import utility.RegNextN
 import utility.ClockGate
 import org.chipsalliance.cde.config.Parameters
 
@@ -53,8 +56,10 @@ class DataStorage(implicit p: Parameters) extends L2Module {
     set = blocks,
     way = 1,
     singlePort = true,
-    readMCP2 = true
+    multicycle = 2,
+    hasMbist = p(L2ParamKey).hasMbist
   ))
+  private val mbistPl = MbistPipeline.PlaceMbistPipeline(1, "L2DataStorage", p(L2ParamKey).hasMbist)
 
   val masked_clock = ClockGate(false.B, io.req.valid, clock)
   array.clock := masked_clock
