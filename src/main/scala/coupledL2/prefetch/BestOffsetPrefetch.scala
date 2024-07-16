@@ -419,7 +419,16 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
   val tlb_req_arb = Module(new RRArbiterInit(new L2TlbReq, REQ_FILTER_SIZE))
   val pf_req_arb = Module(new RRArbiterInit(new PrefetchReq, REQ_FILTER_SIZE))
 
-  io.tlb_req.req <> tlb_req_arb.io.out
+  /* timing description:
+   * entry    : s0 look up, s1 update & replace
+   * tlb      : s0 arbiter, s1 send tlb req, s2 receive tlb resp
+   * prefetch : s0 arbiter & send pf req
+   */
+
+  // add a cycle for timing
+  tlb_req_arb.io.out.ready := true.B
+  io.tlb_req.req.valid := RegNext(tlb_req_arb.io.out.valid)
+  io.tlb_req.req.bits := RegEnable(tlb_req_arb.io.out.bits, tlb_req_arb.io.out.valid)
   io.tlb_req.req_kill := false.B
   io.tlb_req.resp.ready := true.B
   io.out_req <> pf_req_arb.io.out
@@ -468,6 +477,9 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
   val s1_alloc_entry = Wire(new BopReqBufferEntry)
   s1_alloc_entry.fromBopReqBundle(s1_in_req)
 
+  /* s2 tlb resp */
+  val s2_tlb_fire_oh = RegNext(s1_tlb_fire_oh, 0.U)
+
   /* entry update */
   val exp_drop = Wire(Vec(REQ_FILTER_SIZE, Bool()))
   val miss_drop = Wire(Vec(REQ_FILTER_SIZE, Bool()))
@@ -477,11 +489,11 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
   for ((e, i) <- entries.zipWithIndex){
     alloc(i) := s1_valid && s1_invalid_oh(i)
     pf_fired(i) := s0_pf_fire_oh(i)
-    exp_drop(i) := s1_tlb_fire_oh(i) && io.tlb_req.resp.valid && !io.tlb_req.resp.bits.miss &&
+    exp_drop(i) := s2_tlb_fire_oh(i) && io.tlb_req.resp.valid && !io.tlb_req.resp.bits.miss &&
       ((e.needT && (io.tlb_req.resp.bits.excp.head.pf.st || io.tlb_req.resp.bits.excp.head.af.st)) ||
       (!e.needT && (io.tlb_req.resp.bits.excp.head.pf.ld || io.tlb_req.resp.bits.excp.head.af.ld)))
-    val miss = s1_tlb_fire_oh(i) && io.tlb_req.resp.valid && io.tlb_req.resp.bits.miss
-    tlb_fired(i) := s1_tlb_fire_oh(i) && io.tlb_req.resp.valid && !io.tlb_req.resp.bits.miss && !exp_drop(i)
+    val miss = s2_tlb_fire_oh(i) && io.tlb_req.resp.valid && io.tlb_req.resp.bits.miss
+    tlb_fired(i) := s2_tlb_fire_oh(i) && io.tlb_req.resp.valid && !io.tlb_req.resp.bits.miss && !exp_drop(i)
     miss_drop(i) := miss && e.replayEn
     miss_first_replay(i) := miss && !e.replayEn
     
@@ -513,7 +525,7 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
   /* tlb & pf */
   for((e, i) <- entries.zipWithIndex){
     //tlb_req_arb.io.in(i).valid := e.valid && !s1_tlb_fire_oh(i) && !s2_tlb_fire_oh(i) && !e.paddrValid && !s1_evicted_oh(i)
-    tlb_req_arb.io.in(i).valid := e.valid && !e.paddrValid && !s1_tlb_fire_oh(i) && !e.replayCnt.orR
+    tlb_req_arb.io.in(i).valid := e.valid && !e.paddrValid && !s1_tlb_fire_oh(i) && !s2_tlb_fire_oh(i) && !e.replayCnt.orR
     tlb_req_arb.io.in(i).bits.vaddr := e.get_tlb_vaddr()
     when(e.needT) {
       tlb_req_arb.io.in(i).bits.cmd := TlbCmd.write
