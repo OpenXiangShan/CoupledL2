@@ -19,7 +19,8 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import coupledL2.utils.SRAMTemplate
+import utility.SRAMTemplate
+import utility.mbist.MbistPipeline
 import utility.RegNextN
 import org.chipsalliance.cde.config.Parameters
 
@@ -52,8 +53,11 @@ class DataStorage(implicit p: Parameters) extends L2Module {
     set = blocks,
     way = 1,
     singlePort = true,
-    holdRead = true
+    holdRead = true,
+    multicycle = 2,
+    hasMbist = p(L2ParamKey).hasMbist
   ))
+  private val mbistPl = MbistPipeline.PlaceMbistPipeline(1, "L2DataStorage", p(L2ParamKey).hasMbist)
 
   val arrayIdx = Cat(io.req.bits.way, io.req.bits.set)
   val wen = io.req.valid && io.req.bits.wen

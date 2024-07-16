@@ -23,6 +23,7 @@ import freechips.rocketchip.tilelink._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2._
 import coupledL2.prefetch.PrefetchIO
+import utility.mbist.MbistPipeline
 
 class OuterBundle extends DecoupledPortIO with BaseOuterBundle
 
@@ -59,6 +60,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   val mainPipe = Module(new MainPipe())
   val reqBuf = Module(new RequestBuffer())
   val mshrCtl = Module(new MSHRCtl())
+  private val mbistPl = MbistPipeline.PlaceMbistPipeline(2, "L2Slice", p(L2ParamKey).hasMbist)
 
   sinkC.io.msInfo := mshrCtl.io.msInfo
 

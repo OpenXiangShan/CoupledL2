@@ -162,7 +162,7 @@ class RecentRequestTable(implicit p: Parameters) extends BOPModule {
   }
 
   val rrTable = Module(
-    new SRAMTemplate(rrTableEntry(), set = rrTableEntries, way = 1, shouldReset = true, singlePort = true)
+    new SRAMTemplate(rrTableEntry(), set = rrTableEntries, way = 1, shouldReset = true, singlePort = true, hasMbist = cacheParams.hasMbist)
   )
 
   val wAddr = io.w.bits

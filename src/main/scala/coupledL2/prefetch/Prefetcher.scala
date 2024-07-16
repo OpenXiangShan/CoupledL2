@@ -23,6 +23,7 @@ import utility._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import coupledL2._
+import utility.mbist.MbistPipeline
 
 /* virtual address */
 trait HasPrefetcherHelper extends HasCircularQueuePtrHelper with HasCoupledL2Parameters {
@@ -369,4 +370,5 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   XSPerfAccumulate("prefetch_req_selectTP", hasTPReq && !hasReceiverReq && !hasVBOPReq && !hasPBOPReq)
   XSPerfAccumulate("prefetch_req_SMS_other_overlapped",
     hasReceiverReq && (hasVBOPReq || hasPBOPReq || hasTPReq))
+  private val mbistPl = MbistPipeline.PlaceMbistPipeline(2, "MbistPipeL2Prefetcher", cacheParams.hasMbist & hasBOP)
 }
