@@ -197,7 +197,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
 
   // remove duplicate prefetch if same-addr A req in MSHR
   def sameAddr(a: TaskBundle, b: MSHRInfo): Bool = Cat(a.tag, a.set) === Cat(b.reqTag, b.set)
-  val isPrefetch = task_s2.bits.fromA && task_s2.bits.opcode === Hint
+  val isPrefetch = task_s2.bits.fromA && task_s2.bits.opcode === Hint && !task_s2.bits.mshrTask
   val dupMask    = VecInit(
     io.msInfo.map(s =>
       s.valid && s.bits.isAcqOrPrefetch && sameAddr(task_s2.bits, s.bits)) 
