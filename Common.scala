@@ -155,3 +155,34 @@ class TaskEntry(implicit p: Parameters) extends LLCBundle {
   val ready = Bool()
   val task  = new Task()
 }
+
+class PipeStatus(implicit p: Parameters) extends LLCBundle {
+  val tags = Vec(5, UInt(tagBits.W))
+  val sets = Vec(5, UInt(setBits.W))
+  val valids = Vec(5, Bool())
+
+  def s2_tag = tags(0)
+  def s3_tag = tags(1)
+  def s4_tag = tags(2)
+  def s5_tag = tags(3)
+  def s6_tag = tags(4)
+
+  def s2_set = sets(0)
+  def s3_set = sets(1)
+  def s4_set = sets(2)
+  def s5_set = sets(3)
+  def s6_set = sets(4)
+
+  def s2_valid = valids(0)
+  def s3_valid = valids(1)
+  def s4_valid = valids(2)
+  def s5_valid = valids(3)
+  def s6_valid = valids(4)
+}
+
+class BlockInfo(implicit p: Parameters) extends LLCBundle {
+  val set = UInt(setBits.W)
+  val tag = UInt(tagBits.W)
+  val opcode = UInt(REQ_OPCODE_WIDTH.W)
+  val reqID = UInt(TXNID_WIDTH.W)
+}

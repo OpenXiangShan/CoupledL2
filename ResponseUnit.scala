@@ -34,11 +34,7 @@ class ResponseEntry(implicit p: Parameters) extends TaskEntry {
   val w_compack = Bool()
 }
 
-class ResponseInfo(implicit p: Parameters) extends LLCBundle {
-  val set = UInt(setBits.W)
-  val tag = UInt(tagBits.W)
-  val opcode = UInt(REQ_OPCODE_WIDTH.W)
-  val reqID = UInt(TXNID_WIDTH.W)
+class ResponseInfo(implicit p: Parameters) extends BlockInfo {
   val w_compack = Bool()
 }
 
@@ -66,7 +62,7 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
     val txrsp = DecoupledIO(new Task()) // Comp(DBIDResp)
     val txdat = DecoupledIO(new TaskWithData()) // CompData
 
-    /* Response info to SnoopUnit */
+    /* Response buffers info */
     val respInfo = Vec(mshrs, ValidIO(new ResponseInfo()))
 
     /* instruct MemUnit to immediately send a read request */
