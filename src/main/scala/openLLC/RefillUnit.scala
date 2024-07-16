@@ -58,6 +58,9 @@ class RefillUnit(implicit p: Parameters) extends LLCModule {
     /* refill data read */
     val read = Flipped(ValidIO(new RefillBufRead()))
     val data = Output(new DSBlock())
+
+    /* refill buffers info */
+    val refillInfo = Vec(mshrs, ValidIO(new BlockInfo()))
   })
 
   val rsp     = io.resp
@@ -181,6 +184,15 @@ class RefillUnit(implicit p: Parameters) extends LLCModule {
     val entry = buffer(io.read.bits.id)
     entry.valid := false.B
     entry.ready := false.B
+  }
+
+  /* block info */
+  io.refillInfo.zipWithIndex.foreach { case (m, i) =>
+    m.valid := buffer(i).valid
+    m.bits.tag := buffer(i).task.tag
+    m.bits.set := buffer(i).task.set
+    m.bits.opcode := buffer(i).task.chiOpcode
+    m.bits.reqID := buffer(i).task.reqID
   }
 
   /* Performance Counter */

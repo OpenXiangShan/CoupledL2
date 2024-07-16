@@ -66,6 +66,9 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
       val wdata = Output(new DSBlock())
     }
     val rdataFromDS_s6 = Input(new DSBlock())
+
+    /* status of each pipeline stage */
+    val pipeInfo = Output(new PipeStatus())
   })
 
   val snpTask_s4    = io.snoopTask_s4
@@ -77,9 +80,14 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
 
   val refillData_s4 = io.refillBufResp_s4
   val rdata_s6      = io.rdataFromDS_s6
+  val pipeInfo      = io.pipeInfo
 
   /* Stage 2 */
   val task_s2 = io.taskFromArb_s2
+
+  pipeInfo.s2_valid := task_s2.valid
+  pipeInfo.s2_tag := task_s2.bits.tag
+  pipeInfo.s2_set := task_s2.bits.set
 
   /* Stage 3 */
   val task_s3 = RegInit(0.U.asTypeOf(Valid(new Task())))
@@ -198,6 +206,10 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
     "Non-exist block release?(addr: 0x%d)",
     reqLineAddr_s3
   )
+
+  pipeInfo.s3_valid := task_s3.valid
+  pipeInfo.s3_tag := task_s3.bits.tag
+  pipeInfo.s3_set := task_s3.bits.set
 
   /* Stage 4 */
   val task_s4 = RegInit(0.U.asTypeOf(Valid(new Task())))
@@ -335,7 +347,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
   )
 
   compTask_s4.valid := task_s4.valid &&
-    (releaseReq_s4 || (exclusiveReq_s4 || sharedReq_s4) && !self_hit_s4)
+    (releaseReq_s4 || (readNotSharedDirty_s4 || readUnique_s4) && !self_hit_s4 || makeUnique_s4)
   compTask_s4.bits := comp_task_s4
 
   /**  Read task to MemUnit **/
@@ -372,12 +384,20 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
 
   val req_drop_s4 = !dataUnready_s4 && !repl_dirty_block_s4
 
+  pipeInfo.s4_valid := task_s4.valid
+  pipeInfo.s4_tag := task_s4.bits.tag
+  pipeInfo.s4_set := task_s4.bits.set
+
   /* Stage 5 */
   val task_s5 = RegInit(0.U.asTypeOf(Valid(new Task())))
   task_s5.valid := task_s4.valid && !req_drop_s4
   when(task_s4.valid && !req_drop_s4) {
     task_s5.bits := Mux(dataUnready_s4, comp_task_s4, mem_task_s4)
   }
+
+  pipeInfo.s5_valid := task_s5.valid
+  pipeInfo.s5_tag := task_s5.bits.tag
+  pipeInfo.s5_set := task_s5.bits.set
 
   /* Stage 6 */
   val task_s6 = RegInit(0.U.asTypeOf(Valid(new Task())))
@@ -398,5 +418,9 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
   writeTask_s6.valid := task_s6.valid && repl_dirty_block_s6
   writeTask_s6.bits.task := req_s6
   writeTask_s6.bits.data := rdata_s6
+
+  pipeInfo.s6_valid := task_s6.valid
+  pipeInfo.s6_tag := task_s6.bits.tag
+  pipeInfo.s6_set := task_s6.bits.set
 
 }

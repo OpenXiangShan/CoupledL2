@@ -72,9 +72,7 @@ object ClientMetaEntry {
 class SubDirRead(tagBits: Int, setBits: Int, ways: Int)(implicit p: Parameters) extends LLCBundle {
   val tag = UInt(tagBits.W)
   val set = UInt(setBits.W)
-  val wayMask = UInt(ways.W)
   val replacerInfo = new ReplacerInfo()
-  val mshrId = UInt(mshrBits.W)
 }
 
 class DirRead(implicit p: Parameters) extends LLCBundle with HasClientInfo {
