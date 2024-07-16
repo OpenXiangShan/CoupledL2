@@ -170,6 +170,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
     p.tlb_req.req.ready := true.B
     p.tlb_req.resp.valid := false.B
     p.tlb_req.resp.bits := DontCare
+    p.tlb_req.pmp_resp := DontCare
     p.recv_addr := 0.U.asTypeOf(p.recv_addr)
   }
 
