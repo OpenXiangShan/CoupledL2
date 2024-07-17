@@ -20,13 +20,57 @@ package openLLC
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
+import utility.{FastArbiter}
 
-class RequestBuffer(implicit p: Parameters) extends LLCModule {
+class RequestBuffer(entries: Int = 8)(implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {
     val in = Flipped(DecoupledIO(new Task()))
     val out = DecoupledIO(new Task())
   })
 
-  // TODO: buffer incoming CHI-requests
-  io.in <> io.out
+  /* Data Structure */
+  val buffer = RegInit(VecInit(Seq.fill(entries)(0.U.asTypeOf(Valid(new Task())))))
+  val issueArb = Module(new FastArbiter(new Task(), entries))
+
+  val in   = io.in
+  val out  = io.out
+  val full = Cat(buffer.map(_.valid)).andR
+
+  /* Alloc */
+  in.ready := !full
+
+  val insertIdx = PriorityEncoder(buffer.map(!_.valid))
+  val alloc = in.fire
+  when(alloc) {
+    val entry = buffer(insertIdx)
+    entry.valid := true.B
+    entry.bits := in.bits
+  }
+
+  /* Issue */
+  issueArb.io.in.zip(buffer).foreach { case (in, e) =>
+    in.valid := e.valid
+    in.bits  := e.bits
+  }
+  issueArb.io.out.ready := true.B
+
+  out.valid := issueArb.io.out.valid
+  out.bits := issueArb.io.out.bits
+
+  /* Dealloc */
+  when(out.fire) {
+    val entry = buffer(issueArb.io.chosen)
+    entry.valid := false.B
+  }
+
+  /* Performance Counter */
+  if(cacheParams.enablePerf) {
+    val bufferTimer = RegInit(VecInit(Seq.fill(entries)(0.U(16.W))))
+    buffer.zip(bufferTimer).map { case (e, t) =>
+        when(e.valid) { t := t + 1.U }
+        when(RegNext(e.valid, false.B) && !e.valid) { t := 0.U }
+        assert(t < 20000.U, "ReqBuf Leak")
+    }
+  }
+
 }
