@@ -414,7 +414,7 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
   def get_flag(vaddr: UInt) = get_block_vaddr(vaddr)
 
   // if full then drop new req, so there is no need to use s1_evicted_oh & replacement
-  val entries = Seq.fill(REQ_FILTER_SIZE)(Reg(new BopReqBufferEntry))
+  val entries = Seq.fill(REQ_FILTER_SIZE)(RegInit(0.U.asTypeOf(new BopReqBufferEntry)))
   //val replacement = ReplacementPolicy.fromString("plru", REQ_FILTER_SIZE)
   val tlb_req_arb = Module(new RRArbiterInit(new L2TlbReq, REQ_FILTER_SIZE))
   val pf_req_arb = Module(new RRArbiterInit(new PrefetchReq, REQ_FILTER_SIZE))
@@ -526,13 +526,6 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
 
     pf_req_arb.io.in(i).valid := e.can_send_pf()
     pf_req_arb.io.in(i).bits := e.toPrefetchReq()
-  }
-
-  // reset meta to avoid muti-hit problem
-  for (i <- 0 until REQ_FILTER_SIZE) {
-    when(reset.asBool) {
-      entries(i).reset(i.U)
-    }
   }
 
   XSPerfAccumulate("tlb_req", io.tlb_req.req.valid)
