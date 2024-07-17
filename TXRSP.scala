@@ -27,6 +27,9 @@ class TXRSP (implicit p: Parameters) extends LLCModule {
     val task = Flipped(DecoupledIO(new Task()))
     val rsp = DecoupledIO(new CHIRSP())
   })
-  io.rsp := DontCare
-  io.task := DontCare
+
+  io.rsp.valid := io.task.valid
+  io.rsp.bits := io.task.bits.toCHIRSPBundle()
+
+  io.task.ready := io.rsp.ready
 }

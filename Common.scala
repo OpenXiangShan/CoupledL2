@@ -131,9 +131,8 @@ class TaskWithData(implicit p: Parameters) extends LLCBundle {
     dat.resp := task.resp
     dat.dbID := task.dbID
     dat.be := Fill(BE_WIDTH, true.B)
-    dat.data := Seq.tabulate(beatSize)(
-      i => data.data((i + 1) * beatBytes * 8 - 1, i * beatBytes * 8)
-    )(beatId)
+    dat.data := data.data(beatId).data
+    dat.dataID := (beatBytes * beatId * 8).U(offsetBits - 1, offsetBits - 2)
     dat
   }
 }
@@ -147,7 +146,8 @@ class Resp(implicit p: Parameters) extends LLCBundle {
 }
 
 class RespWithData(implicit p: Parameters) extends Resp {
-  val data = new DSBlock()
+  val dataID = UInt(DATAID_WIDTH.W)
+  val data = new DSBeat()
 }
 
 class TaskEntry(implicit p: Parameters) extends LLCBundle {

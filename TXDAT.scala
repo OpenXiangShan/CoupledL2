@@ -28,6 +28,27 @@ class TXDAT (implicit p: Parameters) extends LLCModule {
     val task = Flipped(DecoupledIO(new TaskWithData()))
 
   })
-  io.dat := DontCare
-  io.task := DontCare
+
+  val beatValids = RegInit(VecInit(Seq.fill(beatSize)(false.B)))
+  val buffer = RegEnable(io.task.bits, 0.U.asTypeOf(new TaskWithData()), io.task.fire)
+  val bufferValid = Cat(beatValids).orR
+  val beat_id = PriorityEncoder(beatValids)
+  val last_beat = if(beatSize == 1) beatValids.toSeq.last else
+    !Cat(beatValids.toSeq.init).orR && beatValids.toSeq.last
+
+  when(io.task.fire) {
+    beatValids := VecInit(Seq.fill(beatSize)(true.B))
+  }.elsewhen(io.dat.fire) {
+    beatValids(beat_id) := false.B
+  }
+
+  io.dat.valid := bufferValid
+  io.dat.bits := 0.U.asTypeOf(new CHIDAT())
+  for (i <- 0 until beatSize) {
+    when(beat_id === i.U) {
+      io.dat.bits := buffer.toCHIDATBundle(i)
+    }
+  }
+  io.task.ready := !bufferValid || last_beat && io.dat.fire
+
 }

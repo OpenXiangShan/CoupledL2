@@ -28,6 +28,8 @@ class TXREQ (implicit p: Parameters) extends LLCModule {
     val task = Flipped(DecoupledIO(new Task()))
   })
 
-  io.req := DontCare
-  io.task.ready := DontCare
+  io.req.valid := io.task.valid
+  io.req.bits := io.task.bits.toCHIREQBundle()
+
+  io.task.ready := io.req.ready
 }

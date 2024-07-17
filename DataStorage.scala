@@ -27,8 +27,12 @@ class DSRequest(implicit p: Parameters) extends LLCBundle {
   val set = UInt(setBits.W)
 }
 
+class DSBeat(implicit p: Parameters) extends LLCBundle {
+  val data = UInt((beatBytes * 8).W)
+}
+
 class DSBlock(implicit p: Parameters) extends LLCBundle {
-  val data = UInt((blockBytes * 8).W)
+  val data = Vec(beatSize, new DSBeat())
 }
 
 class WBEntry(implicit p: Parameters) extends LLCBundle {
