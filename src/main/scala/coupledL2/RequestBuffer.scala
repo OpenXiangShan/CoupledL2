@@ -112,8 +112,10 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
   /* ======== Data Structure ======== */
 
-  io.ATag := io.in.bits.tag
-  io.ASet := io.in.bits.set
+//  io.ATag := io.in.bits.tag
+//  io.ASet := io.in.bits.set
+  io.ATag := in.tag
+  io.ASet := in.set
 
   val buffer = RegInit(VecInit(Seq.fill(entries)(0.U.asTypeOf(new ReqEntry))))
   val issueArb = Module(new FastArbiter(new ReqEntry, entries))
@@ -183,8 +185,8 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   // flow not allowed when full, or entries might starve
   val canFlow = flow.B && !full && !conflict(io.in.bits) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(io.in.bits)
   val doFlow  = canFlow && io.out.ready
-  io.hasLatePF := latePrefetch(in) && io.in.valid && !sameAddr(in, RegNext(in))
-  io.hasMergeA := mergeA && io.in.valid && !sameAddr(in, RegNext(in))
+  io.hasLatePF := latePrefetch(in) && inVal && !sameAddr(in, RegNext(in))
+  io.hasMergeA := mergeA && inVal && !sameAddr(in, RegNext(in))
 
   //  val depMask    = buffer.map(e => e.valid && sameAddr(io.in.bits, e.task))
   // remove duplicate prefetch if same-addr A req in MSHR or ReqBuf
@@ -315,9 +317,11 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       XSPerfAccumulate("req_buffer_flow", io.in.valid && doFlow)
     }
     XSPerfAccumulate("req_buffer_alloc", alloc)
-    XSPerfAccumulate("req_buffer_full", full)
-    XSPerfAccumulate("recv_prefetch", io.in.fire && isPrefetch)
-    XSPerfAccumulate("recv_normal", io.in.fire && !isPrefetch)
+    XSPerfAccumulate("req_buffer_full", full) 
+    if (prefetchOpt.nonEmpty) {
+      XSPerfAccumulate("recv_prefetch", io.inPrefetch.get.fire)
+    }
+    XSPerfAccumulate("recv_normal", io.in.fire)
     XSPerfAccumulate("chosenQ_cancel", chosenQValid && cancel)
     XSPerfAccumulate("req_buffer_mergeA", io.hasMergeA)
     // TODO: count conflict
