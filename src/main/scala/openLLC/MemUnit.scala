@@ -63,7 +63,7 @@ class MemUnit(implicit p: Parameters) extends LLCModule {
     val txdat = DecoupledIO(new TaskWithData())
 
     /* bypass rdata when RAW conflict occurs */
-    val bypassData = ValidIO(new RespWithData)
+    val bypassData = Vec(beatSize, ValidIO(new RespWithData()))
   })
 
   val rsp        = io.resp
@@ -91,17 +91,22 @@ class MemUnit(implicit p: Parameters) extends LLCModule {
   val conflictIdx_2 = PriorityEncoder(conflictMask_2)
   val bypass_en_1 = urgentRead.valid && Cat(conflictMask_1).orR
   val bypass_en_2 = task_2.valid && Cat(conflictMask_2).orR
-  val fakeRsp = RegInit(0.U.asTypeOf(new RespWithData()))
+  val fakeRsp = RegInit(VecInit(Seq.fill(beatSize)(0.U.asTypeOf(new RespWithData()))))
 
   when(bypass_en_1 || bypass_en_2) {
-    fakeRsp.txnID := Mux(bypass_en_2, task_2.bits.txnID, urgentRead.bits.txnID)
-    fakeRsp.dbID := 0.U
-    fakeRsp.opcode := CompData
-    fakeRsp.resp := 0.U
-    fakeRsp.data := Mux(bypass_en_2, entries(conflictIdx_2).data, entries(conflictIdx_1).data)
+    for (i <- 0 until beatSize) {
+      fakeRsp(i).txnID := Mux(bypass_en_2, task_2.bits.txnID, urgentRead.bits.txnID)
+      fakeRsp(i).dbID := 0.U
+      fakeRsp(i).opcode := CompData
+      fakeRsp(i).resp := 0.U
+      fakeRsp(i).data := Mux(bypass_en_2, entries(conflictIdx_2).data.data(i), entries(conflictIdx_1).data.data(i))
+    }
   }
-  bypassData.valid := RegNext(bypass_en_1 || bypass_en_2, false.B)
-  bypassData.bits := fakeRsp
+
+  for (i <- 0 until beatSize) {
+    bypassData(i).valid := RegNext(bypass_en_1 || bypass_en_2, false.B)
+    bypassData(i).bits := fakeRsp(i)
+  }
 
   urgentRead.ready := txreq.ready && !bypass_en_1 || bypass_en_1 && !bypass_en_2
 

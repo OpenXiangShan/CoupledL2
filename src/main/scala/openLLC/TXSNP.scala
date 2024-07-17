@@ -29,6 +29,9 @@ class TXSNP (implicit p: Parameters) extends LLCModule {
     val snp = DecoupledIO(new CHISNP())
 
   })
-  io.snp := DontCare
-  io.task := DontCare
+
+  io.snp.valid := io.task.valid
+  io.snp.bits := io.task.bits.toCHISNPBundle()
+
+  io.task.ready := io.snp.ready
 }

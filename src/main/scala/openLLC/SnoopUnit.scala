@@ -85,14 +85,14 @@ class SnoopUnit(implicit p: Parameters) extends LLCModule {
 
   /* Update ready */
   when(ack.valid) {
-    val wakeUp_vec = buffer.map(e =>
+    val update_vec = buffer.map(e =>
       e.valid && !e.ready && ack.bits.opcode === CompAck && ack.bits.txnID === e.waitID
     )
-    assert(PopCount(wakeUp_vec) < 2.U, "Snoop task repeated")
-    val canWakeUp = Cat(wakeUp_vec).orR
-    val wakeUp_id = PriorityEncoder(wakeUp_vec)
-    when(canWakeUp) {
-      val entry = buffer(wakeUp_id)
+    assert(PopCount(update_vec) < 2.U, "Snoop task repeated")
+    val canUpdate = Cat(update_vec).orR
+    val update_id = PriorityEncoder(update_vec)
+    when(canUpdate) {
+      val entry = buffer(update_id)
       entry.ready := true.B
     }
   }

@@ -92,7 +92,7 @@ class Slice()(implicit p: Parameters) extends LLCModule {
   txDown.req <> txreqDown.io.req
   txDown.dat <> txdatDown.io.dat
 
-  txreqDown.io.task := DontCare
+  txreqDown.io.task <> memUnit.io.txreq
   io.waitPCrdInfo := DontCare
 
   reqBuf.io.in <> rxreqUp.io.task

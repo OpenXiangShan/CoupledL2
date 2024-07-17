@@ -28,6 +28,7 @@ import utility.{FastArbiter}
 
 class ResponseEntry(implicit p: Parameters) extends TaskEntry {
   val data = new DSBlock()
+  val beatValids = Vec(beatSize, Bool())
   val s_comp = Bool()
   val s_urgentRead = Bool()
   val w_snpRsp = Bool()
@@ -53,7 +54,7 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
     val snpData = Flipped(ValidIO(new RespWithData()))
 
     /* fake CompData response from MemUnit */
-    val bypassData = Flipped(ValidIO(new RespWithData()))
+    val bypassData = Flipped(Vec(beatSize, ValidIO(new RespWithData())))
 
     /* CompAck/SnpResp from upstream RXRSP channel */
     val response = Flipped(ValidIO(new Resp()))
@@ -108,6 +109,7 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
     entry.w_compack := false.B
     entry.task := task_1.bits.task
     entry.data := task_1.bits.data
+    entry.beatValids := VecInit(Seq.fill(beatSize)(true.B))
   }
 
   when(alloc_2) {
@@ -117,6 +119,7 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
     val isMakeUnique = task_2.bits.chiOpcode === MakeUnique
     entry.valid := true.B
     entry.ready := !(isReadNotSharedDirty || isReadUnique)
+    entry.beatValids := VecInit(Seq.fill(beatSize)(!(isReadNotSharedDirty || isReadUnique)))
     entry.s_comp := false.B
     entry.s_urgentRead := true.B
     entry.w_snpRsp := !Cat(task_2.bits.snpVec).orR
@@ -129,55 +132,68 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
   /* Update state */
   def handleMemResp(response: Valid[RespWithData]): Unit = {
     when(response.valid) {
-      val wakeUp_vec = buffer.map(e =>
+      val update_vec = buffer.map(e =>
         e.task.reqID === response.bits.txnID && e.valid && !e.ready && !e.s_comp &&
         response.bits.opcode === CompData
       )
-      assert(PopCount(wakeUp_vec) < 2.U, "Response task repeated")
-      val canWakeUp = Cat(wakeUp_vec).orR
-      val wakeUp_id = PriorityEncoder(wakeUp_vec)
-      when(canWakeUp) {
-        val entry = buffer(wakeUp_id)
-        entry.ready := true.B
-        entry.data := response.bits.data
+      assert(PopCount(update_vec) < 2.U, "Response task repeated")
+      val canUpdate = Cat(update_vec).orR
+      val update_id = PriorityEncoder(update_vec)
+      when(canUpdate) {
+        val entry = buffer(update_id)
+        val beatId = response.bits.dataID >> (beatBytes / 16)
+        val newBeatValids = Cat(entry.beatValids) | UIntToOH(beatId)
+        entry.beatValids := VecInit(newBeatValids.asBools)
+        when(newBeatValids.andR) {
+          entry.ready := true.B
+        }
+        entry.data.data(beatId) := response.bits.data
       }
     }
   }
 
   def handleSnpResp(snpRsp: Valid[Resp], snpData: Valid[RespWithData]): Unit = {
     when(snpData.valid) {
-      val wakeUp_vec = buffer.map(e =>
+      val update_vec = buffer.map(e =>
         (e.task.reqID === snpData.bits.txnID) && e.valid && !e.ready && !e.s_comp && !e.w_snpRsp &&
         snpData.bits.opcode === SnpRespData
       )
-      assert(PopCount(wakeUp_vec) < 2.U, "Response task repeated")
-      val canWakeUp = Cat(wakeUp_vec).orR
-      val wakeUp_id = PriorityEncoder(wakeUp_vec)
-      when(canWakeUp) {
-        val entry = buffer(wakeUp_id)
-        entry.ready := true.B
-        entry.data := snpData.bits.data
+      assert(PopCount(update_vec) < 2.U, "Response task repeated")
+      val canUpdate = Cat(update_vec).orR
+      val update_id = PriorityEncoder(update_vec)
+      when(canUpdate) {
+        val entry = buffer(update_id)
+        val beatId = snpData.bits.dataID >> (beatBytes / 16)
+        val newBeatValids = Cat(entry.beatValids) | UIntToOH(beatId)
+        entry.beatValids := VecInit(newBeatValids.asBools)
+        when(newBeatValids.andR) {
+          val src_idOH = UIntToOH(snpData.bits.srcID)(clientBits - 1, 0)
+          val newSnpVec = VecInit((Cat(entry.task.snpVec) & ~src_idOH).asBools)
+          entry.task.snpVec := newSnpVec
+          entry.ready := true.B
+          when(!Cat(newSnpVec).orR) {
+            entry.w_snpRsp := true.B
+          }
+        }
+        entry.data.data(beatId) := snpData.bits.data
       }
     }
 
-    for (r <- Seq(snpData, snpRsp)) {
-      when(r.valid) {
-        val update_vec = buffer.map(e =>
-          e.task.reqID === r.bits.txnID && e.valid && !e.w_snpRsp &&
-          (r.bits.opcode === SnpResp || r.bits.opcode === SnpRespData)
-        )
-        assert(PopCount(update_vec) < 2.U, "Response task repeated")
-        val canUpdate = Cat(update_vec).orR
-        val update_id = PriorityEncoder(update_vec)
-        when(canUpdate) {
-          val entry = buffer(update_id)
-          val src_idOH = UIntToOH(r.bits.srcID)(clientBits - 1, 0)
-          val newSnpVec = VecInit((Cat(entry.task.snpVec) & ~src_idOH).asBools)
-          entry.task.snpVec := newSnpVec
-          when(!Cat(newSnpVec).orR) {
-            entry.w_snpRsp := true.B
-            entry.s_urgentRead := r.bits.opcode === SnpRespData || entry.ready
-          }
+    when(snpRsp.valid) {
+      val update_vec = buffer.map(e =>
+        e.task.reqID === snpRsp.bits.txnID && e.valid && !e.w_snpRsp && snpRsp.bits.opcode === SnpResp
+      )
+      assert(PopCount(update_vec) < 2.U, "Response task repeated")
+      val canUpdate = Cat(update_vec).orR
+      val update_id = PriorityEncoder(update_vec)
+      when(canUpdate) {
+        val entry = buffer(update_id)
+        val src_idOH = UIntToOH(snpRsp.bits.srcID)(clientBits - 1, 0)
+        val newSnpVec = VecInit((Cat(entry.task.snpVec) & ~src_idOH).asBools)
+        entry.task.snpVec := newSnpVec
+        when(!Cat(newSnpVec).orR) {
+          entry.w_snpRsp := true.B
+          entry.s_urgentRead := entry.ready
         }
       }
     }
@@ -187,10 +203,11 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
         when(snpData.bits.txnID === snpRsp.bits.txnID) {
           val update_vec = buffer.map(e => e.task.reqID === snpRsp.bits.txnID && e.valid && !e.w_snpRsp)
           assert(PopCount(update_vec) < 2.U, "Response task repeated")
-          val canUpdate = Cat(update_vec).orR
           val update_id = PriorityEncoder(update_vec)
+          val entry = buffer(update_id)
+          val waitLastBeat = PopCount(~Cat(entry.beatValids)) === 1.U
+          val canUpdate = Cat(update_vec).orR && waitLastBeat
           when(canUpdate) {
-            val entry = buffer(update_id)
             val src_idOH_1 = UIntToOH(snpData.bits.srcID)(clientBits - 1, 0)
             val src_idOH_2 = UIntToOH(snpRsp.bits.srcID)(clientBits - 1, 0)
             val newSnpVec = VecInit((Cat(entry.task.snpVec) & ~src_idOH_1 & ~src_idOH_2).asBools)
@@ -220,8 +237,10 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
     }
   }
 
+  for (i <- 0 until beatSize) {
+    handleMemResp(bypassData(i))
+  } 
   handleMemResp(memData)
-  handleMemResp(bypassData)
   handleSnpResp(rsp, snpData)
   handleCompAck(rsp)
 
