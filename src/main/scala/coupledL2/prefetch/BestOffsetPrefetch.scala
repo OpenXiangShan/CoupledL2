@@ -421,7 +421,7 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
 
   /* timing description:
    * entry    : s0 look up, s1 update & replace
-   * tlb      : s0 arbiter, s1 send tlb req, s2 receive tlb resp
+   * tlb      : s0 arbiter, s1 send tlb req, s2 receive tlb resp, s3 receive pmp resp
    * prefetch : s0 arbiter & send pf req
    */
 
@@ -480,6 +480,11 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
   /* s2 tlb resp */
   val s2_tlb_fire_oh = RegNext(s1_tlb_fire_oh, 0.U)
 
+  /* s3 pmp resp */
+  val s3_tlb_fire_oh = RegNext(s2_tlb_fire_oh, 0.U)
+  val s3_tlb_resp_valid = RegNext(io.tlb_req.resp.valid)
+  val s3_tlb_resp = RegEnable(io.tlb_req.resp.bits, io.tlb_req.resp.valid)
+
   /* entry update */
   val exp_drop = Wire(Vec(REQ_FILTER_SIZE, Bool()))
   val miss_drop = Wire(Vec(REQ_FILTER_SIZE, Bool()))
@@ -489,13 +494,13 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
   for ((e, i) <- entries.zipWithIndex){
     alloc(i) := s1_valid && s1_invalid_oh(i)
     pf_fired(i) := s0_pf_fire_oh(i)
-    exp_drop(i) := s2_tlb_fire_oh(i) && io.tlb_req.resp.valid && !io.tlb_req.resp.bits.miss && (
-      (e.needT && (io.tlb_req.resp.bits.excp.head.pf.st || io.tlb_req.resp.bits.excp.head.af.st)) ||
-      (!e.needT && (io.tlb_req.resp.bits.excp.head.pf.ld || io.tlb_req.resp.bits.excp.head.af.ld)) ||
+    exp_drop(i) := s3_tlb_fire_oh(i) && s3_tlb_resp_valid && !s3_tlb_resp.miss && (
+      (e.needT && (s3_tlb_resp.excp.head.pf.st || s3_tlb_resp.excp.head.af.st)) ||
+      (!e.needT && (s3_tlb_resp.excp.head.pf.ld || s3_tlb_resp.excp.head.af.ld)) ||
       io.tlb_req.pmp_resp.mmio
     )
-    val miss = s2_tlb_fire_oh(i) && io.tlb_req.resp.valid && io.tlb_req.resp.bits.miss
-    tlb_fired(i) := s2_tlb_fire_oh(i) && io.tlb_req.resp.valid && !io.tlb_req.resp.bits.miss && !exp_drop(i)
+    val miss = s3_tlb_fire_oh(i) && s3_tlb_resp_valid && s3_tlb_resp.miss
+    tlb_fired(i) := s3_tlb_fire_oh(i) && s3_tlb_resp_valid && !s3_tlb_resp.miss && !exp_drop(i)
     miss_drop(i) := miss && e.replayEn
     miss_first_replay(i) := miss && !e.replayEn
     
@@ -505,7 +510,7 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
     }
     // recent data: update tlb resp
     when(tlb_fired(i)){
-      e.update_paddr(io.tlb_req.resp.bits.paddr.head)
+      e.update_paddr(s3_tlb_resp.paddr.head)
     }.elsewhen(miss_drop(i)) { // miss
       e.reset(i.U)
     }.elsewhen(miss_first_replay(i)){
@@ -527,7 +532,7 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
   /* tlb & pf */
   for((e, i) <- entries.zipWithIndex){
     //tlb_req_arb.io.in(i).valid := e.valid && !s1_tlb_fire_oh(i) && !s2_tlb_fire_oh(i) && !e.paddrValid && !s1_evicted_oh(i)
-    tlb_req_arb.io.in(i).valid := e.valid && !e.paddrValid && !s1_tlb_fire_oh(i) && !s2_tlb_fire_oh(i) && !e.replayCnt.orR
+    tlb_req_arb.io.in(i).valid := e.valid && !e.paddrValid && !s1_tlb_fire_oh(i) && !s2_tlb_fire_oh(i) && !s3_tlb_fire_oh(i) && !e.replayCnt.orR
     tlb_req_arb.io.in(i).bits.vaddr := e.get_tlb_vaddr()
     when(e.needT) {
       tlb_req_arb.io.in(i).bits.cmd := TlbCmd.write
@@ -552,10 +557,12 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
   XSPerfAccumulate("tlb_req", io.tlb_req.req.valid)
   XSPerfAccumulate("tlb_miss", io.tlb_req.resp.valid && io.tlb_req.resp.bits.miss)
   XSPerfAccumulate("tlb_excp",
-    io.tlb_req.resp.valid && !io.tlb_req.resp.bits.miss && (
-      io.tlb_req.resp.bits.excp.head.pf.st || io.tlb_req.resp.bits.excp.head.af.st ||
-      io.tlb_req.resp.bits.excp.head.pf.ld || io.tlb_req.resp.bits.excp.head.af.ld
+    s3_tlb_resp_valid && !s3_tlb_resp.miss && (
+      (s3_tlb_resp.excp.head.pf.st || s3_tlb_resp.excp.head.af.st) ||
+      (s3_tlb_resp.excp.head.pf.ld || s3_tlb_resp.excp.head.af.ld) ||
+      io.tlb_req.pmp_resp.mmio
   ))
+  XSPerfAccumulate("tlb_excp_mmio", s3_tlb_resp_valid && io.tlb_req.pmp_resp.mmio)
   XSPerfAccumulate("entry_alloc", PopCount(alloc))
   XSPerfAccumulate("entry_miss_first_replay", PopCount(miss_first_replay))
   XSPerfAccumulate("entry_miss_drop", PopCount(miss_drop))
