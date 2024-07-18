@@ -111,9 +111,6 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   }
 
   /* ======== Data Structure ======== */
-
-//  io.ATag := io.in.bits.tag
-//  io.ASet := io.in.bits.set
   io.ATag := in.tag
   io.ASet := in.set
 
@@ -153,7 +150,6 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 //  }
 
   // other flags
-//  val in      = io.in.bits
   val full    = Cat(buffer.map(_.valid)).andR
 
   // incoming Acquire can be merged with late_pf MSHR block
@@ -192,8 +188,6 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   // remove duplicate prefetch if same-addr A req in MSHR or ReqBuf
   val isPrefetch = in.fromA && in.opcode === Hint
   val dupMask    = VecInit(
-//    io.mshrInfo.map(s =>
-//      s.valid && s.bits.isAcqOrPrefetch && sameAddr(in, s.bits)) ++
     buffer.map(e =>
       e.valid && sameAddr(in, e.task)
     )

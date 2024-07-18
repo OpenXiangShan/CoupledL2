@@ -122,23 +122,6 @@ class SinkA(implicit p: Parameters) extends L2Module {
   io.task.bits := fromTLAtoTaskBundle(io.a.bits)
   io.a.ready := io.task.ready
 
-/*  if (prefetchOpt.nonEmpty) {
-    io.task.valid := io.a.valid || io.prefetchReq.get.valid
-    io.task.bits := Mux(
-      io.a.valid,
-      fromTLAtoTaskBundle(io.a.bits),
-      fromPrefetchReqtoTaskBundle(io.prefetchReq.get.bits
-    ))
-
-    io.a.ready := io.task.ready
-    io.prefetchReq.get.ready := io.task.ready && !io.a.valid
-  } else {
-    io.task.valid := io.a.valid
-    io.task.bits := fromTLAtoTaskBundle(io.a.bits)
-    io.a.ready := io.task.ready
-  }
- */
-
   // Performance counters
   // num of reqs
   XSPerfAccumulate("sinkA_req", io.task.fire)
