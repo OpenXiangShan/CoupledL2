@@ -317,7 +317,6 @@ class BopReqBundle(implicit p: Parameters) extends BOPBundle{
 }
 
 class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
-  val valid = Bool()
   // for tlb req
   val paddrValid = Bool()
   val vaddrNoOffset = UInt((fullVAddrBits-offsetBits).W)
@@ -329,20 +328,7 @@ class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
   val needT = Bool()
   val source = UInt(sourceIdBits.W)
 
-  def reset(x: UInt): Unit = {
-    valid := false.B
-    paddrValid := false.B
-    vaddrNoOffset := 0.U
-    baseVaddr := 0.U
-    paddrNoOffset := 0.U
-    replayEn := false.B
-    replayCnt := 0.U
-    needT := false.B
-    source := 0.U
-  }
-
   def fromBopReqBundle(req: BopReqBundle) = {
-    valid := true.B
     paddrValid := false.B
     vaddrNoOffset := get_block_vaddr(req.full_vaddr)
     baseVaddr := req.base_vaddr
@@ -351,15 +337,6 @@ class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
     paddrNoOffset := 0.U
     needT := req.needT
     source := req.source
-  }
-
-  def isEqualBopReq(req: BopReqBundle) = {
-    // FIXME lyq: the comparision logic is very complicated, is there a way to simplify
-    valid &&
-    vaddrNoOffset === get_block_vaddr(req.full_vaddr) &&
-    baseVaddr === req.base_vaddr &&
-    needT === req.needT &&
-    source === req.source
   }
 
   def toPrefetchReq(): PrefetchReq = {
@@ -371,10 +348,6 @@ class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
     req.source := source
     req.pfSource := MemReqSource.Prefetch2L2BOP.id.U
     req
-  }
-
-  def can_send_pf(): Bool = {
-    valid && paddrValid
   }
 
   def get_pf_paddr(): UInt = {
@@ -392,13 +365,6 @@ class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
     replayCnt := 0.U
   }
 
-  def update_sent(): Unit ={
-    valid := false.B
-  }
-
-  def update_excp(): Unit = {
-    valid := false.B
-  }
 }
 
 class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
@@ -409,15 +375,40 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
   })
 
   val firstTlbReplayCnt = Constantin.createRecord("firstTlbReplayCnt", bopParams.tlbReplayCnt)
-
-  def wayMap[T <: Data](f: Int => T) = VecInit((0 until REQ_FILTER_SIZE).map(f))
-  def get_flag(vaddr: UInt) = get_block_vaddr(vaddr)
-
   // if full then drop new req, so there is no need to use s1_evicted_oh & replacement
-  val entries = Seq.fill(REQ_FILTER_SIZE)(RegInit(0.U.asTypeOf(new BopReqBufferEntry)))
+  val valids = Seq.fill(REQ_FILTER_SIZE)(RegInit(false.B))
+  val entries = Seq.fill(REQ_FILTER_SIZE)(Reg(new BopReqBufferEntry))
   //val replacement = ReplacementPolicy.fromString("plru", REQ_FILTER_SIZE)
   val tlb_req_arb = Module(new RRArbiterInit(new L2TlbReq, REQ_FILTER_SIZE))
   val pf_req_arb = Module(new RRArbiterInit(new PrefetchReq, REQ_FILTER_SIZE))
+
+  def wayMap[T <: Data](f: Int => T) = VecInit((0 until REQ_FILTER_SIZE).map(f))
+
+  def get_flag(vaddr: UInt) = get_block_vaddr(vaddr)
+
+  def alloc_entry(i: Int, e: BopReqBufferEntry): Unit = {
+    valids(i) := true.B
+    entries(i) := e
+  }
+
+  def invalid_entry(i: Int): Unit = {
+    valids(i) := false.B
+  }
+
+  def can_send_pf(i: Int): Bool = {
+    valids(i) && entries(i).paddrValid
+  }
+
+  def isEqualBopReq(i: Int, req: BopReqBundle): Bool = {
+    // FIXME lyq: the comparision logic is very complicated, is there a way to simplify
+    val v = valids(i)
+    val e = entries(i)
+    v &&
+      e.vaddrNoOffset === get_block_vaddr(req.full_vaddr) &&
+      e.baseVaddr === req.base_vaddr &&
+      e.needT === req.needT &&
+      e.source === req.source
+  }
 
   io.tlb_req.req <> tlb_req_arb.io.out
   io.tlb_req.req_kill := false.B
@@ -436,13 +427,13 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
   val s0_conflict_prev = prev_in_valid && s0_in_flag === prev_in_flag
   // FIXME lyq: the comparision logic is very complicated, is there a way to simplify
   val s0_match_oh = VecInit(entries.indices.map(i =>
-    entries(i).valid && entries(i).vaddrNoOffset === s0_in_flag &&
+    valids(i) && entries(i).vaddrNoOffset === s0_in_flag &&
     entries(i).needT === s0_in_req.needT && entries(i).source === s0_in_req.source &&
     entries(i).baseVaddr === s0_in_req.base_vaddr
   )).asUInt
   val s0_match = Cat(s0_match_oh).orR
 
-  val s0_invalid_vec = wayMap(w => !entries(w).valid && !alloc(w))
+  val s0_invalid_vec = wayMap(w => !valids(w) && !alloc(w))
   val s0_has_invalid_way = s0_invalid_vec.asUInt.orR
   val s0_invalid_oh = ParallelPriorityMux(s0_invalid_vec.zipWithIndex.map(x => x._1 -> UIntToOH(x._2.U(REQ_FILTER_SIZE.W))))
 
@@ -486,34 +477,33 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
     miss_first_replay(i) := miss && !e.replayEn
     
     // old data: update replayCnt
-    when(e.valid && e.replayCnt.orR) {
+    when(valids(i) && e.replayCnt.orR) {
       e.replayCnt := e.replayCnt - 1.U
     }
     // recent data: update tlb resp
     when(tlb_fired(i)){
       e.update_paddr(io.tlb_req.resp.bits.paddr.head)
     }.elsewhen(miss_drop(i)) { // miss
-      e.reset(i.U)
+      invalid_entry(i)
     }.elsewhen(miss_first_replay(i)){
       e.replayCnt := firstTlbReplayCnt
       e.replayEn := 1.U
     }.elsewhen(exp_drop(i)){
-      e.update_excp()
+      invalid_entry(i)
     }
     // issue data: update pf
     when(pf_fired(i)){
-      e.update_sent()
+      invalid_entry(i)
     }
     // new data: update data
     when(alloc(i)){
-      e := s1_alloc_entry
+      alloc_entry(i, s1_alloc_entry)
     }
   }
 
   /* tlb & pf */
   for((e, i) <- entries.zipWithIndex){
-    //tlb_req_arb.io.in(i).valid := e.valid && !s1_tlb_fire_oh(i) && !s2_tlb_fire_oh(i) && !e.paddrValid && !s1_evicted_oh(i)
-    tlb_req_arb.io.in(i).valid := e.valid && !e.paddrValid && !s1_tlb_fire_oh(i) && !e.replayCnt.orR
+    tlb_req_arb.io.in(i).valid := valids(i) && !e.paddrValid && !s1_tlb_fire_oh(i) && !e.replayCnt.orR
     tlb_req_arb.io.in(i).bits.vaddr := e.get_tlb_vaddr()
     when(e.needT) {
       tlb_req_arb.io.in(i).bits.cmd := TlbCmd.write
@@ -524,7 +514,7 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
     tlb_req_arb.io.in(i).bits.kill := false.B
     tlb_req_arb.io.in(i).bits.no_translate := false.B
 
-    pf_req_arb.io.in(i).valid := e.can_send_pf()
+    pf_req_arb.io.in(i).valid := can_send_pf(i)
     pf_req_arb.io.in(i).bits := e.toPrefetchReq()
   }
 
