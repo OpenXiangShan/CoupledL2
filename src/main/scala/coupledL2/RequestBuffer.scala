@@ -71,6 +71,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
   val io = IO(new Bundle() {
     val in          = Flipped(DecoupledIO(new TaskBundle))
+    val inPrefetch  = prefetchOpt.map(_ => Flipped(DecoupledIO(new TaskBundle)))
     val out         = DecoupledIO(new TaskBundle)
     val mshrInfo  = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo)))
     val aMergeTask = ValidIO(new AMergeTask)
@@ -90,10 +91,28 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     val hasMergeA = Output(Bool())
   })
 
-  /* ======== Data Structure ======== */
+   /*  ========  Mux in and inPrefetch and in(TL-A)always has the higher priority ========*/
+  val in = Wire(new TaskBundle())
+  val inVal = WireInit(false.B)
+  if (prefetchOpt.nonEmpty) {
+    inVal := io.in.valid || io.inPrefetch.get.valid
+  } else {
+    inVal := io.in.valid
+  }
 
-  io.ATag := io.in.bits.tag
-  io.ASet := io.in.bits.set
+
+  if (prefetchOpt.nonEmpty) {
+    in := Mux(
+      io.in.valid,
+      io.in.bits,
+      io.inPrefetch.get.bits )
+  } else {
+    in := io.in.bits
+  }
+
+  /* ======== Data Structure ======== */
+  io.ATag := in.tag
+  io.ASet := in.set
 
   val buffer = RegInit(VecInit(Seq.fill(entries)(0.U.asTypeOf(new ReqEntry))))
   val issueArb = Module(new FastArbiter(new ReqEntry, entries))
@@ -131,19 +150,18 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 //  }
 
   // other flags
-  val in      = io.in.bits
   val full    = Cat(buffer.map(_.valid)).andR
 
   // incoming Acquire can be merged with late_pf MSHR block
   val mergeAMask = VecInit(io.mshrInfo.map(s =>
-    s.valid && s.bits.isPrefetch && sameAddr(in, s.bits) && !s.bits.willFree && !s.bits.dirHit && !s.bits.s_refill &&
-      in.fromA && (in.opcode === AcquireBlock || in.opcode === AcquirePerm) && !s.bits.mergeA && !(in.param === NtoT && s.bits.param === NtoB)
+    s.valid && s.bits.isPrefetch && sameAddr(io.in.bits, s.bits) && !s.bits.willFree && !s.bits.dirHit && !s.bits.s_refill &&
+      io.in.bits.fromA && (io.in.bits.opcode === AcquireBlock || io.in.bits.opcode === AcquirePerm) && !s.bits.mergeA && !(io.in.bits.param === NtoT && s.bits.param === NtoB)
   )).asUInt
   val mergeA = mergeAMask.orR
   val mergeAId = OHToUInt(mergeAMask)
   io.aMergeTask.valid := io.in.valid && mergeA
   io.aMergeTask.bits.id := mergeAId
-  io.aMergeTask.bits.task := in
+  io.aMergeTask.bits.task := io.in.bits
 
   /*
    noFreeWay check: s2 + s3 + mshrs >= ways(L2)
@@ -161,17 +179,15 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   def noFreeWay(task: TaskBundle): Bool = noFreeWayForSet(task.set)
 
   // flow not allowed when full, or entries might starve
-  val canFlow = flow.B && !full && !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(in)
+  val canFlow = flow.B && !full && !conflict(io.in.bits) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(io.in.bits)
   val doFlow  = canFlow && io.out.ready
-  io.hasLatePF := latePrefetch(in) && io.in.valid && !sameAddr(in, RegNext(in))
-  io.hasMergeA := mergeA && io.in.valid && !sameAddr(in, RegNext(in))
+  io.hasLatePF := latePrefetch(in) && inVal && !sameAddr(in, RegNext(in))
+  io.hasMergeA := mergeA && inVal && !sameAddr(in, RegNext(in))
 
   //  val depMask    = buffer.map(e => e.valid && sameAddr(io.in.bits, e.task))
   // remove duplicate prefetch if same-addr A req in MSHR or ReqBuf
   val isPrefetch = in.fromA && in.opcode === Hint
   val dupMask    = VecInit(
-    io.mshrInfo.map(s =>
-      s.valid && s.bits.isAcqOrPrefetch && sameAddr(in, s.bits)) ++
     buffer.map(e =>
       e.valid && sameAddr(in, e.task)
     )
@@ -182,9 +198,12 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
   /* ======== Alloc ======== */
   io.in.ready   := !full || doFlow || mergeA || dup
+  if (prefetchOpt.nonEmpty) {
+    io.inPrefetch.get.ready   := !full || dup
+  }
 
   val insertIdx = PriorityEncoder(buffer.map(!_.valid))
-  val alloc = !full && io.in.valid && !doFlow && !dup && !mergeA
+  val alloc = !full && inVal && !doFlow && !dup && !mergeA
   when(alloc){
     val entry = buffer(insertIdx)
     val mpBlock = Cat(io.mainPipeBlock).orR
@@ -195,7 +214,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     entry.valid   := true.B
     // when Addr-Conflict / Same-Addr-Dependent / MainPipe-Block / noFreeWay-in-Set, entry not ready
     entry.rdy     := !conflict(in) && !mpBlock && !s1Block && !noFreeWay(in)// && !Cat(depMask).orR
-    entry.task    := io.in.bits
+    entry.task    := in
     entry.waitMP  := Cat(
       s1Block,
       io.mainPipeBlock(0),
@@ -287,14 +306,16 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
   // add XSPerf to see how many cycles the req is held in Buffer
   if(cacheParams.enablePerf) {
-    XSPerfAccumulate("drop_prefetch", io.in.valid && dup)
+//    XSPerfAccumulate("drop_prefetch", io.in.valid && dup)
     if(flow){
       XSPerfAccumulate("req_buffer_flow", io.in.valid && doFlow)
     }
     XSPerfAccumulate("req_buffer_alloc", alloc)
-    XSPerfAccumulate("req_buffer_full", full)
-    XSPerfAccumulate("recv_prefetch", io.in.fire && isPrefetch)
-    XSPerfAccumulate("recv_normal", io.in.fire && !isPrefetch)
+    XSPerfAccumulate("req_buffer_full", full) 
+    if (prefetchOpt.nonEmpty) {
+      XSPerfAccumulate("recv_prefetch", io.inPrefetch.get.fire)
+    }
+    XSPerfAccumulate("recv_normal", io.in.fire)
     XSPerfAccumulate("chosenQ_cancel", chosenQValid && cancel)
     XSPerfAccumulate("req_buffer_mergeA", io.hasMergeA)
     // TODO: count conflict
