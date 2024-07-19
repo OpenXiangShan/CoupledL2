@@ -116,7 +116,7 @@ class RefillUnit(implicit p: Parameters) extends LLCModule {
       when(newBeatValids.andR) {
         entry.ready := true.B
         when(rspData.bits.opcode === SnpRespData) {
-          val src_idOH = UIntToOH(rspData.bits.srcID)(clientBits - 1, 0)
+          val src_idOH = UIntToOH(rspData.bits.srcID)(numRNs - 1, 0)
           val newSnpVec = VecInit((Cat(entry.task.snpVec) & ~src_idOH).asBools)
           entry.task.snpVec := newSnpVec
           when(!Cat(newSnpVec).orR) {
@@ -138,7 +138,7 @@ class RefillUnit(implicit p: Parameters) extends LLCModule {
     val update_id = PriorityEncoder(update_vec)
     when(canUpdate) {
       val entry = buffer(update_id)
-      val src_idOH = UIntToOH(rsp.bits.srcID)(clientBits - 1, 0)
+      val src_idOH = UIntToOH(rsp.bits.srcID)(numRNs - 1, 0)
       val newSnpVec = VecInit((Cat(entry.task.snpVec) & ~src_idOH).asBools)
       entry.task.snpVec := newSnpVec
       when(!Cat(newSnpVec).orR) {
@@ -157,8 +157,8 @@ class RefillUnit(implicit p: Parameters) extends LLCModule {
         val waitLastBeat = PopCount(~Cat(entry.beatValids)) === 1.U
         val canUpdate = Cat(update_vec).orR && waitLastBeat
         when(canUpdate) {
-          val src_idOH_1 = UIntToOH(rspData.bits.srcID)(clientBits - 1, 0)
-          val src_idOH_2 = UIntToOH(rsp.bits.srcID)(clientBits - 1, 0)
+          val src_idOH_1 = UIntToOH(rspData.bits.srcID)(numRNs - 1, 0)
+          val src_idOH_2 = UIntToOH(rsp.bits.srcID)(numRNs - 1, 0)
           val newSnpVec = VecInit((Cat(entry.task.snpVec) & ~src_idOH_1 & ~src_idOH_2).asBools)
           entry.task.snpVec := newSnpVec
           when(!Cat(newSnpVec).orR) {
@@ -216,7 +216,7 @@ class RefillUnit(implicit p: Parameters) extends LLCModule {
     buffer.zip(bufferTimer).map { case (e, t) =>
         when(e.valid) { t := t + 1.U }
         when(RegNext(e.valid, false.B) && !e.valid) { t := 0.U }
-        assert(t < 20000.U, "RefillBuf Leak")
+        assert(t < timeoutThreshold.U, "RefillBuf Leak")
     }
   }
 

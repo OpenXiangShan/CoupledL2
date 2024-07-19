@@ -27,11 +27,12 @@ class TXSNP (implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {
     val task = Flipped(DecoupledIO(new Task()))
     val snp = DecoupledIO(new CHISNP())
-
+    val snpMask = Output(Vec(numRNs, Bool()))
   })
 
   io.snp.valid := io.task.valid
   io.snp.bits := io.task.bits.toCHISNPBundle()
+  io.snpMask := io.task.bits.snpVec
 
   io.task.ready := io.snp.ready
 }

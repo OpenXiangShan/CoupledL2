@@ -22,14 +22,13 @@ import chisel3.util._
 import freechips.rocketchip.amba.axi4._
 import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.tl2chi.{DecoupledPortIO, PCrdInfo, DecoupledNoSnpPortIO}
+import coupledL2.tl2chi.{DecoupledPortIO, DecoupledNoSnpPortIO}
 
 class Slice()(implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {
     val in = Flipped(new DecoupledPortIO)
     val out = new DecoupledNoSnpPortIO
-
-    val waitPCrdInfo = Output(Vec(mshrs, new PCrdInfo))
+    val snpMask = Output(Vec(numRNs, Bool()))
   })
 
   val txUp = io.in.rx
@@ -65,35 +64,26 @@ class Slice()(implicit p: Parameters) extends LLCModule {
   val responseUnit = Module(new ResponseUnit())
   val snpUnit = Module(new SnoopUnit())
   
+  /* Connect upwards channels */
   rxreqUp.io.req <> rxUp.req
-
   rxrspUp.io.in <> rxUp.rsp
-
   rxdatUp.io.in <> rxUp.dat
-
-  txsnpUp.io.task <> snpUnit.io.out
-
-  txrspUp.io.task <> responseUnit.io.txrsp
-
-  txdatUp.io.task <> responseUnit.io.txdat
-
-  rxrspDown.io.in <> rxDown.rsp
-
-  rxdatDown.io.in <> rxDown.dat
-
-  txreqDown.io.task <> memUnit.io.txreq
-
-  txdatDown.io.task <> memUnit.io.txdat
-
   txUp.dat <> txdatUp.io.dat
   txUp.rsp <> txrspUp.io.rsp
   txUp.snp <> txsnpUp.io.snp
 
+  /* Connect downwards channels */
   txDown.req <> txreqDown.io.req
   txDown.dat <> txdatDown.io.dat
+  rxrspDown.io.in <> rxDown.rsp
+  rxdatDown.io.in <> rxDown.dat
 
+  txsnpUp.io.task <> snpUnit.io.out
+  txrspUp.io.task <> responseUnit.io.txrsp
+  txdatUp.io.task <> responseUnit.io.txdat
   txreqDown.io.task <> memUnit.io.txreq
-  io.waitPCrdInfo := DontCare
+  txdatDown.io.task <> memUnit.io.txdat
+  txreqDown.io.task <> memUnit.io.txreq
 
   reqBuf.io.in <> rxreqUp.io.task
 
@@ -122,7 +112,6 @@ class Slice()(implicit p: Parameters) extends LLCModule {
   refillUnit.io.read <> reqArb.io.refillBufRead_s2
   refillUnit.io.respData <> rxdatUp.io.out
   refillUnit.io.resp <> rxrspUp.io.out
-
   refillUnit.io.task_in <> mainPipe.io.refillTask_s4
 
   memUnit.io.fromMainPipe <> mainPipe.io.toMemUnit
@@ -139,6 +128,6 @@ class Slice()(implicit p: Parameters) extends LLCModule {
   snpUnit.io.respInfo <> responseUnit.io.respInfo
   snpUnit.io.ack <> rxrspUp.io.out
 
-  println(s"addrBits $fullAddressBits")
+  io.snpMask := txsnpUp.io.snpMask
 
 }
