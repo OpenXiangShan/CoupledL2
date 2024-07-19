@@ -260,15 +260,15 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
   val need_snoop_s4    = replace_snoop_s4 || read_snoop_s4
   val snp_address_s4 = Mux(
     replace_snoop_s4,
-    Cat(clientsDirResp_s4.tag, clientsDirResp_s4.set, req_s4.off),
-    Cat(req_s4.tag, req_s4.set, req_s4.off)
+    Cat(clientsDirResp_s4.tag, clientsDirResp_s4.set, req_s4.bank, req_s4.off),
+    Cat(req_s4.tag, req_s4.set, req_s4.bank, req_s4.off)
   )
 
   val snp_task_s4 = WireInit(0.U.asTypeOf(req_s4))
   snp_task_s4.tag := parseAddress(snp_address_s4)._1
   snp_task_s4.set := parseAddress(snp_address_s4)._2
+  snp_task_s4.bank := parseAddress(snp_address_s4)._3
   snp_task_s4.replSnp := replace_snoop_s4
-  snp_task_s4.srcID := req_s4.tgtID
   snp_task_s4.txnID := req_s4.reqID
   snp_task_s4.doNotGoToSD := true.B
   snp_task_s4.snpVec := VecInit(
@@ -318,7 +318,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
       Mux(
         sharedReq_s4,
         Cat(peerRNs_valids_vec_s4),
-        Cat(Seq.fill(clientBits)(false.B))
+        Cat(Seq.fill(numRNs)(false.B))
       )
     ).asBools
   )
@@ -334,11 +334,10 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
     Mux(
       read_snoop_s4,
       Cat(peerRNs_valids_vec_s4),
-      Cat(Seq.fill(clientBits)(false.B))
+      Cat(Seq.fill(numRNs)(false.B))
     ).asBools
   )
   comp_task_s4.tgtID := srcID_s4
-  comp_task_s4.srcID := req_s4.tgtID
   comp_task_s4.homeNID := req_s4.tgtID
   comp_task_s4.dbID := req_s4.reqID
   comp_task_s4.resp := ParallelPriorityMux(
@@ -354,7 +353,6 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
   val mem_task_s4 = WireInit(req_s4)
   mem_task_s4.tag := Mux(refill_task_s4, selfDirResp_s4.tag, req_s4.tag)
   mem_task_s4.set := Mux(refill_task_s4, selfDirResp_s4.set, req_s4.set)
-  mem_task_s4.srcID := req_s4.tgtID
   mem_task_s4.txnID := req_s4.reqID
   mem_task_s4.homeNID := req_s4.tgtID
   mem_task_s4.chiOpcode := Mux(refill_task_s4, WriteNoSnpFull, ReadNoSnp)

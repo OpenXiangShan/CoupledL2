@@ -32,7 +32,7 @@ trait HasClientInfo { this: HasOpenLLCParameters =>
   def clientWays = clientCacheParams.map(_.ways).max
   def clientSetBits = log2Ceil(clientSets)
   def clientWayBits = log2Ceil(clientWays)
-  def fullClientTagBits = fullAddressBits - clientSetBits - offsetBits
+  def clientTagBits = fullAddressBits - clientSetBits - bankBits - offsetBits
 }
 
 class SelfMetaEntry(implicit p: Parameters) extends Bundle {
@@ -77,7 +77,7 @@ class SubDirRead(tagBits: Int, setBits: Int, ways: Int)(implicit p: Parameters) 
 
 class DirRead(implicit p: Parameters) extends LLCBundle with HasClientInfo {
   val self = new SubDirRead(tagBits, setBits, cacheParams.ways)
-  val clients = new SubDirRead(fullClientTagBits, clientSetBits, clientWays)
+  val clients = new SubDirRead(clientTagBits, clientSetBits, clientWays)
 }
 
 class SubDirResult[T <: Data](tagBits: Int, setBits: Int, wayBits: Int, gen: T)
@@ -93,10 +93,10 @@ class SubDirResult[T <: Data](tagBits: Int, setBits: Int, wayBits: Int, gen: T)
 class DirResult(implicit p: Parameters) extends LLCBundle with HasClientInfo {
   val self = new SubDirResult[SelfMetaEntry](tagBits, setBits, wayBits, SelfMetaEntry())
   val clients = new SubDirResult[Vec[ClientMetaEntry]](
-    fullClientTagBits,
+    clientTagBits,
     clientSetBits,
     clientWayBits,
-    VecInit(Seq.fill(clientBits)(ClientMetaEntry()))
+    VecInit(Seq.fill(numRNs)(ClientMetaEntry()))
   )
 }
 
@@ -282,11 +282,11 @@ class DirWriteIO(implicit p: Parameters) extends LLCBundle with HasClientInfo {
     new MetaWrite[Vec[ClientMetaEntry]](
       clientSetBits,
       clientWays,
-      VecInit(Seq.fill(clientBits)(ClientMetaEntry()))
+      VecInit(Seq.fill(numRNs)(ClientMetaEntry()))
     )
   )
   val clientTagWReq = ValidIO(
-    new TagWrite(clientSetBits, clientWayBits, fullClientTagBits)
+    new TagWrite(clientSetBits, clientWayBits, clientTagBits)
   )
 }
 
@@ -313,8 +313,8 @@ class Directory(implicit p: Parameters) extends LLCModule with HasClientInfo {
     new SubDirectory[Vec[ClientMetaEntry]](
       sets = clientSets,
       ways = clientWays,
-      tagBits = fullClientTagBits,
-      meta_init_fn = () => VecInit(Seq.fill(clientBits)(ClientMetaEntry())),
+      tagBits = clientTagBits,
+      meta_init_fn = () => VecInit(Seq.fill(numRNs)(ClientMetaEntry())),
       meta_valid_fn = metas => Cat(metas.map(_.valid)).orR,
       invalid_way_sel = client_invalid_way_sel,
       replacement = "random"

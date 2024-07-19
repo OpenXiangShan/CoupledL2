@@ -70,8 +70,8 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
     val urgentRead = DecoupledIO(new Task())
   })
 
-  val task_1     = io.fromMainPipe.task_s6
-  val task_2     = io.fromMainPipe.task_s4
+  val task_s6    = io.fromMainPipe.task_s6
+  val task_s4    = io.fromMainPipe.task_s4
   val memData    = io.memData
   val snpData    = io.snpData
   val bypassData = io.bypassData
@@ -86,48 +86,48 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
   val txdatArb = Module(new FastArbiter(new TaskWithData(), mshrs))
 
   /* Alloc */
-  val freeVec_1   = buffer.map(!_.valid)
-  val idOH_1      = PriorityEncoderOH(freeVec_1)
-  val freeVec_2   = Mux(task_1.valid, Cat(freeVec_1).asUInt & ~Cat(idOH_1), Cat(freeVec_1))
-  val idOH_2      = PriorityEncoderOH(freeVec_2)
-  val insertIdx_1 = OHToUInt(idOH_1)
-  val insertIdx_2 = OHToUInt(idOH_2)
+  val freeVec_s6   = buffer.map(!_.valid)
+  val idOH_s6      = PriorityEncoderOH(freeVec_s6)
+  val freeVec_s4   = Mux(task_s6.valid, Cat(freeVec_s6).asUInt & ~Cat(idOH_s6), Cat(freeVec_s6))
+  val idOH_s4      = PriorityEncoderOH(freeVec_s4)
+  val insertIdx_s6 = OHToUInt(idOH_s6)
+  val insertIdx_s4 = OHToUInt(idOH_s4)
 
-  val full_1  = !(Cat(freeVec_1).orR)
-  val full_2  = !freeVec_2.orR
-  val alloc_1 = task_1.valid && !full_1
-  val alloc_2 = task_2.valid && !full_2
+  val full_s6  = !(Cat(freeVec_s6).orR)
+  val full_s4  = !freeVec_s4.orR
+  val alloc_s6 = task_s6.valid && !full_s6
+  val alloc_s4 = task_s4.valid && !full_s4
 
-  // Task_1 can only be CompData
-  when(alloc_1) {
-    val entry = buffer(insertIdx_1)
+  // Task_s6 can only be CompData
+  when(alloc_s6) {
+    val entry = buffer(insertIdx_s6)
     entry.valid := true.B
     entry.ready := true.B
     entry.s_comp := false.B
     entry.s_urgentRead := true.B
     entry.w_snpRsp := true.B
     entry.w_compack := false.B
-    entry.task := task_1.bits.task
-    entry.data := task_1.bits.data
+    entry.task := task_s6.bits.task
+    entry.data := task_s6.bits.data
     entry.beatValids := VecInit(Seq.fill(beatSize)(true.B))
   }
 
-  when(alloc_2) {
-    val entry = buffer(insertIdx_2)
-    val isReadNotSharedDirty = task_2.bits.chiOpcode === ReadNotSharedDirty
-    val isReadUnique = task_2.bits.chiOpcode === ReadUnique
-    val isMakeUnique = task_2.bits.chiOpcode === MakeUnique
+  when(alloc_s4) {
+    val entry = buffer(insertIdx_s4)
+    val isReadNotSharedDirty = task_s4.bits.chiOpcode === ReadNotSharedDirty
+    val isReadUnique = task_s4.bits.chiOpcode === ReadUnique
+    val isMakeUnique = task_s4.bits.chiOpcode === MakeUnique
     entry.valid := true.B
     entry.ready := !(isReadNotSharedDirty || isReadUnique)
     entry.beatValids := VecInit(Seq.fill(beatSize)(!(isReadNotSharedDirty || isReadUnique)))
     entry.s_comp := false.B
     entry.s_urgentRead := true.B
-    entry.w_snpRsp := !Cat(task_2.bits.snpVec).orR
+    entry.w_snpRsp := !Cat(task_s4.bits.snpVec).orR
     entry.w_compack := !(isReadUnique || isReadNotSharedDirty || isMakeUnique)
-    entry.task := task_2.bits
+    entry.task := task_s4.bits
   }
 
-  assert(!(full_1 && task_1.valid || full_2 && task_2.valid) , "ResponseBuf overflow")
+  assert(!(full_s6 && task_s6.valid || full_s4 && task_s4.valid) , "ResponseBuf overflow")
 
   /* Update state */
   def handleMemResp(response: Valid[RespWithData]): Unit = {
@@ -167,7 +167,7 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
         val newBeatValids = Cat(entry.beatValids) | UIntToOH(beatId)
         entry.beatValids := VecInit(newBeatValids.asBools)
         when(newBeatValids.andR) {
-          val src_idOH = UIntToOH(snpData.bits.srcID)(clientBits - 1, 0)
+          val src_idOH = UIntToOH(snpData.bits.srcID)(numRNs - 1, 0)
           val newSnpVec = VecInit((Cat(entry.task.snpVec) & ~src_idOH).asBools)
           entry.task.snpVec := newSnpVec
           entry.ready := true.B
@@ -188,7 +188,7 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
       val update_id = PriorityEncoder(update_vec)
       when(canUpdate) {
         val entry = buffer(update_id)
-        val src_idOH = UIntToOH(snpRsp.bits.srcID)(clientBits - 1, 0)
+        val src_idOH = UIntToOH(snpRsp.bits.srcID)(numRNs - 1, 0)
         val newSnpVec = VecInit((Cat(entry.task.snpVec) & ~src_idOH).asBools)
         entry.task.snpVec := newSnpVec
         when(!Cat(newSnpVec).orR) {
@@ -208,8 +208,8 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
           val waitLastBeat = PopCount(~Cat(entry.beatValids)) === 1.U
           val canUpdate = Cat(update_vec).orR && waitLastBeat
           when(canUpdate) {
-            val src_idOH_1 = UIntToOH(snpData.bits.srcID)(clientBits - 1, 0)
-            val src_idOH_2 = UIntToOH(snpRsp.bits.srcID)(clientBits - 1, 0)
+            val src_idOH_1 = UIntToOH(snpData.bits.srcID)(numRNs - 1, 0)
+            val src_idOH_2 = UIntToOH(snpRsp.bits.srcID)(numRNs - 1, 0)
             val newSnpVec = VecInit((Cat(entry.task.snpVec) & ~src_idOH_1 & ~src_idOH_2).asBools)
             entry.task.snpVec := newSnpVec
             when(!Cat(newSnpVec).orR) {
@@ -325,7 +325,7 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
     buffer.zip(bufferTimer).map { case (e, t) =>
         when(e.valid) { t := t + 1.U }
         when(RegNext(e.valid, false.B) && !e.valid) { t := 0.U }
-        assert(t < 20000.U, "ResponseBuf Leak")
+        assert(t < timeoutThreshold.U, "ResponseBuf Leak")
     }
   }
 

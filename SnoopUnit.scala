@@ -120,7 +120,7 @@ class SnoopUnit(implicit p: Parameters) extends LLCModule {
     buffer.zip(bufferTimer).map { case (e, t) =>
         when(e.valid) { t := t + 1.U }
         when(RegNext(e.valid, false.B) && !e.valid) { t := 0.U }
-        assert(t < 20000.U, "SnoopBuf Leak")
+        assert(t < timeoutThreshold.U, "SnoopBuf Leak")
     }
   }
 

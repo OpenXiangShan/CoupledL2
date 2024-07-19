@@ -26,24 +26,49 @@ import coupledL2.tl2chi.{PortIO}
 class OpenLLC(implicit p: Parameters) extends LazyModule with HasOpenLLCParameters {
 
   class OpenLLCImp(wrapper: LazyModule) extends LazyModuleImp(wrapper) {
+    private val sizeBytes = cacheParams.toCacheParams.capacity.toDouble 
+    private val sizeStr = sizeBytesToStr(sizeBytes)
+    private val clientParam = cacheParams.clientCaches.head.toCacheParams
+    private val singleCore = cacheParams.clientCaches.size == 1
+    private val inclusion = if (singleCore) "Exclusive" else "Non-inclusive"
+    // Display info
+    println(s"====== ${inclusion} CHI-CHI ${cacheParams.name} ($sizeStr * $banks-bank)  ======")
+    println(s"bankBits: ${bankBits}")
+    println(s"sets:${cacheParams.sets} ways:${cacheParams.ways} blockBytes:${cacheParams.blockBytes}")
+    println(s"[client] size:${sizeBytesToStr(clientParam.capacity.toDouble)}")
+    println(s"[client] sets:${clientParam.sets} ways:${clientParam.ways} blockBytes:${clientParam.blockBytes}")
+
     val io = IO(new Bundle {
-      val chi_upwards = Flipped(new PortIO)
-      val chi_downwards = new NoSnpPortIO
+      val rn = Vec(numRNs, Flipped(new PortIO))
+      val sn = new NoSnpPortIO
       val nodeID = Input(UInt())
     })
 
-    val slice = Module(new Slice)
-    val upwardsLinkMonitor = Module(new UpwardsLinkMonitor)
-    val downwardsLinkMonitor = Module(new DownwardsLinkMonitor)
+    val rnXbar = Module(new RNXbar())
+    val snXbar = Module(new SNXbar())
+    val snLinkMonitor = Module(new DownwardsLinkMonitor())
+
+    for (i <- 0 until numRNs) {
+      val rnLinkMonitor = Module(new UpwardsLinkMonitor())
+      rnLinkMonitor.io.out <> io.rn(i)
+      rnLinkMonitor.io.entranceID := i.U
+      rnLinkMonitor.io.nodeID := io.nodeID
+      rnXbar.io.in(i) <> rnLinkMonitor.io.in
+    }
+
+    for (j <- 0 until banks) {
+      val slice = Module(new Slice())
+      slice.io.in <> rnXbar.io.out(j)
+      rnXbar.io.snpMasks(j) := slice.io.snpMask 
+      snXbar.io.in(j) <> slice.io.out
+    }
+    
+    snLinkMonitor.io.in <> snXbar.io.out
+    snLinkMonitor.io.nodeID := io.nodeID
+
+    io.sn <> snLinkMonitor.io.out
 
     dontTouch(io)
-
-    upwardsLinkMonitor.io.in <> slice.io.in
-    upwardsLinkMonitor.io.nodeID := io.nodeID
-    downwardsLinkMonitor.io.in <> slice.io.out
-    downwardsLinkMonitor.io.nodeID := io.nodeID
-    io.chi_upwards <> upwardsLinkMonitor.io.out
-    io.chi_downwards <> downwardsLinkMonitor.io.out
   }
   lazy val module = new OpenLLCImp(this)
 }

@@ -36,6 +36,7 @@ class ReplacerInfo(implicit p: Parameters) extends LLCBundle {
 
 class Task(implicit p: Parameters) extends LLCBundle {
   val set = UInt(setBits.W)
+  val bank = UInt(bankBits.W)
   val tag = UInt(tagBits.W)
   val off = UInt(offsetBits.W)
   val size = UInt(SIZE_WIDTH.W)
@@ -49,7 +50,7 @@ class Task(implicit p: Parameters) extends LLCBundle {
 
   // Snoop Info
   val replSnp = Bool() // indicates whether the snoop is caused by a replacement
-  val snpVec  = Vec(clientBits, Bool())
+  val snpVec  = Vec(numRNs, Bool())
 
   // CHI
   val tgtID = UInt(TGTID_WIDTH.W)
@@ -78,7 +79,7 @@ class Task(implicit p: Parameters) extends LLCBundle {
     req.txnID := txnID
     req.opcode := chiOpcode
     req.size := size
-    req.addr := Cat(tag, set, 0.U(offsetBits.W))
+    req.addr := Cat(tag, set, bank, 0.U(offsetBits.W))
     req.allowRetry := allowRetry //TODO: consider retry
     req.pCrdType := pCrdType
     req.expCompAck := expCompAck
@@ -95,7 +96,7 @@ class Task(implicit p: Parameters) extends LLCBundle {
     snp.fwdNID := fwdNID
     snp.fwdTxnID := fwdTxnID
     snp.opcode := chiOpcode
-    snp.addr := Cat(tag, set, 0.U(offsetBits.W))
+    snp.addr := Cat(tag, set, bank, 0.U(offsetBits.W))
     snp.doNotGoToSD := doNotGoToSD
     snp.retToSrc := retToSrc
     snp

@@ -67,10 +67,10 @@ class MemUnit(implicit p: Parameters) extends LLCModule {
   })
 
   val rsp        = io.resp
-  val task_1     = io.fromMainPipe.task_s6
-  val task_2     = io.fromMainPipe.task_s4
   val txreq      = io.txreq
   val txdat      = io.txdat
+  val task_s6    = io.fromMainPipe.task_s6
+  val task_s4    = io.fromMainPipe.task_s4
   val bypassData = io.bypassData
   val urgentRead = io.urgentRead
 
@@ -80,80 +80,83 @@ class MemUnit(implicit p: Parameters) extends LLCModule {
   val txdatArb = Module(new FastArbiter(new TaskWithData(), mshrs))
 
   /* Bypass Read */
+  // If a new read task entering the MemUnit has the same target address as one of the write tasks in the buffer,
+  // then this request will not be sent to the memory. Instead, a fake CompData will be returned to the responseUnit,
+  // reducing processing time
   def sameAddr(a: Task, b: Task): Bool = Cat(a.tag, a.set) === Cat(b.tag, b.set)
   def conflict(r: Task, w: Task): Bool = sameAddr(r, w) &&
     r.chiOpcode === ReadNoSnp && w.chiOpcode === WriteBackFull
 
-  val entries = VecInit(buffer.toSeq :+ MemEntry(task_1.valid, task_1.bits.task, task_1.bits.data))
-  val conflictMask_1 = entries.map(e => e.valid && urgentRead.valid && conflict(urgentRead.bits, e.task))
-  val conflictMask_2 = entries.map(e => e.valid && task_2.valid && conflict(task_2.bits, e.task))
-  val conflictIdx_1 = PriorityEncoder(conflictMask_1)
-  val conflictIdx_2 = PriorityEncoder(conflictMask_2)
-  val bypass_en_1 = urgentRead.valid && Cat(conflictMask_1).orR
-  val bypass_en_2 = task_2.valid && Cat(conflictMask_2).orR
+  val entries = VecInit(buffer.toSeq :+ MemEntry(task_s6.valid, task_s6.bits.task, task_s6.bits.data))
+  val conflictMask_ur = entries.map(e => e.valid && urgentRead.valid && conflict(urgentRead.bits, e.task))
+  val conflictMask_s4 = entries.map(e => e.valid && task_s4.valid && conflict(task_s4.bits, e.task))
+  val conflictIdx_ur = PriorityEncoder(conflictMask_ur)
+  val conflictIdx_s4 = PriorityEncoder(conflictMask_s4)
+  val bypass_ur = urgentRead.valid && Cat(conflictMask_ur).orR
+  val bypass_s4 = task_s4.valid && Cat(conflictMask_s4).orR
   val fakeRsp = RegInit(VecInit(Seq.fill(beatSize)(0.U.asTypeOf(new RespWithData()))))
 
-  when(bypass_en_1 || bypass_en_2) {
+  when(bypass_ur || bypass_s4) {
     for (i <- 0 until beatSize) {
-      fakeRsp(i).txnID := Mux(bypass_en_2, task_2.bits.txnID, urgentRead.bits.txnID)
+      fakeRsp(i).txnID := Mux(bypass_s4, task_s4.bits.txnID, urgentRead.bits.txnID)
       fakeRsp(i).dbID := 0.U
       fakeRsp(i).opcode := CompData
       fakeRsp(i).resp := 0.U
-      fakeRsp(i).data := Mux(bypass_en_2, entries(conflictIdx_2).data.data(i), entries(conflictIdx_1).data.data(i))
+      fakeRsp(i).data := Mux(bypass_s4, entries(conflictIdx_s4).data.data(i), entries(conflictIdx_ur).data.data(i))
     }
   }
 
   for (i <- 0 until beatSize) {
-    bypassData(i).valid := RegNext(bypass_en_1 || bypass_en_2, false.B)
+    bypassData(i).valid := RegNext(bypass_ur || bypass_s4, false.B)
     bypassData(i).bits := fakeRsp(i)
   }
 
-  urgentRead.ready := txreq.ready && !bypass_en_1 || bypass_en_1 && !bypass_en_2
+  urgentRead.ready := txreq.ready && !bypass_ur || bypass_ur && !bypass_s4
 
   /* Alloc */
-  val freeVec_1   = buffer.map(!_.valid)
-  val idOH_1      = PriorityEncoderOH(freeVec_1)
-  val freeVec_2   = Mux(task_1.valid, Cat(freeVec_1).asUInt & ~Cat(idOH_1), Cat(freeVec_1))
-  val idOH_2      = PriorityEncoderOH(freeVec_2)
-  val insertIdx_1 = OHToUInt(idOH_1)
-  val insertIdx_2 = OHToUInt(idOH_2)
+  val freeVec_s6   = buffer.map(!_.valid)
+  val idOH_s6      = PriorityEncoderOH(freeVec_s6)
+  val freeVec_s4   = Mux(task_s6.valid, Cat(freeVec_s6).asUInt & ~Cat(idOH_s6), Cat(freeVec_s6))
+  val idOH_s4      = PriorityEncoderOH(freeVec_s4)
+  val insertIdx_s6 = OHToUInt(idOH_s6)
+  val insertIdx_s4 = OHToUInt(idOH_s4)
 
-  val full_1  = !(Cat(freeVec_1).orR)
-  val full_2  = !freeVec_2.orR
-  val alloc_1 = task_1.valid && !full_1
-  val alloc_2 = task_2.valid && !full_2 && !bypass_en_2
+  val full_s6  = !(Cat(freeVec_s6).orR)
+  val full_s4  = !freeVec_s4.orR
+  val alloc_s6 = task_s6.valid && !full_s6
+  val alloc_s4 = task_s4.valid && !full_s4 && !bypass_s4
 
-  when(alloc_1) {
-    val entry = buffer(insertIdx_1)
+  when(alloc_s6) {
+    val entry = buffer(insertIdx_s6)
     entry.valid := true.B
     entry.s_issueReq := false.B
     entry.s_issueDat := false.B
     entry.w_dbid := false.B
     entry.w_comp := false.B
-    entry.task := task_1.bits.task
-    entry.data := task_1.bits.data
+    entry.task := task_s6.bits.task
+    entry.data := task_s6.bits.data
   }
 
-  when(alloc_2) {
-    val entry = buffer(insertIdx_2)
+  when(alloc_s4) {
+    val entry = buffer(insertIdx_s4)
     entry.valid := true.B
     entry.s_issueReq := false.B
     entry.s_issueDat := true.B
     entry.w_dbid := true.B
     entry.w_comp := true.B
-    entry.task := task_2.bits
+    entry.task := task_s4.bits
   }
 
-  assert(!(full_1 && task_1.valid || full_2 && task_2.valid && !bypass_en_2) , "MemBuf overflow")
+  assert(!(full_s6 && task_s6.valid || full_s4 && task_s4.valid && !bypass_s4) , "MemBuf overflow")
 
   /* Issue */
   txreqArb.io.in.zip(buffer).foreach { case (in, e) =>
     in.valid := e.valid && !e.s_issueReq
     in.bits := e.task
   }
-  txreqArb.io.out.ready := txreq.ready && (!urgentRead.valid || bypass_en_1)
-  txreq.valid := txdatArb.io.out.valid || urgentRead.valid && !bypass_en_1
-  txreq.bits := Mux(urgentRead.valid && !bypass_en_1, urgentRead.bits, txreqArb.io.out.bits)
+  txreqArb.io.out.ready := txreq.ready && (!urgentRead.valid || bypass_ur)
+  txreq.valid := txdatArb.io.out.valid || urgentRead.valid && !bypass_ur
+  txreq.bits := Mux(urgentRead.valid && !bypass_ur, urgentRead.bits, txreqArb.io.out.bits)
 
   txdatArb.io.in.zip(buffer).foreach { case (in, e) =>
     in.valid := e.valid && e.task.chiOpcode === WriteNoSnpFull &&
@@ -167,7 +170,7 @@ class MemUnit(implicit p: Parameters) extends LLCModule {
   txdat.bits.task.chiOpcode := NonCopyBackWrData
 
   /* Update state */
-  when(txreq.fire && (!urgentRead.valid || bypass_en_1)) {
+  when(txreq.fire && (!urgentRead.valid || bypass_ur)) {
     val entry = buffer(txreqArb.io.chosen)
     when(entry.task.chiOpcode === WriteNoSnpFull) {
       entry.s_issueReq := true.B
@@ -215,7 +218,7 @@ class MemUnit(implicit p: Parameters) extends LLCModule {
     buffer.zip(bufferTimer).map { case (e, t) =>
         when(e.valid) { t := t + 1.U }
         when(RegNext(e.valid, false.B) && !e.valid) { t := 0.U }
-        assert(t < 20000.U, "MemBuf Leak")
+        assert(t < timeoutThreshold.U, "MemBuf Leak")
     }
   }
 
