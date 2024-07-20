@@ -146,7 +146,7 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
       val update_id = PriorityEncoder(update_vec)
       when(canUpdate) {
         val entry = buffer(update_id)
-        val beatId = response.bits.dataID >> (beatBytes / 16)
+        val beatId = response.bits.dataID >> log2Ceil(beatBytes / 16)
         val newBeatValids = Cat(entry.beatValids) | UIntToOH(beatId)
         entry.beatValids := VecInit(newBeatValids.asBools)
         when(newBeatValids.andR) {
@@ -168,7 +168,7 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
       val update_id = PriorityEncoder(update_vec)
       when(canUpdate) {
         val entry = buffer(update_id)
-        val beatId = snpData.bits.dataID >> (beatBytes / 16)
+        val beatId = snpData.bits.dataID >> log2Ceil(beatBytes / 16)
         val newBeatValids = Cat(entry.beatValids) | UIntToOH(beatId)
         entry.beatValids := VecInit(newBeatValids.asBools)
         when(newBeatValids.andR) {
