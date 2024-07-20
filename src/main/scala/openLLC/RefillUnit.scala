@@ -103,7 +103,7 @@ class RefillUnit(implicit p: Parameters) extends LLCModule {
       val clients_hit = entry.dirResult.clients.hit
       val clients_meta = entry.dirResult.clients.meta
       val beatId = rspData.bits.dataID >> log2Ceil(beatBytes / 16)
-      val newBeatValids = Cat(entry.beatValids) | UIntToOH(beatId)
+      val newBeatValids = entry.beatValids.asUInt | UIntToOH(beatId)
 
       assert(
         !isWriteBackFull || inv_CBWrData || clients_hit && clients_meta(rspData.bits.srcID).valid,
@@ -117,7 +117,7 @@ class RefillUnit(implicit p: Parameters) extends LLCModule {
         entry.ready := true.B
         when(rspData.bits.opcode === SnpRespData) {
           val src_idOH = UIntToOH(rspData.bits.srcID)(numRNs - 1, 0)
-          val newSnpVec = VecInit((Cat(entry.task.snpVec) & ~src_idOH).asBools)
+          val newSnpVec = VecInit((entry.task.snpVec.asUInt & ~src_idOH).asBools)
           entry.task.snpVec := newSnpVec
           when(!Cat(newSnpVec).orR) {
             entry.w_snpRsp := true.B
@@ -139,7 +139,7 @@ class RefillUnit(implicit p: Parameters) extends LLCModule {
     when(canUpdate) {
       val entry = buffer(update_id)
       val src_idOH = UIntToOH(rsp.bits.srcID)(numRNs - 1, 0)
-      val newSnpVec = VecInit((Cat(entry.task.snpVec) & ~src_idOH).asBools)
+      val newSnpVec = VecInit((entry.task.snpVec.asUInt & ~src_idOH).asBools)
       entry.task.snpVec := newSnpVec
       when(!Cat(newSnpVec).orR) {
         entry.w_snpRsp := true.B
@@ -154,12 +154,12 @@ class RefillUnit(implicit p: Parameters) extends LLCModule {
         assert(PopCount(update_vec) < 2.U, "Refill task repeated")
         val update_id = PriorityEncoder(update_vec)
         val entry = buffer(update_id)
-        val waitLastBeat = PopCount(~Cat(entry.beatValids)) === 1.U
+        val waitLastBeat = PopCount(~entry.beatValids.asUInt) === 1.U
         val canUpdate = Cat(update_vec).orR && waitLastBeat
         when(canUpdate) {
           val src_idOH_1 = UIntToOH(rspData.bits.srcID)(numRNs - 1, 0)
           val src_idOH_2 = UIntToOH(rsp.bits.srcID)(numRNs - 1, 0)
-          val newSnpVec = VecInit((Cat(entry.task.snpVec) & ~src_idOH_1 & ~src_idOH_2).asBools)
+          val newSnpVec = VecInit((entry.task.snpVec.asUInt & ~src_idOH_1 & ~src_idOH_2).asBools)
           entry.task.snpVec := newSnpVec
           when(!Cat(newSnpVec).orR) {
             entry.w_snpRsp := true.B

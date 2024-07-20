@@ -70,7 +70,8 @@ class RNXbar(implicit p: Parameters) extends LLCModule {
     io.out(i).rx.rsp.ready := Cat(rxrspArbs.map(arb => arb.io.out.fire && arb.io.chosen === i.U)).orR
     io.out(i).rx.dat.ready := Cat(rxdatArbs.map(arb => arb.io.out.fire && arb.io.chosen === i.U)).orR
 
-    val newSnpMask = ~Cat(rxsnpArbs.map(arb => arb.io.out.fire && arb.io.chosen === i.U)) & snpMasks(i).asUInt
+    val newSnpMask = ~VecInit(rxsnpArbs.map(arb => arb.io.out.fire && arb.io.chosen === i.U)).asUInt &
+      snpMasks(i).asUInt
     snpMasks(i) := VecInit(newSnpMask.asBools)
 
     io.out(i).rx.snp.ready := snpReqs(i).valid && !newSnpMask.orR

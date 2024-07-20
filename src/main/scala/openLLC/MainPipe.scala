@@ -243,9 +243,9 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
 
   /** Send Snoop task **/
   val clients_valids_vec_s4 = VecInit(clients_meta_s4.map(_.valid))
-  val peerRNs_valids_vec_s4 = clients_valids_vec_s4.zipWithIndex.map { case (valid, i) =>
+  val peerRNs_valids_vec_s4 = VecInit(clients_valids_vec_s4.zipWithIndex.map { case (valid, i) =>
     Mux(i.U === srcID_s4, false.B, valid)
-  }
+  })
 
   val clients_meta_conflict_s4 = !clients_hit_s4 && clients_valids_vec_s4.asUInt.orR &&
     (readNotSharedDirty_s4 || readUnique_s4 || makeUnique_s4)
@@ -272,7 +272,11 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
   snp_task_s4.txnID := req_s4.reqID
   snp_task_s4.doNotGoToSD := true.B
   snp_task_s4.snpVec := VecInit(
-    Mux(replace_snoop_s4, Cat(clients_valids_vec_s4), Cat(peerRNs_valids_vec_s4)).asBools
+    Mux(
+      replace_snoop_s4,
+      clients_valids_vec_s4.asUInt,
+      peerRNs_valids_vec_s4.asUInt
+    ).asBools
   )
   snp_task_s4.chiOpcode := Mux(
     replace_snoop_s4,
@@ -314,10 +318,10 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
   refillTask_s4.bits.task.snpVec := VecInit(
     Mux(
       replace_snoop_s4,
-      Cat(clients_valids_vec_s4),
+      clients_valids_vec_s4.asUInt,
       Mux(
         sharedReq_s4,
-        Cat(peerRNs_valids_vec_s4),
+        peerRNs_valids_vec_s4.asUInt,
         Cat(Seq.fill(numRNs)(false.B))
       )
     ).asBools
@@ -333,7 +337,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
   comp_task_s4.snpVec := VecInit(
     Mux(
       read_snoop_s4,
-      Cat(peerRNs_valids_vec_s4),
+      peerRNs_valids_vec_s4.asUInt,
       Cat(Seq.fill(numRNs)(false.B))
     ).asBools
   )
