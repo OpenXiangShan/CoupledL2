@@ -86,9 +86,14 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
   val txdatArb = Module(new FastArbiter(new TaskWithData(), mshrs))
 
   /* Alloc */
-  val freeVec_s6   = buffer.map(!_.valid)
+  val freeVec_s6   = VecInit(buffer.map(!_.valid))
   val idOH_s6      = PriorityEncoderOH(freeVec_s6)
-  val freeVec_s4   = Mux(task_s6.valid, Cat(freeVec_s6).asUInt & ~Cat(idOH_s6), Cat(freeVec_s6))
+  val freeVec_s4   = 
+    Mux(
+      task_s6.valid,
+      VecInit(freeVec_s6.zip(idOH_s6).map{ case (x, y) => x && ~y }).asUInt,
+      freeVec_s6.asUInt
+    )
   val idOH_s4      = PriorityEncoderOH(freeVec_s4)
   val insertIdx_s6 = OHToUInt(idOH_s6)
   val insertIdx_s4 = OHToUInt(idOH_s4)
