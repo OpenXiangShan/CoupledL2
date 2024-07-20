@@ -160,7 +160,7 @@ class MemUnit(implicit p: Parameters) extends LLCModule {
     in.bits := e.task
   }
   txreqArb.io.out.ready := txreq.ready && (!urgentRead.valid || bypass_ur)
-  txreq.valid := txdatArb.io.out.valid || urgentRead.valid && !bypass_ur
+  txreq.valid := txreqArb.io.out.valid || urgentRead.valid && !bypass_ur
   txreq.bits := Mux(urgentRead.valid && !bypass_ur, urgentRead.bits, txreqArb.io.out.bits)
 
   txdatArb.io.in.zip(buffer).foreach { case (in, e) =>

@@ -102,7 +102,7 @@ class RefillUnit(implicit p: Parameters) extends LLCModule {
       val cancel = isWriteBackFull && inv_CBWrData
       val clients_hit = entry.dirResult.clients.hit
       val clients_meta = entry.dirResult.clients.meta
-      val beatId = rspData.bits.dataID >> (beatBytes / 16)
+      val beatId = rspData.bits.dataID >> log2Ceil(beatBytes / 16)
       val newBeatValids = Cat(entry.beatValids) | UIntToOH(beatId)
 
       assert(
