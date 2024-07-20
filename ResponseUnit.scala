@@ -327,10 +327,10 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
   /* Performance Counter */
   if(cacheParams.enablePerf) {
     val bufferTimer = RegInit(VecInit(Seq.fill(mshrs)(0.U(16.W))))
-    buffer.zip(bufferTimer).map { case (e, t) =>
+    buffer.zip(bufferTimer).zipWithIndex.map { case ((e, t), i) =>
         when(e.valid) { t := t + 1.U }
         when(RegNext(e.valid, false.B) && !e.valid) { t := 0.U }
-        assert(t < timeoutThreshold.U, "ResponseBuf Leak")
+        assert(t < timeoutThreshold.U, "ResponseBuf Leak(id: %d)", i.U)
     }
   }
 
