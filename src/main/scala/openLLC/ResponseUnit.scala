@@ -250,8 +250,9 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
   handleCompAck(rsp)
 
   /* Issue */
-  txdatArb.io.in.zip(buffer).foreach { case (in, e) =>
-    in.valid := e.valid && e.ready && e.w_snpRsp && e.s_urgentRead && !e.s_comp
+  val isRead = buffer.map(e => e.task.chiOpcode === ReadUnique || e.task.chiOpcode === ReadNotSharedDirty)
+  txdatArb.io.in.zip(buffer).zip(isRead).foreach { case ((in, e), r) =>
+    in.valid := e.valid && e.ready && e.w_snpRsp && e.s_urgentRead && !e.s_comp && r
     in.bits.task := e.task
     in.bits.data := e.data
   }
@@ -264,8 +265,8 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
     entry.s_comp := true.B
   }
 
-  txrspArb.io.in.zip(buffer).foreach { case (in, e) =>
-    in.valid := e.valid && e.ready && e.w_snpRsp && e.s_urgentRead && !e.s_comp
+  txrspArb.io.in.zip(buffer).zip(isRead).foreach { case ((in, e), r) =>
+    in.valid := e.valid && e.ready && e.w_snpRsp && e.s_urgentRead && !e.s_comp && !r
     in.bits := e.task
   }
   txrspArb.io.out.ready := txrsp.ready
