@@ -109,7 +109,7 @@ object CHIOpcode {
   object SNPOpcodes {
     val width_map = Map(
       Issue.B -> 5,
-      Issue.Eb -> 6,
+      Issue.Eb -> 5,
     )
 
     val width = width_map(Issue.curr_issue)
@@ -225,7 +225,7 @@ object CHIOpcode {
   object DATOpcodes {
     val width_map = Map(
       Issue.B -> 3,
-      Issue.Eb -> 5,
+      Issue.Eb -> 4,
     )
 
     val width = width_map(Issue.curr_issue)

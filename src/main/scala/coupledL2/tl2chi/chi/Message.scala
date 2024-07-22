@@ -145,7 +145,7 @@ trait HasCHIMsgParameters {
   def RESP_WIDTH = CHICohStates.width
   def FWDSTATE_WIDTH = CHICohStates.width
   def DATAPULL_WIDTH = 3
-  def DATASOURCE_WIDTH = 3
+  def DATASOURCE_WIDTH = if (Issue.curr_issue == Issue.Eb) 4 else 3
   def CCID_WIDTH = 2
   def DATAID_WIDTH = 2
   def BE_WIDTH = DATA_WIDTH / 8
@@ -285,8 +285,9 @@ class CHIDAT extends CHIBundle {
   val resp = UInt(RESP_WIDTH.W)
 
   val fwdState = UInt(FWDSTATE_WIDTH.W) // Used for DCT
+  val dataSourceHi = Issue.field_Eb(UInt((DATASOURCE_WIDTH - FWDSTATE_WIDTH).W))
   def dataPull = fwdState // Used for Stash
-  def dataSource = fwdState // Indicates Data source in a response
+  def dataSource = if (Issue.curr_issue == Issue.Eb) Cat(dataSourceHi.get, fwdState) else fwdState // Indicates Data source in a response
 
   val cBusy = Issue.field_Eb(UInt(CBUSY_WIDTH.W))
 
