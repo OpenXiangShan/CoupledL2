@@ -133,7 +133,7 @@ class TaskWithData(implicit p: Parameters) extends LLCBundle {
     dat.dbID := task.dbID
     dat.be := Fill(BE_WIDTH, true.B)
     dat.data := data.data(beatId).data
-    dat.dataID := (beatBytes * beatId * 8).U(offsetBits - 1, offsetBits - 2)
+    dat.dataID := (beatBytes * beatId * 8).U(log2Ceil(blockBytes * 8) - 1, log2Ceil(blockBytes * 8) - 2)
     dat
   }
 }
