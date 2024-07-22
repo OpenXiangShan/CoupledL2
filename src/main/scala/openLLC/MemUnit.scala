@@ -64,6 +64,9 @@ class MemUnit(implicit p: Parameters) extends LLCModule {
 
     /* bypass rdata when RAW conflict occurs */
     val bypassData = Vec(beatSize, ValidIO(new RespWithData()))
+
+    /* memory access buffers info */
+    val memInfo = Vec(mshrs.memory, ValidIO(new BlockInfo()))
   })
 
   val rsp        = io.resp
@@ -75,9 +78,9 @@ class MemUnit(implicit p: Parameters) extends LLCModule {
   val urgentRead = io.urgentRead
 
   /* Data Structure */
-  val buffer   = RegInit(VecInit(Seq.fill(mshrs)(0.U.asTypeOf(new MemEntry()))))
-  val txreqArb = Module(new FastArbiter(new Task(), mshrs))
-  val txdatArb = Module(new FastArbiter(new TaskWithData(), mshrs))
+  val buffer   = RegInit(VecInit(Seq.fill(mshrs.memory)(0.U.asTypeOf(new MemEntry()))))
+  val txreqArb = Module(new FastArbiter(new Task(), mshrs.memory))
+  val txdatArb = Module(new FastArbiter(new TaskWithData(), mshrs.memory))
 
   /* Bypass Read */
   // If a new read task entering the MemUnit has the same target address as one of the write tasks in the buffer,
@@ -217,9 +220,18 @@ class MemUnit(implicit p: Parameters) extends LLCModule {
     }
   }
 
+  /* block info */
+  io.memInfo.zipWithIndex.foreach { case (m, i) =>
+    m.valid := buffer(i).valid
+    m.bits.tag := buffer(i).task.tag
+    m.bits.set := buffer(i).task.set
+    m.bits.opcode := buffer(i).task.chiOpcode
+    m.bits.reqID := buffer(i).task.reqID
+  }
+
   /* Performance Counter */
   if(cacheParams.enablePerf) {
-    val bufferTimer = RegInit(VecInit(Seq.fill(mshrs)(0.U(16.W))))
+    val bufferTimer = RegInit(VecInit(Seq.fill(mshrs.memory)(0.U(16.W))))
     buffer.zip(bufferTimer).zipWithIndex.map { case ((e, t), i) =>
         when(e.valid) { t := t + 1.U }
         when(RegNext(e.valid, false.B) && !e.valid) { t := 0.U }

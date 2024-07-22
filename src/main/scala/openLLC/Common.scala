@@ -43,7 +43,7 @@ class Task(implicit p: Parameters) extends LLCBundle {
 
   // Refill task
   val refillTask = Bool() // is task from RefillUnit
-  val bufID = UInt(mshrBits.W)
+  val bufID = UInt(log2Ceil(mshrs.refill).W)
 
   // Identify the transaction from LLC
   val reqID = UInt(TXNID_WIDTH.W)

@@ -24,6 +24,8 @@ import org.chipsalliance.cde.config.{Field, Parameters}
 import coupledL2.L2Param
 import huancun.CacheParameters
 
+case class ResourceConfig(refill: Int, response: Int, snoop: Int, memory: Int)
+
 case class OpenLLCParam
 (
   name: String = "LLC",
@@ -31,7 +33,7 @@ case class OpenLLCParam
   sets: Int = 128,
   blockBytes: Int = 64,
   beatBytes: Int = 32,
-  mshrs: Int = 16,
+  mshrs: ResourceConfig = ResourceConfig(16, 16, 16, 16),
   fullAddressBits: Int = 16,
   replacement: String = "plru",
   clientCaches: Seq[L2Param] = Nil,
@@ -77,7 +79,6 @@ trait HasOpenLLCParameters {
   def tagBits = fullAddressBits - setBits - bankBits - offsetBits
 
   def mshrs = cacheParams.mshrs
-  def mshrBits = log2Up(mshrs)  // TODO: check this
 
   def numRNs = cacheParams.clientCaches.size
 

@@ -28,7 +28,7 @@ import coupledL2.tl2chi.CHIOpcode.RSPOpcodes._
 import utility.{FastArbiter}
 
 class RefillBufRead(implicit p: Parameters) extends LLCBundle {
-  val id = Output(UInt(mshrBits.W))
+  val id = Output(UInt(log2Ceil(mshrs.refill).W))
 }
 
 class RefillTask(implicit p: Parameters) extends LLCBundle {
@@ -61,15 +61,15 @@ class RefillUnit(implicit p: Parameters) extends LLCModule {
     val data = Output(new DSBlock())
 
     /* refill buffers info */
-    val refillInfo = Vec(mshrs, ValidIO(new BlockInfo()))
+    val refillInfo = Vec(mshrs.refill, ValidIO(new BlockInfo()))
   })
 
   val rsp     = io.resp
   val rspData = io.respData
 
   /* Data Structure */
-  val buffer   = RegInit(VecInit(Seq.fill(mshrs)(0.U.asTypeOf(new RefillEntry()))))
-  val issueArb = Module(new FastArbiter(new Task(), mshrs))
+  val buffer   = RegInit(VecInit(Seq.fill(mshrs.refill)(0.U.asTypeOf(new RefillEntry()))))
+  val issueArb = Module(new FastArbiter(new Task(), mshrs.refill))
 
   val full = Cat(buffer.map(_.valid)).andR
 
@@ -184,7 +184,7 @@ class RefillUnit(implicit p: Parameters) extends LLCModule {
   io.task_out.bits := issueArb.io.out.bits
 
   /* Data read */
-  val ridReg = RegEnable(io.read.bits.id, 0.U(mshrBits.W), io.read.valid)
+  val ridReg = RegEnable(io.read.bits.id, 0.U(log2Ceil(mshrs.refill).W), io.read.valid)
   io.data := buffer(ridReg).data
 
   /* Dealloc */
@@ -212,7 +212,7 @@ class RefillUnit(implicit p: Parameters) extends LLCModule {
 
   /* Performance Counter */
   if(cacheParams.enablePerf) {
-    val bufferTimer = RegInit(VecInit(Seq.fill(mshrs)(0.U(16.W))))
+    val bufferTimer = RegInit(VecInit(Seq.fill(mshrs.refill)(0.U(16.W))))
     buffer.zip(bufferTimer).zipWithIndex.map { case ((e, t), i) =>
         when(e.valid) { t := t + 1.U }
         when(RegNext(e.valid, false.B) && !e.valid) { t := 0.U }

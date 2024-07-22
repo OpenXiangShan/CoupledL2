@@ -37,10 +37,13 @@ class SnoopUnit(implicit p: Parameters) extends LLCModule {
     val out = DecoupledIO(new Task())
 
     /* block info from ResponseUnit */
-    val respInfo = Flipped(Vec(mshrs, ValidIO(new ResponseInfo())))
+    val respInfo = Flipped(Vec(mshrs.snoop, ValidIO(new ResponseInfo())))
 
     /* CompAck from upstream RXRSP channel */
     val ack = Flipped(ValidIO(new Resp()))
+
+    /* snoop buffers info */
+    val snpInfo = Vec(mshrs.snoop, ValidIO(new BlockInfo()))
   })
 
   val in  = io.in
@@ -48,8 +51,8 @@ class SnoopUnit(implicit p: Parameters) extends LLCModule {
   val ack = io.ack
 
   /* Data Structure */
-  val buffer   = RegInit(VecInit(Seq.fill(mshrs)(0.U.asTypeOf(new SnoopEntry()))))
-  val issueArb = Module(new FastArbiter(new Task(), mshrs))
+  val buffer   = RegInit(VecInit(Seq.fill(mshrs.snoop)(0.U.asTypeOf(new SnoopEntry()))))
+  val issueArb = Module(new FastArbiter(new Task(), mshrs.snoop))
 
   val full = Cat(buffer.map(_.valid)).andR
   val arbValid = issueArb.io.out.valid
@@ -114,9 +117,18 @@ class SnoopUnit(implicit p: Parameters) extends LLCModule {
     entry.ready := false.B
   }
 
+  /* block info */
+  io.snpInfo.zipWithIndex.foreach { case (m, i) =>
+    m.valid := buffer(i).valid
+    m.bits.tag := buffer(i).task.tag
+    m.bits.set := buffer(i).task.set
+    m.bits.opcode := buffer(i).task.chiOpcode
+    m.bits.reqID := buffer(i).task.reqID
+  }
+
   /* Performance Counter */
   if(cacheParams.enablePerf) {
-    val bufferTimer = RegInit(VecInit(Seq.fill(mshrs)(0.U(16.W))))
+    val bufferTimer = RegInit(VecInit(Seq.fill(mshrs.snoop)(0.U(16.W))))
     buffer.zip(bufferTimer).zipWithIndex.map { case ((e, t), i) =>
         when(e.valid) { t := t + 1.U }
         when(RegNext(e.valid, false.B) && !e.valid) { t := 0.U }
