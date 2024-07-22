@@ -64,7 +64,7 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
     val txdat = DecoupledIO(new TaskWithData()) // CompData
 
     /* Response buffers info */
-    val respInfo = Vec(mshrs, ValidIO(new ResponseInfo()))
+    val respInfo = Vec(mshrs.response, ValidIO(new ResponseInfo()))
 
     /* instruct MemUnit to immediately send a read request */
     val urgentRead = DecoupledIO(new Task())
@@ -81,9 +81,9 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
   val urgentRead = io.urgentRead
 
   /* Data Structure */
-  val buffer = RegInit(VecInit(Seq.fill(mshrs)(0.U.asTypeOf(new ResponseEntry()))))
-  val txrspArb = Module(new FastArbiter(new Task(), mshrs))
-  val txdatArb = Module(new FastArbiter(new TaskWithData(), mshrs))
+  val buffer = RegInit(VecInit(Seq.fill(mshrs.response)(0.U.asTypeOf(new ResponseEntry()))))
+  val txrspArb = Module(new FastArbiter(new Task(), mshrs.response))
+  val txdatArb = Module(new FastArbiter(new TaskWithData(), mshrs.response))
 
   /* Alloc */
   val freeVec_s6   = VecInit(buffer.map(!_.valid))
@@ -327,7 +327,7 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
 
   /* Performance Counter */
   if(cacheParams.enablePerf) {
-    val bufferTimer = RegInit(VecInit(Seq.fill(mshrs)(0.U(16.W))))
+    val bufferTimer = RegInit(VecInit(Seq.fill(mshrs.response)(0.U(16.W))))
     buffer.zip(bufferTimer).zipWithIndex.map { case ((e, t), i) =>
         when(e.valid) { t := t + 1.U }
         when(RegNext(e.valid, false.B) && !e.valid) { t := 0.U }
