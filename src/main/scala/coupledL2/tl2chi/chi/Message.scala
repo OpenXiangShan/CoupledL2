@@ -72,7 +72,7 @@ object RespErrEncodings {
   * This object collects constants and related helper methods
   * to support different CHI issues (versions).
   */
-object CHIIssue {
+object Issue {
   val B = "issueB"
   val Eb = "issueEb"
   val curr_issue = Eb
@@ -97,11 +97,11 @@ trait HasCHIMsgParameters {
   )
 
   val SUPPORT_ISSUE_CONFIG = Map(
-    CHIIssue.B -> ISSUE_B_CONFIG,
-    CHIIssue.Eb -> ISSUE_Eb_CONFIG
+    Issue.B -> ISSUE_B_CONFIG,
+    Issue.Eb -> ISSUE_Eb_CONFIG
   )
 
-  def issue_config(key: String) = SUPPORT_ISSUE_CONFIG(CHIIssue.curr_issue)(key)
+  def issue_config(key: String) = SUPPORT_ISSUE_CONFIG(Issue.curr_issue)(key)
 
   def NODEID_WIDTH = issue_config("NODEID_WIDTH")
   require(NODEID_WIDTH >= 7 && NODEID_WIDTH <= 11)
@@ -235,9 +235,9 @@ class CHIREQ extends CHIBundle {
   def excl = snoopMe // Used for Exclusive transactions
 
   val expCompAck = Bool()
-  val tagOp = CHIIssue.field_Eb(UInt(TAGOP_WIDTH.W))
+  val tagOp = Issue.field_Eb(UInt(TAGOP_WIDTH.W))
   val traceTag = Bool()
-  val mpam = CHIIssue.field_Eb(UInt(MPAM_WIDTH.W))
+  val mpam = Issue.field_Eb(UInt(MPAM_WIDTH.W))
   val rsvdc = UInt(REQ_RSVDC_WIDTH.W)
 
   /* MSB */
@@ -266,7 +266,7 @@ class CHISNP extends CHIBundle {
 
   val retToSrc = Bool()
   val traceTag = Bool()
-  val mpam = CHIIssue.field_Eb(UInt(MPAM_WIDTH.W))
+  val mpam = Issue.field_Eb(UInt(MPAM_WIDTH.W))
 
   /* MSB */
 }
@@ -288,15 +288,15 @@ class CHIDAT extends CHIBundle {
   def dataPull = fwdState // Used for Stash
   def dataSource = fwdState // Indicates Data source in a response
 
-  val cBusy = CHIIssue.field_Eb(UInt(CBUSY_WIDTH.W))
+  val cBusy = Issue.field_Eb(UInt(CBUSY_WIDTH.W))
 
   val dbID = UInt(DBID_WIDTH.W)
   val ccID = UInt(CCID_WIDTH.W)
   val dataID = UInt(DATAID_WIDTH.W)
 
-  val tagOp = CHIIssue.field_Eb(UInt(TAGOP_WIDTH.W))
-  val tag = CHIIssue.field_Eb(UInt(TAG_WIDTH.W))
-  val tu = CHIIssue.field_Eb(UInt(TAG_UPDATE_WIDTH.W))
+  val tagOp = Issue.field_Eb(UInt(TAGOP_WIDTH.W))
+  val tag = Issue.field_Eb(UInt(TAG_WIDTH.W))
+  val tu = Issue.field_Eb(UInt(TAG_UPDATE_WIDTH.W))
 
   val traceTag = Bool()
   val rsvdc = UInt(DAT_RSVDC_WIDTH.W)
@@ -321,7 +321,7 @@ class CHIRSP extends CHIBundle {
   val fwdState = UInt(FWDSTATE_WIDTH.W)
   def dataPull = fwdState
 
-  val cBusy = CHIIssue.field_Eb(UInt(CBUSY_WIDTH.W))
+  val cBusy = Issue.field_Eb(UInt(CBUSY_WIDTH.W))
 
   val dbID = UInt(DBID_WIDTH.W)
   def pGroupID = dbID(LPID_WIDTH - 1, 0)
@@ -330,7 +330,7 @@ class CHIRSP extends CHIBundle {
 
   val pCrdType = UInt(PCRDTYPE_WIDTH.W)
 
-  val tagOp = CHIIssue.field_Eb(UInt(TAGOP_WIDTH.W))
+  val tagOp = Issue.field_Eb(UInt(TAGOP_WIDTH.W))
 
   val traceTag = Bool()
   /* MSB */

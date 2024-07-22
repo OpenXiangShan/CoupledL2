@@ -24,11 +24,11 @@ object CHIOpcode {
 
   object REQOpcodes {
     val width_map = Map(
-      CHIIssue.B -> 6,
-      CHIIssue.Eb -> 7,
+      Issue.B -> 6,
+      Issue.Eb -> 7,
     )
 
-    val width = width_map(CHIIssue.curr_issue)
+    val width = width_map(Issue.curr_issue)
 
     def ReqLCrdReturn         = 0x00.U(width.W)
     def ReadShared            = 0x01.U(width.W)
@@ -88,11 +88,11 @@ object CHIOpcode {
 
   object RSPOpcodes {
     val width_map = Map(
-      CHIIssue.B -> 4,
-      CHIIssue.Eb -> 5,
+      Issue.B -> 4,
+      Issue.Eb -> 5,
     )
 
-    val width = width_map(CHIIssue.curr_issue)
+    val width = width_map(Issue.curr_issue)
 
     def RespLCrdReturn  = 0x0.U(width.W)
     def SnpResp         = 0x1.U(width.W)
@@ -108,11 +108,11 @@ object CHIOpcode {
 
   object SNPOpcodes {
     val width_map = Map(
-      CHIIssue.B -> 5,
-      CHIIssue.Eb -> 6,
+      Issue.B -> 5,
+      Issue.Eb -> 6,
     )
 
-    val width = width_map(CHIIssue.curr_issue)
+    val width = width_map(Issue.curr_issue)
 
     def SnpLCrdReturn         = 0x00.U(width.W)
     def SnpShared             = 0x01.U(width.W)
@@ -224,11 +224,11 @@ object CHIOpcode {
 
   object DATOpcodes {
     val width_map = Map(
-      CHIIssue.B -> 3,
-      CHIIssue.Eb -> 4,
+      Issue.B -> 3,
+      Issue.Eb -> 5,
     )
 
-    val width = width_map(CHIIssue.curr_issue)
+    val width = width_map(Issue.curr_issue)
 
     def DataLCrdReturn    = 0x0.U(width.W)
     def SnpRespData       = 0x1.U(width.W)
