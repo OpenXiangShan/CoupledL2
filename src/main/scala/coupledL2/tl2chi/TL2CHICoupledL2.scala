@@ -71,11 +71,15 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
     val io_chi = IO(new PortIO)
     val io_nodeID = IO(Input(UInt()))
 
+    // Check port width
+    require(io_chi.tx.rsp.getWidth == io_chi.rx.rsp.getWidth);
+    require(io_chi.tx.dat.getWidth == io_chi.rx.dat.getWidth);
+
     // Display info
-    println(s"CHI REQ Width: ${(new CHIREQ).getWidth}")
-    println(s"CHI RSP Width: ${(new CHIRSP).getWidth}")
-    println(s"CHI SNP Width: ${(new CHISNP).getWidth}")
-    println(s"CHI DAT Width: ${(new CHIDAT).getWidth}")
+    println(s"CHI REQ Flit Width: ${io_chi.tx.req.flit.getWidth}")
+    println(s"CHI RSP Flit Width: ${io_chi.tx.rsp.flit.getWidth}")
+    println(s"CHI SNP Flit Width: ${io_chi.rx.snp.flit.getWidth}")
+    println(s"CHI DAT Flit Width: ${io_chi.rx.dat.flit.getWidth}")
     println(s"CHI Port Width: ${io_chi.getWidth}")
 
     println(s"MMIO:")
