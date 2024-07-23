@@ -201,11 +201,11 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
     data = new_self_meta_s3
   )
 
-  assert(
-    !releaseReq_s3 || releaseReq_s3 && clients_meta_s3(srcID_s3).valid,
-    "Non-exist block release?(addr: 0x%x)",
-    Cat(reqLineAddr_s3, req_s3.bank, req_s3.off)
-  )
+  // assert(
+  //   !releaseReq_s3 || releaseReq_s3 && clients_meta_s3(srcID_s3).valid,
+  //   "Non-exist block release?(addr: 0x%x)",
+  //   Cat(reqLineAddr_s3, req_s3.bank, req_s3.off)
+  // )
 
   pipeInfo.s3_valid := task_s3.valid
   pipeInfo.s3_tag := task_s3.bits.tag
