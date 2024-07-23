@@ -254,6 +254,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   ms_task.tpmetaWenRepl := need_mshr_s3_tp
   ms_task.tpReplTag := req_s3.tpReplTag
   ms_task.tpmetaReplTag := 0.U(tagBits.W)
+  ms_task.tpmetaAccessed := req_s3.tpmetaAccessed
 
   /* ======== Resps to SinkA/B/C Reqs ======== */
   val sink_resp_s3 = WireInit(0.U.asTypeOf(Valid(new TaskBundle))) // resp for sinkA/B/C request that does not need to alloc mshr
@@ -382,7 +383,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     clients = Fill(clientBits, true.B),
     alias = Some(metaW_s3_a_alias),
     accessed = true.B,
-    tpMeta = false.B
+    tpMeta = false.B,
+    tpMetaAccessed = false.B
   )
   val metaW_s3_b = Mux(req_s3.param === toN, MetaEntry(),
     MetaEntry(
@@ -391,7 +393,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       clients = meta_s3.clients,
       alias = meta_s3.alias,
       accessed = meta_s3.accessed,
-      tpMeta = false.B
+      tpMeta = false.B,
+      tpMetaAccessed = false.B
     )
   )
 
@@ -401,7 +404,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     clients = Fill(clientBits, !isToN(req_s3.param)),
     alias = meta_s3.alias,
     accessed = meta_s3.accessed,
-    tpMeta = false.B
+    tpMeta = false.B,
+    tpMetaAccessed = false.B
   )
 
   val metaW_s3_tp = MetaEntry(
@@ -410,7 +414,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     clients = 0.U,
     alias = Some(0.U),
     accessed = sinkTP_req_s3 && !tp_req_w_s3,
-    tpMeta = true.B
+    tpMeta = true.B,
+    tpMetaAccessed = req_s3.tpmetaAccessed
   )
 
   // use merge_meta if mergeA

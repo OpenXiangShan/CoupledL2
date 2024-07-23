@@ -115,6 +115,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle with HasChannelBits {
   val tpReplTag = UInt(tagBits.W)
   // for tpMetaTable repl
   val tpmetaReplTag = UInt(tagBits.W)
+  val tpmetaAccessed = Bool()
 }
 
 class PipeStatus(implicit p: Parameters) extends L2Bundle with HasChannelBits
@@ -306,6 +307,7 @@ class TPmetaReq(implicit p: Parameters) extends L2Bundle {
   val hartid = UInt(4.W) // max 16 harts
   val l2ReqBundle = new TPmetaL2ReqBundle()
   val wmode = Bool()
+  val tpmetaAccessed = Bool()
   val rawData = Vec(16, UInt((fullAddressBits - offsetBits).W))
   val replTag = UInt(tagBits.W)
 }
@@ -318,6 +320,7 @@ class TPmetaResp(implicit p: Parameters)  extends L2Bundle {
 class TPmetaL2Req(implicit p: Parameters) extends L2Bundle {
   val l2ReqBundle = new TPmetaL2ReqBundle()
   val wmode = Bool()
+  val tpmetaAccessed = Bool()
   // [511, 508] = hartid; [479, 0] = rawData
   val rawData = UInt(512.W)
   val replTag = UInt(tagBits.W)

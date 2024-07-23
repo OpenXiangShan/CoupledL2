@@ -55,11 +55,13 @@ class SinkTPmeta(implicit p: Parameters) extends L2Module {
     task.isKeyword.foreach(_ := false.B)
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+
     task.tpmeta := true.B
     task.tpmetaWen := req.wmode
     task.tpmetaWenRepl := false.B
     task.tpReplTag := req.l2ReqBundle.tag
     task.tpmetaReplTag := req.replTag
+    task.tpmetaAccessed := req.tpmetaAccessed
     task
   }
 

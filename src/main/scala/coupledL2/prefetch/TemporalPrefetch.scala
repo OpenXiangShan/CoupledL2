@@ -73,6 +73,7 @@ class tpMetaEntry(implicit p:Parameters) extends TPBundle {
   val valid = Bool()
   val triggerTag = UInt((vaddrBits-blockOffBits-tpTableSetBits).W)
   val l2ReqBundle = new TPmetaL2ReqBundle()
+  val hitConfidence = Bool()
   // val tab = UInt(2.W)
 }
 
@@ -87,6 +88,7 @@ class triggerBundle(implicit p: Parameters) extends TPBundle {
   val paddr = UInt(fullAddressBits.W)
   val way = UInt(log2Ceil(tpTableAssoc).W)
   val replTag = UInt(tagBits.W)
+  val hitConfidence = Bool()
 }
 
 class trainBundle(implicit p: Parameters) extends TPBundle {
@@ -389,6 +391,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   triggerQueue.io.enq.bits.paddr := train_s2.addr
   triggerQueue.io.enq.bits.way := way_s2
   triggerQueue.io.enq.bits.replTag := Mux(replTagValid_s2, replTag_s2, Mux(trainOnVaddr.orR, vtag_s2, ptag_s2))
+  triggerQueue.io.enq.bits.hitConfidence := hit_s2
   triggerQueue.io.deq.ready := false.B // will be override
 
   // dataReadQueue enqueue
@@ -398,6 +401,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   dataReadQueue.io.enq.bits.rawData := DontCare
   dataReadQueue.io.enq.bits.hartid := io.hartid
   dataReadQueue.io.enq.bits.replTag := DontCare
+  dataReadQueue.io.enq.bits.tpmetaAccessed := DontCare
 
   tpMetaReadQueue.io.enq.valid := dataReadQueue.io.deq.fire
   tpMetaReadQueue.io.enq.bits.set := Mux(trainOnVaddr.orR, vset_s2, pset_s2)
@@ -420,6 +424,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   io.tpmeta_port.req.bits.wmode := Mux(writeReqValid, dataWriteQueue.io.deq.bits.wmode, dataReadQueue.io.deq.bits.wmode)
   io.tpmeta_port.req.bits.rawData := Mux(writeReqValid, writeReqRawData, readReqRawData)
   io.tpmeta_port.req.bits.replTag := Mux(writeReqValid, dataWriteQueue.io.deq.bits.replTag, dataReadQueue.io.deq.bits.replTag)
+  io.tpmeta_port.req.bits.tpmetaAccessed := Mux(writeReqValid, dataWriteQueue.io.deq.bits.tpmetaAccessed, dataReadQueue.io.deq.bits.tpmetaAccessed)
 
 
   /* Async Stage: get tpMeta and insert it into tpDataQueue */
@@ -472,12 +477,13 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val (write_record_l2_ptag, write_record_l2_pset, write_record_l2_pbank, write_record_l2_poff) = parseFullAddressWithBank(write_record_trigger.paddr)
 
   val tpMeta_w_bits = Wire(new tpMetaEntry())
-  tpMeta_w_bits.valid := Mux(tpMetaRespValid_s2, false.B, true.B)
+  tpMeta_w_bits.valid := Mux(tpmetaInvalidate, false.B, true.B)
   tpMeta_w_bits.triggerTag := Mux(trainOnVaddr.orR, write_record_vtag, write_record_ptag)
   tpMeta_w_bits.l2ReqBundle.tag := Mux(trainOnVaddr.orR, write_record_l2_vtag, write_record_l2_ptag)
   tpMeta_w_bits.l2ReqBundle.set := Mux(trainOnVaddr.orR, write_record_l2_vset, write_record_l2_pset)
   tpMeta_w_bits.l2ReqBundle.bank := Mux(trainOnVaddr.orR, write_record_l2_vbank, write_record_l2_pbank)
   tpMeta_w_bits.l2ReqBundle.off := Mux(trainOnVaddr.orR, write_record_l2_voff, write_record_l2_poff)
+  tpMeta_w_bits.hitConfidence := RegEnable(hit_s2, s2_valid)
   when(!resetFinish) {
     tpMeta_w_bits.valid := false.B
     tpMeta_w_bits.triggerTag := 0.U
@@ -485,6 +491,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     tpMeta_w_bits.l2ReqBundle.set := 0.U
     tpMeta_w_bits.l2ReqBundle.bank := 0.U
     tpMeta_w_bits.l2ReqBundle.off := 0.U
+    tpMeta_w_bits.hitConfidence := false.B
   }
 
   val tpTable_w_set = Mux(resetFinish, Mux(tpmetaInvalidate, tpMetaResp_s2.set,
@@ -503,6 +510,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   dataWriteQueue.io.enq.bits.l2ReqBundle.off := Mux(trainOnVaddr.orR, write_record_l2_voff, write_record_l2_poff)
   dataWriteQueue.io.enq.bits.hartid := io.hartid
   dataWriteQueue.io.enq.bits.replTag := write_record_trigger.replTag
+  dataWriteQueue.io.enq.bits.tpmetaAccessed := write_record_trigger.hitConfidence
   assert(dataWriteQueue.io.enq.ready === true.B) // TODO: support back-pressure
 
   when(resetIdx === 0.U) {
@@ -567,6 +575,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   triggerPt.vaddr := recoverVaddr(write_record_trigger.vaddr)
   triggerPt.way := write_record_trigger.way
   triggerPt.replTag := write_record_trigger.replTag
+  triggerPt.hitConfidence := write_record_trigger.hitConfidence
 
   val trainDB = ChiselDB.createTable("tptrain", new trainBundle(), basicDB = true)
   val trainPt = Wire(new trainBundle())

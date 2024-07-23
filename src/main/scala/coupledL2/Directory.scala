@@ -37,6 +37,7 @@ class MetaEntry(implicit p: Parameters) extends L2Bundle {
   val prefetch = if (hasPrefetchBit) Some(Bool()) else None // whether block is prefetched
   val prefetchSrc = if (hasPrefetchSrc) Some(UInt(PfSource.pfSourceBits.W)) else None // prefetch source
   val tpMeta = if(hasTP) Some(Bool()) else None
+  val tpMetaAccessed = if(hasTP) Some(Bool()) else None
   val accessed = Bool()
 
   def =/=(entry: MetaEntry): Bool = {
@@ -50,7 +51,8 @@ object MetaEntry {
     init
   }
   def apply(dirty: Bool, state: UInt, clients: UInt, alias: Option[UInt], prefetch: Bool = false.B,
-            pfsrc: UInt = PfSource.NoWhere.id.U, tpMeta: Bool = false.B, accessed: Bool = false.B
+            pfsrc: UInt = PfSource.NoWhere.id.U, accessed: Bool = false.B,
+            tpMeta: Bool = false.B, tpMetaAccessed: Bool = false.B
   )(implicit p: Parameters) = {
     val entry = Wire(new MetaEntry)
     entry.dirty := dirty
@@ -60,6 +62,7 @@ object MetaEntry {
     entry.prefetch.foreach(_ := prefetch)
     entry.prefetchSrc.foreach(_ := pfsrc)
     entry.tpMeta.foreach(_ := tpMeta)
+    entry.tpMetaAccessed.foreach(_ := tpMetaAccessed)
     entry.accessed := accessed
     entry
   }
@@ -219,6 +222,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   val metaValidVec = metaAll_s3.map(m =>
     m.state =/= MetaData.INVALID && m.tpMeta.getOrElse(false.B) === req_s3.tpmeta)
   val hitVec = tagMatchVec.zip(metaValidVec).map(x => x._1 && x._2)
+  val tpmetaAccessedVec = metaAll_s3.map(_.tpMetaAccessed.getOrElse(false.B))
 
   /* ====== refill retry ====== */
   // when refill, ways that have not finished writing its refillData back to DS (in MSHR Release),
@@ -365,7 +369,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   )
 
   if(cacheParams.replacement == "srrip"){
-    val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3, hit_s3, inv, req_type)
+    val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3, hit_s3, inv, req_type, tpmetaAccessedVec)
     val repl_init = Wire(Vec(ways, UInt(rrpvBits.W)))
     repl_init.foreach(_ := Fill(rrpvBits, 1.U(1.W)))
     replacer_sram_opt.get.io.w(
@@ -398,7 +402,7 @@ class Directory(implicit p: Parameters) extends L2Module {
                     Mux(match_b, true.B,
                       Mux(PSEL(9)===0.U, false.B, true.B)))    // false.B - srrip, true.B - brrip
 
-    val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3, hit_s3, inv, repl_type, req_type)
+    val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3, hit_s3, inv, repl_type, req_type, tpmetaAccessedVec)
 
     val repl_init = Wire(Vec(ways, UInt(rrpvBits.W)))
     repl_init.foreach(_ := Fill(rrpvBits, 1.U(1.W)))

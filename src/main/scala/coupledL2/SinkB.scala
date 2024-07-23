@@ -71,6 +71,7 @@ class SinkB(implicit p: Parameters) extends L2Module {
     task.tpmetaWenRepl := false.B
     task.tpReplTag := 0.U(tagBits.W)
     task.tpmetaReplTag := 0.U(tagBits.W)
+    task.tpmetaAccessed := false.B
     task
   }
   val task = fromTLBtoTaskBundle(io.b.bits)

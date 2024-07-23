@@ -146,6 +146,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   mergeAtask.tpmetaWenRepl := false.B
   mergeAtask.tpReplTag := 0.U(tagBits.W)
   mergeAtask.tpmetaReplTag := 0.U(tagBits.W)
+  mergeAtask.tpmetaAccessed := false.B
   val inflight_insertIdx = PriorityEncoder(inflightGrant.map(!_.valid))
   val grantQueue_enq_isKeyword = Mux(io.d_task.bits.task.mergeA, mergeAtask.isKeyword.getOrElse(false.B), io.d_task.bits.task.isKeyword.getOrElse(false.B))
   // The following is organized in the order of data flow
