@@ -96,7 +96,7 @@ class Task(implicit p: Parameters) extends LLCBundle {
     snp.fwdNID := fwdNID
     snp.fwdTxnID := fwdTxnID
     snp.opcode := chiOpcode
-    snp.addr := Cat(tag, set, bank, 0.U(offsetBits.W))
+    snp.addr := Cat(tag, set, bank, 0.U(offsetBits.W)) >> 3 // SNP channel: Addr[(MPA-1):3]
     snp.doNotGoToSD := doNotGoToSD
     snp.retToSrc := retToSrc
     snp
