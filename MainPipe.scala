@@ -369,7 +369,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
 
   // need ReadNoSnp downwards
   readTask_s4.valid := task_s4.valid && (readNotSharedDirty_s4 || readUnique_s4) &&
-    !self_hit_s4 && !clients_hit_s4
+    !self_hit_s4 && !peersRNs_hit_s4
   readTask_s4.bits := mem_task_s4
 
   /** DS read/write **/
