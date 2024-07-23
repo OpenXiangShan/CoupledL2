@@ -74,7 +74,7 @@ class RNXbar(implicit p: Parameters) extends LLCModule {
       snpMasks(i).asUInt
     snpMasks(i) := VecInit(newSnpMask.asBools)
 
-    io.out(i).rx.snp.ready := snpReqs(i).valid && !newSnpMask.orR
+    io.out(i).rx.snp.ready := snpReqs(i).valid && !newSnpMask.orR || !snpMasks(i).asUInt.orR
     when(io.out(i).rx.snp.fire) {
       snpReqs(i).valid := true.B
       snpReqs(i).bits  := io.out(i).rx.snp.bits
