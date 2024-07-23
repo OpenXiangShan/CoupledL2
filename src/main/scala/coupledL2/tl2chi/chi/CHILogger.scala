@@ -24,9 +24,10 @@ import utility.ChiselDB
 import CHIOpcode._
 
 class CHILogMessage extends Bundle with HasCHIMsgParameters  {
-  val channel = UInt(3.W)
   val address = UInt(ADDR_WIDTH.W)
+  val channel = UInt(3.W)
   val opcode = UInt(OPCODE_WIDTH.W)
+  val data = UInt(DATA_WIDTH.W)
 
   // TODO: just pack everything into here for now, consider split? by script when anaylze
   // Since DB entry format must be unified, we just use UInt(widestWidth.W) for all channels
@@ -102,10 +103,11 @@ object CHILogger extends HasCHIMsgParameters {
     }
 
     all_logs.zip(all_flits).map {
+      // all channels have opcode field
       case (log, flit) => log.opcode := flit.elements.filter(_._1 == "opcode").head._2
     }
 
-
+    // ** Address **
     txreq_log.address := txreq_flit.addr
     // rxrsp may be Comp or CompDBIDResp (or RetryAck)
     rxrsp_log.address := txreq_addrs(rxrsp_flit.txnID)
@@ -118,6 +120,15 @@ object CHILogger extends HasCHIMsgParameters {
     txrsp_log.address := Mux(txrsp_flit.opcode === RSPOpcodes.CompAck, dbid_addrs(txrsp_flit.txnID), rxsnp_addrs(txrsp_flit.txnID))
     // txdat may be SnpRespData or CbWriteData (or NcbWriteData or SnpRespDataFwded:TODO)
     txdat_log.address := Mux(txdat_flit.opcode === DATOpcodes.CopyBackWrData, dbid_addrs(txdat_flit.txnID), rxsnp_addrs(txdat_flit.txnID))
+
+    // ** Data **
+    all_logs.zip(all_flits).map {
+      case (log, flit) =>
+        val data = flit.elements.filter(_._1 == "data")
+        log.opcode := {
+          if (data.nonEmpty) data.head._2 else 0.U
+        }
+    }
 
     all_logs.zip(all_chns).map {
       case (log, chn) => log.flit := chn.flit
