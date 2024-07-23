@@ -87,13 +87,13 @@ trait HasCHIMsgParameters {
   val ISSUE_B_CONFIG = Map(
     "NODEID_WIDTH" -> 7,
     "TXNID_WIDTH" -> 8,
-    "LPID_WIDTH" -> 5,
+    "LPID_WITH_PADDING_WIDTH" -> 5,
   )
 
   val ISSUE_Eb_CONFIG = Map(
     "NODEID_WIDTH" -> 11,
     "TXNID_WIDTH" -> 12,
-    "LPID_WIDTH" -> 8,
+    "LPID_WITH_PADDING_WIDTH" -> 8,
   )
 
   val SUPPORT_ISSUE_CONFIG = Map(
@@ -111,8 +111,8 @@ trait HasCHIMsgParameters {
   def TGTID_WIDTH = NODEID_WIDTH
   def SRCID_WIDTH = NODEID_WIDTH
   def TXNID_WIDTH = issue_config("TXNID_WIDTH") // An 8-bit field is defined for the TxnID to accommodate up to 256 outstanding transactions
-  def LPID_WIDTH = issue_config("LPID_WIDTH")
-  def LPID_LEGACY_WIDTH = 5
+  def LPID_WITH_PADDING_WIDTH = issue_config("LPID_WITH_PADDING_WIDTH")
+  def LPID_WIDTH = 5
   def RETURNNID_WIDTH = NODEID_WIDTH
   def RETURNTXNID_WIDTH = TXNID_WIDTH
   def STASHNID_WIDTH = NODEID_WIDTH
@@ -225,11 +225,11 @@ class CHIREQ extends CHIBundle {
   val memAttr = new MemAttr()
   val snpAttr = Bool()
   def doDWT = snpAttr // E.b field
-  val lpID = UInt(LPID_WIDTH.W)
-  def lpIDreal = lpID(LPID_WIDTH - 1, 0) // E.b field
-  def pGroupID = lpID // E.b field
-  def stashGroupID = lpID // E.b field
-  def tagGroupID = lpID // E.b field
+  val lpIDWithPadding = UInt(LPID_WITH_PADDING_WIDTH.W)
+  def lpID = lpIDWithPadding(LPID_WIDTH - 1, 0) // E.b field
+  def pGroupID = lpIDWithPadding // E.b field
+  def stashGroupID = lpIDWithPadding // E.b field
+  def tagGroupID = lpIDWithPadding // E.b field
 
   val snoopMe = Bool() // Used for Atomic
   def excl = snoopMe // Used for Exclusive transactions
@@ -254,8 +254,8 @@ class CHISNP extends CHIBundle {
 
   val fwdTxnID = UInt(FWDTXNID_WIDTH.W)
   def stashLPID = fwdTxnID(STASHLPID_WIDTH - 1, 0)
-  def stashLPIDValid = fwdTxnID(STASHLPID_WIDTH).asBool
-  def vmIDExt = fwdTxnID
+  def stashLPIDValid = fwdTxnID(STASHLPID_WIDTH)
+  def vmIDExt = fwdTxnID(VMIDEXT_WIDTH - 1, 0)
 
   val opcode = UInt(SNP_OPCODE_WIDTH.W)
   val addr = UInt(SNP_ADDR_WIDTH.W)
