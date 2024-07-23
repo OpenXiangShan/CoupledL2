@@ -125,7 +125,7 @@ object CHILogger extends HasCHIMsgParameters {
     all_logs.zip(all_flits).map {
       case (log, flit) =>
         val data = flit.elements.filter(_._1 == "data")
-        log.opcode := {
+        log.data := {
           if (data.nonEmpty) data.head._2 else 0.U
         }
     }
