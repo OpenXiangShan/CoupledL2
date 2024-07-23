@@ -38,7 +38,7 @@ abstract class TL2CHIL2Module(implicit val p: Parameters) extends Module
 
 class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
 
-  val addressRange = AddressSet(0x00000000L, 0xfffffffffL).subtract(AddressSet(0x0L, 0x7fffffffL)) // TODO: parameterize this
+  val addressRange = AddressSet(0x00000000L, 0xffffffffffffL).subtract(AddressSet(0x0L, 0x7fffffffL)) // TODO: parameterize this
   val managerParameters = TLSlavePortParameters.v1(
     managers = Seq(TLSlaveParameters.v1(
       address = addressRange,
