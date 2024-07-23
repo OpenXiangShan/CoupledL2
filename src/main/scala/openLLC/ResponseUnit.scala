@@ -24,6 +24,7 @@ import coupledL2.tl2chi._
 import coupledL2.tl2chi.CHIOpcode.REQOpcodes._
 import coupledL2.tl2chi.CHIOpcode.DATOpcodes._
 import coupledL2.tl2chi.CHIOpcode.RSPOpcodes._
+import coupledL2.tl2chi.CHICohStates._
 import utility.{FastArbiter}
 
 class ResponseEntry(implicit p: Parameters) extends TaskEntry {
@@ -181,6 +182,9 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule {
           }
         }
         entry.data.data(beatId) := snpData.bits.data
+        when(entry.task.chiOpcode === ReadUnique && snpData.bits.resp(2)) {
+          entry.task.resp := setPD(entry.task.resp)
+        }
       }
     }
 
