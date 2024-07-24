@@ -313,6 +313,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     pfRcv.get.io.tlb_req.req.ready := true.B
     pfRcv.get.io.tlb_req.resp.valid := false.B
     pfRcv.get.io.tlb_req.resp.bits := DontCare
+    pfRcv.get.io.tlb_req.pmp_resp := DontCare
     assert(!pfRcv.get.io.req.valid ||
       pfRcv.get.io.req.bits.pfSource === MemReqSource.Prefetch2L2SMS.id.U ||
       pfRcv.get.io.req.bits.pfSource === MemReqSource.Prefetch2L2Stream.id.U ||
