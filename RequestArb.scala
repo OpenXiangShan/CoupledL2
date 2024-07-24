@@ -96,7 +96,7 @@ class RequestArb(implicit p: Parameters) extends LLCModule with HasClientInfo {
   val blockByMem = Cat(memInfo.map(e => e.valid && e.bits.reqID === reqID_s1 && !task_s1.bits.refillTask)).orR ||
     (inflight_memAccess +& potential_memAccess) >= mshrs.memory.U
 
-  val blockEntrance = blockByMainPipe || blockByRefill || blockByResp
+  val blockEntrance = blockByMainPipe || blockByRefill || blockByResp || blockByMem
 
   task_s1.valid := io.dirRead_s1.ready && (io.busTask_s1.valid || io.refillTask_s1.valid) && !blockEntrance
   task_s1.bits := Mux(io.refillTask_s1.valid, io.refillTask_s1.bits, io.busTask_s1.bits)
