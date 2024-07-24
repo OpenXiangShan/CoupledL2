@@ -157,7 +157,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     s.valid && s.bits.isPrefetch && sameAddr(io.in.bits, s.bits) && !s.bits.willFree && !s.bits.dirHit && !s.bits.s_refill &&
       io.in.bits.fromA && (io.in.bits.opcode === AcquireBlock || io.in.bits.opcode === AcquirePerm) && !s.bits.mergeA && !(io.in.bits.param === NtoT && s.bits.param === NtoB)
   )).asUInt
-  val mergeA = mergeAMask.orR
+  val mergeA = io.in.valid && mergeAMask.orR
   val mergeAId = OHToUInt(mergeAMask)
   io.aMergeTask.valid := io.in.valid && mergeA
   io.aMergeTask.bits.id := mergeAId
@@ -179,7 +179,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   def noFreeWay(task: TaskBundle): Bool = noFreeWayForSet(task.set)
 
   // flow not allowed when full, or entries might starve
-  val canFlow = flow.B && !full && !conflict(io.in.bits) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(io.in.bits)
+  val canFlow = flow.B && !full && io.in.valid && !conflict(io.in.bits) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(io.in.bits)
   val doFlow  = canFlow && io.out.ready
   io.hasLatePF := latePrefetch(in) && inVal && !sameAddr(in, RegNext(in))
   io.hasMergeA := mergeA && inVal && !sameAddr(in, RegNext(in))
