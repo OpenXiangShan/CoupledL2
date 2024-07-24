@@ -318,7 +318,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     oa.expCompAck := true.B
     oa.memAttr := MemAttr(cacheable = true.B, allocate = true.B, device = false.B, ewa = true.B)
     oa.snpAttr := true.B
-    oa.lpID := 0.U
+    oa.lpIDWithPadding := 0.U
     oa.excl := false.B
     oa.snoopMe := false.B
     oa.traceTag := false.B
