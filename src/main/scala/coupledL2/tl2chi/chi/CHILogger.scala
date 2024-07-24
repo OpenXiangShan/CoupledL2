@@ -20,22 +20,10 @@ import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.diplomacy._
+import freechips.rocketchip.util._
+import scala.collection.immutable.{ListMap, SeqMap}
 import utility.ChiselDB
 import CHIOpcode._
-
-class CHILogMessage extends Bundle with HasCHIMsgParameters  {
-  val address = UInt(ADDR_WIDTH.W)
-  val channel = UInt(3.W)
-  val opcode = UInt(OPCODE_WIDTH.W)
-  val data = UInt(DATA_WIDTH.W)
-
-  // TODO: just pack everything into here for now, consider split? by script when anaylze
-  // Since DB entry format must be unified, we just use UInt(widestWidth.W) for all channels
-  val flit = UInt(400.W) // TODOTODO! check width
-
-  // TODO: .elements.filterNot(_._1 == "data")
-  // this can be used to exclude data from flit
-}
 
 class CHILogger(name: String, enable: Boolean)(implicit p: Parameters) extends Module {
   val io = IO(new Bundle() {
@@ -44,12 +32,23 @@ class CHILogger(name: String, enable: Boolean)(implicit p: Parameters) extends M
   })
   io.down <> io.up
   CHILogger.track(io.down, this.clock, this.reset)(name)
-  dontTouch(io) // TODOTODO
 }
 
 object CHILogger extends HasCHIMsgParameters {
+  // ** !! gather all distinct fields from CHI bundles !! **
+  val all_bundles = Seq(new CHIREQ, new CHIRSP, new CHIDAT, new CHISNP)
+  val all_fields = all_bundles.map(_.elements).reduce(_.concat(_))
 
-  val table = ChiselDB.createTable("CHILog", new CHILogMessage, basicDB = true)
+  // 1. ORDER is SQL key word, avoid it
+  // 2. opcode width differs among channels, use Max of them
+  val all_fields_sub = all_fields.removedAll(Seq("order", "opcode"))
+  val all_fields_plus = ListMap.from(all_fields_sub) ++ ListMap("channel" -> UInt(3.W)) ++
+    ListMap("ordering" -> UInt(3.W)) ++ ListMap("opcode" -> UInt(OPCODE_WIDTH.W))
+
+  // use RecordMap to generate a Record from ListMap
+  val CHILogMessage = RecordMap(all_fields_plus)
+  val table = ChiselDB.createTable("CHILog", CHILogMessage, basicDB = true)
+  // println(s"test: ${CHILogMessage.elements}")
 
   def track(out: PortIO, clock: Clock, reset: Reset)(name: String) = {
     // only txreq and txsnp contains addr
@@ -57,6 +56,7 @@ object CHILogger extends HasCHIMsgParameters {
     val txreq_addrs = Reg(Vec((1 << TXNID_WIDTH), UInt(ADDR_WIDTH.W)))
     val rxsnp_addrs = Reg(Vec((1 << TXNID_WIDTH), UInt(ADDR_WIDTH.W)))
     val dbid_addrs = Reg(Vec((1 << DBID_WIDTH), UInt(ADDR_WIDTH.W)))
+
     // Here are some cases:
     // read (Normal): req(TxnID)->comp(TxnID); comp(DBID)->ack(TxnID)
     // read (DMT): TODO
@@ -83,8 +83,8 @@ object CHILogger extends HasCHIMsgParameters {
     val txrsp_flit = WireInit(0.U.asTypeOf(new CHIRSP))
     val txdat_flit = WireInit(0.U.asTypeOf(new CHIDAT))
     val all_flits = Seq(txreq_flit, rxrsp_flit, rxdat_flit, rxsnp_flit, txrsp_flit, txdat_flit)
-    // TODO:? does this module work for txreq/txrsp/txdat?
 
+    // ** parse flit into CHI bundles **
     all_flits.zip(all_chns).map {
       case (flit, chn) =>
         var lsb = 0
@@ -93,46 +93,38 @@ object CHILogger extends HasCHIMsgParameters {
           lsb += e.asUInt.getWidth
         }
     }
-    
-    val txreq_log, rxrsp_log, rxdat_log, rxsnp_log, txrsp_log, txdat_log = WireInit(0.U.asTypeOf(new CHILogMessage))
+
+    // ======== log ========
+    val txreq_log, rxrsp_log, rxdat_log, rxsnp_log, txrsp_log, txdat_log = WireInit(0.U.asTypeOf(CHILogMessage))
     val all_logs = Seq(txreq_log, rxrsp_log, rxdat_log, rxsnp_log, txrsp_log, txdat_log)
 
-    // ======== log entry assignment ========
-    all_logs.zipWithIndex.map {
-      case (log, i) => log.channel := i.U
-    }
-
-    all_logs.zip(all_flits).map {
-      // all channels have opcode field
-      case (log, flit) => log.opcode := flit.elements.filter(_._1 == "opcode").head._2
-    }
-
-    // ** Address **
-    txreq_log.address := txreq_flit.addr
-    // rxrsp may be Comp or CompDBIDResp (or RetryAck)
-    rxrsp_log.address := txreq_addrs(rxrsp_flit.txnID)
-    // rxdat is CompData alone
-    rxdat_log.address := txreq_addrs(rxdat_flit.txnID)
-
-    val rxsnp_addr_full = Cat(rxsnp_flit.addr, 0.U(3.W)) // Snp addr is [PA_MSB-1:3]
-    rxsnp_log.address := rxsnp_addr_full
-    // txrsp may be SnpResp or CompAck (or SnpRespFwded: TODO)
-    txrsp_log.address := Mux(txrsp_flit.opcode === RSPOpcodes.CompAck, dbid_addrs(txrsp_flit.txnID), rxsnp_addrs(txrsp_flit.txnID))
-    // txdat may be SnpRespData or CbWriteData (or NcbWriteData or SnpRespDataFwded:TODO)
-    txdat_log.address := Mux(txdat_flit.opcode === DATOpcodes.CopyBackWrData, dbid_addrs(txdat_flit.txnID), rxsnp_addrs(txdat_flit.txnID))
-
-    // ** Data **
     all_logs.zip(all_flits).map {
       case (log, flit) =>
-        val data = flit.elements.filter(_._1 == "data")
-        log.data := {
-          if (data.nonEmpty) data.head._2 else 0.U
+        log.elements.foreach{
+          case (name, data) =>
+            data := flit.elements.getOrElse(name, 0.U).asTypeOf(data)
         }
     }
-
-    all_logs.zip(all_chns).map {
-      case (log, chn) => log.flit := chn.flit
+    // ** overwrite some special fields **
+    all_logs.zipWithIndex.map {
+      case (log, i) => log.elements("channel") := i.U
     }
+
+    txreq_log.elements("ordering") := txreq_flit.order
+
+    // ** Address **
+    txreq_log.elements("addr") := txreq_flit.addr
+    // rxrsp may be Comp or CompDBIDResp (or RetryAck)
+    rxrsp_log.elements("addr") := txreq_addrs(rxrsp_flit.txnID)
+    // rxdat is CompData alone
+    rxdat_log.elements("addr") := txreq_addrs(rxdat_flit.txnID)
+
+    val rxsnp_addr_full = Cat(rxsnp_flit.addr, 0.U(3.W)) // Snp addr is [PA_MSB-1:3]
+    rxsnp_log.elements("addr") := rxsnp_addr_full
+    // txrsp may be SnpResp or CompAck (or SnpRespFwded: TODO)
+    txrsp_log.elements("addr") := Mux(txrsp_flit.opcode === RSPOpcodes.CompAck, dbid_addrs(txrsp_flit.txnID), rxsnp_addrs(txrsp_flit.txnID))
+    // txdat may be SnpRespData or CbWriteData (or NcbWriteData or SnpRespDataFwded:TODO)
+    txdat_log.elements("addr") := Mux(txdat_flit.opcode === DATOpcodes.CopyBackWrData, dbid_addrs(txdat_flit.txnID), rxsnp_addrs(txdat_flit.txnID))
 
     // ======== record addrs at Reqs ========
     when(txreq.flitv) {
@@ -151,16 +143,13 @@ object CHILogger extends HasCHIMsgParameters {
       dbid_addrs(rxdat_flit.dbID) := addr
     }
 
-    // TODO: only record certain reqs? or keep them all (CompAck, PCrdGrant)
-
-    // TODO: link active??
+    // TODO: consider link active??
     table.log(txreq_log, txreq.flitv, name, clock, reset)
     table.log(rxrsp_log, rxrsp.flitv, name, clock, reset)
     table.log(rxdat_log, rxdat.flitv, name, clock, reset)
     table.log(rxsnp_log, rxsnp.flitv, name, clock, reset)
     table.log(txrsp_log, txrsp.flitv, name, clock, reset)
     table.log(txdat_log, txdat.flitv, name, clock, reset)
-
   }
 
   def apply(name: String, enable: Boolean = true)(implicit p: Parameters) = {
