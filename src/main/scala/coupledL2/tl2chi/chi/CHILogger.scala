@@ -60,11 +60,14 @@ object CHILogger extends HasCHIMsgParameters {
     // Here are some cases:
     // read (Normal): req(TxnID)->comp(TxnID); comp(DBID)->ack(TxnID)
     // read (DMT): TODO
-    // read (DCT): TODO
+    // read (DCT): RN0:req(TxnID)->RN1:SnpFwd(FwdTxnID)->RN0:CompData(TxnID); comp(DBID)->ack(TxnID)
+    //                                 SnpFwd(TxnID)   ->RN0:CompData(DBID) √
+    //                                 SnpFwd(TxnID)   ->ICN:SnpResp[Data]Fwded(TxnID)
     // write (CopyBack): req(TxnID)->compDBID(TxnID); compDBID(DBID)->data(TxnID)
     // write (NCb): TODO
     // WriteNoSnp (combined resp): same as write (CopyBack)
-    // WriteNoSnp (separate resp): TODO
+    // WriteNoSnp (separate resp): req(TxnID)->DBID(TxnID); DBID(DBID)->data(TxnID);
+    //                             req(TxnID)|DBID(DBID)->Comp(TxnID|DBID)
     // dataless: same as read (Normal)
     // Snoop: snp(TxnID)->resp(TxnID)
 
@@ -121,10 +124,11 @@ object CHILogger extends HasCHIMsgParameters {
 
     val rxsnp_addr_full = Cat(rxsnp_flit.addr, 0.U(3.W)) // Snp addr is [PA_MSB-1:3]
     rxsnp_log.elements("addr") := rxsnp_addr_full
-    // txrsp may be SnpResp or CompAck (or SnpRespFwded: TODO)
+    // txrsp may be CompAck or SnpResp[Fwded]
     txrsp_log.elements("addr") := Mux(txrsp_flit.opcode === RSPOpcodes.CompAck, dbid_addrs(txrsp_flit.txnID), rxsnp_addrs(txrsp_flit.txnID))
-    // txdat may be SnpRespData or CbWriteData (or NcbWriteData or SnpRespDataFwded:TODO)
-    txdat_log.elements("addr") := Mux(txdat_flit.opcode === DATOpcodes.CopyBackWrData, dbid_addrs(txdat_flit.txnID), rxsnp_addrs(txdat_flit.txnID))
+    // txdat may be SnpResp[Fwded]Data or CompData(DCT) CbWriteData (or NcbWriteData TODO)
+    txdat_log.elements("addr") := Mux(txdat_flit.opcode === DATOpcodes.CopyBackWrData, dbid_addrs(txdat_flit.txnID),
+                                  Mux(txdat_flit.opcode === DATOpcodes.CompData, rxsnp_addrs(txdat_flit.dbID), rxsnp_addrs(txdat_flit.txnID)))
 
     // ======== record addrs at Reqs ========
     when(txreq.flitv) {
@@ -133,7 +137,6 @@ object CHILogger extends HasCHIMsgParameters {
     when(rxsnp.flitv) {
       rxsnp_addrs(rxsnp_flit.txnID) := rxsnp_addr_full
     }
-    // TODO: record CompData/Comp for CompAck?
     when(rxrsp.flitv && (rxrsp_flit.opcode === RSPOpcodes.CompDBIDResp || rxrsp_flit.opcode === RSPOpcodes.Comp)) {
       val addr = txreq_addrs(rxrsp_flit.txnID)
       dbid_addrs(rxrsp_flit.dbID) := addr
