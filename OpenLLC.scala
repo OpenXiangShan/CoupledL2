@@ -23,7 +23,7 @@ import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2chi.{PortIO}
 
-class OpenLLC(implicit p: Parameters) extends LazyModule with HasOpenLLCParameters {
+class OpenLLC(implicit p: Parameters) extends LazyModule with HasOpenLLCParameters with HasClientInfo {
 
   class OpenLLCImp(wrapper: LazyModule) extends LazyModuleImp(wrapper) {
     private val sizeBytes = cacheParams.toCacheParams.capacity.toDouble 
@@ -35,8 +35,8 @@ class OpenLLC(implicit p: Parameters) extends LazyModule with HasOpenLLCParamete
     println(s"====== ${inclusion} CHI-CHI ${cacheParams.name} ($sizeStr * $banks-bank)  ======")
     println(s"bankBits: ${bankBits}")
     println(s"sets:${cacheParams.sets} ways:${cacheParams.ways} blockBytes:${cacheParams.blockBytes}")
-    println(s"[client] size:${sizeBytesToStr(clientParam.capacity.toDouble)}")
-    println(s"[client] sets:${clientParam.sets} ways:${clientParam.ways} blockBytes:${clientParam.blockBytes}")
+    println(s"[snoop filter] size:${sizeBytesToStr(clientSets * clientWays * clientParam.blockBytes.toDouble)}")
+    println(s"[snoop filter] sets:${clientSets} ways:${clientWays}")
 
     val io = IO(new Bundle {
       val rn = Vec(numRNs, Flipped(new PortIO))
