@@ -20,6 +20,7 @@ package openLLC
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
+import coupledL2.tl2chi.CHIOpcode.REQOpcodes._
 import utility.{FastArbiter}
 
 class RequestBuffer(entries: Int = 8)(implicit p: Parameters) extends LLCModule {
@@ -42,6 +43,13 @@ class RequestBuffer(entries: Int = 8)(implicit p: Parameters) extends LLCModule 
   val insertIdx = PriorityEncoder(buffer.map(!_.valid))
   val alloc = in.fire
   when(alloc) {
+    val isReadNotSharedDirty = in.bits.chiOpcode === ReadNotSharedDirty
+    val isReadUnique = in.bits.chiOpcode === ReadUnique
+    val isMakeUnique = in.bits.chiOpcode === MakeUnique
+    val isWriteBackFull = in.bits.chiOpcode === WriteBackFull
+    val isEvict = in.bits.chiOpcode === Evict
+    assert(isReadNotSharedDirty || isReadUnique || isMakeUnique || isWriteBackFull || isEvict, "Unsupported opcode")
+
     val entry = buffer(insertIdx)
     entry.valid := true.B
     entry.bits := in.bits
