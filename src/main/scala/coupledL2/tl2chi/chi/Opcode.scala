@@ -106,6 +106,9 @@ object CHIOpcode {
     def PCrdGrant(implicit p: Parameters)       = 0x7.U(width.W)
     def ReadReceipt(implicit p: Parameters)     = 0x8.U(width.W)
     def SnpRespFwded(implicit p: Parameters)    = 0x9.U(width.W)
+
+    // E.b new opcodes
+    def RespSepData     = 0xB.U(width_map(Issue.Eb).W)
   }
 
   object SNPOpcodes {
@@ -246,6 +249,10 @@ object CHIOpcode {
     def SnpRespDataPtl(implicit p: Parameters)    = 0x5.U(width.W)
     def SnpRespDataFwded(implicit p: Parameters)  = 0x6.U(width.W)
     def WriteDataCancel(implicit p: Parameters)   = 0x7.U(width.W)
+
+    // E.b new opcodes
+    def DataSepResp       = 0xB.U(width_map(Issue.Eb).W)
+
     def widthCheck(opcode: UInt)(implicit p: Parameters): Unit = { require (opcode.getWidth >= width) }
     def isSnpRespDataX(opcode: UInt)(implicit p: Parameters): Bool = {
       widthCheck(opcode)
