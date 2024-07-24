@@ -91,7 +91,8 @@ trait HasOpenLLCParameters {
     val bank = offset >> offsetBits
     val set = bank >> bankBits
     val tag = set >> setBits
-    (tag(tagBits - 1, 0), set(setBits - 1, 0), bank(bankBits - 1, 0), offset(offsetBits - 1, 0))
+    (tag(tagBits - 1, 0), set(setBits - 1, 0), if (bankBits == 0) 0.U(0.W) else bank(bankBits - 1, 0),
+      offset(offsetBits - 1, 0))
   }
 
   def sizeBytesToStr(sizeBytes: Double): String = sizeBytes match {
