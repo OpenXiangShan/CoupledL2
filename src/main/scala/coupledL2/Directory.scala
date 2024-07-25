@@ -112,6 +112,10 @@ class TagWrite(implicit p: Parameters) extends L2Bundle {
   val wtag = UInt(tagBits.W)
 }
 
+class tpmetaFb(implicit  p: Parameters) extends L2Bundle {
+  val accuracy = Bool()
+}
+
 class tpmetaBundle(implicit  p: Parameters) extends L2Bundle {
   val metaW = Bool()
   val hit = Bool()
@@ -130,6 +134,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     val replResp = ValidIO(new ReplacerResult)
     // used to count occWays for Grant to retry
     val msInfo = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo)))
+    val tpmetaFb = prefetchOpt.map(_ => Flipped(ValidIO(new tpmetaFb)))
   })
 
   def invalid_way_sel(metaVec: Seq[MetaEntry], repl: UInt) = {
@@ -223,6 +228,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     m.state =/= MetaData.INVALID && m.tpMeta.getOrElse(false.B) === req_s3.tpmeta)
   val hitVec = tagMatchVec.zip(metaValidVec).map(x => x._1 && x._2)
   val tpmetaAccessedVec = metaAll_s3.map(_.tpMetaAccessed.getOrElse(false.B))
+  val tpmetaAccuracyVec = metaAll_s3.map(_.tpMeta.getOrElse(false.B) && io.tpmetaFb.get.valid && io.tpmetaFb.get.bits.accuracy)
 
   /* ====== refill retry ====== */
   // when refill, ways that have not finished writing its refillData back to DS (in MSHR Release),
@@ -369,7 +375,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   )
 
   if(cacheParams.replacement == "srrip"){
-    val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3, hit_s3, inv, req_type, tpmetaAccessedVec)
+    val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3, hit_s3, inv, req_type, tpmetaAccuracyVec, tpmetaAccessedVec)
     val repl_init = Wire(Vec(ways, UInt(rrpvBits.W)))
     repl_init.foreach(_ := Fill(rrpvBits, 1.U(1.W)))
     replacer_sram_opt.get.io.w(
@@ -402,7 +408,7 @@ class Directory(implicit p: Parameters) extends L2Module {
                     Mux(match_b, true.B,
                       Mux(PSEL(9)===0.U, false.B, true.B)))    // false.B - srrip, true.B - brrip
 
-    val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3, hit_s3, inv, repl_type, req_type, tpmetaAccessedVec)
+    val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3, hit_s3, inv, repl_type, req_type, tpmetaAccuracyVec, tpmetaAccessedVec)
 
     val repl_init = Wire(Vec(ways, UInt(rrpvBits.W)))
     repl_init.foreach(_ := Fill(rrpvBits, 1.U(1.W)))

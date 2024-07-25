@@ -118,6 +118,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     val tpMetaResp = prefetchOpt.map(_ => DecoupledIO(new TPmetaL2Resp))
 
     val tpHitFeedback = prefetchOpt.map(_ => DecoupledIO(new TPHitFeedback()))
+    // send TP meta accuracy to dir
+    val tpmetaFb = prefetchOpt.map(_ => ValidIO(new tpmetaFb))
   })
 
   val resetFinish = RegInit(false.B)
@@ -495,6 +497,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       train.bits.reqsource := req_s3.reqSource
   }
 
+  /*tp feedback*/
   io.tpHitFeedback.foreach {
     fb =>
       fb.valid := task_s3.valid
@@ -502,6 +505,21 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       fb.bits.latepf := (task_s3.bits.reqSource === MemReqSource.Prefetch2L2TP.id.U) && dirResult_s3.hit
       fb.bits.replMiss := !meta_s3.accessed && (meta_s3.prefetchSrc.get === PfSource.TP.id.U) && !dirResult_s3.hit
   }
+
+  val tpAccuracyConfidence = RegInit((1 << (cacheParams.entryBits - 1)).asUInt(cacheParams.entryBits.W))
+  val tpReset = RegInit(0.U(log2Floor(500000).W))
+  when (io.tpHitFeedback.get.valid) {
+    tpAccuracyConfidence := Mux(io.tpHitFeedback.get.bits.hit || io.tpHitFeedback.get.bits.latepf, tpAccuracyConfidence + 1.U, Mux(io.tpHitFeedback.get.bits.replMiss, tpAccuracyConfidence - 1.U, tpAccuracyConfidence))
+  }.elsewhen (tpReset.andR) {
+    tpAccuracyConfidence := (1 << cacheParams.entryBits).asUInt
+  }
+  when (tpReset.andR) {
+    tpReset := 0.U
+  }.elsewhen(clock.asBool) {
+    tpReset := tpReset + 1.U
+  }
+  io.tpmetaFb.get.valid := hasTP.asBool
+  io.tpmetaFb.get.bits.accuracy := tpAccuracyConfidence(cacheParams.entryBits - 1) || tpAccuracyConfidence(cacheParams.entryBits - 2)
 
   /* ======== Stage 4 ======== */
   val task_s4 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))

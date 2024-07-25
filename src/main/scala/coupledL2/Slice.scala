@@ -116,6 +116,7 @@ class Slice()(implicit p: Parameters) extends L2Module {
   mainPipe.io.taskInfo_s1 <> reqArb.io.taskInfo_s1
   if (prefetchOpt.nonEmpty && hasTP) {
     mainPipe.io.tpMetaReqData.get <> sinkTPmeta.io.tpMetaDataW.get
+    mainPipe.io.tpmetaFb.get <> directory.io.tpmetaFb.get
   }
 
   // priority: nested-ReleaseData / probeAckData [NEW] > mainPipe DS rdata [OLD]

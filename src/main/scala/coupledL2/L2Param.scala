@@ -111,6 +111,7 @@ case class L2Param
     blockGranularity = log2Ceil(sets),
     blockBytes = blockBytes
   )
+  val entryBits = log2Ceil(sets * ways)
 }
 
 case object EdgeInKey extends Field[TLEdgeIn]
