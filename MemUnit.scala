@@ -67,6 +67,9 @@ class MemUnit(implicit p: Parameters) extends LLCModule {
 
     /* memory access buffers info */
     val memInfo = Vec(mshrs.memory, ValidIO(new BlockInfo()))
+
+    /* block info from ResponseUnit */
+    val respInfo = Flipped(Vec(mshrs.response, ValidIO(new ResponseInfo())))
   })
 
   val rsp        = io.resp
@@ -88,7 +91,7 @@ class MemUnit(implicit p: Parameters) extends LLCModule {
   // reducing processing time
   def sameAddr(a: Task, b: Task): Bool = Cat(a.tag, a.set) === Cat(b.tag, b.set)
   def conflict(r: Task, w: Task): Bool = sameAddr(r, w) &&
-    r.chiOpcode === ReadNoSnp && w.chiOpcode === WriteBackFull
+    r.chiOpcode === ReadNoSnp && w.chiOpcode === WriteNoSnpFull
 
   val entries = VecInit(buffer.toSeq :+ MemEntry(task_s6.valid, task_s6.bits.task, task_s6.bits.data))
   val conflictMask_ur = entries.map(e => e.valid && urgentRead.valid && conflict(urgentRead.bits, e.task))
@@ -106,6 +109,7 @@ class MemUnit(implicit p: Parameters) extends LLCModule {
       fakeRsp(i).opcode := CompData
       fakeRsp(i).resp := 0.U
       fakeRsp(i).data := Mux(bypass_s4, entries(conflictIdx_s4).data.data(i), entries(conflictIdx_ur).data.data(i))
+      fakeRsp(i).dataID := (beatBytes * i * 8).U(log2Ceil(blockBytes * 8) - 1, log2Ceil(blockBytes * 8) - 2)
     }
   }
 
@@ -162,8 +166,19 @@ class MemUnit(implicit p: Parameters) extends LLCModule {
     in.valid := e.valid && !e.s_issueReq
     in.bits := e.task
   }
-  txreqArb.io.out.ready := txreq.ready && (!urgentRead.valid || bypass_ur)
-  txreq.valid := txreqArb.io.out.valid || urgentRead.valid && !bypass_ur
+  txreqArb.io.out.ready := true.B
+
+  // This blocking mechanism might be triggered when a request needs to read memory and snoop other cache blocks
+  // due to an SF capacity conflict. In this case, when the snooped block is refilled, it may result a writeback
+  // if a dirty block is evicted. This can result in two memory access requests with the same TxnID. Therefore, 
+  // it is necessary to control the issuance of write request, ensuring that the write request is sent only after
+  // the read request has received a response.
+  val blockByResp = Cat(
+    io.respInfo.map(e => e.valid && !e.bits.w_compdata && e.bits.w_snpRsp &&
+    (e.bits.opcode === ReadUnique || e.bits.opcode === ReadNotSharedDirty) &&
+    e.bits.reqID === txreqArb.io.out.bits.reqID && txreqArb.io.out.bits.chiOpcode === WriteNoSnpFull)
+  ).orR
+  txreq.valid := txreqArb.io.out.valid && !blockByResp || urgentRead.valid && !bypass_ur
   txreq.bits := Mux(urgentRead.valid && !bypass_ur, urgentRead.bits, txreqArb.io.out.bits)
 
   txdatArb.io.in.zip(buffer).foreach { case (in, e) =>

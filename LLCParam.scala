@@ -82,7 +82,7 @@ trait HasOpenLLCParameters {
 
   def numRNs = cacheParams.clientCaches.size
 
-  def timeoutThreshold = 5000
+  def timeoutThreshold = 20000
 
   def sam = cacheParams.sam
 

@@ -108,6 +108,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
   val passDirty_s3   = req_s3.resp(2) // Resp[2: 0] = {PassDirty, CacheState[1: 0]}
 
   val self_hit_s3       = selfDirResp_s3.hit
+  val selfDirty_s3      = self_meta_s3.dirty
   val clients_hit_s3    = clientsDirResp_s3.hit
   val originalRN_hit_s3 = clients_hit_s3 && clients_meta_s3(srcID_s3).valid
   val peerRNs_hit_s3    = Cat(clients_meta_s3.zipWithIndex.map { case (meta, i) =>
@@ -141,7 +142,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
   // Final meta to be written
   val new_self_meta_s3 = SelfMetaEntry(
     valid = refill_task_s3,
-    dirty = Mux(refill_task_s3, passDirty_s3, false.B)
+    dirty = refill_task_s3 && (passDirty_s3 || self_hit_s3 && selfDirty_s3)
   )
   val new_clients_meta_s3 = WireInit(clients_meta_s3)
   new_clients_meta_s3.zipWithIndex.foreach { case (meta, i) =>
@@ -166,12 +167,12 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
     * 1. shared request where requester does not have the required block
     * 2. exclusive request where requestor does not have the required block 
     *    or peer-RNs have required block
-    * 3. release request
+    * 3. release request where requester has the required block
     */
   clientsMetaW_s3.valid := task_s3.valid && (
     sharedReq_s3 && !originalRN_hit_s3 ||
     exclusiveReq_s3 && (peerRNs_hit_s3 || !originalRN_hit_s3) ||
-    releaseReq_s3
+    releaseReq_s3 && originalRN_hit_s3
   )
   clientsMetaW_s3.bits.apply(
     lineAddr = reqLineAddr_s3,
@@ -330,7 +331,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
 
   /** Comp task to ResponseUnit **/
   val respSC_s4 = sharedReq_s4
-  val respUC_s4 = makeUnique_s4 || !makeUnique_s4 && exclusiveReq_s4 && !selfDirty_s4
+  val respUC_s4 = makeUnique_s4 || !makeUnique_s4 && exclusiveReq_s4 && (!selfDirty_s4 || !self_hit_s4)
   val respUD_s4 = !makeUnique_s4 && exclusiveReq_s4 && self_hit_s4 && selfDirty_s4
   val respI_s4  = releaseReq_s4
   val comp_task_s4 = WireInit(req_s4)
@@ -341,6 +342,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule {
       Cat(Seq.fill(numRNs)(false.B))
     ).asBools
   )
+  comp_task_s4.replSnp := replace_snoop_s4
   comp_task_s4.tgtID := srcID_s4
   comp_task_s4.homeNID := req_s4.tgtID
   comp_task_s4.dbID := req_s4.reqID

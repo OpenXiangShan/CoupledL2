@@ -21,7 +21,6 @@ import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import scala.math.min
-import java.nio.channels.Pipe
 
 class RequestArb(implicit p: Parameters) extends LLCModule with HasClientInfo {
   val io = IO(new Bundle() {
@@ -83,16 +82,20 @@ class RequestArb(implicit p: Parameters) extends LLCModule with HasClientInfo {
   val potential_response, potential_memAccess = PopCount(pipeInfo.valids)
 
   val blockByMainPipe = sameSet_s2 || sameSet_s3 || sameSet_s4 || sameAddr_s5 || sameAddr_s6
-  val blockByRefill = Cat(refillInfo.map(e =>
-    e.valid && Cat(e.bits.tag, e.bits.set) === Cat(tag_s1, set_s1) && !task_s1.bits.refillTask)).orR ||
-    Cat(refillInfo.map(e => e.valid && e.bits.reqID === reqID_s1 && !task_s1.bits.refillTask)).orR ||
+  val blockByRefill = !task_s1.bits.refillTask && (
+    Cat(refillInfo.map(e => e.valid && Cat(e.bits.tag, e.bits.set) === Cat(tag_s1, set_s1))).orR ||
+    Cat(refillInfo.map(e => e.valid && e.bits.reqID === reqID_s1)).orR ||
     (inflight_refill +& potential_refill) >= mshrs.refill.U
-  val blockByResp = Cat(respInfo.map(e =>
-    e.valid && Cat(e.bits.tag, e.bits.set) === Cat(tag_s1, set_s1) && !task_s1.bits.refillTask)).orR ||
-    Cat(respInfo.map(e => e.valid && e.bits.reqID === reqID_s1 && !task_s1.bits.refillTask)).orR ||
+  )
+  val blockByResp = !task_s1.bits.refillTask && (
+    Cat(respInfo.map(e => e.valid && Cat(e.bits.tag, e.bits.set) === Cat(tag_s1, set_s1))).orR ||
+    Cat(respInfo.map(e => e.valid && e.bits.reqID === reqID_s1)).orR ||
     (inflight_response +& potential_response) >= mshrs.response.U
-  val blockBySnp = Cat(snpInfo.map(e => e.valid && e.bits.reqID === reqID_s1 && !task_s1.bits.refillTask)).orR ||
+  )
+  val blockBySnp = !task_s1.bits.refillTask && (
+    Cat(snpInfo.map(e => e.valid && e.bits.reqID === reqID_s1)).orR ||
     (inflight_snoop +& potential_snoop) >= mshrs.snoop.U
+  )
   val blockByMem = Cat(memInfo.map(e => e.valid && e.bits.reqID === reqID_s1 && !task_s1.bits.refillTask)).orR ||
     (inflight_memAccess +& potential_memAccess) >= mshrs.memory.U
 

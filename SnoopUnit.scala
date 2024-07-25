@@ -37,7 +37,7 @@ class SnoopUnit(implicit p: Parameters) extends LLCModule {
     val out = DecoupledIO(new Task())
 
     /* block info from ResponseUnit */
-    val respInfo = Flipped(Vec(mshrs.snoop, ValidIO(new ResponseInfo())))
+    val respInfo = Flipped(Vec(mshrs.response, ValidIO(new ResponseInfo())))
 
     /* CompAck from upstream RXRSP channel */
     val ack = Flipped(ValidIO(new Resp()))
