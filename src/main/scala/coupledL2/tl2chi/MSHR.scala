@@ -159,6 +159,10 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   val snpToN = isSnpToN(req_chiOpcode)
   val snpToB = isSnpToB(req_chiOpcode)
 
+  val req_cmoClean = req.cmoTask && req.opcode === 0.U
+  val req_cmoFlush = req.cmoTask && req.opcode === 1.U
+  val req_cmoInval = req.cmoTask && req.opcode === 2.U
+
   /**
     * About which snoop should echo SnpRespData[Fwded] instead of SnpResp[Fwded]:
     * 1. When the snooped block is dirty, always echo SnpRespData[Fwded], except for SnpMakeInvalid*, SnpStash*,
@@ -209,7 +213,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   val release_valid1 = !state.s_release && state.w_rprobeacklast && state.w_grantlast && state.w_replResp
   val release_valid2 = !state.s_reissue.getOrElse(false.B) && !state.w_releaseack && gotRetryAck && gotPCrdGrant
   // Theoretically, data to be released is saved in ReleaseBuffer, so Acquire can be sent as soon as req enters mshr
-  io.tasks.txreq.valid := !state.s_acquire ||
+  // For cmo_clean/flush, dirty data should be released downward first, then Clean req can be sent
+  io.tasks.txreq.valid := !state.s_acquire && !((req_cmoClean || req_cmoFlush) && !state.w_releaseack) ||
                           !state.s_reissue.getOrElse(false.B) && !state.w_grant && gotRetryAck && gotPCrdGrant ||
                           release_valid2
   io.tasks.txrsp.valid := !state.s_compack.get && state.w_grantlast
@@ -304,15 +309,16 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       */
     val isWriteBackFull = isT(meta.state) && meta.dirty || probeDirty
     val isEvict = !isWriteBackFull
-    oa.opcode := Mux(
-      release_valid2,
-      Mux(isWriteBackFull, WriteBackFull, Evict),
-      ParallelPriorityMux(Seq(
-        (req.opcode === AcquirePerm && req.param === NtoT) -> MakeUnique,
-        req_needT                                          -> ReadUnique,
-        req_needB /* Default */                            -> ReadNotSharedDirty
-      ))
-    )
+    oa.opcode := ParallelPriorityMux(Seq(
+      req_cmoClean                                       -> CleanShared,
+      req_cmoFlush                                       -> CleanInvalid,
+      req_cmoInval                                       -> MakeInvalid,
+      (release_valid2 && isWriteBackFull)                -> WriteBackFull,
+      (release_valid2 && !isWriteBackFull)               -> Evict,
+      (req.opcode === AcquirePerm && req.param === NtoT) -> MakeUnique,
+      req_needT                                          -> ReadUnique,
+      req_needB /* Default */                            -> ReadNotSharedDirty
+    ))
     oa.size := log2Ceil(blockBytes).U
     oa.addr := Cat(Mux(release_valid2, dirResult.tag, req.tag), req.set, 0.U(offsetBits.W))
     oa.ns := false.B
@@ -320,7 +326,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     oa.allowRetry := state.s_reissue.getOrElse(false.B)
     oa.order := OrderEncodings.None
     oa.pCrdType := Mux(!state.s_reissue.getOrElse(false.B), pcrdtype, 0.U)
-    oa.expCompAck := !release_valid2
+    oa.expCompAck := !release_valid2 && !req_cmoInval && !req_cmoClean && !req_cmoFlush
     oa.memAttr := MemAttr(
       cacheable = true.B,
       allocate = !(release_valid2 && isEvict),
@@ -349,12 +355,17 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
         Mux(snpToN, toN, toT)
       ),
       Mux(
-        req_get && dirResult.hit && meta.state === TRUNK,
-        toB,
-        toN
+        req.cmoTask,
+        toN,
+        Mux(
+          req_get && dirResult.hit && meta.state === TRUNK,
+          toB,
+          toN
+        )
       )
     )
     ob.alias.foreach(_ := meta.alias.getOrElse(0.U))
+    ob.needData := Mux(req_cmoInval, 1.U, 0.U)   // probe L1 toN and donot writeback dirty data
     ob
   }
 

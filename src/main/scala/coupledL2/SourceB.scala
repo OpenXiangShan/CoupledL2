@@ -59,7 +59,7 @@ class SourceB(implicit p: Parameters) extends L2Module {
     b.source  := dcacheSourceIdStart
     b.address := Cat(task.tag, task.set, 0.U(offsetBits.W))
     b.mask    := Fill(beatBytes, 1.U(1.W))
-    b.data    := Cat(task.alias.getOrElse(0.U), 0.U(1.W)) // this is the same as HuanCun
+    b.data    := Cat(task.alias.getOrElse(0.U), task.needData)  //Cat(task.alias.getOrElse(0.U), 0.U(1.W)) // this is the same as HuanCun
     b.corrupt := false.B
     b
   }

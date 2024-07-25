@@ -142,12 +142,17 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   val meta_s3         = dirResult_s3.meta
   val req_s3          = task_s3.bits
 
+  val cmo_req_s3      = req_s3.cmoTask
   val mshr_req_s3     = req_s3.mshrTask
-  val sink_req_s3     = !mshr_req_s3
-  val sinkA_req_s3    = !mshr_req_s3 && req_s3.fromA
-  val sinkB_req_s3    = !mshr_req_s3 && req_s3.fromB
-  val sinkC_req_s3    = !mshr_req_s3 && req_s3.fromC
+  val sink_req_s3     = !mshr_req_s3 && !cmo_req_s3
+  val sinkA_req_s3    = !mshr_req_s3 && !cmo_req_s3 && req_s3.fromA
+  val sinkB_req_s3    = !mshr_req_s3 && !cmo_req_s3 && req_s3.fromB
+  val sinkC_req_s3    = !mshr_req_s3 && !cmo_req_s3 && req_s3.fromC
 
+  val cmo_clean_s3    = cmo_req_s3 && req_s3.opcode === 0.U
+  val cmo_flush_s3    = cmo_req_s3 && req_s3.opcode === 1.U
+  val cmo_inval_s3    = cmo_req_s3 && req_s3.opcode === 2.U
+  
   val req_acquire_s3            = sinkA_req_s3 && (req_s3.opcode === AcquireBlock || req_s3.opcode === AcquirePerm)
   val req_acquireBlock_s3       = sinkA_req_s3 && req_s3.opcode === AcquireBlock
   val req_prefetch_s3           = sinkA_req_s3 && req_s3.opcode === Hint
@@ -228,7 +233,10 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   val need_dct_s3_b = doFwd || doFwdHitRelease // DCT
   val need_mshr_s3_b = need_pprobe_s3_b || need_dct_s3_b
 
-  val need_mshr_s3 = need_mshr_s3_a || need_mshr_s3_b
+  val need_mshr_s3_cmo = cmo_inval_s3 || cmo_clean_s3 || cmo_flush_s3
+  val need_probe_s3_cmo = (cmo_inval_s3 || cmo_clean_s3 || cmo_flush_s3) && meta_has_clients_s3 && dirResult_s3.hit
+
+  val need_mshr_s3 = need_mshr_s3_a || need_mshr_s3_b || need_mshr_s3_cmo
 
   /* Signals to MSHR Ctl */
   val alloc_state = WireInit(0.U.asTypeOf(new FSMState()))
@@ -418,6 +426,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
     )
   val metaW_valid_s3_c = sinkC_req_s3 && dirResult_s3.hit
   val metaW_valid_s3_mshr = mshr_req_s3 && req_s3.metaWen && !(mshr_refill_s3 && retry)
+  val metaW_valid_s3_cmo = cmo_inval_s3 && dirResult_s3.hit
   require(clientBits == 1)
 
   val metaW_s3_a_alias = Mux(
@@ -450,6 +459,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   )
   // use merge_meta if mergeA
   val metaW_s3_mshr = Mux(req_s3.mergeA, req_s3.aMergeTask.meta, req_s3.meta)
+  val metaW_s3_cmo  = MetaEntry()   // invalid the block
 
   val metaW_way = Mux(
     mshr_refill_s3 && req_s3.replTask,
@@ -458,15 +468,15 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   )
 
   io.metaWReq.valid := !resetFinish || task_s3.valid && (
-    metaW_valid_s3_a || metaW_valid_s3_b || metaW_valid_s3_c || metaW_valid_s3_mshr
+    metaW_valid_s3_a || metaW_valid_s3_b || metaW_valid_s3_c || metaW_valid_s3_mshr || metaW_valid_s3_cmo
   )
   io.metaWReq.bits.set := Mux(resetFinish, req_s3.set, resetIdx)
   io.metaWReq.bits.wayOH := Mux(resetFinish, UIntToOH(metaW_way), Fill(cacheParams.ways, true.B))
   io.metaWReq.bits.wmeta := Mux(
     resetFinish,
     ParallelPriorityMux(
-      Seq(metaW_valid_s3_a, metaW_valid_s3_b, metaW_valid_s3_c, metaW_valid_s3_mshr),
-      Seq(metaW_s3_a, metaW_s3_b, metaW_s3_c, metaW_s3_mshr)
+      Seq(metaW_valid_s3_a, metaW_valid_s3_b, metaW_valid_s3_c, metaW_valid_s3_mshr, metaW_valid_s3_cmo),
+      Seq(metaW_s3_a, metaW_s3_b, metaW_s3_c, metaW_s3_mshr, metaW_s3_cmo)
     ),
     MetaEntry()
   )
@@ -803,6 +813,30 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
     // need forwarding response
     when (need_dct_s3_b) {
       alloc_state.s_dct.get := false.B
+    }
+  }
+
+  when (req_s3.cmoTask) {
+    alloc_state.s_refill := true.B
+    alloc_state.w_replResp := true.B
+    // need Acquire downwards
+    when (cmo_inval_s3 || cmo_clean_s3 || cmo_flush_s3) {
+      alloc_state.s_acquire := false.B
+      alloc_state.s_compack.get := true.B
+      alloc_state.w_grantfirst := false.B
+      alloc_state.w_grantlast := false.B
+      alloc_state.w_grant := false.B
+    }
+    // need Probe for clean client cache
+    when (need_probe_s3_cmo) {
+      alloc_state.s_rprobe := false.B
+      alloc_state.w_rprobeackfirst := false.B
+      alloc_state.w_rprobeacklast := false.B
+    }
+    // need Release dirty block downwards
+    when ((cmo_clean_s3 || cmo_flush_s3) && dirResult_s3.hit && meta_s3.dirty) {
+      alloc_state.s_release := false.B
+      alloc_state.w_releaseack := false.B
     }
   }
 
