@@ -45,6 +45,9 @@ test-top-l2l3l2:
 test-top-fullsys:
 	$(MAKE) test-top SYSTEM=fullSys
 
+test-top-xsconfig:
+	$(MAKE) test-top SYSTEM=XSConfig
+
 test-top-chi-dualcore-0ul:
 	$(MAKE) test-top SYSTEM=CHI_DualCore_0UL$(TEST_TOP_SUFFIX)
 
