@@ -91,7 +91,7 @@ class RefillUnit(implicit p: Parameters) extends LLCModule {
 
   /* Update state */
   when(rspData.valid) {
-    val update_vec = buffer.map(e => (e.task.reqID === rspData.bits.txnID) && e.valid && !e.ready)
+    val update_vec = buffer.map(e => (e.task.reqID === rspData.bits.txnID) && e.valid)
     assert(PopCount(update_vec) < 2.U, "Refill task repeated")
     val canUpdate = Cat(update_vec).orR
     val update_id = PriorityEncoder(update_vec)
@@ -102,8 +102,6 @@ class RefillUnit(implicit p: Parameters) extends LLCModule {
       val cancel = isWriteBackFull && inv_CBWrData
       val clients_hit = entry.dirResult.clients.hit
       val clients_meta = entry.dirResult.clients.meta
-      val beatId = rspData.bits.dataID >> log2Ceil(beatBytes / 16)
-      val newBeatValids = entry.beatValids.asUInt | UIntToOH(beatId)
 
       assert(
         !isWriteBackFull || inv_CBWrData || clients_hit && clients_meta(rspData.bits.srcID).valid,
@@ -111,21 +109,19 @@ class RefillUnit(implicit p: Parameters) extends LLCModule {
         Cat(entry.task.tag, entry.task.set, entry.task.bank, entry.task.off)
       )
 
+      val beatId = rspData.bits.dataID >> log2Ceil(beatBytes / 16)
+      val newBeatValids = entry.beatValids.asUInt | UIntToOH(beatId)
       entry.valid := !cancel
       entry.beatValids := VecInit(newBeatValids.asBools)
-      when(newBeatValids.andR) {
-        entry.ready := true.B
-        when(rspData.bits.opcode === SnpRespData) {
-          val src_idOH = UIntToOH(rspData.bits.srcID)(numRNs - 1, 0)
-          val newSnpVec = VecInit((entry.task.snpVec.asUInt & ~src_idOH).asBools)
-          entry.task.snpVec := newSnpVec
-          when(!Cat(newSnpVec).orR) {
-            entry.w_snpRsp := true.B
-          }
-        }
-      }
+      entry.ready := newBeatValids.andR
       entry.data.data(beatId) := rspData.bits.data
       entry.task.resp := rspData.bits.resp
+      when(rspData.bits.opcode === SnpRespData) {
+        val src_idOH  = UIntToOH(rspData.bits.srcID)(numRNs - 1, 0)
+        val newSnpVec = VecInit((entry.task.snpVec.asUInt & ~src_idOH).asBools)
+        entry.task.snpVec := newSnpVec
+        entry.w_snpRsp := !Cat(newSnpVec).orR
+      }
     }
   }
 
@@ -141,9 +137,7 @@ class RefillUnit(implicit p: Parameters) extends LLCModule {
       val src_idOH = UIntToOH(rsp.bits.srcID)(numRNs - 1, 0)
       val newSnpVec = VecInit((entry.task.snpVec.asUInt & ~src_idOH).asBools)
       entry.task.snpVec := newSnpVec
-      when(!Cat(newSnpVec).orR) {
-        entry.w_snpRsp := true.B
-      }
+      entry.w_snpRsp := !Cat(newSnpVec).orR
     }
   }
 
@@ -157,13 +151,11 @@ class RefillUnit(implicit p: Parameters) extends LLCModule {
         val waitLastBeat = PopCount(~entry.beatValids.asUInt) === 1.U
         val canUpdate = Cat(update_vec).orR && waitLastBeat
         when(canUpdate) {
-          val src_idOH_1 = UIntToOH(rspData.bits.srcID)(numRNs - 1, 0)
-          val src_idOH_2 = UIntToOH(rsp.bits.srcID)(numRNs - 1, 0)
-          val newSnpVec = VecInit((entry.task.snpVec.asUInt & ~src_idOH_1 & ~src_idOH_2).asBools)
+          val src_idOH_dat = UIntToOH(rspData.bits.srcID)(numRNs - 1, 0)
+          val src_idOH_rsp = UIntToOH(rsp.bits.srcID)(numRNs - 1, 0)
+          val newSnpVec = VecInit((entry.task.snpVec.asUInt & ~src_idOH_dat & ~src_idOH_rsp).asBools)
           entry.task.snpVec := newSnpVec
-          when(!Cat(newSnpVec).orR) {
-            entry.w_snpRsp := true.B
-          }
+          entry.w_snpRsp := !Cat(newSnpVec).orR
         }
       }
     }
@@ -189,7 +181,8 @@ class RefillUnit(implicit p: Parameters) extends LLCModule {
 
   /* Dealloc */
   buffer.foreach {e =>
-    val cancel = e.valid && !e.ready && !(e.task.chiOpcode === WriteBackFull) && e.w_snpRsp
+    val cancel = e.valid && !e.ready && !(e.task.chiOpcode === WriteBackFull) && e.w_snpRsp &&
+      !e.beatValids.asUInt.orR
     when(cancel) {
       e.valid := false.B
     }

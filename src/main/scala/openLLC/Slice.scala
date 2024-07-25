@@ -118,6 +118,7 @@ class Slice()(implicit p: Parameters) extends LLCModule {
 
   memUnit.io.fromMainPipe <> mainPipe.io.toMemUnit
   memUnit.io.urgentRead <> responseUnit.io.urgentRead
+  memUnit.io.respInfo <> responseUnit.io.respInfo
   memUnit.io.resp <> rxrspDown.io.out
 
   responseUnit.io.fromMainPipe <> mainPipe.io.toResponseUnit
