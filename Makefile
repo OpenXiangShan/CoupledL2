@@ -20,6 +20,9 @@ test-top-l2l3l2:
 test-top-fullsys:
 	mill -i CoupledL2.test.runMain coupledL2.TestTop_fullSys -td build
 
+test-top-xsconfig:
+	mill -i CoupledL2.test.runMain coupledL2.TestTop_XSConfig -td build
+
 clean:
 	rm -rf ./build
 
