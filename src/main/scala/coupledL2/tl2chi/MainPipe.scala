@@ -817,8 +817,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   }
 
   when (req_s3.cmoTask) {
-    alloc_state.s_refill := true.B
-    alloc_state.w_replResp := true.B
+    alloc_state.s_cmoresp := false.B
     // need Acquire downwards
     when (cmo_inval_s3 || cmo_clean_s3 || cmo_flush_s3) {
       alloc_state.s_acquire := false.B

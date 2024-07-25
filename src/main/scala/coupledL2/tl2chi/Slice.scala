@@ -201,6 +201,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   io.in.d <> inBuf.d(grantBuf.io.d)
   grantBuf.io.e <> inBuf.e(io.in.e)
   sinkCMO.io.cmoReq <> io.cmoReq
+  io.cmoResp <> mshrCtl.io.cmoResp
 
   /* Connect downwards channels */
   io.out.tx.req <> txreq.io.out

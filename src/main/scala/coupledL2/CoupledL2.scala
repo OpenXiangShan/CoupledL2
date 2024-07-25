@@ -225,6 +225,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
   val tpmeta_source_node = if(hasTPPrefetcher) Some(BundleBridgeSource(() => DecoupledIO(new TPmetaReq))) else None
   val tpmeta_sink_node = if(hasTPPrefetcher) Some(BundleBridgeSink(Some(() => ValidIO(new TPmetaResp)))) else None
   val cmo_sink_node = if(hasRVA23CMO) Some(BundleBridgeSink(Some(() => DecoupledIO(new RVA23CMOReq)))) else None
+  val cmo_source_node = if(hasRVA23CMO) Some(BundleBridgeSink(Some(() => DecoupledIO(new RVA23CMOResp)))) else None
   
   val managerPortParams = (m: TLSlavePortParameters) => TLSlavePortParameters.v1(
     m.managers.map { m =>
@@ -455,6 +456,12 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         slice
     }
 
+    cmo_source_node match {
+      case Some(x) =>
+        fastArb(slices.map(_.io.cmoResp), x.out.head._1, Some("cmo_resp"))
+      case None =>
+    }
+    
     // Refill hint
     if (enableHintGuidedGrant) {
       // for timing consideration, hint should latch one cycle before sending to L1

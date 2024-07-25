@@ -44,6 +44,7 @@ class MSHRTasks(implicit p: Parameters) extends TL2CHIL2Bundle {
   val source_b = DecoupledIO(new SourceBReq)
   val mainpipe = DecoupledIO(new TaskBundle) // To Mainpipe (SourceC or SourceD)
   // val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain)) // To prefetcher
+  val cmoResp = DecoupledIO(new RVA23CMOResp()) // To L1 CMO_channel
 }
 
 class MSHRResps(implicit p: Parameters) extends TL2CHIL2Bundle {
@@ -232,6 +233,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     mp_cbwrdata_valid ||
     mp_dct_valid
   // io.tasks.prefetchTrain.foreach(t => t.valid := !state.s_triggerprefetch.getOrElse(true.B))
+  io.tasks.cmoResp.valid := !state.s_cmoresp && state.w_grantlast && state.w_rprobeacklast
 
   when (
     pending_grant_valid &&
@@ -800,6 +802,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       state.s_dct.get := true.B
     }
   }
+  when (io.tasks.cmoResp.fire) {
+    state.s_cmoresp := true.B
+  }
 
   /*                      Handling response
 
@@ -941,7 +946,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     state.s_compack.getOrElse(true.B) &&
     state.s_cbwrdata.getOrElse(true.B) &&
     state.s_reissue.getOrElse(true.B) &&
-    state.s_dct.getOrElse(true.B)
+    state.s_dct.getOrElse(true.B) &&
+    state.s_cmoresp
   val no_wait = state.w_rprobeacklast && state.w_pprobeacklast && state.w_grantlast && state.w_releaseack && state.w_replResp
   val will_free = no_schedule && no_wait
   when (will_free && req_valid) {

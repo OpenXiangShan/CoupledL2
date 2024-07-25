@@ -249,6 +249,7 @@ class FSMState(implicit p: Parameters) extends L2Bundle {
   // val s_grantack = Bool() // respond grantack downwards, moved to GrantBuf
   // val s_triggerprefetch = prefetchOpt.map(_ => Bool())
   val s_retry = Bool()    // need retry when conflict
+  val s_cmoresp = Bool()  // resp upwards for finishing cmo inst
 
   // wait
   val w_rprobeackfirst = Bool()
@@ -326,6 +327,10 @@ class L2ToL1Hint(implicit p: Parameters) extends Bundle {
 // custom l2 - l1 CMO inst req
 class RVA23CMOReq(implicit p: Parameters) extends Bundle {
   val opcode = UInt(3.W)   // 0-cbo.clean, 1-cbo.flush, 2-cbo.inval, 3-cbo.zero
+  val address = UInt(64.W)
+}
+// custom l2 - l1 CMO inst resp(ack)
+class RVA23CMOResp(implicit p: Parameters) extends Bundle {
   val address = UInt(64.W)
 }
 
