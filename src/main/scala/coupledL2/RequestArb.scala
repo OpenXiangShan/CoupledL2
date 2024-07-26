@@ -33,6 +33,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
     val sinkA    = Flipped(DecoupledIO(new TaskBundle))
     val ATag     = Input(UInt(tagBits.W)) // !TODO: very dirty, consider optimize structure
     val ASet     = Input(UInt(setBits.W)) // To pass A entrance status to MP for blockA-info of ReqBuf
+    val ASetFast = Input(UInt(setBits.W)) // To pass A entrance status to MP for blockA-info of ReqBuf
     val s1Entrance = ValidIO(new L2Bundle {
       val set = UInt(setBits.W)
     })
@@ -261,7 +262,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   require(beatSize == 2)
 
   /* status of each pipeline stage */
-  io.status_s1.sets := VecInit(Seq(C_task.set, B_task.set, io.ASet, mshr_task_s1.bits.set))
+  io.status_s1.sets := VecInit(Seq(C_task.set, B_task.set, io.ASet, io.ASetFast, mshr_task_s1.bits.set))
   io.status_s1.tags := VecInit(Seq(C_task.tag, B_task.tag, io.ATag, mshr_task_s1.bits.tag))
  // io.status_s1.isKeyword := VecInit(Seq(C_task.isKeyword, B_task.isKeyword, io.isKeyword, mshr_task_s1.bits.isKeyword))
 

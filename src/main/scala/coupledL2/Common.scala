@@ -153,7 +153,7 @@ class PipeStatus(implicit p: Parameters) extends L2Bundle
 
 class PipeEntranceStatus(implicit p: Parameters) extends L2Bundle {
   val tags = Vec(4, UInt(tagBits.W))
-  val sets = Vec(4, UInt(setBits.W))
+  val sets = Vec(5, UInt(setBits.W))
   val dup = Bool()
 
   def c_tag = tags(0)
@@ -165,6 +165,7 @@ class PipeEntranceStatus(implicit p: Parameters) extends L2Bundle {
   def b_set = sets(1)
   def a_set = sets(2)
   def g_set = sets(3)
+  def f_set = sets(4) // fast a_set
 }
 
 // MSHR Task that MainPipe sends to MSHRCtl

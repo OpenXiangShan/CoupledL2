@@ -75,12 +75,13 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     val out         = DecoupledIO(new TaskBundle)
     val mshrInfo  = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo)))
     val aMergeTask = ValidIO(new AMergeTask)
-    val mainPipeBlock = Input(Vec(2, Bool()))
+    val mainPipeBlock = Input(Vec(4, Bool()))
     /* Snoop task from arbiter at stage 2 */
     val taskFromArb_s2 = Flipped(ValidIO(new TaskBundle()))
 
     val ATag        = Output(UInt(tagBits.W))
     val ASet        = Output(UInt(setBits.W))
+    val ASetFast    = Output(UInt(setBits.W))
 
     // when Probe/Release/MSHR enters MainPipe, we need also to block A req
     val s1Entrance = Flipped(ValidIO(new L2Bundle {
@@ -113,6 +114,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   /* ======== Data Structure ======== */
   io.ATag := in.tag
   io.ASet := in.set
+  io.ASetFast := io.in.bits.set
 
   val buffer = RegInit(VecInit(Seq.fill(entries)(0.U.asTypeOf(new ReqEntry))))
   val issueArb = Module(new FastArbiter(new ReqEntry, entries))
@@ -179,7 +181,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   def noFreeWay(task: TaskBundle): Bool = noFreeWayForSet(task.set)
 
   // flow not allowed when full, or entries might starve
-  val canFlow = flow.B && !full && io.in.valid && !conflict(io.in.bits) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(io.in.bits)
+  val canFlow = flow.B && !full && io.in.valid && !conflict(io.in.bits) && !chosenQValid && !Cat(io.mainPipeBlock(2),io.mainPipeBlock(3)).orR && !noFreeWay(io.in.bits)
   val doFlow  = canFlow && io.out.ready
   io.hasLatePF := latePrefetch(in) && inVal && !sameAddr(in, RegNext(in))
   io.hasMergeA := mergeA && inVal && !sameAddr(in, RegNext(in))
@@ -206,7 +208,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   val alloc = !full && inVal && !doFlow && !dup && !mergeA
   when(alloc){
     val entry = buffer(insertIdx)
-    val mpBlock = Cat(io.mainPipeBlock).orR
+    val mpBlock = Cat(io.mainPipeBlock(1),io.mainPipeBlock(0)).orR
     val pipeBlockOut = io.out.fire && sameSet(in, io.out.bits)
     val probeBlock   = io.s1Entrance.valid && io.s1Entrance.bits.set === in.set // wait for same-addr req to enter MSHR
     val s1Block      = pipeBlockOut || probeBlock

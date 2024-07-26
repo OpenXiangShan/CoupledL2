@@ -91,6 +91,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
 
   reqArb.io.ATag := reqBuf.io.ATag
   reqArb.io.ASet := reqBuf.io.ASet
+  reqArb.io.ASetFast := reqBuf.io.ASetFast
   reqArb.io.sinkA <> reqBuf.io.out
   reqArb.io.sinkB <> rxsnp.io.task
   reqArb.io.sinkC <> sinkC.io.task
