@@ -23,6 +23,7 @@ test-top-fullsys:
 test-top-xsconfig:
 	mill -i CoupledL2.test.runMain coupledL2.TestTop_XSConfig -td build --infer-rw --repl-seq-mem -c:TestTop:-o:TestTop.v.conf
 	./scripts/gen_sep_mem.sh "./scripts/vlsi_mem_gen" "./build/TestTop.v.conf" "./build"
+	python3 zero_ram.py
 
 clean:
 	rm -rf ./build
