@@ -95,6 +95,7 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   val cmo_task_s1 = Wire(Valid(new TaskBundle()))
   cmo_task_s1.valid := io.dirRead_s1.ready && io.cmoTask.valid && resetFinish
   cmo_task_s1.bits := io.cmoTask.bits
+  io.cmoTask.ready := io.dirRead_s1.ready && resetFinish && s2_ready
 
   val s1_needs_replRead = mshr_task_s1.valid && mshr_task_s1.bits.fromA && mshr_task_s1.bits.replTask && (
     mshr_task_s1.bits.opcode(2, 1) === Grant(2, 1) ||

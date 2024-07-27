@@ -35,7 +35,7 @@ abstract class BaseSliceIO[T_OUT <: BaseOuterBundle](implicit p: Parameters) ext
   // val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
   val dirResult = topDownOpt.map(_ => ValidIO(new DirResult))
   val latePF = topDownOpt.map(_ => Output(Bool()))
-  val cmoReq = DecoupledIO(new RVA23CMOReq())
+  val cmoReq = Flipped(DecoupledIO(new RVA23CMOReq()))
   val cmoResp = DecoupledIO(new RVA23CMOResp())
 }
 

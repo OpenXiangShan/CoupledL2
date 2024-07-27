@@ -234,6 +234,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     mp_dct_valid
   // io.tasks.prefetchTrain.foreach(t => t.valid := !state.s_triggerprefetch.getOrElse(true.B))
   io.tasks.cmoResp.valid := !state.s_cmoresp && state.w_grantlast && state.w_rprobeacklast
+  io.tasks.cmoResp.bits.address := 0.U
 
   when (
     pending_grant_valid &&
