@@ -116,6 +116,19 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(imp
     l2.mmioBridge.mmioNode := mmioClientNode
   }
 
+  val l1_cmo_sender_nodes = (0 until numCores).map(_ => BundleBridgeSource(() => DecoupledIO(new RVA23CMOReq)))
+  val l1_cmo_recver_nodes = (0 until numCores).map(_ => BundleBridgeSink(Some(() => DecoupledIO(new RVA23CMOResp))))
+  l1_cmo_sender_nodes.zip(l2_nodes).zipWithIndex.foreach { case ((cmo_sender, l2), i) =>
+    l2.cmo_sink_node.foreach { sink =>
+      sink := cmo_sender
+    }
+  }
+  l1_cmo_recver_nodes.zip(l2_nodes).zipWithIndex.foreach { case ((cmo_recver, l2), i) =>
+    l2.cmo_source_node.foreach { source =>
+      cmo_recver := source
+    }
+  }
+
   lazy val module = new LazyModuleImp(this){
     val timer = WireDefault(0.U(64.W))
     val logEnable = WireDefault(false.B)
