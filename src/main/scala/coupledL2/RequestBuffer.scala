@@ -91,11 +91,27 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     val hasMergeA = Output(Bool())
   })
 
+    /*  ========  Add registers to inPrefetch for timing ========*/
+
+  val regPrefetchValid = RegInit(false.B)
+  val regPrefetchBits = Reg(new TaskBundle)
+  val inPrefetchReady = Wire(Bool())
+
+  io.inPrefetch.foreach{ prefetch=>
+    when(prefetch.valid){
+      regPrefetchValid :=true.B
+      regPrefetchBits :=prefetch.bits
+    }.otherwise{
+      regPrefetchValid :=false.B
+    }
+    prefetch.ready := inPrefetchReady
+  }
+
    /*  ========  Mux in and inPrefetch and in(TL-A)always has the higher priority ========*/
   val in = Wire(new TaskBundle())
   val inVal = WireInit(false.B)
   if (prefetchOpt.nonEmpty) {
-    inVal := io.in.valid || io.inPrefetch.get.valid
+    inVal := io.in.valid || regPrefetchValid
   } else {
     inVal := io.in.valid
   }
@@ -105,7 +121,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     in := Mux(
       io.in.valid,
       io.in.bits,
-      io.inPrefetch.get.bits )
+      regPrefetchBits )
   } else {
     in := io.in.bits
   }
@@ -179,7 +195,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   def noFreeWay(task: TaskBundle): Bool = noFreeWayForSet(task.set)
 
   // flow not allowed when full, or entries might starve
-  val canFlow = flow.B && !full && io.in.valid && !conflict(io.in.bits) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(io.in.bits)
+  val canFlow = flow.B && !full && inVal && !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(in)
   val doFlow  = canFlow && io.out.ready
   io.hasLatePF := latePrefetch(in) && inVal && !sameAddr(in, RegNext(in))
   io.hasMergeA := mergeA && inVal && !sameAddr(in, RegNext(in))
@@ -198,9 +214,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
   /* ======== Alloc ======== */
   io.in.ready   := !full || doFlow || mergeA || dup
-  if (prefetchOpt.nonEmpty) {
-    io.inPrefetch.get.ready   := !full || dup
-  }
+  inPrefetchReady := !full || doFlow || dup
 
   val insertIdx = PriorityEncoder(buffer.map(!_.valid))
   val alloc = !full && inVal && !doFlow && !dup && !mergeA
@@ -294,8 +308,8 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   val cancel = !buffer(chosenQ.io.deq.bits.id).rdy
 
   chosenQ.io.deq.ready := io.out.ready || cancel
-  io.out.valid := chosenQValid && !cancel || io.in.valid && canFlow
-  io.out.bits  := Mux(canFlow, io.in.bits, chosenQ.io.deq.bits.bits.task)
+  io.out.valid := chosenQValid && !cancel || inVal && canFlow
+  io.out.bits  := Mux(canFlow, in, chosenQ.io.deq.bits.bits.task)
 
   when(chosenQ.io.deq.fire && !cancel) {
     buffer(chosenQ.io.deq.bits.id).valid := false.B
@@ -308,7 +322,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   if(cacheParams.enablePerf) {
 //    XSPerfAccumulate("drop_prefetch", io.in.valid && dup)
     if(flow){
-      XSPerfAccumulate("req_buffer_flow", io.in.valid && doFlow)
+      XSPerfAccumulate("req_buffer_flow", inVal && doFlow)
     }
     XSPerfAccumulate("req_buffer_alloc", alloc)
     XSPerfAccumulate("req_buffer_full", full) 
