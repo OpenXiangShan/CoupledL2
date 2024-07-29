@@ -11,6 +11,7 @@ import freechips.rocketchip.tilelink._
 import org.chipsalliance.cde.config._
 import coupledL2._
 import coupledL2.tl2chi._
+import coupledL2.tl2chi.chi._
 import utility._
 
 class TestTop_L3()(implicit p: Parameters) extends LazyModule with HasCHIMsgParameters {
@@ -104,6 +105,7 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(implic
       hartId              = i,
     )
     case EnableCHI => true
+    case CHIIssue => "B"
     case huancun.BankBitsKey => log2Ceil(banks)
     case MaxHartIdBits => log2Up(numCores)
     case LogUtilsOptionsKey => LogUtilsOptions(
