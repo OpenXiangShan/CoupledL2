@@ -29,7 +29,6 @@ import scala.math.max
 import coupledL2._
 import coupledL2.tl2chi.CHIOpcode.RSPOpcodes._
 import coupledL2.prefetch._
-import coupledL2.utils.XSPerfAccumulate
 
 abstract class TL2CHIL2Bundle(implicit val p: Parameters) extends Bundle
   with HasCoupledL2Parameters

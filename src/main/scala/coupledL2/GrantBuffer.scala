@@ -24,7 +24,6 @@ import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.prefetch.PrefetchResp
-import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram, XSPerfMax}
 
 // record info of those with Grant sent, yet GrantAck not received
 // used to block Probe upwards
@@ -198,10 +197,10 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   )
 
 
-  XSPerfAccumulate(cacheParams, "toTLBundleD_valid", deqValid)
-  XSPerfAccumulate(cacheParams, "toTLBundleD_valid_isKeyword", deqValid && deqTask.isKeyword.getOrElse(false.B))
-  XSPerfAccumulate(cacheParams, "toTLBundleD_fire", deqValid && io.d.ready)
-  XSPerfAccumulate(cacheParams, "toTLBundleD_fire_isKeyword", deqValid && io.d.ready && deqTask.isKeyword.getOrElse(false.B))
+  XSPerfAccumulate("toTLBundleD_valid", deqValid)
+  XSPerfAccumulate("toTLBundleD_valid_isKeyword", deqValid && deqTask.isKeyword.getOrElse(false.B))
+  XSPerfAccumulate("toTLBundleD_fire", deqValid && io.d.ready)
+  XSPerfAccumulate("toTLBundleD_fire_isKeyword", deqValid && io.d.ready && deqTask.isKeyword.getOrElse(false.B))
  /* val d_isKeyword = Mux(
     grantBufValid,
     grantBuf.task.isKeyword,
@@ -316,11 +315,11 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
         assert(t < 10000.U, "Inflight Grant Leak")
 
         val enable = RegNext(e.valid) && !e.valid
-        XSPerfHistogram(cacheParams, "grant_grantack_period", t, enable, 0, 12, 1)
-        XSPerfMax(cacheParams, "max_grant_grantack_period", t, enable)
+        XSPerfHistogram("grant_grantack_period", t, enable, 0, 12, 1)
+        XSPerfMax("max_grant_grantack_period", t, enable)
     }
     // pftRespQueue is about to be full, and using back pressure to block All MainPipe Entrance
     // which can SERIOUSLY affect performance, should consider less drastic prefetch policy
-    XSPerfAccumulate(cacheParams, "pftRespQueue_about_to_full", noSpaceForMSHRPft.getOrElse(false.B))
+    XSPerfAccumulate("pftRespQueue_about_to_full", noSpaceForMSHRPft.getOrElse(false.B))
   }
 }

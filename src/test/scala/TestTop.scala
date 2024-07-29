@@ -10,7 +10,7 @@ import freechips.rocketchip.tilelink._
 import huancun._
 import coupledL2.prefetch._
 import coupledL2.tl2tl._
-import utility.{ChiselDB, FileRegisters, TLLogger, Constantin}
+import utility._
 
 
 import scala.collection.mutable.ArrayBuffer
@@ -57,8 +57,18 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
   val l1d_nodes = (0 until 1) map( i => createClientNode(s"l1d$i", 32))
   val master_nodes = l1d_nodes
 
-  val l2 = LazyModule(new TL2TLCoupledL2()((baseConfig(1).alterPartial({
+  val l2 = LazyModule(new TL2TLCoupledL2()((baseConfig(1).alter((site, here, up) => {
     case BankBitsKey => 0
+    case LogUtilsOptionsKey => LogUtilsOptions(
+      false,
+      here(L2ParamKey).enablePerf,
+      here(L2ParamKey).FPGAPlatform
+    )
+    case PerfCounterOptionsKey => PerfCounterOptions(
+      here(L2ParamKey).enablePerf && !here(L2ParamKey).FPGAPlatform,
+      here(L2ParamKey).enableRollingDB && !here(L2ParamKey).FPGAPlatform,
+      0
+    )
   }))))
   val xbar = TLXbar()
   val ram = LazyModule(new TLRAM(AddressSet(0, 0xff_ffffL), beatBytes = 32))
@@ -140,7 +150,7 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
   ))
   val master_nodes = Seq(l1d, l1i)
 
-  val l2 = LazyModule(new TL2TLCoupledL2()(baseConfig(1).alterPartial({
+  val l2 = LazyModule(new TL2TLCoupledL2()(baseConfig(1).alter((site, here, up) => {
     case L2ParamKey => L2Param(
       name = s"l2",
       ways = 4,
@@ -153,9 +163,19 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
       ))
     )
     case BankBitsKey => 0
+    case LogUtilsOptionsKey => LogUtilsOptions(
+      false,
+      here(L2ParamKey).enablePerf,
+      here(L2ParamKey).FPGAPlatform
+    )
+    case PerfCounterOptionsKey => PerfCounterOptions(
+      here(L2ParamKey).enablePerf && !here(L2ParamKey).FPGAPlatform,
+      here(L2ParamKey).enableRollingDB && !here(L2ParamKey).FPGAPlatform,
+      0
+    )
   })))
 
-  val l3 = LazyModule(new HuanCun()(baseConfig(1).alterPartial({
+  val l3 = LazyModule(new HuanCun()(baseConfig(1).alter((site, here, up) => {
     case HCCacheParamsKey => HCCacheParameters(
       name = "l3",
       level = 3,
@@ -172,6 +192,16 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
       ),
       echoField = Seq(DirtyField()),
       simulation = true
+    )
+    case LogUtilsOptionsKey => LogUtilsOptions(
+      here(HCCacheParamsKey).enableDebug,
+      here(HCCacheParamsKey).enablePerf,
+      here(HCCacheParamsKey).FPGAPlatform
+    )
+    case PerfCounterOptionsKey => PerfCounterOptions(
+      here(HCCacheParamsKey).enablePerf && !here(HCCacheParamsKey).FPGAPlatform,
+      false,
+      0
     )
   })))
 
@@ -271,8 +301,18 @@ class TestTop_L2_Standalone()(implicit p: Parameters) extends LazyModule {
   val l1d_nodes = (0 until 1) map( i => createClientNode(s"l1d$i", 32))
   val master_nodes = l1d_nodes
 
-  val l2 = LazyModule(new TL2TLCoupledL2()(new Config((_, _, _) => {
+  val l2 = LazyModule(new TL2TLCoupledL2()(new Config((site, here, up) => {
     case BankBitsKey => 0
+    case LogUtilsOptionsKey => LogUtilsOptions(
+      false,
+      here(L2ParamKey).enablePerf,
+      here(L2ParamKey).FPGAPlatform
+    )
+    case PerfCounterOptionsKey => PerfCounterOptions(
+      here(L2ParamKey).enablePerf && !here(L2ParamKey).FPGAPlatform,
+      here(L2ParamKey).enableRollingDB && !here(L2ParamKey).FPGAPlatform,
+      0
+    )
   })))
   val xbar = TLXbar()
   val l3 = createManagerNode("Fake_L3", 16)
@@ -347,7 +387,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
   val l1d_nodes = (0 until nrL2).map(i => createClientNode(s"l1d$i", 32))
   val master_nodes = l1d_nodes
 
-  val coupledL2 = (0 until nrL2).map(i => LazyModule(new TL2TLCoupledL2()(baseConfig(1).alterPartial({
+  val coupledL2 = (0 until nrL2).map(i => LazyModule(new TL2TLCoupledL2()(baseConfig(1).alter((site, here, up) => {
     case L2ParamKey => L2Param(
       name = s"l2$i",
       ways = 4,
@@ -357,10 +397,20 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
       hartId = i
     )
     case BankBitsKey => 0
+    case LogUtilsOptionsKey => LogUtilsOptions(
+      false,
+      here(L2ParamKey).enablePerf,
+      here(L2ParamKey).FPGAPlatform
+    )
+    case PerfCounterOptionsKey => PerfCounterOptions(
+      here(L2ParamKey).enablePerf && !here(L2ParamKey).FPGAPlatform,
+      here(L2ParamKey).enableRollingDB && !here(L2ParamKey).FPGAPlatform,
+      i
+    )
   }))))
   val l2_nodes = coupledL2.map(_.node)
 
-  val l3 = LazyModule(new HuanCun()(baseConfig(1).alterPartial({
+  val l3 = LazyModule(new HuanCun()(baseConfig(1).alter((site, here, up) => {
     case HCCacheParamsKey => HCCacheParameters(
       name = "L3",
       level = 3,
@@ -377,6 +427,16 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
       ),
       echoField = Seq(DirtyField()),
       simulation = true
+    )
+    case LogUtilsOptionsKey => LogUtilsOptions(
+      here(HCCacheParamsKey).enableDebug,
+      here(HCCacheParamsKey).enablePerf,
+      here(HCCacheParamsKey).FPGAPlatform
+    )
+    case PerfCounterOptionsKey => PerfCounterOptions(
+      here(HCCacheParamsKey).enablePerf && !here(HCCacheParamsKey).FPGAPlatform,
+      false,
+      0
     )
   })))
 
@@ -482,7 +542,7 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
     master_nodes = master_nodes ++ Seq(l1d, l1i) // TODO
 
     val l1xbar = TLXbar()
-    val l2 = LazyModule(new TL2TLCoupledL2()(baseConfig(1).alterPartial({
+    val l2 = LazyModule(new TL2TLCoupledL2()(baseConfig(1).alter((site, here, up) => {
       case L2ParamKey => L2Param(
         name = s"l2$i",
         ways = 4,
@@ -495,6 +555,16 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
         ))
       )
       case BankBitsKey => 0
+      case LogUtilsOptionsKey => LogUtilsOptions(
+        false,
+        here(L2ParamKey).enablePerf,
+        here(L2ParamKey).FPGAPlatform
+      )
+      case PerfCounterOptionsKey => PerfCounterOptions(
+        here(L2ParamKey).enablePerf && !here(L2ParamKey).FPGAPlatform,
+        here(L2ParamKey).enableRollingDB && !here(L2ParamKey).FPGAPlatform,
+        i
+      )
     })))
 
     l1xbar := TLBuffer() := l1i
@@ -507,7 +577,7 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
     }
   }
 
-  val l3 = LazyModule(new HuanCun()(baseConfig(1).alterPartial({
+  val l3 = LazyModule(new HuanCun()(baseConfig(1).alter((site, here, up) => {
     case HCCacheParamsKey => HCCacheParameters(
       name = "L3",
       level = 3,
@@ -524,6 +594,16 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
       ),
       echoField = Seq(DirtyField()),
       simulation = true
+    )
+    case LogUtilsOptionsKey => LogUtilsOptions(
+      here(HCCacheParamsKey).enableDebug,
+      here(HCCacheParamsKey).enablePerf,
+      here(HCCacheParamsKey).FPGAPlatform
+    )
+    case PerfCounterOptionsKey => PerfCounterOptions(
+      here(HCCacheParamsKey).enablePerf && !here(HCCacheParamsKey).FPGAPlatform,
+      false,
+      0
     )
   })))
 

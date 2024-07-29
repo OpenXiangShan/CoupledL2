@@ -26,7 +26,6 @@ import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.prefetch.{PfSource, PrefetchTrain}
-import coupledL2.utils.XSPerfAccumulate
 import coupledL2.tl2chi.CHIOpcode._
 import coupledL2.tl2chi.CHIOpcode.DATOpcodes._
 import coupledL2.tl2chi.CHIOpcode.REQOpcodes._
@@ -106,7 +105,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   val pcrdtype = RegInit(0.U(PCRDTYPE_WIDTH.W))
   val gotRetryAck = RegInit(false.B)
   val gotPCrdGrant = RegInit(false.B)
-  val gotReissued = RegInit(false.B)
   val metaChi = ParallelLookUp(
     Cat(meta.dirty, meta.state),
     Seq(
@@ -118,12 +116,12 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       Cat( true.B, TIP)   -> UD
     ))
   //for PCrdGrant info. search
-  io.waitPCrdInfo.valid := gotRetryAck && !gotReissued
+  io.waitPCrdInfo.valid := gotRetryAck && !gotPCrdGrant
   io.waitPCrdInfo.srcID.get := srcid
   io.waitPCrdInfo.pCrdType.get := pcrdtype
 
   /* Allocation */
-  when(io.alloc.valid) {
+  when (io.alloc.valid) {
     req_valid := true.B
     state     := io.alloc.bits.state
     dirResult := io.alloc.bits.dirResult
@@ -137,7 +135,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 
     gotRetryAck := false.B
     gotPCrdGrant := false.B
-    gotReissued := false.B
     srcid := 0.U
     dbid := 0.U
     pcrdtype := 0.U
@@ -207,15 +204,17 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   assert(!(req_valid && req_prefetch && dirResult.hit), "MSHR can not receive prefetch hit req")
 
   /* ======== Task allocation ======== */
+  // The first Release with AllowRetry = 1 is sent to main pipe, because the task needs to write DS.
+  // The second Release with AllowRetry = 0 is sent to TXREQ directly, because DS is already written.
+  val release_valid1 = !state.s_release && state.w_rprobeacklast && state.w_grantlast && state.w_replResp
+  val release_valid2 = !state.s_reissue.getOrElse(false.B) && !state.w_releaseack && gotRetryAck && gotPCrdGrant
   // Theoretically, data to be released is saved in ReleaseBuffer, so Acquire can be sent as soon as req enters mshr
-//  io.tasks.txreq.valid := !state.s_acquire || !state.s_reissue
   io.tasks.txreq.valid := !state.s_acquire ||
-                          !state.s_reissue.getOrElse(false.B) && !state.w_grant && gotRetryAck && gotPCrdGrant
+                          !state.s_reissue.getOrElse(false.B) && !state.w_grant && gotRetryAck && gotPCrdGrant ||
+                          release_valid2
   io.tasks.txrsp.valid := !state.s_compack.get && state.w_grantlast
   io.tasks.source_b.valid := !state.s_pprobe || !state.s_rprobe
-  val mp_release_valid = !state.s_release && state.w_rprobeacklast && state.w_grantlast && state.w_replResp ||
-                         !state.s_reissue.getOrElse(false.B) && !state.w_releaseack && gotRetryAck && gotPCrdGrant
-                 // release after Grant to L1 sent and replRead returns
+  val mp_release_valid = release_valid1
   val mp_cbwrdata_valid = !state.s_cbwrdata.getOrElse(true.B) && state.w_releaseack
   val mp_probeack_valid = !state.s_probeack && state.w_pprobeacklast
   val pending_grant_valid = !state.s_refill && state.w_grantlast && state.w_rprobeacklast
@@ -303,20 +302,31 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       *  PrefetchRead         |  ReadNotSharedDirty
       *  PrefetchWrite        |  ReadUnique
       */
-    oa.opcode := ParallelPriorityMux(Seq(
-      (req.opcode === AcquirePerm && req.param === NtoT) -> MakeUnique,
-      req_needT                                          -> ReadUnique,
-      req_needB /* Default */                            -> ReadNotSharedDirty
-    ))
+    val isWriteBackFull = isT(meta.state) && meta.dirty || probeDirty
+    val isEvict = !isWriteBackFull
+    oa.opcode := Mux(
+      release_valid2,
+      Mux(isWriteBackFull, WriteBackFull, Evict),
+      ParallelPriorityMux(Seq(
+        (req.opcode === AcquirePerm && req.param === NtoT) -> MakeUnique,
+        req_needT                                          -> ReadUnique,
+        req_needB /* Default */                            -> ReadNotSharedDirty
+      ))
+    )
     oa.size := log2Ceil(blockBytes).U
-    oa.addr := Cat(req.tag, req.set, 0.U(offsetBits.W)) //TODO 36bit -> 48bit
+    oa.addr := Cat(Mux(release_valid2, dirResult.tag, req.tag), req.set, 0.U(offsetBits.W))
     oa.ns := false.B
     oa.likelyshared := false.B
     oa.allowRetry := state.s_reissue.getOrElse(false.B)
     oa.order := OrderEncodings.None
     oa.pCrdType := Mux(!state.s_reissue.getOrElse(false.B), pcrdtype, 0.U)
-    oa.expCompAck := true.B
-    oa.memAttr := MemAttr(cacheable = true.B, allocate = true.B, device = false.B, ewa = true.B)
+    oa.expCompAck := !release_valid2
+    oa.memAttr := MemAttr(
+      cacheable = true.B,
+      allocate = !(release_valid2 && isEvict),
+      device = false.B,
+      ewa = true.B
+    )
     oa.snpAttr := true.B
     oa.lpIDWithPadding := 0.U
     oa.excl := false.B
@@ -547,9 +557,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 
 
   val mergeA = RegInit(false.B)
-  when(io.aMergeTask.valid) {
+  when (io.aMergeTask.valid) {
     mergeA := true.B
-  }.elsewhen(io.alloc.valid) {
+  }.elsewhen (io.alloc.valid) {
     mergeA := false.B
   }
   val mp_grant_task    = {
@@ -707,6 +717,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     mp_dct.srcID.get := 0.U
     mp_dct.txnID.get := req.fwdTxnID.get
     mp_dct.homeNID.get := req.srcID.get
+    mp_dct.dbID.get := req.txnID.get
     mp_dct.chiOpcode.get := CompData
     mp_dct.resp.get := setPD(fwdCacheState, fwdPassDirty)
     mp_dct.fwdState.get := 0.U
@@ -740,8 +751,15 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 
   /* ======== Task update ======== */
   when (io.tasks.txreq.fire) {
-    state.s_acquire := true.B 
-    state.s_reissue.get := true.B 
+    state.s_acquire := true.B
+    when (!state.s_reissue.get) {
+      state.s_reissue.get := true.B
+      gotRetryAck := false.B
+      gotPCrdGrant := false.B
+      when (release_valid2) {
+        state.s_cbwrdata.get := !(isT(meta.state) && meta.dirty || probeDirty)
+      }
+    }
   }
   when (io.tasks.txrsp.fire) {
     state.s_compack.get := true.B
@@ -756,9 +774,12 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       state.s_retry := true.B
     }.elsewhen (mp_release_valid) {
       state.s_release := true.B
-      state.s_reissue.get := true.B
+      // when (!state.s_reissue.get) {
+      //   state.s_reissue.get := true.B
+      //   gotRetryAck := false.B
+      //   gotPCrdGrant := false.B
+      // }
       state.s_cbwrdata.get := !(isT(meta.state) && meta.dirty || probeDirty)
-      // meta.state := INVALID
     }.elsewhen (mp_cbwrdata_valid) {
       state.s_cbwrdata.get := true.B
       meta.state := INVALID
@@ -859,28 +880,25 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       dbid := rxrsp.bits.dbID.getOrElse(0.U)
       srcid := rxrsp.bits.srcID.getOrElse(0.U)
     }
-    when(rxrsp.bits.chiOpcode.get === CompDBIDResp) {
+    when (rxrsp.bits.chiOpcode.get === CompDBIDResp) {
       state.w_releaseack := true.B
       srcid := rxrsp.bits.srcID.getOrElse(0.U)
       dbid := rxrsp.bits.dbID.getOrElse(0.U)
     }
-    when(rxrsp.bits.chiOpcode.get === RetryAck) {
+    when (rxrsp.bits.chiOpcode.get === RetryAck) {
       srcid := rxrsp.bits.srcID.getOrElse(0.U)
       pcrdtype := rxrsp.bits.pCrdType.getOrElse(0.U)
       gotRetryAck := true.B
-      gotReissued := false.B
     }
-    when((rxrsp.bits.chiOpcode.get === PCrdGrant) && !gotReissued) {
+    when (rxrsp.bits.chiOpcode.get === PCrdGrant) {
       state.s_reissue.get := false.B
       gotPCrdGrant := true.B
-      gotReissued := true.B
     }
   }
  // when there is this type of pCredit in pCam -> reissue
   when (io.pCamPri) {
     state.s_reissue.get := false.B
     gotPCrdGrant := true.B
-    gotReissued := true.B
   }
 
   // replay
@@ -998,6 +1016,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     when (io.nestedwb.b_inv_dirty) {
       meta.dirty := false.B
       meta.state := INVALID
+      probeDirty := false.B
     }
   }
   when (nestedwb_hit_match) {
@@ -1025,11 +1044,11 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   // deadlock check
   // 
   val validCnt = RegInit(0.U(64.W))
-  when(io.alloc.valid) {
+  when (io.alloc.valid) {
     validCnt := 0.U
   }
 
-  when(req_valid) {
+  when (req_valid) {
     validCnt := validCnt + 1.U
   }
 
@@ -1037,6 +1056,12 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   val VALID_CNT_MAX = 200000.U
   assert(validCnt <= VALID_CNT_MAX, "validCnt full!, maybe there is a deadlock! addr => 0x%x req_opcode => %d channel => 0b%b", mshrAddr, req.opcode, req.channel)
 
+  val evictFire = io.tasks.txreq.fire && io.tasks.txreq.bits.opcode === Evict ||
+    io.tasks.mainpipe.fire && io.tasks.mainpipe.bits.opcode === Evict && io.tasks.mainpipe.bits.toTXREQ
+  val wbFire = io.tasks.txreq.fire && io.tasks.txreq.bits.opcode === WriteBackFull ||
+    io.tasks.mainpipe.fire && io.tasks.mainpipe.bits.opcode === WriteBackFull && io.tasks.mainpipe.bits.toTXREQ
+  assert(!RegNext(evictFire) || state.s_cbwrdata.get, "There should be no CopyBackWrData after Evict")
+  assert(!RegNext(wbFire) || !state.s_cbwrdata.get, "There must be a CopyBackWrData after WriteBack")
 
   /* ======== Performance counters ======== */
   // time stamp

@@ -28,7 +28,6 @@ import org.chipsalliance.cde.config.{Parameters, Field}
 import scala.math.max
 import coupledL2._
 import coupledL2.prefetch._
-import coupledL2.utils.XSPerfAccumulate
 import huancun.{TPmetaReq, TPmetaResp}
 
 class TL2TLCoupledL2(implicit p: Parameters) extends CoupledL2Base {

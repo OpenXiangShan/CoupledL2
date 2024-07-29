@@ -124,6 +124,6 @@ class SourceB(implicit p: Parameters) extends L2Module {
   /* ======== Perf ======== */
   for(i <- 0 until entries){
     val update = PopCount(probes.map(_.valid)) === i.U
-    XSPerfAccumulate(cacheParams, s"probe_buffer_util_$i", update)
+    XSPerfAccumulate(s"probe_buffer_util_$i", update)
   }
 }

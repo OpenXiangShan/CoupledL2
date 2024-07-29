@@ -24,15 +24,15 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLHints._
 import coupledL2.prefetch.PrefetchReq
-import coupledL2.utils.XSPerfAccumulate
 import huancun.{AliasKey, PrefetchKey}
-import utility.MemReqSource
+import utility.{MemReqSource, XSPerfAccumulate}
 
 class SinkA(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val a = Flipped(DecoupledIO(new TLBundleA(edgeIn.bundle)))
     val prefetchReq = prefetchOpt.map(_ => Flipped(DecoupledIO(new PrefetchReq)))
     val task = DecoupledIO(new TaskBundle)
+    val taskPrefetch = prefetchOpt.map(_ => DecoupledIO(new TaskBundle))
   })
   assert(!(io.a.valid && io.a.bits.opcode(2, 1) === 0.U), "no Put")
 
@@ -112,42 +112,37 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task
   }
   if (prefetchOpt.nonEmpty) {
-    io.task.valid := io.a.valid || io.prefetchReq.get.valid
-    io.task.bits := Mux(
-      io.a.valid,
-      fromTLAtoTaskBundle(io.a.bits),
-      fromPrefetchReqtoTaskBundle(io.prefetchReq.get.bits
-    ))
-
-    io.a.ready := io.task.ready
-    io.prefetchReq.get.ready := io.task.ready && !io.a.valid
-  } else {
-    io.task.valid := io.a.valid
-    io.task.bits := fromTLAtoTaskBundle(io.a.bits)
-    io.a.ready := io.task.ready
+    io.taskPrefetch.get.valid := io.prefetchReq.get.valid
+    io.taskPrefetch.get.bits := fromPrefetchReqtoTaskBundle(io.prefetchReq.get.bits)
+    io.prefetchReq.get.ready := io.taskPrefetch.get.ready && !io.a.valid
   }
+  
+
+  io.task.valid := io.a.valid
+  io.task.bits := fromTLAtoTaskBundle(io.a.bits)
+  io.a.ready := io.task.ready
 
   // Performance counters
   // num of reqs
-  XSPerfAccumulate(cacheParams, "sinkA_req", io.task.fire)
-  XSPerfAccumulate(cacheParams, "sinkA_acquire_req", io.a.fire && io.a.bits.opcode(2, 1) === AcquireBlock(2, 1))
-  XSPerfAccumulate(cacheParams, "sinkA_acquireblock_req", io.a.fire && io.a.bits.opcode === AcquireBlock)
-  XSPerfAccumulate(cacheParams, "sinkA_acquireperm_req", io.a.fire && io.a.bits.opcode === AcquirePerm)
-  XSPerfAccumulate(cacheParams, "sinkA_get_req", io.a.fire && io.a.bits.opcode === Get)
+  XSPerfAccumulate("sinkA_req", io.task.fire)
+  XSPerfAccumulate("sinkA_acquire_req", io.a.fire && io.a.bits.opcode(2, 1) === AcquireBlock(2, 1))
+  XSPerfAccumulate("sinkA_acquireblock_req", io.a.fire && io.a.bits.opcode === AcquireBlock)
+  XSPerfAccumulate("sinkA_acquireperm_req", io.a.fire && io.a.bits.opcode === AcquirePerm)
+  XSPerfAccumulate("sinkA_get_req", io.a.fire && io.a.bits.opcode === Get)
   prefetchOpt.foreach {
     _ =>
-      XSPerfAccumulate(cacheParams, "sinkA_prefetch_req", io.prefetchReq.get.fire)
-      XSPerfAccumulate(cacheParams, "sinkA_prefetch_from_l2", io.prefetchReq.get.bits.fromL2 && io.prefetchReq.get.fire)
-      XSPerfAccumulate(cacheParams, "sinkA_prefetch_from_l1", !io.prefetchReq.get.bits.fromL2 && io.prefetchReq.get.fire)
+      XSPerfAccumulate("sinkA_prefetch_req", io.prefetchReq.get.fire)
+      XSPerfAccumulate("sinkA_prefetch_from_l2", io.prefetchReq.get.bits.fromL2 && io.prefetchReq.get.fire)
+      XSPerfAccumulate("sinkA_prefetch_from_l1", !io.prefetchReq.get.bits.fromL2 && io.prefetchReq.get.fire)
   }
 
   // cycels stalled by mainpipe
   val stall = io.task.valid && !io.task.ready
-  XSPerfAccumulate(cacheParams, "sinkA_stall_by_mainpipe", stall)
-  XSPerfAccumulate(cacheParams, "sinkA_acquire_stall_by_mainpipe", stall &&
+  XSPerfAccumulate("sinkA_stall_by_mainpipe", stall)
+  XSPerfAccumulate("sinkA_acquire_stall_by_mainpipe", stall &&
     (io.task.bits.opcode === AcquireBlock || io.task.bits.opcode === AcquirePerm))
-  XSPerfAccumulate(cacheParams, "sinkA_get_stall_by_mainpipe", stall && io.task.bits.opcode === Get)
-  XSPerfAccumulate(cacheParams, "sinkA_put_stall_by_mainpipe", stall &&
+  XSPerfAccumulate("sinkA_get_stall_by_mainpipe", stall && io.task.bits.opcode === Get)
+  XSPerfAccumulate("sinkA_put_stall_by_mainpipe", stall &&
     (io.task.bits.opcode === PutFullData || io.task.bits.opcode === PutPartialData))
-  prefetchOpt.foreach { _ => XSPerfAccumulate(cacheParams, "sinkA_prefetch_stall_by_mainpipe", stall && io.task.bits.opcode === Hint) }
+  prefetchOpt.foreach { _ => XSPerfAccumulate("sinkA_prefetch_stall_by_mainpipe", stall && io.task.bits.opcode === Hint) }
 }

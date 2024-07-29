@@ -27,7 +27,7 @@ import coupledL2._
 import coupledL2.utils._
 import coupledL2.debug._
 import coupledL2.prefetch.PrefetchIO
-import utility.RegNextN
+import utility.{RegNextN, XSPerfHistogram}
 
 class OuterBundle(params: TLBundleParameters) extends TLBundle(params) with BaseOuterBundle
 
@@ -55,10 +55,15 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   val prbq = Module(new ProbeQueue())
   prbq.io <> DontCare // @XiaBin TODO
 
+  if (prefetchOpt.nonEmpty) {
+    a_reqBuf.io.inPrefetch.get <> sinkA.io.taskPrefetch.get
+  }
   a_reqBuf.io.in <> sinkA.io.task
   a_reqBuf.io.mshrInfo := mshrCtl.io.msInfo
   a_reqBuf.io.mainPipeBlock := mainPipe.io.toReqBuf
   a_reqBuf.io.s1Entrance := reqArb.io.s1Entrance
+  a_reqBuf.io.taskFromArb_s2 := reqArb.io.taskToPipe_s2
+
   sinkB.io.msInfo := mshrCtl.io.msInfo
   sinkC.io.msInfo := mshrCtl.io.msInfo
 
@@ -143,6 +148,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
       p.tlb_req.req.ready := true.B
       p.tlb_req.resp.valid := false.B
       p.tlb_req.resp.bits := DontCare
+      p.tlb_req.pmp_resp := DontCare
       p.recv_addr := 0.U.asTypeOf(p.recv_addr)
   }
 
@@ -190,10 +196,10 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
     val delay = timer - a_begin_times(d_source)
     val (first, _, _, _) = edgeIn.count(grantBuf.io.d)
     val delay_sample = grantBuf.io.d.fire && grantBuf.io.d.bits.opcode =/= ReleaseAck && first
-    XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 0, 20, 1, true, true)
-    XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 20, 300, 10, true, true)
-    XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 300, 500, 20, true, true)
-    XSPerfHistogram(cacheParams, "a_to_d_delay", delay, delay_sample, 500, 1000, 100, true, false)
+    XSPerfHistogram("a_to_d_delay", delay, delay_sample, 0, 20, 1, true, true)
+    XSPerfHistogram("a_to_d_delay", delay, delay_sample, 20, 300, 10, true, true)
+    XSPerfHistogram("a_to_d_delay", delay, delay_sample, 300, 500, 20, true, true)
+    XSPerfHistogram("a_to_d_delay", delay, delay_sample, 500, 1000, 100, true, false)
   }
 
   val monitor = Module(new Monitor())
