@@ -331,9 +331,9 @@ class CHIRSP(implicit p: Parameters) extends CHIBundle {
   val cBusy = field_Eb(UInt(CBUSY_WIDTH.W))
 
   val dbID = UInt(DBID_WIDTH.W)
-  def pGroupID = dbID(LPID_WIDTH - 1, 0)
-  def stashGroupID = dbID(LPID_WIDTH - 1, 0)
-  def tagGroupID = dbID(LPID_WIDTH - 1, 0)
+  def pGroupID = dbID(LPID_WITH_PADDING_WIDTH - 1, 0)
+  def stashGroupID = dbID(LPID_WITH_PADDING_WIDTH - 1, 0)
+  def tagGroupID = dbID(LPID_WITH_PADDING_WIDTH - 1, 0)
 
   val pCrdType = UInt(PCRDTYPE_WIDTH.W)
 
