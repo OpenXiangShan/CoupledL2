@@ -11,7 +11,6 @@ import freechips.rocketchip.tilelink._
 import org.chipsalliance.cde.config._
 import coupledL2._
 import coupledL2.tl2chi._
-import coupledL2.tl2chi.chi._
 import utility._
 
 class TestTop_L3()(implicit p: Parameters) extends LazyModule with HasCHIMsgParameters {
