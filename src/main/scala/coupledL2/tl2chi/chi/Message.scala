@@ -76,10 +76,8 @@ object RespErrEncodings {
   * to support different CHI issues (versions).
   */
 object Issue {
-  val B = "issueB"
-  val Eb = "issueEb"
-
-  val curr_issue = Eb
+  val B = "B"
+  val Eb = "E.b"
 }
 
 trait HasCHIMsgParameters {
