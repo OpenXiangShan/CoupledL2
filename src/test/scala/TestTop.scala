@@ -123,6 +123,7 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(implic
     case OpenLLCParamKey => OpenLLCParam(
       clientCaches = Seq.fill(numCores)(cacheParams)
     )
+    case CHIIssue => "B"
   })))
   val l3xbar = LazyModule(new DummyLLC(1)(p))
   val ram = LazyModule(new AXI4RAM(AddressSet(0, 0xff_ffffL), beatBytes = 32))
