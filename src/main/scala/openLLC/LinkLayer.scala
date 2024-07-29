@@ -22,17 +22,17 @@ import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2chi._
 
-class DownwardsNoSnpLinkIO extends Bundle with HasLinkSwitch {
+class DownwardsNoSnpLinkIO(implicit p: Parameters) extends Bundle with HasLinkSwitch {
   val req = ChannelIO(new CHIREQ)
   val dat = ChannelIO(new CHIDAT)
 }
 
-class UpwardsNoSnpLinkIO extends Bundle with HasLinkSwitch {
+class UpwardsNoSnpLinkIO(implicit p: Parameters) extends Bundle with HasLinkSwitch {
   val rsp = ChannelIO(new CHIRSP)
   val dat = ChannelIO(new CHIDAT)
 }
 
-class NoSnpPortIO extends Bundle with HasPortSwitch {
+class NoSnpPortIO(implicit p: Parameters) extends Bundle with HasPortSwitch {
   val tx = new DownwardsNoSnpLinkIO
   val rx = Flipped(new UpwardsNoSnpLinkIO)
 }
