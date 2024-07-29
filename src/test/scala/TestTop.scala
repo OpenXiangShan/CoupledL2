@@ -125,7 +125,9 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(implic
     )
     case CHIIssue => "B"
   })))
-  val l3xbar = LazyModule(new DummyLLC(1)(p))
+  val l3xbar = LazyModule(new DummyLLC(1)(p.alter((_, _, _) => {
+    case CHIIssue => "B"
+  })))
   val ram = LazyModule(new AXI4RAM(AddressSet(0, 0xff_ffffL), beatBytes = 32))
 
   val bankBinders = (0 until numCores).map(_ => BankBinder(banks, 64))
