@@ -151,6 +151,14 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(imp
         }
       }
     }
+    l1_cmo_sender_nodes.zipWithIndex.foreach{
+      case (node, i) =>
+        node.makeIOs()(ValName(s"cmo_sender_port_$i"))
+    }
+    l1_cmo_recver_nodes.zipWithIndex.foreach{
+      case (node, i) =>
+        node.makeIOs()(ValName(s"cmo_recver_port_$i"))
+    }
 
     val io = IO(Vec(numCores, new Bundle() {
       val chi = new PortIO
