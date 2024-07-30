@@ -16,21 +16,17 @@ import utility._
 class TestTop_L3()(implicit p: Parameters) extends LazyModule with HasCHIMsgParameters {
   override lazy val desiredName: String = "TestTop_L3"
 
-  val cacheParams = p(OpenLLCParamKey)
-  val numRNs = cacheParams.clientCaches.size
   val l3 = LazyModule(new OpenLLC())
 
   lazy val module = new LazyModuleImp(this){
     val io = IO(new Bundle {
-      val rn = Vec(numRNs, Flipped(new PortIO))
-      val sn = new NoSnpPortIO
+      val chi_upwards = Flipped(new PortIO)
+      val chi_downwards = new NoSnpPortIO
       val nodeID = Input(UInt(NODEID_WIDTH.W))
-    })
-
+    })    
     l3.module.io.nodeID := io.nodeID
-    l3.module.io.rn <> io.rn
-
-    io.sn <> l3.module.io.sn
+    l3.module.io.chi_downwards <> io.chi_downwards
+    l3.module.io.chi_upwards <> io.chi_upwards
   }
 }
 
@@ -119,13 +115,7 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(implic
     )
   }))))
 
-  val l3 = LazyModule(new OpenLLC()(new Config((site, here, up) => {
-    case OpenLLCParamKey => OpenLLCParam(
-      clientCaches = Seq.fill(numCores)(cacheParams)
-    )
-    case CHIIssue => "B"
-  })))
-  val l3xbar = LazyModule(new DummyLLC(1)(p.alter((_, _, _) => {
+  val l3 = LazyModule(new DummyLLC(numCores)(p.alter((_, _, _) => {
     case CHIIssue => "B"
   })))
   val ram = LazyModule(new AXI4RAM(AddressSet(0, 0xff_ffffL), beatBytes = 32))
@@ -167,7 +157,7 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(implic
   ram.node := 
     AXI4Xbar() :=
     AXI4Fragmenter() :=
-    l3xbar.axi4node
+    l3.axi4node
 
   lazy val module = new LazyModuleImp(this) {
     val timer = WireDefault(0.U(64.W))
@@ -201,21 +191,6 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(implic
       l2.module.io.debugTopDown := DontCare
       l2.module.io.l2_tlb_req <> DontCare
     }
-
-    l3.module.io.sn.rx.dat <> l3xbar.module.io.rn(0).rx.dat
-    l3.module.io.sn.rx.rsp <> l3xbar.module.io.rn(0).rx.rsp
-    l3.module.io.sn.rxsactive := l3xbar.module.io.rn(0).rxsactive
-    l3.module.io.sn.rx.linkactivereq := l3xbar.module.io.rn(0).rx.linkactivereq
-    l3.module.io.sn.tx.linkactiveack := l3xbar.module.io.rn(0).tx.linkactiveack
-    l3.module.io.nodeID := numCores.U(NODEID_WIDTH.W)
-
-    l3xbar.module.io.rn(0).tx.req <> l3.module.io.sn.tx.req
-    l3xbar.module.io.rn(0).tx.dat <> l3.module.io.sn.tx.dat
-    l3xbar.module.io.rn(0).txsactive := l3.module.io.sn.txsactive
-    l3xbar.module.io.rn(0).tx.linkactivereq := l3.module.io.sn.tx.linkactivereq
-    l3xbar.module.io.rn(0).rx.linkactiveack := l3.module.io.sn.rx.linkactiveack
-    l3xbar.module.io.rn(0).tx.rsp := DontCare
-    l3xbar.module.io.rn(0).rx.snp := DontCare
   }
 }
 
