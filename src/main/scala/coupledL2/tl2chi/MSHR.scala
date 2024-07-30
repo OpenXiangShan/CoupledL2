@@ -1017,18 +1017,18 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     when (io.nestedwb.c_set_dirty) {
       meta.dirty := true.B
     }
-    when (io.nestedwb.b_inv_dirty) {
+    when (io.nestedwb.b_inv_dirty && req.fromA) {
       meta.dirty := false.B
       meta.state := INVALID
       probeDirty := false.B
     }
   }
   when (nestedwb_hit_match) {
-    when (io.nestedwb.b_toB.get) {
+    when (io.nestedwb.b_toB.get && req.fromA) {
       meta.state := Mux(meta.state >= BRANCH, BRANCH, INVALID)
       meta.dirty := false.B
     }
-    when (io.nestedwb.b_toN.get) {
+    when (io.nestedwb.b_toN.get && req.fromA) {
       meta.state := INVALID
       dirResult.hit := false.B
       meta.dirty := false.B
