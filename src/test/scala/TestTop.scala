@@ -25,8 +25,8 @@ class TestTop_L3()(implicit p: Parameters) extends LazyModule with HasCHIMsgPara
       val nodeID = Input(UInt(NODEID_WIDTH.W))
     })    
     l3.module.io.nodeID := io.nodeID
-    l3.module.io.chi_downwards <> io.chi_downwards
-    l3.module.io.chi_upwards <> io.chi_upwards
+    l3.module.io.rn <> io.chi_upwards;
+    l3.module.io.sn <> io.chi_downwards;
   }
 }
 
