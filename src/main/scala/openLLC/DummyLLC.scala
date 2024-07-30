@@ -72,6 +72,11 @@ class DummyLLCImp(numRNs: Int)(wrapper: DummyLLC) extends LazyModuleImp(wrapper)
     rn(i) <> linkMonitor.io.out
   }
 
+  println(s"CHI REQ Flit Width: ${io.rn(0).tx.req.flit.getWidth}")
+  println(s"CHI RSP Flit Width: ${io.rn(0).tx.rsp.flit.getWidth}")
+  println(s"CHI SNP Flit Width: ${io.rn(0).rx.snp.flit.getWidth}")
+  println(s"CHI DAT Flit Width: ${io.rn(0).rx.dat.flit.getWidth}")
+
   val releaseBuf = Reg(Vec(beatSize, UInt((beatBytes * 8).W)))
   val refillBuf = Reg(Vec(beatSize, UInt((beatBytes * 8).W)))
   val wBeatCnt = RegInit(0.U(log2Ceil(beatSize).W))

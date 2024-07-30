@@ -25,8 +25,8 @@ class TestTop_L3()(implicit p: Parameters) extends LazyModule with HasCHIMsgPara
       val nodeID = Input(UInt(NODEID_WIDTH.W))
     })    
     l3.module.io.nodeID := io.nodeID
-    l3.module.io.chi_downwards <> io.chi_downwards
-    l3.module.io.chi_upwards <> io.chi_upwards
+    l3.module.io.rn <> io.chi_upwards;
+    l3.module.io.sn <> io.chi_downwards;
   }
 }
 
@@ -100,6 +100,7 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(implic
       hartId              = i,
     )
     case EnableCHI => true
+    case CHIIssue => "B"
     case huancun.BankBitsKey => log2Ceil(banks)
     case MaxHartIdBits => log2Up(numCores)
     case LogUtilsOptionsKey => LogUtilsOptions(
@@ -114,7 +115,9 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(implic
     )
   }))))
 
-  val l3 = LazyModule(new DummyLLC(numCores)(p))
+  val l3 = LazyModule(new DummyLLC(numCores)(p.alter((_, _, _) => {
+    case CHIIssue => "B"
+  })))
   val ram = LazyModule(new AXI4RAM(AddressSet(0, 0xff_ffffL), beatBytes = 32))
 
   val bankBinders = (0 until numCores).map(_ => BankBinder(banks, 64))

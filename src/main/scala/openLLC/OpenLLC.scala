@@ -44,6 +44,11 @@ class OpenLLC(implicit p: Parameters) extends LazyModule with HasOpenLLCParamete
       val nodeID = Input(UInt())
     })
 
+    println(s"CHI REQ Flit Width: ${io.rn(0).tx.req.flit.getWidth}")
+    println(s"CHI RSP Flit Width: ${io.rn(0).tx.rsp.flit.getWidth}")
+    println(s"CHI SNP Flit Width: ${io.rn(0).rx.snp.flit.getWidth}")
+    println(s"CHI DAT Flit Width: ${io.rn(0).rx.dat.flit.getWidth}")
+
     val rnXbar = Module(new RNXbar())
     val snXbar = Module(new SNXbar())
     val snLinkMonitor = Module(new DownwardsLinkMonitor())
