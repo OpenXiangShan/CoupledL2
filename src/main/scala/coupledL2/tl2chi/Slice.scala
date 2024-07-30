@@ -24,7 +24,7 @@ import org.chipsalliance.cde.config.Parameters
 import coupledL2._
 import coupledL2.prefetch.PrefetchIO
 
-class OuterBundle extends DecoupledPortIO with BaseOuterBundle
+class OuterBundle(implicit p: Parameters) extends DecoupledPortIO with BaseOuterBundle
 
 class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   with HasCoupledL2Parameters

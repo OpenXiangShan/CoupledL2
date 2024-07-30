@@ -25,19 +25,19 @@ import scala.collection.immutable.{ListMap, SeqMap}
 import utility.ChiselDB
 import CHIOpcode._
 
-class CHILogger(name: String, enable: Boolean)(implicit p: Parameters) extends Module {
+class CHILogger(name: String, enable: Boolean, flit_as_is: Boolean = false)
+               (implicit val p: Parameters) extends Module with HasCHIMsgParameters {
+
   val io = IO(new Bundle() {
     val up = Flipped(new PortIO)
     val down = new PortIO
   })
   io.down <> io.up
-  CHILogger.track(io.down, this.clock, this.reset)(name)
-}
+  track(io.down, this.clock, this.reset)(name)
 
-object CHILogger extends HasCHIMsgParameters {
   // packed_flit = true: just dump the whole flit as UInt
   // packed_flit = false: separate every field
-  val packed_flit = false
+  val packed_flit = flit_as_is
 
   // ** !! gather all distinct fields from CHI bundles !! **
   val all_bundles = Seq(new CHIREQ, new CHIRSP, new CHIDAT, new CHISNP)
@@ -175,7 +175,10 @@ object CHILogger extends HasCHIMsgParameters {
     table.log(txrsp_log, txrsp.flitv, name, clock, reset)
     table.log(txdat_log, txdat.flitv, name, clock, reset)
   }
+}
 
+object CHILogger {
+  
   def apply(name: String, enable: Boolean = true)(implicit p: Parameters) = {
     val logger = Module(new CHILogger(name, enable))
     logger

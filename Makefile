@@ -1,3 +1,17 @@
+ISSUE ?= B
+
+TEST_TOP_SUFFIX := UNKNOWN
+ifeq ($(ISSUE), B)
+TEST_TOP_SUFFIX :=
+endif
+ifeq ($(ISSUE), E.b)
+TEST_TOP_SUFFIX := _Eb
+endif
+
+ifeq ($(TEST_TOP_SUFFIX), UNKNOWN)
+$(error "Unknown CHI Issue specified: $(ISSUE)")
+endif
+
 init:
 	git submodule update --init
 	cd rocket-chip && git submodule update --init hardfloat cde
@@ -32,28 +46,28 @@ test-top-fullsys:
 	$(MAKE) test-top SYSTEM=fullSys
 
 test-top-chi-dualcore-0ul:
-	$(MAKE) test-top SYSTEM=CHI_DualCore_0UL
+	$(MAKE) test-top SYSTEM=CHI_DualCore_0UL$(TEST_TOP_SUFFIX)
 
 test-top-chi-dualcore-2ul:
-	$(MAKE) test-top SYSTEM=CHI_DualCore_2UL
+	$(MAKE) test-top SYSTEM=CHI_DualCore_2UL$(TEST_TOP_SUFFIX)
 
 test-top-chi-quadcore-0ul:
-	$(MAKE) test-top SYSTEM=CHI_QuadCore_0UL
+	$(MAKE) test-top SYSTEM=CHI_QuadCore_0UL$(TEST_TOP_SUFFIX)
 
 test-top-chi-quadcore-2ul:
-	$(MAKE) test-top SYSTEM=CHI_QuadCore_2UL
+	$(MAKE) test-top SYSTEM=CHI_QuadCore_2UL$(TEST_TOP_SUFFIX)
 
 test-top-chi-octacore-0ul:
-	$(MAKE) test-top SYSTEM=CHI_OctaCore_0UL
+	$(MAKE) test-top SYSTEM=CHI_OctaCore_0UL$(TEST_TOP_SUFFIX)
 
 test-top-chi-octacore-2ul:
-	$(MAKE) test-top SYSTEM=CHI_OctaCore_2UL
+	$(MAKE) test-top SYSTEM=CHI_OctaCore_2UL$(TEST_TOP_SUFFIX)
 
 test-top-chi-hexacore-0ul:
-	$(MAKE) test-top SYSTEM=CHI_HexaCore_0UL
+	$(MAKE) test-top SYSTEM=CHI_HexaCore_0UL$(TEST_TOP_SUFFIX)
 
 test-top-chi-hexacore-2ul:
-	$(MAKE) test-top SYSTEM=CHI_HexaCore_2UL
+	$(MAKE) test-top SYSTEM=CHI_HexaCore_2UL$(TEST_TOP_SUFFIX)
 
 clean:
 	rm -rf ./build

@@ -78,6 +78,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
   val probeDirty = RegInit(false.B)
   val probeGotN = RegInit(false.B)
   val timer = RegInit(0.U(64.W)) // for performance analysis
+  val beatCnt = RegInit(0.U(log2Ceil(beatSize).W))
 
   val req_valid = RegInit(false.B)
   val req       = RegInit(0.U.asTypeOf(new TaskBundle()))
@@ -132,6 +133,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
     probeDirty  := false.B
     probeGotN   := false.B
     timer       := 1.U
+    beatCnt     := 0.U
 
     gotRetryAck := false.B
     gotPCrdGrant := false.B
@@ -328,7 +330,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
       ewa = true.B
     )
     oa.snpAttr := true.B
-    oa.lpID := 0.U
+    oa.lpIDWithPadding := 0.U
     oa.excl := false.B
     oa.snoopMe := false.B
     oa.traceTag := false.B
@@ -829,6 +831,17 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 
   // RXDAT
   when (rxdat.valid) {
+    when (rxdat.bits.chiOpcode.get === DataSepResp) {
+      require(beatSize == 2) // TODO: This is ugly
+      beatCnt := beatCnt + 1.U
+      state.w_grantfirst := true.B
+      state.w_grantlast := state.w_grantfirst && beatCnt === (beatSize - 1).U
+      state.w_grant := req.off === 0.U || state.w_grantfirst  // TODO? why offset?
+      gotT := rxdatIsU || rxdatIsU_PD
+      gotDirty := gotDirty || rxdatIsU_PD
+      gotGrantData := true.B
+    }
+
     when (rxdat.bits.chiOpcode.get === CompData) {
       require(beatSize == 2) // TODO: This is ugly
       state.w_grantfirst := true.B
@@ -844,6 +857,13 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
 
   // RXRSP for dataless
   when (rxrsp.valid) {
+    when (rxrsp.bits.chiOpcode.get === RespSepData) {
+      state.w_grantfirst := true.B
+      srcid := rxrsp.bits.srcID.getOrElse(0.U)
+      homenid := rxrsp.bits.srcID.getOrElse(0.U)
+      dbid := rxrsp.bits.dbID.getOrElse(0.U)
+    }
+
     when (rxrsp.bits.chiOpcode.get === Comp) {
       // There is a pending Read transaction waiting for the Comp resp
       when (!state.w_grant) {
