@@ -154,7 +154,6 @@ class PipeStatus(implicit p: Parameters) extends L2Bundle
 class PipeEntranceStatus(implicit p: Parameters) extends L2Bundle {
   val tags = Vec(4, UInt(tagBits.W))
   val sets = Vec(4, UInt(setBits.W))
-  val dup = Bool()
 
   def c_tag = tags(0)
   def b_tag = tags(1)
