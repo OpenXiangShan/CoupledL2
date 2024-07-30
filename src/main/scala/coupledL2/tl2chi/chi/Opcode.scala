@@ -235,12 +235,6 @@ object CHIOpcode {
 
     def width(implicit p: Parameters) = width_map(p(CHIIssue))
 
-    def DataL2RdData(implicit p: Parameters)        = 0x0.U(width.W)
-    def DataL2RdDataFwded(implicit p: Parameters)  = 0x1.U(width.W)
-    def DataL2RdDataCancel(implicit p: Parameters) = 0x2.U(width.W)
-    def DataL2RdDataFwdedCancel(implicit p: Parameters) = 0x3.U(width.W)
-    def DataL2RdDataFwdedCancel2(implicit p: Parameters) = 0x4.U(width.W)
-
     def DataLCrdReturn(implicit p: Parameters)    = 0x0.U(width.W)
     def SnpRespData(implicit p: Parameters)       = 0x1.U(width.W)
     def CopyBackWrData(implicit p: Parameters)    = 0x2.U(width.W)
