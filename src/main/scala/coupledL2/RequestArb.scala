@@ -194,17 +194,14 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   task_s2.valid := s1_fire
   when(s1_fire) { task_s2.bits := task_s1.bits }
 
+/*  val sameSet_s2 = task_s2.valid && task_s2.bits.fromA && !task_s2.bits.mshrTask && task_s2.bits.set === A_task.set
+  val sameSet_s3 = RegNext(task_s2.valid && task_s2.bits.fromA && !task_s2.bits.mshrTask) &&
+    RegEnable(task_s2.bits.set, task_s2.valid) === A_task.set
+  val sameSetCnt = PopCount(VecInit(io.msInfo.map(s => s.valid && s.bits.set === A_task.set && s.bits.fromA) :+
+    sameSet_s2 :+ sameSet_s3).asUInt)
+  noFreeWay := sameSetCnt >= cacheParams.ways.U
+ */
   io.taskToPipe_s2 := task_s2
-
-  // remove duplicate prefetch if same-addr A req in MSHR
-  def sameAddr(a: TaskBundle, b: MSHRInfo): Bool = Cat(a.tag, a.set) === Cat(b.reqTag, b.set)
-  val isPrefetch = task_s2.bits.fromA && task_s2.bits.opcode === Hint && !task_s2.bits.mshrTask
-  val dupMask    = VecInit(
-    io.msInfo.map(s =>
-      s.valid && s.bits.isAcqOrPrefetch && sameAddr(task_s2.bits, s.bits)) 
-  ).asUInt
-
-  io.status_s1.dup := isPrefetch && dupMask.orR
 
   // MSHR task
   val mshrTask_s2 = task_s2.valid && task_s2.bits.mshrTask

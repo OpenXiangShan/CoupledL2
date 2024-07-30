@@ -104,9 +104,6 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   reqArb.io.msInfo := mshrCtl.io.msInfo
 
   reqBuf.io.in <> sinkA.io.task
-  if (prefetchOpt.nonEmpty) {
-    reqBuf.io.inPrefetch.get <> sinkA.io.taskPrefetch.get
-  }
   reqBuf.io.mshrInfo := mshrCtl.io.msInfo
   reqBuf.io.mainPipeBlock := mainPipe.io.toReqBuf
   reqBuf.io.s1Entrance := reqArb.io.s1Entrance
