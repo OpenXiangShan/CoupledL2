@@ -24,7 +24,7 @@ import org.chipsalliance.cde.config.Field
 import scala.math.max
 import coupledL2.TaskBundle
 
-case object CHIIssue extends Field[String](Issue.Eb)
+case object CHIIssue extends Field[String](Issue.B)
 
 object CHICohStates {
   val width = 3
