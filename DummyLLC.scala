@@ -322,7 +322,7 @@ class DummyLLCImp(numRNs: Int)(wrapper: DummyLLC) extends LazyModuleImp(wrapper)
       when (snpBeatCnt(i) === (beatSize - 1).U) {
         w_snpresp(i) := true.B
 
-        when (resp === CHICohStates.SC_PD) {
+        when ((resp & CHICohStates.PassDirty) =/= 0.U) {
           // SD state is not supported on RNs because we adopt MESI coherency rather than MOESI for now.
           // Therefore when other peer-RNs are snooped to Shared state and pass dirty to HN, HN is reponsible
           // for either caching dirty copy in local cache of HN, or copying back the dirty data into SN.
