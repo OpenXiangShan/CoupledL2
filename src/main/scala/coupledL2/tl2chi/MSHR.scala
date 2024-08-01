@@ -26,11 +26,6 @@ import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.prefetch.{PfSource, PrefetchTrain}
-import coupledL2.tl2chi.CHIOpcode._
-import coupledL2.tl2chi.CHIOpcode.DATOpcodes._
-import coupledL2.tl2chi.CHIOpcode.REQOpcodes._
-import coupledL2.tl2chi.CHIOpcode.RSPOpcodes._
-import coupledL2.tl2chi.CHIOpcode.SNPOpcodes._
 import coupledL2.tl2chi.CHICohStates._
 import coupledL2.tl2chi.CHIChannel
 import coupledL2.MetaData._
@@ -54,7 +49,7 @@ class MSHRResps(implicit p: Parameters) extends TL2CHIL2Bundle {
 //  val rxdat = new RespBundle()  
 }
 
-class MSHR(implicit p: Parameters) extends TL2CHIL2Module {
+class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val io = IO(new Bundle() {
     val id = Input(UInt(mshrBits.W))
     val status = ValidIO(new MSHRStatus)
