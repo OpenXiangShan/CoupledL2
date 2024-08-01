@@ -118,20 +118,12 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
   io.toMainPipe.mshr_alloc_ptr := OHToUInt(selectedMSHROH)
 
   /*
-   rxrsp for PCredit timing is quite critical and break it here
-   */
-  val rxrspValid = RegNext(io.resps.rxrsp.valid)
-  val rxrspInfo = RegNext(io.resps.rxrsp.respInfo)
-  val rxrspMshrId = RegNext( io.resps.rxrsp.mshrId)
-
-  /*
    when PCrdGrant, give credit to one entry that:
    1. got RetryAck and not Reissued
    2. match srcID and PCrdType
    3. use Round-Robin arbiter if multi-entry match
    */
   val isPCrdGrant = io.resps.rxrsp.valid && (io.resps.rxrsp.respInfo.chiOpcode.get === PCrdGrant)
-  val isPCrdGrantReg = RegNext(isPCrdGrant)
   val waitPCrdInfo  = Wire(Vec(mshrsAll, new PCrdInfo))
   val timeOutPri = VecInit(Seq.fill(16)(false.B))
   val timeOutSel = WireInit(false.B)
@@ -144,23 +136,22 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
       p.pCrdType.get === io.resps.rxrsp.respInfo.pCrdType.get
   ))
 
-  val matchPCrdGrantReg = RegNext(matchPCrdGrant)
   pArb.io.in.zipWithIndex.foreach {
     case (in, i) =>
-      in.valid := matchPCrdGrantReg(i)
+      in.valid := matchPCrdGrant(i)
       in.bits := 0.U
   }
   pArb.io.out.ready := true.B
 
   val pCrdOH = VecInit(UIntToOH(pArb.io.chosen).asBools)
-  val pCrdFixPri = VecInit(pCrdOH zip matchPCrdGrantReg map {case(a,b) => a && b})
+  val pCrdFixPri = VecInit(pCrdOH zip matchPCrdGrant map {case(a,b) => a && b})
 //val pCrdFixPri = VecInit(PriorityEncoderOH(matchPCrdGrantReg)) //fix priority arbiter
 
   // timeout protect
   val counter = RegInit(VecInit(Seq.fill(mshrsAll)(0.U((log2Ceil(mshrsAll)+1).W))))
 
   for(i <- 0 until 16) {
-    when(matchPCrdGrantReg(i)) {
+    when(matchPCrdGrant(i)) {
       when(!timeOutSel && pCrdFixPri(i) || timeOutPri(i)) {
         counter(i):=0.U
       }.otherwise {
@@ -168,7 +159,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
       }
     }
   }
-  val timeOutOH = PriorityEncoderOH(counter.map(_>=12.U) zip matchPCrdGrantReg map {case(a,b) => a&&b})
+  val timeOutOH = PriorityEncoderOH(counter.map(_>=12.U) zip matchPCrdGrant map {case(a,b) => a&&b})
   timeOutPri := VecInit(timeOutOH)
 
   timeOutSel := timeOutPri.reduce(_|_)
@@ -234,10 +225,8 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
       m.io.resps.rxdat.valid := m.io.status.valid && io.resps.rxdat.valid && io.resps.rxdat.mshrId === i.U
       m.io.resps.rxdat.bits := io.resps.rxdat.respInfo
 
-//      m.io.resps.rxrsp.valid := (m.io.status.valid && io.resps.rxrsp.valid && !isPCrdGrant && io.resps.rxrsp.mshrId === i.U) || (isPCrdGrant && pCrdPri(i))
-//      m.io.resps.rxrsp.bits := io.resps.rxrsp.respInfo
-      m.io.resps.rxrsp.valid := (m.io.status.valid && rxrspValid && !isPCrdGrantReg && rxrspMshrId === i.U) || (isPCrdGrantReg && pCrdPri(i))
-      m.io.resps.rxrsp.bits := rxrspInfo
+      m.io.resps.rxrsp.valid := (m.io.status.valid && io.resps.rxrsp.valid && !isPCrdGrant && io.resps.rxrsp.mshrId === i.U) || (isPCrdGrant && pCrdPri(i))
+      m.io.resps.rxrsp.bits := io.resps.rxrsp.respInfo
 
       m.io.replResp.valid := io.replResp.valid && io.replResp.bits.mshrId === i.U
       m.io.replResp.bits := io.replResp.bits
