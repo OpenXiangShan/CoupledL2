@@ -32,7 +32,6 @@ class CHILogger(name: String, enable: Boolean, flit_as_is: Boolean = false)
     val down = new PortIO
   })
   io.down <> io.up
-  track(io.down, this.clock, this.reset)(name)
 
   // packed_flit = true: just dump the whole flit as UInt
   // packed_flit = false: separate every field
@@ -59,6 +58,7 @@ class CHILogger(name: String, enable: Boolean, flit_as_is: Boolean = false)
   val CHILogMessage = RecordMap(all_fields_final)
   val table = ChiselDB.createTable("CHILog", CHILogMessage, basicDB = true)
   // println(s"test: ${CHILogMessage.elements}")
+  track(io.down, this.clock, this.reset)(name)
 
   def track(out: PortIO, clock: Clock, reset: Reset)(name: String) = {
     val txreq = out.tx.req  // channel = 0
@@ -135,8 +135,11 @@ class CHILogger(name: String, enable: Boolean, flit_as_is: Boolean = false)
       // txrsp may be CompAck or SnpResp[Fwded]
       txrsp_log.elements("addr") := Mux(txrsp_flit.opcode === CompAck, dbid_addrs(txrsp_flit.txnID), rxsnp_addrs(txrsp_flit.txnID))
       // txdat may be SnpResp[Fwded]Data or CompData(DCT) CbWriteData (or NcbWriteData TODO)
-      txdat_log.elements("addr") := Mux(txdat_flit.opcode === CopyBackWrData, dbid_addrs(txdat_flit.txnID),
-        Mux(txdat_flit.opcode === CompData, rxsnp_addrs(txdat_flit.dbID), rxsnp_addrs(txdat_flit.txnID)))
+      txdat_log.elements("addr") := Mux(
+        txdat_flit.opcode === CopyBackWrData || txdat_flit.opcode === NonCopyBackWrData,
+        dbid_addrs(txdat_flit.txnID),
+        Mux(txdat_flit.opcode === CompData, rxsnp_addrs(txdat_flit.dbID), rxsnp_addrs(txdat_flit.txnID))
+      )
 
       // ======== record addrs at Reqs ========
       when(txreq.flitv) {
@@ -145,7 +148,7 @@ class CHILogger(name: String, enable: Boolean, flit_as_is: Boolean = false)
       when(rxsnp.flitv) {
         rxsnp_addrs(rxsnp_flit.txnID) := rxsnp_addr_full
       }
-      when(rxrsp.flitv && (rxrsp_flit.opcode === CompDBIDResp || rxrsp_flit.opcode === Comp)) {
+      when(rxrsp.flitv && (rxrsp_flit.opcode === CompDBIDResp || rxrsp_flit.opcode === Comp || rxrsp_flit.opcode === DBIDResp)) {
         val addr = txreq_addrs(rxrsp_flit.txnID)
         dbid_addrs(rxrsp_flit.dbID) := addr
       }
