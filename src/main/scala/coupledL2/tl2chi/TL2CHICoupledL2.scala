@@ -27,7 +27,6 @@ import freechips.rocketchip.util._
 import org.chipsalliance.cde.config.{Parameters, Field}
 import scala.math.max
 import coupledL2._
-import coupledL2.tl2chi.CHIOpcode.RSPOpcodes._
 import coupledL2.prefetch._
 
 abstract class TL2CHIL2Bundle(implicit val p: Parameters) extends Bundle
@@ -65,7 +64,8 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
   val mmioBridge = LazyModule(new MMIOBridge)
   val mmioNode = mmioBridge.mmioNode
 
-  class CoupledL2Imp(wrapper: LazyModule) extends BaseCoupledL2Imp(wrapper) {
+  class CoupledL2Imp(wrapper: LazyModule) extends BaseCoupledL2Imp(wrapper)
+    with HasCHIOpcodes {
 
     val io_chi = IO(new PortIO)
     val io_nodeID = IO(Input(UInt()))

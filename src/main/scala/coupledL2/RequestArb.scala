@@ -25,9 +25,10 @@ import freechips.rocketchip.tilelink.TLMessages._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2tl._
 import coupledL2.tl2chi._
-import coupledL2.tl2chi.CHIOpcode._
 
-class RequestArb(implicit p: Parameters) extends L2Module {
+class RequestArb(implicit p: Parameters) extends L2Module
+  with HasCHIOpcodes {
+
   val io = IO(new Bundle() {
     /* receive incoming tasks */
     val sinkA    = Flipped(DecoupledIO(new TaskBundle))
@@ -213,8 +214,8 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   // Release-replTask also read refillBuf and then write to DS
   val releaseRefillData = task_s2.bits.replTask && (if (enableCHI) {
     task_s2.bits.toTXREQ && (
-      task_s2.bits.chiOpcode.get === REQOpcodes.WriteBackFull ||
-      task_s2.bits.chiOpcode.get === REQOpcodes.Evict
+      task_s2.bits.chiOpcode.get === WriteBackFull ||
+      task_s2.bits.chiOpcode.get === Evict
     )
   } else {
     task_s2.bits.opcode(2, 1) === Release(2, 1)
@@ -228,15 +229,15 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   // ReleaseData and ProbeAckData read releaseBuffer
   // channel is used to differentiate GrantData and ProbeAckData
   val snoopNeedData = if (enableCHI) {
-    task_s2.bits.fromB && task_s2.bits.toTXDAT && DATOpcodes.isSnpRespDataX(task_s2.bits.chiOpcode.get)
+    task_s2.bits.fromB && task_s2.bits.toTXDAT && isSnpRespDataX(task_s2.bits.chiOpcode.get)
   } else {
     task_s2.bits.fromB && task_s2.bits.opcode === ProbeAckData
   }
   val releaseNeedData = if (enableCHI) {
-    task_s2.bits.toTXDAT && task_s2.bits.chiOpcode.get === DATOpcodes.CopyBackWrData
+    task_s2.bits.toTXDAT && task_s2.bits.chiOpcode.get === CopyBackWrData
   } else task_s2.bits.opcode === ReleaseData
   val dctNeedData = if (enableCHI) {
-    task_s2.bits.toTXDAT && task_s2.bits.chiOpcode.get === DATOpcodes.CompData
+    task_s2.bits.toTXDAT && task_s2.bits.chiOpcode.get === CompData
   } else false.B
   val snpHitReleaseNeedData = if (enableCHI) {
     !mshrTask_s2 && task_s2.bits.fromB && task_s2.bits.snpHitReleaseWithData

@@ -20,237 +20,196 @@ package coupledL2.tl2chi
 import chisel3._
 import chisel3.util._
 
-import org.chipsalliance.cde.config.Parameters
+trait HasCHIOpcodes extends HasCHIMsgParameters {
 
-object CHIOpcode {
+  def Eb_REQ_OPCODE_WIDTH = ISSUE_Eb_CONFIG("REQ_OPCODE_WIDTH")
+  def Eb_RSP_OPCODE_WIDTH = ISSUE_Eb_CONFIG("RSP_OPCODE_WIDTH")
+  def Eb_SNP_OPCODE_WIDTH = ISSUE_Eb_CONFIG("SNP_OPCODE_WIDTH")
+  def Eb_DAT_OPCODE_WIDTH = ISSUE_Eb_CONFIG("DAT_OPCODE_WIDTH")
 
-  object REQOpcodes {
-    val width_map = Map(
-      Issue.B -> 6,
-      Issue.Eb -> 7,
-    )
+  /**
+    * REQ
+    */
+  def ReqLCrdReturn         = 0x00.U(REQ_OPCODE_WIDTH.W)
+  def ReadShared            = 0x01.U(REQ_OPCODE_WIDTH.W)
+  def ReadClean             = 0x02.U(REQ_OPCODE_WIDTH.W)
+  def ReadOnce              = 0x03.U(REQ_OPCODE_WIDTH.W)
+  def ReadNoSnp             = 0x04.U(REQ_OPCODE_WIDTH.W)
+  def PCrdReturn            = 0x05.U(REQ_OPCODE_WIDTH.W)
 
-    def width(implicit p: Parameters) = width_map(p(CHIIssue))
+  def ReadUnique            = 0x07.U(REQ_OPCODE_WIDTH.W)
+  def CleanShared           = 0x08.U(REQ_OPCODE_WIDTH.W)
+  def CleanInvalid          = 0x09.U(REQ_OPCODE_WIDTH.W)
+  def MakeInvalid           = 0x0A.U(REQ_OPCODE_WIDTH.W)
+  def CleanUnique           = 0x0B.U(REQ_OPCODE_WIDTH.W)
+  def MakeUnique            = 0x0C.U(REQ_OPCODE_WIDTH.W)
+  def Evict                 = 0x0D.U(REQ_OPCODE_WIDTH.W)
 
-    def ReqLCrdReturn(implicit p: Parameters)         = 0x00.U(width.W)
-    def ReadShared(implicit p: Parameters)            = 0x01.U(width.W)
-    def ReadClean(implicit p: Parameters)             = 0x02.U(width.W)
-    def ReadOnce(implicit p: Parameters)              = 0x03.U(width.W)
-    def ReadNoSnp(implicit p: Parameters)             = 0x04.U(width.W)
-    def PCrdReturn(implicit p: Parameters)            = 0x05.U(width.W)
+  def DVMOp                 = 0x14.U(REQ_OPCODE_WIDTH.W)
+  def WriteEvictFull        = 0x15.U(REQ_OPCODE_WIDTH.W)
 
-    def ReadUnique(implicit p: Parameters)            = 0x07.U(width.W)
-    def CleanShared(implicit p: Parameters)           = 0x08.U(width.W)
-    def CleanInvalid(implicit p: Parameters)          = 0x09.U(width.W)
-    def MakeInvalid(implicit p: Parameters)           = 0x0A.U(width.W)
-    def CleanUnique(implicit p: Parameters)           = 0x0B.U(width.W)
-    def MakeUnique(implicit p: Parameters)            = 0x0C.U(width.W)
-    def Evict(implicit p: Parameters)                 = 0x0D.U(width.W)
+  def WriteCleanFull        = 0x17.U(REQ_OPCODE_WIDTH.W)
+  def WriteUniquePtl        = 0x18.U(REQ_OPCODE_WIDTH.W)
+  def WriteUniqueFull       = 0x19.U(REQ_OPCODE_WIDTH.W)
+  def WriteBackPtl          = 0x1A.U(REQ_OPCODE_WIDTH.W)
+  def WriteBackFull         = 0x1B.U(REQ_OPCODE_WIDTH.W)
+  def WriteNoSnpPtl         = 0x1C.U(REQ_OPCODE_WIDTH.W)
+  def WriteNoSnpFull        = 0x1D.U(REQ_OPCODE_WIDTH.W)
 
-    def DVMOp(implicit p: Parameters)                 = 0x14.U(width.W)
-    def WriteEvictFull(implicit p: Parameters)        = 0x15.U(width.W)
+  def WriteUniqueFullStash  = 0x20.U(REQ_OPCODE_WIDTH.W)
+  def WriteUniquePtlStash   = 0x21.U(REQ_OPCODE_WIDTH.W)
+  def StashOnceShared       = 0x22.U(REQ_OPCODE_WIDTH.W)
+  def StashOnceUnique       = 0x23.U(REQ_OPCODE_WIDTH.W)
+  def ReadOnceCleanInvalid  = 0x24.U(REQ_OPCODE_WIDTH.W)
+  def ReadOnceMakeInvalid   = 0x25.U(REQ_OPCODE_WIDTH.W)
+  def ReadNotSharedDirty    = 0x26.U(REQ_OPCODE_WIDTH.W)
+  def CleanSharedPersist    = 0x27.U(REQ_OPCODE_WIDTH.W)
 
-    def WriteCleanFull(implicit p: Parameters)        = 0x17.U(width.W)
-    def WriteUniquePtl(implicit p: Parameters)        = 0x18.U(width.W)
-    def WriteUniqueFull(implicit p: Parameters)       = 0x19.U(width.W)
-    def WriteBackPtl(implicit p: Parameters)          = 0x1A.U(width.W)
-    def WriteBackFull(implicit p: Parameters)         = 0x1B.U(width.W)
-    def WriteNoSnpPtl(implicit p: Parameters)         = 0x1C.U(width.W)
-    def WriteNoSnpFull(implicit p: Parameters)        = 0x1D.U(width.W)
+  def AtomicStore_ADD       = 0x28.U(REQ_OPCODE_WIDTH.W)
+  def AtomicStore_CLR       = 0x29.U(REQ_OPCODE_WIDTH.W)
+  def AtomicStore_EOR       = 0x2A.U(REQ_OPCODE_WIDTH.W)
+  def AtomicStore_SET       = 0x2B.U(REQ_OPCODE_WIDTH.W)
+  def AtomicStore_SMAX      = 0x2C.U(REQ_OPCODE_WIDTH.W)
+  def AtomicStore_SMIN      = 0x2D.U(REQ_OPCODE_WIDTH.W)
+  def AtomicStore_UMAX      = 0x2E.U(REQ_OPCODE_WIDTH.W)
+  def AtomicStore_UMIN      = 0x2F.U(REQ_OPCODE_WIDTH.W)
+  def AtomicLoad_ADD        = 0x30.U(REQ_OPCODE_WIDTH.W)
+  def AtomicLoad_CLR        = 0x31.U(REQ_OPCODE_WIDTH.W)
+  def AtomicLoad_EOR        = 0x32.U(REQ_OPCODE_WIDTH.W)
+  def AtomicLoad_SET        = 0x33.U(REQ_OPCODE_WIDTH.W)
+  def AtomicLoad_SMAX       = 0x34.U(REQ_OPCODE_WIDTH.W)
+  def AtomicLoad_SMIN       = 0x35.U(REQ_OPCODE_WIDTH.W)
+  def AtomicLoad_UMAX       = 0x36.U(REQ_OPCODE_WIDTH.W)
+  def AtomicLoad_UMIN       = 0x37.U(REQ_OPCODE_WIDTH.W)
+  def AtomicSwap            = 0x38.U(REQ_OPCODE_WIDTH.W)
+  def AtomicCompare         = 0x39.U(REQ_OPCODE_WIDTH.W)
+  def PrefetchTgt           = 0x3A.U(REQ_OPCODE_WIDTH.W)
 
-    def WriteUniqueFullStash(implicit p: Parameters)  = 0x20.U(width.W)
-    def WriteUniquePtlStash(implicit p: Parameters)   = 0x21.U(width.W)
-    def StashOnceShared(implicit p: Parameters)       = 0x22.U(width.W)
-    def StashOnceUnique(implicit p: Parameters)       = 0x23.U(width.W)
-    def ReadOnceCleanInvalid(implicit p: Parameters)  = 0x24.U(width.W)
-    def ReadOnceMakeInvalid(implicit p: Parameters)   = 0x25.U(width.W)
-    def ReadNotSharedDirty(implicit p: Parameters)    = 0x26.U(width.W)
-    def CleanSharedPersist(implicit p: Parameters)    = 0x27.U(width.W)
+  /**
+    * RSP
+    */
+  def RespLCrdReturn  = 0x0.U(RSP_OPCODE_WIDTH.W)
+  def SnpResp         = 0x1.U(RSP_OPCODE_WIDTH.W)
+  def CompAck         = 0x2.U(RSP_OPCODE_WIDTH.W)
+  def RetryAck        = 0x3.U(RSP_OPCODE_WIDTH.W)
+  def Comp            = 0x4.U(RSP_OPCODE_WIDTH.W)
+  def CompDBIDResp    = 0x5.U(RSP_OPCODE_WIDTH.W)
+  def DBIDResp        = 0x6.U(RSP_OPCODE_WIDTH.W)
+  def PCrdGrant       = 0x7.U(RSP_OPCODE_WIDTH.W)
+  def ReadReceipt     = 0x8.U(RSP_OPCODE_WIDTH.W)
+  def SnpRespFwded    = 0x9.U(RSP_OPCODE_WIDTH.W)
+  // E.b
+  def RespSepData     = 0xB.U(Eb_RSP_OPCODE_WIDTH.W)
 
-    def AtomicStore_ADD(implicit p: Parameters)       = 0x28.U(width.W)
-    def AtomicStore_CLR(implicit p: Parameters)       = 0x29.U(width.W)
-    def AtomicStore_EOR(implicit p: Parameters)       = 0x2A.U(width.W)
-    def AtomicStore_SET(implicit p: Parameters)       = 0x2B.U(width.W)
-    def AtomicStore_SMAX(implicit p: Parameters)      = 0x2C.U(width.W)
-    def AtomicStore_SMIN(implicit p: Parameters)      = 0x2D.U(width.W)
-    def AtomicStore_UMAX(implicit p: Parameters)      = 0x2E.U(width.W)
-    def AtomicStore_UMIN(implicit p: Parameters)      = 0x2F.U(width.W)
-    def AtomicLoad_ADD(implicit p: Parameters)        = 0x30.U(width.W)
-    def AtomicLoad_CLR(implicit p: Parameters)        = 0x31.U(width.W)
-    def AtomicLoad_EOR(implicit p: Parameters)        = 0x32.U(width.W)
-    def AtomicLoad_SET(implicit p: Parameters)        = 0x33.U(width.W)
-    def AtomicLoad_SMAX(implicit p: Parameters)       = 0x34.U(width.W)
-    def AtomicLoad_SMIN(implicit p: Parameters)       = 0x35.U(width.W)
-    def AtomicLoad_UMAX(implicit p: Parameters)       = 0x36.U(width.W)
-    def AtomicLoad_UMIN(implicit p: Parameters)       = 0x37.U(width.W)
-    def AtomicSwap(implicit p: Parameters)            = 0x38.U(width.W)
-    def AtomicCompare(implicit p: Parameters)         = 0x39.U(width.W)
-    def PrefetchTgt(implicit p: Parameters)           = 0x3A.U(width.W)
+  /**
+    * SNP
+    */
+  def SnpLCrdReturn         = 0x00.U(SNP_OPCODE_WIDTH.W)
+  def SnpShared             = 0x01.U(SNP_OPCODE_WIDTH.W)
+  def SnpClean              = 0x02.U(SNP_OPCODE_WIDTH.W)
+  def SnpOnce               = 0x03.U(SNP_OPCODE_WIDTH.W)
+  def SnpNotSharedDirty     = 0x04.U(SNP_OPCODE_WIDTH.W)
+  def SnpUniqueStash        = 0x05.U(SNP_OPCODE_WIDTH.W)
+  def SnpMakeInvalidStash   = 0x06.U(SNP_OPCODE_WIDTH.W)
+  def SnpUnique             = 0x07.U(SNP_OPCODE_WIDTH.W)
+  def SnpCleanShared        = 0x08.U(SNP_OPCODE_WIDTH.W)
+  def SnpCleanInvalid       = 0x09.U(SNP_OPCODE_WIDTH.W)
+  def SnpMakeInvalid        = 0x0A.U(SNP_OPCODE_WIDTH.W)
+  def SnpStashUnique        = 0x0B.U(SNP_OPCODE_WIDTH.W)
+  def SnpStashShared        = 0x0C.U(SNP_OPCODE_WIDTH.W)
+  def SnpDVMOp              = 0x0D.U(SNP_OPCODE_WIDTH.W)
+
+  def SnpSharedFwd          = 0x11.U(SNP_OPCODE_WIDTH.W)
+  def SnpCleanFwd           = 0x12.U(SNP_OPCODE_WIDTH.W)
+  def SnpOnceFwd            = 0x13.U(SNP_OPCODE_WIDTH.W)
+  def SnpNotSharedDirtyFwd  = 0x14.U(SNP_OPCODE_WIDTH.W)
+
+  def SnpUniqueFwd          = 0x17.U(SNP_OPCODE_WIDTH.W)
+
+  def isSnpXStash(opcode: UInt): Bool = {
+    opcode === SnpUniqueStash || opcode === SnpMakeInvalidStash
   }
 
-  object RSPOpcodes {
-    val width_map = Map(
-      Issue.B -> 4,
-      Issue.Eb -> 5,
-    )
-
-    def width(implicit p: Parameters) = width_map(p(CHIIssue))
-
-    def RespLCrdReturn(implicit p: Parameters)  = 0x0.U(width.W)
-    def SnpResp(implicit p: Parameters)         = 0x1.U(width.W)
-    def CompAck(implicit p: Parameters)         = 0x2.U(width.W)
-    def RetryAck(implicit p: Parameters)        = 0x3.U(width.W)
-    def Comp(implicit p: Parameters)            = 0x4.U(width.W)
-    def CompDBIDResp(implicit p: Parameters)    = 0x5.U(width.W)
-    def DBIDResp(implicit p: Parameters)        = 0x6.U(width.W)
-    def PCrdGrant(implicit p: Parameters)       = 0x7.U(width.W)
-    def ReadReceipt(implicit p: Parameters)     = 0x8.U(width.W)
-    def SnpRespFwded(implicit p: Parameters)    = 0x9.U(width.W)
-
-    // E.b new opcodes
-    def RespSepData     = 0xB.U(width_map(Issue.Eb).W)
+  def isSnpStashX(opcode: UInt): Bool = {
+    opcode === SnpStashUnique || opcode === SnpStashShared
   }
 
-  object SNPOpcodes {
-    val width_map = Map(
-      Issue.B -> 5,
-      Issue.Eb -> 5,
-    )
-
-    def width(implicit p: Parameters) = width_map(p(CHIIssue))
-
-    def SnpLCrdReturn(implicit p: Parameters)         = 0x00.U(width.W)
-    def SnpShared(implicit p: Parameters)             = 0x01.U(width.W)
-    def SnpClean(implicit p: Parameters)              = 0x02.U(width.W)
-    def SnpOnce (implicit p: Parameters)              = 0x03.U(width.W)
-    def SnpNotSharedDirty(implicit p: Parameters)     = 0x04.U(width.W)
-    def SnpUniqueStash(implicit p: Parameters)        = 0x05.U(width.W)
-    def SnpMakeInvalidStash(implicit p: Parameters)   = 0x06.U(width.W)
-    def SnpUnique(implicit p: Parameters)             = 0x07.U(width.W)
-    def SnpCleanShared(implicit p: Parameters)        = 0x08.U(width.W)
-    def SnpCleanInvalid(implicit p: Parameters)       = 0x09.U(width.W)
-    def SnpMakeInvalid(implicit p: Parameters)        = 0x0A.U(width.W)
-    def SnpStashUnique(implicit p: Parameters)        = 0x0B.U(width.W)
-    def SnpStashShared(implicit p: Parameters)        = 0x0C.U(width.W)
-    def SnpDVMOp(implicit p: Parameters)              = 0x0D.U(width.W)
-
-    def SnpSharedFwd(implicit p: Parameters)          = 0x11.U(width.W)
-    def SnpCleanFwd(implicit p: Parameters)           = 0x12.U(width.W)
-    def SnpOnceFwd(implicit p: Parameters)            = 0x13.U(width.W)
-    def SnpNotSharedDirtyFwd(implicit p: Parameters)  = 0x14.U(width.W)
-
-    def SnpUniqueFwd(implicit p: Parameters)          = 0x17.U(width.W)
-
-    def widthCheck(opcode: UInt)(implicit p: Parameters): Unit = { require (opcode.getWidth >= width) }
-
-    def isSnpXStash(opcode: UInt)(implicit p: Parameters): Bool = {
-      widthCheck(opcode)
-      opcode === SnpUniqueStash || opcode === SnpMakeInvalidStash
-    }
-
-    def isSnpStashX(opcode: UInt)(implicit p: Parameters): Bool = {
-      widthCheck(opcode)
-      opcode === SnpStashUnique || opcode === SnpStashShared
-    }
-
-    def isSnpXFwd(opcode: UInt)(implicit p: Parameters): Bool = {
-      widthCheck(opcode)
-      opcode >= SnpSharedFwd
-    }
-
-
-    def isSnpOnceX(opcode: UInt)(implicit p: Parameters): Bool = {
-      widthCheck(opcode)
-      opcode === SnpOnce || opcode === SnpOnceFwd
-    }
-
-    def isSnpCleanX(opcode: UInt)(implicit p: Parameters): Bool = {
-      widthCheck(opcode)
-      opcode === SnpClean || opcode === SnpCleanFwd
-    }
-
-    def isSnpSharedX(opcode: UInt)(implicit p: Parameters): Bool = {
-      widthCheck(opcode)
-      opcode === SnpShared || opcode === SnpSharedFwd
-    }
-
-    def isSnpNotSharedDirtyX(opcode: UInt)(implicit p: Parameters): Bool = {
-      widthCheck(opcode)
-      opcode === SnpNotSharedDirty || opcode === SnpNotSharedDirtyFwd
-    }
-
-    def isSnpToB(opcode: UInt)(implicit p: Parameters): Bool = {
-      isSnpCleanX(opcode) || isSnpSharedX(opcode) || isSnpNotSharedDirtyX(opcode)
-    }
-
-    def isSnpToN(opcode: UInt)(implicit p: Parameters): Bool = {
-      isSnpUniqueX(opcode) || opcode === SnpCleanInvalid || isSnpMakeInvalidX (opcode)
-    }
-
-    def isSnpCleanShared(opcode: UInt)(implicit p: Parameters): Bool = {
-      widthCheck(opcode)
-      opcode === SnpCleanShared
-    }
-
-    def isSnpToBNonFwd(opcode: UInt)(implicit p: Parameters): Bool = {
-      widthCheck(opcode)
-      opcode === SnpClean ||
-      opcode === SnpNotSharedDirty ||
-      opcode === SnpShared
-    }
-
-    def isSnpToBFwd(opcode: UInt)(implicit p: Parameters): Bool = {
-      widthCheck(opcode)
-      opcode === SnpCleanFwd ||
-      opcode === SnpNotSharedDirtyFwd ||
-      opcode === SnpSharedFwd
-    }
-
-    def isSnpToNNonFwd(opcode: UInt)(implicit p: Parameters): Bool = {
-     widthCheck(opcode) 
-     opcode === SnpUnique || opcode === SnpUniqueStash
-    }
-
-    def isSnpToNFwd(opcode: UInt)(implicit p: Parameters): Bool = {
-     widthCheck(opcode) 
-     opcode === SnpUniqueFwd 
-    }
-
-    def isSnpUniqueX(opcode: UInt)(implicit p: Parameters): Bool = {
-      widthCheck(opcode)
-      opcode === SnpUnique || opcode === SnpUniqueFwd || opcode === SnpUniqueStash
-    }
-
-    def isSnpMakeInvalidX(opcode: UInt)(implicit p: Parameters): Bool = {
-      widthCheck(opcode)
-      opcode === SnpMakeInvalid || opcode === SnpMakeInvalidStash
-    }
+  def isSnpXFwd(opcode: UInt): Bool = {
+    opcode >= SnpSharedFwd
   }
 
-  object DATOpcodes {
-    val width_map = Map(
-      Issue.B -> 3,
-      Issue.Eb -> 4,
-    )
 
-    def width(implicit p: Parameters) = width_map(p(CHIIssue))
+  def isSnpOnceX(opcode: UInt): Bool = {
+    opcode === SnpOnce || opcode === SnpOnceFwd
+  }
 
-    def DataLCrdReturn(implicit p: Parameters)    = 0x0.U(width.W)
-    def SnpRespData(implicit p: Parameters)       = 0x1.U(width.W)
-    def CopyBackWrData(implicit p: Parameters)    = 0x2.U(width.W)
-    def NonCopyBackWrData(implicit p: Parameters) = 0x3.U(width.W)
-    def CompData(implicit p: Parameters)          = 0x4.U(width.W)
-    def SnpRespDataPtl(implicit p: Parameters)    = 0x5.U(width.W)
-    def SnpRespDataFwded(implicit p: Parameters)  = 0x6.U(width.W)
-    def WriteDataCancel(implicit p: Parameters)   = 0x7.U(width.W)
+  def isSnpCleanX(opcode: UInt): Bool = {
+    opcode === SnpClean || opcode === SnpCleanFwd
+  }
 
-    // E.b new opcodes
-    def DataSepResp       = 0xB.U(width_map(Issue.Eb).W)
+  def isSnpSharedX(opcode: UInt): Bool = {
+    opcode === SnpShared || opcode === SnpSharedFwd
+  }
 
-    def widthCheck(opcode: UInt)(implicit p: Parameters): Unit = { require (opcode.getWidth >= width) }
-    def isSnpRespDataX(opcode: UInt)(implicit p: Parameters): Bool = {
-      widthCheck(opcode)
-      opcode === SnpRespData || opcode === SnpRespDataPtl || opcode === SnpRespDataFwded
-    }
+  def isSnpNotSharedDirtyX(opcode: UInt): Bool = {
+    opcode === SnpNotSharedDirty || opcode === SnpNotSharedDirtyFwd
+  }
+
+  def isSnpToB(opcode: UInt): Bool = {
+    isSnpCleanX(opcode) || isSnpSharedX(opcode) || isSnpNotSharedDirtyX(opcode)
+  }
+
+  def isSnpToN(opcode: UInt): Bool = {
+    isSnpUniqueX(opcode) || opcode === SnpCleanInvalid || isSnpMakeInvalidX (opcode)
+  }
+
+  def isSnpCleanShared(opcode: UInt): Bool = {
+    opcode === SnpCleanShared
+  }
+
+  def isSnpToBNonFwd(opcode: UInt): Bool = {
+    opcode === SnpClean ||
+    opcode === SnpNotSharedDirty ||
+    opcode === SnpShared
+  }
+
+  def isSnpToBFwd(opcode: UInt): Bool = {
+    opcode === SnpCleanFwd ||
+    opcode === SnpNotSharedDirtyFwd ||
+    opcode === SnpSharedFwd
+  }
+
+  def isSnpToNNonFwd(opcode: UInt): Bool = { 
+    opcode === SnpUnique || opcode === SnpUniqueStash
+  }
+
+  def isSnpToNFwd(opcode: UInt): Bool = { 
+    opcode === SnpUniqueFwd 
+  }
+
+  def isSnpUniqueX(opcode: UInt): Bool = {
+    opcode === SnpUnique || opcode === SnpUniqueFwd || opcode === SnpUniqueStash
+  }
+
+  def isSnpMakeInvalidX(opcode: UInt): Bool = {
+    opcode === SnpMakeInvalid || opcode === SnpMakeInvalidStash
+  }
+
+  /**
+    * DAT
+    */
+  def DataLCrdReturn    = 0x0.U(DAT_OPCODE_WIDTH.W)
+  def SnpRespData       = 0x1.U(DAT_OPCODE_WIDTH.W)
+  def CopyBackWrData    = 0x2.U(DAT_OPCODE_WIDTH.W)
+  def NonCopyBackWrData = 0x3.U(DAT_OPCODE_WIDTH.W)
+  def CompData          = 0x4.U(DAT_OPCODE_WIDTH.W)
+  def SnpRespDataPtl    = 0x5.U(DAT_OPCODE_WIDTH.W)
+  def SnpRespDataFwded  = 0x6.U(DAT_OPCODE_WIDTH.W)
+  def WriteDataCancel   = 0x7.U(DAT_OPCODE_WIDTH.W)
+  // E.b
+  def DataSepResp       = 0xB.U(Eb_DAT_OPCODE_WIDTH.W)
+
+  def isSnpRespDataX(opcode: UInt): Bool = {
+    opcode === SnpRespData || opcode === SnpRespDataPtl || opcode === SnpRespDataFwded
   }
 }

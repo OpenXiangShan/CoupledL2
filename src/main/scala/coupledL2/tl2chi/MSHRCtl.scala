@@ -26,8 +26,6 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.prefetch.PrefetchTrain
 import coupledL2._
-import tl2chi.{HasCHIMsgParameters}
-import coupledL2.tl2chi.CHIOpcode.RSPOpcodes._
 
 // PCrd info for MSHR Retry 
 class PCrdInfo(implicit p: Parameters) extends TL2CHIL2Bundle
@@ -37,7 +35,7 @@ class PCrdInfo(implicit p: Parameters) extends TL2CHIL2Bundle
   val pCrdType = chiOpt.map(_ => UInt(PCRDTYPE_WIDTH.W))
 }
 
-class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
+class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val io = IO(new Bundle() {
     /* interact with req arb */
     val fromReqArb = Input(new Bundle() {
