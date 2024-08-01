@@ -23,10 +23,9 @@ import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.util._
 import scala.collection.immutable.{ListMap, SeqMap}
 import utility.ChiselDB
-import CHIOpcode._
 
 class CHILogger(name: String, enable: Boolean, flit_as_is: Boolean = false)
-               (implicit val p: Parameters) extends Module with HasCHIMsgParameters {
+               (implicit val p: Parameters) extends Module with HasCHIOpcodes {
 
   val io = IO(new Bundle() {
     val up = Flipped(new PortIO)
@@ -134,10 +133,10 @@ class CHILogger(name: String, enable: Boolean, flit_as_is: Boolean = false)
       val rxsnp_addr_full = Cat(rxsnp_flit.addr, 0.U(3.W)) // Snp addr is [PA_MSB-1:3]
       rxsnp_log.elements("addr") := rxsnp_addr_full
       // txrsp may be CompAck or SnpResp[Fwded]
-      txrsp_log.elements("addr") := Mux(txrsp_flit.opcode === RSPOpcodes.CompAck, dbid_addrs(txrsp_flit.txnID), rxsnp_addrs(txrsp_flit.txnID))
+      txrsp_log.elements("addr") := Mux(txrsp_flit.opcode === CompAck, dbid_addrs(txrsp_flit.txnID), rxsnp_addrs(txrsp_flit.txnID))
       // txdat may be SnpResp[Fwded]Data or CompData(DCT) CbWriteData (or NcbWriteData TODO)
-      txdat_log.elements("addr") := Mux(txdat_flit.opcode === DATOpcodes.CopyBackWrData, dbid_addrs(txdat_flit.txnID),
-        Mux(txdat_flit.opcode === DATOpcodes.CompData, rxsnp_addrs(txdat_flit.dbID), rxsnp_addrs(txdat_flit.txnID)))
+      txdat_log.elements("addr") := Mux(txdat_flit.opcode === CopyBackWrData, dbid_addrs(txdat_flit.txnID),
+        Mux(txdat_flit.opcode === CompData, rxsnp_addrs(txdat_flit.dbID), rxsnp_addrs(txdat_flit.txnID)))
 
       // ======== record addrs at Reqs ========
       when(txreq.flitv) {
@@ -146,11 +145,11 @@ class CHILogger(name: String, enable: Boolean, flit_as_is: Boolean = false)
       when(rxsnp.flitv) {
         rxsnp_addrs(rxsnp_flit.txnID) := rxsnp_addr_full
       }
-      when(rxrsp.flitv && (rxrsp_flit.opcode === RSPOpcodes.CompDBIDResp || rxrsp_flit.opcode === RSPOpcodes.Comp)) {
+      when(rxrsp.flitv && (rxrsp_flit.opcode === CompDBIDResp || rxrsp_flit.opcode === Comp)) {
         val addr = txreq_addrs(rxrsp_flit.txnID)
         dbid_addrs(rxrsp_flit.dbID) := addr
       }
-      when(rxdat.flitv && rxdat_flit.opcode === DATOpcodes.CompData) {
+      when(rxdat.flitv && rxdat_flit.opcode === CompData) {
         val addr = txreq_addrs(rxdat_flit.txnID)
         dbid_addrs(rxdat_flit.dbID) := addr
       }

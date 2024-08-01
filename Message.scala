@@ -87,12 +87,20 @@ trait HasCHIMsgParameters {
     "NODEID_WIDTH" -> 7,
     "TXNID_WIDTH" -> 8,
     "LPID_WITH_PADDING_WIDTH" -> 5,
+    "REQ_OPCODE_WIDTH" -> 6,
+    "RSP_OPCODE_WIDTH" -> 4,
+    "SNP_OPCODE_WIDTH" -> 5,
+    "DAT_OPCODE_WIDTH" -> 3
   )
 
   val ISSUE_Eb_CONFIG = Map(
     "NODEID_WIDTH" -> 11,
     "TXNID_WIDTH" -> 12,
     "LPID_WITH_PADDING_WIDTH" -> 8,
+    "REQ_OPCODE_WIDTH" -> 7,
+    "RSP_OPCODE_WIDTH" -> 5,
+    "SNP_OPCODE_WIDTH" -> 5,
+    "DAT_OPCODE_WIDTH" -> 4
   )
 
   val SUPPORT_ISSUE_CONFIG = Map(
@@ -124,10 +132,10 @@ trait HasCHIMsgParameters {
   def TAGOP_WIDTH = 2
 
 
-  def REQ_OPCODE_WIDTH = CHIOpcode.REQOpcodes.width
-  def RSP_OPCODE_WIDTH = CHIOpcode.RSPOpcodes.width
-  def SNP_OPCODE_WIDTH = CHIOpcode.SNPOpcodes.width
-  def DAT_OPCODE_WIDTH = CHIOpcode.DATOpcodes.width
+  def REQ_OPCODE_WIDTH = issue_config("REQ_OPCODE_WIDTH")
+  def RSP_OPCODE_WIDTH = issue_config("RSP_OPCODE_WIDTH")
+  def SNP_OPCODE_WIDTH = issue_config("SNP_OPCODE_WIDTH")
+  def DAT_OPCODE_WIDTH = issue_config("DAT_OPCODE_WIDTH")
   def OPCODE_WIDTH = max(REQ_OPCODE_WIDTH, max(RSP_OPCODE_WIDTH, max(SNP_OPCODE_WIDTH, DAT_OPCODE_WIDTH)))
 
   def ADDR_WIDTH = 48
