@@ -21,8 +21,8 @@ import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.utils.{SRAMTemplate, ReplacementPolicy}
+import coupledL2.tl2chi.HasCHIOpcodes
 import utility.{ParallelPriorityMux}
-import coupledL2.tl2chi.CHIOpcode.REQOpcodes._
 
 trait HasClientInfo { this: HasOpenLLCParameters =>
   def clientCacheParams = cacheParams.clientCaches
@@ -133,10 +133,10 @@ class SubDirectory[T <: Data](
   meta_init_fn: () => T,
   meta_valid_fn: T => Bool,
   invalid_way_sel: (Seq[T], UInt) => (Bool, UInt), // try to find a invalid way
-  replacement: String)(implicit p: Parameters) extends Module {
+  replacement: String)(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
 
-  private val setBits = log2Ceil(sets)
-  private val wayBits = log2Ceil(ways)
+  override def setBits = log2Ceil(sets)
+  override def wayBits = log2Ceil(ways)
   
   val meta_init = meta_init_fn()
 

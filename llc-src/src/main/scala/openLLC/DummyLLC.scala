@@ -24,10 +24,6 @@ import freechips.rocketchip.amba.axi4.AXI4Parameters._
 import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2chi._
-import coupledL2.tl2chi.CHIOpcode.REQOpcodes._
-import coupledL2.tl2chi.CHIOpcode.SNPOpcodes._
-import coupledL2.tl2chi.CHIOpcode.RSPOpcodes._
-import coupledL2.tl2chi.CHIOpcode.DATOpcodes._
 import utility._
 
 class DummyLLC(numRNs: Int = 1)(implicit p: Parameters) extends LazyModule with HasOpenLLCParameters {
@@ -43,7 +39,10 @@ class DummyLLC(numRNs: Int = 1)(implicit p: Parameters) extends LazyModule with 
   lazy val module = new DummyLLCImp(numRNs)(this)
 }
 
-class DummyLLCImp(numRNs: Int)(wrapper: DummyLLC) extends LazyModuleImp(wrapper) with HasOpenLLCParameters {
+class DummyLLCImp(numRNs: Int)(wrapper: DummyLLC) extends LazyModuleImp(wrapper)
+  with HasOpenLLCParameters 
+  with HasCHIOpcodes {
+
   val io = IO(new Bundle {
     val rn = Vec(numRNs, Flipped(new PortIO))
   })
