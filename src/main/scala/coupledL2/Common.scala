@@ -310,6 +310,7 @@ class TPmetaReq(implicit p: Parameters) extends L2Bundle {
   val tpmetaAccessed = Bool()
   val rawData = Vec(16, UInt((fullAddressBits - offsetBits).W))
   val replTag = UInt(tagBits.W)
+  val way = UInt(2.W) //magic number; keep with tpmetaCache/Table
 }
 
 class TPmetaResp(implicit p: Parameters)  extends L2Bundle {

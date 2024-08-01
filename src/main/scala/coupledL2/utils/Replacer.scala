@@ -356,7 +356,7 @@ class StaticRRIP(n_ways: Int, rrpvBits: Int = 6) extends ReplacementPolicy {
           (req_type === 4.U || req_type(2, 0) === 6.U) -> (baseRRPV4data + 2.U)
         ))
       }.otherwise { // update other way
-        e := Mux(hit || invalid, State(i), State(i) + Mux(accessed(i) || tpmeta(i), 1.U, increcement))
+        e := Mux(hit || invalid, State(i), State(i) +increcement)
       }
     }
     Cat(nextState.map(x=>x).reverse)
@@ -415,7 +415,7 @@ class BRRIP(n_ways: Int, rrpvBits: Int = 6) extends ReplacementPolicy {
           (req_type === 4.U || req_type(2,0) === 6.U) -> (baseRRPV4data + 3.U)
         ))
       }.otherwise { // update other way
-        e := Mux(hit || invalid, State(i), State(i) + Mux(accessed(i) || tpmeta(i), 1.U, increcement))
+        e := Mux(hit || invalid, State(i), State(i) + increcement)
       }
     }
     /* val random = (rand.nextInt(32)).U 

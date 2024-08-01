@@ -50,6 +50,8 @@ trait HasTPParams extends HasCoupledL2Parameters {
   val tpParams = prefetchOpt.get.asInstanceOf[TPParameters]
   val tpTableAssoc = tpParams.tpTableAssoc
   val tpTableNrSet = tpParams.tpTableEntries / tpTableAssoc
+  val tpmetaCacheNrSet = tpTableNrSet / 4
+  val tpmetaCacheAssoc = tpTableAssoc
   val tpTableSetBits = log2Ceil(tpTableNrSet)
   val tpEntryMaxLen = tpParams.inflightEntries
   val tpTableReplacementPolicy = tpParams.replacementPolicy
@@ -81,6 +83,12 @@ class tpDataEntry(implicit p:Parameters) extends TPBundle {
   val rawData = Vec(tpEntryMaxLen, UInt(fullAddressBits.W))
   // val rawData_debug = Vec(tpEntryMaxLen, UInt(vaddrBits.W))
   // TODO: val compressedData = UInt(512.W)
+}
+
+class tpMetaCacheEntry(implicit p:Parameters) extends TPBundle {
+  val valid = Bool()
+  val tag = UInt((tagBits + setBits + bankBits - log2Ceil(tpmetaCacheNrSet)).W)
+  val rawData = UInt(512.W)
 }
 
 class triggerBundle(implicit p: Parameters) extends TPBundle {
@@ -159,8 +167,28 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     (x << offsetBits.U).asUInt
   }
 
+  def reparseFullAddressWithBank(req: TPmetaL2ReqBundle): (UInt, UInt) = {
+    val tag = req.tag
+    val set = req.set
+    val bank = req.bank
+    if (bankBits == 0) {
+      val fullAddressPremix = Cat(tag(tagBits - 1, 0), set(setBits - 1, 0))
+      val newTag = fullAddressPremix(tagBits + setBits - 1, log2Ceil(tpmetaCacheNrSet))
+      val newSet = fullAddressPremix(log2Ceil(tpmetaCacheNrSet) - 1, 0)
+      (newTag, newSet)
+    } else {
+      val fullAddressPremix = Cat(tag(tagBits - 1, 0), set(setBits - 1, 0), bank(bankBits - 1, 0))
+      val newTag = fullAddressPremix(tagBits + setBits + bankBits - 1, log2Ceil(tpmetaCacheNrSet))
+      val newSet = fullAddressPremix(log2Ceil(tpmetaCacheNrSet) - 1, 0)
+      (newTag, newSet)
+    }
+  }
+
   val tpMetaTable = Module(
-    new SRAMTemplate(new tpMetaEntry(), set = tpTableNrSet, way = tpTableAssoc, shouldReset = false, singlePort = true)
+    new SRAMTemplate(new tpMetaEntry(), set = tpTableNrSet, way = tpTableAssoc, shouldReset = true, singlePort = true)
+  )
+  val tpMetaCache = Module(
+    new SRAMTemplate(new tpMetaCacheEntry(), set = tpmetaCacheNrSet, way = tpmetaCacheAssoc, shouldReset = true, singlePort = true)
   )
   val dataReadQueue = Module(new Queue(new TPmetaReq(), dataReadQueueDepth, pipe = false, flow = false))
   val dataWriteQueue = Module(new Queue(new TPmetaReq(), dataWriteQueueDepth, pipe = false, flow = false))
@@ -301,6 +329,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val tpMetaRespValid_s2 = RegEnable(tpMetaRespValid_s1, s1_valid)
   val tpMetaResp_s2 = RegEnable(tpMetaResp_s0, s1_valid)
   val hit_s2 = RegEnable(hit_s1, false.B, s1_valid)
+  val hitWay_s2 = RegEnable(hitWay, s1_valid)
   val hasInvalidWay_s2 = RegEnable(hasInvalidWay_s1, false.B, s1_valid)
   val way_s2 = RegEnable(way_s1, s1_valid)
   val repl_state_s2 = RegEnable(repl_state_s1, s1_valid)
@@ -391,7 +420,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   triggerQueue.io.enq.bits.paddr := train_s2.addr
   triggerQueue.io.enq.bits.way := way_s2
   triggerQueue.io.enq.bits.replTag := Mux(replTagValid_s2, replTag_s2, Mux(trainOnVaddr.orR, vtag_s2, ptag_s2))
-  triggerQueue.io.enq.bits.hitConfidence := hit_s2
+  triggerQueue.io.enq.bits.hitConfidence := Mux(hit_s2, metas(hitWay_s2).hitConfidence, false.B)
   triggerQueue.io.deq.ready := false.B // will be override
 
   // dataReadQueue enqueue
@@ -401,9 +430,11 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   dataReadQueue.io.enq.bits.rawData := DontCare
   dataReadQueue.io.enq.bits.hartid := io.hartid
   dataReadQueue.io.enq.bits.replTag := DontCare
-  dataReadQueue.io.enq.bits.tpmetaAccessed := DontCare
+  dataReadQueue.io.enq.bits.tpmetaAccessed := Mux(hit_s2, metas(hitWay_s2).hitConfidence, false.B)
+  dataReadQueue.io.enq.bits.way := DontCare
 
-  tpMetaReadQueue.io.enq.valid := dataReadQueue.io.deq.fire
+//  tpMetaReadQueue.io.enq.valid := dataReadQueue.io.deq.fire
+  tpMetaReadQueue.io.enq.valid := false.B
   tpMetaReadQueue.io.enq.bits.set := Mux(trainOnVaddr.orR, vset_s2, pset_s2)
   tpMetaReadQueue.io.enq.bits.tag := Mux(trainOnVaddr.orR, vtag_s2, ptag_s2)
 
@@ -415,30 +446,54 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   dataWriteQueue.io.deq.ready := io.tpmeta_port.req.ready
 
   // tpmeta_port req assignment, priority: write > read
+  // assign accessed meta to cache
   val readReqValid = dataReadQueue.io.deq.valid
   val writeReqValid = dataWriteQueue.io.deq.valid
   val readReqRawData = Cat(dataReadQueue.io.deq.bits.hartid, Cat(dataReadQueue.io.deq.bits.rawData.reverse).pad(508))
   val writeReqRawData = Cat(dataWriteQueue.io.deq.bits.hartid, Cat(dataWriteQueue.io.deq.bits.rawData.reverse).pad(508))
-  io.tpmeta_port.req.valid := readReqValid || writeReqValid
+
+  io.tpmeta_port.req.valid := (readReqValid && !dataReadQueue.io.deq.bits.tpmetaAccessed) || (writeReqValid && !dataWriteQueue.io.deq.bits.tpmetaAccessed)
   io.tpmeta_port.req.bits.l2ReqBundle := Mux(writeReqValid, dataWriteQueue.io.deq.bits.l2ReqBundle, dataReadQueue.io.deq.bits.l2ReqBundle)
   io.tpmeta_port.req.bits.wmode := Mux(writeReqValid, dataWriteQueue.io.deq.bits.wmode, dataReadQueue.io.deq.bits.wmode)
   io.tpmeta_port.req.bits.rawData := Mux(writeReqValid, writeReqRawData, readReqRawData)
   io.tpmeta_port.req.bits.replTag := Mux(writeReqValid, dataWriteQueue.io.deq.bits.replTag, dataReadQueue.io.deq.bits.replTag)
   io.tpmeta_port.req.bits.tpmetaAccessed := Mux(writeReqValid, dataWriteQueue.io.deq.bits.tpmetaAccessed, dataReadQueue.io.deq.bits.tpmetaAccessed)
 
+  val tpmetaCache_w_bits = Wire(new tpMetaCacheEntry())
+  val (tpmetaCache_w_bits_tag, tpmetaCache_w_set) = reparseFullAddressWithBank(dataWriteQueue.io.deq.bits.l2ReqBundle)
+  val tpmetaCache_w_valid = writeReqValid && dataWriteQueue.io.deq.bits.tpmetaAccessed
+  val tpmetaCache_w_wayOH = UIntToOH(dataWriteQueue.io.deq.bits.way)
+  tpmetaCache_w_bits.valid := dataWriteQueue.io.deq.bits.tpmetaAccessed
+  tpmetaCache_w_bits.rawData := writeReqRawData
+  tpmetaCache_w_bits.tag := tpmetaCache_w_bits_tag
+  tpMetaCache.io.w.apply(tpmetaCache_w_valid, tpmetaCache_w_bits, tpmetaCache_w_set, tpmetaCache_w_wayOH)
+
+  val tpmetaCahce_r_valid = readReqValid && dataReadQueue.io.deq.bits.tpmetaAccessed && !writeReqValid
+  val (tpmetaCache_r_tag, tpmetaCache_r_set) = reparseFullAddressWithBank(dataReadQueue.io.deq.bits.l2ReqBundle)
+  val tpmetaCache_r_tag_reg = RegEnable(tpmetaCache_r_tag, tpmetaCahce_r_valid)
+  val tpmetas = tpMetaCache.io.r(tpmetaCahce_r_valid, tpmetaCache_r_set).resp.data
+  val tpmetasTagMatchVec = tpmetas.map(_.tag === tpmetaCache_r_tag_reg)
+  val tpmetasValidVec = tpmetas.map(_.valid === true.B)
+  val tpmetasHitVec = tpmetasTagMatchVec.zip(tpmetasValidVec).map(x => x._1 && x._2)
+  val tpmetasHitWay = OHToUInt(tpmetasHitVec)
+  val tpmetasHit = tpmetasHitWay.orR
+  val tpmetasRawData = tpmetas(tpmetasHitWay).rawData
 
   /* Async Stage: get tpMeta and insert it into tpDataQueue */
 
-  io.tpmeta_port.resp.ready := true.B
+  io.tpmeta_port.resp.ready := !RegNext(tpmetaCahce_r_valid) //TODO: fix disable logic; close now
 
-  val tpmetaRespHartid = io.tpmeta_port.resp.bits.rawData(511, 508)
-  val tpmetaRespRawData = VecInit((0 until 16).map(i => io.tpmeta_port.resp.bits.rawData(metaDataLength * (i + 1) - 1, metaDataLength * i)))
-  tpDataQueue.io.enq.valid := io.tpmeta_port.resp.valid && tpmetaRespHartid === hartid.U && io.tpmeta_port.resp.bits.exist
+  val tpmetaRespRawDataWithHartid = Mux(io.tpmeta_port.resp.fire, io.tpmeta_port.resp.bits.rawData, tpmetasRawData)
+  val tpmetaRespHartid = tpmetaRespRawDataWithHartid(511, 508)
+  val tpmetaRespRawData = VecInit((0 until 16).map(i => tpmetaRespRawDataWithHartid(metaDataLength * (i + 1) - 1, metaDataLength * i)))
+  tpDataQueue.io.enq.valid := tpmetaRespHartid === hartid.U &&
+    ((io.tpmeta_port.resp.valid && io.tpmeta_port.resp.bits.exist) || tpmetasHit)
   tpDataQueue.io.enq.bits.rawData := tpmetaRespRawData
   assert(tpDataQueue.io.enq.ready === true.B) // tpDataQueue is never full
 
   tpMetaReadQueue.io.deq.ready := io.tpmeta_port.resp.valid && tpmetaRespHartid === hartid.U
-  tpMetaRespQueue.io.enq.valid := io.tpmeta_port.resp.valid && tpmetaRespHartid === hartid.U && !io.tpmeta_port.resp.bits.exist
+//  tpMetaRespQueue.io.enq.valid := io.tpmeta_port.resp.valid && tpmetaRespHartid === hartid.U && !io.tpmeta_port.resp.bits.exist
+  tpMetaRespQueue.io.enq.valid := false.B
   tpMetaRespQueue.io.enq.bits := tpMetaReadQueue.io.deq.bits
 
   /* Recorder logic TODO: compress data based on max delta */
@@ -511,6 +566,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   dataWriteQueue.io.enq.bits.hartid := io.hartid
   dataWriteQueue.io.enq.bits.replTag := write_record_trigger.replTag
   dataWriteQueue.io.enq.bits.tpmetaAccessed := write_record_trigger.hitConfidence
+  dataWriteQueue.io.enq.bits.way := way_s2
   assert(dataWriteQueue.io.enq.ready === true.B) // TODO: support back-pressure
 
   when(resetIdx === 0.U) {
