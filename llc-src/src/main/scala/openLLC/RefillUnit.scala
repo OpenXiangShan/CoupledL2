@@ -22,9 +22,6 @@ import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2chi._
 import coupledL2.tl2chi.CHICohStates._
-import coupledL2.tl2chi.CHIOpcode.REQOpcodes._
-import coupledL2.tl2chi.CHIOpcode.DATOpcodes._
-import coupledL2.tl2chi.CHIOpcode.RSPOpcodes._
 import utility.{FastArbiter}
 
 class RefillBufRead(implicit p: Parameters) extends LLCBundle {
@@ -44,7 +41,7 @@ class RefillEntry(implicit p: Parameters) extends TaskEntry {
   val dirResult = new DirResult()
 }
 
-class RefillUnit(implicit p: Parameters) extends LLCModule {
+class RefillUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   val io = IO(new Bundle() {
     /* receive refill requests from mainpipe */
     val task_in = Flipped(ValidIO(new RefillTask()))

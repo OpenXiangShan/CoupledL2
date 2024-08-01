@@ -20,9 +20,7 @@ package openLLC
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.tl2chi.CHIOpcode.REQOpcodes._
-import coupledL2.tl2chi.CHIOpcode.DATOpcodes._
-import coupledL2.tl2chi.CHIOpcode.RSPOpcodes._
+import coupledL2.tl2chi.HasCHIOpcodes
 import utility.{FastArbiter}
 
 class MemEntry(implicit p: Parameters) extends TaskEntry {
@@ -43,7 +41,7 @@ object MemEntry {
   }
 }
 
-class MemUnit(implicit p: Parameters) extends LLCModule {
+class MemUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   val io = IO(new Bundle() {
     /* ReadNoSnp/WriteNoSnp task from MainPipe */
     val fromMainPipe = new Bundle() {

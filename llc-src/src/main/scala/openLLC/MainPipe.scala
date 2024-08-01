@@ -21,13 +21,10 @@ import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2chi._
-import coupledL2.tl2chi.CHIOpcode.REQOpcodes._
-import coupledL2.tl2chi.CHIOpcode.SNPOpcodes._
-import coupledL2.tl2chi.CHIOpcode.RSPOpcodes._
 import coupledL2.tl2chi.CHICohStates._
 import utility._
 
-class MainPipe(implicit p: Parameters) extends LLCModule {
+class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   val io = IO(new Bundle() {
     /* receive incoming task from arbiter at stage 2 */
     val taskFromArb_s2 = Flipped(ValidIO(new Task()))
