@@ -21,9 +21,6 @@ import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2chi._
-import coupledL2.tl2chi.CHIOpcode.REQOpcodes._
-import coupledL2.tl2chi.CHIOpcode.DATOpcodes._
-import coupledL2.tl2chi.CHIOpcode.RSPOpcodes._
 import coupledL2.tl2chi.CHICohStates._
 import utility.{FastArbiter}
 
@@ -42,7 +39,7 @@ class ResponseInfo(implicit p: Parameters) extends BlockInfo {
   val w_compack = Bool()
 }
 
-class ResponseUnit(implicit p: Parameters) extends LLCModule {
+class ResponseUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   val io = IO(new Bundle() {
     /* Comp(DBIDResp/Data) task from MainPipe */
     val fromMainPipe = new Bundle() {

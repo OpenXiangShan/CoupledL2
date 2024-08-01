@@ -21,14 +21,13 @@ import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import utility.{FastArbiter}
-import coupledL2.tl2chi.CHIOpcode.REQOpcodes._
-import coupledL2.tl2chi.CHIOpcode.RSPOpcodes._
+import coupledL2.tl2chi.HasCHIOpcodes
 
 class SnoopEntry(implicit p: Parameters) extends TaskEntry {
   val waitID = UInt(TXNID_WIDTH.W) // Indicates which CompAck the task needs to wait for to wake itself up
 }
 
-class SnoopUnit(implicit p: Parameters) extends LLCModule {
+class SnoopUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   val io = IO(new Bundle() {
     /* receive snoop requests from mainpipe */
     val in = Flipped(ValidIO(new Task()))
