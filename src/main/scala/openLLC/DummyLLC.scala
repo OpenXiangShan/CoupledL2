@@ -24,6 +24,7 @@ import freechips.rocketchip.amba.axi4.AXI4Parameters._
 import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2chi._
+import coupledL2.tl2chi.CHICohStates._
 import utility._
 
 class DummyLLC(numRNs: Int = 1)(implicit p: Parameters) extends LazyModule with HasOpenLLCParameters {
@@ -86,6 +87,7 @@ class DummyLLCImp(numRNs: Int)(wrapper: DummyLLC) extends LazyModuleImp(wrapper)
 
   val snpGotData = RegInit(false.B)
   val snpGotDirty = RegInit(false.B)
+  val cbwrdataValid = RegInit(false.B)
 
   val be = Reg(UInt(beatBytes.W))
 
@@ -108,6 +110,7 @@ class DummyLLCImp(numRNs: Int)(wrapper: DummyLLC) extends LazyModuleImp(wrapper)
     refillBeatCnt := 0.U
     snpGotData := false.B
     snpGotDirty := false.B
+    cbwrdataValid := false.B
   }.elsewhen (valid && noSchedule && noWait) {
     valid := false.B
   }
@@ -210,7 +213,7 @@ class DummyLLCImp(numRNs: Int)(wrapper: DummyLLC) extends LazyModuleImp(wrapper)
   aw.bits.qos := 0.U
 
   w.bits.data := releaseBuf(wBeatCnt)
-  w.bits.strb := Mux(isWriteNoSnp, be, Fill(beatBytes, true.B))
+  w.bits.strb := Mux(isWriteNoSnp, be, Fill(beatBytes, cbwrdataValid || snpGotDirty))
   w.bits.last := isWriteNoSnp || wBeatCnt === (beatSize - 1).U
 
   for (i <- 0 until numRNs) {
@@ -344,6 +347,7 @@ class DummyLLCImp(numRNs: Int)(wrapper: DummyLLC) extends LazyModuleImp(wrapper)
         val beatIdx = rn(i).tx.dat.bits.dataID >> 1
         val data = rn(i).tx.dat.bits.data
         releaseBuf(beatIdx) := data
+        cbwrdataValid := (rn(i).tx.dat.bits.resp & PassDirty) =/= I
         when (releaseBeatCnt === (beatSize - 1).U) {
           w_wrdata := true.B
         }
