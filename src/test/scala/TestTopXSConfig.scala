@@ -162,10 +162,10 @@ class TestTop_XSConfig()(implicit p: Parameters) extends LazyModule {
       l3.node :*= l3_xbar
 
   lazy val module = new LazyModuleImp(this) {
-    val timer = WireDefault(0.U(64.W))
-    val logEnable = WireDefault(false.B)
-    val clean = WireDefault(false.B)
-    val dump = WireDefault(false.B)
+    val timer = IO(Input(UInt(64.W)))
+    val logEnable = IO(Input(Bool()))
+    val clean = IO(Input(Bool()))
+    val dump = IO(Input(Bool()))
 
     dontTouch(timer)
     dontTouch(logEnable)
@@ -187,6 +187,29 @@ class TestTop_XSConfig()(implicit p: Parameters) extends LazyModule {
   }
 }
 
+import firrtl._
+import firrtl.ir._
+import firrtl.stage.TransformManager.TransformDependency
+import firrtl.stage.RunFirrtlTransformAnnotation
+
+class PrintModuleName extends Transform with DependencyAPIMigration {
+  // avoid print's check
+  override def prerequisites = firrtl.stage.Forms.Checks
+  override def invalidates(a: Transform) = false
+  override def optionalPrerequisiteOf: Seq[TransformDependency] = firrtl.stage.Forms.HighEmitters
+
+  override protected def execute(state: CircuitState): CircuitState = {
+    val c = state.circuit
+    def onStmt(s: Statement): Statement = s match {
+      case Print(info, StringLit(string), args, clk, en) =>
+        Print(info, StringLit(string.replace(XSLog.MagicStr, "%m")), args, clk, en)
+      case other: Statement =>
+        other.mapStmt(onStmt)
+    }
+    state.copy(c.mapModule(m => m.mapStmt(onStmt)))
+  }
+}
+
 object TestTop_XSConfig extends App {
   val config = baseConfig(1).alterPartial({
     case L2ParamKey => L2Param(
@@ -202,7 +225,8 @@ object TestTop_XSConfig extends App {
 
   val top = DisableMonitors(p => LazyModule(new TestTop_XSConfig()(p)))(config)
   (new ChiselStage).execute(args, Seq(
-    ChiselGeneratorAnnotation(() => top.module)
+    ChiselGeneratorAnnotation(() => top.module),
+    RunFirrtlTransformAnnotation(new PrintModuleName)
   ))
 
   ChiselDB.addToFileRegisters
