@@ -45,7 +45,7 @@ class TXRSP(implicit p: Parameters) extends TL2CHIL2Module {
   require(chiOpt.isDefined)
 
   // TODO: an mshrsAll-entry queue is too much, evaluate for a proper size later
-  val queue = Module(new Queue(new CHIRSP, entries = mshrsAll, flow = true))
+  val queue = Module(new Queue(new CHIRSP, entries = mshrsAll, flow = false))
 
   // Back pressure logic from TXRSP
   val queueCnt = queue.io.count

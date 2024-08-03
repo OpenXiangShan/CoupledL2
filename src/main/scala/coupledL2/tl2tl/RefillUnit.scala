@@ -23,7 +23,7 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2._
-import coupledL2.utils.XSPerfAccumulate
+import utility.XSPerfAccumulate
 import huancun.{DirtyKey, IsHitKey}
 
 class grantAckQEntry(implicit p: Parameters) extends L2Bundle {
@@ -86,6 +86,6 @@ class RefillUnit(implicit p: Parameters) extends L2Module {
       zero := zero & io.sinkD.bits.data === 0.U // if beat not 0.U, clear 'zero'
     }
   }
-  XSPerfAccumulate(cacheParams, "sinkD_from_L3_zero", io.refillBufWrite.valid && beat === beatSize.U && zero && io.sinkD.bits.data === 0.U)
-  XSPerfAccumulate(cacheParams, "sinkD_from_L3_all",  io.refillBufWrite.valid && beat === beatSize.U)
+  XSPerfAccumulate("sinkD_from_L3_zero", io.refillBufWrite.valid && beat === beatSize.U && zero && io.sinkD.bits.data === 0.U)
+  XSPerfAccumulate("sinkD_from_L3_all",  io.refillBufWrite.valid && beat === beatSize.U)
 }

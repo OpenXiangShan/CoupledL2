@@ -75,6 +75,8 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     val mshrInfo  = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo)))
     val aMergeTask = ValidIO(new AMergeTask)
     val mainPipeBlock = Input(Vec(2, Bool()))
+    /* Snoop task from arbiter at stage 2 */
+    val taskFromArb_s2 = Flipped(ValidIO(new TaskBundle()))
 
     val ATag        = Output(UInt(tagBits.W))
     val ASet        = Output(UInt(setBits.W))
@@ -143,8 +145,23 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   io.aMergeTask.bits.id := mergeAId
   io.aMergeTask.bits.task := in
 
+  /*
+   noFreeWay check: s2 + s3 + mshrs >= ways(L2)
+   */
+  def noFreeWayForSet(set: UInt): Bool = {
+    val task_s2 = io.taskFromArb_s2
+    val sameSet_s2 = task_s2.valid && task_s2.bits.fromA && !task_s2.bits.mshrTask && task_s2.bits.set === set
+    val sameSet_s3 = RegNext(task_s2.valid && task_s2.bits.fromA && !task_s2.bits.mshrTask) &&
+      RegEnable(task_s2.bits.set, task_s2.valid) === set
+    val sameSetCnt = PopCount(VecInit(io.mshrInfo.map(s => s.valid && s.bits.set === set && s.bits.fromA) :+
+      sameSet_s2 :+ sameSet_s3).asUInt)
+    val noFreeWay = sameSetCnt >= cacheParams.ways.U
+    noFreeWay
+  }
+  def noFreeWay(task: TaskBundle): Bool = noFreeWayForSet(task.set)
+
   // flow not allowed when full, or entries might starve
-  val canFlow = flow.B && !full && !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR
+  val canFlow = flow.B && !full && !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(in)
   val doFlow  = canFlow && io.out.ready
   io.hasLatePF := latePrefetch(in) && io.in.valid && !sameAddr(in, RegNext(in))
   io.hasMergeA := mergeA && io.in.valid && !sameAddr(in, RegNext(in))
@@ -177,7 +194,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
     entry.valid   := true.B
     // when Addr-Conflict / Same-Addr-Dependent / MainPipe-Block / noFreeWay-in-Set, entry not ready
-    entry.rdy     := !conflict(in) && !mpBlock && !s1Block // && !Cat(depMask).orR
+    entry.rdy     := !conflict(in) && !mpBlock && !s1Block && !noFreeWay(in)// && !Cat(depMask).orR
     entry.task    := io.in.bits
     entry.waitMP  := Cat(
       s1Block,
@@ -210,7 +227,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   issueArb.io.out.ready := chosenQ.io.enq.ready
 
   /* ======== Update rdy and masks ======== */
-  for (e <- buffer) {
+  buffer.zipWithIndex.foreach { case (e, i) =>
     when(e.valid) {
       val waitMSUpdate  = WireInit(e.waitMS)
 //      val depMaskUpdate = WireInit(e.depMask)
@@ -247,7 +264,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       // update info
       e.waitMS  := waitMSUpdate
 //      e.depMask := depMaskUpdate
-      e.rdy     := !waitMSUpdate.orR && !e.waitMP && !s1_Block
+      e.rdy     := !waitMSUpdate.orR && !e.waitMP && !s1_Block && !noFreeWay(e.task)
     }
   }
 
@@ -270,20 +287,20 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
   // add XSPerf to see how many cycles the req is held in Buffer
   if(cacheParams.enablePerf) {
-    XSPerfAccumulate(cacheParams, "drop_prefetch", io.in.valid && dup)
+    XSPerfAccumulate("drop_prefetch", io.in.valid && dup)
     if(flow){
-      XSPerfAccumulate(cacheParams, "req_buffer_flow", io.in.valid && doFlow)
+      XSPerfAccumulate("req_buffer_flow", io.in.valid && doFlow)
     }
-    XSPerfAccumulate(cacheParams, "req_buffer_alloc", alloc)
-    XSPerfAccumulate(cacheParams, "req_buffer_full", full)
-    XSPerfAccumulate(cacheParams, "recv_prefetch", io.in.fire && isPrefetch)
-    XSPerfAccumulate(cacheParams, "recv_normal", io.in.fire && !isPrefetch)
-    XSPerfAccumulate(cacheParams, "chosenQ_cancel", chosenQValid && cancel)
-    XSPerfAccumulate(cacheParams, "req_buffer_mergeA", io.hasMergeA)
+    XSPerfAccumulate("req_buffer_alloc", alloc)
+    XSPerfAccumulate("req_buffer_full", full)
+    XSPerfAccumulate("recv_prefetch", io.in.fire && isPrefetch)
+    XSPerfAccumulate("recv_normal", io.in.fire && !isPrefetch)
+    XSPerfAccumulate("chosenQ_cancel", chosenQValid && cancel)
+    XSPerfAccumulate("req_buffer_mergeA", io.hasMergeA)
     // TODO: count conflict
     for(i <- 0 until entries){
       val cntEnable = PopCount(buffer.map(_.valid)) === i.U
-      XSPerfAccumulate(cacheParams, s"req_buffer_util_$i", cntEnable)
+      XSPerfAccumulate(s"req_buffer_util_$i", cntEnable)
     }
     val bufferTimer = RegInit(VecInit(Seq.fill(entries)(0.U(16.W))))
     buffer zip bufferTimer map {
@@ -293,9 +310,9 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
         assert(t < 20000.U, "ReqBuf Leak")
 
         val enable = RegNext(e.valid) && !e.valid
-        XSPerfHistogram(cacheParams, "reqBuf_timer", t, enable, 0, 20, 1, right_strict = true)
-        XSPerfHistogram(cacheParams, "reqBuf_timer", t, enable, 20, 400, 20, left_strict = true)
-        XSPerfMax(cacheParams, "max_reqBuf_timer", t, enable)
+        XSPerfHistogram("reqBuf_timer", t, enable, 0, 20, 1, right_strict = true)
+        XSPerfHistogram("reqBuf_timer", t, enable, 20, 400, 20, left_strict = true)
+        XSPerfMax("max_reqBuf_timer", t, enable)
 
         // assert !(all entries occupied for 100 cycles)
     }

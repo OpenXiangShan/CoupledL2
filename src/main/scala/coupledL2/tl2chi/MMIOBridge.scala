@@ -26,7 +26,6 @@ import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.HasCoupledL2Parameters
-import coupledL2.tl2chi.CHIOpcode._
 
 class MMIOBridge()(implicit p: Parameters) extends LazyModule
   with HasCoupledL2Parameters
@@ -57,7 +56,7 @@ class MMIOBridge()(implicit p: Parameters) extends LazyModule
 
 }
 
-class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Module {
+class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
 
   val needRR = true
   val order = WireInit(if (needRR) OrderEncodings.EndpointOrder else OrderEncodings.None)
@@ -147,25 +146,25 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
     s_resp := true.B
   }
   when (rxrsp.fire) {
-    when (rxrsp.bits.opcode === RSPOpcodes.CompDBIDResp || rxrsp.bits.opcode === RSPOpcodes.Comp) {
+    when (rxrsp.bits.opcode === CompDBIDResp || rxrsp.bits.opcode === Comp) {
       w_comp := true.B
     }
-    when (rxrsp.bits.opcode === RSPOpcodes.CompDBIDResp || rxrsp.bits.opcode === RSPOpcodes.DBIDResp) {
+    when (rxrsp.bits.opcode === CompDBIDResp || rxrsp.bits.opcode === DBIDResp) {
       w_dbidresp := true.B
       srcID := rxrsp.bits.srcID
       dbID := rxrsp.bits.dbID
     }
-    when (rxrsp.bits.opcode === RSPOpcodes.CompDBIDResp || rxrsp.bits.opcode === RSPOpcodes.Comp) {
+    when (rxrsp.bits.opcode === CompDBIDResp || rxrsp.bits.opcode === Comp) {
       denied := denied || rxrsp.bits.respErr === RespErrEncodings.NDERR
       // TODO: d_corrupt is reserved and must be 0 in TileLink
     }
-    when (rxrsp.bits.opcode === RSPOpcodes.RetryAck) {
+    when (rxrsp.bits.opcode === RetryAck) {
       s_txreq := false.B
       w_pcrdgrant := false.B
       allowRetry := false.B
       pCrdType := rxrsp.bits.pCrdType
     }
-    when (rxrsp.bits.opcode === RSPOpcodes.ReadReceipt) {
+    when (rxrsp.bits.opcode === ReadReceipt) {
       w_readreceipt.foreach(_ := true.B)
     }
   }
@@ -185,9 +184,9 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   txreq.bits.tgtID := SAM(sam).lookup(txreq.bits.addr)
   txreq.bits.txnID := io.id
   txreq.bits.opcode := ParallelLookUp(req.opcode, Seq(
-    Get -> REQOpcodes.ReadNoSnp,
-    PutFullData -> REQOpcodes.WriteNoSnpFull,
-    PutPartialData -> REQOpcodes.WriteNoSnpPtl
+    Get -> ReadNoSnp,
+    PutFullData -> WriteNoSnpFull,
+    PutPartialData -> WriteNoSnpPtl
   ))
   txreq.bits.size := req.size
   txreq.bits.addr := req.address
@@ -214,7 +213,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   txdat.bits := 0.U.asTypeOf(txdat.bits.cloneType)
   txdat.bits.tgtID := srcID
   txdat.bits.txnID := dbID
-  txdat.bits.opcode := DATOpcodes.NonCopyBackWrData
+  txdat.bits.opcode := NonCopyBackWrData
   txdat.bits.ccID := req.address(log2Ceil(beatBytes), log2Ceil(beatBytes) - CCID_WIDTH + 1)
   txdat.bits.dataID := Cat(req.address(log2Ceil(beatBytes)), 0.U(1.W))
   txdat.bits.be := ParallelLookUp(
@@ -234,7 +233,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
 
 class MMIOBridgeImp(outer: MMIOBridge) extends LazyModuleImp(outer)
   with HasCoupledL2Parameters
-  with HasCHIMsgParameters {
+  with HasCHIOpcodes {
 
   val (bus, edge) = outer.mmioNode.in.head
 
@@ -259,7 +258,7 @@ class MMIOBridgeImp(outer: MMIOBridge) extends LazyModuleImp(outer)
   val pCrdValids = RegInit(VecInit(Seq.fill(mmioBridgeSize)(false.B)))
   val pCrdTypes = Reg(Vec(mmioBridgeSize, UInt(PCRDTYPE_WIDTH.W)))
   val pCrdInsertOH = PriorityEncoderOH(pCrdValids.map(!_))
-  val isPCrdGrant = io.rx.rsp.bits.opcode === RSPOpcodes.PCrdGrant
+  val isPCrdGrant = io.rx.rsp.bits.opcode === PCrdGrant
   val pCrdMatch = Wire(Vec(mmioBridgeSize, Vec(mmioBridgeSize, Bool())))
   val pCrdMatchEntryVec = pCrdMatch.map(_.asUInt.orR)
   val pCrdMatchEntryOH = PriorityEncoderOH(pCrdMatchEntryVec)
@@ -303,7 +302,7 @@ class MMIOBridgeImp(outer: MMIOBridge) extends LazyModuleImp(outer)
   val txreqArb = Module(new Arbiter(chiselTypeOf(io.tx.req.bits), mmioBridgeSize))
   for ((a, req) <- txreqArb.io.in.zip(entries.map(_.io.chi.tx.req))) {
     a <> req
-    val isReadNoSnp = req.bits.opcode === REQOpcodes.ReadNoSnp
+    val isReadNoSnp = req.bits.opcode === ReadNoSnp
     val block = isReadNoSnp && waitOnReadReceipt
     req.ready := a.ready && !block
     a.valid := req.valid && !block

@@ -10,9 +10,9 @@ import freechips.rocketchip.tile.MaxHartIdBits
 import huancun._
 import coupledL2.prefetch._
 import coupledL2.tl2chi._
-import utility.{ChiselDB, FileRegisters, TLLogger}
+import utility._
 
-class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(implicit p: Parameters) extends LazyModule
+class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue: String = "B")(implicit p: Parameters) extends LazyModule
   with HasCHIMsgParameters {
 
   /*   L1D(L1I)* L1D(L1I)* ... L1D(L1I)*
@@ -62,14 +62,25 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(imp
   }
 
   // val l2 = LazyModule(new TL2CHICoupledL2())
-  val l2_nodes = (0 until numCores).map(i => LazyModule(new TL2CHICoupledL2()(new Config((_, _, _) => {
+  val l2_nodes = (0 until numCores).map(i => LazyModule(new TL2CHICoupledL2()(new Config((site, here, up) => {
     case L2ParamKey => cacheParams.copy(
       name                = s"L2_$i",
       hartId              = i,
     )
     case EnableCHI => true
+    case CHIIssue => issue
     case BankBitsKey => log2Ceil(banks)
     case MaxHartIdBits => log2Up(numCores)
+    case LogUtilsOptionsKey => LogUtilsOptions(
+      false,
+      here(L2ParamKey).enablePerf,
+      here(L2ParamKey).FPGAPlatform
+    )
+    case PerfCounterOptionsKey => PerfCounterOptions(
+      here(L2ParamKey).enablePerf && !here(L2ParamKey).FPGAPlatform,
+      here(L2ParamKey).enableRollingDB && !here(L2ParamKey).FPGAPlatform,
+      i
+    )
   }))))
 
   val bankBinders = (0 until numCores).map(_ => BankBinder(banks, 64))
@@ -202,6 +213,26 @@ object TestTop_CHI_DualCore_2UL extends App {
   )(args)
 }
 
+object TestTop_CHI_DualCore_0UL_Eb extends App {
+
+  TestTopCHIHelper.gen(p => new TestTop_CHIL2(
+    numCores = 2,
+    numULAgents = 0,
+    banks = 1,
+    issue = "E.b")(p)
+  )(args)
+}
+
+object TestTop_CHI_DualCore_2UL_Eb extends App {
+
+  TestTopCHIHelper.gen(p => new TestTop_CHIL2(
+    numCores = 2,
+    numULAgents = 0,
+    banks = 1,
+    issue = "E.b")(p)
+  )(args)
+}
+
 
 
 object TestTop_CHI_QuadCore_0UL extends App {
@@ -219,6 +250,26 @@ object TestTop_CHI_QuadCore_2UL extends App {
     numCores = 4,
     numULAgents = 2,
     banks = 1)(p)
+  )(args)
+}
+
+object TestTop_CHI_QuadCore_0UL_Eb extends App {
+
+  TestTopCHIHelper.gen(p => new TestTop_CHIL2(
+    numCores = 4,
+    numULAgents = 0,
+    banks = 1,
+    issue = "E.b")(p)
+  )(args)
+}
+
+object TestTop_CHI_QuadCore_2UL_Eb extends App {
+
+  TestTopCHIHelper.gen(p => new TestTop_CHIL2(
+    numCores = 4,
+    numULAgents = 2,
+    banks = 1,
+    issue = "E.b")(p)
   )(args)
 }
 
@@ -241,6 +292,26 @@ object TestTop_CHI_OctaCore_2UL extends App {
   )(args)
 }
 
+object TestTop_CHI_OctaCore_0UL_Eb extends App {
+
+  TestTopCHIHelper.gen(p => new TestTop_CHIL2(
+    numCores = 8,
+    numULAgents = 0,
+    banks = 1,
+    issue = "E.b")(p)
+  )(args)
+}
+
+object TestTop_CHI_OctaCore_2UL_Eb extends App {
+
+  TestTopCHIHelper.gen(p => new TestTop_CHIL2(
+    numCores = 8,
+    numULAgents = 2,
+    banks = 1,
+    issue = "E.b")(p)
+  )(args)
+}
+
 
 object TestTop_CHI_HexaCore_0UL extends App {
 
@@ -257,5 +328,25 @@ object TestTop_CHI_HexaCore_2UL extends App {
     numCores = 16,
     numULAgents = 2,
     banks = 1)(p)
+  )(args)
+}
+
+object TestTop_CHI_HexaCore_0UL_Eb extends App {
+
+  TestTopCHIHelper.gen(p => new TestTop_CHIL2(
+    numCores = 16,
+    numULAgents = 0,
+    banks = 1,
+    issue = "E.b")(p)
+  )(args)
+}
+
+object TestTop_CHI_HexaCore_2UL_Eb extends App {
+
+  TestTopCHIHelper.gen(p => new TestTop_CHIL2(
+    numCores = 16,
+    numULAgents = 2,
+    banks = 1,
+    issue = "E.b")(p)
   )(args)
 }

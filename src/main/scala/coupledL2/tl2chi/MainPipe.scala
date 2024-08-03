@@ -26,12 +26,10 @@ import freechips.rocketchip.tilelink.TLPermissions._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2._
 import coupledL2.prefetch.{PrefetchTrain, PfSource}
-import coupledL2.tl2chi.CHIOpcode._
 import coupledL2.tl2chi.CHICohStates._
 import coupledL2.MetaData._
-import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram}
 
-class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
+class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val io = IO(new Bundle() {
     /* receive task from arbiter at stage 2 */
     val taskFromArb_s2 = Flipped(ValidIO(new TaskBundle()))
@@ -159,20 +157,20 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   val mshr_accessackdata_s3     = mshr_req_s3 && req_s3.fromA && req_s3.opcode === AccessAckData
   val mshr_hintack_s3           = mshr_req_s3 && req_s3.fromA && req_s3.opcode === HintAck
 
-  val mshr_snpResp_s3           = mshr_req_s3 && req_s3.toTXRSP && req_s3.chiOpcode.get === RSPOpcodes.SnpResp
-  val mshr_snpRespFwded_s3      = mshr_req_s3 && req_s3.toTXRSP && req_s3.chiOpcode.get === RSPOpcodes.SnpRespFwded
-  val mshr_snpRespData_s3       = mshr_req_s3 && req_s3.toTXDAT && req_s3.chiOpcode.get === DATOpcodes.SnpRespData
-  val mshr_snpRespDataPtl_s3    = mshr_req_s3 && req_s3.toTXDAT && req_s3.chiOpcode.get === DATOpcodes.SnpRespDataPtl
-  val mshr_snpRespDataFwded_s3  = mshr_req_s3 && req_s3.toTXDAT && req_s3.chiOpcode.get === DATOpcodes.SnpRespDataFwded
+  val mshr_snpResp_s3           = mshr_req_s3 && req_s3.toTXRSP && req_s3.chiOpcode.get === SnpResp
+  val mshr_snpRespFwded_s3      = mshr_req_s3 && req_s3.toTXRSP && req_s3.chiOpcode.get === SnpRespFwded
+  val mshr_snpRespData_s3       = mshr_req_s3 && req_s3.toTXDAT && req_s3.chiOpcode.get === SnpRespData
+  val mshr_snpRespDataPtl_s3    = mshr_req_s3 && req_s3.toTXDAT && req_s3.chiOpcode.get === SnpRespDataPtl
+  val mshr_snpRespDataFwded_s3  = mshr_req_s3 && req_s3.toTXDAT && req_s3.chiOpcode.get === SnpRespDataFwded
   val mshr_snpRespX_s3 = mshr_snpResp_s3 || mshr_snpRespFwded_s3
   val mshr_snpRespDataX_s3 = mshr_snpRespData_s3 || mshr_snpRespDataPtl_s3 || mshr_snpRespDataFwded_s3
 
-  val mshr_dct_s3               = mshr_req_s3 && req_s3.toTXDAT && req_s3.chiOpcode.get === DATOpcodes.CompData
+  val mshr_dct_s3               = mshr_req_s3 && req_s3.toTXDAT && req_s3.chiOpcode.get === CompData
 
-  val mshr_writeBackFull_s3     = mshr_req_s3 && req_s3.toTXREQ && req_s3.chiOpcode.get === REQOpcodes.WriteBackFull
-  val mshr_evict_s3             = mshr_req_s3 && req_s3.toTXREQ && req_s3.chiOpcode.get === REQOpcodes.Evict
+  val mshr_writeBackFull_s3     = mshr_req_s3 && req_s3.toTXREQ && req_s3.chiOpcode.get === WriteBackFull
+  val mshr_evict_s3             = mshr_req_s3 && req_s3.toTXREQ && req_s3.chiOpcode.get === Evict
   
-  val mshr_cbWrData_s3          = mshr_req_s3 && req_s3.toTXDAT && req_s3.chiOpcode.get === DATOpcodes.CopyBackWrData
+  val mshr_cbWrData_s3          = mshr_req_s3 && req_s3.toTXDAT && req_s3.chiOpcode.get === CopyBackWrData
 
   val meta_has_clients_s3       = meta_s3.clients.orR
   val req_needT_s3              = needT(req_s3.opcode, req_s3.param)
@@ -210,20 +208,20 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
     * 
     */
   // whether L2 should do forwarding or not
-  val expectFwd = SNPOpcodes.isSnpXFwd(req_s3.chiOpcode.get)
+  val expectFwd = isSnpXFwd(req_s3.chiOpcode.get)
   val canFwd = dirResult_s3.hit
   val doFwd = expectFwd && canFwd
   val doFwdHitRelease = expectFwd && req_s3.snpHitRelease && req_s3.snpHitReleaseWithData
-  val need_pprobe_s3_b_snpOnceX = req_s3.fromB && SNPOpcodes.isSnpOnceX(req_s3.chiOpcode.get) &&
+  val need_pprobe_s3_b_snpOnceX = req_s3.fromB && isSnpOnceX(req_s3.chiOpcode.get) &&
     dirResult_s3.hit && meta_s3.state === TRUNK && meta_has_clients_s3
   val need_pprobe_s3_b_snpToB = req_s3.fromB && (
-    SNPOpcodes.isSnpToB(req_s3.chiOpcode.get) ||
-    req_s3.chiOpcode.get === SNPOpcodes.SnpCleanShared
+    isSnpToB(req_s3.chiOpcode.get) ||
+    req_s3.chiOpcode.get === SnpCleanShared
   ) && dirResult_s3.hit && meta_s3.state === TRUNK && meta_has_clients_s3
   val need_pprobe_s3_b_snpToN = req_s3.fromB && (
-    SNPOpcodes.isSnpUniqueX(req_s3.chiOpcode.get) ||
-    req_s3.chiOpcode.get === SNPOpcodes.SnpCleanInvalid ||
-    SNPOpcodes.isSnpMakeInvalidX(req_s3.chiOpcode.get)
+    isSnpUniqueX(req_s3.chiOpcode.get) ||
+    req_s3.chiOpcode.get === SnpCleanInvalid ||
+    isSnpMakeInvalidX(req_s3.chiOpcode.get)
   ) && dirResult_s3.hit && meta_has_clients_s3
   val need_pprobe_s3_b = need_pprobe_s3_b_snpOnceX || need_pprobe_s3_b_snpToB || need_pprobe_s3_b_snpToN
   val need_dct_s3_b = doFwd || doFwdHitRelease // DCT
@@ -252,19 +250,19 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
 
   // whether L2 should respond data to HN or not
   val retToSrc = req_s3.retToSrc.getOrElse(false.B)
-  val neverRespData = SNPOpcodes.isSnpMakeInvalidX(req_s3.chiOpcode.get) ||
-    SNPOpcodes.isSnpStashX(req_s3.chiOpcode.get) ||
-    req_s3.chiOpcode.get === SNPOpcodes.SnpOnceFwd ||
-    req_s3.chiOpcode.get === SNPOpcodes.SnpUniqueFwd
+  val neverRespData = isSnpMakeInvalidX(req_s3.chiOpcode.get) ||
+    isSnpStashX(req_s3.chiOpcode.get) ||
+    req_s3.chiOpcode.get === SnpOnceFwd ||
+    req_s3.chiOpcode.get === SnpUniqueFwd
   val shouldRespData_dirty = dirResult_s3.hit && (meta_s3.state === TIP || meta_s3.state === TRUNK) && meta_s3.dirty
   // For forwarding snoops, if the RetToSrc value is 1, must return a copy is the cache line is Dirty or Clean.
-  val shouldRespData_retToSrc_fwd = dirResult_s3.hit && retToSrc && SNPOpcodes.isSnpXFwd(req_s3.chiOpcode.get)
+  val shouldRespData_retToSrc_fwd = dirResult_s3.hit && retToSrc && isSnpXFwd(req_s3.chiOpcode.get)
   // For non-forwarding snoops, ig the RetToSrc value is 1, must return a copy if the cache line is Shared Clean and
   // snoopee retains a copy of the cache line.
   val shouldRespData_retToSrc_nonFwd = dirResult_s3.hit && retToSrc && meta_s3.state === BRANCH && (
-    req_s3.chiOpcode.get === SNPOpcodes.SnpOnce ||
-    req_s3.chiOpcode.get === SNPOpcodes.SnpUnique ||
-    SNPOpcodes.isSnpToBNonFwd(req_s3.chiOpcode.get)
+    req_s3.chiOpcode.get === SnpOnce ||
+    req_s3.chiOpcode.get === SnpUnique ||
+    isSnpToBNonFwd(req_s3.chiOpcode.get)
   )
   val shouldRespData = shouldRespData_dirty || shouldRespData_retToSrc_fwd || shouldRespData_retToSrc_nonFwd
   val doRespData = shouldRespData && !neverRespData
@@ -276,19 +274,19 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   // Resp[2: 0] = {PassDirty, CacheState[1: 0]}
   val respCacheState = WireInit(I)
   val respPassDirty = dirResult_s3.hit && meta_s3.state === TIP && meta_s3.dirty &&
-    !(neverRespData || req_s3.chiOpcode.get === SNPOpcodes.SnpOnce)
+    !(neverRespData || req_s3.chiOpcode.get === SnpOnce)
   when (dirResult_s3.hit) {
-    when (SNPOpcodes.isSnpToB(req_s3.chiOpcode.get)) {
+    when (isSnpToB(req_s3.chiOpcode.get)) {
       respCacheState := SC
     }
-    when (SNPOpcodes.isSnpOnceX(req_s3.chiOpcode.get) || SNPOpcodes.isSnpStashX(req_s3.chiOpcode.get)) {
+    when (isSnpOnceX(req_s3.chiOpcode.get) || isSnpStashX(req_s3.chiOpcode.get)) {
       respCacheState := Mux(
         meta_s3.state === BRANCH,
         SC,
         Mux(meta_s3.dirty, UD, UC)
       )
     }
-    when (req_s3.chiOpcode.get === SNPOpcodes.SnpCleanShared) {
+    when (req_s3.chiOpcode.get === SnpCleanShared) {
       respCacheState := Mux(meta_s3.state === BRANCH, SC, UC)
     }
   }
@@ -297,10 +295,10 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   val fwdCacheState = WireInit(I)
   val fwdPassDirty = WireInit(false.B)
   when (dirResult_s3.hit) {
-    when (SNPOpcodes.isSnpToBFwd(req_s3.chiOpcode.get)) {
+    when (isSnpToBFwd(req_s3.chiOpcode.get)) {
       fwdCacheState := SC
     }
-    when (req_s3.chiOpcode.get === SNPOpcodes.SnpUniqueFwd) {
+    when (req_s3.chiOpcode.get === SnpUniqueFwd) {
       when (meta_s3.state === TIP && meta_s3.dirty) {
         fwdCacheState := UD
         fwdPassDirty := true.B
@@ -332,16 +330,16 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
     sink_resp_s3.bits.pCrdType.foreach(_ := 0.U) // TODO
     sink_resp_s3.bits.chiOpcode.foreach(_ := MuxLookup(
       Cat(doFwd || doFwdHitRelease, doRespData || doRespDataHitRelease),
-      RSPOpcodes.SnpResp
+      SnpResp
     )(Seq(
-      Cat(false.B, false.B) -> RSPOpcodes.SnpResp,
-      Cat(true.B, false.B)  -> RSPOpcodes.SnpRespFwded,
-      Cat(false.B, true.B)  -> DATOpcodes.SnpRespData, // ignore SnpRespDataPtl for now
-      Cat(true.B, true.B)   -> DATOpcodes.SnpRespDataFwded
+      Cat(false.B, false.B) -> SnpResp,
+      Cat(true.B, false.B)  -> SnpRespFwded,
+      Cat(false.B, true.B)  -> SnpRespData, // ignore SnpRespDataPtl for now
+      Cat(true.B, true.B)   -> SnpRespDataFwded
     )))
     sink_resp_s3.bits.resp.foreach(_ := Mux(
-      req_s3.snpHitRelease && !SNPOpcodes.isSnpStashX(req_s3.chiOpcode.get),
-      setPD(I, req_s3.snpHitReleaseWithData && !SNPOpcodes.isSnpMakeInvalidX(req_s3.chiOpcode.get)),
+      req_s3.snpHitRelease && !isSnpStashX(req_s3.chiOpcode.get),
+      setPD(I, req_s3.snpHitReleaseWithData && !isSnpMakeInvalidX(req_s3.chiOpcode.get)),
       setPD(respCacheState, respPassDirty && (doRespData || doRespDataHitRelease))
     ))
     sink_resp_s3.bits.fwdState.foreach(_ := setPD(fwdCacheState, fwdPassDirty))
@@ -414,8 +412,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   /* ======== Write Directory ======== */
   val metaW_valid_s3_a = sinkA_req_s3 && !need_mshr_s3_a && !req_get_s3 && !req_prefetch_s3 // get & prefetch that hit will not write meta
   val metaW_valid_s3_b = sinkB_req_s3 && !need_mshr_s3_b && dirResult_s3.hit &&
-    !SNPOpcodes.isSnpOnceX(req_s3.chiOpcode.get) && !SNPOpcodes.isSnpStashX(req_s3.chiOpcode.get) && (
-      meta_s3.state === TIP || meta_s3.state === BRANCH && SNPOpcodes.isSnpToN(req_s3.chiOpcode.get)
+    !isSnpOnceX(req_s3.chiOpcode.get) && !isSnpStashX(req_s3.chiOpcode.get) && (
+      meta_s3.state === TIP || meta_s3.state === BRANCH && isSnpToN(req_s3.chiOpcode.get)
     )
   val metaW_valid_s3_c = sinkC_req_s3 && dirResult_s3.hit
   val metaW_valid_s3_mshr = mshr_req_s3 && req_s3.metaWen && !(mshr_refill_s3 && retry)
@@ -433,10 +431,10 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
     alias = Some(metaW_s3_a_alias),
     accessed = true.B
   )
-  val metaW_s3_b = Mux(SNPOpcodes.isSnpToN(req_s3.chiOpcode.get), MetaEntry(),
+  val metaW_s3_b = Mux(isSnpToN(req_s3.chiOpcode.get), MetaEntry(),
     MetaEntry(
       dirty = false.B,
-      state = Mux(req_s3.chiOpcode.get === SNPOpcodes.SnpCleanShared, meta_s3.state, BRANCH),
+      state = Mux(req_s3.chiOpcode.get === SnpCleanShared, meta_s3.state, BRANCH),
       clients = meta_s3.clients,
       alias = meta_s3.alias,
       accessed = meta_s3.accessed
@@ -820,44 +818,44 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
 
   /* ===== Performance counters ===== */
   // num of mshr req
-  XSPerfAccumulate(cacheParams, "mshr_grant_req", task_s3.valid && mshr_grant_s3 && !retry)
-  XSPerfAccumulate(cacheParams, "mshr_grantdata_req", task_s3.valid && mshr_grantdata_s3 && !retry)
-  XSPerfAccumulate(cacheParams, "mshr_accessackdata_req", task_s3.valid && mshr_accessackdata_s3 && !retry)
-  XSPerfAccumulate(cacheParams, "mshr_hintack_req", task_s3.valid && mshr_hintack_s3 && !retry)
-  // XSPerfAccumulate(cacheParams, "mshr_probeack_req", task_s3.valid && mshr_probeack_s3)
-  // XSPerfAccumulate(cacheParams, "mshr_probeackdata_req", task_s3.valid && mshr_probeackdata_s3)
-  // XSPerfAccumulate(cacheParams, "mshr_release_req", task_s3.valid && mshr_release_s3)
-  XSPerfAccumulate(cacheParams, "mshr_snpResp_req", task_s3.valid && mshr_snpResp_s3)
-  XSPerfAccumulate(cacheParams, "mshr_snpRespFwded_req", task_s3.valid && mshr_snpRespFwded_s3)
-  XSPerfAccumulate(cacheParams, "mshr_snpRespData_req", task_s3.valid && mshr_snpRespData_s3)
-  XSPerfAccumulate(cacheParams, "mshr_snpRespDataPtl_req", task_s3.valid && mshr_snpRespDataPtl_s3)
-  XSPerfAccumulate(cacheParams, "mshr_snpRespDataFwded_req", task_s3.valid && mshr_snpRespDataFwded_s3)
-  XSPerfAccumulate(cacheParams, "mshr_writeBackFull", task_s3.valid && mshr_writeBackFull_s3)
-  XSPerfAccumulate(cacheParams, "mshr_evict_s3", task_s3.valid && mshr_evict_s3)
+  XSPerfAccumulate("mshr_grant_req", task_s3.valid && mshr_grant_s3 && !retry)
+  XSPerfAccumulate("mshr_grantdata_req", task_s3.valid && mshr_grantdata_s3 && !retry)
+  XSPerfAccumulate("mshr_accessackdata_req", task_s3.valid && mshr_accessackdata_s3 && !retry)
+  XSPerfAccumulate("mshr_hintack_req", task_s3.valid && mshr_hintack_s3 && !retry)
+  // XSPerfAccumulate("mshr_probeack_req", task_s3.valid && mshr_probeack_s3)
+  // XSPerfAccumulate("mshr_probeackdata_req", task_s3.valid && mshr_probeackdata_s3)
+  // XSPerfAccumulate("mshr_release_req", task_s3.valid && mshr_release_s3)
+  XSPerfAccumulate("mshr_snpResp_req", task_s3.valid && mshr_snpResp_s3)
+  XSPerfAccumulate("mshr_snpRespFwded_req", task_s3.valid && mshr_snpRespFwded_s3)
+  XSPerfAccumulate("mshr_snpRespData_req", task_s3.valid && mshr_snpRespData_s3)
+  XSPerfAccumulate("mshr_snpRespDataPtl_req", task_s3.valid && mshr_snpRespDataPtl_s3)
+  XSPerfAccumulate("mshr_snpRespDataFwded_req", task_s3.valid && mshr_snpRespDataFwded_s3)
+  XSPerfAccumulate("mshr_writeBackFull", task_s3.valid && mshr_writeBackFull_s3)
+  XSPerfAccumulate("mshr_evict_s3", task_s3.valid && mshr_evict_s3)
   
 
   // directory access result
   val hit_s3 = task_s3.valid && !mshr_req_s3 && dirResult_s3.hit
   val miss_s3 = task_s3.valid && !mshr_req_s3 && !dirResult_s3.hit
-  XSPerfAccumulate(cacheParams, "a_req_hit", hit_s3 && req_s3.fromA)
-  XSPerfAccumulate(cacheParams, "acquire_hit", hit_s3 && req_s3.fromA &&
+  XSPerfAccumulate("a_req_hit", hit_s3 && req_s3.fromA)
+  XSPerfAccumulate("acquire_hit", hit_s3 && req_s3.fromA &&
     (req_s3.opcode === AcquireBlock || req_s3.opcode === AcquirePerm))
-  XSPerfAccumulate(cacheParams, "get_hit", hit_s3 && req_s3.fromA && req_s3.opcode === Get)
-  XSPerfAccumulate(cacheParams, "retry", mshr_refill_s3 && retry)
+  XSPerfAccumulate("get_hit", hit_s3 && req_s3.fromA && req_s3.opcode === Get)
+  XSPerfAccumulate("retry", mshr_refill_s3 && retry)
 
-  XSPerfAccumulate(cacheParams, "a_req_miss", miss_s3 && req_s3.fromA)
-  XSPerfAccumulate(cacheParams, "acquire_miss", miss_s3 && req_s3.fromA &&
+  XSPerfAccumulate("a_req_miss", miss_s3 && req_s3.fromA)
+  XSPerfAccumulate("acquire_miss", miss_s3 && req_s3.fromA &&
     (req_s3.opcode === AcquireBlock || req_s3.opcode === AcquirePerm))
-  XSPerfAccumulate(cacheParams, "get_miss", miss_s3 && req_s3.fromA && req_s3.opcode === Get)
+  XSPerfAccumulate("get_miss", miss_s3 && req_s3.fromA && req_s3.opcode === Get)
 
-  XSPerfAccumulate(cacheParams, "b_req_hit", hit_s3 && req_s3.fromB)
-  XSPerfAccumulate(cacheParams, "b_req_miss", miss_s3 && req_s3.fromB)
+  XSPerfAccumulate("b_req_hit", hit_s3 && req_s3.fromB)
+  XSPerfAccumulate("b_req_miss", miss_s3 && req_s3.fromB)
 
-  XSPerfHistogram(cacheParams, "a_req_access_way", perfCnt = dirResult_s3.way,
+  XSPerfHistogram("a_req_access_way", perfCnt = dirResult_s3.way,
     enable = task_s3.valid && !mshr_req_s3 && req_s3.fromA, start = 0, stop = cacheParams.ways, step = 1)
-  XSPerfHistogram(cacheParams, "a_req_hit_way", perfCnt = dirResult_s3.way,
+  XSPerfHistogram("a_req_hit_way", perfCnt = dirResult_s3.way,
     enable = hit_s3 && req_s3.fromA, start = 0, stop = cacheParams.ways, step = 1)
-  XSPerfHistogram(cacheParams, "a_req_miss_way_choice", perfCnt = dirResult_s3.way,
+  XSPerfHistogram("a_req_miss_way_choice", perfCnt = dirResult_s3.way,
     enable = miss_s3 && req_s3.fromA, start = 0, stop = cacheParams.ways, step = 1)
 
   // pipeline stages for TX and sourceD reqs
@@ -866,30 +864,30 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module {
   val txreq_pipe_len = ParallelMux(txreq.map(_.fire), pipe_len)
   val txrsp_pipe_len = ParallelMux(txrsp.map(_.fire), pipe_len)
   val txdat_pipe_len = ParallelMux(txdat.map(_.fire), pipe_len)
-  XSPerfHistogram(cacheParams, "sourceD_pipeline_stages", sourceD_pipe_len,
+  XSPerfHistogram("sourceD_pipeline_stages", sourceD_pipe_len,
     enable = io.toSourceD.fire, start = 3, stop = 5+1, step = 1)
-  XSPerfHistogram(cacheParams, "txreq_pipeline_stages", txreq_pipe_len,
+  XSPerfHistogram("txreq_pipeline_stages", txreq_pipe_len,
     enable = io.toTXREQ.fire, start = 3, stop = 5+1, step = 1)
-  XSPerfHistogram(cacheParams, "txrsp_pipeline_stages", txrsp_pipe_len,
+  XSPerfHistogram("txrsp_pipeline_stages", txrsp_pipe_len,
     enable = io.toTXRSP.fire, start = 3, stop = 5+1, step = 1)
-  XSPerfHistogram(cacheParams, "txdat_pipeline_stages", txdat_pipe_len,
+  XSPerfHistogram("txdat_pipeline_stages", txdat_pipe_len,
     enable = io.toTXDAT.fire, start = 3, stop = 5+1, step = 1)
 
-  // XSPerfAccumulate(cacheParams, "a_req_tigger_prefetch", io.prefetchTrain.)
+  // XSPerfAccumulate("a_req_tigger_prefetch", io.prefetchTrain.)
   prefetchOpt.foreach {
     _ =>
-      XSPerfAccumulate(cacheParams, "a_req_trigger_prefetch", io.prefetchTrain.get.fire)
-      XSPerfAccumulate(cacheParams, "a_req_trigger_prefetch_not_ready", io.prefetchTrain.get.valid && !io.prefetchTrain.get.ready)
-      XSPerfAccumulate(cacheParams, "acquire_trigger_prefetch_on_miss", io.prefetchTrain.get.fire && req_acquire_s3 && !dirResult_s3.hit)
-      XSPerfAccumulate(cacheParams, "acquire_trigger_prefetch_on_hit_pft", io.prefetchTrain.get.fire && req_acquire_s3 && dirResult_s3.hit && meta_s3.prefetch.get)
+      XSPerfAccumulate("a_req_trigger_prefetch", io.prefetchTrain.get.fire)
+      XSPerfAccumulate("a_req_trigger_prefetch_not_ready", io.prefetchTrain.get.valid && !io.prefetchTrain.get.ready)
+      XSPerfAccumulate("acquire_trigger_prefetch_on_miss", io.prefetchTrain.get.fire && req_acquire_s3 && !dirResult_s3.hit)
+      XSPerfAccumulate("acquire_trigger_prefetch_on_hit_pft", io.prefetchTrain.get.fire && req_acquire_s3 && dirResult_s3.hit && meta_s3.prefetch.get)
       // TODO
-      // XSPerfAccumulate(cacheParams, "release_all", mshr_release_s3)
-      // XSPerfAccumulate(cacheParams, "release_prefetch_accessed", mshr_release_s3 && meta_s3.prefetch.get && meta_s3.accessed)
-      // XSPerfAccumulate(cacheParams, "release_prefetch_not_accessed", mshr_release_s3 && meta_s3.prefetch.get && !meta_s3.accessed)
-      XSPerfAccumulate(cacheParams, "get_trigger_prefetch_on_miss", io.prefetchTrain.get.fire && req_get_s3 && !dirResult_s3.hit)
-      XSPerfAccumulate(cacheParams, "get_trigger_prefetch_on_hit_pft", io.prefetchTrain.get.fire && req_get_s3 && dirResult_s3.hit && meta_s3.prefetch.get)
+      // XSPerfAccumulate("release_all", mshr_release_s3)
+      // XSPerfAccumulate("release_prefetch_accessed", mshr_release_s3 && meta_s3.prefetch.get && meta_s3.accessed)
+      // XSPerfAccumulate("release_prefetch_not_accessed", mshr_release_s3 && meta_s3.prefetch.get && !meta_s3.accessed)
+      XSPerfAccumulate("get_trigger_prefetch_on_miss", io.prefetchTrain.get.fire && req_get_s3 && !dirResult_s3.hit)
+      XSPerfAccumulate("get_trigger_prefetch_on_hit_pft", io.prefetchTrain.get.fire && req_get_s3 && dirResult_s3.hit && meta_s3.prefetch.get)
   }
 
-  XSPerfAccumulate(cacheParams, "early_prefetch", meta_s3.prefetch.getOrElse(false.B) && !meta_s3.accessed && !dirResult_s3.hit && task_s3.valid)
+  XSPerfAccumulate("early_prefetch", meta_s3.prefetch.getOrElse(false.B) && !meta_s3.accessed && !dirResult_s3.hit && task_s3.valid)
 
 }

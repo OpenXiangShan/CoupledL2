@@ -25,10 +25,7 @@ import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.prefetch.PrefetchTrain
-import coupledL2.utils.{XSPerfAccumulate, XSPerfHistogram, XSPerfMax}
 import coupledL2._
-import tl2chi.{HasCHIMsgParameters}
-import coupledL2.tl2chi.CHIOpcode.RSPOpcodes._
 
 // PCrd info for MSHR Retry 
 class PCrdInfo(implicit p: Parameters) extends TL2CHIL2Bundle
@@ -38,7 +35,7 @@ class PCrdInfo(implicit p: Parameters) extends TL2CHIL2Bundle
   val pCrdType = chiOpt.map(_ => UInt(PCRDTYPE_WIDTH.W))
 }
 
-class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
+class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val io = IO(new Bundle() {
     /* interact with req arb */
     val fromReqArb = Input(new Bundle() {
@@ -128,7 +125,10 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
    */
   val isPCrdGrant = io.resps.rxrsp.valid && (io.resps.rxrsp.respInfo.chiOpcode.get === PCrdGrant)
   val waitPCrdInfo  = Wire(Vec(mshrsAll, new PCrdInfo))
-//  val pArb = Module(new RRArbiter(UInt(), mshrsAll))
+  val timeOutPri = VecInit(Seq.fill(16)(false.B))
+  val timeOutSel = WireInit(false.B)
+  val pCrdPri = VecInit(Seq.fill(16)(false.B))
+  val pArb = Module(new RRArbiter(UInt(), mshrsAll))
 
   val matchPCrdGrant = VecInit(waitPCrdInfo.map(p =>
       isPCrdGrant && p.valid &&
@@ -136,30 +136,40 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
       p.pCrdType.get === io.resps.rxrsp.respInfo.pCrdType.get
   ))
 
-/*  pArb.io.in.zipWithIndex.foreach {
-      case (in, i) =>
+  pArb.io.in.zipWithIndex.foreach {
+    case (in, i) =>
       in.valid := matchPCrdGrant(i)
       in.bits := 0.U
   }
   pArb.io.out.ready := true.B
-  val pCrdRR = VecInit(UIntToOH(pArb.io.chosen))
-  val pCrdPri = VecInit((matchPCrdGrant.asUInt & pCrdRR.asUInt).asBools)
-//val pCrdPri = VecInit(PriorityEncoderOH(matchPCrdGrant))
-  val pCrdIsWait = OHToUInt(pCrdPri)
- */
 
-  /*
-   Random arbiter if multi-entry match
-   */
-  val lfsr = LFSR(16, true.B)
-  val idx = Random(16, lfsr)
-  val idxOH = VecInit(UIntToOH(idx))
+  val pCrdOH = VecInit(UIntToOH(pArb.io.chosen).asBools)
+  val pCrdFixPri = VecInit(pCrdOH zip matchPCrdGrant map {case(a,b) => a && b})
+//val pCrdFixPri = VecInit(PriorityEncoderOH(matchPCrdGrantReg)) //fix priority arbiter
 
-  val doubleReq = Fill(2, matchPCrdGrant.asUInt)
-  val doubleGnt = ~(doubleReq - idxOH.asUInt) & doubleReq
-  val gnt = doubleGnt(31,16) | doubleGnt(15,0)
-  val pCrdPri = VecInit(gnt.asBools)
-  val pCrdIsWait = OHToUInt(pCrdPri)
+  // timeout protect
+  val counter = RegInit(VecInit(Seq.fill(mshrsAll)(0.U((log2Ceil(mshrsAll)+1).W))))
+
+  for(i <- 0 until 16) {
+    when(matchPCrdGrant(i)) {
+      when(!timeOutSel && pCrdFixPri(i) || timeOutPri(i)) {
+        counter(i):=0.U
+      }.otherwise {
+        counter(i):= counter(i) + 1.U
+      }
+    }
+  }
+  val timeOutOH = PriorityEncoderOH(counter.map(_>=12.U) zip matchPCrdGrant map {case(a,b) => a&&b})
+  timeOutPri := VecInit(timeOutOH)
+
+  timeOutSel := timeOutPri.reduce(_|_)
+  pCrdPri := Mux(timeOutSel, timeOutPri, pCrdFixPri)
+
+  dontTouch (timeOutPri)
+  dontTouch (timeOutSel)
+  dontTouch (pCrdOH)
+  dontTouch (pCrdFixPri)
+  dontTouch (pCrdPri)
 
   /* when PCrdGrant come before RetryAck, 16 entry CAM used to:
    1. save {srcID, PCrdType} 
@@ -171,7 +181,8 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
   val pCamValids = Cat(pCam.map(_.valid))
   val enqIdx = PriorityEncoder(~pCamValids.asUInt)
 
-  when (isPCrdGrant && !pCrdIsWait.orR){
+//  when (isPCrdGrant && !pCrdIsWait.orR){
+  when (isPCrdGrant){
     pCam(enqIdx).valid := true.B
     pCam(enqIdx).srcID.get := io.resps.rxrsp.respInfo.srcID.get
     pCam(enqIdx).pCrdType.get := io.resps.rxrsp.respInfo.pCrdType.get
@@ -226,7 +237,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
       m.io.aMergeTask.bits := io.aMergeTask.bits.task
 
       waitPCrdInfo(i) := m.io.waitPCrdInfo 
-      m.io.pCamPri := (pCamPri === i.U) && waitPCrdInfo(i).valid
+      m.io.pCamPri := 0.U /*(pCamPri === i.U) && waitPCrdInfo(i).valid*/
   }
   /* Reserve 1 entry for SinkB */
   io.waitPCrdInfo <> waitPCrdInfo
@@ -270,9 +281,9 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
     }
   )
   /* Performance counters */
-/*  XSPerfAccumulate(cacheParams, "capacity_conflict_to_sinkA", a_mshrFull)
-  XSPerfAccumulate(cacheParams, "capacity_conflict_to_sinkB", mshrFull)
-  XSPerfHistogram(cacheParams, "mshr_alloc", io.toMainPipe.mshr_alloc_ptr,
+/*  XSPerfAccumulate("capacity_conflict_to_sinkA", a_mshrFull)
+  XSPerfAccumulate("capacity_conflict_to_sinkB", mshrFull)
+  XSPerfHistogram("mshr_alloc", io.toMainPipe.mshr_alloc_ptr,
     enable = io.fromMainPipe.mshr_alloc_s3.valid,
     start = 0, stop = mshrsAll, step = 1)
   if (cacheParams.enablePerf) {
@@ -287,9 +298,9 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
     val release_period_en = io.resps.rxdat.valid && io.resps.rxdat.respInfo.opcode === ReleaseAck
     val probe_period_en = io.resps.sinkC.valid &&
       (io.resps.sinkC.respInfo.opcode === ProbeAck || io.resps.sinkC.respInfo.opcode === ProbeAckData)
-    XSPerfHistogram(cacheParams, "acquire_period", acquire_period, acquire_period_en, start, stop, step)
-    XSPerfHistogram(cacheParams, "release_period", release_period, release_period_en, start, stop, step)
-    XSPerfHistogram(cacheParams, "probe_period", probe_period, probe_period_en, start, stop, step)
+    XSPerfHistogram("acquire_period", acquire_period, acquire_period_en, start, stop, step)
+    XSPerfHistogram("release_period", release_period, release_period_en, start, stop, step)
+    XSPerfHistogram("probe_period", probe_period, probe_period_en, start, stop, step)
  
     val timers = RegInit(VecInit(Seq.fill(mshrsAll)(0.U(64.W))))
     for (((timer, m), i) <- timers.zip(mshrs).zipWithIndex) {
@@ -299,9 +310,9 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module {
         timer := timer + 1.U
       }
       val enable = m.io.status.valid && m.io.status.bits.will_free
-      XSPerfHistogram(cacheParams, "mshr_latency_" + Integer.toString(i, 10),
+      XSPerfHistogram("mshr_latency_" + Integer.toString(i, 10),
         timer, enable, 0, 300, 10)
-      XSPerfMax(cacheParams, "mshr_latency", timer, enable)
+      XSPerfMax("mshr_latency", timer, enable)
     }
   }*/
 }

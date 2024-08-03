@@ -24,7 +24,7 @@ import org.chipsalliance.cde.config.Parameters
 import coupledL2._
 import coupledL2.prefetch.PrefetchIO
 
-class OuterBundle extends DecoupledPortIO with BaseOuterBundle
+class OuterBundle(implicit p: Parameters) extends DecoupledPortIO with BaseOuterBundle
 
 class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   with HasCoupledL2Parameters
@@ -107,6 +107,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   reqBuf.io.mshrInfo := mshrCtl.io.msInfo
   reqBuf.io.mainPipeBlock := mainPipe.io.toReqBuf
   reqBuf.io.s1Entrance := reqArb.io.s1Entrance
+  reqBuf.io.taskFromArb_s2 := reqArb.io.taskToPipe_s2
 
   mainPipe.io.taskFromArb_s2 := reqArb.io.taskToPipe_s2
   mainPipe.io.taskInfo_s1 := reqArb.io.taskInfo_s1
@@ -169,6 +170,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
     p.tlb_req.req.ready := true.B
     p.tlb_req.resp.valid := false.B
     p.tlb_req.resp.bits := DontCare
+    p.tlb_req.pmp_resp := DontCare
     p.recv_addr := 0.U.asTypeOf(p.recv_addr)
   }
 

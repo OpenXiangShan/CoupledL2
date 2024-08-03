@@ -50,51 +50,51 @@ trait HasPortSwitch { this: Bundle =>
   val rxsactive = Input(Bool())
 }
 
-class DownwardsLinkIO extends Bundle with HasLinkSwitch {
+class DownwardsLinkIO(implicit p: Parameters) extends Bundle with HasLinkSwitch {
   val req = ChannelIO(new CHIREQ)
   val rsp = ChannelIO(new CHIRSP)
   val dat = ChannelIO(new CHIDAT)
 }
 
-class UpwardsLinkIO extends Bundle with HasLinkSwitch {
+class UpwardsLinkIO(implicit p: Parameters) extends Bundle with HasLinkSwitch {
   val rsp = ChannelIO(new CHIRSP)
   val dat = ChannelIO(new CHIDAT)
   val snp = ChannelIO(new CHISNP)
 }
 
-class DecoupledDownwardsLinkIO extends Bundle {
+class DecoupledDownwardsLinkIO(implicit p: Parameters) extends Bundle {
   val req = DecoupledIO(new CHIREQ)
   val rsp = DecoupledIO(new CHIRSP)
   val dat = DecoupledIO(new CHIDAT)
 }
 
-class DecoupledUpwardsLinkIO extends Bundle {
+class DecoupledUpwardsLinkIO(implicit p: Parameters) extends Bundle {
   val rsp = DecoupledIO(new CHIRSP)
   val dat = DecoupledIO(new CHIDAT)
   val snp = DecoupledIO(new CHISNP)
 }
 
-class DecoupledDownwardsNoSnpLinkIO extends Bundle {
+class DecoupledDownwardsNoSnpLinkIO(implicit p: Parameters) extends Bundle {
   val req = DecoupledIO(new CHIREQ)
   val dat = DecoupledIO(new CHIDAT)
 }
 
-class DecoupledUpwardsNoSnpLinkIO extends Bundle {
+class DecoupledUpwardsNoSnpLinkIO(implicit p: Parameters) extends Bundle {
   val rsp = DecoupledIO(new CHIRSP)
   val dat = DecoupledIO(new CHIDAT)
 }
 
-class PortIO extends Bundle with HasPortSwitch {
+class PortIO(implicit p: Parameters) extends Bundle with HasPortSwitch {
   val tx = new DownwardsLinkIO
   val rx = Flipped(new UpwardsLinkIO)
 }
 
-class DecoupledPortIO extends Bundle {
+class DecoupledPortIO(implicit p: Parameters) extends Bundle {
   val tx = new DecoupledDownwardsLinkIO
   val rx = Flipped(new DecoupledUpwardsLinkIO)
 }
 
-class DecoupledNoSnpPortIO extends Bundle {
+class DecoupledNoSnpPortIO(implicit p: Parameters) extends Bundle {
   val tx = new DecoupledDownwardsNoSnpLinkIO
   val rx = Flipped(new DecoupledUpwardsNoSnpLinkIO)
 }

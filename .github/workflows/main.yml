@@ -73,6 +73,16 @@ jobs:
             rm -rf ./dut/CoupledL2 && ln -s ../.. ./dut/CoupledL2
             make coupledL2-test-l2l3l2 run THREADS_BUILD=4 CXX_COMPILER=clang++-17
 
+      - name: Unit test for CHI version
+        run: |
+            cd tl-test-new/dut
+            git clone https://github.com/OpenXiangShan/OpenLLC
+            cd OpenLLC && make init
+            rm -rf ./coupledL2 && ln -s ../../.. ./coupledL2
+            cd ..
+            rm -rf ./CoupledL2 && ln -s ./OpenLLC ./CoupledL2 && cd ..
+            make coupledL2-test-l2l3l2 run THREADS_BUILD=4 CXX_COMPILER=clang++-17
+            
       - name: Tar up artifacts of Unit Test for TileLink version
         run: |
             tar -zcf ${{ env.RUN_ARCHIVE }} ./tl-test-new/run
@@ -82,7 +92,3 @@ jobs:
         with:
           path: ${{ github.workspace }}/${{ env.RUN_ARCHIVE }}
           name: ${{ env.RUN_ARCHIVE }}
-            
-      - name: Compile CHI QuadCore
-        run: |
-            make test-top-chi-quadcore-2ul
