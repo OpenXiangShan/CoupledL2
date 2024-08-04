@@ -89,6 +89,7 @@ jobs:
             
       - name: Tar up artifacts of Unit Test for TileLink version
         run: |
+            test -d ./tl-test-new/run || mkdir -p ./tl-test-new/run
             tar -zcf ${{ env.RUN_ARCHIVE }} ./tl-test-new/run
 
       - name: Upload artifacts of Unit Test for TileLink version
