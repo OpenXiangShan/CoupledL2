@@ -83,6 +83,9 @@ object Issue {
 trait HasCHIMsgParameters {
   implicit val p: Parameters
 
+  def ENABLE_ISSUE_Eb = p(CHIIssue) == Issue.Eb
+  def ENABLE_ISSUE_B = p(CHIIssue) == Issue.B
+
   val ISSUE_B_CONFIG = Map(
     "NODEID_WIDTH" -> 7,
     "TXNID_WIDTH" -> 8,
@@ -112,7 +115,7 @@ trait HasCHIMsgParameters {
 
   // Scala by-name argument
   def field_Eb[T <: Data](d: T): Option[T] = {
-    if (p(CHIIssue) == Issue.Eb) Some(d) else None
+    if (ENABLE_ISSUE_Eb) Some(d) else None
   }
 
   def NODEID_WIDTH = issue_config("NODEID_WIDTH")
@@ -157,7 +160,7 @@ trait HasCHIMsgParameters {
   def RESP_WIDTH = CHICohStates.width
   def FWDSTATE_WIDTH = CHICohStates.width
   def DATAPULL_WIDTH = 3
-  def DATASOURCE_WIDTH = if (p(CHIIssue) == Issue.Eb) 4 else 3
+  def DATASOURCE_WIDTH = if (ENABLE_ISSUE_Eb) 4 else 3
   def CCID_WIDTH = 2
   def DATAID_WIDTH = 2
   def BE_WIDTH = DATA_WIDTH / 8
@@ -299,7 +302,7 @@ class CHIDAT(implicit p: Parameters) extends CHIBundle {
   val fwdState = UInt(FWDSTATE_WIDTH.W) // Used for DCT
   val dataSourceHi = field_Eb(UInt((DATASOURCE_WIDTH - FWDSTATE_WIDTH).W))
   def dataPull = fwdState // Used for Stash
-  def dataSource = if (p(CHIIssue) == Issue.Eb) Cat(dataSourceHi.get, fwdState) else fwdState // Indicates Data source in a response
+  def dataSource = if (ENABLE_ISSUE_Eb) Cat(dataSourceHi.get, fwdState) else fwdState // Indicates Data source in a response
 
   val cBusy = field_Eb(UInt(CBUSY_WIDTH.W))
 
