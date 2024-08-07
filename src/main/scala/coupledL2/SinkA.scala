@@ -32,7 +32,6 @@ class SinkA(implicit p: Parameters) extends L2Module {
     val a = Flipped(DecoupledIO(new TLBundleA(edgeIn.bundle)))
     val prefetchReq = prefetchOpt.map(_ => Flipped(DecoupledIO(new PrefetchReq)))
     val task = DecoupledIO(new TaskBundle)
-    val taskPrefetch = prefetchOpt.map(_ => DecoupledIO(new TaskBundle))
   })
   assert(!(io.a.valid && io.a.bits.opcode(2, 1) === 0.U), "no Put")
 
@@ -112,15 +111,20 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task
   }
   if (prefetchOpt.nonEmpty) {
-    io.taskPrefetch.get.valid := io.prefetchReq.get.valid
-    io.taskPrefetch.get.bits := fromPrefetchReqtoTaskBundle(io.prefetchReq.get.bits)
-    io.prefetchReq.get.ready := io.taskPrefetch.get.ready && !io.a.valid
-  }
-  
+    io.task.valid := io.a.valid || io.prefetchReq.get.valid
+    io.task.bits := Mux(
+      io.a.valid,
+      fromTLAtoTaskBundle(io.a.bits),
+      fromPrefetchReqtoTaskBundle(io.prefetchReq.get.bits
+    ))
 
-  io.task.valid := io.a.valid
-  io.task.bits := fromTLAtoTaskBundle(io.a.bits)
-  io.a.ready := io.task.ready
+    io.a.ready := io.task.ready
+    io.prefetchReq.get.ready := io.task.ready && !io.a.valid
+  } else {
+    io.task.valid := io.a.valid
+    io.task.bits := fromTLAtoTaskBundle(io.a.bits)
+    io.a.ready := io.task.ready
+  }
 
   // Performance counters
   // num of reqs

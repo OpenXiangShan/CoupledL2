@@ -157,7 +157,6 @@ class PipeStatus(implicit p: Parameters) extends L2Bundle
 class PipeEntranceStatus(implicit p: Parameters) extends L2Bundle {
   val tags = Vec(4, UInt(tagBits.W))
   val sets = Vec(4, UInt(setBits.W))
-  val dup = Bool()
 
   def c_tag = tags(0)
   def b_tag = tags(1)
@@ -373,8 +372,18 @@ class L2TlbResp(nDups: Int = 1)(implicit p: Parameters) extends L2Bundle {
     val af = new TlbExceptionBundle()
   })
 }
+
+class PMPRespBundle(implicit p: Parameters) extends L2Bundle {
+  val ld = Output(Bool())
+  val st = Output(Bool())
+  val instr = Output(Bool())
+  val mmio = Output(Bool())
+  val atomic = Output(Bool())
+}
+
 class L2ToL1TlbIO(nRespDups: Int = 1)(implicit p: Parameters) extends L2Bundle{
   val req = DecoupledIO(new L2TlbReq)
   val req_kill = Output(Bool())
   val resp = Flipped(DecoupledIO(new L2TlbResp(nRespDups)))
+  val pmp_resp = Flipped(new PMPRespBundle())
 }

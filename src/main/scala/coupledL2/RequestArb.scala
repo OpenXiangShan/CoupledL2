@@ -25,9 +25,10 @@ import freechips.rocketchip.tilelink.TLMessages._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2tl._
 import coupledL2.tl2chi._
-import coupledL2.tl2chi.CHIOpcode._
 
-class RequestArb(implicit p: Parameters) extends L2Module {
+class RequestArb(implicit p: Parameters) extends L2Module
+  with HasCHIOpcodes {
+
   val io = IO(new Bundle() {
     /* receive incoming tasks */
     val sinkA    = Flipped(DecoupledIO(new TaskBundle))
@@ -200,17 +201,14 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   task_s2.valid := s1_fire
   when(s1_fire) { task_s2.bits := task_s1.bits }
 
+/*  val sameSet_s2 = task_s2.valid && task_s2.bits.fromA && !task_s2.bits.mshrTask && task_s2.bits.set === A_task.set
+  val sameSet_s3 = RegNext(task_s2.valid && task_s2.bits.fromA && !task_s2.bits.mshrTask) &&
+    RegEnable(task_s2.bits.set, task_s2.valid) === A_task.set
+  val sameSetCnt = PopCount(VecInit(io.msInfo.map(s => s.valid && s.bits.set === A_task.set && s.bits.fromA) :+
+    sameSet_s2 :+ sameSet_s3).asUInt)
+  noFreeWay := sameSetCnt >= cacheParams.ways.U
+ */
   io.taskToPipe_s2 := task_s2
-
-  // remove duplicate prefetch if same-addr A req in MSHR
-  def sameAddr(a: TaskBundle, b: MSHRInfo): Bool = Cat(a.tag, a.set) === Cat(b.reqTag, b.set)
-  val isPrefetch = task_s2.bits.fromA && task_s2.bits.opcode === Hint && !task_s2.bits.mshrTask
-  val dupMask    = VecInit(
-    io.msInfo.map(s =>
-      s.valid && s.bits.isAcqOrPrefetch && sameAddr(task_s2.bits, s.bits)) 
-  ).asUInt
-
-  io.status_s1.dup := isPrefetch && dupMask.orR
 
   // MSHR task
   val mshrTask_s2 = task_s2.valid && task_s2.bits.mshrTask
@@ -222,8 +220,8 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   // Release-replTask also read refillBuf and then write to DS
   val releaseRefillData = task_s2.bits.replTask && (if (enableCHI) {
     task_s2.bits.toTXREQ && (
-      task_s2.bits.chiOpcode.get === REQOpcodes.WriteBackFull ||
-      task_s2.bits.chiOpcode.get === REQOpcodes.Evict
+      task_s2.bits.chiOpcode.get === WriteBackFull ||
+      task_s2.bits.chiOpcode.get === Evict
     )
   } else {
     task_s2.bits.opcode(2, 1) === Release(2, 1)
@@ -237,15 +235,15 @@ class RequestArb(implicit p: Parameters) extends L2Module {
   // ReleaseData and ProbeAckData read releaseBuffer
   // channel is used to differentiate GrantData and ProbeAckData
   val snoopNeedData = if (enableCHI) {
-    task_s2.bits.fromB && task_s2.bits.toTXDAT && DATOpcodes.isSnpRespDataX(task_s2.bits.chiOpcode.get)
+    task_s2.bits.fromB && task_s2.bits.toTXDAT && isSnpRespDataX(task_s2.bits.chiOpcode.get)
   } else {
     task_s2.bits.fromB && task_s2.bits.opcode === ProbeAckData
   }
   val releaseNeedData = if (enableCHI) {
-    task_s2.bits.toTXDAT && task_s2.bits.chiOpcode.get === DATOpcodes.CopyBackWrData
+    task_s2.bits.toTXDAT && task_s2.bits.chiOpcode.get === CopyBackWrData
   } else task_s2.bits.opcode === ReleaseData
   val dctNeedData = if (enableCHI) {
-    task_s2.bits.toTXDAT && task_s2.bits.chiOpcode.get === DATOpcodes.CompData
+    task_s2.bits.toTXDAT && task_s2.bits.chiOpcode.get === CompData
   } else false.B
   val snpHitReleaseNeedData = if (enableCHI) {
     !mshrTask_s2 && task_s2.bits.fromB && task_s2.bits.snpHitReleaseWithData

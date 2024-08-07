@@ -124,7 +124,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   /* ======== Stage 3 ======== */
   val task_s3 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
-  task_s3.valid := task_s2.valid && !io.fromReqArb.status_s1.dup //drop at S2 when prefetch duplicate in MSHR 
+  task_s3.valid := task_s2.valid
   when(task_s2.valid) {
     task_s3.bits := task_s2.bits
   }

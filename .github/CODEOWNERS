@@ -2,5 +2,4 @@
 src/main/scala/coupledL2/Directory.scala @cailuoshan @linjuanZ
 src/main/scala/coupledL2/utils/ @cailuoshan @linjuanZ
 src/main/scala/coupledL2/prefetch/ @Maxpicca-Li
-src/main/scala/coupledL2/prefetch/ @wakafa1
 src/test/scala/ @Kumonda221-CrO3

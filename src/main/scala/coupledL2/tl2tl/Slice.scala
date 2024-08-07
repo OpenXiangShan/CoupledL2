@@ -55,9 +55,6 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   val prbq = Module(new ProbeQueue())
   prbq.io <> DontCare // @XiaBin TODO
 
-  if (prefetchOpt.nonEmpty) {
-    a_reqBuf.io.inPrefetch.get <> sinkA.io.taskPrefetch.get
-  }
   a_reqBuf.io.in <> sinkA.io.task
   a_reqBuf.io.mshrInfo := mshrCtl.io.msInfo
   a_reqBuf.io.mainPipeBlock := mainPipe.io.toReqBuf
@@ -148,6 +145,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
       p.tlb_req.req.ready := true.B
       p.tlb_req.resp.valid := false.B
       p.tlb_req.resp.bits := DontCare
+      p.tlb_req.pmp_resp := DontCare
       p.recv_addr := 0.U.asTypeOf(p.recv_addr)
   }
 
