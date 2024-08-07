@@ -40,7 +40,7 @@ class TestTop_XSConfig()(implicit p: Parameters) extends LazyModule {
         channelBytes = TLChannelBeatBytes(cacheParams.blockBytes),
         minLatency = 1,
         echoFields = Nil,
-        requestFields = Seq(AliasField(2)),
+        requestFields = Seq(AliasField(2), PrefetchField()),
         responseKeys = cacheParams.respKey
       )
     ))
@@ -48,7 +48,15 @@ class TestTop_XSConfig()(implicit p: Parameters) extends LazyModule {
   }
 
   val l1d_nodes = (0 until nrL2).map(i => createClientNode(s"l1d$i", 32))
-  val master_nodes = l1d_nodes
+  val l1i_nodes = (0 until nrL2).map(i => TLClientNode(Seq(
+    TLMasterPortParameters.v1(
+      clients = Seq(TLMasterParameters.v1(
+        name = s"l1i$i",
+        sourceId = IdRange(0, 32)
+      ))
+    )
+  )))
+  val master_nodes = l1d_nodes ++ l1i_nodes
 
   // ============ L2 ==============
   val l2banks = 4
@@ -131,14 +139,14 @@ class TestTop_XSConfig()(implicit p: Parameters) extends LazyModule {
 
   val ram = LazyModule(new TLRAM(AddressSet(0, 0xfffffffffL), beatBytes = 32))
 
-  l1d_nodes.zip(l2_nodes).zipWithIndex map {
-    case ((l1d, l2), i) =>
-      l2_binder(i) :*=
-      l2 :*=
-      TLBuffer() :*=
-      l1_xbar(i) :=*
-      TLLogger(s"L2_L1_${i}", true) :=*
-      l1d
+  (0 until nrL2).map { i =>
+    l1_xbar(i) :=* TLLogger(s"L2_L1D_${i}", true) :=* TLBuffer() :=* l1d_nodes(i)
+    l1_xbar(i) :=* TLLogger(s"L2_L1I_${i}", true) :=* TLBuffer() :=* l1i_nodes(i)
+
+    l2_binder(i) :*=
+    l2_nodes(i) :*=
+    TLBuffer() :*=
+    l1_xbar(i)
   }
 
   l2_nodes.zipWithIndex map {
