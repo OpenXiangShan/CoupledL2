@@ -100,6 +100,7 @@ trait HasCHIOpcodes extends HasCHIMsgParameters {
   def SnpRespFwded    = 0x9.U(RSP_OPCODE_WIDTH.W)
   // E.b
   def RespSepData     = 0xB.U(Eb_RSP_OPCODE_WIDTH.W)
+  def DBIDRespOrd     = 0xE.U(Eb_RSP_OPCODE_WIDTH.W)
 
   /**
     * SNP
