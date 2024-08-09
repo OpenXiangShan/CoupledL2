@@ -401,5 +401,7 @@ class ReceiverLinkMonitor(implicit p: Parameters) extends LLCModule with HasCHIM
   io.in.rx.linkactivereq := !reset.asBool
   io.in.tx.linkactiveack := RegNext(io.in.tx.linkactivereq) || !txDeact
 
+  io.in.syscoack := RegNext(io.in.syscoreq)
+
   dontTouch(io.in)
 }
