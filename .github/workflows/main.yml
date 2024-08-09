@@ -73,7 +73,7 @@ jobs:
             sed -i 's/ari.target.*/ari.target = 240/g' ./configs/user.tltest.ini
             rm -rf ./dut/CoupledL2 && ln -s ../.. ./dut/CoupledL2
             make coupledL2-test-l2l3l2 run THREADS_BUILD=4 CXX_COMPILER=clang++-17
-            rm -rf run
+            rm -rf run/*.vcd run/*.fst run/*.log run/*.db
 
       # Clean artifacts folder (./tl-test-new/run) after successful run
       - name: Unit test for CHI version
@@ -85,7 +85,7 @@ jobs:
             cd ..
             rm -rf ./CoupledL2 && ln -s ./OpenLLC ./CoupledL2 && cd ..
             make coupledL2-test-l2l3l2 run THREADS_BUILD=4 CXX_COMPILER=clang++-17
-            rm -rf run
+            rm -rf run/*.vcd run/*.fst run/*.log run/*.db
             
       - name: Tar up artifacts of Unit Test for TileLink version
         run: |
