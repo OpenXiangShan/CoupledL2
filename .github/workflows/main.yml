@@ -23,8 +23,8 @@ jobs:
     # Environments
     env:
       RUN_ARCHIVE: coupledL2-tl-test-new-run-${{ github.sha }}
-      RUN_ARCHIVE_TL: ${{ RUN_ARCHIVE }}-tilelink.tar.gz
-      RUN_ARCHIVE_CHI: ${{ RUN_ARCHIVE }}-chi.tar.gz
+      RUN_ARCHIVE_TL: coupledL2-tl-test-new-run-${{ github.sha }}-tilelink.tar.gz
+      RUN_ARCHIVE_CHI: coupledL2-tl-test-new-run-${{ github.sha }}-chi.tar.gz
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
