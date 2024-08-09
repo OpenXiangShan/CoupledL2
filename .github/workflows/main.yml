@@ -22,7 +22,9 @@ jobs:
 
     # Environments
     env:
-      RUN_ARCHIVE: coupledL2-tl-test-new-run-${{ github.sha }}.tar.gz
+      RUN_ARCHIVE: coupledL2-tl-test-new-run-${{ github.sha }}
+      RUN_ARCHIVE_TL: ${{ RUN_ARCHIVE }}-tilelink.tar.gz
+      RUN_ARCHIVE_CHI: ${{ RUN_ARCHIVE }}-chi.tar.gz
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
@@ -75,6 +77,11 @@ jobs:
             make coupledL2-test-l2l3l2 run THREADS_BUILD=4 CXX_COMPILER=clang++-17
             rm -rf run/*.vcd run/*.fst run/*.log run/*.db
 
+      - name: Tar up artifacts of Unit Test for TileLink version
+        run: |
+            test -d ./tl-test-new/run || mkdir -p ./tl-test-new/run
+            tar -zcf ${{ env.RUN_ARCHIVE_TL }} ./tl-test-new/run
+
       # Clean artifacts folder (./tl-test-new/run) after successful run
       - name: Unit test for CHI version
         run: |
@@ -87,13 +94,13 @@ jobs:
             make coupledL2-test-l2l3l2 run THREADS_BUILD=4 CXX_COMPILER=clang++-17
             rm -rf run/*.vcd run/*.fst run/*.log run/*.db
             
-      - name: Tar up artifacts of Unit Test for TileLink version
+      - name: Tar up artifacts of Unit Test for CHI version
         run: |
             test -d ./tl-test-new/run || mkdir -p ./tl-test-new/run
-            tar -zcf ${{ env.RUN_ARCHIVE }} ./tl-test-new/run
+            tar -zcf ${{ env.RUN_ARCHIVE_CHI }} ./tl-test-new/run
 
-      - name: Upload artifacts of Unit Test for TileLink version
+      - name: Upload artifacts of Unit Test
         uses: actions/upload-artifact@v4
         with:
-          path: ${{ github.workspace }}/${{ env.RUN_ARCHIVE }}
+          path: ${{ github.workspace }}/${{ env.RUN_ARCHIVE }}*
           name: ${{ env.RUN_ARCHIVE }}
