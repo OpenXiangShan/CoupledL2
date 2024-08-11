@@ -28,14 +28,20 @@ class RefillBufRead(implicit p: Parameters) extends LLCBundle {
   val id = Output(UInt(log2Ceil(mshrs.refill).W))
 }
 
-class RefillTask(implicit p: Parameters) extends LLCBundle {
+class RefillState(implicit p: Parameters) extends LLCBundle {
+  val s_refill = Bool()
+  val w_datRsp   = Bool()
+  val w_snpRsp = Bool()
+}
+
+class RefillRequest(implicit p: Parameters) extends LLCBundle {
+  val state = new RefillState()
   val task = new Task()
   val dirResult = new DirResult()
 }
 
 class RefillEntry(implicit p: Parameters) extends TaskEntry {
-  val s_refill = Bool()
-  val w_snpRsp = Bool()
+  val state = new RefillState()
   val data = new DSBlock()
   val beatValids = Vec(beatSize, Bool())
   val dirResult = new DirResult()
@@ -44,10 +50,10 @@ class RefillEntry(implicit p: Parameters) extends TaskEntry {
 class RefillUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   val io = IO(new Bundle() {
     /* receive refill requests from mainpipe */
-    val task_in = Flipped(ValidIO(new RefillTask()))
+    val alloc = Flipped(ValidIO(new RefillRequest()))
   
     /* send refill task to request arbiter */
-    val task_out = DecoupledIO(new Task())
+    val task = DecoupledIO(new Task())
 
     /* response from upstream RXDAT/RXRSP channel */ 
     val respData = Flipped(ValidIO(new RespWithData()))
@@ -72,19 +78,17 @@ class RefillUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
 
   /* Alloc */
   val insertIdx = PriorityEncoder(buffer.map(!_.valid))
-  val alloc = !full && io.task_in.valid
-  when(alloc) {
+  val canAlloc = !full && io.alloc.valid
+  when(canAlloc) {
     val entry = buffer(insertIdx)
     entry.valid := true.B
-    entry.ready := false.B
-    entry.s_refill := false.B
-    entry.w_snpRsp := !Cat(io.task_in.bits.task.snpVec).orR
-    entry.task := io.task_in.bits.task
+    entry.state := io.alloc.bits.state
+    entry.task := io.alloc.bits.task
     entry.task.bufID := insertIdx
-    entry.dirResult := io.task_in.bits.dirResult
+    entry.dirResult := io.alloc.bits.dirResult
     entry.beatValids := VecInit(Seq.fill(beatSize)(false.B))
   }
-  assert(!full || !io.task_in.valid, "RefillBuf overflow")
+  assert(!full || !io.alloc.valid, "RefillBuf overflow")
 
   /* Update state */
   when(rspData.valid) {
@@ -110,21 +114,21 @@ class RefillUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
       val newBeatValids = entry.beatValids.asUInt | UIntToOH(beatId)
       entry.valid := !cancel
       entry.beatValids := VecInit(newBeatValids.asBools)
-      entry.ready := newBeatValids.andR
+      entry.state.w_datRsp := newBeatValids.andR
       entry.data.data(beatId) := rspData.bits.data
       entry.task.resp := rspData.bits.resp
       when(rspData.bits.opcode === SnpRespData) {
         val src_idOH  = UIntToOH(rspData.bits.srcID)(numRNs - 1, 0)
         val newSnpVec = VecInit((entry.task.snpVec.asUInt & ~src_idOH).asBools)
         entry.task.snpVec := newSnpVec
-        entry.w_snpRsp := !Cat(newSnpVec).orR
+        entry.state.w_snpRsp := !Cat(newSnpVec).orR
       }
     }
   }
 
   when(rsp.valid) {
     val update_vec = buffer.map(e =>
-      e.task.reqID === rsp.bits.txnID && e.valid && !e.w_snpRsp && rsp.bits.opcode === SnpResp
+      e.task.reqID === rsp.bits.txnID && e.valid && !e.state.w_snpRsp && rsp.bits.opcode === SnpResp
     )
     assert(PopCount(update_vec) < 2.U, "Refill task repeated")
     val canUpdate = Cat(update_vec).orR
@@ -134,25 +138,24 @@ class RefillUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
       val src_idOH = UIntToOH(rsp.bits.srcID)(numRNs - 1, 0)
       val newSnpVec = VecInit((entry.task.snpVec.asUInt & ~src_idOH).asBools)
       entry.task.snpVec := newSnpVec
-      entry.w_snpRsp := !Cat(newSnpVec).orR
+      entry.state.w_snpRsp := !Cat(newSnpVec).orR
     }
   }
 
   when(rspData.valid && rsp.valid) {
     when(rspData.bits.opcode === SnpRespData && rsp.bits.opcode === SnpResp) {
       when(rspData.bits.txnID === rsp.bits.txnID) {
-        val update_vec = buffer.map(e => e.task.reqID === rsp.bits.txnID && e.valid && !e.w_snpRsp)
+        val update_vec = buffer.map(e => e.task.reqID === rsp.bits.txnID && e.valid && !e.state.w_snpRsp)
         assert(PopCount(update_vec) < 2.U, "Refill task repeated")
         val update_id = PriorityEncoder(update_vec)
         val entry = buffer(update_id)
-        val waitLastBeat = PopCount(~entry.beatValids.asUInt) === 1.U
-        val canUpdate = Cat(update_vec).orR && waitLastBeat
+        val canUpdate = Cat(update_vec).orR
         when(canUpdate) {
           val src_idOH_dat = UIntToOH(rspData.bits.srcID)(numRNs - 1, 0)
           val src_idOH_rsp = UIntToOH(rsp.bits.srcID)(numRNs - 1, 0)
           val newSnpVec = VecInit((entry.task.snpVec.asUInt & ~src_idOH_dat & ~src_idOH_rsp).asBools)
           entry.task.snpVec := newSnpVec
-          entry.w_snpRsp := !Cat(newSnpVec).orR
+          entry.state.w_snpRsp := !Cat(newSnpVec).orR
         }
       }
     }
@@ -160,17 +163,17 @@ class RefillUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
 
   /* Issue */
   issueArb.io.in.zip(buffer).foreach { case (in, e) =>
-    in.valid := e.valid && e.ready && !e.s_refill && (!e.task.replSnp || e.task.replSnp && e.w_snpRsp)
+    in.valid := e.valid && e.state.w_datRsp && !e.state.s_refill && (!e.task.replSnp || e.task.replSnp && e.state.w_snpRsp)
     in.bits := e.task
   }
-  issueArb.io.out.ready := io.task_out.ready
-  when(io.task_out.fire) {
+  issueArb.io.out.ready := true.B
+  when(io.task.fire) {
     val entry = buffer(issueArb.io.chosen)
-    entry.s_refill := true.B
+    entry.state.s_refill := true.B
   }
 
-  io.task_out.valid := issueArb.io.out.valid
-  io.task_out.bits := issueArb.io.out.bits
+  io.task.valid := issueArb.io.out.valid
+  io.task.bits := issueArb.io.out.bits
 
   /* Data read */
   val ridReg = RegEnable(io.read.bits.id, 0.U(log2Ceil(mshrs.refill).W), io.read.valid)
@@ -178,7 +181,7 @@ class RefillUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
 
   /* Dealloc */
   buffer.foreach {e =>
-    val cancel = e.valid && !e.ready && !(e.task.chiOpcode === WriteBackFull) && e.w_snpRsp &&
+    val cancel = e.valid && !e.state.w_datRsp && !(e.task.chiOpcode === WriteBackFull) && e.state.w_snpRsp &&
       !e.beatValids.asUInt.orR
     when(cancel) {
       e.valid := false.B
@@ -188,7 +191,7 @@ class RefillUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   when(io.read.valid) {
     val entry = buffer(io.read.bits.id)
     entry.valid := false.B
-    entry.ready := false.B
+    entry.state.w_datRsp := false.B
   }
 
   /* block info */

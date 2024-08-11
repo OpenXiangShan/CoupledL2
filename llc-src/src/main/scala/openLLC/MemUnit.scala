@@ -23,12 +23,24 @@ import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2chi.HasCHIOpcodes
 import utility.{FastArbiter}
 
-class MemEntry(implicit p: Parameters) extends TaskEntry {
+class MemState(implicit p: Parameters) extends LLCBundle {
   val s_issueReq = Bool()
   val s_issueDat = Bool()
+  val w_datRsp   = Bool()
   val w_dbid     = Bool()
   val w_comp     = Bool()
+}
+
+class MemRequest(withData: Boolean)(implicit p: Parameters) extends LLCBundle {
+  val state = new MemState()
+  val task  = new Task()
+  val data  = if (withData) Some(new DSBlock()) else None
+}
+
+class MemEntry(implicit p: Parameters) extends TaskEntry {
+  val state      = new MemState()
   val data       = new DSBlock()
+  val beatValids = Vec(beatSize, Bool())
 }
 
 object MemEntry {
@@ -45,16 +57,20 @@ class MemUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   val io = IO(new Bundle() {
     /* ReadNoSnp/WriteNoSnp task from MainPipe */
     val fromMainPipe = new Bundle() {
-      val task_s4 = Flipped(ValidIO(new Task()))
-      val task_s6 = Flipped(ValidIO(new TaskWithData()))
+      val alloc_s4 = Flipped(ValidIO(new MemRequest(withData = false)))
+      val alloc_s6 = Flipped(ValidIO(new MemRequest(withData = true)))
     }
 
     // urgent indicating high priority
     // used when all snoops to the upper-level cache fail to retrieve data
     val urgentRead = Flipped(DecoupledIO(new Task()))
 
-    /* response from downstream RXREQ channel */
-    val resp = Flipped(ValidIO(new Resp()))
+    /* response from downstream RXRSP channel */
+    val snRxrsp = Flipped(ValidIO(new Resp()))
+
+    /* snoop response from upper-level cache */
+    val rnRxdat = Flipped(ValidIO(new RespWithData()))
+    val rnRxrsp = Flipped(ValidIO(new Resp()))
 
     /* generate requests sent to the Slave Node. */
     val txreq = DecoupledIO(new Task())
@@ -70,11 +86,13 @@ class MemUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
     val respInfo = Flipped(Vec(mshrs.response, ValidIO(new ResponseInfo())))
   })
 
-  val rsp        = io.resp
+  val memResp    = io.snRxrsp
+  val snpData    = io.rnRxdat
+  val snpResp    = io.rnRxrsp
   val txreq      = io.txreq
   val txdat      = io.txdat
-  val task_s6    = io.fromMainPipe.task_s6
-  val task_s4    = io.fromMainPipe.task_s4
+  val alloc_s6   = io.fromMainPipe.alloc_s6
+  val alloc_s4   = io.fromMainPipe.alloc_s4
   val bypassData = io.bypassData
   val urgentRead = io.urgentRead
 
@@ -91,18 +109,18 @@ class MemUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   def conflict(r: Task, w: Task): Bool = sameAddr(r, w) &&
     r.chiOpcode === ReadNoSnp && w.chiOpcode === WriteNoSnpFull
 
-  val entries = VecInit(buffer.toSeq :+ MemEntry(task_s6.valid, task_s6.bits.task, task_s6.bits.data))
+  val entries = VecInit(buffer.toSeq :+ MemEntry(alloc_s6.valid, alloc_s6.bits.task, alloc_s6.bits.data.get))
   val conflictMask_ur = entries.map(e => e.valid && urgentRead.valid && conflict(urgentRead.bits, e.task))
-  val conflictMask_s4 = entries.map(e => e.valid && task_s4.valid && conflict(task_s4.bits, e.task))
+  val conflictMask_s4 = entries.map(e => e.valid && alloc_s4.valid && conflict(alloc_s4.bits.task, e.task))
   val conflictIdx_ur = PriorityEncoder(conflictMask_ur)
   val conflictIdx_s4 = PriorityEncoder(conflictMask_s4)
   val bypass_ur = urgentRead.valid && Cat(conflictMask_ur).orR
-  val bypass_s4 = task_s4.valid && Cat(conflictMask_s4).orR
+  val bypass_s4 = alloc_s4.valid && Cat(conflictMask_s4).orR
   val fakeRsp = RegInit(VecInit(Seq.fill(beatSize)(0.U.asTypeOf(new RespWithData()))))
 
   when(bypass_ur || bypass_s4) {
     for (i <- 0 until beatSize) {
-      fakeRsp(i).txnID := Mux(bypass_s4, task_s4.bits.txnID, urgentRead.bits.txnID)
+      fakeRsp(i).txnID := Mux(bypass_s4, alloc_s4.bits.task.txnID, urgentRead.bits.txnID)
       fakeRsp(i).dbID := 0.U
       fakeRsp(i).opcode := CompData
       fakeRsp(i).resp := 0.U
@@ -123,7 +141,7 @@ class MemUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   val idOH_s6      = PriorityEncoderOH(freeVec_s6)
   val freeVec_s4   = 
     Mux(
-      task_s6.valid,
+      alloc_s6.valid,
       VecInit(freeVec_s6.zip(idOH_s6).map{ case (x, y) => x && ~y }).asUInt,
       freeVec_s6.asUInt
     )
@@ -131,37 +149,33 @@ class MemUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   val insertIdx_s6 = OHToUInt(idOH_s6)
   val insertIdx_s4 = OHToUInt(idOH_s4)
 
-  val full_s6  = !(Cat(freeVec_s6).orR)
-  val full_s4  = !freeVec_s4.orR
-  val alloc_s6 = task_s6.valid && !full_s6
-  val alloc_s4 = task_s4.valid && !full_s4 && !bypass_s4
+  val full_s6     = !(Cat(freeVec_s6).orR)
+  val full_s4     = !freeVec_s4.orR
+  val canAlloc_s6 = alloc_s6.valid && !full_s6
+  val canAlloc_s4 = alloc_s4.valid && !full_s4 && !bypass_s4
 
-  when(alloc_s6) {
+  when(canAlloc_s6) {
     val entry = buffer(insertIdx_s6)
     entry.valid := true.B
-    entry.s_issueReq := false.B
-    entry.s_issueDat := false.B
-    entry.w_dbid := false.B
-    entry.w_comp := false.B
-    entry.task := task_s6.bits.task
-    entry.data := task_s6.bits.data
+    entry.state := alloc_s6.bits.state
+    entry.task := alloc_s6.bits.task
+    entry.data := alloc_s6.bits.data.get
+    entry.beatValids := VecInit(Seq.fill(beatSize)(true.B))
   }
 
-  when(alloc_s4) {
+  when(canAlloc_s4) {
     val entry = buffer(insertIdx_s4)
     entry.valid := true.B
-    entry.s_issueReq := false.B
-    entry.s_issueDat := true.B
-    entry.w_dbid := true.B
-    entry.w_comp := true.B
-    entry.task := task_s4.bits
+    entry.state := alloc_s4.bits.state
+    entry.task := alloc_s4.bits.task
+    entry.beatValids := VecInit(Seq.fill(beatSize)(false.B))
   }
 
-  assert(!(full_s6 && task_s6.valid || full_s4 && task_s4.valid && !bypass_s4) , "MemBuf overflow")
+  assert(!(full_s6 && alloc_s6.valid || full_s4 && alloc_s4.valid && !bypass_s4) , "MemBuf overflow")
 
   /* Issue */
   txreqArb.io.in.zip(buffer).foreach { case (in, e) =>
-    in.valid := e.valid && !e.s_issueReq
+    in.valid := e.valid && e.state.w_datRsp && !e.state.s_issueReq
     in.bits := e.task
   }
   txreqArb.io.out.ready := true.B
@@ -180,8 +194,8 @@ class MemUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   txreq.bits := Mux(urgentRead.valid && !bypass_ur, urgentRead.bits, txreqArb.io.out.bits)
 
   txdatArb.io.in.zip(buffer).foreach { case (in, e) =>
-    in.valid := e.valid && e.task.chiOpcode === WriteNoSnpFull &&
-      e.s_issueReq && e.w_dbid && !e.s_issueDat
+    in.valid := e.valid && e.state.w_datRsp && e.task.chiOpcode === WriteNoSnpFull &&
+      e.state.s_issueReq && e.state.w_dbid && !e.state.s_issueDat
     in.bits.task := e.task
     in.bits.data := e.data
   }
@@ -194,40 +208,72 @@ class MemUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   when(txreq.fire && (!urgentRead.valid || bypass_ur)) {
     val entry = buffer(txreqArb.io.chosen)
     when(entry.task.chiOpcode === WriteNoSnpFull) {
-      entry.s_issueReq := true.B
+      entry.state.s_issueReq := true.B
     }.otherwise {
       entry.valid := false.B
     }
   }
 
-  when(rsp.valid) {
-    val match_vec = buffer.map(e => e.valid && e.s_issueReq && e.task.reqID === rsp.bits.txnID)
+  when(snpData.valid) {
+    val match_vec = buffer.map(e => e.valid && !e.state.w_datRsp && e.task.chiOpcode === WriteNoSnpFull &&
+      e.task.reqID === snpData.bits.txnID)
     assert(PopCount(match_vec) < 2.U, "Mem task repeated")
     val update = Cat(match_vec).orR
     val bufID = PriorityEncoder(match_vec)
     when(update) {
       val entry = buffer(bufID)
-      when(rsp.bits.opcode === CompDBIDResp) {
-        entry.w_dbid := true.B
-        entry.w_comp := true.B
-        entry.task.txnID := rsp.bits.dbID
-      }.elsewhen(rsp.bits.opcode === DBIDResp) {
-        entry.w_dbid := true.B
-        entry.task.txnID := rsp.bits.dbID
-      }.elsewhen(rsp.bits.opcode === Comp) {
-        entry.w_comp := true.B
+      when(!snpData.bits.resp(2)) {
+        entry.valid := false.B
+      }.otherwise {
+        val beatId = snpData.bits.dataID >> log2Ceil(beatBytes / 16)
+        val newBeatValids = entry.beatValids.asUInt | UIntToOH(beatId)
+        entry.beatValids := VecInit(newBeatValids.asBools)
+        entry.state.w_datRsp := newBeatValids.andR
+        entry.data.data(beatId) := snpData.bits.data
+      }
+    }
+  }
+
+  when(snpResp.valid) {
+    val match_vec = buffer.map(e => e.valid && !e.state.w_datRsp && e.task.chiOpcode === WriteNoSnpFull &&
+      e.task.reqID === snpResp.bits.txnID)
+    assert(PopCount(match_vec) < 2.U, "Mem task repeated")
+    val update = Cat(match_vec).orR
+    val bufID = PriorityEncoder(match_vec)
+    when(update) {
+      val entry = buffer(bufID)
+      entry.valid := false.B
+    }
+  }
+
+  when(memResp.valid) {
+    val match_vec = buffer.map(e => e.valid && e.state.s_issueReq && e.task.reqID === memResp.bits.txnID)
+    assert(PopCount(match_vec) < 2.U, "Mem task repeated")
+    val update = Cat(match_vec).orR
+    val bufID = PriorityEncoder(match_vec)
+    when(update) {
+      val entry = buffer(bufID)
+      when(memResp.bits.opcode === CompDBIDResp) {
+        entry.state.w_dbid := true.B
+        entry.state.w_comp := true.B
+        entry.task.txnID := memResp.bits.dbID
+      }.elsewhen(memResp.bits.opcode === DBIDResp) {
+        entry.state.w_dbid := true.B
+        entry.task.txnID := memResp.bits.dbID
+      }.elsewhen(memResp.bits.opcode === Comp) {
+        entry.state.w_comp := true.B
       }
     }
   }
 
   when(txdat.fire) {
     val entry = buffer(txdatArb.io.chosen)
-    entry.s_issueDat := true.B
+    entry.state.s_issueDat := true.B
   }
 
   buffer.foreach { e =>
-    val will_free = e.valid && e.task.chiOpcode === WriteNoSnpFull &&
-      e.s_issueReq && e.s_issueDat && e.w_dbid && e.w_comp
+    val will_free = e.valid && e.task.chiOpcode === WriteNoSnpFull && e.state.s_issueReq && e.state.s_issueDat &&
+      e.state.w_dbid && e.state.w_comp && e.state.w_datRsp
     when(will_free) {
       e.valid := false.B
     }
