@@ -153,7 +153,6 @@ class RespWithData(implicit p: Parameters) extends Resp {
 
 class TaskEntry(implicit p: Parameters) extends LLCBundle {
   val valid = Bool()
-  val ready = Bool()
   val task  = new Task()
 }
 

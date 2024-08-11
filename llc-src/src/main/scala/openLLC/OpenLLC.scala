@@ -29,8 +29,6 @@ class OpenLLC(implicit p: Parameters) extends LazyModule with HasOpenLLCParamete
     private val sizeBytes = cacheParams.toCacheParams.capacity.toDouble 
     private val sizeStr = sizeBytesToStr(sizeBytes)
     private val clientParam = cacheParams.clientCaches.head.toCacheParams
-    private val singleCore = cacheParams.clientCaches.size == 1
-    private val inclusion = if (singleCore) "Exclusive" else "Non-inclusive"
     // Display info
     println(s"====== ${inclusion} CHI-CHI ${cacheParams.name} ($sizeStr * $banks-bank)  ======")
     println(s"bankBits: ${bankBits}")
