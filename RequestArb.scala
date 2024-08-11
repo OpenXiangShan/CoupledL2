@@ -20,9 +20,10 @@ package openLLC
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
+import coupledL2.tl2chi.HasCHIOpcodes
 import scala.math.min
 
-class RequestArb(implicit p: Parameters) extends LLCModule with HasClientInfo {
+class RequestArb(implicit p: Parameters) extends LLCModule with HasClientInfo with HasCHIOpcodes {
   val io = IO(new Bundle() {
     /* receive incoming tasks from s1 */
     val busTask_s1 = Flipped(DecoupledIO(new Task()))
@@ -61,6 +62,10 @@ class RequestArb(implicit p: Parameters) extends LLCModule with HasClientInfo {
   val set_s1   = task_s1.bits.set
   val reqID_s1 = task_s1.bits.reqID
 
+  val isCleanInvalid_s1 = !task_s1.bits.refillTask && task_s1.bits.chiOpcode === CleanInvalid
+  val isCleanShared_s1 = !task_s1.bits.refillTask && task_s1.bits.chiOpcode === CleanShared
+  val isClean_s1 = isCleanInvalid_s1 || isCleanShared_s1
+
   // To prevent data hazards caused by read-after-write conflicts in the directory,
   // blocking is required when the set of s1 is the same as that of s2 or s3
   val sameSet_s2 = pipeInfo.s2_valid && pipeInfo.s2_set(minSetBits - 1, 0) === set_s1(minSetBits - 1, 0)
@@ -96,7 +101,9 @@ class RequestArb(implicit p: Parameters) extends LLCModule with HasClientInfo {
     Cat(snpInfo.map(e => e.valid && e.bits.reqID === reqID_s1)).orR ||
     (inflight_snoop +& potential_snoop) >= mshrs.snoop.U
   )
-  val blockByMem = Cat(memInfo.map(e => e.valid && e.bits.reqID === reqID_s1 && !task_s1.bits.refillTask)).orR ||
+  val blockByMem = Cat(memInfo.map(e => e.valid && Cat(e.bits.tag, e.bits.set) === Cat(tag_s1, set_s1) &&
+    e.bits.opcode === WriteNoSnpFull && (task_s1.bits.refillTask  || isClean_s1))).orR ||
+    Cat(memInfo.map(e => e.valid && e.bits.reqID === reqID_s1 && !task_s1.bits.refillTask)).orR ||
     (inflight_memAccess +& potential_memAccess) >= mshrs.memory.U
 
   val blockEntrance = blockByMainPipe || blockByRefill || blockByResp || blockByMem

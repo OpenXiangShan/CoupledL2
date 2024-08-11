@@ -81,6 +81,7 @@ trait HasOpenLLCParameters {
   def mshrs = cacheParams.mshrs
 
   def numRNs = cacheParams.clientCaches.size
+  def inclusion = if (numRNs == 1) "Exclusive" else "Non-inclusive"
 
   def timeoutThreshold = 20000
 
@@ -98,7 +99,7 @@ trait HasOpenLLCParameters {
   def sizeBytesToStr(sizeBytes: Double): String = sizeBytes match {
     case _ if sizeBytes >= 1024 * 1024 => (sizeBytes / 1024 / 1024) + "MB"
     case _ if sizeBytes >= 1024        => (sizeBytes / 1024) + "KB"
-    case _                             => "B"
+    case _                             => sizeBytes + "B"
   }
 
 }

@@ -88,7 +88,7 @@ class Slice()(implicit p: Parameters) extends LLCModule {
   reqBuf.io.in <> rxreqUp.io.task
 
   reqArb.io.busTask_s1 <> reqBuf.io.out
-  reqArb.io.refillTask_s1 <> refillUnit.io.task_out
+  reqArb.io.refillTask_s1 <> refillUnit.io.task
   reqArb.io.pipeInfo <> mainPipe.io.pipeInfo
   reqArb.io.refillInfo <> refillUnit.io.refillInfo
   reqArb.io.respInfo <> responseUnit.io.respInfo
@@ -114,18 +114,21 @@ class Slice()(implicit p: Parameters) extends LLCModule {
   refillUnit.io.read <> reqArb.io.refillBufRead_s2
   refillUnit.io.respData <> rxdatUp.io.out
   refillUnit.io.resp <> rxrspUp.io.out
-  refillUnit.io.task_in <> mainPipe.io.refillTask_s4
+  refillUnit.io.alloc <> mainPipe.io.refillReq_s4
 
   memUnit.io.fromMainPipe <> mainPipe.io.toMemUnit
   memUnit.io.urgentRead <> responseUnit.io.urgentRead
+  memUnit.io.rnRxdat <> rxdatUp.io.out
+  memUnit.io.rnRxrsp <> rxrspUp.io.out
+  memUnit.io.snRxrsp <> rxrspDown.io.out
   memUnit.io.respInfo <> responseUnit.io.respInfo
-  memUnit.io.resp <> rxrspDown.io.out
 
   responseUnit.io.fromMainPipe <> mainPipe.io.toResponseUnit
   responseUnit.io.bypassData <> memUnit.io.bypassData
-  responseUnit.io.memData <> rxdatDown.io.out
-  responseUnit.io.snpData <> rxdatUp.io.out
-  responseUnit.io.response <> rxrspUp.io.out
+  responseUnit.io.rnRxdat <> rxdatUp.io.out
+  responseUnit.io.rnRxrsp <> rxrspUp.io.out
+  responseUnit.io.snRxdat <> rxdatDown.io.out
+  responseUnit.io.snRxrsp <> rxrspDown.io.out
 
   snpUnit.io.in <> mainPipe.io.snoopTask_s4
   snpUnit.io.respInfo <> responseUnit.io.respInfo

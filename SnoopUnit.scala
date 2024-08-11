@@ -24,6 +24,7 @@ import utility.{FastArbiter}
 import coupledL2.tl2chi.HasCHIOpcodes
 
 class SnoopEntry(implicit p: Parameters) extends TaskEntry {
+  val ready  = Bool()
   val waitID = UInt(TXNID_WIDTH.W) // Indicates which CompAck the task needs to wait for to wake itself up
 }
 
