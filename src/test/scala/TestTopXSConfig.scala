@@ -115,8 +115,8 @@ class TestTop_XSConfig()(implicit p: Parameters) extends LazyModule {
   val ram = LazyModule(new TLRAM(AddressSet(0, 0xfffffffffL), beatBytes = 32))
 
   (0 until nrL2).map { i =>
-    l1_xbar(i) :=* TLLogger(s"L2_L1D_${i}", true) :=* l1d_nodes(i)
-    l1_xbar(i) :=* TLLogger(s"L2_L1I_${i}", true) :=* l1i_nodes(i)
+    l1_xbar(i) :=* TLLogger(s"L2_L1D_${i}", true) :=* TLBuffer() :=* l1d_nodes(i)
+    l1_xbar(i) :=* TLLogger(s"L2_L1I_${i}", true) :=* TLBuffer() :=* l1i_nodes(i)
 
     l2_binder(i) :*=
     l2_nodes(i) :*=
