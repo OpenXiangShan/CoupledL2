@@ -126,6 +126,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     gotDirty    := false.B
     gotGrantData := false.B
     probeDirty  := false.B
+
     probeGotN   := false.B
     timer       := 1.U
     beatCnt     := 0.U
@@ -889,12 +890,13 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       pcrdtype := rxrsp.bits.pCrdType.getOrElse(0.U)
       gotRetryAck := true.B
     }
-    when (rxrsp.bits.chiOpcode.get === PCrdGrant) {
-      state.s_reissue.get := false.B
-      gotPCrdGrant := true.B
-    }
+//    when (rxrsp.bits.chiOpcode.get === PCrdGrant) {
+//      state.s_reissue.get := false.B
+//      gotPCrdGrant := true.B
+//    }
   }
- // when there is this type of pCredit in pCam -> reissue
+
+  // when there is this type of pCredit in pCam -> reissue
   when (io.pCamPri) {
     state.s_reissue.get := false.B
     gotPCrdGrant := true.B

@@ -19,7 +19,7 @@ package coupledL2.tl2chi
 
 import chisel3._
 import chisel3.util._
-import utility.{FastArbiter, Pipeline, ParallelPriorityMux, RegNextN}
+import utility.{FastArbiter, Pipeline, ParallelPriorityMux, RegNextN, MatchPcrdGrant}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
@@ -155,6 +155,8 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         val rxrspIsMMIO = rxrsp.bits.txnID.head(1).asBool
         val isPCrdGrant = rxrsp.valid && (rxrsp.bits.opcode === PCrdGrant)
         val pArb = Module(new RRArbiter(UInt(), banks))
+//        val pCrdSliceIDReg = Reg(UInt(banks.W))
+        val pCrdSliceID = Wire(UInt(log2Ceil(banks).W))
         /*
         when PCrdGrant, give credit to one Slice that:
         1. got RetryAck and not Reissued
@@ -162,22 +164,39 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         3. use Round-Robin arbiter if multi-Slice match
         */
         val matchPCrdGrant = Wire(Vec(banks, UInt(mshrsAll.W)))
+        val validCounts = Wire(Vec(banks, UInt(log2Ceil(mshrsAll+1).W)))
         slices.zipWithIndex.foreach { case (s, i) =>
           matchPCrdGrant(i) := VecInit(s.io_waitPCrdInfo.map(p =>
             p.valid && isPCrdGrant &&
             p.srcID.get === rxrsp.bits.srcID &&
             p.pCrdType.get === rxrsp.bits.pCrdType
           )).asUInt
+          s.io_matchPCrdInfo := matchPCrdGrant(i)
+          validCounts(i) := PopCount(s.io_waitPCrdInfo.map(_.valid))
         }
-        val pCrdIsWait = VecInit(matchPCrdGrant.map(_.asUInt.orR)).asUInt
+        val pCrdIsWait = VecInit(matchPCrdGrant.map(_.asUInt.orR)).asUInt 
+        val pCrdSliceIDOH = UIntToOH(pCrdSliceID)
+        val onlyValidraw = Cat(validCounts.map(count => count === 1.U)).asUInt
+        val onlyValid = Reverse(onlyValidraw)
+        val pCrdSliceHit = pCrdSliceIDOH & pCrdIsWait & onlyValid
+        val pCrdCancel = RegNext(pCrdSliceHit) & onlyValid
+
+        dontTouch (validCounts)
+        dontTouch (onlyValid)
+        dontTouch (pCrdSliceHit)
+        dontTouch (pCrdSliceIDOH)
+        dontTouch  (pCrdIsWait)
 
         pArb.io.in.zipWithIndex.foreach {
           case (in, i) =>
-            in.valid := pCrdIsWait(i)
+            in.valid := pCrdIsWait(i) && !pCrdCancel(i)
+//            in.valid := pCrdIsWait(i)
             in.bits := 0.U
         }
         pArb.io.out.ready := true.B
-        val pCrdSliceID = pArb.io.chosen 
+        pCrdSliceID := pArb.io.chosen
+
+
         val rxrspSliceID = Mux(isPCrdGrant, pCrdSliceID, getSliceID(rxrsp.bits.txnID))
         slices.zipWithIndex.foreach { case (s, i) =>
           s.io.out.rx.rsp.valid := rxrsp.valid && rxrspSliceID === i.U && !rxrspIsMMIO
