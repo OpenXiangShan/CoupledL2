@@ -24,6 +24,7 @@ import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import coupledL2._
 import huancun.DirtyKey
+import coupledL2.utils.Queue_SRAM
 
 //class SourceC(implicit p: Parameters) extends L2Module {
 //  val io = IO(new Bundle() {
@@ -136,8 +137,18 @@ class SourceC(implicit p: Parameters) extends L2Module {
   })
 
   // We must keep SourceC FIFO, so a queue is used
-  val queue = Module(new Queue(io.in.bits.cloneType, entries = mshrsAll, flow = true))
-  queue.io.enq <> io.in
+  // Use customized SRAM: dual_port, max 256bits:
+  val queue = Module(new Queue_SRAM(new TaskBundle(), entries = mshrsAll, flow = true, useSyncReadMem = true))
+  val queueData0 = Module(new Queue_SRAM(new DSBeat(), entries = mshrsAll, flow = true, useSyncReadMem = true))
+  val queueData1 = Module(new Queue_SRAM(new DSBeat(), entries = mshrsAll, flow = true, useSyncReadMem = true))
+  queue.io.enq.valid := io.in.valid
+  queue.io.enq.bits := io.in.bits.task
+  io.in.ready := queue.io.enq.ready
+  val enqData = io.in.bits.data.asTypeOf(Vec(beatSize, new DSBeat))
+  queueData0.io.enq.valid := io.in.valid
+  queueData0.io.enq.bits := enqData(0)
+  queueData1.io.enq.valid := io.in.valid
+  queueData1.io.enq.bits := enqData(1)
   // Add back pressure logic from SourceC
   // refer to GrantBuffer
   val sourceCQueueCnt = queue.io.count
@@ -163,10 +174,12 @@ class SourceC(implicit p: Parameters) extends L2Module {
 
   val dequeueReady = !taskValid
   queue.io.deq.ready := dequeueReady
+  queueData0.io.deq.ready := dequeueReady
+  queueData1.io.deq.ready := dequeueReady
   when(queue.io.deq.valid && dequeueReady) {
     beatValids.foreach(_ := true.B)
-    taskR.task := queue.io.deq.bits.task
-    taskR.data := queue.io.deq.bits.data
+    taskR.task := queue.io.deq.bits
+    taskR.data := Cat(queueData1.io.deq.bits.data, queueData0.io.deq.bits.data).asTypeOf(new DSBlock)
   }
 
   def toTLBundleC(task: TaskBundle, data: UInt = 0.U) = {
