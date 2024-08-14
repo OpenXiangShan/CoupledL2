@@ -36,6 +36,7 @@ abstract class TL2CHIL2Module(implicit val p: Parameters) extends Module
   with HasCoupledL2Parameters
   with HasCHIMsgParameters
 
+
 class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
 
   val addressRange = AddressSet(0x00000000L, 0xfffffffffL).subtract(AddressSet(0x0L, 0x7fffffffL)) // TODO: parameterize this
@@ -155,7 +156,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         val rxrspIsMMIO = rxrsp.bits.txnID.head(1).asBool
         val isPCrdGrant = rxrsp.valid && (rxrsp.bits.opcode === PCrdGrant)
         val pArb = Module(new RRArbiter(UInt(), banks))
-//        val pCrdSliceIDReg = Reg(UInt(banks.W))
+        val pMatch = VecInit(Seq.fill(banks)(Module(new PCrdGrantMatcher(mshrsAll)).io))
         val pCrdSliceID = Wire(UInt(log2Ceil(banks).W))
         /*
         when PCrdGrant, give credit to one Slice that:
@@ -166,31 +167,26 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         val matchPCrdGrant = Wire(Vec(banks, UInt(mshrsAll.W)))
         val validCounts = Wire(Vec(banks, UInt(log2Ceil(mshrsAll+1).W)))
         slices.zipWithIndex.foreach { case (s, i) =>
-          matchPCrdGrant(i) := VecInit(s.io_waitPCrdInfo.map(p =>
-            p.valid && isPCrdGrant &&
-            p.srcID.get === rxrsp.bits.srcID &&
-            p.pCrdType.get === rxrsp.bits.pCrdType
-          )).asUInt
+          pMatch(i).io_waitPCrdInfo := s.io_waitPCrdInfo
+          pMatch(i).rxrsp.bits.srcID := rxrsp.bits.srcID
+          pMatch(i).rxrsp.bits.pCrdType := rxrsp.bits.pCrdType
+          pMatch(i).isPCrdGrant := isPCrdGrant
+          //Output
+          matchPCrdGrant(i) := pMatch(i).matchPCrdGrant
           s.io_matchPCrdInfo := matchPCrdGrant(i)
           validCounts(i) := PopCount(s.io_waitPCrdInfo.map(_.valid))
         }
-        val pCrdIsWait = VecInit(matchPCrdGrant.map(_.asUInt.orR)).asUInt 
+
+        val pCrdIsWait = VecInit(matchPCrdGrant.map(_.asUInt.orR)).asUInt
         val pCrdSliceIDOH = UIntToOH(pCrdSliceID)
         val onlyValidraw = Cat(validCounts.map(count => count === 1.U)).asUInt
         val onlyValid = Reverse(onlyValidraw)
         val pCrdSliceHit = pCrdSliceIDOH & pCrdIsWait & onlyValid
         val pCrdCancel = RegNext(pCrdSliceHit) & onlyValid
 
-        dontTouch (validCounts)
-        dontTouch (onlyValid)
-        dontTouch (pCrdSliceHit)
-        dontTouch (pCrdSliceIDOH)
-        dontTouch  (pCrdIsWait)
-
         pArb.io.in.zipWithIndex.foreach {
           case (in, i) =>
             in.valid := pCrdIsWait(i) && !pCrdCancel(i)
-//            in.valid := pCrdIsWait(i)
             in.bits := 0.U
         }
         pArb.io.out.ready := true.B
