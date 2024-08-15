@@ -61,7 +61,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     val nestedwbData = Output(Bool())
     val aMergeTask = Flipped(ValidIO(new TaskBundle))
     val replResp = Flipped(ValidIO(new ReplacerResult))
-    val pCamPri = Input(Bool())
+    val pCrdPri = Input(Bool())
     val waitPCrdInfo = Output(new PCrdInfo)
   })
 
@@ -889,13 +889,10 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       pcrdtype := rxrsp.bits.pCrdType.getOrElse(0.U)
       gotRetryAck := true.B
     }
-    when (rxrsp.bits.chiOpcode.get === PCrdGrant) {
-      state.s_reissue.get := false.B
-      gotPCrdGrant := true.B
-    }
   }
- // when there is this type of pCredit in pCam -> reissue
-  when (io.pCamPri) {
+
+  // when rxrsp is PCrdGrant
+  when (io.pCrdPri) {
     state.s_reissue.get := false.B
     gotPCrdGrant := true.B
   }
