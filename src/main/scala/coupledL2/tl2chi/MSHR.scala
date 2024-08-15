@@ -208,7 +208,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   /* ======== Task allocation ======== */
   // The first Release with AllowRetry = 1 is sent to main pipe, because the task needs to write DS.
   // The second Release with AllowRetry = 0 is sent to TXREQ directly, because DS is already written.
-  val release_valid1 = !state.s_release && state.w_rprobeacklast && state.w_grantlast && state.w_replResp
+  val release_valid1 = (!state.s_release && state.w_rprobeacklast && state.w_grantlast && state.w_replResp) || (!state.s_release && state.w_rprobeacklast && state.w_replResp && (req_cmoClean || req_cmoFlush))
   val release_valid2 = !state.s_reissue.getOrElse(false.B) && !state.w_releaseack && gotRetryAck && gotPCrdGrant
   // Theoretically, data to be released is saved in ReleaseBuffer, so Acquire can be sent as soon as req enters mshr
   // For cmo_clean/flush, dirty data should be released downward first, then Clean req can be sent
