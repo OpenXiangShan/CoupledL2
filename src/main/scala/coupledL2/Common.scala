@@ -350,6 +350,7 @@ class L2TlbReq(implicit p: Parameters) extends L2Bundle{
 }
 class L2TlbResp(nDups: Int = 1)(implicit p: Parameters) extends L2Bundle {
   val paddr = Vec(nDups, Output(UInt(fullAddressBits.W)))
+  val pbmt = Output(UInt(2.W))
   val miss = Output(Bool())
   val excp = Vec(nDups, new Bundle {
     val gpf = new TlbExceptionBundle()
