@@ -336,6 +336,19 @@ object TlbCmd {
   def isAtom(a: UInt) = a(2)
   def isAmo(a: UInt) = a===atom_write // NOTE: sc mixed
 }
+
+// Svpbmt extension
+object Pbmt {
+  def pma:  UInt = "b00".U  // None
+  def nc:   UInt = "b01".U  // Non-cacheable, idempotent, weakly-ordered (RVWMO), main memory
+  def io:   UInt = "b10".U  // Non-cacheable, non-idempotent, strongly-ordered (I/O ordering), I/O
+  def rsvd: UInt = "b11".U  // Reserved for future standard use
+  def width: Int = 2
+  
+  def apply() = UInt(width.W)
+  def isUncache(a: UInt) = a===nc || a===io
+}
+
 class TlbExceptionBundle extends Bundle {
   val ld = Output(Bool())
   val st = Output(Bool())
@@ -350,7 +363,7 @@ class L2TlbReq(implicit p: Parameters) extends L2Bundle{
 }
 class L2TlbResp(nDups: Int = 1)(implicit p: Parameters) extends L2Bundle {
   val paddr = Vec(nDups, Output(UInt(fullAddressBits.W)))
-  val pbmt = Output(UInt(2.W))
+  val pbmt = Output(Pbmt.apply())
   val miss = Output(Bool())
   val excp = Vec(nDups, new Bundle {
     val gpf = new TlbExceptionBundle()
