@@ -21,16 +21,19 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import utility.{FastArbiter, ParallelMax, ParallelPriorityMux, Pipeline, RegNextN, XSPerfAccumulate}
+import utility.{DFTResetSignals, FastArbiter, ParallelMax, ParallelPriorityMux, Pipeline, RegNextN, XSPerfAccumulate}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tile.MaxHartIdBits
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.util._
-import org.chipsalliance.cde.config.{Parameters, Field}
+import org.chipsalliance.cde.config.{Field, Parameters}
+
 import scala.math.max
 import coupledL2.prefetch._
-import huancun.{TPmetaReq, TPmetaResp, BankBitsKey}
+import huancun.{BankBitsKey, TPmetaReq, TPmetaResp}
+import utility.mbist.{MbistInterface, MbistPipeline}
+import utility.sram.SramHelper
 
 trait HasCoupledL2Parameters {
   val p: Parameters
@@ -533,5 +536,36 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
 
     val okHint = grant_data_fire.orR && hintPipe1.io.out.valid && hintPipe1.io.out.bits === grant_data_source
     XSPerfAccumulate("ok2Hints", okHint)
+
+    private val mbistPl = MbistPipeline.PlaceMbistPipeline(Int.MaxValue, "L2Cache", cacheParams.hasMbist)
+
+    private val sigFromSrams = if (cacheParams.hasMbist) Some(SramHelper.genBroadCastBundleTop()) else None
+    val dft = if (cacheParams.hasMbist) Some(IO(sigFromSrams.get.cloneType)) else None
+    val dft_out = if (cacheParams.hasMbist) Some(IO(Output(sigFromSrams.get.cloneType))) else None
+    val dft_reset = IO(Input(new DFTResetSignals()))
+    val dft_reset_out = IO(Output(new DFTResetSignals()))
+    dft_reset_out := dft_reset
+    if (cacheParams.hasMbist) {
+      sigFromSrams.get := dft.get
+      dft_out.get := dft.get
+    }
+
+    private val l2MbistIntf = if (cacheParams.hasMbist) {
+      val params = mbistPl.get.nodeParams
+      val intf = Some(Module(new MbistInterface(
+        params = Seq(params),
+        ids = Seq(mbistPl.get.childrenIds),
+        name = s"MbistIntfL2",
+        pipelineNum = 1
+      )))
+      intf.get.toPipeline.head <> mbistPl.get.mbist
+      if (cacheParams.hartId == 0) mbistPl.get.registerCSV(intf.get.info, "MbistL2")
+      intf.get.mbist := DontCare
+      dontTouch(intf.get.mbist)
+      //TODO: add mbist controller connections here
+      intf
+    } else {
+      None
+    }
   }
 }
