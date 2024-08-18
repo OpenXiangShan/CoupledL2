@@ -137,6 +137,14 @@ class CHIAsyncBridgeSource(params: AsyncQueueParams = AsyncQueueParams())(implic
   io.async.rx.dat.lcrdv <> ToAsyncBundle.bitPulse(io.enq.rx.dat.lcrdv, params, Some("rxdat_lcrdv"))
   io.async.rx.snp.lcrdv <> ToAsyncBundle.bitPulse(io.enq.rx.snp.lcrdv, params, Some("rxsnp_lcrdv"))
 
+  io.async.txsactive := io.enq.txsactive
+  io.async.rx.linkactiveack := io.enq.rx.linkactiveack
+  io.async.tx.linkactivereq := io.enq.tx.linkactivereq
+  io.async.syscoreq := io.enq.syscoreq
+  io.async.tx.req.flitpend := io.enq.tx.req.flitpend
+  io.async.tx.dat.flitpend := io.enq.tx.dat.flitpend
+  io.async.tx.rsp.flitpend := io.enq.tx.rsp.flitpend
+  
   withClockAndReset(clock, reset) {
     //
     // Below is a typical synchronizer with two registers
@@ -192,6 +200,14 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
   io.deq.rx.rsp.lcrdv <> FromAsyncBundle.bitPulse(io.async.rx.rsp.lcrdv, params, Some("rxrsp_lcrdv"))
   io.deq.rx.dat.lcrdv <> FromAsyncBundle.bitPulse(io.async.rx.dat.lcrdv, params, Some("rxdat_lcrdv"))
   io.deq.rx.snp.lcrdv <> FromAsyncBundle.bitPulse(io.async.rx.snp.lcrdv, params, Some("rxsnp_lcrdv"))
+
+  io.async.rxsactive := io.deq.rxsactive
+  io.async.tx.linkactiveack := io.deq.tx.linkactiveack
+  io.async.rx.linkactivereq := io.deq.rx.linkactivereq
+  io.async.syscoack := io.deq.syscoack
+  io.async.rx.snp.flitpend := io.deq.rx.snp.flitpend
+  io.async.rx.dat.flitpend := io.deq.rx.dat.flitpend
+  io.async.rx.rsp.flitpend := io.deq.rx.rsp.flitpend
 
   withClockAndReset(clock, reset) {
     //
