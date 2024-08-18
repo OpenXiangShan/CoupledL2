@@ -18,167 +18,209 @@ package coupledL2.tl2chi
 
 import chisel3._
 import chisel3.util._
-import freechips.rocketchip.util._
+import freechips.rocketchip.util.{AsyncQueueParams, AsyncBundle, AsyncQueueSource, AsyncQueueSink}
+import freechips.rocketchip.util.SynchronizerShiftReg
 import org.chipsalliance.cde.config.Parameters
 
-class AsyncBridgeCHI(implicit p: Parameters) extends RawModule {
-    val enq_clock = IO(Input(Clock()))
-    val enq_reset = IO(Input(Reset()))
-    val deq_clock = IO(Input(Clock()))
-    val deq_reset = IO(Input(Reset()))
-    val io = IO(new Bundle {
-        // val linkCtrl_enq    = Flipped(new CHILinkCtrlIO())
-        // val linkCtrl_deq    = new CHILinkCtrlIO()
-        // val chi_enq         = CHIBundleUpstream(Config.chiBundleParams, true)
-        // val chi_deq         = CHIBundleDownstream(Config.chiBundleParams, true)
-        val chi_enq = Flipped(new PortIO)
-        val chi_deq = new PortIO
-        val resetFinish_enq = Output(Bool())
-        val resetFinish_deq = Output(Bool())
-    })
+class AsyncChannelIO[+T <: Data](gen: T, params: AsyncQueueParams = AsyncQueueParams()) extends Bundle {
+  val flitpend = Output(Bool())
+  val flit = new AsyncBundle(UInt(gen.getWidth.W), params)
+  val lcrdv = Flipped(new AsyncBundle(UInt(0.W), params))
+}
 
-    val numSyncReg = 3
+class AsyncDownwardsLinkIO(
+  params: AsyncQueueParams = AsyncQueueParams()
+)(implicit p: Parameters) extends Bundle with HasLinkSwitch {
+  val req = new AsyncChannelIO(new CHIREQ, params)
+  val rsp = new AsyncChannelIO(new CHIRSP, params)
+  val dat = new AsyncChannelIO(new CHIDAT, params)
+}
 
-    // A helper object for creating AsyncCreditBridge
-    object AsyncConnect {
-        //
-        // case class AsyncQueueParams: (default parameters)
-        //      depth: Int      = 8
-        //      sync: Int       = 3
-        //      safe: Boolean   = true    [[If safe is true, then effort is made to resynchronize the crossing indices when either side is reset.
-        //                                  This makes it safe/possible to reset one side of the crossing (but not the other) when the queue is empty.]]
-        //      narrow: Boolean = false   [[If narrow is true then the read mux is moved to the source side of the crossing.
-        //                                  This reduces the number of level shifters in the case where the clock crossing is also a voltage crossing,
-        //                                  at the expense of a combinational path from the sink to the source and back to the sink.]]
-        //
+class AsyncUpwardsLinkIO(
+  params: AsyncQueueParams = AsyncQueueParams()
+)(implicit p: Parameters) extends Bundle with HasLinkSwitch {
+  val rsp = new AsyncChannelIO(new CHIRSP, params)
+  val dat = new AsyncChannelIO(new CHIDAT, params)
+  val snp = new AsyncChannelIO(new CHISNP, params)
+}
 
-        // Factory method for creating AsyncQueue between two clock domain(fifo structure)
-        // clock domains:
-        //      enq_clock   <--\           /--> deq_clock
-        //                     |AsyncQueue|
-        //      enq_reset  <--/           \--> deq_reset
-        //
-        def apply[T <: Data](in: ChannelIO[T], in_clock: Clock, in_reset: Reset, out_clock: Clock, out_reset: Reset, name: String = "Unknown", depth: Int = 4, sync: Int = 3): ChannelIO[T] = {
-            val out    = WireInit(0.U.asTypeOf(chiselTypeOf(in)))
-            val params = AsyncQueueParams(depth, sync)
-            val q      = Module(new AsyncQueue(chiselTypeOf(in.flit), params))
-            q.io.enq_clock := in_clock
-            q.io.enq_reset := in_reset
-            q.io.deq_clock := out_clock
-            q.io.deq_reset := out_reset
-            q.io.enq.bits  := in.flit
-            q.io.enq.valid := in.flitv
+class AsyncPortIO(
+  params: AsyncQueueParams = AsyncQueueParams()
+)(implicit p: Parameters) extends Bundle with HasPortSwitch with HasSystemCoherencyInterface {
+  val tx = new AsyncDownwardsLinkIO(params)
+  val rx = Flipped(new AsyncUpwardsLinkIO(params))
+}
 
-            // q.io.enq.ready  ==> DontCare
-            withClockAndReset(enq_clock, enq_reset) {
-                assert(!(!q.io.enq.ready && in.flitv), s"AsyncConnect [${name}] enq when AsnycQueue is not ready!")
-            }
+object ToAsyncBundle {
+  def channel[T <: Data](
+    chn: ChannelIO[T],
+    params: AsyncQueueParams = AsyncQueueParams(),
+    name: Option[String] = None
+  ) = {
+    val source = Module(new AsyncQueueSource(chiselTypeOf(chn.flit), params))
+    if (name.isDefined) { source.suggestName("asyncQSource_" + name.get) }
+    source.io.enq.valid := chn.flitv
+    source.io.enq.bits := chn.flit
+    source.io.async
+  }
 
-            out.flit       := q.io.deq.bits
-            out.flitv      := q.io.deq.valid
-            q.io.deq.ready := true.B
-            out
-        }
+  def bitPulse(
+    bit: Bool,
+    params: AsyncQueueParams = AsyncQueueParams(),
+    name: Option[String] = None
+  ) = {
+    val source = Module(new AsyncQueueSource(UInt(0.W), params))
+    if (name.isDefined) { source.suggestName("asyncQBitSource_" + name.get) }
+    source.io.enq.valid := bit
+    source.io.enq.bits := DontCare
+    source.io.async
+  }
+}
 
-        // Creating a 1-bit AsyncQueue between two clock domain, only used for bit pulse signals(e.g. lcrdv in CHI)
-        def bitPulseConnect[T <: Data](in: Bool, in_clock: Clock, in_reset: Reset, out_clock: Clock, out_reset: Reset, name: String = "Unknown", depth: Int = 4, sync: Int = 3): Bool = {
-            val out    = WireInit(false.B)
-            val params = AsyncQueueParams(depth, sync)
-            val q      = Module(new AsyncQueue(UInt(0.W), params))
-            q.io.enq_clock := in_clock
-            q.io.enq_reset := in_reset
-            q.io.deq_clock := out_clock
-            q.io.deq_reset := out_reset
-            q.io.enq.bits  <> DontCare
-            q.io.enq.valid := in
+object FromAsyncBundle {
+  def channel(
+    async: AsyncBundle[UInt],
+    params: AsyncQueueParams = AsyncQueueParams(),
+    name: Option[String] = None
+  ) = {
+    val gen = chiselTypeOf(async.mem.head)
+    val out = Wire(new ChannelIO(gen))
+    val sink = Module(new AsyncQueueSink(gen, params))
+    if (name.isDefined) { sink.suggestName("asyncQSink_" + name.get) }
+    sink.io.async <> async
+    sink.io.deq.ready := true.B
+    out.flitv := sink.io.deq.valid
+    out.flit := sink.io.deq.bits
+    // flitpend and lcrdv are assigned independently
+    out.flitpend := DontCare
+    out.lcrdv := DontCare
+    out
+  }
 
-            // q.io.enq.ready  ==> DontCare
-            withClockAndReset(enq_clock, enq_reset) {
-                assert(!(!q.io.enq.ready && in), s"AsyncConnect [${name}] enq when AsnycQueue is not ready!")
-            }
+  def bitPulse[T <: Data](
+    async: AsyncBundle[T],
+    params: AsyncQueueParams = AsyncQueueParams(),
+    name: Option[String] = None
+  ): Bool = {
+    val gen = chiselTypeOf(async.mem.head)
+    val sink = Module(new AsyncQueueSink(gen, params))
+    if (name.isDefined) { sink.suggestName("asyncQBitSink_" + name.get) }
+    sink.io.async <> async
+    sink.io.deq.ready := true.B
+    sink.io.deq.valid
+  }
+}
 
-            out            := q.io.deq.valid
-            q.io.deq.ready := true.B
-            out
-        }
+class CHIAsyncBridgeSource(implicit p: Parameters) extends Module {
+
+  val numSyncReg = 3
+  val params = AsyncQueueParams(depth = 4, sync = numSyncReg) // TODO: parameterize this
+
+  val io = IO(new Bundle() {
+    val enq = Flipped(new PortIO)
+    val async = new AsyncPortIO(params)
+    val resetFinish = Output(Bool())
+  })
+
+  io.async.tx.req.flit <> ToAsyncBundle.channel(io.enq.tx.req, params, Some("txreq_flit"))
+  io.async.tx.rsp.flit <> ToAsyncBundle.channel(io.enq.tx.rsp, params, Some("txrsp_flit"))
+  io.async.tx.dat.flit <> ToAsyncBundle.channel(io.enq.tx.dat, params, Some("txdat_flit"))
+
+  io.enq.tx.req.lcrdv <> FromAsyncBundle.bitPulse(io.async.tx.req.lcrdv, params, Some("txreq_lcrdv"))
+  io.enq.tx.rsp.lcrdv <> FromAsyncBundle.bitPulse(io.async.tx.rsp.lcrdv, params, Some("txrsp_lcrdv"))
+  io.enq.tx.dat.lcrdv <> FromAsyncBundle.bitPulse(io.async.tx.dat.lcrdv, params, Some("txdat_lcrdv"))
+
+  io.enq.rx.rsp <> FromAsyncBundle.channel(io.async.rx.rsp.flit, params, Some("rxrsp_flit"))
+  io.enq.rx.dat <> FromAsyncBundle.channel(io.async.rx.dat.flit, params, Some("rxdat_flit"))
+  io.enq.rx.snp <> FromAsyncBundle.channel(io.async.rx.snp.flit, params, Some("rxsnp_flit"))
+
+  io.async.rx.rsp.lcrdv <> ToAsyncBundle.bitPulse(io.enq.rx.rsp.lcrdv, params, Some("rxrsp_lcrdv"))
+  io.async.rx.dat.lcrdv <> ToAsyncBundle.bitPulse(io.enq.rx.dat.lcrdv, params, Some("rxdat_lcrdv"))
+  io.async.rx.snp.lcrdv <> ToAsyncBundle.bitPulse(io.enq.rx.snp.lcrdv, params, Some("rxsnp_lcrdv"))
+
+  withClockAndReset(clock, reset) {
+    //
+    // Below is a typical synchronizer with two registers
+    //                                       │
+    //                    ┌────┐  ┌────┐     │
+    //  output signal ◄───┤ \/ │◄─┤ \/ │◄────│────── input signal
+    //                    │    │  │    │     │
+    //                    └────┘  └────┘     │
+    //                     output clock      │
+    //
+    io.enq.rxsactive := SynchronizerShiftReg(io.async.rxsactive, numSyncReg, Some("sync_rxsactive"))
+    io.enq.tx.linkactiveack := SynchronizerShiftReg(io.async.tx.linkactiveack, numSyncReg, Some("sync_tx_linkactiveack"))
+    io.enq.rx.linkactivereq := SynchronizerShiftReg(io.async.rx.linkactivereq, numSyncReg, Some("sync_rx_linkactivereq"))
+    io.enq.syscoack := SynchronizerShiftReg(io.async.syscoack, numSyncReg, Some("sync_syscoack"))
+
+    io.enq.rx.rsp.flitpend := SynchronizerShiftReg(io.async.rx.rsp.flitpend, numSyncReg, Some("sync_rx_rsp_flitpend"))
+    io.enq.rx.dat.flitpend := SynchronizerShiftReg(io.async.rx.dat.flitpend, numSyncReg, Some("sync_rx_dat_flitpend"))
+    io.enq.rx.snp.flitpend := SynchronizerShiftReg(io.async.rx.snp.flitpend, numSyncReg, Some("sync_rx_snp_flitpend"))
+
+    val RESET_FINISH_MAX = 100
+    val resetFinishCounter = withReset(reset.asAsyncReset)(RegInit(0.U((log2Ceil(RESET_FINISH_MAX) + 1).W)))
+    when (resetFinishCounter < RESET_FINISH_MAX.U) {
+      resetFinishCounter := resetFinishCounter + 1.U
     }
+    io.resetFinish := resetFinishCounter >= RESET_FINISH_MAX.U
+  }
 
+  dontTouch(io)
+}
+
+class CHIAsyncBridgeSink(implicit p: Parameters) extends Module {
+
+  val numSyncReg = 3
+  val params = AsyncQueueParams(depth = 4, sync = numSyncReg) // TODO: parameterize this
+
+  val io = IO(new Bundle() {
+    val async = Flipped(new AsyncPortIO(params))
+    val deq = new PortIO
+    val resetFinish = Output(Bool())
+  })
+
+  io.deq.tx.req <> FromAsyncBundle.channel(io.async.tx.req.flit, params, Some("txreq_flit"))
+  io.deq.tx.rsp <> FromAsyncBundle.channel(io.async.tx.rsp.flit, params, Some("txrsp_flit"))
+  io.deq.tx.dat <> FromAsyncBundle.channel(io.async.tx.dat.flit, params, Some("txdat_flit"))
+
+  io.async.tx.req.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.req.lcrdv, params, Some("txreq_lcrdv"))
+  io.async.tx.rsp.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.rsp.lcrdv, params, Some("txrsp_lcrdv"))
+  io.async.tx.dat.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.dat.lcrdv, params, Some("txdat_lcrdv"))
+
+  io.async.rx.rsp.flit <> ToAsyncBundle.channel(io.deq.rx.rsp, params, Some("rxrsp_flit"))
+  io.async.rx.dat.flit <> ToAsyncBundle.channel(io.deq.rx.dat, params, Some("rxdat_flit"))
+  io.async.rx.snp.flit <> ToAsyncBundle.channel(io.deq.rx.snp, params, Some("rxsnp_flit"))
+
+  io.deq.rx.rsp.lcrdv <> FromAsyncBundle.bitPulse(io.async.rx.rsp.lcrdv, params, Some("rxrsp_lcrdv"))
+  io.deq.rx.dat.lcrdv <> FromAsyncBundle.bitPulse(io.async.rx.dat.lcrdv, params, Some("rxdat_lcrdv"))
+  io.deq.rx.snp.lcrdv <> FromAsyncBundle.bitPulse(io.async.rx.snp.lcrdv, params, Some("rxsnp_lcrdv"))
+
+  withClockAndReset(clock, reset) {
     //
-    // CHI TX Channel: responsible for receiving L-Credit
+    // Below is a typical synchronizer with two registers
+    //                                       │
+    //                    ┌────┐  ┌────┐     │
+    //  output signal ◄───┤ \/ │◄─┤ \/ │◄────│────── input signal
+    //                    │    │  │    │     │
+    //                    └────┘  └────┘     │
+    //                     output clock      │
     //
-    io.chi_deq.tx.req <> AsyncConnect(io.chi_enq.tx.req, enq_clock, enq_reset, deq_clock, deq_reset, "enq_txreq_to_deq_txreq")
-    io.chi_deq.tx.dat <> AsyncConnect(io.chi_enq.tx.dat, enq_clock, enq_reset, deq_clock, deq_reset, "enq_txdat_to_deq_txdat")
-    io.chi_deq.tx.rsp <> AsyncConnect(io.chi_enq.tx.rsp, enq_clock, enq_reset, deq_clock, deq_reset, "enq_txrsp_to_deq_txrsp")
+    io.deq.txsactive := SynchronizerShiftReg(io.async.txsactive, numSyncReg, Some("sync_txsactive"))
+    io.deq.rx.linkactiveack := SynchronizerShiftReg(io.async.rx.linkactiveack, numSyncReg, Some("sync_rx_linkactiveack"))
+    io.deq.tx.linkactivereq := SynchronizerShiftReg(io.async.tx.linkactivereq, numSyncReg, Some("sync_tx_linkactivereq"))
+    io.deq.syscoreq := SynchronizerShiftReg(io.async.syscoreq, numSyncReg, Some("sync_syscoreq"))
 
-    io.chi_enq.tx.req.lcrdv <> AsyncConnect.bitPulseConnect(io.chi_deq.tx.req.lcrdv, deq_clock, deq_reset, enq_clock, enq_reset, "deq_txreq_lcrdv_to_enq_txreq_lcrdv")
-    io.chi_enq.tx.dat.lcrdv <> AsyncConnect.bitPulseConnect(io.chi_deq.tx.dat.lcrdv, deq_clock, deq_reset, enq_clock, enq_reset, "deq_txdat_lcrdv_to_enq_txdat_lcrdv")
-    io.chi_enq.tx.rsp.lcrdv <> AsyncConnect.bitPulseConnect(io.chi_deq.tx.rsp.lcrdv, deq_clock, deq_reset, enq_clock, enq_reset, "deq_txrsp_lcrdv_to_enq_txrsp_lcrdv")
+    io.deq.tx.req.flitpend := SynchronizerShiftReg(io.async.tx.req.flitpend, numSyncReg, Some("sync_tx_req_flitpend"))
+    io.deq.tx.dat.flitpend := SynchronizerShiftReg(io.async.tx.dat.flitpend, numSyncReg, Some("sync_tx_dat_flitpend"))
+    io.deq.tx.rsp.flitpend := SynchronizerShiftReg(io.async.tx.rsp.flitpend, numSyncReg, Some("sync_tx_rsp_flitpend"))
 
-    //
-    // CHI RX Channel: responsible for sending L-Credit
-    //
-    io.chi_enq.rx.dat <> AsyncConnect(io.chi_deq.rx.dat, deq_clock, deq_reset, enq_clock, enq_reset, "deq_rxdat_to_enq_rxdat")
-    io.chi_enq.rx.rsp <> AsyncConnect(io.chi_deq.rx.rsp, deq_clock, deq_reset, enq_clock, enq_reset, "deq_rxrsp_to_enq_rxrsp")
-    io.chi_enq.rx.snp <> AsyncConnect(io.chi_deq.rx.snp, deq_clock, deq_reset, enq_clock, enq_reset, "deq_rxsnp_to_enq_rxsnp")
-
-    io.chi_deq.rx.dat.lcrdv <> AsyncConnect.bitPulseConnect(io.chi_enq.rx.dat.lcrdv, enq_clock, enq_reset, deq_clock, deq_reset, "enq_rxdat_lcrdv_to_deq_rxdat_lcrdv")
-    io.chi_deq.rx.rsp.lcrdv <> AsyncConnect.bitPulseConnect(io.chi_enq.rx.rsp.lcrdv, enq_clock, enq_reset, deq_clock, deq_reset, "enq_rxrsp_lcrdv_to_deq_rxrsp_lcrdv")
-    io.chi_deq.rx.snp.lcrdv <> AsyncConnect.bitPulseConnect(io.chi_enq.rx.snp.lcrdv, enq_clock, enq_reset, deq_clock, deq_reset, "enq_rxsnp_lcrdv_to_deq_rxsnp_lcrdv")
-
-    //
-    // Input link control
-    //
-    withClockAndReset(enq_clock, enq_reset) {
-        //
-        // Below is a typical synchronizer with two registers
-        //                                       │
-        //                    ┌────┐  ┌────┐     │
-        //  output signal ◄───┤ \/ │◄─┤ \/ │◄────│────── input signal
-        //                    │    │  │    │     │
-        //                    └────┘  └────┘     │
-        //                     output clock      │
-        //
-        io.chi_enq.rxsactive := SynchronizerShiftReg(io.chi_deq.rxsactive, numSyncReg, Some("sync_LinkCtrl_rxsactive"))
-        io.chi_enq.tx.linkactiveack := SynchronizerShiftReg(io.chi_deq.tx.linkactiveack, numSyncReg, Some("sync_LinkCtrl_txactiveack"))
-        io.chi_enq.rx.linkactivereq := SynchronizerShiftReg(io.chi_deq.rx.linkactivereq, numSyncReg, Some("sync_LinkCrtl_rxactivereq"))
-        io.chi_enq.syscoack := SynchronizerShiftReg(io.chi_deq.syscoack, numSyncReg, Some("sync_LinkCtrl_syscoack"))
-
-        io.chi_enq.rx.dat.flitpend := SynchronizerShiftReg(io.chi_deq.rx.dat.flitpend, numSyncReg, Some("sync_enq_rxdat_flitpend"))
-        io.chi_enq.rx.rsp.flitpend := SynchronizerShiftReg(io.chi_deq.rx.rsp.flitpend, numSyncReg, Some("sync_enq_rxrsp_flitpend"))
-        io.chi_enq.rx.snp.flitpend := SynchronizerShiftReg(io.chi_deq.rx.snp.flitpend, numSyncReg, Some("sync_enq_rxsnp_flitpend"))
-
-        val RESET_FINISH_MAX       = 100
-        val resetFinishCounter_enq = withReset(enq_reset.asAsyncReset)(RegInit(0.U((log2Ceil(RESET_FINISH_MAX) + 1).W)))
-        when (resetFinishCounter_enq < RESET_FINISH_MAX.U) {
-            resetFinishCounter_enq := resetFinishCounter_enq + 1.U
-        }
-        io.resetFinish_enq := resetFinishCounter_enq >= RESET_FINISH_MAX.U
+    val RESET_FINISH_MAX = 100
+    val resetFinishCounter = withReset(reset.asAsyncReset)(RegInit(0.U((log2Ceil(RESET_FINISH_MAX) + 1).W)))
+    when (resetFinishCounter < RESET_FINISH_MAX.U) {
+      resetFinishCounter := resetFinishCounter + 1.U
     }
+    io.resetFinish := resetFinishCounter >= RESET_FINISH_MAX.U
+  }
 
-    //
-    // Output link controls
-    //
-    withClockAndReset(deq_clock, deq_reset) {
-        io.chi_deq.txsactive := SynchronizerShiftReg(io.chi_enq.txsactive, numSyncReg, Some("sync_LinkCtrl_txsactive"))
-        io.chi_deq.rx.linkactiveack := SynchronizerShiftReg(io.chi_enq.rx.linkactiveack, numSyncReg, Some("sync_LinkCtrl_rxactiveack"))
-        io.chi_deq.tx.linkactivereq := SynchronizerShiftReg(io.chi_enq.tx.linkactivereq, numSyncReg, Some("sync_LinkCrtl_txactivereq"))
-        io.chi_deq.syscoreq := SynchronizerShiftReg(io.chi_enq.syscoreq, numSyncReg, Some("sync_LinkCtrl_syscoreq"))
-
-        io.chi_deq.tx.req.flitpend := SynchronizerShiftReg(io.chi_enq.tx.req.flitpend, numSyncReg, Some("sync_enq_txreq_flitpend"))
-        io.chi_deq.tx.dat.flitpend := SynchronizerShiftReg(io.chi_enq.tx.dat.flitpend, numSyncReg, Some("sync_enq_txdat_flitpend"))
-        io.chi_deq.tx.rsp.flitpend := SynchronizerShiftReg(io.chi_enq.tx.rsp.flitpend, numSyncReg, Some("sync_enq_txrsp_flitpend"))
-
-        val RESET_FINISH_MAX       = 100
-        val resetFinishCounter_deq = withReset(deq_reset.asAsyncReset)(RegInit(0.U((log2Ceil(RESET_FINISH_MAX) + 1).W)))
-        when(resetFinishCounter_deq < RESET_FINISH_MAX.U) {
-            resetFinishCounter_deq := resetFinishCounter_deq + 1.U
-        }
-        io.resetFinish_deq := resetFinishCounter_deq >= RESET_FINISH_MAX.U
-    }
-
-    dontTouch(enq_clock)
-    dontTouch(deq_clock)
-    dontTouch(enq_reset)
-    dontTouch(deq_reset)
-    dontTouch(io)
+  dontTouch(io)
 }
