@@ -111,10 +111,9 @@ object FromAsyncBundle {
   }
 }
 
-class CHIAsyncBridgeSource(implicit p: Parameters) extends Module {
+class CHIAsyncBridgeSource(params: AsyncQueueParams = AsyncQueueParams())(implicit p: Parameters) extends Module {
 
-  val numSyncReg = 3
-  val params = AsyncQueueParams(depth = 4, sync = numSyncReg) // TODO: parameterize this
+  val numSyncReg = params.sync
 
   val io = IO(new Bundle() {
     val enq = Flipped(new PortIO)
@@ -168,10 +167,9 @@ class CHIAsyncBridgeSource(implicit p: Parameters) extends Module {
   dontTouch(io)
 }
 
-class CHIAsyncBridgeSink(implicit p: Parameters) extends Module {
+class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit p: Parameters) extends Module {
 
-  val numSyncReg = 3
-  val params = AsyncQueueParams(depth = 4, sync = numSyncReg) // TODO: parameterize this
+  val numSyncReg = params.sync
 
   val io = IO(new Bundle() {
     val async = Flipped(new AsyncPortIO(params))
