@@ -311,7 +311,7 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes 
   urgentTask.chiOpcode := ReadNoSnp
   urgentTask.txnID := buffer(urgentIdx).task.reqID
   urgentTask.size := log2Ceil(64).U
-  urgentTask.allowRetry := false.B
+  urgentTask.allowRetry := true.B
   urgentTask.order := OrderEncodings.None
   urgentTask.memAttr := MemAttr()
   urgentTask.snpAttr := false.B
