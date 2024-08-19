@@ -22,7 +22,7 @@ import org.chipsalliance.cde.config.Parameters
 import chisel3.DontCare.:=
 import chisel3._
 import chisel3.util._
-import coupledL2.{HasCoupledL2Parameters, L2TlbReq, L2ToL1TlbIO, TlbCmd}
+import coupledL2.{HasCoupledL2Parameters, L2TlbReq, L2ToL1TlbIO, TlbCmd, Pbmt}
 import coupledL2.utils.ReplacementPolicy
 import scopt.Read
 
@@ -488,7 +488,7 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
     exp_drop(i) := s3_tlb_fire_oh(i) && s3_tlb_resp_valid && !s3_tlb_resp.miss && (
       (e.needT && (s3_tlb_resp.excp.head.pf.st || s3_tlb_resp.excp.head.af.st)) ||
       (!e.needT && (s3_tlb_resp.excp.head.pf.ld || s3_tlb_resp.excp.head.af.ld)) ||
-      io.tlb_req.pmp_resp.mmio
+      io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt)
     )
     val miss = s3_tlb_fire_oh(i) && s3_tlb_resp_valid && s3_tlb_resp.miss
     tlb_fired(i) := s3_tlb_fire_oh(i) && s3_tlb_resp_valid && !s3_tlb_resp.miss && !exp_drop(i)
@@ -543,9 +543,9 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
     s3_tlb_resp_valid && !s3_tlb_resp.miss && (
       (s3_tlb_resp.excp.head.pf.st || s3_tlb_resp.excp.head.af.st) ||
       (s3_tlb_resp.excp.head.pf.ld || s3_tlb_resp.excp.head.af.ld) ||
-      io.tlb_req.pmp_resp.mmio
+      io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt)
   ))
-  XSPerfAccumulate("tlb_excp_mmio", s3_tlb_resp_valid && io.tlb_req.pmp_resp.mmio)
+  XSPerfAccumulate("tlb_excp_uncache", s3_tlb_resp_valid && (io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt)))
   XSPerfAccumulate("entry_alloc", PopCount(alloc))
   XSPerfAccumulate("entry_miss_first_replay", PopCount(miss_first_replay))
   XSPerfAccumulate("entry_miss_drop", PopCount(miss_drop))
