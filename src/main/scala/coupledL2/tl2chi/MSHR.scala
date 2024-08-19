@@ -399,7 +399,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_release.fromL2pft.foreach(_ := false.B)
     mp_release.needHint.foreach(_ := false.B)
     mp_release.dirty := false.B//meta.dirty && meta.state =/= INVALID || probeDirty
-    mp_release.metaWen := false.B
+    mp_release.metaWen := (req_cmoClean || req_cmoFlush)  // when clean/flush, invalid line by mshr(when replace, invalid by directory)
     mp_release.meta := MetaEntry()
     mp_release.tagWen := false.B
     mp_release.dsWen := true.B // write refillData to DS
