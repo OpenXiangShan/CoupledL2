@@ -159,6 +159,7 @@ class TaskEntry(implicit p: Parameters) extends LLCBundle {
 class PipeStatus(implicit p: Parameters) extends LLCBundle {
   val tags = Vec(5, UInt(tagBits.W))
   val sets = Vec(5, UInt(setBits.W))
+  val reqIDs = Vec(5, UInt(TXNID_WIDTH.W))
   val valids = Vec(5, Bool())
 
   def s2_tag = tags(0)
@@ -172,6 +173,12 @@ class PipeStatus(implicit p: Parameters) extends LLCBundle {
   def s4_set = sets(2)
   def s5_set = sets(3)
   def s6_set = sets(4)
+
+  def s2_reqID = reqIDs(0)
+  def s3_reqID = reqIDs(1)
+  def s4_reqID = reqIDs(2)
+  def s5_reqID = reqIDs(3)
+  def s6_reqID = reqIDs(4)
 
   def s2_valid = valids(0)
   def s3_valid = valids(1)
