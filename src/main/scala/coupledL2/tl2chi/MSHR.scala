@@ -834,6 +834,10 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     when (isToN(c_resp.bits.param)) {
       probeGotN := true.B
     }
+    when ((req_cmoClean || req_cmoFlush) && c_resp.bits.opcode === ProbeAckData) {
+      state.s_release := false.B
+      state.w_releaseack := false.B
+    }
   }
 
   val rxdatIsU = rxdat.bits.resp.get === UC
