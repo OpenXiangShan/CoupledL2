@@ -46,20 +46,14 @@ class Queue_SRAM[T <: Data](
                         val flow:           Boolean = false,
                         val useSyncReadMem: Boolean = false,
                         val hasFlush:       Boolean = false
-                      )(
-                        implicit compileOptions: chisel3.CompileOptions)
+                      )()
   extends Module() {
   require(entries > -1, "Queue must have non-negative number of entries")
   require(entries != 0, "Use companion object Queue.apply for zero entries")
-  val genType = if (compileOptions.declaredTypeMustBeUnbound) {
-    requireIsChiselType(gen)
-    gen
+  val genType = if (DataMirror.internal.isSynthesizable(gen)) {
+    chiselTypeOf(gen)
   } else {
-    if (DataMirror.internal.isSynthesizable(gen)) {
-      chiselTypeOf(gen)
-    } else {
-      gen
-    }
+    gen
   }
 
   val io = IO(new QueueIO(genType, entries, hasFlush))
