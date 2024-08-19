@@ -76,6 +76,12 @@ class RequestArb(implicit p: Parameters) extends LLCModule with HasClientInfo wi
   val sameAddr_s5 = pipeInfo.s5_valid && Cat(pipeInfo.s5_tag, pipeInfo.s5_set) === Cat(tag_s1, set_s1)
   val sameAddr_s6 = pipeInfo.s6_valid && Cat(pipeInfo.s6_tag, pipeInfo.s6_set) === Cat(tag_s1, set_s1)
 
+  val sameReqID_s2 = pipeInfo.s2_valid && pipeInfo.s2_reqID === reqID_s1
+  val sameReqID_s3 = pipeInfo.s3_valid && pipeInfo.s3_reqID === reqID_s1
+  val sameReqID_s4 = pipeInfo.s4_valid && pipeInfo.s4_reqID === reqID_s1
+  val sameReqID_s5 = pipeInfo.s5_valid && pipeInfo.s5_reqID === reqID_s1
+  val sameReqID_s6 = pipeInfo.s6_valid && pipeInfo.s6_reqID === reqID_s1
+
   // Since the stages within the MainPipe are non-blocking, when the sum of the requests being processed
   // in the buffer and the potential requests that might occupy the buffer in the MainPipe exceeds the 
   // total number of buffer entries, new requests need to be blocked from entering the MainPipe.
@@ -86,7 +92,8 @@ class RequestArb(implicit p: Parameters) extends LLCModule with HasClientInfo wi
   val potential_refill, potential_snoop = PopCount(Seq(pipeInfo.s2_valid, pipeInfo.s3_valid, pipeInfo.s4_valid))
   val potential_response, potential_memAccess = PopCount(pipeInfo.valids)
 
-  val blockByMainPipe = sameSet_s2 || sameSet_s3 || sameSet_s4 || sameAddr_s5 || sameAddr_s6
+  val blockByMainPipe = sameSet_s2 || sameSet_s3 || sameSet_s4 || sameAddr_s5 || sameAddr_s6 ||
+    sameReqID_s2 || sameReqID_s3 || sameReqID_s4 || sameReqID_s5 || sameReqID_s6
   val blockByRefill = !task_s1.bits.refillTask && (
     Cat(refillInfo.map(e => e.valid && Cat(e.bits.tag, e.bits.set) === Cat(tag_s1, set_s1))).orR ||
     Cat(refillInfo.map(e => e.valid && e.bits.reqID === reqID_s1)).orR ||
