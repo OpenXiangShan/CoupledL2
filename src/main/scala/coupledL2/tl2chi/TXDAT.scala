@@ -22,6 +22,7 @@ import chisel3.util._
 import utility._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.{TaskWithData, TaskBundle}
+import coupledL2.utils.Queue_SRAM
 
 class TXDATBlockBundle(implicit p: Parameters) extends TXBlockBundle {
   val blockSinkBReqEntrance = Bool()
@@ -44,8 +45,18 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module {
   require(beatBytes * 8 == DATA_WIDTH)
 
   // TODO: an mshrsAll-entry queue is too much, evaluate for a proper size later
-  val queue = Module(new Queue(io.in.bits.cloneType, entries = mshrsAll, flow = true))
-  queue.io.enq <> io.in
+  // Use customized SRAM: dual_port, max 256bits:
+  val queue = Module(new Queue_SRAM(new TaskBundle(), entries = mshrsAll, flow = true, useSyncReadMem = true))
+  val queueData0 = Module(new Queue_SRAM(new DSBeat(), entries = mshrsAll, flow = true, useSyncReadMem = true))
+  val queueData1 = Module(new Queue_SRAM(new DSBeat(), entries = mshrsAll, flow = true, useSyncReadMem = true))
+  queue.io.enq.valid := io.in.valid
+  queue.io.enq.bits := io.in.bits.task
+  io.in.ready := queue.io.enq.ready
+  val enqData = io.in.bits.data.asTypeOf(Vec(beatSize, new DSBeat))
+  queueData0.io.enq.valid := io.in.valid
+  queueData0.io.enq.bits := enqData(0)
+  queueData1.io.enq.valid := io.in.valid
+  queueData1.io.enq.bits := enqData(1)
 
   // Back pressure logic from TXDAT
   val queueCnt = queue.io.count
@@ -71,9 +82,12 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module {
 
   val dequeueReady = !taskValid // TODO: this may introduce bubble?
   queue.io.deq.ready := dequeueReady
+  queueData0.io.deq.ready := dequeueReady
+  queueData1.io.deq.ready := dequeueReady
   when (queue.io.deq.fire) {
     beatValids.foreach(_ := true.B)
-    taskR := queue.io.deq.bits
+    taskR.task := queue.io.deq.bits
+    taskR.data := Cat(queueData1.io.deq.bits.data, queueData0.io.deq.bits.data).asTypeOf(new DSBlock)
   }
 
   val data = taskR.data.data
