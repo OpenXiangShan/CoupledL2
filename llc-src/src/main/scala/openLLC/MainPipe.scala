@@ -85,6 +85,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   pipeInfo.s2_valid := task_s2.valid
   pipeInfo.s2_tag := task_s2.bits.tag
   pipeInfo.s2_set := task_s2.bits.set
+  pipeInfo.s2_reqID := task_s2.bits.reqID
 
   /* Stage 3 */
   val task_s3 = RegInit(0.U.asTypeOf(Valid(new Task())))
@@ -231,6 +232,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   pipeInfo.s3_valid := task_s3.valid
   pipeInfo.s3_tag := task_s3.bits.tag
   pipeInfo.s3_set := task_s3.bits.set
+  pipeInfo.s3_reqID := task_s3.bits.reqID
 
   /* Stage 4 */
   val task_s4 = RegInit(0.U.asTypeOf(Valid(new Task())))
@@ -406,7 +408,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   mem_task_s4.homeNID := req_s4.tgtID
   mem_task_s4.chiOpcode := Mux(refill_task_s4 || cleanReq_s4, WriteNoSnpFull, ReadNoSnp)
   mem_task_s4.size := log2Ceil(64).U
-  mem_task_s4.allowRetry := false.B
+  mem_task_s4.allowRetry := true.B
   mem_task_s4.order := OrderEncodings.None // TODO: order requirement?
   mem_task_s4.memAttr := MemAttr()
   mem_task_s4.snpAttr := false.B
@@ -441,6 +443,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   pipeInfo.s4_valid := task_s4.valid
   pipeInfo.s4_tag := task_s4.bits.tag
   pipeInfo.s4_set := task_s4.bits.set
+  pipeInfo.s4_reqID := task_s4.bits.reqID
 
   /* Stage 5 */
   val task_s5 = RegInit(0.U.asTypeOf(Valid(new Task())))
@@ -452,6 +455,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   pipeInfo.s5_valid := task_s5.valid
   pipeInfo.s5_tag := task_s5.bits.tag
   pipeInfo.s5_set := task_s5.bits.set
+  pipeInfo.s5_reqID := task_s5.bits.reqID
 
   /* Stage 6 */
   val task_s6 = RegInit(0.U.asTypeOf(Valid(new Task())))
@@ -487,5 +491,5 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   pipeInfo.s6_valid := task_s6.valid
   pipeInfo.s6_tag := task_s6.bits.tag
   pipeInfo.s6_set := task_s6.bits.set
-
+  pipeInfo.s6_reqID := task_s6.bits.reqID
 }
