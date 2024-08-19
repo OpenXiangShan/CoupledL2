@@ -19,7 +19,7 @@ package coupledL2.tl2chi
 
 import chisel3._
 import chisel3.util._
-import utility.{FastArbiter, Pipeline, ParallelPriorityMux, RegNextN}
+import utility.{FastArbiter, Pipeline, ParallelPriorityMux, RegNextN, RRArbiterInit}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
@@ -154,7 +154,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         val rxrsp = Wire(DecoupledIO(new CHIRSP))
         val rxrspIsMMIO = rxrsp.bits.txnID.head(1).asBool
         val isPCrdGrant = rxrsp.valid && (rxrsp.bits.opcode === PCrdGrant)
-        val pArb = Module(new RRArbiter(UInt(), banks))
+        val pArb = Module(new RRArbiterInit(UInt(), banks))
         /*
         when PCrdGrant, give credit to one Slice that:
         1. got RetryAck and not Reissued
