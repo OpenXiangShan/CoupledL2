@@ -112,7 +112,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
 
   // val grantQueue = Module(new Queue(new GrantQueueTask(), entries = mshrsAll))
   // Use customized SRAM: dual_port, max 256bits:
-  val grantQueue = Module(new Queue_SRAM(new GrantQueueTask(), entries = mshrsAll, useSyncReadMem = true))
+  val grantQueue = Module(new Queue(new GrantQueueTask(), entries = mshrsAll))
   val grantQueueData0 = Module(new Queue_SRAM(new GrantQueueData(), entries = mshrsAll, useSyncReadMem = true))
   val grantQueueData1 = Module(new Queue_SRAM(new GrantQueueData(), entries = mshrsAll, useSyncReadMem = true))
 

@@ -138,7 +138,7 @@ class SourceC(implicit p: Parameters) extends L2Module {
 
   // We must keep SourceC FIFO, so a queue is used
   // Use customized SRAM: dual_port, max 256bits:
-  val queue = Module(new Queue_SRAM(new TaskBundle(), entries = mshrsAll, flow = true, useSyncReadMem = true))
+  val queue = Module(new Queue(new TaskBundle(), entries = mshrsAll, flow = true))
   val queueData0 = Module(new Queue_SRAM(new DSBeat(), entries = mshrsAll, flow = true, useSyncReadMem = true))
   val queueData1 = Module(new Queue_SRAM(new DSBeat(), entries = mshrsAll, flow = true, useSyncReadMem = true))
   queue.io.enq.valid := io.in.valid
