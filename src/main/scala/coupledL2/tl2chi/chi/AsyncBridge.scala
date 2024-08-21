@@ -146,6 +146,7 @@ class CHIAsyncBridgeSource(params: AsyncQueueParams = AsyncQueueParams())(implic
   io.async.tx.rsp.flitpend := io.enq.tx.rsp.flitpend
   
   withClockAndReset(clock, reset) {
+    val resetFinish = Wire(Bool())
     //
     // Below is a typical synchronizer with two registers
     //                                       │
@@ -157,7 +158,7 @@ class CHIAsyncBridgeSource(params: AsyncQueueParams = AsyncQueueParams())(implic
     //
     io.enq.rxsactive := SynchronizerShiftReg(io.async.rxsactive, numSyncReg, Some("sync_rxsactive"))
     io.enq.tx.linkactiveack := SynchronizerShiftReg(io.async.tx.linkactiveack, numSyncReg, Some("sync_tx_linkactiveack"))
-    io.enq.rx.linkactivereq := SynchronizerShiftReg(io.async.rx.linkactivereq, numSyncReg, Some("sync_rx_linkactivereq"))
+    io.enq.rx.linkactivereq := SynchronizerShiftReg(io.async.rx.linkactivereq, numSyncReg, Some("sync_rx_linkactivereq")) && resetFinish
     io.enq.syscoack := SynchronizerShiftReg(io.async.syscoack, numSyncReg, Some("sync_syscoack"))
 
     io.enq.rx.rsp.flitpend := SynchronizerShiftReg(io.async.rx.rsp.flitpend, numSyncReg, Some("sync_rx_rsp_flitpend"))
@@ -169,7 +170,8 @@ class CHIAsyncBridgeSource(params: AsyncQueueParams = AsyncQueueParams())(implic
     when (resetFinishCounter < RESET_FINISH_MAX.U) {
       resetFinishCounter := resetFinishCounter + 1.U
     }
-    io.resetFinish := resetFinishCounter >= RESET_FINISH_MAX.U
+    resetFinish := resetFinishCounter >= RESET_FINISH_MAX.U
+    io.resetFinish := resetFinish
   }
 
   dontTouch(io)
@@ -210,6 +212,7 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
   io.async.rx.rsp.flitpend := io.deq.rx.rsp.flitpend
 
   withClockAndReset(clock, reset) {
+    val resetFinish = Wire(Bool())
     //
     // Below is a typical synchronizer with two registers
     //                                       │
@@ -221,7 +224,7 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
     //
     io.deq.txsactive := SynchronizerShiftReg(io.async.txsactive, numSyncReg, Some("sync_txsactive"))
     io.deq.rx.linkactiveack := SynchronizerShiftReg(io.async.rx.linkactiveack, numSyncReg, Some("sync_rx_linkactiveack"))
-    io.deq.tx.linkactivereq := SynchronizerShiftReg(io.async.tx.linkactivereq, numSyncReg, Some("sync_tx_linkactivereq"))
+    io.deq.tx.linkactivereq := SynchronizerShiftReg(io.async.tx.linkactivereq, numSyncReg, Some("sync_tx_linkactivereq")) && resetFinish
     io.deq.syscoreq := SynchronizerShiftReg(io.async.syscoreq, numSyncReg, Some("sync_syscoreq"))
 
     io.deq.tx.req.flitpend := SynchronizerShiftReg(io.async.tx.req.flitpend, numSyncReg, Some("sync_tx_req_flitpend"))
@@ -233,7 +236,8 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
     when (resetFinishCounter < RESET_FINISH_MAX.U) {
       resetFinishCounter := resetFinishCounter + 1.U
     }
-    io.resetFinish := resetFinishCounter >= RESET_FINISH_MAX.U
+    resetFinish := resetFinishCounter >= RESET_FINISH_MAX.U
+    io.resetFinish := resetFinish
   }
 
   dontTouch(io)
