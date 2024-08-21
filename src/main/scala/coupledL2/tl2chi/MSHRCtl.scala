@@ -129,7 +129,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
   val timeOutPri = VecInit(Seq.fill(16)(false.B))
   val timeOutSel = WireInit(false.B)
   val pCrdPri = VecInit(Seq.fill(16)(false.B))
-  val pArb = Module(new RRArbiter(UInt(), mshrsAll))
+  val pArb = Module(new RRArbiterInit(UInt(), mshrsAll))
 
   val matchPCrdGrant = VecInit(waitPCrdInfo.map(p =>
       isPCrdGrant && p.valid &&

@@ -50,6 +50,11 @@ trait HasPortSwitch { this: Bundle =>
   val rxsactive = Input(Bool())
 }
 
+trait HasSystemCoherencyInterface { this: Bundle =>
+  val syscoreq = Output(Bool())
+  val syscoack = Input(Bool())
+}
+
 class DownwardsLinkIO(implicit p: Parameters) extends Bundle with HasLinkSwitch {
   val req = ChannelIO(new CHIREQ)
   val rsp = ChannelIO(new CHIRSP)
@@ -84,7 +89,9 @@ class DecoupledUpwardsNoSnpLinkIO(implicit p: Parameters) extends Bundle {
   val dat = DecoupledIO(new CHIDAT)
 }
 
-class PortIO(implicit p: Parameters) extends Bundle with HasPortSwitch {
+class PortIO(implicit p: Parameters) extends Bundle
+  with HasPortSwitch
+  with HasSystemCoherencyInterface {
   val tx = new DownwardsLinkIO
   val rx = Flipped(new UpwardsLinkIO)
 }
@@ -294,6 +301,8 @@ class LinkMonitor(implicit p: Parameters) extends L2Module with HasCHIMsgParamet
   io.out.txsactive := true.B
   io.out.tx.linkactivereq := !reset.asBool
   io.out.rx.linkactiveack := RegNext(io.out.rx.linkactivereq) || !rxDeact
+
+  io.out.syscoreq := true.B
 
   dontTouch(io.out)
 
