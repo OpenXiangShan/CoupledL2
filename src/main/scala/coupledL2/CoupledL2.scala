@@ -77,7 +77,7 @@ trait HasCoupledL2Parameters {
   def hasTPPrefetcher = prefetchers.exists(_.isInstanceOf[TPParameters])
   def hasPrefetchBit = prefetchers.exists(_.hasPrefetchBit) // !! TODO.test this
   def hasPrefetchSrc = prefetchers.exists(_.hasPrefetchSrc)
-  def hasRVA23CMO = true
+  def hasRVA23CMO = false
   def topDownOpt = if(cacheParams.elaboratedTopDown) Some(true) else None
 
   def enableHintGuidedGrant = true
@@ -451,6 +451,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
             slice.io.cmoReq.valid := false.B
             slice.io.cmoReq.bits.opcode :=  0.U
             slice.io.cmoReq.bits.address := 0.U
+            slice.io.cmoResp.ready := false.B
         }
 
         slice

@@ -287,7 +287,6 @@ class SourceBReq(implicit p: Parameters) extends L2Bundle {
   val opcode = UInt(3.W)
   val param = UInt(bdWidth.W)
   val alias = aliasBitsOpt.map(_ => UInt(aliasBitsOpt.get.W))
-  val needData = UInt(1.W)
 }
 
 class BlockInfo(implicit p: Parameters) extends L2Bundle {

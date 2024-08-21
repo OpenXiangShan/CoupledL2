@@ -41,7 +41,7 @@ class RequestArb(implicit p: Parameters) extends L2Module
     val sinkB    = Flipped(DecoupledIO(new TaskBundle))
     val sinkC    = Flipped(DecoupledIO(new TaskBundle))
     val mshrTask = Flipped(DecoupledIO(new TaskBundle))
-    val cmoTask  = Flipped(DecoupledIO(new TaskBundle))
+    val cmoTask  = if (hasRVA23CMO) Some(Flipped(DecoupledIO(new TaskBundle))) else None
 
     /* read/write directory */
     val dirRead_s1 = DecoupledIO(new DirRead())  // To directory, read meta/tag
@@ -94,9 +94,11 @@ class RequestArb(implicit p: Parameters) extends L2Module
   val mshr_task_s1 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
 
   val cmo_task_s1 = Wire(Valid(new TaskBundle()))
-  cmo_task_s1.valid := io.dirRead_s1.ready && io.cmoTask.valid && resetFinish
-  cmo_task_s1.bits := io.cmoTask.bits
-  io.cmoTask.ready := io.dirRead_s1.ready && resetFinish && s2_ready
+  cmo_task_s1.valid := (if (io.cmoTask.isDefined) io.dirRead_s1.ready && io.cmoTask.get.valid && resetFinish else false.B)
+  cmo_task_s1.bits := (if (io.cmoTask.isDefined) io.cmoTask.get.bits else 0.U.asTypeOf(new TaskBundle))
+  if (io.cmoTask.isDefined) {
+    io.cmoTask.get.ready := io.dirRead_s1.ready && resetFinish && s2_ready
+  }
 
   val s1_needs_replRead = mshr_task_s1.valid && mshr_task_s1.bits.fromA && mshr_task_s1.bits.replTask && (
     mshr_task_s1.bits.opcode(2, 1) === Grant(2, 1) ||

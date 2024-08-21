@@ -365,7 +365,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       )
     )
     ob.alias.foreach(_ := meta.alias.getOrElse(0.U))
-    ob.needData := Mux(req_cmoInval, 1.U, 0.U)   // probe L1 toN and donot writeback dirty data
     ob
   }
 
