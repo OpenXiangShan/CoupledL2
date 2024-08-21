@@ -97,6 +97,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   reqArb.io.sinkC <> sinkC.io.task
   reqArb.io.mshrTask <> mshrCtl.io.mshrTask
   reqArb.io.cmoTask.foreach(_ := sinkCMO.io.task)
+  if (!hasRVA23CMO) { sinkCMO.io.task.ready := false.B }
   reqArb.io.fromMSHRCtl := mshrCtl.io.toReqArb
   reqArb.io.fromMainPipe := mainPipe.io.toReqArb
   reqArb.io.fromGrantBuffer := grantBuf.io.toReqArb
