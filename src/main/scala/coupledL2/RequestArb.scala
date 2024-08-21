@@ -101,7 +101,7 @@ class RequestArb(implicit p: Parameters) extends L2Module
   /* ======== Stage 0 ======== */
   // if mshr_task_s1 is replRead, it might stall and wait for dirRead.ready, so we block new mshrTask from entering
   // TODO: will cause msTask path vacant for one-cycle after replRead, since not use Flow so as to avoid ready propagation
-  io.mshrTask.ready := !io.fromGrantBuffer.blockMSHRReqEntrance && !s1_needs_replRead && !(mshr_task_s1.valid && !s2_ready)
+  io.mshrTask.ready := !io.fromGrantBuffer.blockMSHRReqEntrance && !s1_needs_replRead && !(mshr_task_s1.valid && !s2_ready) && 
     (if (io.fromSourceC.isDefined) !io.fromSourceC.get.blockMSHRReqEntrance else true.B) &&
     (if (io.fromTXDAT.isDefined) !io.fromTXDAT.get.blockMSHRReqEntrance else true.B) &&
     (if (io.fromTXRSP.isDefined) !io.fromTXRSP.get.blockMSHRReqEntrance else true.B) &&
