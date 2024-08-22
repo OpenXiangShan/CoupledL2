@@ -77,7 +77,7 @@ trait HasCoupledL2Parameters {
   def hasTPPrefetcher = prefetchers.exists(_.isInstanceOf[TPParameters])
   def hasPrefetchBit = prefetchers.exists(_.hasPrefetchBit) // !! TODO.test this
   def hasPrefetchSrc = prefetchers.exists(_.hasPrefetchSrc)
-  def hasRVA23CMO = false
+  def hasRVA23CMO = cacheParams.hasRVA23CMO
   def topDownOpt = if(cacheParams.elaboratedTopDown) Some(true) else None
 
   def enableHintGuidedGrant = true
