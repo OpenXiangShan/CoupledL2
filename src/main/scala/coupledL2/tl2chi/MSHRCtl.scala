@@ -91,6 +91,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
 
     /* to Slice Top for pCrd info.*/
     val waitPCrdInfo  = Output(Vec(mshrsAll, new PCrdInfo))
+    val matchPCrdInfo = Input(UInt(mshrsAll.W))
 })
 
   /*MSHR allocation pointer gen -> to Mainpipe*/
@@ -124,18 +125,18 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
    3. use Round-Robin arbiter if multi-entry match
    */
   val isPCrdGrant = io.resps.rxrsp.valid && (io.resps.rxrsp.respInfo.chiOpcode.get === PCrdGrant)
+  val isPCrdGrantReg = RegNext(isPCrdGrant)
   val waitPCrdInfo  = Wire(Vec(mshrsAll, new PCrdInfo))
   val timeOutPri = VecInit(Seq.fill(16)(false.B))
   val timeOutSel = WireInit(false.B)
   val pCrdPri = VecInit(Seq.fill(16)(false.B))
   val pArb = Module(new RRArbiterInit(UInt(), mshrsAll))
 
-  val matchPCrdGrant = VecInit(waitPCrdInfo.map(p =>
-      isPCrdGrant && p.valid &&
-      p.srcID.get === io.resps.rxrsp.respInfo.srcID.get &&
-      p.pCrdType.get === io.resps.rxrsp.respInfo.pCrdType.get
-  ))
-
+  val matchPCrdGrantPre = VecInit(pCrdPri.zip(io.matchPCrdInfo.asBools.map(_ & io.resps.rxrsp.valid)).map{
+    case(a,b) => !a & b
+  })
+  val  matchPCrdGrant = RegNext(matchPCrdGrantPre)
+   
   pArb.io.in.zipWithIndex.foreach {
     case (in, i) =>
       in.valid := matchPCrdGrant(i)
@@ -145,7 +146,6 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
 
   val pCrdOH = VecInit(UIntToOH(pArb.io.chosen).asBools)
   val pCrdFixPri = VecInit(pCrdOH zip matchPCrdGrant map {case(a,b) => a && b})
-//val pCrdFixPri = VecInit(PriorityEncoderOH(matchPCrdGrantReg)) //fix priority arbiter
 
   // timeout protect
   val counter = RegInit(VecInit(Seq.fill(mshrsAll)(0.U((log2Ceil(mshrsAll)+1).W))))
@@ -225,7 +225,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
       m.io.resps.rxdat.valid := m.io.status.valid && io.resps.rxdat.valid && io.resps.rxdat.mshrId === i.U
       m.io.resps.rxdat.bits := io.resps.rxdat.respInfo
 
-      m.io.resps.rxrsp.valid := (m.io.status.valid && io.resps.rxrsp.valid && !isPCrdGrant && io.resps.rxrsp.mshrId === i.U) || (isPCrdGrant && pCrdPri(i))
+      m.io.resps.rxrsp.valid := m.io.status.valid && io.resps.rxrsp.valid && !isPCrdGrant && (io.resps.rxrsp.mshrId === i.U)
       m.io.resps.rxrsp.bits := io.resps.rxrsp.respInfo
 
       m.io.replResp.valid := io.replResp.valid && io.replResp.bits.mshrId === i.U
@@ -236,10 +236,10 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
       m.io.aMergeTask.valid := io.aMergeTask.valid && io.aMergeTask.bits.id === i.U
       m.io.aMergeTask.bits := io.aMergeTask.bits.task
 
-      waitPCrdInfo(i) := m.io.waitPCrdInfo 
-      m.io.pCamPri := 0.U /*(pCamPri === i.U) && waitPCrdInfo(i).valid*/
+      waitPCrdInfo(i) := m.io.waitPCrdInfo
+      m.io.pCrdPri := isPCrdGrantReg && pCrdPri(i)
   }
-  /* Reserve 1 entry for SinkB */
+  /* mshrc -> L2Top to wait pCrd */
   io.waitPCrdInfo <> waitPCrdInfo
 
   /* Reserve 1 entry for SinkB */

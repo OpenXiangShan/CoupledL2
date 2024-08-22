@@ -386,3 +386,29 @@ class L2ToL1TlbIO(nRespDups: Int = 1)(implicit p: Parameters) extends L2Bundle{
   val resp = Flipped(DecoupledIO(new L2TlbResp(nRespDups)))
   val pmp_resp = Flipped(new PMPRespBundle())
 }
+
+class PCrdGrantMatcherIO(val numPorts: Int) extends Bundle {
+  val io_waitPCrdInfo = Input(Vec(numPorts, new Bundle {
+    val valid = Bool()
+    val srcID = UInt(7.W)
+    val pCrdType = UInt(4.W)
+  }))
+  val rxrsp = Input(new Bundle {
+    val bits = new Bundle {
+      val srcID = UInt(7.W)
+      val pCrdType = UInt(4.W)
+    }
+  })
+  val isPCrdGrant = Input(Bool())
+  val matchPCrdGrant = Output(UInt(numPorts.W))
+}
+
+class PCrdGrantMatcher(val numPorts: Int) extends Module {
+  val io = IO(new PCrdGrantMatcherIO(numPorts))
+
+  io.matchPCrdGrant := VecInit(io.io_waitPCrdInfo.map { p =>
+    p.valid && io.isPCrdGrant &&
+    p.srcID === io.rxrsp.bits.srcID &&
+    p.pCrdType === io.rxrsp.bits.pCrdType
+  }).asUInt
+}
