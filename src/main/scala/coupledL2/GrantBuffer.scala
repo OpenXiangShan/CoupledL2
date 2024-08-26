@@ -24,6 +24,7 @@ import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.prefetch.PrefetchResp
+import coupledL2.utils.Queue_SRAM
 
 // record info of those with Grant sent, yet GrantAck not received
 // used to block Probe upwards
@@ -37,10 +38,17 @@ class TaskWithData(implicit p: Parameters) extends L2Bundle {
   val data = new DSBlock()
 }
 
-class GrantQueueTask(implicit p: Parameters) extends L2Bundle {
+/*class GrantQueueTask(implicit p: Parameters) extends L2Bundle {
   val task = new TaskBundle()
   val data = new DSBlock()
   val grantid = UInt(mshrBits.W)
+}*/
+class GrantQueueTask(implicit p: Parameters) extends L2Bundle {
+  val task = new TaskBundle()
+  val grantid = UInt(mshrBits.W)
+}
+class GrantQueueData(implicit p: Parameters) extends L2Bundle {
+  val data = new DSBeat()
 }
 
 // 1. Communicate with L1
@@ -102,7 +110,12 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
 //    (next_beat, next_beatsOH)
 //  }
 
+  // val grantQueue = Module(new Queue(new GrantQueueTask(), entries = mshrsAll))
+  // Use customized SRAM: dual_port, max 256bits:
   val grantQueue = Module(new Queue(new GrantQueueTask(), entries = mshrsAll))
+  val grantQueueData0 = Module(new Queue_SRAM(new GrantQueueData(), entries = mshrsAll, useSyncReadMem = true))
+  val grantQueueData1 = Module(new Queue_SRAM(new GrantQueueData(), entries = mshrsAll, useSyncReadMem = true))
+
   val inflightGrant = RegInit(VecInit(Seq.fill(grantBufInflightSize){
     0.U.asTypeOf(Valid(new InflightGrantEntry))
   }))
@@ -149,8 +162,12 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   grantQueue.io.enq.bits.task := Mux(io.d_task.bits.task.mergeA, mergeAtask, io.d_task.bits.task)
   grantQueue.io.enq.bits.task.isKeyword.foreach(_ := grantQueue_enq_isKeyword)
   //grantQueue.io.enq.bits.task.isKeyword.foreach(_ := io.d_task.bits.task.isKeyword.getOrElse(false.B))
-  grantQueue.io.enq.bits.data := io.d_task.bits.data
   grantQueue.io.enq.bits.grantid := inflight_insertIdx
+  val enqData = io.d_task.bits.data.asTypeOf(Vec(beatSize, new DSBeat))
+  grantQueueData0.io.enq.valid := grantQueue.io.enq.valid
+  grantQueueData0.io.enq.bits.data := enqData(0)
+  grantQueueData1.io.enq.valid := grantQueue.io.enq.valid
+  grantQueueData1.io.enq.bits.data := enqData(1)
   io.d_task.ready := true.B // GrantBuf should always be ready
 
   val grantQueueCnt = grantQueue.io.count
@@ -162,8 +179,8 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   val deqValid = grantQueue.io.deq.valid
   val deqTask = grantQueue.io.deq.bits.task
  // val deqTask.isKeyword.foreach(_ := grantQueue.io.deq.bits.task.isKeyword)
-  val deqData = grantQueue.io.deq.bits.data.asTypeOf(Vec(beatSize, new DSBeat))
   val deqId   = grantQueue.io.deq.bits.grantid
+  val deqData = VecInit(Seq(grantQueueData0.io.deq.bits.data, grantQueueData1.io.deq.bits.data))
 
   // grantBuf: to keep the remaining unsent beat of GrantData
   val grantBufValid = RegInit(false.B)
@@ -174,6 +191,8 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   }))
 
   grantQueue.io.deq.ready := io.d.ready && !grantBufValid
+  grantQueueData0.io.deq.ready := grantQueue.io.deq.ready
+  grantQueueData1.io.deq.ready := grantQueue.io.deq.ready
 
   // if deqTask has data, send the first beat directly and save the remaining beat in grantBuf
   when(deqValid && io.d.ready && !grantBufValid && deqTask.opcode(0)) {
