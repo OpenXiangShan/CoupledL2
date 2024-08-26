@@ -153,7 +153,7 @@ class LCredit2Decoupled[T <: Bundle](
   val lcreditOut = (lcreditPool > queue.io.count) && enableLCredit
 
   val ready = lcreditInflight =/= 0.U
-  val accept = ready && io.in.flitv && RegNext(io.in.flitpend)
+  val accept = ready && io.in.flitv //&& RegNext(io.in.flitpend) -> TODO flitpend for LowPower
 
   when (lcreditOut) {
     when (!accept) {
