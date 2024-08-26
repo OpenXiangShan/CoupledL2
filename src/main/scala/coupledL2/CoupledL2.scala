@@ -77,6 +77,7 @@ trait HasCoupledL2Parameters {
   def hasTPPrefetcher = prefetchers.exists(_.isInstanceOf[TPParameters])
   def hasPrefetchBit = prefetchers.exists(_.hasPrefetchBit) // !! TODO.test this
   def hasPrefetchSrc = prefetchers.exists(_.hasPrefetchSrc)
+  def hasRVA23CMO = cacheParams.hasRVA23CMO
   def topDownOpt = if(cacheParams.elaboratedTopDown) Some(true) else None
 
   def enableHintGuidedGrant = true
@@ -223,6 +224,8 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     if(hasReceiver) Some(BundleBridgeSink(Some(() => new PrefetchRecv))) else None
   val tpmeta_source_node = if(hasTPPrefetcher) Some(BundleBridgeSource(() => DecoupledIO(new TPmetaReq))) else None
   val tpmeta_sink_node = if(hasTPPrefetcher) Some(BundleBridgeSink(Some(() => ValidIO(new TPmetaResp)))) else None
+  val cmo_sink_node = if(hasRVA23CMO) Some(BundleBridgeSink(Some(() => DecoupledIO(new RVA23CMOReq)))) else None
+  val cmo_source_node = if(hasRVA23CMO) Some(BundleBridgeSource(Some(() => DecoupledIO(new RVA23CMOResp)))) else None
   
   val managerPortParams = (m: TLSlavePortParameters) => TLSlavePortParameters.v1(
     m.managers.map { m =>
@@ -439,7 +442,25 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
             s.tlb_req.resp.ready := true.B
         }
 
+        cmo_sink_node match {
+          case Some(x) =>
+            slice.io.cmoReq.valid := x.in.head._1.valid && bank_eq(x.in.head._1.bits.address >> offsetBits, i, bankBits)
+            slice.io.cmoReq.bits :=  x.in.head._1.bits
+            x.in.head._1.ready := slice.io.cmoReq.ready
+          case None =>
+            slice.io.cmoReq.valid := false.B
+            slice.io.cmoReq.bits.opcode :=  0.U
+            slice.io.cmoReq.bits.address := 0.U
+            slice.io.cmoResp.ready := false.B
+        }
+
         slice
+    }
+
+    cmo_source_node match {
+      case Some(x) =>
+        fastArb(slices.map(_.io.cmoResp), x.out.head._1, Some("cmo_resp"))
+      case None =>
     }
 
     // Refill hint

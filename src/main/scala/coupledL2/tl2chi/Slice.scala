@@ -41,6 +41,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   val sinkA = Module(new SinkA)
   val sinkC = Module(new SinkC)
   val grantBuf = Module(new GrantBuffer)
+  val sinkCMO = Module(new SinkCMO)
 
   /* Downwards CHI-related modules */
   val txreq = Module(new TXREQ())
@@ -96,6 +97,8 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   reqArb.io.sinkB <> rxsnp.io.task
   reqArb.io.sinkC <> sinkC.io.task
   reqArb.io.mshrTask <> mshrCtl.io.mshrTask
+  reqArb.io.cmoTask.foreach(_ := sinkCMO.io.task)
+  if (!hasRVA23CMO) { sinkCMO.io.task.ready := false.B }
   reqArb.io.fromMSHRCtl := mshrCtl.io.toReqArb
   reqArb.io.fromMainPipe := mainPipe.io.toReqArb
   reqArb.io.fromGrantBuffer := grantBuf.io.toReqArb
@@ -197,6 +200,8 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   sinkC.io.c <> inBuf.c(io.in.c)
   io.in.d <> inBuf.d(grantBuf.io.d)
   grantBuf.io.e <> inBuf.e(io.in.e)
+  sinkCMO.io.cmoReq <> io.cmoReq
+  io.cmoResp <> mshrCtl.io.cmoResp
 
   /* Connect downwards channels */
   io.out.tx.req <> txreq.io.out

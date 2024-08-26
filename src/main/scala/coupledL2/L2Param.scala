@@ -104,6 +104,8 @@ case class L2Param(
   elaboratedTopDown: Boolean = true,
   // env
   FPGAPlatform: Boolean = false,
+  // CMO
+  hasRVA23CMO: Boolean = false,
 
   // Network layer SAM
   sam: Seq[(AddressSet, Int)] = Seq(AddressSet.everything -> 0)
