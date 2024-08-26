@@ -35,10 +35,11 @@ class ReplacerInfo(implicit p: Parameters) extends L2Bundle {
 }
 
 trait HasTLChannelBits { this: Bundle =>
-  val channel = UInt(3.W)
+  val channel = UInt(4.W)
   def fromA = channel(0).asBool
   def fromB = channel(1).asBool
   def fromC = channel(2).asBool
+  def fromTP = channel(3).asBool
 }
 
 class MergeTaskBundle(implicit p: Parameters) extends L2Bundle {
@@ -110,6 +111,11 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val mergeA = Bool()
   val aMergeTask = new MergeTaskBundle()
 
+  // for TP meta (read & write req)
+  val tpmeta = Bool()
+  val tpmetaWen = Bool()
+  val tpmetaWenRepl = Bool()
+
   // Used for get data from ReleaseBuf when snoop hit with same PA 
   val snpHitRelease = Bool()
   val snpHitReleaseWithData = Bool()
@@ -152,18 +158,20 @@ class PipeStatus(implicit p: Parameters) extends L2Bundle
   with HasTLChannelBits
 
 class PipeEntranceStatus(implicit p: Parameters) extends L2Bundle {
-  val tags = Vec(4, UInt(tagBits.W))
-  val sets = Vec(4, UInt(setBits.W))
+  val tags = Vec(5, UInt(tagBits.W))
+  val sets = Vec(5, UInt(setBits.W))
 
   def c_tag = tags(0)
   def b_tag = tags(1)
   def a_tag = tags(2)
   def g_tag = tags(3) // replRead-Grant
+  def tp_tag = tags(4)
 
   def c_set = sets(0)
   def b_set = sets(1)
   def a_set = sets(2)
   def g_set = sets(3)
+  def tp_set = sets(4)
 }
 
 // MSHR Task that MainPipe sends to MSHRCtl
@@ -290,6 +298,7 @@ class BlockInfo(implicit p: Parameters) extends L2Bundle {
   val blockA_s1 = Bool()
   val blockB_s1 = Bool()
   val blockC_s1 = Bool()
+  val blockTP_s1 = Bool()
 }
 
 // used for nested C Release
@@ -371,4 +380,39 @@ class L2ToL1TlbIO(nRespDups: Int = 1)(implicit p: Parameters) extends L2Bundle{
   val req_kill = Output(Bool())
   val resp = Flipped(DecoupledIO(new L2TlbResp(nRespDups)))
   val pmp_resp = Flipped(new PMPRespBundle())
+}
+
+class TPmetaL2ReqBundle(implicit p: Parameters) extends L2Bundle {
+  val set = UInt(setBits.W)
+  val tag = UInt(tagBits.W)
+  val off = UInt(offsetBits.W)
+}
+
+class TPmetaData extends Bundle {
+  val hartid = UInt(4.W)
+  val rawData = UInt(512.W)
+}
+
+class TPmetaReq(implicit p: Parameters) extends L2Bundle {
+  val hartid = UInt(4.W) // max 16 harts
+  val l2ReqBundle = new TPmetaL2ReqBundle()
+  val wmode = Bool()
+  val rawData = Vec(16, UInt((36-6).W))
+}
+
+class TPmetaResp extends Bundle {
+  val hartid = UInt(4.W)
+  val rawData = Vec(16, UInt((36-6).W))
+}
+
+class TPmetaL2Req(implicit p: Parameters) extends L2Bundle {
+  val l2ReqBundle = new TPmetaL2ReqBundle()
+  val wmode = Bool()
+  // [511, 508] = hartid; [479, 0] = rawData
+  val rawData = UInt(512.W)
+}
+
+class TPmetaL2Resp extends Bundle {
+  val exist = Bool()
+  val rawData = UInt(512.W)
 }

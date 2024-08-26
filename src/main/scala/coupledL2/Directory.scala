@@ -19,9 +19,10 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import freechips.rocketchip.util.SetAssocLRU
+import chisel3.util.random.LFSR
+import freechips.rocketchip.util.{Random, UIntToAugmentedUInt, SetAssocLRU}
 import coupledL2.utils._
-import utility.{ParallelPriorityMux, RegNextN, XSPerfAccumulate}
+import utility.{ParallelPriorityMux, RegNextN, XSPerfAccumulate, XSPerfHistogram, ChiselDB}
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.prefetch.PfSource
 import freechips.rocketchip.tilelink.TLMessages._
@@ -34,6 +35,7 @@ class MetaEntry(implicit p: Parameters) extends L2Bundle {
   val alias = aliasBitsOpt.map(width => UInt(width.W)) // alias bits of client
   val prefetch = if (hasPrefetchBit) Some(Bool()) else None // whether block is prefetched
   val prefetchSrc = if (hasPrefetchSrc) Some(UInt(PfSource.pfSourceBits.W)) else None // prefetch source
+  val tpMeta = if (hasTPPrefetcher) Some(Bool()) else None
   val accessed = Bool()
 
   def =/=(entry: MetaEntry): Bool = {
@@ -47,7 +49,7 @@ object MetaEntry {
     init
   }
   def apply(dirty: Bool, state: UInt, clients: UInt, alias: Option[UInt], prefetch: Bool = false.B,
-            pfsrc: UInt = PfSource.NoWhere.id.U, accessed: Bool = false.B
+            pfsrc: UInt = PfSource.NoWhere.id.U, tpMeta: Bool = false.B,accessed: Bool = false.B
   )(implicit p: Parameters) = {
     val entry = Wire(new MetaEntry)
     entry.dirty := dirty
@@ -56,6 +58,7 @@ object MetaEntry {
     entry.alias.foreach(_ := alias.getOrElse(0.U))
     entry.prefetch.foreach(_ := prefetch)
     entry.prefetchSrc.foreach(_ := pfsrc)
+    entry.tpMeta.foreach(_ := tpMeta)
     entry.accessed := accessed
     entry
   }
@@ -70,6 +73,8 @@ class DirRead(implicit p: Parameters) extends L2Bundle {
   // dirRead when refill
   val refill = Bool()
   val mshrId = UInt(mshrBits.W)
+  val tpmeta = Bool()
+  val tpmetaWen = Bool()
 }
 
 class DirResult(implicit p: Parameters) extends L2Bundle {
@@ -103,6 +108,14 @@ class TagWrite(implicit p: Parameters) extends L2Bundle {
   val wtag = UInt(tagBits.W)
 }
 
+class tpmetaBundle(implicit  p: Parameters) extends L2Bundle {
+  val metaW = Bool()
+  val hit = Bool()
+  val tag = UInt(tagBits.W)
+  val sset = UInt(setBits.W)
+  val way = UInt(wayBits.W)
+}
+
 class Directory(implicit p: Parameters) extends L2Module {
 
   val io = IO(new Bundle() {
@@ -120,6 +133,29 @@ class Directory(implicit p: Parameters) extends L2Module {
     val has_invalid_way = Cat(invalid_vec).orR
     val way = ParallelPriorityMux(invalid_vec.zipWithIndex.map(x => x._1 -> x._2.U(wayBits.W)))
     (has_invalid_way, way)
+  }
+
+  def tpmeta_way_sel(metaVec: Seq[MetaEntry]) = {
+    val tpmeta_vec = metaVec.map(entry =>
+      entry.state =/= MetaData.INVALID && entry.tpMeta.get)
+    val tpmeta_way_count = PopCount(tpmeta_vec)
+    val tpmeta_repl = tpmeta_way_count >= tpmetaL2Ways.asUInt
+    val replWay = WireInit(UInt(wayBits.W), 0.U)
+
+    when(tpmeta_repl) {
+      // use random replacement now
+      val lfsr = LFSR(16, true.B)
+      val random = Random(tpmetaL2Ways, lfsr)
+      (0 until cacheParams.ways).foldLeft(0.U(wayBits.W)) {
+        case (sum, way) =>
+          when(sum === random && tpmeta_vec(way)) {
+            replWay := way.asUInt
+          }
+          sum + tpmeta_vec(way)
+      }
+    }
+
+    (tpmeta_repl, replWay)
   }
 
   val sets = cacheParams.sets
@@ -179,7 +215,8 @@ class Directory(implicit p: Parameters) extends L2Module {
   val tagAll_s3 = RegEnable(tagRead, 0.U.asTypeOf(tagRead), reqValid_s2)
 
   val tagMatchVec = tagAll_s3.map(_ (tagBits - 1, 0) === req_s3.tag)
-  val metaValidVec = metaAll_s3.map(_.state =/= MetaData.INVALID)
+  val metaValidVec = metaAll_s3.map(m =>
+    m.state =/= MetaData.INVALID && m.tpMeta.getOrElse(false.B) === req_s3.tpmeta)
   val hitVec = tagMatchVec.zip(metaValidVec).map(x => x._1 && x._2)
 
   /* ====== refill retry ====== */
@@ -201,6 +238,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   val hitWay = OHToUInt(hitVec)
   val replaceWay = WireInit(UInt(wayBits.W), 0.U)
   val (inv, invalidWay) = invalid_way_sel(metaAll_s3, replaceWay)
+  val (tpmetaReplValid, tpmetaReplWay) = tpmeta_way_sel(metaAll_s3)
   val chosenWay = Mux(inv, invalidWay, replaceWay)
   // if chosenWay not in wayMask, then choose a way in wayMask
   // for retry bug fixing: if the chosenway cause retry last time, choose another way
@@ -217,8 +255,14 @@ class Directory(implicit p: Parameters) extends L2Module {
     PriorityEncoder(freeWayMask_s3)
   )
 
+  val tpReplaceWay = Mux(
+    tpmetaReplValid && req_s3.tpmetaWen,
+    tpmetaReplWay,
+    finalWay
+  )
+
   val hit_s3 = Cat(hitVec).orR
-  val way_s3 = Mux(hit_s3, hitWay, finalWay)
+  val way_s3 = Mux(hit_s3, hitWay, tpReplaceWay)
   val meta_s3 = metaAll_s3(way_s3)
   val tag_s3 = tagAll_s3(way_s3)
   val set_s3 = req_s3.set
@@ -255,10 +299,10 @@ class Directory(implicit p: Parameters) extends L2Module {
   replaceWay := repl.get_replace_way(repl_state_s3)
 
   io.replResp.valid := refillReqValid_s3
-  io.replResp.bits.tag := tagAll_s3(finalWay)
+  io.replResp.bits.tag := tagAll_s3(tpReplaceWay)
   io.replResp.bits.set := req_s3.set
-  io.replResp.bits.way := finalWay
-  io.replResp.bits.meta := metaAll_s3(finalWay)
+  io.replResp.bits.way := tpReplaceWay
+  io.replResp.bits.meta := metaAll_s3(tpReplaceWay)
   io.replResp.bits.mshrId := req_s3.mshrId
   io.replResp.bits.retry := refillRetry
 
@@ -274,8 +318,10 @@ class Directory(implicit p: Parameters) extends L2Module {
     (req_s3.replacerInfo.opcode === AcquirePerm || req_s3.replacerInfo.opcode === AcquireBlock)
   }
   val updateRefill = refillReqValid_s3 && !refillRetry
+  val updateTPmetaReplace = reqValid_s3 && req_s3.tpmeta && req_s3.tpmetaWen
   // update replacer when A/C hit or refill
-  replacerWen := updateHit || updateRefill
+  // also update replacer when TPmeta req(write) valid
+  replacerWen := updateHit || updateRefill || updateTPmetaReplace
 
   // hit-Promotion, miss-Insertion for RRIP
   // origin-bit marks whether the data_block is reused
@@ -365,4 +411,8 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   XSPerfAccumulate("dirRead_cnt", io.read.fire)
   XSPerfAccumulate("choose_busy_way", reqValid_s3 && !req_s3.wayMask(chosenWay))
+  XSPerfAccumulate("tpmetaRepl", tpmetaReplValid && req_s3.tpmetaWen)
+  XSPerfAccumulate("tpmeta_repl_tpmeta", io.replResp.valid && io.replResp.bits.meta.tpMeta.getOrElse(false.B) && req_s3.tpmetaWen)
+  XSPerfAccumulate("normal_repl_tpmeta", io.replResp.valid && io.replResp.bits.meta.tpMeta.getOrElse(false.B) && !req_s3.tpmetaWen)
+  XSPerfHistogram("tpmetaReplWayDist", tpReplaceWay, tpmetaReplValid && req_s3.tpmetaWen, 0, cacheParams.ways, 1)
 }

@@ -136,6 +136,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   io.toReqArb.blockB_s1 := mshrFull   // conflict logic in SinkB
   io.toReqArb.blockA_s1 := a_mshrFull // conflict logic in ReqBuf
   io.toReqArb.blockG_s1 := false.B
+  io.toReqArb.blockTP_s1 := false.B
 
   /* Acquire downwards */
   val acquireUnit = Module(new AcquireUnit())

@@ -230,7 +230,7 @@ class PrefetchQueue(implicit p: Parameters) extends PrefetchModule {
 class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val io = IO(new PrefetchIO)
   val tpio = IO(new Bundle() {
-    val tpmeta_port = if (hasTPPrefetcher) Some(new tpmetaPortIO()) else None
+    val tpmeta_port = if (hasTPPrefetcher) Some(new tpmetaL2PortIO()) else None
   })
   val hartId = IO(Input(UInt(hartIdLen.W)))
 

@@ -141,6 +141,9 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   mergeAtask.reqSource := io.d_task.bits.task.reqSource
   mergeAtask.mergeA := false.B
   mergeAtask.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+  mergeAtask.tpmeta := false.B
+  mergeAtask.tpmetaWen := false.B
+  mergeAtask.tpmetaWenRepl := false.B
   val inflight_insertIdx = PriorityEncoder(inflightGrant.map(!_.valid))
   val grantQueue_enq_isKeyword = Mux(io.d_task.bits.task.mergeA, mergeAtask.isKeyword.getOrElse(false.B), io.d_task.bits.task.isKeyword.getOrElse(false.B))
   // The following is organized in the order of data flow
@@ -303,6 +306,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   // A-replace related rprobe is handled in SourceB
   io.toReqArb.blockSinkReqEntrance.blockC_s1 := noSpaceForSinkReq
   io.toReqArb.blockSinkReqEntrance.blockG_s1 := false.B // this is not used
+  io.toReqArb.blockSinkReqEntrance.blockTP_s1 := false.B
   io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq || noSpaceWaitSinkEForMSHRReq || noSpaceForMSHRPft.getOrElse(false.B)
 
   // =========== XSPerf ===========

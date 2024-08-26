@@ -157,10 +157,11 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
       sets = 128,
       clientCaches = Seq(L1Param(aliasBitsOpt = Some(2), vaddrBitsOpt = Some(16))),
       echoField = Seq(DirtyField()),
-      prefetch = Seq(BOPParameters(
-        rrTableEntries = 16,
-        rrTagBits = 6
-      ))
+//      prefetch = Seq(BOPParameters(
+//        rrTableEntries = 16,
+//        rrTagBits = 6
+//      ))
+      prefetch = Seq(TPParameters())
     )
     case BankBitsKey => 0
     case LogUtilsOptionsKey => LogUtilsOptions(

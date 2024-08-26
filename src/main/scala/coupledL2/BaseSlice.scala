@@ -32,6 +32,8 @@ abstract class BaseSliceIO[T_OUT <: BaseOuterBundle](implicit p: Parameters) ext
   val sliceId = Input(UInt(bankBits.W))
   val l1Hint = DecoupledIO(new L2ToL1Hint())
   val prefetch = prefetchOpt.map(_ => Flipped(new PrefetchIO))
+  val tpMetaReq = prefetchOpt.map(_ => Flipped(DecoupledIO(new TPmetaL2Req)))
+  val tpMetaResp = prefetchOpt.map(_ => DecoupledIO(new TPmetaL2Resp))
   // val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
   val dirResult = topDownOpt.map(_ => ValidIO(new DirResult))
   val latePF = topDownOpt.map(_ => Output(Bool()))

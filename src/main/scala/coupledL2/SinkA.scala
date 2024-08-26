@@ -38,7 +38,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
   def fromTLAtoTaskBundle(a: TLBundleA): TaskBundle = {
     val task = Wire(new TaskBundle)
     task := 0.U.asTypeOf(new TaskBundle)
-    task.channel := "b001".U
+    task.channel := "b0001".U
     task.txChannel := 0.U
     task.tag := parseAddress(a.address)._1
     task.set := parseAddress(a.address)._2
@@ -71,13 +71,16 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.isKeyword.foreach(_ := a.echo.lift(IsKeywordKey).getOrElse(false.B))
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+    task.tpmeta := false.B
+    task.tpmetaWen := false.B
+    task.tpmetaWenRepl := false.B
     task
   }
   def fromPrefetchReqtoTaskBundle(req: PrefetchReq): TaskBundle = {
     val task = Wire(new TaskBundle)
     val fullAddr = Cat(req.tag, req.set, 0.U(offsetBits.W))
     task := 0.U.asTypeOf(new TaskBundle)
-    task.channel := "b001".U
+    task.channel := "b0001".U
     task.tag := parseAddress(fullAddr)._1
     task.set := parseAddress(fullAddr)._2
     task.off := 0.U
@@ -108,6 +111,9 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.isKeyword.foreach(_ := false.B)
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+    task.tpmeta := false.B
+    task.tpmetaWen := false.B
+    task.tpmetaWenRepl := false.B
     task
   }
   if (prefetchOpt.nonEmpty) {

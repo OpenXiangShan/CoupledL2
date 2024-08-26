@@ -47,6 +47,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   val sinkA = Module(new SinkA)
   val sinkB = Module(new SinkB)
   val sinkC = Module(new SinkC)
+  val sinkTPmeta = Module(new SinkTPmeta)
   val sourceC = Module(new SourceC)
   val grantBuf = Module(new GrantBuffer)
   val refillBuf = Module(new MSHRBuffer(wPorts = 2))
@@ -67,6 +68,8 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   reqArb.io.sinkA <> a_reqBuf.io.out
   reqArb.io.ATag := a_reqBuf.io.ATag
   reqArb.io.ASet := a_reqBuf.io.ASet
+
+  reqArb.io.sinkTPmeta <> sinkTPmeta.io.task
 
   reqArb.io.sinkB <> sinkB.io.task
   reqArb.io.sinkC <> sinkC.io.task
@@ -108,6 +111,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   mainPipe.io.releaseBufResp_s3.bits := releaseBuf.io.resp.data
   mainPipe.io.fromReqArb.status_s1 := reqArb.io.status_s1
   mainPipe.io.taskInfo_s1 <> reqArb.io.taskInfo_s1
+  mainPipe.io.tpMetaReqData.get <> sinkTPmeta.io.tpMetaDataW.get
 
   // priority: nested-ReleaseData / probeAckData [NEW] > mainPipe DS rdata [OLD]
   // 0/1 might happen at the same cycle with 2
@@ -147,6 +151,21 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
       p.tlb_req.resp.bits := DontCare
       p.tlb_req.pmp_resp := DontCare
       p.recv_addr := 0.U.asTypeOf(p.recv_addr)
+  }
+
+  /* connect TPReq/Resp */
+  io.tpMetaReq.foreach {
+    r =>
+      sinkTPmeta.io.tpMetaReq.get.valid := r.valid
+      r.ready := sinkTPmeta.io.tpMetaReq.get.ready
+      sinkTPmeta.io.tpMetaReq.get.bits := r.bits
+  }
+
+  io.tpMetaResp.foreach {
+    r =>
+      r.valid := mainPipe.io.tpMetaResp.get.valid
+      r.bits := mainPipe.io.tpMetaResp.get.bits
+      mainPipe.io.tpMetaResp.get.ready := r.ready
   }
 
   /* input & output signals */

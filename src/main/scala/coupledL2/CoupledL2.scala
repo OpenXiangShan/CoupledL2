@@ -75,6 +75,7 @@ trait HasCoupledL2Parameters {
   def hasBOP = prefetchers.exists(_.isInstanceOf[BOPParameters])
   def hasReceiver = prefetchers.exists(_.isInstanceOf[PrefetchReceiverParams])
   def hasTPPrefetcher = prefetchers.exists(_.isInstanceOf[TPParameters])
+  def tpmetaL2Ways = 2
   def hasPrefetchBit = prefetchers.exists(_.hasPrefetchBit) // !! TODO.test this
   def hasPrefetchSrc = prefetchers.exists(_.hasPrefetchSrc)
   def topDownOpt = if(cacheParams.elaboratedTopDown) Some(true) else None
@@ -221,8 +222,8 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
 
   val pf_recv_node: Option[BundleBridgeSink[PrefetchRecv]] =
     if(hasReceiver) Some(BundleBridgeSink(Some(() => new PrefetchRecv))) else None
-  val tpmeta_source_node = if(hasTPPrefetcher) Some(BundleBridgeSource(() => DecoupledIO(new TPmetaReq))) else None
-  val tpmeta_sink_node = if(hasTPPrefetcher) Some(BundleBridgeSink(Some(() => ValidIO(new TPmetaResp)))) else None
+//  val tpmeta_source_node = if(hasTPPrefetcher) Some(BundleBridgeSource(() => DecoupledIO(new TPmetaReq))) else None
+//  val tpmeta_sink_node = if(hasTPPrefetcher) Some(BundleBridgeSink(Some(() => ValidIO(new TPmetaResp)))) else None
   
   val managerPortParams = (m: TLSlavePortParameters) => TLSlavePortParameters.v1(
     m.managers.map { m =>
@@ -324,6 +325,8 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     val prefetchTrains = prefetchOpt.map(_ => Wire(Vec(banks, DecoupledIO(new PrefetchTrain()(pftParams)))))
     val prefetchResps = prefetchOpt.map(_ => Wire(Vec(banks, DecoupledIO(new PrefetchResp()(pftParams)))))
     val prefetchReqsReady = WireInit(VecInit(Seq.fill(banks)(false.B)))
+    val tpmetaReqsReady = WireInit(VecInit(Seq.fill(banks)(false.B)))
+    val tpmetaResps = prefetchOpt.map(_ => Wire(Vec(banks, DecoupledIO(new TPmetaL2Resp()))))
     io.l2_tlb_req <> DontCare // TODO: l2_tlb_req should be Option
     prefetchOpt.foreach {
       _ =>
@@ -332,6 +335,8 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         prefetcher.get.hartId := io.hartId
         fastArb(prefetchResps.get, prefetcher.get.io.resp, Some("prefetch_resp"))
         prefetcher.get.io.tlb_req <> io.l2_tlb_req
+        prefetcher.get.tpio.tpmeta_port.get.req.ready := Cat(tpmetaReqsReady).orR
+        fastArb(tpmetaResps.get, prefetcher.get.tpio.tpmeta_port.get.resp, Some("tpmetal2_resp"))
     }
     pf_recv_node match {
       case Some(x) =>
@@ -346,6 +351,8 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
             p.io_l2_pf_en := false.B
         }
     }
+
+    /*
     tpmeta_source_node match {
       case Some(x) =>
         x.out.head._1 <> prefetcher.get.tpio.tpmeta_port.get.req
@@ -356,6 +363,8 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         prefetcher.get.tpio.tpmeta_port.get.resp <> x.in.head._1
       case None =>
     }
+
+     */
 
     // ** WARNING:TODO: this depends on where the latch is
     // ** if Hint latched in slice, while D-Channel latched in XSTile
@@ -437,6 +446,19 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
             s.tlb_req.req.bits := DontCare
             s.tlb_req.req_kill := DontCare
             s.tlb_req.resp.ready := true.B
+        }
+
+        slice.io.tpMetaReq.zip(prefetcher.get.tpio.tpmeta_port).foreach {
+          case (s, p) =>
+            s.valid := p.req.valid && bank_eq(p.req.bits.l2ReqBundle.set, i, bankBits)
+            s.bits := p.req.bits
+            tpmetaReqsReady(i) := s.ready && bank_eq(p.req.bits.l2ReqBundle.set, i, bankBits)
+        }
+
+        slice.io.tpMetaResp.zip(prefetcher.get.tpio.tpmeta_port).foreach {
+          case (s, p) =>
+            val metaResp = Pipeline(s)
+            tpmetaResps.get(i) <> metaResp
         }
 
         slice
