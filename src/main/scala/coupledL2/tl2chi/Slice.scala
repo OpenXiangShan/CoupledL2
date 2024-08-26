@@ -34,6 +34,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
     override val out: OuterBundle = new OuterBundle
   })
   val io_waitPCrdInfo = IO(Output(Vec(mshrsAll, new PCrdInfo)))
+  val io_matchPCrdInfo = IO(Input(UInt(mshrsAll.W)))
   val io_msStatus = topDownOpt.map(_ => IO(Vec(mshrsAll, ValidIO(new MSHRStatus))))
 
   /* Upwards TileLink-related modules */
@@ -179,7 +180,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
 
   /* to Slice Top for pCrd info.*/
   io_waitPCrdInfo <> mshrCtl.io.waitPCrdInfo
-
+  io_matchPCrdInfo <> mshrCtl.io.matchPCrdInfo
   /* IO Connection */
   io.l1Hint <> mainPipe.io.l1Hint
   topDownOpt.foreach (
