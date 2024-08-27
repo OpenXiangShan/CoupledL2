@@ -170,6 +170,13 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
       mainPipe.io.tpMetaResp.get.ready := r.ready
   }
 
+  io.tpHitFeedback.foreach {
+    r =>
+      r.valid := mainPipe.io.tpHitFeedback.get.valid
+      r.bits := mainPipe.io.tpHitFeedback.get.bits
+      mainPipe.io.tpHitFeedback.get.ready := r.ready
+  }
+
   /* input & output signals */
   val inBuf = cacheParams.innerBuf
   val outBuf = cacheParams.outerBuf

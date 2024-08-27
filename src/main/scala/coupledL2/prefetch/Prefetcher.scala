@@ -231,6 +231,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val io = IO(new PrefetchIO)
   val tpio = IO(new Bundle() {
     val tpmeta_port = if (hasTPPrefetcher) Some(new tpmetaL2PortIO()) else None
+    val tpHitFeedback = if(hasTPPrefetcher) Some(Flipped(DecoupledIO(new TPHitFeedback()))) else None
   })
   val hartId = IO(Input(UInt(hartIdLen.W)))
 
@@ -328,6 +329,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       (if(hasBOP) !vbop.get.io.req.valid && !pbop.get.io.req.valid else true.B)
 
     tp.get.io.tpmeta_port <> tpio.tpmeta_port.get
+    tp.get.io.tpHitFeedback <> tpio.tpHitFeedback.get
   }
 
   // =================== Connection of all Prefetchers =====================

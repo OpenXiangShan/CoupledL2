@@ -423,3 +423,9 @@ class TPmetaL2Resp extends Bundle {
   val exist = Bool()
   val rawData = UInt(512.W)
 }
+
+class TPHitFeedback(implicit p: Parameters) extends L2Bundle {
+  val hit = Bool()
+  val latepf = Bool()
+  val replMiss = Bool()
+}

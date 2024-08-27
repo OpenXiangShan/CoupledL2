@@ -341,6 +341,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     val prefetchReqsReady = WireInit(VecInit(Seq.fill(banks)(false.B)))
     val tpmetaReqsReady = WireInit(VecInit(Seq.fill(banks)(false.B)))
     val tpmetaResps = prefetchOpt.map(_ => Wire(Vec(banks, DecoupledIO(new TPmetaL2Resp()))))
+    val tpHitFeedbacks = prefetchOpt.map(_=> Wire(Vec(banks, DecoupledIO(new TPHitFeedback()))))
     io.l2_tlb_req <> DontCare // TODO: l2_tlb_req should be Option
     prefetchOpt.foreach {
       _ =>
@@ -351,6 +352,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         prefetcher.get.io.tlb_req <> io.l2_tlb_req
         prefetcher.get.tpio.tpmeta_port.get.req.ready := Cat(tpmetaReqsReady).orR
         fastArb(tpmetaResps.get, prefetcher.get.tpio.tpmeta_port.get.resp, Some("tpmetal2_resp"))
+        fastArb(tpHitFeedbacks.get, prefetcher.get.tpio.tpHitFeedback.get, Some("tp_hitfeedback"))
     }
     pf_recv_node match {
       case Some(x) =>
@@ -474,6 +476,12 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
             case (s, p) =>
               val metaResp = Pipeline(s)
               tpmetaResps.get(i) <> metaResp
+          }
+
+          slice.io.tpHitFeedback.zip(prefetcher.get.tpio.tpHitFeedback).foreach {
+            case (s, p) =>
+              val hitFeedback = Pipeline(s)
+              tpHitFeedbacks.get(i) <> hitFeedback
           }
         }
 

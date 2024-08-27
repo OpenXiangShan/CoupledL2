@@ -22,7 +22,7 @@ import chisel3.util._
 import utility._
 import org.chipsalliance.cde.config.Parameters
 import utility.{ChiselDB, Constantin, MemReqSource, SRAMTemplate, ParallelPriorityMux}
-import coupledL2.{HasCoupledL2Parameters, TPmetaL2Req, TPmetaL2Resp, TPmetaReq, TPmetaResp, L2Bundle, TPmetaL2ReqBundle /*, TPmetaL3Req, TPmetaL3Resp*/}
+import coupledL2.{HasCoupledL2Parameters, TPHitFeedback, TPmetaL2Req, TPmetaL2Resp, TPmetaReq, TPmetaResp, L2Bundle, TPmetaL2ReqBundle /*, TPmetaL3Req, TPmetaL3Resp*/}
 import coupledL2.utils.ReplacementPolicy
 //import huancun.{TPmetaReq, TPmetaResp}
 
@@ -36,6 +36,7 @@ case class TPParameters(
     tpDataQueueDepth: Int = 8,
     triggerQueueDepth: Int = 4,
     throttleCycles: Int = 4,  // unused yet
+    resetThrottle: Int = log2Ceil(200000),
     replacementPolicy: String = "tpbrrip",
     debug: Boolean = false
 ) extends PrefetchParameters {
@@ -62,8 +63,10 @@ trait HasTPParams extends HasCoupledL2Parameters {
   def tpDataQueueDepth = tpParams.tpDataQueueDepth
   def triggerQueueDepth = tpParams.triggerQueueDepth
   def metaDataLength = fullAddressBits - offsetBits
-//  val tpThrottleCycles = tpParams.throttleCycles
-//  require(tpThrottleCycles > 0, "tpThrottleCycles must be greater than 0")
+  def tpPfEntries = log2Ceil(tpParams.tpTableEntries * tpParams.inflightEntries) // actually less
+  def resetThrottle = tpParams.resetThrottle
+  //  val tpThrottleCycles = tpParams.throttleCycles
+  //  require(tpThrottleCycles > 0, "tpThrottleCycles must be greater than 0")
 }
 
 abstract class TPBundle(implicit val p: Parameters) extends Bundle with HasTPParams
@@ -141,6 +144,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     val resp = Flipped(DecoupledIO(new PrefetchResp))
     val tpmeta_port = new tpmetaL2PortIO()
     val hartid = Input(UInt(hartIdLen.W))
+    val tpHitFeedback = Flipped(DecoupledIO(new TPHitFeedback()))
   })
 
   def parseVaddr(x: UInt): (UInt, UInt) = {
@@ -195,9 +199,45 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     assert(!trainOnVaddr)
   }
 
+  /* hit feedback regulation  */
+  val tpFbCtrl = RegInit((1 << (tpPfEntries - 1)).asUInt(tpPfEntries.W))
+  val tpFbResetCount = RegInit(0.U((tpPfEntries).W))
+  val tpFbReset = (tpFbResetCount(tpPfEntries - 1) && tpFbResetCount(tpPfEntries - 2)) | !resetFinish
+  val tpReset = RegInit(0.U(resetThrottle.W))
+  val tpTrainCount = RegInit(0.U((resetThrottle - 4).W))
+  val tpFbHit = Mux(tpFbCtrl.andR, false.B, io.tpHitFeedback.bits.latepf | io.tpHitFeedback.bits.hit)
+  val tpFbMiss = Mux(tpFbCtrl.orR, io.tpHitFeedback.bits.replMiss, false.B)
+  val tpDisable = !(tpFbCtrl(tpPfEntries - 1) | tpFbCtrl(tpPfEntries - 2)) | (tpTrainCount(resetThrottle - 9))
+  when (io.tpHitFeedback.valid) {
+    tpFbCtrl := Mux(tpFbHit, tpFbCtrl + 1.U, Mux(tpFbMiss, tpFbCtrl - 1.U, tpFbCtrl))
+  }.elsewhen (tpFbReset || tpReset.andR) {
+    tpFbCtrl := (1 << (tpPfEntries - 1)).asUInt
+  }
+
+  when (tpReset.andR) {
+    tpReset := 0.U
+  }.elsewhen(clock.asBool) {
+    tpReset := tpReset + 1.U
+  }
+
+  when (io.train.valid && !tpDisable) {
+    tpTrainCount := Mux(tpTrainCount.andR, tpTrainCount, tpTrainCount + 1.U)
+  }.elsewhen(tpReset.andR) {
+    tpTrainCount := 0.U
+  }
+
+  when (tpDisable && io.train.fire) {
+    tpFbResetCount := tpFbResetCount + 1.U
+  }.elsewhen(tpFbReset || tpReset.andR) {
+    tpFbResetCount := 0.U
+  }
+
+  io.tpHitFeedback.ready := true.B
+
   /* Stage 0: query tpMetaTable */
 
-  val s0_valid = io.train.fire && Mux(trainOnVaddr.orR, io.train.bits.vaddr.getOrElse(0.U) =/= 0.U, true.B) &&
+  val s0_valid = io.train.fire && !tpDisable &&
+    Mux(trainOnVaddr.orR, io.train.bits.vaddr.getOrElse(0.U) =/= 0.U, true.B) &&
     Mux(trainOnL1PF.orR, true.B, io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U) || tpMetaRespQueue.io.deq.fire
   val trainVaddr = io.train.bits.vaddr.getOrElse(0.U)
   val trainPaddr = io.train.bits.addr
@@ -563,4 +603,9 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   XSPerfAccumulate("tp_meta_read_miss", io.tpmeta_port.resp.valid && !io.tpmeta_port.resp.bits.exist)
   XSPerfAccumulate("tp_meta_invalid", tpMetaRespValid_s2)
   XSPerfAccumulate("tp_meta_write", io.tpmeta_port.req.fire && io.tpmeta_port.req.bits.wmode)
+  XSPerfAccumulate("tp_close", tpDisable&& !tpFbResetCount.orR)
+  XSPerfAccumulate("tp_reset", tpFbReset)
+  XSPerfAccumulate("tp_hit", io.tpHitFeedback.valid && io.tpHitFeedback.bits.hit)
+  XSPerfAccumulate("tp_latepf", io.tpHitFeedback.valid && io.tpHitFeedback.bits.latepf)
+  XSPerfAccumulate("tp_miss", io.tpHitFeedback.valid && io.tpHitFeedback.bits.replMiss)
 }

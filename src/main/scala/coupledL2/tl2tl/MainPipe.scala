@@ -116,6 +116,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     val tpMetaReqData = prefetchOpt.map(_ => Flipped(DecoupledIO(new TPmetaData)))
     val tpMetaResp = prefetchOpt.map(_ => DecoupledIO(new TPmetaL2Resp))
 
+    val tpHitFeedback = prefetchOpt.map(_ => DecoupledIO(new TPHitFeedback()))
+
     val toMonitor = Output(new MainpipeMoni())
   })
 
@@ -491,6 +493,14 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       train.bits.prefetched := Mux(req_s3.mergeA, true.B, meta_s3.prefetch.getOrElse(false.B))
       train.bits.pfsource := meta_s3.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) // TODO
       train.bits.reqsource := req_s3.reqSource
+  }
+
+  io.tpHitFeedback.foreach {
+    fb =>
+      fb.valid := task_s3.valid
+      fb.bits.hit := (meta_s3.prefetchSrc.get === PfSource.TP.id.U) && dirResult_s3.hit
+      fb.bits.latepf := (task_s3.bits.reqSource === MemReqSource.Prefetch2L2TP.id.U) && dirResult_s3.hit
+      fb.bits.replMiss := !meta_s3.accessed && (meta_s3.prefetchSrc.get === PfSource.TP.id.U) && !dirResult_s3.hit
   }
 
   /* ======== Stage 4 ======== */
