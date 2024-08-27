@@ -335,10 +335,6 @@ class Directory(implicit p: Parameters) extends L2Module {
   // also update replacer when TPmeta req(write) valid
   replacerWen := updateHit || updateRefill || updateTPmetaReplace
 
-  // hit-Promotion, miss-Insertion for RRIP
-  // origin-bit marks whether the data_block is reused
-  val touch_way_s3 = Mux(refillReqValid_s3, replaceWay, way_s3)
-  val rrip_hit_s3 = Mux(refillReqValid_s3, false.B, hit_s3)
   val origin_bit_opt = if(random_repl) None else
     Some(Module(new SRAMTemplate(Bool(), sets, ways, singlePort = true, shouldReset = true)))
   val origin_bits_r = origin_bit_opt.get.io.r(io.read.fire, io.read.bits.set).resp.data
@@ -366,7 +362,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   val rrpvBits = 3
 
   if(cacheParams.replacement == "srrip"){
-    val next_state_s3 = repl.get_next_state(repl_state_s3, touch_way_s3, rrip_hit_s3, inv, rrip_req_type)
+    val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3, hit_s3, inv, rrip_req_type)
     val repl_init = Wire(Vec(ways, UInt(rrpvBits.W)))
     repl_init.foreach(_ := Cat(1.U(1.W), 0.U((rrpvBits-1).W)))
     replacer_sram_opt.get.io.w(
@@ -410,7 +406,7 @@ class Directory(implicit p: Parameters) extends L2Module {
       1.U
     )
   } else {
-    val basic_next_state_s3 = repl.get_next_state(repl_state_s3, touch_way_s3)
+    val basic_next_state_s3 = repl.get_next_state(repl_state_s3, way_s3)
     //    val next_state_s3 = (0 until cacheParams.ways).foldLeft(basic_next_state_s3) {
     //      case (new_state, way) =>
     //        when(tpmetaVec_s3(way)) {
