@@ -56,7 +56,9 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.useProbeData := false.B
     task.mshrRetry := false.B
     task.fromL2pft.foreach(_ := false.B)
-    task.needHint.foreach(_ := a.user.lift(PrefetchKey).getOrElse(false.B))
+//    need talk
+//    task.needHint.foreach(_ := a.user.lift(PrefetchKey).getOrElse(false.B))
+    task.needHint.foreach(_ := true.B)
     task.dirty := false.B
     task.way := 0.U(wayBits.W)
     task.meta := 0.U.asTypeOf(new MetaEntry)
