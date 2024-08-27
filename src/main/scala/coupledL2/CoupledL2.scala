@@ -456,7 +456,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
             s.tlb_req.resp.ready := true.B
         }
 
-        if (prefetchOpt.nonEmpty && hasTP) {
+        if (prefetchOpt.nonEmpty && hasTPPrefetcher) {
           slice.io.tpMetaReq.zip(prefetcher.get.tpio.tpmeta_port).foreach {
             case (s, p) =>
               s.valid := p.req.valid && bank_eq(p.req.bits.l2ReqBundle.bank, i, bankBits)

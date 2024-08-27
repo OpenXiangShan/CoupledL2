@@ -309,7 +309,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     Mux(mshr_req_s3, req_s3.way, dirResult_s3.way))
   io.toDS.req_s3.bits.set := Mux(mshr_req_s3, req_s3.set, dirResult_s3.set)
   io.toDS.req_s3.bits.wen := wen
-  if (prefetchOpt.nonEmpty && hasTP) {
+  if (prefetchOpt.nonEmpty && hasTPPrefetcher) {
     io.toDS.wdata_s3.data := Mux(
       !mshr_req_s3,
       Mux(
@@ -577,7 +577,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   d_s5.bits.task := task_s5.bits
   d_s5.bits.data.data := out_data_s5
 
-  if (prefetchOpt.nonEmpty && hasTP) {
+  if (prefetchOpt.nonEmpty && hasTPPrefetcher) {
     io.tpMetaResp.get.valid := task_s5.valid && task_s5.bits.channel(3) && !task_s5.bits.tpmetaWen
     io.tpMetaResp.get.bits.exist := hit_s5
     io.tpMetaResp.get.bits.rawData := rdata_s5

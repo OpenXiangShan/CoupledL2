@@ -75,7 +75,7 @@ class SinkTPmeta(implicit p: Parameters) extends L2Module {
   }
 
   val tpMetaDataDataQueue = Module(new Queue(new TPmetaData(), 4, pipe = false, flow = false))
-  if(prefetchOpt.nonEmpty && hasTP) {
+  if(prefetchOpt.nonEmpty && hasTPPrefetcher) {
     tpMetaDataDataQueue.io.enq.valid := io.tpMetaReq.get.fire
     tpMetaDataDataQueue.io.enq.bits.hartid := io.tpMetaReq.get.bits.rawData(511, 508)
     tpMetaDataDataQueue.io.enq.bits.rawData := io.tpMetaReq.get.bits.rawData

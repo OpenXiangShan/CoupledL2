@@ -111,7 +111,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   mainPipe.io.releaseBufResp_s3.bits := releaseBuf.io.resp.data
   mainPipe.io.fromReqArb.status_s1 := reqArb.io.status_s1
   mainPipe.io.taskInfo_s1 <> reqArb.io.taskInfo_s1
-  if (prefetchOpt.nonEmpty && hasTP) {
+  if (prefetchOpt.nonEmpty && hasTPPrefetcher) {
     mainPipe.io.tpMetaReqData.get <> sinkTPmeta.io.tpMetaDataW.get
   }
 
