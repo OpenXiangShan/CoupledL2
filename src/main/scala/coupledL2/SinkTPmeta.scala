@@ -22,6 +22,7 @@ class SinkTPmeta(implicit p: Parameters) extends L2Module {
   def fromTPmetaReqtoTaskBundle(req: TPmetaL2Req): TaskBundle = {
     val task = Wire(new TaskBundle)
     task.channel := "b1000".U
+    task.txChannel := 0.U
     task.tag := req.l2ReqBundle.tag
     task.set := req.l2ReqBundle.set
     task.off := 0.U
@@ -55,6 +56,9 @@ class SinkTPmeta(implicit p: Parameters) extends L2Module {
     task.isKeyword.foreach(_ := false.B)
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+    task.snpHitRelease := false.B
+    task.snpHitReleaseWithData := false.B
+    task.snpHitReleaseIdx := 0.U
     task.tpmeta := true.B
     task.tpmetaWen := req.wmode
     task.tpmetaWenRepl := false.B
