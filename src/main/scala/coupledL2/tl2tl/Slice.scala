@@ -161,7 +161,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   grantBuf.io.e <> inBuf.e(io.in.e)
   io.cmoReq.ready := false.B
   io.cmoResp.valid := false.B
-  io.cmoResp.bits := 0.U.asTypeOf(new RVA23CMOResp)
+  io.cmoResp.bits := 0.U.asTypeOf(new CMOResp)
 
   /* connect downward channels */
   io.out.a <> outBuf.a(mshrCtl.io.sourceA)

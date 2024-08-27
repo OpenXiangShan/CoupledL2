@@ -39,7 +39,7 @@ class MSHRTasks(implicit p: Parameters) extends TL2CHIL2Bundle {
   val source_b = DecoupledIO(new SourceBReq)
   val mainpipe = DecoupledIO(new TaskBundle) // To Mainpipe (SourceC or SourceD)
   // val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain)) // To prefetcher
-  val cmoResp = DecoupledIO(new RVA23CMOResp()) // To L1 CMO_channel
+  val cmoResp = DecoupledIO(new CMOResp()) // To L1 CMO_channel
 }
 
 class MSHRResps(implicit p: Parameters) extends TL2CHIL2Bundle {
