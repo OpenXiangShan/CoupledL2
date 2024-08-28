@@ -41,7 +41,7 @@ class RequestArb(implicit p: Parameters) extends L2Module
     val sinkB    = Flipped(DecoupledIO(new TaskBundle))
     val sinkC    = Flipped(DecoupledIO(new TaskBundle))
     val mshrTask = Flipped(DecoupledIO(new TaskBundle))
-    val cmoTask  = if (hasRVA23CMO) Some(Flipped(DecoupledIO(new TaskBundle))) else None
+    val cmoTask  = if (hasCMO) Some(Flipped(DecoupledIO(new TaskBundle))) else None
 
     /* read/write directory */
     val dirRead_s1 = DecoupledIO(new DirRead())  // To directory, read meta/tag

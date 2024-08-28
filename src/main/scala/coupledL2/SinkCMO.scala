@@ -28,7 +28,7 @@ import utility.MemReqSource
 // SinkCMO receives upwards CMO_Inst Req, and send it to RequestArb directly
 class SinkCMO(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
-    val cmoReq = Flipped(DecoupledIO(new RVA23CMOReq()))
+    val cmoReq = Flipped(DecoupledIO(new CMOReq()))
     val task = DecoupledIO(new TaskBundle)
   })
 

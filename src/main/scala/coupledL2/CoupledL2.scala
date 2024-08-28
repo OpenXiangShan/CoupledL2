@@ -77,7 +77,7 @@ trait HasCoupledL2Parameters {
   def hasTPPrefetcher = prefetchers.exists(_.isInstanceOf[TPParameters])
   def hasPrefetchBit = prefetchers.exists(_.hasPrefetchBit) // !! TODO.test this
   def hasPrefetchSrc = prefetchers.exists(_.hasPrefetchSrc)
-  def hasRVA23CMO = cacheParams.hasRVA23CMO
+  def hasCMO = cacheParams.hasCMO
   def topDownOpt = if(cacheParams.elaboratedTopDown) Some(true) else None
 
   def enableHintGuidedGrant = true
@@ -224,8 +224,8 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     if(hasReceiver) Some(BundleBridgeSink(Some(() => new PrefetchRecv))) else None
   val tpmeta_source_node = if(hasTPPrefetcher) Some(BundleBridgeSource(() => DecoupledIO(new TPmetaReq))) else None
   val tpmeta_sink_node = if(hasTPPrefetcher) Some(BundleBridgeSink(Some(() => ValidIO(new TPmetaResp)))) else None
-  val cmo_sink_node = if(hasRVA23CMO) Some(BundleBridgeSink(Some(() => DecoupledIO(new RVA23CMOReq)))) else None
-  val cmo_source_node = if(hasRVA23CMO) Some(BundleBridgeSource(Some(() => DecoupledIO(new RVA23CMOResp)))) else None
+  val cmo_sink_node = if(hasCMO) Some(BundleBridgeSink(Some(() => DecoupledIO(new CMOReq)))) else None
+  val cmo_source_node = if(hasCMO) Some(BundleBridgeSource(Some(() => DecoupledIO(new CMOResp)))) else None
   
   val managerPortParams = (m: TLSlavePortParameters) => TLSlavePortParameters.v1(
     m.managers.map { m =>

@@ -62,7 +62,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
     val toTXREQ = DecoupledIO(new CHIREQ())
     val toTXRSP = DecoupledIO(new CHIRSP()) // TODO: unify with main pipe, which should be TaskBundle
     val toSourceB = DecoupledIO(new TLBundleB(edgeIn.bundle))
-    val cmoResp = DecoupledIO(new RVA23CMOResp())
+    val cmoResp = DecoupledIO(new CMOResp())
 
     /* to block sourceB from sending same-addr probe until GrantAck received */
     val grantStatus = Input(Vec(grantBufInflightSize, new GrantStatus()))

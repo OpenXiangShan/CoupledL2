@@ -105,7 +105,7 @@ case class L2Param(
   // env
   FPGAPlatform: Boolean = false,
   // CMO
-  hasRVA23CMO: Boolean = false,
+  hasCMO: Boolean = false,
 
   // Network layer SAM
   sam: Seq[(AddressSet, Int)] = Seq(AddressSet.everything -> 0)
