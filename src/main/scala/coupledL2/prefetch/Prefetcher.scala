@@ -330,6 +330,13 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
 
     tp.get.io.tpmeta_port <> tpio.tpmeta_port.get
     tp.get.io.tpHitFeedback <> tpio.tpHitFeedback.get
+
+    if (!hasBOP) {
+      io.tlb_req.req.valid := false.B
+      io.tlb_req.req.bits := DontCare
+      io.tlb_req.resp.ready := false.B
+      io.tlb_req.req_kill := false.B
+    }
   }
 
   // =================== Connection of all Prefetchers =====================
