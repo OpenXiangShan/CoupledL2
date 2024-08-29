@@ -300,7 +300,7 @@ class LinkMonitor(implicit p: Parameters) extends L2Module with HasCHIMsgParamet
 
   io.out.txsactive := true.B
   io.out.tx.linkactivereq := !reset.asBool
-  io.out.rx.linkactiveack := RegNext(io.out.rx.linkactivereq) || !rxDeact
+  io.out.rx.linkactiveack := (RegNext(io.out.rx.linkactivereq) || !rxDeact) && !reset.asBool
 
   io.out.syscoreq := true.B
 
