@@ -47,8 +47,8 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module {
   // TODO: an mshrsAll-entry queue is too much, evaluate for a proper size later
   // Use customized SRAM: dual_port, max 256bits:
   val queue = Module(new Queue(new TaskBundle(), entries = mshrsAll, flow = true))
-  val queueData0 = Module(new Queue_SRAM(new DSBeat(), entries = mshrsAll, flow = true, useSyncReadMem = true))
-  val queueData1 = Module(new Queue_SRAM(new DSBeat(), entries = mshrsAll, flow = true, useSyncReadMem = true))
+  val queueData0 = Module(new Queue(new DSBeat(), entries = mshrsAll, flow = true))
+  val queueData1 = Module(new Queue(new DSBeat(), entries = mshrsAll, flow = true))
   queue.io.enq.valid := io.in.valid
   queue.io.enq.bits := io.in.bits.task
   io.in.ready := queue.io.enq.ready
