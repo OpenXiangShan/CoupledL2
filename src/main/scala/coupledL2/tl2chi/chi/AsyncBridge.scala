@@ -223,7 +223,7 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
     //                     output clock      │
     //
     io.deq.txsactive := SynchronizerShiftReg(io.async.txsactive, numSyncReg, Some("sync_txsactive"))
-    io.deq.rx.linkactiveack := SynchronizerShiftReg(io.async.rx.linkactiveack, numSyncReg, Some("sync_rx_linkactiveack"))
+    io.deq.rx.linkactiveack := SynchronizerShiftReg(io.async.rx.linkactiveack, numSyncReg, Some("sync_rx_linkactiveack")) && resetFinish
     io.deq.tx.linkactivereq := SynchronizerShiftReg(io.async.tx.linkactivereq, numSyncReg, Some("sync_tx_linkactivereq")) && resetFinish
     io.deq.syscoreq := SynchronizerShiftReg(io.async.syscoreq, numSyncReg, Some("sync_syscoreq"))
 
