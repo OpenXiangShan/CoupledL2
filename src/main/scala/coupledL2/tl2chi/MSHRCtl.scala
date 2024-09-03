@@ -93,7 +93,10 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
     /* to Slice Top for pCrd info.*/
     val waitPCrdInfo  = Output(Vec(mshrsAll, new PCrdInfo))
     val matchPCrdInfo = Input(UInt(mshrsAll.W))
-})
+
+    /* debug */
+    val debug_pcrdGrantFire = Output(Vec(mshrsAll, Bool()))
+  })
 
   /*MSHR allocation pointer gen -> to Mainpipe*/
   class MSHRSelector(implicit p: Parameters) extends L2Module {
@@ -284,6 +287,8 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
       case (in, s) => in := s.io.status
     }
   )
+
+  io.debug_pcrdGrantFire := pCrdPri
   /* Performance counters */
 /*  XSPerfAccumulate("capacity_conflict_to_sinkA", a_mshrFull)
   XSPerfAccumulate("capacity_conflict_to_sinkB", mshrFull)

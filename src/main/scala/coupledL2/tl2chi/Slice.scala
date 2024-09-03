@@ -36,6 +36,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   val io_waitPCrdInfo = IO(Output(Vec(mshrsAll, new PCrdInfo)))
   val io_matchPCrdInfo = IO(Input(UInt(mshrsAll.W)))
   val io_msStatus = topDownOpt.map(_ => IO(Vec(mshrsAll, ValidIO(new MSHRStatus))))
+  val debug_pcrdGrantFire = IO(Output(Vec(mshrsAll, Bool())))
 
   /* Upwards TileLink-related modules */
   val sinkA = Module(new SinkA)
@@ -211,4 +212,5 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   rxdat.io.out <> io.out.rx.dat
   rxrsp.io.out <> io.out.rx.rsp
 
+  debug_pcrdGrantFire := mshrCtl.io.debug_pcrdGrantFire
 }
