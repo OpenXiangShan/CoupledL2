@@ -241,6 +241,7 @@ class MMIOBridgeImp(outer: MMIOBridge) extends LazyModuleImp(outer)
   val (bus, edge) = outer.mmioNode.in.head
 
   val io = IO(new DecoupledNoSnpPortIO)
+  val debug_pcrdGrantFire = IO(Output(Bool()))
 
   val entries = Seq.fill(mmioBridgeSize) { Module(new MMIOBridgeEntry(edge)) }
   val readys = VecInit(entries.map(_.io.req.ready))
@@ -323,6 +324,8 @@ class MMIOBridgeImp(outer: MMIOBridge) extends LazyModuleImp(outer)
   io.rx.rsp.ready := Cat(entries.zipWithIndex.map { case (entry, i) =>
     entry.io.chi.rx.rsp.ready && io.rx.rsp.bits.txnID === i.U
   }).orR || isPCrdGrant
+
+  debug_pcrdGrantFire := io.rx.rsp.valid && isPCrdGrant
 
   dontTouch(io)
   dontTouch(bus)

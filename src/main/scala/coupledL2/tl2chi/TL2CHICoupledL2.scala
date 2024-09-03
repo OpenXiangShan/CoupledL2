@@ -208,6 +208,14 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
           Cat(slices.zipWithIndex.map { case (s, i) => s.io.out.rx.rsp.ready && rxrspSliceID === i.U }).orR
         )
 
+        val pcrdGrantFireVec = Cat(
+          RegNext(mmio.debug_pcrdGrantFire),
+          Cat(slices.map(_.debug_pcrdGrantFire.asUInt))
+        )
+        assert(!RegNext(isPCrdGrant) || PopCount(pcrdGrantFireVec) === 1.U,
+          "Only one mshr may receive PCrdGrant one a time")
+
+
         // RXDAT
         val rxdat = Wire(DecoupledIO(new CHIDAT))
         val rxdatIsMMIO = rxdat.bits.txnID.head(1).asBool
