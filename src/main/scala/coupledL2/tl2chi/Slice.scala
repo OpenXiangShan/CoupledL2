@@ -33,10 +33,10 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   val io = IO(new BaseSliceIO[OuterBundle] {
     override val out: OuterBundle = new OuterBundle
   })
-  val io_waitPCrdInfo = IO(Output(Vec(mshrsAll, new PCrdInfo)))
-  val io_matchPCrdInfo = IO(Input(UInt(mshrsAll.W)))
+  // val io_waitPCrdInfo = IO(Output(Vec(mshrsAll, new PCrdInfo)))
+  // val io_matchPCrdInfo = IO(Input(UInt(mshrsAll.W)))
+  val io_pCrd = IO(Vec(mshrsAll, new PCrdQueryBundle))
   val io_msStatus = topDownOpt.map(_ => IO(Vec(mshrsAll, ValidIO(new MSHRStatus))))
-  val debug_pcrdGrantFire = IO(Output(Vec(mshrsAll, Bool())))
 
   /* Upwards TileLink-related modules */
   val sinkA = Module(new SinkA)
@@ -179,9 +179,9 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
     p.recv_addr := 0.U.asTypeOf(p.recv_addr)
   }
 
-  /* to Slice Top for pCrd info.*/
-  io_waitPCrdInfo <> mshrCtl.io.waitPCrdInfo
-  io_matchPCrdInfo <> mshrCtl.io.matchPCrdInfo
+  // /* to Slice Top for pCrd info.*/
+  // io_waitPCrdInfo <> mshrCtl.io.waitPCrdInfo
+  // io_matchPCrdInfo <> mshrCtl.io.matchPCrdInfo
   /* IO Connection */
   io.l1Hint <> mainPipe.io.l1Hint
   topDownOpt.foreach (
@@ -212,5 +212,5 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   rxdat.io.out <> io.out.rx.dat
   rxrsp.io.out <> io.out.rx.rsp
 
-  debug_pcrdGrantFire := mshrCtl.io.debug_pcrdGrantFire
+  io_pCrd <> mshrCtl.io.pCrd
 }

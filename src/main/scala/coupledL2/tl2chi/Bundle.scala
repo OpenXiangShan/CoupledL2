@@ -72,3 +72,11 @@ class MSHRStatus(implicit p: Parameters) extends TL2CHIL2Bundle
   val is_prefetch = Bool()
 
 }
+
+class PCrdQueryBundle(implicit p: Parameters) extends TL2CHIL2Bundle with HasCHIOpcodes {
+  val query = Output(ValidIO(new Bundle() {
+    val pCrdType = UInt(PCRDTYPE_WIDTH.W)
+    val srcID = UInt(SRCID_WIDTH.W)
+  }))
+  val grant = Input(Bool())
+}
