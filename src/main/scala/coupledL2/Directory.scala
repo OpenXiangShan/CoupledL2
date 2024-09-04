@@ -129,7 +129,15 @@ class Directory(implicit p: Parameters) extends L2Module {
   val metaWen = io.metaWReq.valid
   val replacerWen = WireInit(false.B)
 
-  val tagArray  = Module(new SRAMTemplate(UInt(tagBits.W), sets, ways, singlePort = true))
+  // val tagArray  = Module(new SRAMTemplate(UInt(tagBits.W), sets, ways, singlePort = true))
+  val tagArray = Module(new SplittedSRAM(
+    gen = UInt(tagBits.W),
+    set = sets,
+    way = ways,
+    waySplit = 2,
+    singlePort = true,
+    readMCP2 = false
+  ))
   val metaArray = Module(new SRAMTemplate(new MetaEntry, sets, ways, singlePort = true))
   val tagRead = Wire(Vec(ways, UInt(tagBits.W)))
   val metaRead = Wire(Vec(ways, new MetaEntry()))
