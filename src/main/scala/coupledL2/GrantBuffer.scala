@@ -24,7 +24,6 @@ import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.prefetch.PrefetchResp
-import coupledL2.utils.Queue_SRAM
 
 // record info of those with Grant sent, yet GrantAck not received
 // used to block Probe upwards
@@ -113,8 +112,8 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   // val grantQueue = Module(new Queue(new GrantQueueTask(), entries = mshrsAll))
   // Use customized SRAM: dual_port, max 256bits:
   val grantQueue = Module(new Queue(new GrantQueueTask(), entries = mshrsAll))
-  val grantQueueData0 = Module(new Queue_SRAM(new GrantQueueData(), entries = mshrsAll, useSyncReadMem = true))
-  val grantQueueData1 = Module(new Queue_SRAM(new GrantQueueData(), entries = mshrsAll, useSyncReadMem = true))
+  val grantQueueData0 = Module(new Queue(new GrantQueueData(), entries = mshrsAll))
+  val grantQueueData1 = Module(new Queue(new GrantQueueData(), entries = mshrsAll))
 
   val inflightGrant = RegInit(VecInit(Seq.fill(grantBufInflightSize){
     0.U.asTypeOf(Valid(new InflightGrantEntry))
