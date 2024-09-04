@@ -212,21 +212,22 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
           pCrdMatch.map(x => VecInit(PriorityEncoderOH(x)))
         )
 
-        when (isPCrdGrant) {
-          pCrdValids.zipWithIndex.foreach { case (v, i) =>
-            val t = pCrdTypes(i)
-            val srcID = pCrdSrcIDs(i)
-            val insert = pCrdInsertOH(i)
-            val free = pCrdFreeOH(i)
+        pCrdValids.zipWithIndex.foreach { case (v, i) =>
+          val t = pCrdTypes(i)
+          val srcID = pCrdSrcIDs(i)
+          val insert = pCrdInsertOH(i)
+          val free = pCrdFreeOH(i)
+          when (isPCrdGrant) {
             when (insert) {
               v := true.B
               t := rxrsp.bits.pCrdType
               srcID := rxrsp.bits.srcID
             }
-            when (free) { v := false.B }
             assert(!(v && insert), "P-Credit overflow")
-            assert(!free || v, "invalid entry should not be free")
           }
+
+          when (free) { v := false.B }
+          assert(!free || v, "invalid entry should not be free")
         }
 
         for (i <- 0 until entries) {
