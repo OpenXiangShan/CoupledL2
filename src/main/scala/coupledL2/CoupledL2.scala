@@ -222,8 +222,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
 
   val pf_recv_node: Option[BundleBridgeSink[PrefetchRecv]] =
     if(hasReceiver) Some(BundleBridgeSink(Some(() => new PrefetchRecv))) else None
-  val tpmeta_source_node = if(hasTPPrefetcher) Some(BundleBridgeSource(() => DecoupledIO(new TPmetaReq))) else None
-  val tpmeta_sink_node = if(hasTPPrefetcher) Some(BundleBridgeSink(Some(() => ValidIO(new TPmetaResp)))) else None
+
   val cmo_sink_node = if(hasCMO) Some(BundleBridgeSink(Some(() => DecoupledIO(new CMOReq)))) else None
   val cmo_source_node = if(hasCMO) Some(BundleBridgeSource(Some(() => DecoupledIO(new CMOResp)))) else None
   
@@ -272,6 +271,9 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     clientFn = clientPortParams,
     managerFn = managerPortParams
   )
+
+  val tpmeta_source_node = if(hasTPPrefetcher) Some(BundleBridgeSource(() => DecoupledIO(new TPmetaReq(hartIdLen, node.in.head._2.bundle.addressBits, offsetBits)))) else None
+  val tpmeta_sink_node = if(hasTPPrefetcher) Some(BundleBridgeSink(Some(() => ValidIO(new TPmetaResp(hartIdLen, node.in.head._2.bundle.addressBits, offsetBits))))) else None
 
   abstract class BaseCoupledL2Imp(wrapper: LazyModule) extends LazyModuleImp(wrapper) {
     val banks = node.in.size

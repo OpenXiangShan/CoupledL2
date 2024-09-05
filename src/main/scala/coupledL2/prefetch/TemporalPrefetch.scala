@@ -40,7 +40,7 @@ case class TPParameters(
 ) extends PrefetchParameters {
   override val hasPrefetchBit: Boolean = true
   override val hasPrefetchSrc: Boolean = true
-  override val inflightEntries: Int = 16
+  override val inflightEntries: Int = 16 // changed in sv48
 }
 
 trait HasTPParams extends HasCoupledL2Parameters {
@@ -51,7 +51,7 @@ trait HasTPParams extends HasCoupledL2Parameters {
   def tpTableAssoc = tpParams.tpTableAssoc
   def tpTableNrSet = tpParams.tpTableEntries / tpTableAssoc
   def tpTableSetBits = log2Ceil(tpTableNrSet)
-  def tpEntryMaxLen = tpParams.inflightEntries
+  def tpEntryMaxLen = log2Floor(512 / (fullAddressBits - offsetBits))
   def tpTableReplacementPolicy = tpParams.replacementPolicy
   def debug = tpParams.debug
   def vaddrBits = tpParams.vaddrBits
@@ -99,9 +99,9 @@ class sendBundle(implicit p: Parameters) extends TPBundle {
   val vaddr = UInt(vaddrBits.W)
 }
 
-class tpmetaPortIO(implicit p: Parameters) extends Bundle {
-  val req = DecoupledIO(new TPmetaReq)
-  val resp = Flipped(ValidIO(new TPmetaResp))
+class tpmetaPortIO(hartIdLen: Int, fullAddressBits: Int, offsetBits: Int)(implicit p: Parameters) extends Bundle {
+  val req = DecoupledIO(new TPmetaReq(hartIdLen, fullAddressBits, offsetBits))
+  val resp = Flipped(ValidIO(new TPmetaResp(hartIdLen, fullAddressBits, offsetBits)))
 }
 
 /* VIVT, Physical Data */
@@ -110,7 +110,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     val train = Flipped(DecoupledIO(new PrefetchTrain))
     val req = DecoupledIO(new PrefetchReq)
     val resp = Flipped(DecoupledIO(new PrefetchResp))
-    val tpmeta_port = new tpmetaPortIO()
+    val tpmeta_port = new tpmetaPortIO(hartIdLen, fullAddressBits, offsetBits)
     val hartid = Input(UInt(hartIdLen.W))
   })
 
@@ -129,8 +129,8 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val tpMetaTable = Module(
     new SRAMTemplate(new tpMetaEntry(), set = tpTableNrSet, way = tpTableAssoc, shouldReset = false, singlePort = true)
   )
-  val dataReadQueue = Module(new Queue(new TPmetaReq(), dataReadQueueDepth, pipe = false, flow = false))
-  val dataWriteQueue = Module(new Queue(new TPmetaReq(), dataWriteQueueDepth, pipe = false, flow = false))
+  val dataReadQueue = Module(new Queue(new TPmetaReq(hartIdLen, fullAddressBits, offsetBits), dataReadQueueDepth, pipe = false, flow = false))
+  val dataWriteQueue = Module(new Queue(new TPmetaReq(hartIdLen, fullAddressBits, offsetBits), dataWriteQueueDepth, pipe = false, flow = false))
   val tpDataQueue = Module(new Queue(new tpDataEntry(), tpDataQueueDepth + 1, pipe = false, flow = false))
   val triggerQueue = Module(new Queue(new triggerBundle(), triggerQueueDepth, pipe = false, flow = false))
   val triggerQEmpty = !triggerQueue.io.deq.valid
