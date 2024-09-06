@@ -66,10 +66,6 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
     val resp = DecoupledIO(new TLBundleD(edge.bundle))
     val chi = new DecoupledNoSnpPortIO
     val id = Input(UInt())
-    // val pCrdQuery = Output(ValidIO(new Bundle() {
-    //   val pCrdType = UInt(PCRDTYPE_WIDTH.W)
-    // }))
-    // val pCrdGrant = Input(Bool())
     val pCrd = new PCrdQueryBundle
     val waitOnReadReceipt = Option.when(needRR)(Output(Bool()))
   })
@@ -263,30 +259,6 @@ class MMIOBridgeImp(outer: MMIOBridge) extends LazyModuleImp(outer)
   /**
     * Protocol Retry
     */
-  // val pCrdValids = RegInit(VecInit(Seq.fill(mmioBridgeSize)(false.B)))
-  // val pCrdTypes = Reg(Vec(mmioBridgeSize, UInt(PCRDTYPE_WIDTH.W)))
-  // val pCrdInsertOH = PriorityEncoderOH(pCrdValids.map(!_))
-  // val isPCrdGrant = io.rx.rsp.bits.opcode === PCrdGrant
-  // val pCrdMatch = Wire(Vec(mmioBridgeSize, Vec(mmioBridgeSize, Bool())))
-  // val pCrdMatchEntryVec = pCrdMatch.map(_.asUInt.orR)
-  // val pCrdMatchEntryOH = PriorityEncoderOH(pCrdMatchEntryVec)
-  // val pCrdFreeOH = ParallelPriorityMux(
-  //   pCrdMatchEntryVec,
-  //   pCrdMatch.map(x => VecInit(PriorityEncoderOH(x)))
-  // )
-
-  // when (io.rx.rsp.valid && isPCrdGrant) {
-  //   pCrdValids.zip(pCrdInsertOH).foreach { case (v, insert) => 
-  //     when (insert) { v := true.B }
-  //     assert(!(v && insert), "P-Credit overflow")
-  //   }
-  //   pCrdTypes.zip(pCrdInsertOH).foreach { case (t, insert) =>
-  //     when (insert) { t := io.rx.rsp.bits.pCrdType }
-  //   }
-  // }
-  // pCrdFreeOH.zip(pCrdValids).foreach { case (free, v) =>
-  //   when (free) { v := false.B }
-  // }
   val isPCrdGrant = io_pCrd.map(_.grant).reduce(_ || _)
   io_pCrd.zip(entries).foreach(x => x._1 <> x._2.io.pCrd)
 
@@ -301,12 +273,6 @@ class MMIOBridgeImp(outer: MMIOBridge) extends LazyModuleImp(outer)
     entry.io.chi.rx.rsp.bits := io.rx.rsp.bits
 
     entry.io.id := i.U
-
-    // pCrdMatch(i) := VecInit(pCrdValids.zip(pCrdTypes).map { case (v, t) => 
-    //   entry.io.pCrdQuery.valid && v &&
-    //   entry.io.pCrdQuery.bits.pCrdType === t
-    // })
-    // entry.io.pCrdGrant := pCrdMatchEntryOH(i)
   }
 
   val txreqArb = Module(new Arbiter(chiselTypeOf(io.tx.req.bits), mmioBridgeSize))

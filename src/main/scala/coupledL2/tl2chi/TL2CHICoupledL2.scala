@@ -155,42 +155,6 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         val rxrsp = Wire(DecoupledIO(new CHIRSP))
         val rxrspIsMMIO = rxrsp.bits.txnID.head(1).asBool
         val isPCrdGrant = rxrsp.valid && rxrsp.bits.opcode === PCrdGrant
-        // val pArb = Module(new RRArbiterInit(UInt(), banks))
-        // val pMatch = VecInit(Seq.fill(banks)(Module(new PCrdGrantMatcher(mshrsAll)).io))
-        // val pCrdSliceID = Wire(UInt(log2Ceil(banks).W))
-        // /*
-        // when PCrdGrant, give credit to one Slice that:
-        // 1. got RetryAck and not Reissued
-        // 2. match srcID and PCrdType
-        // 3. use Round-Robin arbiter if multi-Slice match
-        // */
-        // val matchPCrdGrant = Wire(Vec(banks, UInt(mshrsAll.W)))
-        // val validCounts = Wire(Vec(banks, UInt(log2Ceil(mshrsAll+1).W)))
-        // slices.zipWithIndex.foreach { case (s, i) =>
-        //   pMatch(i).io_waitPCrdInfo := s.io_waitPCrdInfo
-        //   pMatch(i).rxrsp.bits.srcID := rxrsp.bits.srcID
-        //   pMatch(i).rxrsp.bits.pCrdType := rxrsp.bits.pCrdType
-        //   pMatch(i).isPCrdGrant := isPCrdGrant
-
-        //   matchPCrdGrant(i) := pMatch(i).matchPCrdGrant
-        //   s.io_matchPCrdInfo := matchPCrdGrant(i)
-        //   validCounts(i) := PopCount(s.io_waitPCrdInfo.map(_.valid))
-        // }
-
-        // val pCrdIsWait = VecInit(matchPCrdGrant.map(_.asUInt.orR)).asUInt
-        // val pCrdSliceIDOH = UIntToOH(pCrdSliceID)
-        // val onlyValidraw = Cat(validCounts.map(count => count === 1.U)).asUInt
-        // val onlyValid = Reverse(onlyValidraw)
-        // val pCrdSliceHit = pCrdSliceIDOH & pCrdIsWait & onlyValid
-        // val pCrdCancel = RegNext(pCrdSliceHit) & onlyValid
-
-        // pArb.io.in.zipWithIndex.foreach {
-        //   case (in, i) =>
-        //     in.valid := pCrdIsWait(i) && !pCrdCancel(i)
-        //     in.bits := 0.U
-        // }
-        // pArb.io.out.ready := true.B
-        // pCrdSliceID := pArb.io.chosen
 
         // PCredit arbitration
         val (mmioQuerys, mmioGrants) = mmio.io_pCrd.map { case x => (x.query, x.grant) }.unzip

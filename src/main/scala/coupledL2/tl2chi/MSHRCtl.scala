@@ -27,14 +27,6 @@ import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.prefetch.PrefetchTrain
 import coupledL2._
 
-// PCrd info for MSHR Retry 
-// class PCrdInfo(implicit p: Parameters) extends TL2CHIL2Bundle
-// {
-//   val valid = Bool()
-//   val srcID = chiOpt.map(_ => UInt(SRCID_WIDTH.W))
-//   val pCrdType = chiOpt.map(_ => UInt(PCRDTYPE_WIDTH.W))
-// }
-
 class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val io = IO(new Bundle() {
     /* interact with req arb */
@@ -91,8 +83,6 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
     val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
 
     /* to Slice Top for pCrd info.*/
-    // val waitPCrdInfo  = Output(Vec(mshrsAll, new PCrdInfo))
-    // val matchPCrdInfo = Input(UInt(mshrsAll.W))
     val pCrd = Vec(mshrsAll, new PCrdQueryBundle)
   })
 
@@ -119,92 +109,6 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
 
   mshrSelector.io.idle := mshrs.map(m => !m.io.status.valid)
   io.toMainPipe.mshr_alloc_ptr := OHToUInt(selectedMSHROH)
-
-//   /*
-//    when PCrdGrant, give credit to one entry that:
-//    1. got RetryAck and not Reissued
-//    2. match srcID and PCrdType
-//    3. use Round-Robin arbiter if multi-entry match
-//    */
-//   val isPCrdGrant = io.resps.rxrsp.valid && (io.resps.rxrsp.respInfo.chiOpcode.get === PCrdGrant)
-//   val isPCrdGrantReg = RegNext(isPCrdGrant)
-//   val waitPCrdInfo  = Wire(Vec(mshrsAll, new PCrdInfo))
-//   val timeOutPri = VecInit(Seq.fill(16)(false.B))
-//   val timeOutSel = WireInit(false.B)
-//   val pCrdPri = VecInit(Seq.fill(16)(false.B))
-//   val pArb = Module(new RRArbiterInit(UInt(), mshrsAll))
-
-//   val matchPCrdGrantPre = VecInit(pCrdPri.zip(io.matchPCrdInfo.asBools.map(_ & io.resps.rxrsp.valid)).map{
-//     case(a,b) => !a & b
-//   })
-//   val  matchPCrdGrant = RegNext(matchPCrdGrantPre)
-   
-//   pArb.io.in.zipWithIndex.foreach {
-//     case (in, i) =>
-//       in.valid := matchPCrdGrant(i)
-//       in.bits := 0.U
-//   }
-//   pArb.io.out.ready := true.B
-
-//   val pCrdOH = VecInit(UIntToOH(pArb.io.chosen).asBools)
-//   val pCrdFixPri = VecInit(pCrdOH zip matchPCrdGrant map {case(a,b) => a && b})
-
-//   // timeout protect
-//   val counter = RegInit(VecInit(Seq.fill(mshrsAll)(0.U((log2Ceil(mshrsAll)+1).W))))
-
-//   for(i <- 0 until 16) {
-//     when(matchPCrdGrant(i)) {
-//       when(!timeOutSel && pCrdFixPri(i) || timeOutPri(i)) {
-//         counter(i):=0.U
-//       }.otherwise {
-//         counter(i):= counter(i) + 1.U
-//       }
-//     }
-//   }
-//   val timeOutOH = PriorityEncoderOH(counter.map(_>=12.U) zip matchPCrdGrant map {case(a,b) => a&&b})
-//   timeOutPri := VecInit(timeOutOH)
-
-//   timeOutSel := timeOutPri.reduce(_|_)
-//   pCrdPri := Mux(timeOutSel, timeOutPri, pCrdFixPri)
-
-//   dontTouch (timeOutPri)
-//   dontTouch (timeOutSel)
-//   dontTouch (pCrdOH)
-//   dontTouch (pCrdFixPri)
-//   dontTouch (pCrdPri)
-
-//   /* when PCrdGrant come before RetryAck, 16 entry CAM used to:
-//    1. save {srcID, PCrdType} 
-//    2. Broadcast to each MSHR for seaching when RetryAck   
-//    */
-// //  val pCamValids = RegInit(VecInit(Seq.fill(mshrsAll){ false.B }))
-//   val pCam  = RegInit(VecInit(Seq.fill(mshrsAll)(0.U.asTypeOf(new PCrdInfo))))
-//   val pCamPri = Wire(UInt(5.W))
-//   val pCamValids = Cat(pCam.map(_.valid))
-//   val enqIdx = PriorityEncoder(~pCamValids.asUInt)
-
-// //  when (isPCrdGrant && !pCrdIsWait.orR){
-//   when (isPCrdGrant){
-//     pCam(enqIdx).valid := true.B
-//     pCam(enqIdx).srcID.get := io.resps.rxrsp.respInfo.srcID.get
-//     pCam(enqIdx).pCrdType.get := io.resps.rxrsp.respInfo.pCrdType.get
-//   }
-
-//   pCamPri := 16.U  //out of range of mshrAll 
-
-//   //each entry zip pCam
-//   for (i <- 0 until mshrsAll) { //entry
-//     when (waitPCrdInfo(i).valid) {
-//       for (j <- 0 until mshrsAll) { //pCam
-//         when (pCam(j).valid &&
-//               waitPCrdInfo(i).srcID.get === pCam(j).srcID.get &&
-//               waitPCrdInfo(i).srcID.get === pCam(j).pCrdType.get) {
-//           pCam(j).valid := false.B
-//           pCamPri := i.U
-//         }
-//       }
-//     }
-//   }
 
   /* SinkC(release) search MSHR with PA */
   val resp_sinkC_match_vec = mshrs.map { mshr =>
@@ -239,12 +143,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
       m.io.aMergeTask.bits := io.aMergeTask.bits.task
 
       io.pCrd(i) <> m.io.pCrd
-
-      // waitPCrdInfo(i) := m.io.waitPCrdInfo
-      // m.io.pCrdPri := isPCrdGrantReg && pCrdPri(i)
   }
-  // /* mshrc -> L2Top to wait pCrd */
-  // io.waitPCrdInfo <> waitPCrdInfo
 
   /* Reserve 1 entry for SinkB */
   io.toReqArb.blockC_s1 := false.B
