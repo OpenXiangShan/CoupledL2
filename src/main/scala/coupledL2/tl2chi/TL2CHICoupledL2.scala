@@ -154,46 +154,57 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         // RXRSP
         val rxrsp = Wire(DecoupledIO(new CHIRSP))
         val rxrspIsMMIO = rxrsp.bits.txnID.head(1).asBool
-        val isPCrdGrant = rxrsp.valid && (rxrsp.bits.opcode === PCrdGrant)
-        val pArb = Module(new RRArbiterInit(UInt(), banks))
-        val pMatch = VecInit(Seq.fill(banks)(Module(new PCrdGrantMatcher(mshrsAll)).io))
-        val pCrdSliceID = Wire(UInt(log2Ceil(banks).W))
-        /*
-        when PCrdGrant, give credit to one Slice that:
-        1. got RetryAck and not Reissued
-        2. match srcID and PCrdType
-        3. use Round-Robin arbiter if multi-Slice match
-        */
-        val matchPCrdGrant = Wire(Vec(banks, UInt(mshrsAll.W)))
-        val validCounts = Wire(Vec(banks, UInt(log2Ceil(mshrsAll+1).W)))
-        slices.zipWithIndex.foreach { case (s, i) =>
-          pMatch(i).io_waitPCrdInfo := s.io_waitPCrdInfo
-          pMatch(i).rxrsp.bits.srcID := rxrsp.bits.srcID
-          pMatch(i).rxrsp.bits.pCrdType := rxrsp.bits.pCrdType
-          pMatch(i).isPCrdGrant := isPCrdGrant
+        val isPCrdGrant = rxrsp.valid && rxrsp.bits.opcode === PCrdGrant
 
-          matchPCrdGrant(i) := pMatch(i).matchPCrdGrant
-          s.io_matchPCrdInfo := matchPCrdGrant(i)
-          validCounts(i) := PopCount(s.io_waitPCrdInfo.map(_.valid))
+        // PCredit arbitration
+        val (mmioQuerys, mmioGrants) = mmio.io_pCrd.map { case x => (x.query, x.grant) }.unzip
+        val (slicesQuerys, slicesGrants) = slices.map { case s =>
+          (s.io_pCrd.map(_.query), s.io_pCrd.map(_.grant))
+        }.unzip
+        val querys = mmioQuerys ++ slicesQuerys.flatten
+        val grants = mmioGrants ++ slicesGrants.flatten
+        val entries = querys.length
+        val pCrdValids = RegInit(VecInit(Seq.fill(entries)(false.B)))
+        val pCrdTypes = Reg(Vec(entries, UInt(PCRDTYPE_WIDTH.W)))
+        val pCrdSrcIDs = Reg(Vec(entries, UInt(SRCID_WIDTH.W)))
+        val pCrdInsertOH = PriorityEncoderOH(pCrdValids.map(!_))
+        val pCrdMatch = Wire(Vec(entries, Vec(entries, Bool())))
+        val pCrdMatchEntryVec = pCrdMatch.map(_.asUInt.orR)
+        val pCrdMatchEntryOH = PriorityEncoderOH(pCrdMatchEntryVec)
+        val pCrdFreeOH = ParallelPriorityMux(
+          pCrdMatchEntryVec,
+          pCrdMatch.map(x => VecInit(PriorityEncoderOH(x)))
+        )
+
+        pCrdValids.zipWithIndex.foreach { case (v, i) =>
+          val t = pCrdTypes(i)
+          val srcID = pCrdSrcIDs(i)
+          val insert = pCrdInsertOH(i)
+          val free = pCrdFreeOH(i)
+          when (isPCrdGrant) {
+            when (insert) {
+              v := true.B
+              t := rxrsp.bits.pCrdType
+              srcID := rxrsp.bits.srcID
+            }
+            assert(!(v && insert), "P-Credit overflow")
+          }
+
+          when (free) { v := false.B }
+          assert(!free || v, "invalid entry should not be free")
         }
 
-        val pCrdIsWait = VecInit(matchPCrdGrant.map(_.asUInt.orR)).asUInt
-        val pCrdSliceIDOH = UIntToOH(pCrdSliceID)
-        val onlyValidraw = Cat(validCounts.map(count => count === 1.U)).asUInt
-        val onlyValid = Reverse(onlyValidraw)
-        val pCrdSliceHit = pCrdSliceIDOH & pCrdIsWait & onlyValid
-        val pCrdCancel = RegNext(pCrdSliceHit) & onlyValid
-
-        pArb.io.in.zipWithIndex.foreach {
-          case (in, i) =>
-            in.valid := pCrdIsWait(i) && !pCrdCancel(i)
-            in.bits := 0.U
+        for (i <- 0 until entries) {
+          pCrdMatch(i) := VecInit(pCrdValids.zip(pCrdTypes).zip(pCrdSrcIDs).map { case ((v, t), s) =>
+            querys(i).valid && v &&
+            querys(i).bits.pCrdType === t &&
+            querys(i).bits.srcID === s
+          })
+          grants(i) := pCrdMatchEntryOH(i)
         }
-        pArb.io.out.ready := true.B
-        pCrdSliceID := pArb.io.chosen
 
 
-        val rxrspSliceID = Mux(isPCrdGrant, pCrdSliceID, getSliceID(rxrsp.bits.txnID))
+        val rxrspSliceID = getSliceID(rxrsp.bits.txnID)
         slices.zipWithIndex.foreach { case (s, i) =>
           s.io.out.rx.rsp.valid := rxrsp.valid && rxrspSliceID === i.U && !rxrspIsMMIO
           s.io.out.rx.rsp.bits := rxrsp.bits

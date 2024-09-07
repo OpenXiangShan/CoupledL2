@@ -43,11 +43,9 @@ class MSHRTasks(implicit p: Parameters) extends TL2CHIL2Bundle {
 }
 
 class MSHRResps(implicit p: Parameters) extends TL2CHIL2Bundle {
-  val sinkC = Flipped(ValidIO(new RespInfoBundle))  
-  val rxrsp = Flipped(ValidIO(new RespInfoBundle))  
-  val rxdat = Flipped(ValidIO(new RespInfoBundle))  
-//  val rxrsp = new RespBundle()  
-//  val rxdat = new RespBundle()  
+  val sinkC = Flipped(ValidIO(new RespInfoBundle))
+  val rxrsp = Flipped(ValidIO(new RespInfoBundle))
+  val rxdat = Flipped(ValidIO(new RespInfoBundle))
 }
 
 class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
@@ -62,8 +60,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     val nestedwbData = Output(Bool())
     val aMergeTask = Flipped(ValidIO(new TaskBundle))
     val replResp = Flipped(ValidIO(new ReplacerResult))
-    val pCrdPri = Input(Bool())
-    val waitPCrdInfo = Output(new PCrdInfo)
+    val pCrd = new PCrdQueryBundle
   })
 
   require (chiOpt.isDefined)
@@ -112,10 +109,10 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       Cat( true.B, TRUNK) -> UD,
       Cat( true.B, TIP)   -> UD
     ))
-  //for PCrdGrant info. search
-  io.waitPCrdInfo.valid := gotRetryAck && !gotPCrdGrant
-  io.waitPCrdInfo.srcID.get := srcid
-  io.waitPCrdInfo.pCrdType.get := pcrdtype
+
+  io.pCrd.query.valid := gotRetryAck && !gotPCrdGrant
+  io.pCrd.query.bits.pCrdType := pcrdtype
+  io.pCrd.query.bits.srcID := srcid
 
   /* Allocation */
   when (io.alloc.valid) {
@@ -912,7 +909,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   }
 
   // when rxrsp is PCrdGrant
-  when (io.pCrdPri) {
+  when (io.pCrd.grant) {
     state.s_reissue.get := false.B
     gotPCrdGrant := true.B
   }
@@ -1013,7 +1010,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   io.msInfo.bits.channel := req.channel
 
   assert(!(c_resp.valid && !io.status.bits.w_c_resp))
-  assert(!(rxrsp.valid && !io.status.bits.w_d_resp))
+  assert(!(rxrsp.valid && rxrsp.bits.chiOpcode.get =/= PCrdGrant && !io.status.bits.w_d_resp))
 
   /* ======== Handling Nested C ======== */
   // for A miss, only when replResp do we finally choose a way, allowing nested C
