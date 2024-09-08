@@ -167,7 +167,6 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         val pCrdValids = RegInit(VecInit(Seq.fill(entries)(false.B)))
         val pCrdTypes = Reg(Vec(entries, UInt(PCRDTYPE_WIDTH.W)))
         val pCrdSrcIDs = Reg(Vec(entries, UInt(SRCID_WIDTH.W)))
-        val pCrdInsertOH = PriorityEncoderOH(pCrdValids.map(!_))
         val pCrdMatch = Wire(Vec(entries, Vec(entries, Bool())))
         val pCrdMatchEntryVec = pCrdMatch.map(_.asUInt.orR)
         val pCrdMatchEntryOH = PriorityEncoderOH(pCrdMatchEntryVec)
@@ -176,20 +175,37 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
           pCrdMatch.map(x => VecInit(PriorityEncoderOH(x)))
         )
 
+        // Insert a PCredit
+        val groupSize = 8
+        val ohs_s0 = Seq.tabulate(entries)(i => (BigInt(1) << i).asUInt(entries.W)) :+ 0.U(entries.W)
+        val groups_s0 = (pCrdValids.map(!_) :+ true.B).zip(ohs_s0).grouped(groupSize).toList
+        val select_s0 = Wire(Vec(groups_s0.length, Bool()))
+        select_s0.zip(groups_s0).foreach { case (s, g) => s := g.map(_._1).reduce(_ || _) }
+        val select_s1 = RegInit(VecInit(Seq.fill(groups_s0.length)(false.B)))
+        when (isPCrdGrant) { select_s1 := select_s0 }
+        val ohs_s1 = RegInit(VecInit(Seq.fill(groups_s0.length)(0.U(entries.W))))
+        ohs_s1.zip(groups_s0).foreach { case (oh, g) => when (isPCrdGrant) { oh := ParallelPriorityMux(g) } }
+        val pCrdInsertOH_s1 = ParallelPriorityMux(select_s1, ohs_s1)
+        val isPCrdGrant_s1 = RegNext(isPCrdGrant)
+        val pCrdType_s1 = RegEnable(rxrsp.bits.pCrdType, isPCrdGrant)
+        val srcID_s1 = RegEnable(rxrsp.bits.srcID, isPCrdGrant)
         pCrdValids.zipWithIndex.foreach { case (v, i) =>
           val t = pCrdTypes(i)
           val srcID = pCrdSrcIDs(i)
-          val insert = pCrdInsertOH(i)
-          val free = pCrdFreeOH(i)
-          when (isPCrdGrant) {
-            when (insert) {
+          val insert_s1 = pCrdInsertOH_s1(i)
+          when (isPCrdGrant_s1) {
+            when (insert_s1) {
               v := true.B
-              t := rxrsp.bits.pCrdType
-              srcID := rxrsp.bits.srcID
+              t := pCrdType_s1
+              srcID := srcID_s1
             }
-            assert(!(v && insert), "P-Credit overflow")
+            assert(!(v && insert_s1), "P-Credit overflow")
           }
+        }
 
+        // Free a PCredit
+        pCrdValids.zipWithIndex.foreach { case (v, i) =>
+          val free = pCrdFreeOH(i)
           when (free) { v := false.B }
           assert(!free || v, "invalid entry should not be free")
         }
@@ -200,20 +216,20 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
             querys(i).bits.pCrdType === t &&
             querys(i).bits.srcID === s
           })
-          grants(i) := pCrdMatchEntryOH(i)
+          grants(i) := RegNext(pCrdMatchEntryOH(i))
         }
 
 
         val rxrspSliceID = getSliceID(rxrsp.bits.txnID)
         slices.zipWithIndex.foreach { case (s, i) =>
-          s.io.out.rx.rsp.valid := rxrsp.valid && rxrspSliceID === i.U && !rxrspIsMMIO
+          s.io.out.rx.rsp.valid := rxrsp.valid && rxrspSliceID === i.U && !rxrspIsMMIO && !isPCrdGrant
           s.io.out.rx.rsp.bits := rxrsp.bits
           s.io.out.rx.rsp.bits.txnID := restoreTXNID(rxrsp.bits.txnID)
         }
-        mmio.io.rx.rsp.valid := rxrsp.valid && rxrspIsMMIO
+        mmio.io.rx.rsp.valid := rxrsp.valid && rxrspIsMMIO && !isPCrdGrant
         mmio.io.rx.rsp.bits := rxrsp.bits
         mmio.io.rx.rsp.bits.txnID := restoreTXNID(rxrsp.bits.txnID)
-        rxrsp.ready := Mux(
+        rxrsp.ready := rxrsp.bits.opcode === PCrdGrant || Mux(
           rxrspIsMMIO,
           mmio.io.rx.rsp.ready,
           Cat(slices.zipWithIndex.map { case (s, i) => s.io.out.rx.rsp.ready && rxrspSliceID === i.U }).orR

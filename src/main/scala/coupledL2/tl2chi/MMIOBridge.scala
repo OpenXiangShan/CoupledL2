@@ -241,7 +241,6 @@ class MMIOBridgeImp(outer: MMIOBridge) extends LazyModuleImp(outer)
 
   val io = IO(new DecoupledNoSnpPortIO)
   val io_pCrd = IO(Vec(mmioBridgeSize, new PCrdQueryBundle))
-  val debug_pcrdGrantFire = IO(Output(Bool()))
 
   val entries = Seq.fill(mmioBridgeSize) { Module(new MMIOBridgeEntry(edge)) }
   val readys = VecInit(entries.map(_.io.req.ready))
@@ -293,11 +292,9 @@ class MMIOBridgeImp(outer: MMIOBridge) extends LazyModuleImp(outer)
   io.rx.dat.ready := Cat(entries.zipWithIndex.map { case (entry, i) =>
     entry.io.chi.rx.dat.ready && io.rx.dat.bits.txnID === i.U
   }).orR
-  io.rx.rsp.ready := Cat(entries.zipWithIndex.map { case (entry, i) =>
-    entry.io.chi.rx.rsp.ready && io.rx.rsp.bits.txnID === i.U
-  }).orR || isPCrdGrant
-
-  debug_pcrdGrantFire := io.rx.rsp.valid && isPCrdGrant
+  io.rx.rsp.ready := true.B
+  assert(!io.rx.rsp.valid || Cat(entries.zipWithIndex.map { case (entry, i) =>
+    entry.io.chi.rx.rsp.ready && io.rx.rsp.bits.txnID === i.U }).orR)
 
   dontTouch(io)
   dontTouch(bus)
