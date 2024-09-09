@@ -202,7 +202,9 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
           })
           grants(i) := pCrdMatchEntryOH(i)
         }
-
+        val grantCnt = RegInit(0.U(64.W))
+        grantCnt := grantCnt + PopCount(grants)
+        dontTouch(grantCnt)
 
         val rxrspSliceID = getSliceID(rxrsp.bits.txnID)
         slices.zipWithIndex.foreach { case (s, i) =>
