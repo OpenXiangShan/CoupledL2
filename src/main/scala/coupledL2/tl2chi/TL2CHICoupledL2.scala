@@ -178,7 +178,8 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         // Insert a PCredit
         val groupSize = 8
         val ohs_s0 = Seq.tabulate(entries)(i => (BigInt(1) << i).asUInt(entries.W)) :+ 0.U(entries.W)
-        val groups_s0 = (pCrdValids.map(!_) :+ true.B).zip(ohs_s0).grouped(groupSize).toList
+        val avail_s0 = Wire(Vec(entries, Bool()))
+        val groups_s0 = (avail_s0 :+ true.B).zip(ohs_s0).grouped(groupSize).toList
         val select_s0 = Wire(Vec(groups_s0.length, Bool()))
         select_s0.zip(groups_s0).foreach { case (s, g) => s := g.map(_._1).reduce(_ || _) }
         val select_s1 = RegInit(VecInit(Seq.fill(groups_s0.length)(false.B)))
@@ -190,6 +191,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         val pCrdType_s1 = RegEnable(rxrsp.bits.pCrdType, isPCrdGrant)
         val srcID_s1 = RegEnable(rxrsp.bits.srcID, isPCrdGrant)
         pCrdValids.zipWithIndex.foreach { case (v, i) =>
+          avail_s0(i) := !v && (!isPCrdGrant_s1 || !pCrdInsertOH_s1(i))
           val t = pCrdTypes(i)
           val srcID = pCrdSrcIDs(i)
           val insert_s1 = pCrdInsertOH_s1(i)
