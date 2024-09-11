@@ -77,6 +77,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     val mainPipeBlock = Input(Vec(2, Bool()))
     /* Snoop task from arbiter at stage 2 */
     val taskFromArb_s2 = Flipped(ValidIO(new TaskBundle()))
+    val taskFromMP_s3 = Flipped(ValidIO(new TaskBundle()))
 
     val ATag        = Output(UInt(tagBits.W))
     val ASet        = Output(UInt(setBits.W))
@@ -167,18 +168,25 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   io.hasMergeA := mergeA && io.in.valid && !sameAddr(in, RegNext(in))
 
   //  val depMask    = buffer.map(e => e.valid && sameAddr(io.in.bits, e.task))
-  // remove duplicate prefetch if same-addr A req in MSHR or ReqBuf
+  // remove duplicate prefetch if same-addr A req in MSHR, MainPipe or ReqBuf
+  def isDup(t: ValidIO[TaskBundle]): Bool = {
+    val isSinkATask = t.bits.fromA && !t.bits.mshrTask
+    val isAcquire  = isSinkATask && (t.bits.opcode === AcquireBlock || t.bits.opcode === AcquirePerm)
+    val isPrefetch = isSinkATask && t.bits.opcode === Hint
+    val isDup = t.valid && sameAddr(in, t.bits) && (isAcquire || isPrefetch)
+    isDup
+  }
+
   val isPrefetch = in.fromA && in.opcode === Hint
   val dupMask    = VecInit(
-    io.mshrInfo.map(s =>
+    io.mshrInfo.map(s =>  // isDup with MSHR
       s.valid && s.bits.isAcqOrPrefetch && sameAddr(in, s.bits)) ++
-    buffer.map(e =>
+    Seq(io.taskFromArb_s2, io.taskFromMP_s3).map(isDup) ++  // isDup with MainPipe
+    buffer.map(e =>       // isDup with ReqBuf
       e.valid && sameAddr(in, e.task)
     )
   ).asUInt
   val dup        = isPrefetch && dupMask.orR
-
-  //!! TODO: we can also remove those that duplicate with mainPipe
 
   /* ======== Alloc ======== */
   io.in.ready   := !full || doFlow || mergeA || dup
