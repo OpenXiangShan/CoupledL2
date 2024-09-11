@@ -214,7 +214,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
 
         for (i <- 0 until entries) {
           pCrdMatch(i) := VecInit(pCrdValids.zip(pCrdTypes).zip(pCrdSrcIDs).map { case ((v, t), s) =>
-            querys(i).valid && v &&
+            querys(i).valid && !grants(i) && v &&
             querys(i).bits.pCrdType === t &&
             querys(i).bits.srcID === s
           })
