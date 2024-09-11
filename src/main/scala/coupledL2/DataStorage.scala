@@ -60,18 +60,14 @@ class DataStorage(implicit p: Parameters) extends L2Module {
   val masked_clock = ClockGate(false.B, io.req.valid, clock)
   array.clock := masked_clock
 
+  val arrayIdx = Cat(io.req.bits.way, io.req.bits.set)
   val wen = io.req.valid && io.req.bits.wen
   val ren = io.req.valid && !io.req.bits.wen
 
   // make sure SRAM input signals will not change during the two cycles
-  val holdWen = wen || RegNext(wen)
-  val holdRen = ren || RegNext(ren)
-  val req = HoldUnless(io.req.bits, io.req.valid)
-  val wdata = HoldUnless(io.wdata, io.req.valid)
-  val arrayIdx = Cat(req.way, req.set)
-
-  array.io.w.apply(holdWen, wdata, arrayIdx, 1.U)
-  array.io.r.apply(holdRen, arrayIdx)
+  // TODO: This check is done elsewhere
+  array.io.w.apply(wen, io.wdata, arrayIdx, 1.U)
+  array.io.r.apply(ren, arrayIdx)
 
   // for timing, we set this as multicycle path
   // s3 read, s4 pass and s5 to destination
