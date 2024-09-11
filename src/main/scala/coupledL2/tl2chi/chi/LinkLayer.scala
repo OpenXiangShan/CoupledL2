@@ -268,7 +268,7 @@ object Decoupled2LCredit {
   }
 }
 
-class LinkMonitor(implicit p: Parameters) extends L2Module with HasCHIMsgParameters {
+class LinkMonitor(implicit p: Parameters) extends L2Module with HasCHIOpcodes {
   val io = IO(new Bundle() {
     val in = Flipped(new DecoupledPortIO())
     val out = new PortIO
@@ -304,7 +304,24 @@ class LinkMonitor(implicit p: Parameters) extends L2Module with HasCHIMsgParamet
 
   io.out.syscoreq := true.B
 
+  val retryAckCnt = RegInit(0.U(64.W))
+  val pCrdGrantCnt = RegInit(0.U(64.W))
+  val noAllowRetryCnt = RegInit(0.U(64.W))
+
+  when (io.in.rx.rsp.fire && io.in.rx.rsp.bits.opcode === RetryAck) {
+    retryAckCnt := retryAckCnt + 1.U
+  }
+  when (io.in.rx.rsp.fire && io.in.rx.rsp.bits.opcode === PCrdGrant) {
+    pCrdGrantCnt := pCrdGrantCnt + 1.U
+  }
+  when (io.in.tx.req.fire && !io.in.tx.req.bits.allowRetry) {
+    noAllowRetryCnt := noAllowRetryCnt + 1.U
+  }
+
   dontTouch(io.out)
+  dontTouch(retryAckCnt)
+  dontTouch(pCrdGrantCnt)
+  dontTouch(noAllowRetryCnt)
 
   def setSrcID[T <: Bundle](in: DecoupledIO[T], srcID: UInt = 0.U): DecoupledIO[T] = {
     val out = Wire(in.cloneType)
