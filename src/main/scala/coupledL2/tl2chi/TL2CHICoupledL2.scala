@@ -206,7 +206,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         val grantCnt = RegInit(0.U(64.W))
         grantCnt := grantCnt + PopCount(grants)
         when (isPCrdGrant) { pCrdGrantCnt := pCrdGrantCnt + 1.U }
-        assert(RegNext(pCrdGrantCnt, init = 0.U(64.W)) === PopCount(pCrdValids) + grantCnt)
+        assert(pCrdGrantCnt === PopCount(pCrdValids) + grantCnt)
         dontTouch(grantCnt)
 
         val rxrspSliceID = getSliceID(rxrsp.bits.txnID)
