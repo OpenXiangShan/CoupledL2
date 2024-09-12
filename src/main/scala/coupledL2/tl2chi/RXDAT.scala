@@ -61,6 +61,7 @@ class RXDAT(implicit p: Parameters) extends TL2CHIL2Module {
   io.in.respInfo.dbID.get      := io.out.bits.dbID
   io.in.respInfo.resp.get      := io.out.bits.resp
   io.in.respInfo.pCrdType.get  := DontCare // RXDAT Channel does not have a pCrdType field
+  io.in.respInfo.respErr.get   := io.out.bits.respErr
 
   io.out.ready := true.B
 

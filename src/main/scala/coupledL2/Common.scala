@@ -71,6 +71,8 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val sourceId = UInt(sourceIdBits.W)     // tilelink sourceID
   val bufIdx = UInt(bufIdxBits.W)         // idx of SinkC buffer
   val needProbeAckData = Bool()           // only used for SinkB reqs, whether L3 needs probeAckData
+  val denied = Bool()
+  val corrupt = Bool()
 
   // MSHR may send Release(Data) or Grant(Data) or ProbeAck(Data) through Main Pipe
   val mshrTask = Bool()                   // is task from mshr
@@ -227,6 +229,7 @@ class RespInfoBundle(implicit p: Parameters) extends L2Bundle
   val dbID = chiOpt.map(_ => UInt(DBID_WIDTH.W))
   val resp = chiOpt.map(_ => UInt(RESP_WIDTH.W))
   val pCrdType = chiOpt.map(_ => UInt(PCRDTYPE_WIDTH.W))
+  val respErr = chiOpt.map(_ => UInt(RESPERR_WIDTH.W))
 }
 
 class RespBundle(implicit p: Parameters) extends L2Bundle {
