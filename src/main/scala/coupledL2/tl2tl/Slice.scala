@@ -139,7 +139,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
 
   io.prefetch.foreach {
     p =>
-      p.train <> Mux(reqBuf.io.hasMergeA, reqBuf.io.prefetchTrain.get, mainPipe.io.prefetchTrain.get)  // mainPipe.io.prefetchTrain.get
+      p.train <> Mux(a_reqBuf.io.hasMergeA, a_reqBuf.io.prefetchTrain.get, mainPipe.io.prefetchTrain.get)  // mainPipe.io.prefetchTrain.get
       sinkA.io.prefetchReq.get <> p.req
       p.resp <> grantBuf.io.prefetchResp.get
       p.tlb_req.req.ready := true.B
