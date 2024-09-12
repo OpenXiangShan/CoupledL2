@@ -25,6 +25,8 @@ import chisel3.util._
 import coupledL2._
 import coupledL2.utils._
 import utility._
+import coupledL2.prefetch.PrefetchTrain
+import coupledL2.MetaData._
 
 class ReqEntry(entries: Int = 4)(implicit p: Parameters) extends L2Bundle() {
   val valid    = Bool()
@@ -88,6 +90,8 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
     val hasLatePF = Output(Bool())
     val hasMergeA = Output(Bool())
+    /* send prefetchTrain to Prefetch when Acquire is merged */
+    val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain))
   })
 
   /* ======== Data Structure ======== */
@@ -285,6 +289,21 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   // for Dir to choose a free way
   io.out.bits.wayMask := Fill(cacheParams.ways, 1.U(1.W))
 
+  io.prefetchTrain.foreach {
+    train =>
+      // trigger train for a_merge when acquire leave reqbuf (early in time)
+      train.valid := io.hasMergeA
+      train.bits.tag := in.tag
+      train.bits.set := in.set
+      train.bits.needT := needT(in.opcode, in.param)
+      train.bits.source := in.sourceId
+      train.bits.vaddr.foreach(_ := in.vaddr.getOrElse(0.U))
+      train.bits.hit := true.B  // mergeA is hit or miss???
+      train.bits.prefetched := true.B
+      train.bits.pfsource := 0.U   //???
+      train.bits.reqsource := in.reqSource
+  }
+  
   // add XSPerf to see how many cycles the req is held in Buffer
   if(cacheParams.enablePerf) {
     XSPerfAccumulate("drop_prefetch", io.in.valid && dup)
