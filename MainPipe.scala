@@ -408,7 +408,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   mem_task_s4.homeNID := req_s4.tgtID
   mem_task_s4.chiOpcode := Mux(refill_task_s4 || cleanReq_s4, WriteNoSnpFull, ReadNoSnp)
   mem_task_s4.size := log2Ceil(64).U
-  mem_task_s4.allowRetry := false.B
+  mem_task_s4.allowRetry := true.B
   mem_task_s4.order := OrderEncodings.None // TODO: order requirement?
   mem_task_s4.memAttr := MemAttr()
   mem_task_s4.snpAttr := false.B
