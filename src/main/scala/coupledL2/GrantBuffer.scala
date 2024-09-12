@@ -90,9 +90,9 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     d.size := offsetBits.U
     d.source := task.sourceId
     d.sink := grant_id
-    d.denied := false.B
+    d.denied := task.denied
     d.data := data
-    d.corrupt := false.B
+    d.corrupt := task.corrupt
     d.echo.lift(IsKeywordKey).foreach(_ := false.B)
     d
   }

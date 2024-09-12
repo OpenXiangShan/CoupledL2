@@ -136,8 +136,10 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   when (rxdat.fire) {
     w_compdata := true.B
     rdata := rxdat.bits.data
-    denied := denied || rxdat.bits.respErr === RespErrEncodings.NDERR
-    corrupt := corrupt || rxdat.bits.respErr === RespErrEncodings.DERR
+    val nderr = rxdat.bits.respErr === RespErrEncodings.NDERR
+    val derr = rxdat.bits.respErr === RespErrEncodings.DERR
+    denied := denied || nderr
+    corrupt := corrupt || derr || nderr
   }
   when (io.resp.fire) {
     s_resp := true.B

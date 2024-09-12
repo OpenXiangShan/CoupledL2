@@ -28,6 +28,7 @@ import org.chipsalliance.cde.config.Parameters
 import coupledL2.prefetch.{PfSource, PrefetchTrain}
 import coupledL2.tl2chi.CHICohStates._
 import coupledL2.tl2chi.CHIChannel
+import coupledL2.tl2chi.RespErrEncodings._
 import coupledL2.MetaData._
 import coupledL2._
 
@@ -99,6 +100,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val pcrdtype = RegInit(0.U(PCRDTYPE_WIDTH.W))
   val gotRetryAck = RegInit(false.B)
   val gotPCrdGrant = RegInit(false.B)
+  val denied = RegInit(false.B)
+  val corrupt = RegInit(false.B)
   val metaChi = ParallelLookUp(
     Cat(meta.dirty, meta.state),
     Seq(
@@ -133,6 +136,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     srcid := 0.U
     dbid := 0.U
     pcrdtype := 0.U
+    denied := false.B
+    corrupt := false.B
 
     retryTimes := 0.U
     backoffTimer := 0.U
@@ -595,6 +600,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_grant.size := 0.U(msgSizeBits.W)
     mp_grant.bufIdx := 0.U(bufIdxBits.W)
     mp_grant.needProbeAckData := false.B
+    mp_grant.denied := denied
+    mp_grant.corrupt := corrupt
     mp_grant.mshrTask := true.B
     mp_grant.mshrId := io.id
     mp_grant.way := dirResult.way
@@ -843,6 +850,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
 
   // RXDAT
   when (rxdat.valid) {
+    val nderr = rxdat.bits.respErr.getOrElse(OK) === NDERR
+    val derr = rxdat.bits.respErr.getOrElse(OK) === DERR
     when (rxdat.bits.chiOpcode.get === DataSepResp) {
       require(beatSize == 2) // TODO: This is ugly
       beatCnt := beatCnt + 1.U
@@ -852,6 +861,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       gotT := rxdatIsU || rxdatIsU_PD
       gotDirty := gotDirty || rxdatIsU_PD
       gotGrantData := true.B
+      denied := denied || nderr
+      corrupt := corrupt || derr || nderr
     }
 
     when (rxdat.bits.chiOpcode.get === CompData) {
@@ -864,16 +875,20 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       gotGrantData := true.B
       dbid := rxdat.bits.dbID.getOrElse(0.U)
       homenid := rxdat.bits.homeNID.getOrElse(0.U)
+      denied := denied || nderr
+      corrupt := corrupt || derr || nderr
     }
   }
 
   // RXRSP for dataless
   when (rxrsp.valid) {
+    val nderr = rxrsp.bits.respErr.getOrElse(OK) === NDERR
     when (rxrsp.bits.chiOpcode.get === RespSepData) {
       state.w_grantfirst := true.B
       srcid := rxrsp.bits.srcID.getOrElse(0.U)
       homenid := rxrsp.bits.srcID.getOrElse(0.U)
       dbid := rxrsp.bits.dbID.getOrElse(0.U)
+      denied := denied || nderr
     }
 
     when (rxrsp.bits.chiOpcode.get === Comp) {
@@ -884,6 +899,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         state.w_grant := req.off === 0.U || rxrsp.bits.last  // TODO? why offset?
         gotT := rxrspIsU
         gotDirty := false.B
+        denied := denied || nderr
       }
 
       // There is a pending Evict transaction waiting for the Comp resp
