@@ -77,8 +77,8 @@ class TestTop_XSConfig()(implicit p: Parameters) extends LazyModule {
       echoField = Seq(DirtyField()),
       hartId = i,
       enableRollingDB = false,
-      prefetch = Nil
-      // prefetch = Seq(TPParameters(tpTableEntries = l2tpTableEntries, tpTableAssoc = l2tpAssoc))
+      // prefetch = Nil
+      prefetch = Seq(TPParameters(tpTableEntries = l2tpTableEntries, tpTableAssoc = l2tpAssoc))
     )
     case BankBitsKey => log2Ceil(l2banks)
     case LogUtilsOptionsKey => LogUtilsOptions(
