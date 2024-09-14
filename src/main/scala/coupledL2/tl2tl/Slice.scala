@@ -95,6 +95,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   directory.io.tagWReq <> mainPipe.io.tagWReq
   directory.io.msInfo <> mshrCtl.io.msInfo
 
+  dataStorage.io.en := mainPipe.io.toDS.en_s3
   dataStorage.io.req <> mainPipe.io.toDS.req_s3
   dataStorage.io.wdata := mainPipe.io.toDS.wdata_s3
 

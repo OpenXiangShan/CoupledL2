@@ -40,8 +40,14 @@ class DSBlock(implicit p: Parameters) extends L2Bundle {
 
 class DataStorage(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
-    // there is only 1 read or write request in the same cycle,
+    // en is the actual r/w valid from mainpipe (last for one cycle)
+    // en is used to generate gated_clock for SRAM
+    val en = Input(Bool())
+
+    // 1. there is only 1 read or write request in the same cycle,
     // so only 1 req port is necessary
+    // 2. according to the requirement of MCP2, [req.valid, req.bits, wdata]
+    // must hold for 2 cycles (unchanged at en and RegNext(en))
     val req = Flipped(ValidIO(new DSRequest))
     val rdata = Output(new DSBlock)
     val wdata = Input(new DSBlock)
@@ -73,6 +79,12 @@ class DataStorage(implicit p: Parameters) extends L2Module {
   // s3 read, s4 pass and s5 to destination
   io.rdata := array.io.r.resp.data(0)
 
-  assert(!io.req.valid || !RegNext(io.req.valid, false.B),
+  assert(!io.en || !RegNext(io.en, false.B),
     "Continuous SRAM req prohibited under MCP2!")
+
+  assert(!(RegNext(io.en) && (io.req.asUInt =/= RegNext(io.req.asUInt))),
+    s"DataStorage req fails to hold for 2 cycles!")
+
+  assert(!(RegNext(io.en) && (io.wdata.asUInt =/= RegNext(io.wdata.asUInt))),
+    s"DataStorage wdata fails to hold for 2 cycles!")
 }
