@@ -168,7 +168,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   val canFlow = flow.B && !full && !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(in)
   val doFlow  = canFlow && io.out.ready
   io.hasLatePF := latePrefetch(in) && io.in.valid && !sameAddr(in, RegNext(in))
-  io.hasMergeA := mergeA && io.in.valid && !sameAddr(in, RegNext(in))
+  io.hasMergeA := mergeA && io.in.valid
 
   //  val depMask    = buffer.map(e => e.valid && sameAddr(io.in.bits, e.task))
   // remove duplicate prefetch if same-addr A req in MSHR or ReqBuf
@@ -292,15 +292,15 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   io.prefetchTrain.foreach {
     train =>
       // trigger train for a_merge when acquire leave reqbuf (early in time)
-      train.valid := io.hasMergeA
+      train.valid := io.aMergeTask.valid
       train.bits.tag := in.tag
       train.bits.set := in.set
       train.bits.needT := needT(in.opcode, in.param)
       train.bits.source := in.sourceId
       train.bits.vaddr.foreach(_ := in.vaddr.getOrElse(0.U))
-      train.bits.hit := true.B  // mergeA is hit or miss???
-      train.bits.prefetched := true.B
-      train.bits.pfsource := 0.U   //???
+      train.bits.hit := false.B
+      train.bits.prefetched := false.B
+      train.bits.pfsource := 0.U
       train.bits.reqsource := in.reqSource
   }
   
