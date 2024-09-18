@@ -159,7 +159,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         // PCredit queue
         class EmptyBundle extends Bundle
 
-        val homeNodeIDs = p(HomeNodeInfoKey).id
+        val homeNodeIDs = p.lift(HomeNodeInfoKey).getOrElse(new HomeNodeInfo).id
         val homeNodeCount = homeNodeIDs.length
 
         val (mmioQuerys, mmioGrants) = mmio.io_pCrd.map { case x => (x.query, x.grant) }.unzip
