@@ -1083,7 +1083,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   }
 
   val mshrAddr = Cat(req.tag, req.set, 0.U(6.W)) // TODO: consider multibank
-  val VALID_CNT_MAX = 200000.U
+  val VALID_CNT_MAX = 400000.U
   assert(validCnt <= VALID_CNT_MAX, "validCnt full!, maybe there is a deadlock! addr => 0x%x req_opcode => %d channel => 0b%b", mshrAddr, req.opcode, req.channel)
 
   val evictFire = io.tasks.txreq.fire && io.tasks.txreq.bits.opcode === Evict ||
