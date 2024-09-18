@@ -23,6 +23,8 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import org.chipsalliance.cde.config.Parameters
 import utility.{MemReqSource, XSPerfAccumulate, RRArbiterInit}
+import chisel3.util.experimental.BoringUtils
+import coupledL2.utils.HoldChecker
 
 class PipeBufferResp(implicit p: Parameters) extends L2Bundle {
   val data = Vec(beatSize, UInt((beatBytes * 8).W))
@@ -185,6 +187,11 @@ class SinkC(implicit p: Parameters) extends L2Module {
   when(RegNext(io.task.fire)) {
     beatValids(RegNext(io.task.bits.bufIdx)).foreach(_ := false.B)
   }
+  // ===== for MCP2 hold check =====
+  val ds_wen = WireInit(false.B)
+  BoringUtils.addSink(ds_wen, "ds_wen")
+  assert(!io.task.fire || !RegNext(io.task.fire), "No continuous write @SinkC")
+  HoldChecker.check2(io.bufResp.data.asUInt, ds_wen, "sinkC_")
 
   // Performance counters
   val stall = io.c.valid && isRelease && !io.c.ready
