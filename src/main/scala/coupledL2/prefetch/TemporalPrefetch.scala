@@ -207,7 +207,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val tpTrainCount = RegInit(0.U((resetThrottle - 4).W))
   val tpFbHit = Mux(tpFbCtrl.andR, false.B, io.tpHitFeedback.bits.latepf | io.tpHitFeedback.bits.hit)
   val tpFbMiss = Mux(tpFbCtrl.orR, io.tpHitFeedback.bits.replMiss, false.B)
-  val tpDisable = !(tpFbCtrl(tpPfEntries - 1) | tpFbCtrl(tpPfEntries - 2)) | (tpTrainCount(resetThrottle - 9))
+  val tpDisable = !(tpFbCtrl(tpPfEntries - 1) | tpFbCtrl(tpPfEntries - 2)) | (tpTrainCount(resetThrottle - 8))
   when (io.tpHitFeedback.valid) {
     tpFbCtrl := Mux(tpFbHit, tpFbCtrl + 1.U, Mux(tpFbMiss, tpFbCtrl - 1.U, tpFbCtrl))
   }.elsewhen (tpFbReset || tpReset.andR) {
@@ -236,7 +236,8 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   /* Stage 0: query tpMetaTable */
 
-  val s0_valid = io.train.fire && !tpDisable &&
+  // val s0_valid = io.train.fire && !tpDisable &&
+  val s0_valid = io.train.fire &&
     Mux(trainOnVaddr.orR, io.train.bits.vaddr.getOrElse(0.U) =/= 0.U, true.B) &&
     Mux(trainOnL1PF.orR, true.B, io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U) || tpMetaRespQueue.io.deq.fire
   val trainVaddr = io.train.bits.vaddr.getOrElse(0.U)
@@ -599,12 +600,14 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   replDB.log(replPt, triggerEnq_s2, "", clock, reset)
 
   XSPerfAccumulate("tp_send", io.req.fire)
+  XSPerfAccumulate("tp_train_valid", io.train.valid)
+  XSPerfAccumulate("tp_s0_valid", s0_valid)
   XSPerfAccumulate("tp_meta_read", io.tpmeta_port.req.fire && !io.tpmeta_port.req.bits.wmode)
   XSPerfAccumulate("tp_meta_read_miss", io.tpmeta_port.resp.valid && !io.tpmeta_port.resp.bits.exist)
   XSPerfAccumulate("tp_meta_invalid", tpMetaRespValid_s2)
   XSPerfAccumulate("tp_meta_write", io.tpmeta_port.req.fire && io.tpmeta_port.req.bits.wmode)
-  XSPerfAccumulate("tp_close", tpDisable&& !tpFbResetCount.orR)
-  XSPerfAccumulate("tp_reset", tpFbReset)
+  XSPerfAccumulate("tp_close", tpDisable&& !tpReset.orR)
+  XSPerfAccumulate("tp_reset", tpReset)
   XSPerfAccumulate("tp_hit", io.tpHitFeedback.valid && io.tpHitFeedback.bits.hit)
   XSPerfAccumulate("tp_latepf", io.tpHitFeedback.valid && io.tpHitFeedback.bits.latepf)
   XSPerfAccumulate("tp_miss", io.tpHitFeedback.valid && io.tpHitFeedback.bits.replMiss)
