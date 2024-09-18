@@ -81,6 +81,7 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, iss
       here(L2ParamKey).enableRollingDB && !here(L2ParamKey).FPGAPlatform,
       i
     )
+    case HomeNodeInfoKey => HomeNodeInfo(id = Seq(0))
   }))))
 
   val bankBinders = (0 until numCores).map(_ => BankBinder(banks, 64))
@@ -149,7 +150,7 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, iss
       dontTouch(l2.module.io)
 
       l2.module.io.hartId := i.U
-      l2.module.io_nodeID := i.U(NODEID_WIDTH.W)
+      l2.module.io_nodeID := (i + 1).U
       l2.module.io.debugTopDown := DontCare
       l2.module.io.l2_tlb_req <> DontCare
     }
@@ -176,8 +177,8 @@ object TestTopCHIHelper {
         elaboratedTopDown   = false,
         FPGAPlatform        = FPGAPlatform,
 
-        // SAM for tester ICN: Home Node ID = 33
-        sam                 = Seq(AddressSet.everything -> 33)
+        // using external RN-F SAM
+        sam                 = Seq(AddressSet.everything -> 0)
       )
     })
 
@@ -208,8 +209,8 @@ object TestTop_CHI_DualCore_2UL extends App {
 
   TestTopCHIHelper.gen(p => new TestTop_CHIL2(
     numCores = 2,
-    numULAgents = 0,
-    banks = 1)(p)
+    numULAgents = 2,
+    banks = 4)(p)
   )(args)
 }
 
@@ -227,7 +228,7 @@ object TestTop_CHI_DualCore_2UL_Eb extends App {
 
   TestTopCHIHelper.gen(p => new TestTop_CHIL2(
     numCores = 2,
-    numULAgents = 0,
+    numULAgents = 2,
     banks = 1,
     issue = "E.b")(p)
   )(args)
