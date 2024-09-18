@@ -35,6 +35,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     /* receive task from arbiter at stage 2 */
     val taskFromArb_s2 = Flipped(ValidIO(new TaskBundle()))
 
+    val taskInfo_s3 = ValidIO(new TaskBundle())
+
     /* handle set conflict in req arb */
     val fromReqArb = Input(new Bundle() {
       val status_s1 = new PipeEntranceStatus
@@ -128,6 +130,8 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   when(task_s2.valid) {
     task_s3.bits := task_s2.bits
   }
+
+  io.taskInfo_s3 := task_s3
 
   /* ======== Enchantment ======== */
   val dirResult_s3    = io.dirResp_s3
