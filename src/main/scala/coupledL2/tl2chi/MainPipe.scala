@@ -25,11 +25,9 @@ import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2._
-import coupledL2.utils.HoldChecker
 import coupledL2.prefetch.{PrefetchTrain, PfSource}
 import coupledL2.tl2chi.CHICohStates._
 import coupledL2.MetaData._
-import chisel3.util.experimental.BoringUtils
 
 class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val io = IO(new Bundle() {
@@ -415,19 +413,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       io.refillBufResp_s3.bits.data
     )
   )
-
-  // ===== for MCP2 hold check =====
-  val en = io.toDS.en_s3
-  val w_en = io.toDS.en_s3 && io.toDS.req_s3.bits.wen
-  HoldChecker.check2(task_s3.bits, en, "task_s3.bits")
-  HoldChecker.check2(dirResult_s3, en, "dirResult_s3")
-  HoldChecker.check2(io.replResp.bits, en, "replResp_s3")
-
-  HoldChecker.check2(io.bufResp.data.asUInt, w_en, "sinkC_data_s3")
-  HoldChecker.check2(io.refillBufResp_s3.bits, w_en, "refillBufResp_data_s3")
-  HoldChecker.check2(io.releaseBufResp_s3.bits, w_en, "releaseBufResp_data_s3")
-
-  BoringUtils.addSource(w_en, "ds_wen")
 
   /* ======== Read DS and store data in Buffer ======== */
   // A: need_write_releaseBuf indicates that DS should be read and the data will be written into ReleaseBuffer

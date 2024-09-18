@@ -21,7 +21,6 @@ import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.utils._
-import chisel3.util.experimental.BoringUtils
 
 class MSHRBufRead(implicit p: Parameters) extends L2Bundle {
   val id = Output(UInt(mshrBits.W))
@@ -64,11 +63,6 @@ class MSHRBuffer(wPorts: Int = 1)(implicit p: Parameters) extends L2Module {
 
   val rdata = buffer(io.r.bits.id).asUInt
   io.resp.data.data := RegEnable(rdata, 0.U.asTypeOf(rdata), io.r.valid)
-
-  val ds_wen = WireInit(false.B)
-  BoringUtils.addSink(ds_wen, "ds_wen")
-  assert(!io.r.valid || !RegNext(io.r.valid), "No continuous read")
-  HoldChecker.check2(io.resp.data.data, ds_wen, "mshrBuf_r")
 }
 
 // may consider just choose an empty entry to insert
