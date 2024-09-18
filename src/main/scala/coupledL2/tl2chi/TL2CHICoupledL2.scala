@@ -156,72 +156,76 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         val rxrspIsMMIO = rxrsp.bits.txnID.head(1).asBool
         val isPCrdGrant = rxrsp.valid && rxrsp.bits.opcode === PCrdGrant
 
-        // PCredit arbitration
+        // PCredit queue
+        class EmptyBundle extends Bundle
+
+        val homeNodeIDs = p(HomeNodeInfoKey).id
+        val homeNodeCount = homeNodeIDs.length
+
         val (mmioQuerys, mmioGrants) = mmio.io_pCrd.map { case x => (x.query, x.grant) }.unzip
         val (slicesQuerys, slicesGrants) = slices.map { case s =>
           (s.io_pCrd.map(_.query), s.io_pCrd.map(_.grant))
         }.unzip
-        val querys = mmioQuerys ++ slicesQuerys.flatten
-        val grants = mmioGrants ++ slicesGrants.flatten
-        val entries = querys.length
-        val pCrdValids = RegInit(VecInit(Seq.fill(entries)(false.B)))
-        val pCrdTypes = Reg(Vec(entries, UInt(PCRDTYPE_WIDTH.W)))
-        val pCrdSrcIDs = Reg(Vec(entries, UInt(SRCID_WIDTH.W)))
-        val pCrdMatch = Wire(Vec(entries, Vec(entries, Bool())))
-        val pCrdMatchEntryVec = pCrdMatch.map(_.asUInt.orR)
-        val pCrdMatchEntryOH = PriorityEncoderOH(pCrdMatchEntryVec)
-        val pCrdFreeOH = ParallelPriorityMux(
-          pCrdMatchEntryVec,
-          pCrdMatch.map(x => VecInit(PriorityEncoderOH(x)))
-        )
+        val mshrPCrdQuerys = mmioQuerys ++ slicesQuerys.flatten
+        val mshrPCrdGrants = mmioGrants ++ slicesGrants.flatten
 
-        // Insert a PCredit
-        val groupSize = 8
-        val ohs_s0 = Seq.tabulate(entries)(i => (BigInt(1) << i).asUInt(entries.W)) :+ 0.U(entries.W)
-        val avail_s0 = Wire(Vec(entries, Bool()))
-        val groups_s0 = (avail_s0 :+ true.B).zip(ohs_s0).grouped(groupSize).toList
-        val select_s0 = Wire(Vec(groups_s0.length, Bool()))
-        select_s0.zip(groups_s0).foreach { case (s, g) => s := g.map(_._1).reduce(_ || _) }
-        val select_s1 = RegInit(VecInit(Seq.fill(groups_s0.length)(false.B)))
-        when (isPCrdGrant) { select_s1 := select_s0 }
-        val ohs_s1 = RegInit(VecInit(Seq.fill(groups_s0.length)(0.U(entries.W))))
-        ohs_s1.zip(groups_s0).foreach { case (oh, g) => when (isPCrdGrant) { oh := ParallelPriorityMux(g) } }
-        val pCrdInsertOH_s1 = ParallelPriorityMux(select_s1, ohs_s1)
-        val isPCrdGrant_s1 = RegNext(isPCrdGrant)
-        val pCrdType_s1 = RegEnable(rxrsp.bits.pCrdType, isPCrdGrant)
-        val srcID_s1 = RegEnable(rxrsp.bits.srcID, isPCrdGrant)
-        pCrdValids.zipWithIndex.foreach { case (v, i) =>
-          avail_s0(i) := !v && (!isPCrdGrant_s1 || !pCrdInsertOH_s1(i))
-          val t = pCrdTypes(i)
-          val srcID = pCrdSrcIDs(i)
-          val insert_s1 = pCrdInsertOH_s1(i)
-          when (isPCrdGrant_s1) {
-            when (insert_s1) {
-              v := true.B
-              t := pCrdType_s1
-              srcID := srcID_s1
-            }
-            assert(!(v && insert_s1), "P-Credit overflow")
-          }
-        }
+        val mshrEntryCount = mshrPCrdQuerys.length
 
-        // Free a PCredit
-        pCrdValids.zipWithIndex.foreach { case (v, i) =>
-          val free = pCrdFreeOH(i)
-          when (free) { v := false.B }
-          assert(!free || v, "invalid entry should not be free")
-        }
+        val pCrdQueueHomeBound = Seq.fill(homeNodeCount)(Module(new Queue(new Bundle {
+          val pCrdType = UInt(PCRDTYPE_WIDTH.W)
+        }, entries = mshrEntryCount)))
 
-        for (i <- 0 until entries) {
-          pCrdMatch(i) := VecInit(pCrdValids.zip(pCrdTypes).zip(pCrdSrcIDs).map { case ((v, t), s) =>
-            querys(i).valid && !grants(i) && v &&
-            querys(i).bits.pCrdType === t &&
-            querys(i).bits.srcID === s
-          })
-          grants(i) := RegNext(pCrdMatchEntryOH(i))
-        }
+        // PCredit hit by MSHRs
+        val mshrPCrdHits = pCrdQueueHomeBound.map(_.io.deq).zipWithIndex.map { case (head, i) => {
+          mshrPCrdQuerys.map { case q => {
+            q.valid && head.valid && q.bits.pCrdType === head.bits.pCrdType && q.bits.srcID === homeNodeIDs(i).U
+          }}
+        }}
+
+        // PCredit dispatch arbitration
+        val mshrPCrdArbGrants = Wire(Vec(homeNodeCount, Vec(mshrEntryCount, Bool())))
+        val mshrPCrdArbIn = mshrPCrdHits.zip(mshrPCrdArbGrants).map { case (hits, grants) => {
+          hits.zip(grants).map { case (hit, grant) => {
+            val arbPort = Wire(Decoupled(new EmptyBundle))
+            arbPort.valid := hit
+            grant := arbPort.ready
+            arbPort
+          }}
+        }}
+        val mshrPCrdArbOut = pCrdQueueHomeBound.map { case queue => {
+          val arbPort = Wire(Decoupled(new EmptyBundle))
+          arbPort.ready := true.B
+          queue.io.deq.ready := arbPort.valid
+          arbPort
+        }}
+
+        mshrPCrdArbIn.zip(mshrPCrdArbOut).zip(homeNodeIDs).foreach{ case ((in, out), id) => {
+          fastArb(in, out, Some(s"pcrdgrant_home${id}"))
+        }}
+
+        mshrPCrdArbGrants.reduceTree { case (a, b) => {
+          VecInit(a.zip(b).map(x => x._1 | x._2))
+        }}.zip(mshrPCrdGrants).foreach { case (arb, grant) => grant := arb }
+
+        // PCredit receive
+        val pCrdGrantValid_s1 = RegNext(isPCrdGrant)
+        val pCrdGrantType_s1 = RegEnable(rxrsp.bits.pCrdType, isPCrdGrant)
+        val pCrdGrantSrcID_s1 = RegEnable(rxrsp.bits.srcID, isPCrdGrant)
+
+        pCrdQueueHomeBound.zip(homeNodeIDs).foreach { case (queue, id) => {
+
+          queue.io.enq.valid := pCrdGrantValid_s1 && pCrdGrantSrcID_s1 === id.U
+          queue.io.enq.bits.pCrdType := pCrdGrantType_s1
+
+          assert(!pCrdGrantValid_s1 || pCrdGrantSrcID_s1 =/= id.U || (pCrdGrantValid_s1 && queue.io.enq.ready),
+            s"P-Credit overflow from Home ${id}")
+        }}
+
+        assert(!pCrdGrantValid_s1 || homeNodeIDs.map(_.U === pCrdGrantSrcID_s1).orR,
+          "unknown Home Node ID")
+
         val grantCnt = RegInit(0.U(64.W))
-        grantCnt := grantCnt + PopCount(grants)
+        grantCnt := grantCnt + PopCount(pCrdQueueHomeBound.map(_.io.deq.ready))
         dontTouch(grantCnt)
 
         val rxrspSliceID = getSliceID(rxrsp.bits.txnID)

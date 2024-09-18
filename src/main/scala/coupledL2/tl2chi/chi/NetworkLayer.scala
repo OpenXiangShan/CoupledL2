@@ -20,6 +20,7 @@ package coupledL2.tl2chi
 import chisel3._
 import chisel3.util._
 import freechips.rocketchip.diplomacy.AddressSet
+import org.chipsalliance.cde.config.Field
 import utility.ParallelPriorityMux
 
 /**
@@ -42,3 +43,15 @@ object SAM {
   def apply(sam: Seq[(AddressSet, Int)]) = new SAM(sam)
   def apply(sam: (AddressSet, Int)) = new SAM(Seq(sam))
 }
+
+/**
+  * Home Node IDs
+  * 
+  * It's required for CoupledL2 (as RNs) to hold the information of HNs on the network
+  * to implement P-Credit management efficiently.
+  */
+case class HomeNodeInfo (
+  id: Seq[Int] = Seq(0)
+)
+
+case object HomeNodeInfoKey extends Field[HomeNodeInfo]
