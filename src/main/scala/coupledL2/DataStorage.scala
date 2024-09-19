@@ -40,8 +40,14 @@ class DSBlock(implicit p: Parameters) extends L2Bundle {
 
 class DataStorage(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
-    // there is only 1 read or write request in the same cycle,
+    // en is the actual r/w valid from mainpipe (last for one cycle)
+    // en is used to generate gated_clock for SRAM
+    val en = Input(Bool())
+
+    // 1. there is only 1 read or write request in the same cycle,
     // so only 1 req port is necessary
+    // 2. according to the requirement of MCP2, [req.valid, req.bits, wdata]
+    // must hold for 2 cycles (unchanged at en and RegNext(en))
     val req = Flipped(ValidIO(new DSRequest))
     val rdata = Output(new DSBlock)
     val wdata = Input(new DSBlock)
@@ -60,23 +66,25 @@ class DataStorage(implicit p: Parameters) extends L2Module {
   val masked_clock = ClockGate(false.B, io.req.valid, clock)
   array.clock := masked_clock
 
+  val arrayIdx = Cat(io.req.bits.way, io.req.bits.set)
   val wen = io.req.valid && io.req.bits.wen
   val ren = io.req.valid && !io.req.bits.wen
 
   // make sure SRAM input signals will not change during the two cycles
-  val holdWen = wen || RegNext(wen)
-  val holdRen = ren || RegNext(ren)
-  val req = HoldUnless(io.req.bits, io.req.valid)
-  val wdata = HoldUnless(io.wdata, io.req.valid)
-  val arrayIdx = Cat(req.way, req.set)
-
-  array.io.w.apply(holdWen, wdata, arrayIdx, 1.U)
-  array.io.r.apply(holdRen, arrayIdx)
+  // TODO: This check is done elsewhere
+  array.io.w.apply(wen, io.wdata, arrayIdx, 1.U)
+  array.io.r.apply(ren, arrayIdx)
 
   // for timing, we set this as multicycle path
   // s3 read, s4 pass and s5 to destination
   io.rdata := array.io.r.resp.data(0)
 
-  assert(!io.req.valid || !RegNext(io.req.valid, false.B),
+  assert(!io.en || !RegNext(io.en, false.B),
     "Continuous SRAM req prohibited under MCP2!")
+
+  assert(!(RegNext(io.en) && (io.req.asUInt =/= RegNext(io.req.asUInt))),
+    s"DataStorage req fails to hold for 2 cycles!")
+
+  assert(!(RegNext(io.en) && (io.wdata.asUInt =/= RegNext(io.wdata.asUInt))),
+    s"DataStorage wdata fails to hold for 2 cycles!")
 }

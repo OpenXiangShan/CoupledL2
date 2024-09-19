@@ -256,7 +256,7 @@ class RequestArb(implicit p: Parameters) extends L2Module
       snoopNeedData ||
       dctNeedData ||
       mshrTask_s2_a_upwards && task_s2.bits.useProbeData,
-    snpHitReleaseNeedData
+    task_s2.valid && snpHitReleaseNeedData
   )
   io.releaseBufRead_s2.bits.id := Mux(
     task_s2.bits.snpHitRelease,

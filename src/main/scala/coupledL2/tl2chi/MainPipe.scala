@@ -73,6 +73,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
     /* read or write data storage */
     val toDS = new Bundle() {
+      val en_s3 = Output(Bool())
       val req_s3 = ValidIO(new DSRequest)
       val rdata_s5 = Input(new DSBlock)
       val wdata_s3 = Output(new DSBlock)
@@ -184,8 +185,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
                               meta_s3.alias.getOrElse(0.U) =/= req_s3.alias.getOrElse(0.U)
 
   val mshr_refill_s3 = mshr_accessackdata_s3 || mshr_hintack_s3 || mshr_grant_s3 // needs refill to L2 DS
-  val retry = io.replResp.valid && io.replResp.bits.retry
-  val need_repl = io.replResp.valid && io.replResp.bits.meta.state =/= INVALID && req_s3.replTask
+  val retry = io.replResp.bits.retry
+  val need_repl = io.replResp.bits.meta.state =/= INVALID && req_s3.replTask
 
   /* ======== Interact with MSHR ======== */
   val acquire_on_miss_s3 = req_acquire_s3 || req_prefetch_s3 || req_get_s3
@@ -386,7 +387,16 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   )
   val wen = wen_c || wen_mshr
 
-  io.toDS.req_s3.valid := task_s3.valid && (ren || wen)
+  // This is to let io.toDS.req_s3.valid hold for 2 cycles (see DataStorage for details)
+  val task_s3_valid_hold2 = RegInit(0.U(2.W))
+  when(task_s2.valid) {
+    task_s3_valid_hold2 := "b11".U
+  }.otherwise {
+    task_s3_valid_hold2 := task_s3_valid_hold2 >> 1.U
+  }
+
+  io.toDS.en_s3 := task_s3.valid && (ren || wen)
+  io.toDS.req_s3.valid := task_s3_valid_hold2.orR && (ren || wen)
   io.toDS.req_s3.bits.way := Mux(
     mshr_refill_s3 && req_s3.replTask,
     io.replResp.bits.way,
