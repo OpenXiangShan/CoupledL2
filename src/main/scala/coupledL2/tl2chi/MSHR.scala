@@ -217,7 +217,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   io.tasks.txreq.valid := !state.s_acquire && !((req_cmoClean || req_cmoFlush) && (!state.w_releaseack || !state.w_rprobeacklast)) ||
                           !state.s_reissue.getOrElse(false.B) && !state.w_grant && gotRetryAck && gotPCrdGrant ||
                           release_valid2
-  io.tasks.txrsp.valid := !state.s_compack.get && state.w_grantlast
+  io.tasks.txrsp.valid := !state.s_compack.get && state.w_grantlast && state.w_grantfirst  //wait for both RespSepData and DataSepResp
   io.tasks.source_b.valid := !state.s_pprobe || !state.s_rprobe
   val mp_release_valid = release_valid1
   val mp_cbwrdata_valid = !state.s_cbwrdata.getOrElse(true.B) && state.w_releaseack
@@ -855,9 +855,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     when (rxdat.bits.chiOpcode.get === DataSepResp) {
       require(beatSize == 2) // TODO: This is ugly
       beatCnt := beatCnt + 1.U
-      state.w_grantfirst := true.B
-      state.w_grantlast := state.w_grantfirst && beatCnt === (beatSize - 1).U
-      state.w_grant := req.off === 0.U || state.w_grantfirst  // TODO? why offset?
+//      state.w_grantfirst := true.B
+      state.w_grantlast := /*state.w_grantfirst &&*/ beatCnt === (beatSize - 1).U
+      state.w_grant := req.off === 0.U || state.w_grantlast  // TODO? why offset?
       gotT := rxdatIsU || rxdatIsU_PD
       gotDirty := gotDirty || rxdatIsU_PD
       gotGrantData := true.B
@@ -977,7 +977,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     state.s_reissue.getOrElse(true.B) &&
     state.s_dct.getOrElse(true.B) &&
     state.s_cmoresp
-  val no_wait = state.w_rprobeacklast && state.w_pprobeacklast && state.w_grantlast && state.w_releaseack && state.w_replResp
+  val no_wait = state.w_rprobeacklast && state.w_pprobeacklast && state.w_grantlast && state.w_grantfirst && state.w_releaseack && state.w_replResp
   val will_free = no_schedule && no_wait
   when (will_free && req_valid) {
     req_valid := false.B
@@ -995,7 +995,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   io.status.bits.needsRepl := releaseNotSent
   // wait for resps, high as valid
   io.status.bits.w_c_resp := !state.w_rprobeacklast || !state.w_pprobeacklast || !state.w_pprobeack
-  io.status.bits.w_d_resp := !state.w_grantlast || !state.w_grant || !state.w_releaseack
+  io.status.bits.w_d_resp := !state.w_grantlast || !state.w_grantfirst || !state.w_grant || !state.w_releaseack
   io.status.bits.will_free := will_free
   io.status.bits.is_miss := !dirResult.hit
   io.status.bits.is_prefetch := req_prefetch
