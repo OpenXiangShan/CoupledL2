@@ -19,7 +19,7 @@ package coupledL2.tl2chi
 import chisel3._
 import chisel3.util._
 import freechips.rocketchip.util.{AsyncQueueParams, AsyncBundle, AsyncQueueSource, AsyncQueueSink}
-import freechips.rocketchip.util.SynchronizerShiftReg
+import freechips.rocketchip.util.AsyncResetSynchronizerShiftReg
 import org.chipsalliance.cde.config.Parameters
 
 class AsyncChannelIO[+T <: Data](gen: T, params: AsyncQueueParams = AsyncQueueParams()) extends Bundle {
@@ -156,14 +156,14 @@ class CHIAsyncBridgeSource(params: AsyncQueueParams = AsyncQueueParams())(implic
     //                    └────┘  └────┘     │
     //                     output clock      │
     //
-    io.enq.rxsactive := SynchronizerShiftReg(io.async.rxsactive, numSyncReg, Some("sync_rxsactive"))
-    io.enq.tx.linkactiveack := SynchronizerShiftReg(io.async.tx.linkactiveack, numSyncReg, Some("sync_tx_linkactiveack"))
-    io.enq.rx.linkactivereq := SynchronizerShiftReg(io.async.rx.linkactivereq, numSyncReg, Some("sync_rx_linkactivereq")) && resetFinish
-    io.enq.syscoack := SynchronizerShiftReg(io.async.syscoack, numSyncReg, Some("sync_syscoack"))
+    io.enq.rxsactive := AsyncResetSynchronizerShiftReg(io.async.rxsactive, numSyncReg, 0, Some("sync_rxsactive"))
+    io.enq.tx.linkactiveack := AsyncResetSynchronizerShiftReg(io.async.tx.linkactiveack, numSyncReg, 0, Some("sync_tx_linkactiveack"))
+    io.enq.rx.linkactivereq := AsyncResetSynchronizerShiftReg(io.async.rx.linkactivereq, numSyncReg, 0, Some("sync_rx_linkactivereq")) && resetFinish
+    io.enq.syscoack := AsyncResetSynchronizerShiftReg(io.async.syscoack, numSyncReg, 0, Some("sync_syscoack"))
 
-    io.enq.rx.rsp.flitpend := SynchronizerShiftReg(io.async.rx.rsp.flitpend, numSyncReg, Some("sync_rx_rsp_flitpend"))
-    io.enq.rx.dat.flitpend := SynchronizerShiftReg(io.async.rx.dat.flitpend, numSyncReg, Some("sync_rx_dat_flitpend"))
-    io.enq.rx.snp.flitpend := SynchronizerShiftReg(io.async.rx.snp.flitpend, numSyncReg, Some("sync_rx_snp_flitpend"))
+    io.enq.rx.rsp.flitpend := AsyncResetSynchronizerShiftReg(io.async.rx.rsp.flitpend, numSyncReg, 0, Some("sync_rx_rsp_flitpend"))
+    io.enq.rx.dat.flitpend := AsyncResetSynchronizerShiftReg(io.async.rx.dat.flitpend, numSyncReg, 0, Some("sync_rx_dat_flitpend"))
+    io.enq.rx.snp.flitpend := AsyncResetSynchronizerShiftReg(io.async.rx.snp.flitpend, numSyncReg, 0, Some("sync_rx_snp_flitpend"))
 
     val RESET_FINISH_MAX = 100
     val resetFinishCounter = withReset(reset.asAsyncReset)(RegInit(0.U((log2Ceil(RESET_FINISH_MAX) + 1).W)))
@@ -222,14 +222,14 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
     //                    └────┘  └────┘     │
     //                     output clock      │
     //
-    io.deq.txsactive := SynchronizerShiftReg(io.async.txsactive, numSyncReg, Some("sync_txsactive"))
-    io.deq.rx.linkactiveack := SynchronizerShiftReg(io.async.rx.linkactiveack, numSyncReg, Some("sync_rx_linkactiveack")) && resetFinish
-    io.deq.tx.linkactivereq := SynchronizerShiftReg(io.async.tx.linkactivereq, numSyncReg, Some("sync_tx_linkactivereq")) && resetFinish
-    io.deq.syscoreq := SynchronizerShiftReg(io.async.syscoreq, numSyncReg, Some("sync_syscoreq"))
+    io.deq.txsactive := AsyncResetSynchronizerShiftReg(io.async.txsactive, numSyncReg, 0, Some("sync_txsactive"))
+    io.deq.rx.linkactiveack := AsyncResetSynchronizerShiftReg(io.async.rx.linkactiveack, numSyncReg, 0, Some("sync_rx_linkactiveack")) && resetFinish
+    io.deq.tx.linkactivereq := AsyncResetSynchronizerShiftReg(io.async.tx.linkactivereq, numSyncReg, 0, Some("sync_tx_linkactivereq")) && resetFinish
+    io.deq.syscoreq := AsyncResetSynchronizerShiftReg(io.async.syscoreq, numSyncReg, 0, Some("sync_syscoreq"))
 
-    io.deq.tx.req.flitpend := SynchronizerShiftReg(io.async.tx.req.flitpend, numSyncReg, Some("sync_tx_req_flitpend"))
-    io.deq.tx.dat.flitpend := SynchronizerShiftReg(io.async.tx.dat.flitpend, numSyncReg, Some("sync_tx_dat_flitpend"))
-    io.deq.tx.rsp.flitpend := SynchronizerShiftReg(io.async.tx.rsp.flitpend, numSyncReg, Some("sync_tx_rsp_flitpend"))
+    io.deq.tx.req.flitpend := AsyncResetSynchronizerShiftReg(io.async.tx.req.flitpend, numSyncReg, 0, Some("sync_tx_req_flitpend"))
+    io.deq.tx.dat.flitpend := AsyncResetSynchronizerShiftReg(io.async.tx.dat.flitpend, numSyncReg, 0, Some("sync_tx_dat_flitpend"))
+    io.deq.tx.rsp.flitpend := AsyncResetSynchronizerShiftReg(io.async.tx.rsp.flitpend, numSyncReg, 0, Some("sync_tx_rsp_flitpend"))
 
     val RESET_FINISH_MAX = 100
     val resetFinishCounter = withReset(reset.asAsyncReset)(RegInit(0.U((log2Ceil(RESET_FINISH_MAX) + 1).W)))
