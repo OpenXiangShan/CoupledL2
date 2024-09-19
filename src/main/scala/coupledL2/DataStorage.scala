@@ -85,6 +85,6 @@ class DataStorage(implicit p: Parameters) extends L2Module {
   assert(!(RegNext(io.en) && (io.req.asUInt =/= RegNext(io.req.asUInt))),
     s"DataStorage req fails to hold for 2 cycles!")
 
-  assert(!(RegNext(io.en) && (io.wdata.asUInt =/= RegNext(io.wdata.asUInt))),
+  assert(!(RegNext(io.en && io.req.bits.wen) && (io.wdata.asUInt =/= RegNext(io.wdata.asUInt))),
     s"DataStorage wdata fails to hold for 2 cycles!")
 }
