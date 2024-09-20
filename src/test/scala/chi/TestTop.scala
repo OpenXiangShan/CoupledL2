@@ -81,7 +81,6 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, iss
       here(L2ParamKey).enableRollingDB && !here(L2ParamKey).FPGAPlatform,
       i
     )
-    case HomeNodeInfoKey => HomeNodeInfo(id = Seq(0))
   }))))
 
   val bankBinders = (0 until numCores).map(_ => BankBinder(banks, 64))
