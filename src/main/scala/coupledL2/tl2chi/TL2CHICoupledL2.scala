@@ -205,7 +205,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
 
         pCrdQueue.io.enq.valid := pCrdGrantValid_s1
         pCrdQueue.io.enq.bits.pCrdType := pCrdGrantType_s1
-        pCrdQueue.io.enq.bits.srcID := pCrdGrantType_s1
+        pCrdQueue.io.enq.bits.srcID := pCrdGrantSrcID_s1
 
         val grantCnt = RegInit(0.U(64.W))
         when (pCrdQueue.io.deq.ready) {
