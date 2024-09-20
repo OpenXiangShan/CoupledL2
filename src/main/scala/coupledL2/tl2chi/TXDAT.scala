@@ -39,7 +39,7 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module {
   })
 
   assert(!io.in.valid || io.in.bits.task.toTXDAT, "txChannel is wrong for TXDAT")
-  assert(io.in.ready, "TXDAT should never be full")
+  assert(!io.in.valid || io.in.ready, "TXDAT should never be full")
   require(chiOpt.isDefined)
   require(beatBytes * 8 == DATA_WIDTH)
 
