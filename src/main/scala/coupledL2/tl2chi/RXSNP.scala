@@ -61,7 +61,7 @@ class RXSNP(
   val reqBlockSnp = reqBlockSnpMask.orR
 
   /**
-    * When should an MSHR that is goint to replace cacheline Y block/nest an incoming snoop with address Y?
+    * When should an MSHR that is going to replace cacheline Y block/nest an incoming snoop with address Y?
     * 
     * 1. After MSHR decides which way to replace but before MSHR finished all the rProbes, the incoming snoop of Y
     *    should be **blocked**, because Once the Probe is issued the slave should not issue further Probes on the block
@@ -70,12 +70,13 @@ class RXSNP(
     */
   val replaceBlockSnpMask = VecInit(io.msInfo.map(s =>
     s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && !s.bits.dirHit && isValid(s.bits.metaState) &&
-    s.bits.w_replResp && (!s.bits.w_rprobeacklast || s.bits.w_releaseack) && !s.bits.willFree
+    s.bits.w_replResp && (!s.bits.w_rprobeacklast || s.bits.w_releaseack || !RegNext(s.bits.w_replResp)) &&
+    !s.bits.willFree
   )).asUInt
   val replaceBlockSnp = replaceBlockSnpMask.orR
   val replaceNestSnpMask = VecInit(io.msInfo.map(s =>
       s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && !s.bits.dirHit && s.bits.metaState =/= INVALID &&
-      s.bits.w_replResp && s.bits.w_rprobeacklast && !s.bits.w_releaseack
+      RegNext(s.bits.w_replResp) && s.bits.w_rprobeacklast && !s.bits.w_releaseack
     )).asUInt
   val replaceDataMask = VecInit(io.msInfo.map(_.bits.replaceData)).asUInt
 
