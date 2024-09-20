@@ -210,19 +210,20 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   /* ======== Task allocation ======== */
   // The first Release with AllowRetry = 1 is sent to main pipe, because the task needs to write DS.
   // The second Release with AllowRetry = 0 is sent to TXREQ directly, because DS is already written.
-  val release_valid1 = (!state.s_release && state.w_rprobeacklast && state.w_grantlast && state.w_replResp) || (!state.s_release && state.w_rprobeacklast && state.w_replResp && (req_cmoClean || req_cmoFlush))
+  val release_valid1 = !state.s_release && state.w_rprobeacklast && state.w_grantlast && state.w_grant && state.w_replResp ||
+    !state.s_release && state.w_rprobeacklast && state.w_replResp && (req_cmoClean || req_cmoFlush)
   val release_valid2 = !state.s_reissue.getOrElse(false.B) && !state.w_releaseack && gotRetryAck && gotPCrdGrant
   // Theoretically, data to be released is saved in ReleaseBuffer, so Acquire can be sent as soon as req enters mshr
   // For cmo_clean/flush, dirty data should be released downward first, then Clean req can be sent
   io.tasks.txreq.valid := !state.s_acquire && !((req_cmoClean || req_cmoFlush) && (!state.w_releaseack || !state.w_rprobeacklast)) ||
                           !state.s_reissue.getOrElse(false.B) && !state.w_grant && gotRetryAck && gotPCrdGrant ||
                           release_valid2
-  io.tasks.txrsp.valid := !state.s_compack.get && state.w_grantlast
+  io.tasks.txrsp.valid := !state.s_compack.get && state.w_grant
   io.tasks.source_b.valid := !state.s_pprobe || !state.s_rprobe
   val mp_release_valid = release_valid1
   val mp_cbwrdata_valid = !state.s_cbwrdata.getOrElse(true.B) && state.w_releaseack
   val mp_probeack_valid = !state.s_probeack && state.w_pprobeacklast
-  val pending_grant_valid = !state.s_refill && state.w_grantlast && state.w_rprobeacklast
+  val pending_grant_valid = !state.s_refill && state.w_grantlast && state.w_grant && state.w_rprobeacklast
   val mp_grant_valid = pending_grant_valid && (retryTimes < backoffThreshold.U || backoffTimer === backoffCycles.U)
   val mp_dct_valid = !state.s_dct.getOrElse(true.B) && state.s_probeack
   io.tasks.mainpipe.valid :=
@@ -857,7 +858,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       beatCnt := beatCnt + 1.U
       state.w_grantfirst := true.B
       state.w_grantlast := state.w_grantfirst && beatCnt === (beatSize - 1).U
-      state.w_grant := req.off === 0.U || state.w_grantfirst  // TODO? why offset?
       gotT := rxdatIsU || rxdatIsU_PD
       gotDirty := gotDirty || rxdatIsU_PD
       gotGrantData := true.B
@@ -869,7 +869,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       require(beatSize == 2) // TODO: This is ugly
       state.w_grantfirst := true.B
       state.w_grantlast := state.w_grantfirst
-      state.w_grant := req.off === 0.U || state.w_grantfirst  // TODO? why offset?
+      state.w_grant := true.B
       gotT := rxdatIsU || rxdatIsU_PD
       gotDirty := gotDirty || rxdatIsU_PD
       gotGrantData := true.B
@@ -884,7 +884,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   when (rxrsp.valid) {
     val nderr = rxrsp.bits.respErr.getOrElse(OK) === NDERR
     when (rxrsp.bits.chiOpcode.get === RespSepData) {
-      state.w_grantfirst := true.B
+      state.w_grant := true.B
       srcid := rxrsp.bits.srcID.getOrElse(0.U)
       homenid := rxrsp.bits.srcID.getOrElse(0.U)
       dbid := rxrsp.bits.dbID.getOrElse(0.U)
@@ -895,8 +895,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       // There is a pending Read transaction waiting for the Comp resp
       when (!state.w_grant) {
         state.w_grantfirst := true.B
-        state.w_grantlast := rxrsp.bits.last
-        state.w_grant := req.off === 0.U || rxrsp.bits.last  // TODO? why offset?
+        state.w_grantlast := true.B
+        state.w_grant := true.B
         gotT := rxrspIsU
         gotDirty := false.B
         denied := denied || nderr
@@ -977,7 +977,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     state.s_reissue.getOrElse(true.B) &&
     state.s_dct.getOrElse(true.B) &&
     state.s_cmoresp
-  val no_wait = state.w_rprobeacklast && state.w_pprobeacklast && state.w_grantlast && state.w_releaseack && state.w_replResp
+  val no_wait = state.w_rprobeacklast && state.w_pprobeacklast && state.w_grantlast && state.w_grant &&
+    state.w_releaseack && state.w_replResp
   val will_free = no_schedule && no_wait
   when (will_free && req_valid) {
     req_valid := false.B
