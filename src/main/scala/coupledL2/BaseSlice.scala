@@ -23,6 +23,7 @@ import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink.TLBundle
 import utility._
 import coupledL2.prefetch.PrefetchIO
+import utils.HasPerfEvents
 
 trait BaseOuterBundle
 
@@ -39,6 +40,6 @@ abstract class BaseSliceIO[T_OUT <: BaseOuterBundle](implicit p: Parameters) ext
   val cmoResp = DecoupledIO(new CMOResp())
 }
 
-abstract class BaseSlice[T_OUT <: BaseOuterBundle](implicit p: Parameters) extends L2Module {
+abstract class BaseSlice[T_OUT <: BaseOuterBundle](implicit p: Parameters) extends L2Module with HasPerfEvents {
   val io: BaseSliceIO[T_OUT]
 }

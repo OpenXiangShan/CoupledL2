@@ -28,8 +28,9 @@ import coupledL2._
 import coupledL2.prefetch.{PrefetchTrain, PfSource}
 import coupledL2.tl2chi.CHICohStates._
 import coupledL2.MetaData._
+import utils.HasPerfEvents
 
-class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
+class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes with HasPerfEvents {
   val io = IO(new Bundle() {
     /* receive task from arbiter at stage 2 */
     val taskFromArb_s2 = Flipped(ValidIO(new TaskBundle()))
@@ -933,4 +934,16 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   XSPerfAccumulate("early_prefetch", meta_s3.prefetch.getOrElse(false.B) && !meta_s3.accessed && !dirResult_s3.hit && task_s3.valid)
 
+  /* ===== Hardware Performance Monitor ===== */
+  val perfEvents = Seq(
+    ("l2_cache_access", task_s3.valid && (sinkA_req_s3 && !req_prefetch_s3 || sinkC_req_s3)),
+    ("l2_cache_wb", task_s3.valid && (mshr_cbWrData_s3 || mshr_snpRespDataX_s3)),
+    ("l2_cache_allocate", task_s3.valid && sinkC_req_s3 && (req_s3.opcode === ReleaseData)),
+    ("l2_cache_wb_victim", task_s3.valid && mshr_cbWrData_s3),
+    ("l2_cache_wb_cleaning_coh", task_s3.valid && mshr_snpRespDataX_s3),
+    ("l2_cache_access_rd", task_s3.valid && sinkA_req_s3 && !req_prefetch_s3),
+    ("l2_cache_access_wr", task_s3.valid && sinkC_req_s3),
+    ("l2_cache_inv", task_s3.valid && sinkB_req_s3 && (req_s3.param === toN))
+  )
+  generatePerfEvent()
 }

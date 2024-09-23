@@ -26,8 +26,9 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.prefetch.PrefetchTrain
 import coupledL2._
+import utils.HasPerfEvents
 
-class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
+class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes with HasPerfEvents {
   val io = IO(new Bundle() {
     /* interact with req arb */
     val fromReqArb = Input(new Bundle() {
@@ -222,5 +223,30 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
       XSPerfMax("mshr_latency", timer, enable)
     }
   }*/
+
+  val hpm_timers = RegInit(VecInit(Seq.fill(mshrsAll)(0.U(10.W))))
+  // TODO: Is the width(4.W) proper here?
+  val lmiss = Wire(Vec(mshrsAll, UInt(4.W)))
+  for (((hpm_timer, m), i) <- hpm_timers.zip(mshrs).zipWithIndex) {
+    when (m.io.alloc.valid) {
+      hpm_timer := 1.U
+    }.otherwise {
+      hpm_timer := hpm_timer + 1.U
+    }
+    val enable = m.io.status.valid && m.io.status.bits.will_free
+    when (enable && hpm_timer > 200.U) {
+      lmiss(i) := 1.U
+    }.otherwise {
+      lmiss(i) := 0.U
+    }
+  }
+
+  val perfEvents = Seq(
+    ("l2_cache_refill", io.resps.rxdat.valid && (io.resps.rxdat.respInfo.chiOpcode.get === CompData) && io.resps.rxdat.respInfo.last),
+    ("l2_cache_rd_refill", io.resps.rxdat.valid && (io.resps.rxdat.respInfo.chiOpcode.get === CompData) && io.resps.rxdat.respInfo.last),
+    ("l2_cache_wr_refill", false.B),
+    ("l2_cache_lmiss", lmiss.reduce(_ + _))
+  )
+  generatePerfEvent()
 }
 
