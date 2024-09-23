@@ -332,6 +332,7 @@ class PrefetchRecv extends Bundle {
   val addr = UInt(64.W)
   val pf_source = UInt(MemReqSource.reqSourceBits.W)
   val addr_valid = Bool()
+  val needT = Bool()
   val l2_pf_en = Bool()
 }
 
