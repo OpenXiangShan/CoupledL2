@@ -63,7 +63,7 @@ class DataStorage(implicit p: Parameters) extends L2Module {
     readMCP2 = true
   ))
 
-  val masked_clock = ClockGate(false.B, io.req.valid, clock)
+  val masked_clock = ClockGate(false.B, io.en, clock)
   array.clock := masked_clock
 
   val arrayIdx = Cat(io.req.bits.way, io.req.bits.set)
