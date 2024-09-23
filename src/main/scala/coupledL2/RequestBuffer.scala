@@ -292,7 +292,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   io.prefetchTrain.foreach {
     train =>
       // trigger train for a_merge when acquire leave reqbuf (early in time)
-      train.valid := io.hasMergeA
+      train.valid := io.aMergeTask.valid
       train.bits.tag := in.tag
       train.bits.set := in.set
       train.bits.needT := needT(in.opcode, in.param)
@@ -315,7 +315,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     XSPerfAccumulate("recv_prefetch", io.in.fire && isPrefetch)
     XSPerfAccumulate("recv_normal", io.in.fire && !isPrefetch)
     XSPerfAccumulate("chosenQ_cancel", chosenQValid && cancel)
-    XSPerfAccumulate("req_buffer_mergeA", io.hasMergeA)
+    XSPerfAccumulate("req_buffer_mergeA", io.aMergeTask.valid)
     // TODO: count conflict
     for(i <- 0 until entries){
       val cntEnable = PopCount(buffer.map(_.valid)) === i.U
