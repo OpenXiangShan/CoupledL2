@@ -343,6 +343,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         prefetcher.get.io.recv_addr.valid := x.in.head._1.addr_valid
         prefetcher.get.io.recv_addr.bits.addr := x.in.head._1.addr
         prefetcher.get.io.recv_addr.bits.pfSource := x.in.head._1.pf_source
+        prefetcher.get.io.recv_addr.bits.needT := x.in.head._1.needT
         prefetcher.get.io_l2_pf_en := x.in.head._1.l2_pf_en
       case None =>
         prefetcher.foreach{
