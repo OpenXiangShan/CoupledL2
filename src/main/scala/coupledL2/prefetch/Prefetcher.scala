@@ -169,6 +169,7 @@ class PrefetchIO(implicit p: Parameters) extends PrefetchBundle {
   val resp = Flipped(DecoupledIO(new PrefetchResp))
   val recv_addr = Flipped(ValidIO(new Bundle() {
     val addr = UInt(64.W)
+    val needT = Bool()
     val pfSource = UInt(MemReqSource.reqSourceBits.W)
   }))
 }
