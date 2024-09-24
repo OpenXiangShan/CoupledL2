@@ -20,6 +20,12 @@ package coupledL2.utils
 import chisel3._
 import chisel3.util._
 
+// enable signals, only used to check mcp2 hold condition of predecessor regs
+class MCP2CheckEn extends Bundle {
+  val en = Bool()
+  val wen = Bool()
+}
+
 /**
  * Assert the signal must hold for certain cycles when enable is high
  */

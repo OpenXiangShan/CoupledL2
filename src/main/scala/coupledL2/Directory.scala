@@ -113,6 +113,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     val replResp = ValidIO(new ReplacerResult)
     // used to count occWays for Grant to retry
     val msInfo = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo)))
+    val mcp2Check = if(hasMCP2Check) Some(Input(new MCP2CheckEn)) else None
   })
 
   def invalid_way_sel(metaVec: Seq[MetaEntry], repl: UInt) = {
@@ -373,4 +374,10 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   XSPerfAccumulate("dirRead_cnt", io.read.fire)
   XSPerfAccumulate("choose_busy_way", reqValid_s3 && !req_s3.wayMask(chosenWay))
+
+  // ===== for MCP2 hold check =====
+  if (hasMCP2Check) {
+    HoldChecker.check2(io.resp.bits, io.mcp2Check.get.en, "dirResp_s3")
+    HoldChecker.check2(io.replResp.bits, io.mcp2Check.get.en, "replResp_s3")
+  }
 }

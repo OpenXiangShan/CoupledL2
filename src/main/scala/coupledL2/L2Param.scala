@@ -106,6 +106,8 @@ case class L2Param(
   FPGAPlatform: Boolean = false,
   // CMO
   hasCMO: Boolean = false,
+  // has DataStorage MCP2 Check
+  MCP2Check: Boolean = true,
 
   // Network layer SAM
   sam: Seq[(AddressSet, Int)] = Seq(AddressSet.everything -> 0)
