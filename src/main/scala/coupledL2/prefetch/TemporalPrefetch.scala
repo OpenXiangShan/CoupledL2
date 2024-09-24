@@ -42,7 +42,7 @@ case class TPParameters(
 ) extends PrefetchParameters {
   override val hasPrefetchBit: Boolean = true
   override val hasPrefetchSrc: Boolean = true
-  override val inflightEntries: Int = 16
+  override val inflightEntries: Int = 16 // should be log2Floor(512 / (fullAddressBits - offsetBits))
 }
 
 trait HasTPParams extends HasCoupledL2Parameters {
@@ -53,7 +53,7 @@ trait HasTPParams extends HasCoupledL2Parameters {
   def tpTableAssoc = tpParams.tpTableAssoc
   def tpTableNrSet = tpParams.tpTableEntries / tpTableAssoc
   def tpTableSetBits = log2Ceil(tpTableNrSet)
-  def tpEntryMaxLen = tpParams.inflightEntries
+  def tpEntryMaxLen = 508 / (fullAddressBits - offsetBits)
   def tpTableReplacementPolicy = tpParams.replacementPolicy
   def debug = tpParams.debug
   def vaddrBits = tpParams.vaddrBits
@@ -63,7 +63,7 @@ trait HasTPParams extends HasCoupledL2Parameters {
   def tpDataQueueDepth = tpParams.tpDataQueueDepth
   def triggerQueueDepth = tpParams.triggerQueueDepth
   def metaDataLength = fullAddressBits - offsetBits
-  def tpPfEntries = log2Ceil(tpParams.tpTableEntries * tpParams.inflightEntries) // actually less
+  def tpPfEntries = log2Ceil(tpParams.tpTableEntries * tpEntryMaxLen) // actually less
   def resetThrottle = tpParams.resetThrottle
   //  val tpThrottleCycles = tpParams.throttleCycles
   //  require(tpThrottleCycles > 0, "tpThrottleCycles must be greater than 0")
@@ -76,6 +76,7 @@ class tpMetaEntry(implicit p:Parameters) extends TPBundle {
   val valid = Bool()
   val triggerTag = UInt((vaddrBits-blockOffBits-tpTableSetBits).W)
   val l2ReqBundle = new TPmetaL2ReqBundle()
+  val hitConfidence = UInt(2.W)
   // val tab = UInt(2.W)
 }
 
@@ -90,6 +91,8 @@ class triggerBundle(implicit p: Parameters) extends TPBundle {
   val paddr = UInt(fullAddressBits.W)
   val way = UInt(log2Ceil(tpTableAssoc).W)
   val replTag = UInt(tagBits.W)
+  val hit = Bool()
+  val hitConfidence = UInt(2.W)
 }
 
 class trainBundle(implicit p: Parameters) extends TPBundle {
@@ -285,10 +288,12 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   val hitVec = tagMatchVec.zip(metaValidVec).map(x => x._1 && x._2)
   val hitWay = OHToUInt(hitVec)
+  val hitConfidenceVec = metas.zip(hitVec).map(x => x._1.hitConfidence.orR && x._2)
   val victimWay = repl.get_replace_way(repl_state_s1 /*never mind for random*/)
   val invalidWay = ParallelPriorityMux(metaInvalidVec.zipWithIndex.map(x => x._1 -> x._2.U(log2Ceil(tpTableAssoc).W)))
 
   val hit_s1 = Cat(hitVec).orR
+  val hitConfidence_s1 = Cat(hitConfidenceVec).orR
   val hasInvalidWay_s1 = Cat(metaInvalidVec).orR
   val way_s1 = Mux(hit_s1, hitWay, Mux(hasInvalidWay_s1, invalidWay, victimWay))
   val l2ReqBundle_s1 = metas(way_s1).l2ReqBundle
@@ -309,6 +314,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val tpMetaRespValid_s2 = RegEnable(tpMetaRespValid_s1, s1_valid)
   val tpMetaResp_s2 = RegEnable(tpMetaResp_s0, s1_valid)
   val hit_s2 = RegEnable(hit_s1, false.B, s1_valid)
+  val hitConfidence_s2 = RegEnable(hitConfidence_s1, false.B, s1_valid)
   val hasInvalidWay_s2 = RegEnable(hasInvalidWay_s1, false.B, s1_valid)
   val way_s2 = RegEnable(way_s1, s1_valid)
   val repl_state_s2 = RegEnable(repl_state_s1, s1_valid)
@@ -396,10 +402,12 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   triggerQueue.io.enq.bits.paddr := train_s2.addr
   triggerQueue.io.enq.bits.way := way_s2
   triggerQueue.io.enq.bits.replTag := Mux(replTagValid_s2, replTag_s2, Mux(trainOnVaddr.orR, vtag_s2, ptag_s2))
+  triggerQueue.io.enq.bits.hit := hit_s2
+  triggerQueue.io.enq.bits.hitConfidence := Mux(hitConfidence_s2, 1.U, hit_s2) //TODO: specify hitConfidence's 2 bits
   triggerQueue.io.deq.ready := false.B // will be override
 
   // dataReadQueue enqueue
-  dataReadQueue.io.enq.valid := s2_valid && !tpMetaRespValid_s2 && hit_s2
+  dataReadQueue.io.enq.valid := s2_valid && !tpMetaRespValid_s2 && hit_s2 // && hitConfidence_s2
   dataReadQueue.io.enq.bits.l2ReqBundle := l2ReqBundle_s2
   dataReadQueue.io.enq.bits.wmode := false.B
   dataReadQueue.io.enq.bits.rawData := DontCare
@@ -434,7 +442,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   io.tpmeta_port.resp.ready := true.B
 
   val tpmetaRespHartid = io.tpmeta_port.resp.bits.rawData(511, 508)
-  val tpmetaRespRawData = VecInit((0 until 16).map(i => io.tpmeta_port.resp.bits.rawData(metaDataLength * (i + 1) - 1, metaDataLength * i)))
+  val tpmetaRespRawData = VecInit((0 until tpEntryMaxLen).map(i => io.tpmeta_port.resp.bits.rawData(metaDataLength * (i + 1) - 1, metaDataLength * i)))
   tpDataQueue.io.enq.valid := io.tpmeta_port.resp.valid && tpmetaRespHartid === hartid.U && io.tpmeta_port.resp.bits.exist
   tpDataQueue.io.enq.bits.rawData := tpmetaRespRawData
   assert(tpDataQueue.io.enq.ready === true.B) // tpDataQueue is never full
@@ -485,6 +493,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   tpMeta_w_bits.l2ReqBundle.set := Mux(trainOnVaddr.orR, write_record_l2_vset, write_record_l2_pset)
   tpMeta_w_bits.l2ReqBundle.bank := Mux(trainOnVaddr.orR, write_record_l2_vbank, write_record_l2_pbank)
   tpMeta_w_bits.l2ReqBundle.off := Mux(trainOnVaddr.orR, write_record_l2_voff, write_record_l2_poff)
+  tpMeta_w_bits.hitConfidence := write_record_trigger.hitConfidence
   when(!resetFinish) {
     tpMeta_w_bits.valid := false.B
     tpMeta_w_bits.triggerTag := 0.U
@@ -492,6 +501,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     tpMeta_w_bits.l2ReqBundle.set := 0.U
     tpMeta_w_bits.l2ReqBundle.bank := 0.U
     tpMeta_w_bits.l2ReqBundle.off := 0.U
+    tpMeta_w_bits.hitConfidence := 0.U
   }
 
   val tpTable_w_set = Mux(resetFinish, Mux(tpmetaInvalidate, tpMetaResp_s2.set,
@@ -501,7 +511,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   tpMetaTable.io.w.apply(tpTable_w_valid || !resetFinish, tpMeta_w_bits, tpTable_w_set, tpTable_w_wayOH)
 
-  dataWriteQueue.io.enq.valid := tpTable_w_valid && !tpmetaInvalidate
+  dataWriteQueue.io.enq.valid := tpTable_w_valid && !tpmetaInvalidate // && write_record_trigger.hit
   dataWriteQueue.io.enq.bits.wmode := true.B
   dataWriteQueue.io.enq.bits.rawData.zip(recorder_data).foreach(x => x._1 := x._2(fullAddressBits - offsetBits - 1, 0))
   dataWriteQueue.io.enq.bits.l2ReqBundle.tag := Mux(trainOnVaddr.orR, write_record_l2_vtag, write_record_l2_ptag)
@@ -575,6 +585,8 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   triggerPt.vaddr := recoverVaddr(write_record_trigger.vaddr)
   triggerPt.way := write_record_trigger.way
   triggerPt.replTag := write_record_trigger.replTag
+  triggerPt.hit := write_record_trigger.hit
+  triggerPt.hitConfidence := write_record_trigger.hitConfidence
 
   val trainDB = ChiselDB.createTable("tptrain", new trainBundle(), basicDB = true)
   val trainPt = Wire(new trainBundle())
@@ -600,6 +612,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   replDB.log(replPt, triggerEnq_s2, "", clock, reset)
 
   XSPerfAccumulate("tp_send", io.req.fire)
+  XSPerfAccumulate("tp_send_set", io.req.fire && (sending_idx === 1.U))
   XSPerfAccumulate("tp_train_valid", io.train.valid)
   XSPerfAccumulate("tp_s0_valid", s0_valid)
   XSPerfAccumulate("tp_meta_read", io.tpmeta_port.req.fire && !io.tpmeta_port.req.bits.wmode)
@@ -611,4 +624,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   XSPerfAccumulate("tp_hit", io.tpHitFeedback.valid && io.tpHitFeedback.bits.hit)
   XSPerfAccumulate("tp_latepf", io.tpHitFeedback.valid && io.tpHitFeedback.bits.latepf)
   XSPerfAccumulate("tp_miss", io.tpHitFeedback.valid && io.tpHitFeedback.bits.replMiss)
+  XSPerfAccumulate("tp_train_0", s2_valid && !hit_s2)
+  XSPerfAccumulate("tp_train_1", s2_valid && hit_s2)
+  XSPerfAccumulate("tp_train_2", s2_valid && hit_s2 && hitConfidence_s2)
 }
