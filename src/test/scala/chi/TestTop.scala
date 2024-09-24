@@ -141,7 +141,7 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, iss
     }
 
     val io = IO(Vec(numCores, new Bundle() {
-      val chi = new PortIO
+      val chi = new PortIO()(p.alterPartial { case CHIIssue => issue })
     }))
 
     l2_nodes.zipWithIndex.foreach { case (l2, i) =>
@@ -200,7 +200,7 @@ object TestTop_CHI_DualCore_0UL extends App {
   TestTopCHIHelper.gen(p => new TestTop_CHIL2(
     numCores = 2,
     numULAgents = 0,
-    banks = 1)(p)
+    banks = 4)(p)
   )(args)
 }
 
@@ -218,7 +218,7 @@ object TestTop_CHI_DualCore_0UL_Eb extends App {
   TestTopCHIHelper.gen(p => new TestTop_CHIL2(
     numCores = 2,
     numULAgents = 0,
-    banks = 1,
+    banks = 4,
     issue = "E.b")(p)
   )(args)
 }
@@ -228,7 +228,7 @@ object TestTop_CHI_DualCore_2UL_Eb extends App {
   TestTopCHIHelper.gen(p => new TestTop_CHIL2(
     numCores = 2,
     numULAgents = 2,
-    banks = 1,
+    banks = 4,
     issue = "E.b")(p)
   )(args)
 }
