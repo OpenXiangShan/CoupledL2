@@ -23,7 +23,6 @@ import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink.TLBundle
 import utility._
 import coupledL2.prefetch.PrefetchIO
-import utils.HasPerfEvents
 
 trait BaseOuterBundle
 

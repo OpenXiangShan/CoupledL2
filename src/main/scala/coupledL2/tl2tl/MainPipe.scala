@@ -29,7 +29,6 @@ import coupledL2._
 import coupledL2.utils._
 import coupledL2.debug._
 import coupledL2.prefetch.{PfSource, PrefetchTrain}
-import utils.HasPerfEvents
 
 class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   val io = IO(new Bundle() {
@@ -719,8 +718,8 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   /* ===== Hardware Performance Monitor ===== */
   val perfEvents = Seq(
     ("l2_cache_access", task_s3.valid && (sinkA_req_s3 && !req_prefetch_s3 || sinkC_req_s3)),
-    ("l2_cache_wb", task_s3.valid && (mshr_releasedata_s3 || mshr_probeackdata_s3)),
-    ("l2_cache_allocate", task_s3.valid && sinkC_req_s3 && (req_s3.opcode === ReleaseData)),
+    ("l2_cache_l2wb", task_s3.valid && (mshr_releasedata_s3 || mshr_probeackdata_s3)),
+    ("l2_cache_l1wb", task_s3.valid && sinkC_req_s3 && (req_s3.opcode === ReleaseData)),
     ("l2_cache_wb_victim", task_s3.valid && mshr_releasedata_s3),
     ("l2_cache_wb_cleaning_coh", task_s3.valid && mshr_probeackdata_s3),
     ("l2_cache_access_rd", task_s3.valid && sinkA_req_s3 && !req_prefetch_s3),

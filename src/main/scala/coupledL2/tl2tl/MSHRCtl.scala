@@ -25,7 +25,6 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2._
 import coupledL2.prefetch.PrefetchTrain
-import utils.HasPerfEvents
 
 class MSHRSelector(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
@@ -235,7 +234,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
     ("l2_cache_refill", acquireUnit.io.sourceA.fire && acquireUnit.io.task.bits.opcode === AcquireBlock),
     ("l2_cache_rd_refill", acquireUnit.io.sourceA.fire && acquireUnit.io.task.bits.opcode === AcquireBlock),
     ("l2_cache_wr_refill", false.B),
-    ("l2_cache_lmiss", lmiss.reduce(_ + _))
+    ("l2_cache_long_miss", lmiss.reduce(_ + _))
   )
   generatePerfEvent()
 }

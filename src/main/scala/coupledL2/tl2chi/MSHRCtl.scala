@@ -26,7 +26,6 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.prefetch.PrefetchTrain
 import coupledL2._
-import utils.HasPerfEvents
 
 class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes with HasPerfEvents {
   val io = IO(new Bundle() {
@@ -245,7 +244,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
     ("l2_cache_refill", io.resps.rxdat.valid && (io.resps.rxdat.respInfo.chiOpcode.get === CompData) && io.resps.rxdat.respInfo.last),
     ("l2_cache_rd_refill", io.resps.rxdat.valid && (io.resps.rxdat.respInfo.chiOpcode.get === CompData) && io.resps.rxdat.respInfo.last),
     ("l2_cache_wr_refill", false.B),
-    ("l2_cache_lmiss", lmiss.reduce(_ + _))
+    ("l2_cache_long_miss", lmiss.reduce(_ + _))
   )
   generatePerfEvent()
 }
