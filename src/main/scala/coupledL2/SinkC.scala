@@ -201,6 +201,6 @@ class SinkC(implicit p: Parameters) extends L2Module {
   // ===== for MCP2 hold check =====
   if (hasMCP2Check) {
     assert(!io.task.fire || !RegNext(io.task.fire), "No continuous write @SinkC")
-    HoldChecker.check2(io.bufResp.data.asUInt, io.mcp2Check.get.wen, "sinkC_wdata")
+    HoldChecker.check2(io.bufResp.data, io.mcp2Check.get.wen, "sinkC_wdata")
   }
 }

@@ -33,19 +33,16 @@ object HoldChecker {
   /**
    * signal holds at en and the next cycle
    */
-  def check2(signal: UInt, en: Bool, name: String): Unit = {
+  def check2(signal: Data, en: Bool, name: String): Unit = {
     // at the 2nd cycle, signal changes
-    assert(!(RegNext(en) && (signal =/= RegNext(signal))),
+    assert(!(RegNext(en) && (signal.asUInt =/= RegNext(signal).asUInt)),
       s"signal changed at $name, fails to hold for 2 cycles")
-  }
-  def check2(signal: Record, en: Bool, name: String): Unit = {
-    check2(signal.asUInt, en, name)
   }
 
   /**
    * signal holds for N cycles
    */
-  def apply(signal: UInt, en: Bool, cycles: Int, name: String): Unit = {
+  def apply(signal: Data, en: Bool, cycles: Int, name: String): Unit = {
     val counter = RegInit(0.U(log2Ceil(cycles).W))
     val data = RegEnable(signal, 0.U.asTypeOf(signal), en)
 
@@ -55,12 +52,8 @@ object HoldChecker {
       counter := Mux(counter === 0.U, 0.U, counter - 1.U)
     }
 
-    assert((counter =/= 0.U) && (signal =/= data),
+    assert((counter =/= 0.U) && (signal.asUInt =/= data.asUInt),
       s"Signal should hold for $cycles cycles, but it fails")
-  }
-
-  def apply(signal: Record, en: Bool, cycles: Int, name: String): Unit = {
-    apply(signal.asUInt, en, cycles, name)
   }
 }
 

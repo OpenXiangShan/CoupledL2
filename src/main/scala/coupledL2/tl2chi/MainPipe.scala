@@ -25,6 +25,7 @@ import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2._
+import coupledL2.utils.HoldChecker
 import coupledL2.prefetch.{PrefetchTrain, PfSource}
 import coupledL2.tl2chi.CHICohStates._
 import coupledL2.MetaData._
@@ -413,6 +414,11 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       io.refillBufResp_s3.bits.data
     )
   )
+
+  if (hasMCP2Check) {
+    HoldChecker.check2(task_s3.bits, io.toDS.en_s3, "task_s3_bits")
+    HoldChecker.check2(task_s3_valid_hold2, io.toDS.en_s3, "task_s3_valid_hold2")
+  }
 
   /* ======== Read DS and store data in Buffer ======== */
   // A: need_write_releaseBuf indicates that DS should be read and the data will be written into ReleaseBuffer
