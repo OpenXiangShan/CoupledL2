@@ -316,7 +316,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
 
   if (hasMCP2Check) {
     HoldChecker.check2(task_s3.bits, io.toDS.en_s3, "task_s3_bits")
-    HoldChecker.check2(task_s3_valid_hold2(0), io.toDS.req_s3.valid, "task_s3_valid_hold2_0")
+    HoldChecker.check2(task_s3_valid_hold2(0), io.toDS.en_s3, "task_s3_valid_hold2_0")
   }
 
   /* ======== Read DS and store data in Buffer ======== */
