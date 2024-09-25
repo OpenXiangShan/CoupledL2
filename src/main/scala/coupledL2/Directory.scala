@@ -377,13 +377,15 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   // ===== for MCP2 hold check =====
   if (hasMCP2Check) {
+    // TODO: it now relies on physical design analysis to tell us which regs to check hold
+    // We may use chisel methods to distinguish all predecessor registers
+    // of dataStorage inputs in the future
     val en = io.mcp2Check.get.en
     HoldChecker.check2(io.resp.bits, en, "dirResp_s3")
     HoldChecker.check2(io.replResp.bits, en, "replResp_s3")
 
     HoldChecker.check2(freeWayMask_s3, en, "freeWayMask_s3")
     HoldChecker.check2(metaAll_s3, en, "metaAll_s3")
-    HoldChecker.check2(refillReqValid_s3, en, "refillReqValid_s3")
     HoldChecker.check2(repl_state_s3, en, "repl_state_s3")
     HoldChecker.check2(req_s3, en, "req_s3")
     HoldChecker.check2(tagAll_s3, en, "tagAll_s3")
