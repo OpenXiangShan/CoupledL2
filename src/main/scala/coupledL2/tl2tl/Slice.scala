@@ -205,4 +205,15 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
 
   val monitor = Module(new Monitor())
   monitor.io.fromMainPipe <> mainPipe.io.toMonitor
+
+  if (hasMCP2Check) {
+    val dsEnable = WireInit(0.U.asTypeOf(new MCP2CheckEn))
+    dsEnable.en := dataStorage.io.en
+    dsEnable.wen := dataStorage.io.en && dataStorage.io.req.bits.wen
+
+    directory.io.mcp2Check.get := dsEnable
+    releaseBuf.io.mcp2Check.get := dsEnable
+    refillBuf.io.mcp2Check.get := dsEnable
+    sinkC.io.mcp2Check.get := dsEnable
+  }
 }
