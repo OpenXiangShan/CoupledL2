@@ -417,6 +417,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   if (hasMCP2Check) {
     HoldChecker.check2(task_s3.bits, io.toDS.en_s3, "task_s3_bits")
+    HoldChecker.check2(task_s3_valid_hold2(0), io.toDS.req_s3.valid, "task_s3_valid_hold2_0")
   }
 
   /* ======== Read DS and store data in Buffer ======== */
