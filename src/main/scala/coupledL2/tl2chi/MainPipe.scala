@@ -397,7 +397,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   }
 
   io.toDS.en_s3 := task_s3.valid && (ren || wen)
-  io.toDS.req_s3.valid := task_s3_valid_hold2.orR && (ren || wen)
+  io.toDS.req_s3.valid := task_s3_valid_hold2(0) && (ren || wen)
   io.toDS.req_s3.bits.way := Mux(
     mshr_refill_s3 && req_s3.replTask,
     io.replResp.bits.way,
