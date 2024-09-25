@@ -521,7 +521,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         INVALID,
         Mux(snpToB, BRANCH, meta.state)
       ),
-      clients = Fill(clientBits, !probeGotN && !snpToN),
+      clients = meta.clients & Fill(clientBits, !probeGotN && !snpToN),
       alias = meta.alias, //[Alias] Keep alias bits unchanged
       prefetch = !snpToN && meta_pft,
       accessed = !snpToN && meta.accessed
