@@ -113,6 +113,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     val replResp = ValidIO(new ReplacerResult)
     // used to count occWays for Grant to retry
     val msInfo = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo)))
+    val mcp2Check = if(hasMCP2Check) Some(Input(new MCP2CheckEn)) else None
   })
 
   def invalid_way_sel(metaVec: Seq[MetaEntry], repl: UInt) = {
@@ -373,4 +374,20 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   XSPerfAccumulate("dirRead_cnt", io.read.fire)
   XSPerfAccumulate("choose_busy_way", reqValid_s3 && !req_s3.wayMask(chosenWay))
+
+  // ===== for MCP2 hold check =====
+  if (hasMCP2Check) {
+    // TODO: it now relies on physical design analysis to tell us which regs to check hold
+    // We may use chisel methods to distinguish all predecessor registers
+    // of dataStorage inputs in the future
+    val en = io.mcp2Check.get.en
+    HoldChecker.check2(io.resp.bits, en, "dirResp_s3")
+    HoldChecker.check2(io.replResp.bits, en, "replResp_s3")
+
+    HoldChecker.check2(freeWayMask_s3, en, "freeWayMask_s3")
+    HoldChecker.check2(metaAll_s3, en, "metaAll_s3")
+    HoldChecker.check2(repl_state_s3, en, "repl_state_s3")
+    HoldChecker.check2(req_s3, en, "req_s3")
+    HoldChecker.check2(tagAll_s3, en, "tagAll_s3")
+  }
 }

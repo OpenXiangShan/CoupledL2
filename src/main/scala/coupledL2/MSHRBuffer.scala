@@ -42,6 +42,7 @@ class MSHRBuffer(wPorts: Int = 1)(implicit p: Parameters) extends L2Module {
     val r = Flipped(ValidIO(new MSHRBufRead))
     val resp = new MSHRBufResp
     val w = Vec(wPorts, Flipped(ValidIO(new MSHRBufWrite)))
+    val mcp2Check = if(hasMCP2Check) Some(Input(new MCP2CheckEn)) else None
   })
 
   val buffer = Reg(Vec(mshrsAll, Vec(beatSize, UInt((beatBytes * 8).W))))
@@ -63,6 +64,11 @@ class MSHRBuffer(wPorts: Int = 1)(implicit p: Parameters) extends L2Module {
 
   val rdata = buffer(io.r.bits.id).asUInt
   io.resp.data.data := RegEnable(rdata, 0.U.asTypeOf(rdata), io.r.valid)
+
+  if (hasMCP2Check) {
+    assert(!io.r.valid || !RegNext(io.r.valid), "No continuous read")
+    HoldChecker.check2(io.resp.data.data, io.mcp2Check.get.wen, "mshrBuf_wdata")
+  }
 }
 
 // may consider just choose an empty entry to insert

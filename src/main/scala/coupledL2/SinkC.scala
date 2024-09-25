@@ -23,6 +23,7 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import org.chipsalliance.cde.config.Parameters
 import utility.{MemReqSource, XSPerfAccumulate, RRArbiterInit}
+import coupledL2.utils._
 
 class PipeBufferResp(implicit p: Parameters) extends L2Bundle {
   val data = Vec(beatSize, UInt((beatBytes * 8).W))
@@ -41,6 +42,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
     val bufResp = Output(new PipeBufferResp)
     val refillBufWrite = ValidIO(new MSHRBufWrite)
     val msInfo = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo)))
+    val mcp2Check = if(hasMCP2Check) Some(Input(new MCP2CheckEn)) else None
   })
 
   val (first, last, _, beat) = edgeIn.count(io.c)
@@ -196,4 +198,9 @@ class SinkC(implicit p: Parameters) extends L2Module {
   XSPerfAccumulate("NewDataNestC", io.refillBufWrite.valid)
   //!!WARNING: TODO: if this is zero, that means fucntion [Release-new-data written into refillBuf]
   // is never tested, and may have flaws
+  // ===== for MCP2 hold check =====
+  if (hasMCP2Check) {
+    assert(!io.task.fire || !RegNext(io.task.fire), "No continuous write @SinkC")
+    HoldChecker.check2(io.bufResp.data, io.mcp2Check.get.wen, "sinkC_wdata")
+  }
 }
