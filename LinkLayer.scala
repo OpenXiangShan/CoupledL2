@@ -35,6 +35,24 @@ class UpwardsNoSnpLinkIO(implicit p: Parameters) extends Bundle with HasLinkSwit
 class NoSnpPortIO(implicit p: Parameters) extends Bundle with HasPortSwitch {
   val tx = new DownwardsNoSnpLinkIO
   val rx = Flipped(new UpwardsNoSnpLinkIO)
+
+  def connect(e: PortIO): Unit = {
+    e.tx.req <> this.tx.req
+    e.tx.dat <> this.tx.dat
+    e.tx.rsp <> DontCare
+    e.tx.linkactivereq <> this.tx.linkactivereq
+    e.rx.snp <> DontCare
+    e.rx.linkactiveack <> this.rx.linkactiveack
+    e.txsactive <> this.txsactive
+    e.syscoreq <> DontCare
+    e.syscoack <> DontCare
+
+    this.tx.linkactiveack <> e.tx.linkactiveack
+    this.rx.rsp <> e.rx.rsp
+    this.rx.dat <> e.rx.dat
+    this.rx.linkactivereq <> e.rx.linkactivereq
+    this.rxsactive <> e.rxsactive
+  }
 }
 
 class UpwardsLinkMonitor(implicit p: Parameters) extends LLCModule {
@@ -87,6 +105,8 @@ class UpwardsLinkMonitor(implicit p: Parameters) extends LLCModule {
   txsactive := true.B
   txOut.linkactivereq := !reset.asBool
   rxOut.linkactiveack := RegNext(rxOut.linkactivereq) || !rxDeact
+
+  io.out.syscoack := RegNext(io.out.syscoreq)
 
   dontTouch(io.out)
 
@@ -153,4 +173,41 @@ class DownwardsLinkMonitor(implicit p: Parameters) extends LLCModule {
     out.bits.elements.filter(_._1 == "srcID").head._2 := srcID
     out
   }
+}
+
+class TransmitterLinkMonitor(implicit p: Parameters) extends LLCModule with HasCHIMsgParameters {
+  private val maxLCreditNum = 15
+  val io = IO(new Bundle() {
+    val in = Flipped(new DecoupledPortIO())
+    val out = new PortIO
+  })
+
+  val txState = RegInit(LinkStates.STOP)
+  val rxState = RegInit(LinkStates.STOP)
+
+  Seq(txState, rxState).zip(MixedVecInit(Seq(io.out.tx, io.out.rx))).foreach { case (state, link) =>
+    state := MuxLookup(Cat(link.linkactivereq, link.linkactiveack), LinkStates.STOP)(Seq(
+      Cat(true.B, false.B) -> LinkStates.ACTIVATE,
+      Cat(true.B, true.B) -> LinkStates.RUN,
+      Cat(false.B, true.B) -> LinkStates.DEACTIVATE,
+      Cat(false.B, false.B) -> LinkStates.STOP
+    ))
+  }
+
+  /* IO assignment */
+  val rxsnpDeact, rxrspDeact, rxdatDeact = Wire(Bool())
+  val rxDeact = rxsnpDeact && rxrspDeact && rxdatDeact
+  Decoupled2LCredit(io.in.tx.req, io.out.tx.req, LinkState(txState), Some("txreq"))
+  Decoupled2LCredit(io.in.tx.rsp, io.out.tx.rsp, LinkState(txState), Some("txrsp"))
+  Decoupled2LCredit(io.in.tx.dat, io.out.tx.dat, LinkState(txState), Some("txdat"))
+  LCredit2Decoupled(io.out.rx.snp, io.in.rx.snp, LinkState(rxState), rxsnpDeact, Some("rxsnp"), maxLCreditNum)
+  LCredit2Decoupled(io.out.rx.rsp, io.in.rx.rsp, LinkState(rxState), rxrspDeact, Some("rxrsp"), maxLCreditNum)
+  LCredit2Decoupled(io.out.rx.dat, io.in.rx.dat, LinkState(rxState), rxdatDeact, Some("rxdat"), maxLCreditNum)
+
+  io.out.txsactive := true.B
+  io.out.tx.linkactivereq := !reset.asBool
+  io.out.rx.linkactiveack := RegNext(io.out.rx.linkactivereq) || !rxDeact
+
+  io.out.syscoreq := true.B
+  dontTouch(io.out)
 }
