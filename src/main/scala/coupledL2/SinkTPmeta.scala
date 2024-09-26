@@ -52,6 +52,7 @@ class SinkTPmeta(implicit p: Parameters) extends L2Module {
     task.reqSource := 0.U
     task.replTask := false.B
     task.vaddr.foreach(_ := 0.U)
+    task.pc.foreach(_ := 0.U)
     //miss acquire keyword
     task.isKeyword.foreach(_ := false.B)
     task.mergeA := false.B

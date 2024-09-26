@@ -224,6 +224,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   ms_task.off              := req_s3.off
   ms_task.alias.foreach(_  := req_s3.alias.getOrElse(0.U))
   ms_task.vaddr.foreach(_  := req_s3.vaddr.getOrElse(0.U))
+  ms_task.pc.foreach(_     := req_s3.pc.getOrElse(0.U))
   ms_task.isKeyword.foreach(_ := req_s3.isKeyword.get)  //OrElse(false.B))
 
   ms_task.opcode           := req_s3.opcode
@@ -258,7 +259,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   ms_task.tpmetaWen        := req_s3.tpmetaWen
   ms_task.tpmetaWenRepl    := need_mshr_s3_tp
   ms_task.tpReplTag        := req_s3.tpReplTag
-  ms_task.tpmetaReplTag := 0.U(tagBits.W)
+  ms_task.tpmetaReplTag    := 0.U(tagBits.W)
 
   /* ======== Resps to SinkA/B/C Reqs ======== */
   val sink_resp_s3 = WireInit(0.U.asTypeOf(Valid(new TaskBundle))) // resp for sinkA/B/C request that does not need to alloc mshr
