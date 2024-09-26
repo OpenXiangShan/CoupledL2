@@ -23,55 +23,51 @@ import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2chi.{PortIO}
 
-class OpenLLC(implicit p: Parameters) extends LazyModule with HasOpenLLCParameters with HasClientInfo {
+class OpenLLC(implicit p: Parameters) extends LLCModule with HasClientInfo {
+  private val sizeBytes = cacheParams.toCacheParams.capacity.toDouble 
+  private val sizeStr = sizeBytesToStr(sizeBytes)
+  private val clientParam = cacheParams.clientCaches.head.toCacheParams
+  // Display info
+  println(s"====== ${inclusion} CHI-CHI ${cacheParams.name} ($sizeStr * $banks-bank)  ======")
+  println(s"bankBits: ${bankBits}")
+  println(s"sets:${cacheParams.sets} ways:${cacheParams.ways} blockBytes:${cacheParams.blockBytes}")
+  println(s"[snoop filter] size:${sizeBytesToStr(banks * clientSets * clientWays * clientParam.blockBytes.toDouble)}")
+  println(s"[snoop filter] sets:${clientSets} ways:${clientWays}")
 
-  class OpenLLCImp(wrapper: LazyModule) extends LazyModuleImp(wrapper) {
-    private val sizeBytes = cacheParams.toCacheParams.capacity.toDouble 
-    private val sizeStr = sizeBytesToStr(sizeBytes)
-    private val clientParam = cacheParams.clientCaches.head.toCacheParams
-    // Display info
-    println(s"====== ${inclusion} CHI-CHI ${cacheParams.name} ($sizeStr * $banks-bank)  ======")
-    println(s"bankBits: ${bankBits}")
-    println(s"sets:${cacheParams.sets} ways:${cacheParams.ways} blockBytes:${cacheParams.blockBytes}")
-    println(s"[snoop filter] size:${sizeBytesToStr(clientSets * clientWays * clientParam.blockBytes.toDouble)}")
-    println(s"[snoop filter] sets:${clientSets} ways:${clientWays}")
+  val io = IO(new Bundle {
+    val rn = Vec(numRNs, Flipped(new PortIO))
+    val sn = new NoSnpPortIO
+    val nodeID = Input(UInt())
+  })
 
-    val io = IO(new Bundle {
-      val rn = Vec(numRNs, Flipped(new PortIO))
-      val sn = new NoSnpPortIO
-      val nodeID = Input(UInt())
-    })
+  println(s"CHI REQ Flit Width: ${io.rn(0).tx.req.flit.getWidth}")
+  println(s"CHI RSP Flit Width: ${io.rn(0).tx.rsp.flit.getWidth}")
+  println(s"CHI SNP Flit Width: ${io.rn(0).rx.snp.flit.getWidth}")
+  println(s"CHI DAT Flit Width: ${io.rn(0).rx.dat.flit.getWidth}")
 
-    println(s"CHI REQ Flit Width: ${io.rn(0).tx.req.flit.getWidth}")
-    println(s"CHI RSP Flit Width: ${io.rn(0).tx.rsp.flit.getWidth}")
-    println(s"CHI SNP Flit Width: ${io.rn(0).rx.snp.flit.getWidth}")
-    println(s"CHI DAT Flit Width: ${io.rn(0).rx.dat.flit.getWidth}")
+  val rnXbar = Module(new RNXbar())
+  val snXbar = Module(new SNXbar())
+  val snLinkMonitor = Module(new DownwardsLinkMonitor())
 
-    val rnXbar = Module(new RNXbar())
-    val snXbar = Module(new SNXbar())
-    val snLinkMonitor = Module(new DownwardsLinkMonitor())
-
-    for (i <- 0 until numRNs) {
-      val rnLinkMonitor = Module(new UpwardsLinkMonitor())
-      rnLinkMonitor.io.out <> io.rn(i)
-      rnLinkMonitor.io.entranceID := i.U
-      rnLinkMonitor.io.nodeID := io.nodeID
-      rnXbar.io.in(i) <> rnLinkMonitor.io.in
-    }
-
-    for (j <- 0 until banks) {
-      val slice = Module(new Slice())
-      slice.io.in <> rnXbar.io.out(j)
-      rnXbar.io.snpMasks(j) := slice.io.snpMask 
-      snXbar.io.in(j) <> slice.io.out
-    }
-    
-    snLinkMonitor.io.in <> snXbar.io.out
-    snLinkMonitor.io.nodeID := io.nodeID
-
-    io.sn <> snLinkMonitor.io.out
-
-    dontTouch(io)
+  for (i <- 0 until numRNs) {
+    val rnLinkMonitor = Module(new UpwardsLinkMonitor())
+    rnLinkMonitor.io.out <> io.rn(i)
+    rnLinkMonitor.io.entranceID := i.U
+    rnLinkMonitor.io.nodeID := io.nodeID
+    rnXbar.io.in(i) <> rnLinkMonitor.io.in
   }
-  lazy val module = new OpenLLCImp(this)
+
+  for (j <- 0 until banks) {
+    val slice = Module(new Slice())
+    slice.io.in <> rnXbar.io.out(j)
+    rnXbar.io.snpMasks(j) := slice.io.snpMask 
+    snXbar.io.in(j) <> slice.io.out
+  }
+  
+  snLinkMonitor.io.in <> snXbar.io.out
+  snLinkMonitor.io.nodeID := io.nodeID
+
+  io.sn <> snLinkMonitor.io.out
+
+  dontTouch(io)
 }
