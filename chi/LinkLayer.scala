@@ -55,7 +55,7 @@ class NoSnpPortIO(implicit p: Parameters) extends Bundle with HasPortSwitch {
   }
 }
 
-class UpwardsLinkMonitor(implicit p: Parameters) extends LLCModule {
+class RNLinkMonitor(implicit p: Parameters) extends LLCModule {
   private val maxLCreditNum = 15
 
   val io = IO(new Bundle() {
@@ -132,7 +132,7 @@ class UpwardsLinkMonitor(implicit p: Parameters) extends LLCModule {
   }
 }
 
-class DownwardsLinkMonitor(implicit p: Parameters) extends LLCModule {
+class SNLinkMonitor(implicit p: Parameters) extends LLCModule {
   private val maxLCreditNum = 15
 
   val io = IO(new Bundle() {

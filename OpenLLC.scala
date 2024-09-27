@@ -31,7 +31,7 @@ class OpenLLC(implicit p: Parameters) extends LLCModule with HasClientInfo {
   println(s"====== ${inclusion} CHI-CHI ${cacheParams.name} ($sizeStr * $banks-bank)  ======")
   println(s"bankBits: ${bankBits}")
   println(s"sets:${cacheParams.sets} ways:${cacheParams.ways} blockBytes:${cacheParams.blockBytes}")
-  println(s"[snoop filter] size:${sizeBytesToStr(banks * clientSets * clientWays * clientParam.blockBytes.toDouble)}")
+  println(s"[snoop filter] size:${sizeBytesToStr(clientSets * clientWays * clientParam.blockBytes.toDouble)} * $banks-bank")
   println(s"[snoop filter] sets:${clientSets} ways:${clientWays}")
 
   val io = IO(new Bundle {
@@ -47,10 +47,10 @@ class OpenLLC(implicit p: Parameters) extends LLCModule with HasClientInfo {
 
   val rnXbar = Module(new RNXbar())
   val snXbar = Module(new SNXbar())
-  val snLinkMonitor = Module(new DownwardsLinkMonitor())
+  val snLinkMonitor = Module(new SNLinkMonitor())
 
   for (i <- 0 until numRNs) {
-    val rnLinkMonitor = Module(new UpwardsLinkMonitor())
+    val rnLinkMonitor = Module(new RNLinkMonitor())
     rnLinkMonitor.io.out <> io.rn(i)
     rnLinkMonitor.io.entranceID := i.U
     rnLinkMonitor.io.nodeID := io.nodeID
