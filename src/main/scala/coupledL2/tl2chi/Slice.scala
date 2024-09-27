@@ -22,7 +22,6 @@ import chisel3.util._
 import freechips.rocketchip.tilelink._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2._
-import coupledL2.utils._
 import coupledL2.prefetch.PrefetchIO
 
 class OuterBundle(implicit p: Parameters) extends DecoupledPortIO with BaseOuterBundle
@@ -210,15 +209,4 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   rxrsp.io.out <> io.out.rx.rsp
 
   io_pCrd <> mshrCtl.io.pCrd
-
-  if (hasMCP2Check) {
-    val dsEnable = WireInit(0.U.asTypeOf(new MCP2CheckEn))
-    dsEnable.en := dataStorage.io.en
-    dsEnable.wen := dataStorage.io.en && dataStorage.io.req.bits.wen
-
-    directory.io.mcp2Check.get := dsEnable
-    releaseBuf.io.mcp2Check.get := dsEnable
-    refillBuf.io.mcp2Check.get := dsEnable
-    sinkC.io.mcp2Check.get := dsEnable
-  }
 }
