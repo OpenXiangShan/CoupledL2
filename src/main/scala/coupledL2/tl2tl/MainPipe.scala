@@ -299,7 +299,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   }
 
   io.toDS.en_s3           := task_s3.valid && (ren || wen)
-  io.toDS.req_s3.valid    := task_s3_valid_hold2(0) && (ren || wen)
+  io.toDS.req_s3.valid    := task_s3_valid_hold2.orR && (ren || wen)
   io.toDS.req_s3.bits.way := Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.way,
     Mux(mshr_req_s3, req_s3.way, dirResult_s3.way))
   io.toDS.req_s3.bits.set := Mux(mshr_req_s3, req_s3.set, dirResult_s3.set)
@@ -313,11 +313,6 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       io.refillBufResp_s3.bits.data
     )
   )
-
-  if (hasMCP2Check) {
-    HoldChecker.check2(task_s3.bits, io.toDS.en_s3, "task_s3_bits")
-    HoldChecker.check2(task_s3_valid_hold2(0), io.toDS.en_s3, "task_s3_valid_hold2_0")
-  }
 
   /* ======== Read DS and store data in Buffer ======== */
   // A: need_write_releaseBuf indicates that DS should be read and the data will be written into ReleaseBuffer
