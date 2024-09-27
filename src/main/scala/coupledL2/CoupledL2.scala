@@ -79,7 +79,6 @@ trait HasCoupledL2Parameters {
   def hasPrefetchSrc = prefetchers.exists(_.hasPrefetchSrc)
   def hasCMO = cacheParams.hasCMO
   def topDownOpt = if(cacheParams.elaboratedTopDown) Some(true) else None
-  def hasMCP2Check = cacheParams.MCP2Check
 
   def enableHintGuidedGrant = true
 
