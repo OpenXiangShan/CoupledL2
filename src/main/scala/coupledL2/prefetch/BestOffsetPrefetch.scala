@@ -25,6 +25,7 @@ import chisel3.util._
 import coupledL2.{HasCoupledL2Parameters, L2TlbReq, L2ToL1TlbIO, TlbCmd, Pbmt}
 import coupledL2.utils.ReplacementPolicy
 import scopt.Read
+import freechips.rocketchip.util.SeqToAugmentedSeq
 
 case class BOPParameters(
   virtualTrain: Boolean = true,
@@ -444,7 +445,7 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
 
   val s0_invalid_vec = wayMap(w => !valids(w) && !alloc(w))
   val s0_has_invalid_way = s0_invalid_vec.asUInt.orR
-  val s0_invalid_oh = ParallelPriorityMux(s0_invalid_vec.zipWithIndex.map(x => x._1 -> UIntToOH(x._2.U(REQ_FILTER_SIZE.W))))
+  val s0_invalid_oh = PriorityEncoderOH(s0_invalid_vec).asUInt
 
   val s0_req_valid = io.in_req.valid && !s0_conflict_prev && !s0_match && s0_has_invalid_way
   val s0_tlb_fire_oh = VecInit(tlb_req_arb.io.in.map(_.fire)).asUInt
