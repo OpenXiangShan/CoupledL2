@@ -21,7 +21,7 @@ import chisel3._
 import chisel3.util._
 import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.tl2chi.{PortIO}
+import coupledL2.tl2chi.{PortIO, CHIIssue}
 
 class OpenLLC(implicit p: Parameters) extends LLCModule with HasClientInfo {
   private val sizeBytes = cacheParams.toCacheParams.capacity.toDouble 
@@ -40,10 +40,12 @@ class OpenLLC(implicit p: Parameters) extends LLCModule with HasClientInfo {
     val nodeID = Input(UInt())
   })
 
+  println(s"CHI Issue Version: ${p(CHIIssue)}")
   println(s"CHI REQ Flit Width: ${io.rn(0).tx.req.flit.getWidth}")
   println(s"CHI RSP Flit Width: ${io.rn(0).tx.rsp.flit.getWidth}")
   println(s"CHI SNP Flit Width: ${io.rn(0).rx.snp.flit.getWidth}")
   println(s"CHI DAT Flit Width: ${io.rn(0).rx.dat.flit.getWidth}")
+  println(s"CHI Port Width: ${io.rn(0).getWidth}")
 
   val rnXbar = Module(new RNXbar())
   val snXbar = Module(new SNXbar())
