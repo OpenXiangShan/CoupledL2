@@ -53,6 +53,11 @@ class OpenNCBImp(wrapper: OpenNCB)(implicit p: Parameters) extends LazyModuleImp
   })
 
   println(s"====== OpenNCB ======")
+  println(s"CHI Issue Version: ${p(CHIIssue)}")
+  println(s"CHI REQ Flit Width: ${io.chi.tx.req.flit.getWidth}")
+  println(s"CHI RSP Flit Width: ${io.chi.rx.rsp.flit.getWidth}")
+  println(s"CHI DAT Flit Width: ${io.chi.rx.dat.flit.getWidth}")
+  println(s"CHI Port Width: ${io.chi.getWidth}")
 
   val chi = io.chi
   val (axi, edge) = wrapper.axi4node.out.head
@@ -65,7 +70,11 @@ class OpenNCBImp(wrapper: OpenNCB)(implicit p: Parameters) extends LazyModuleImp
       dataWidth = edge.bundle.dataBits
     )
     case CHIParametersKey => new CHIParameters(
-      issue            = EnumCHIIssue.B,
+      issue = p(CHIIssue) match {
+        case "B"    => EnumCHIIssue.B
+        case "E.b"  => EnumCHIIssue.E
+        case _      => throw new IllegalArgumentException(s"Unsupported CHI Issue: ${p(CHIIssue)}")
+      },
       nodeIdWidth      = NODEID_WIDTH,
       reqAddrWidth     = ADDR_WIDTH,
       reqRsvdcWidth    = REQ_RSVDC_WIDTH,
@@ -73,7 +82,7 @@ class OpenNCBImp(wrapper: OpenNCB)(implicit p: Parameters) extends LazyModuleImp
       dataWidth        = DATA_WIDTH,
       dataCheckPresent = false,
       poisonPresent    = false,
-      mpamPresent      = false
+      mpamPresent      = true
     )
     case NCBParametersKey => ncbParams
   })))
