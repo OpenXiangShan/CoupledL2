@@ -82,6 +82,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   initState.elements.foreach(_._2 := true.B)
   val state     = RegInit(new FSMState(), initState)
 
+  assert(!(dirResult.hit && !isT(meta.state) && meta.dirty),
+    "directory valid read with dirty under non-T state")
+
   /**
     * When all the ways are occupied with some mshr, other mshrs with the same set may retry to find a way to replace
     * over and over again, which may block the entrance of main pipe and lead to potential deadlock. To resolve the
@@ -172,7 +175,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     * 3. When the snoop opcode is non-forwarding non-stashing snoop, echo SnpRespData if RetToSrc = 1 as long as the
     *    cache line is Shared Clean and the snoopee retains a copy of the cache line.
     */
-  val doRespData_dirty = (isT(meta.state) && meta.dirty || probeDirty) && (
+  val doRespData_dirty = ((dirResult.hit && meta.dirty) || 
+                          probeDirty || 
+                          (req.snpHitRelease && req.snpHitReleaseWithData)) && (
     req_chiOpcode === SnpOnce ||
     snpToB ||
     req_chiOpcode === SnpUnique ||
@@ -180,16 +185,15 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     req_chiOpcode === SnpCleanShared ||
     req_chiOpcode === SnpCleanInvalid
   )
-  val doRespData_retToSrc_fwd = req.retToSrc.get && (isSnpToBFwd(req_chiOpcode) || isSnpToNFwd(req_chiOpcode))
-  val doRespData_retToSrc_nonFwd = req.retToSrc.get && meta.state === BRANCH && (isSnpToBNonFwd(req_chiOpcode) || isSnpToNNonFwd(req_chiOpcode))
-  val doRespData = Mux(
-    dirResult.hit,
-    doRespData_dirty || doRespData_retToSrc_fwd || doRespData_retToSrc_nonFwd,
-    req.snpHitRelease && req.snpHitReleaseWithData
-  )
+  val doRespData_retToSrc_nonFwd = req.retToSrc.get && meta.state === BRANCH && 
+    (isSnpToBNonFwd(req_chiOpcode) || isSnpToNNonFwd(req_chiOpcode))
+  val doRespData = doRespData_dirty || doRespData_retToSrc_nonFwd
+
   dontTouch(doRespData_dirty)
-  dontTouch(doRespData_retToSrc_fwd)
   dontTouch(doRespData_retToSrc_nonFwd)
+
+  assert(!(req_valid && isSnpCleanX(req_chiOpcode) && req.retToSrc.get),
+    "specification failure: received SnpClean/SnpCleanFwd with RetToSrc = 1")
 
   /**
     * About which snoop should echo SnpResp[Data]Fwded instead of SnpResp[Data]:
@@ -198,7 +202,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val doFwd = isSnpXFwd(req_chiOpcode) && dirResult.hit
   val doFwdHitRelease = isSnpXFwd(req_chiOpcode) && req.snpHitRelease && req.snpHitReleaseWithData
 
-  val gotUD = meta.dirty & isT(meta.state) //TC/TTC -> UD
+  val gotUD = meta.dirty //TC/TTC -> UD
   val promoteT_normal =  dirResult.hit && meta_no_client && meta.state === TIP
   val promoteT_L3     = !dirResult.hit && gotT
   val promoteT_alias  =  dirResult.hit && req.aliasTask.getOrElse(false.B) && (meta.state === TRUNK || meta.state === TIP)
@@ -245,14 +249,14 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   }
 
   // resp and fwdState
-  val respCacheState = ParallelPriorityMux(Seq(
+  val respCacheState = Mux(dirResult.hit, ParallelPriorityMux(Seq(
     snpToN -> I,
     snpToB -> SC,
     (isSnpOnceX(req_chiOpcode) || isSnpStashX(req_chiOpcode)) ->
       Mux(probeDirty || meta.dirty, UD, metaChi),
     isSnpCleanShared(req_chiOpcode) -> Mux(isT(meta.state), UC, metaChi)
-  ))
-  val respPassDirty = (meta.dirty || probeDirty) && (
+  )), I)
+  val respPassDirty = ((dirResult.hit && meta.dirty) || probeDirty) && (
     snpToB ||
     req_chiOpcode === SnpUnique ||
     req_chiOpcode === SnpUniqueStash ||
@@ -262,13 +266,11 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val fwdCacheState = Mux(
     isSnpToBFwd(req_chiOpcode),
     SC,
-    Mux(
-      req_chiOpcode === SnpUniqueFwd,
-      Mux(meta.dirty || probeDirty, UD, UC),
-      I
-    )
+    Mux(isSnpToNFwd(req_chiOpcode), UC /*UC_UD*/, I)
   )
-  val fwdPassDirty = req_chiOpcode === SnpUniqueFwd && (meta.dirty || probeDirty)
+  val fwdPassDirty = isSnpToNFwd(req_chiOpcode) && (
+    (dirResult.hit && meta.dirty) || probeDirty ||
+    (req.snpHitRelease && req.snpHitReleaseWithData))
 
   /*TXRSP for CompAck */
     val txrsp_task = {
@@ -310,7 +312,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       *  PrefetchRead         |  ReadNotSharedDirty
       *  PrefetchWrite        |  ReadUnique
       */
-    val isWriteBackFull = isT(meta.state) && meta.dirty || probeDirty
+    val isWriteBackFull = meta.dirty || probeDirty
     val isEvict = !isWriteBackFull
     oa.opcode := ParallelPriorityMux(Seq(
       req_cmoClean                                       -> CleanShared,
@@ -412,7 +414,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_release.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
 
     // CHI
-    val isWriteBackFull = isT(meta.state) && meta.dirty || probeDirty
+    val isWriteBackFull = meta.dirty || probeDirty
     mp_release.tgtID.get := 0.U
     mp_release.srcID.get := 0.U
     mp_release.txnID.get := io.id
@@ -505,7 +507,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_probeack.way := dirResult.way
     mp_probeack.fromL2pft.foreach(_ := false.B)
     mp_probeack.needHint.foreach(_ := false.B)
-    mp_probeack.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
+    mp_probeack.dirty := (dirResult.hit && meta.dirty) || probeDirty
     mp_probeack.meta := MetaEntry(
       /**
         * Under what circumstances should the dirty bit be cleared:
@@ -552,11 +554,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       Cat(false.B, true.B)  -> SnpRespData, // ignore SnpRespDataPtl for now
       Cat(true.B, true.B)   -> SnpRespDataFwded
     ))
-    mp_probeack.resp.get := Mux(
-      req.snpHitRelease && req.snpHitReleaseWithData,
-      I_PD,
-      setPD(respCacheState, respPassDirty && doRespData)
-    )
+    mp_probeack.resp.get := setPD(respCacheState, respPassDirty)
     mp_probeack.fwdState.get := setPD(fwdCacheState, fwdPassDirty)
     mp_probeack.pCrdType.get := 0.U
     mp_probeack.retToSrc.get := req.retToSrc.get // DontCare
@@ -716,7 +714,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_dct.way := dirResult.way
     mp_dct.fromL2pft.foreach(_ := false.B)
     mp_dct.needHint.foreach(_ := false.B)
-    mp_dct.dirty := meta.dirty && meta.state =/= INVALID || probeDirty
+    mp_dct.dirty := (dirResult.hit && meta.dirty) || probeDirty
     mp_dct.meta := MetaEntry()
     mp_dct.metaWen := false.B // meta is written by SnpResp[Data]Fwded, not CompData
     mp_dct.tagWen := false.B
@@ -763,6 +761,36 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   //     train.bits.needT := req_needT
   //     train.bits.source := req.source
   // }
+
+  val mp_valid = io.tasks.mainpipe.valid
+  val mp = io.tasks.mainpipe.bits
+
+  /* ======== Assertions for common transaction ======== */
+  Seq(
+    ("CopyBackWrData", CHICohStateTransSet.ofCopyBackWrData(CopyBackWrData)),
+    ("CompData", CHICohStateTransSet.ofCompData(CompData)),
+    ("DataSepResp", CHICohStateTransSet.ofDataSepResp(DataSepResp)),
+    ("RespSepData", CHICohStateTransSet.ofRespSepData(RespSepData)),
+    ("SnpResp", CHICohStateTransSet.ofSnpResp(SnpResp)),
+    ("SnpRespData", CHICohStateTransSet.ofSnpRespData(SnpRespData)),
+    ("SnpRespDataPtl", CHICohStateTransSet.ofSnpRespDataPtl(SnpRespDataPtl)),
+    ("NonCopyBackWrData", CHICohStateTransSet.ofNonCopyBackWrData(NonCopyBackWrData)),
+    ("WriteDataCancel", CHICohStateTransSet.ofWriteDataCancel(WriteDataCancel))
+  ).foreach { case (name, set) => {
+    assert(!mp_valid || CHICohStateTransSet.isValid(set, 
+        mp.txChannel, mp.chiOpcode.get, mp.resp.get),
+      s"invalid Resp for ${name}")
+  }}
+
+  /* ======== Assertions for DCT forwarded snoop ======== */
+  Seq(
+    ("SnpResp", CHICohStateFwdedTransSet.ofSnpResp(SnpResp)),
+    ("SnpRespData", CHICohStateFwdedTransSet.ofSnpRespData(SnpRespData))
+  ).foreach { case (name, set) => {
+    assert(!mp_valid || CHICohStateFwdedTransSet.isValid(set, 
+        mp.txChannel, mp.chiOpcode.get, mp.resp.get, mp.fwdState.get),
+      s"invalid combination of Resp and FwdState for ${name}")
+  }}
 
   /* ======== Task update ======== */
   when (io.tasks.txreq.fire) {
@@ -844,10 +872,10 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     }
   }
 
-  val rxdatIsU = rxdat.bits.resp.get === UC
+  val rxdatIsU = rxdat.bits.resp.get === UC /*UC_UD*/
   val rxdatIsU_PD = rxdat.bits.resp.get === UC_PD
 
-  val rxrspIsU = rxrsp.bits.resp.get === UC
+  val rxrspIsU = rxrsp.bits.resp.get === UC /*UC_UD*/
 
   // RXDAT
   when (rxdat.valid) {
