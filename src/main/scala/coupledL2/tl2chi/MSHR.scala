@@ -324,7 +324,10 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       *  PrefetchRead         |  ReadNotSharedDirty
       *  PrefetchWrite        |  ReadUnique
       */
-    val isWriteBackFull = meta.dirty || probeDirty
+      // *NOTICE: By the time of issuing Write Back (WriteBackFull or Evict), the directory
+      //          was already updated by replacing, so we should never check directory hit
+      //          on WriteBackFull condition.
+    val isWriteBackFull = isT(meta.state) && meta.dirty || probeDirty
     val isEvict = !isWriteBackFull
     oa.opcode := ParallelPriorityMux(Seq(
       req_cmoClean                                       -> CleanShared,
@@ -426,7 +429,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_release.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
 
     // CHI
-    val isWriteBackFull = meta.dirty || probeDirty
+    // *NOTICE: See 'isWriteBackFull' above.
+    val isWriteBackFull = isT(meta.state) && meta.dirty || probeDirty
     mp_release.tgtID.get := 0.U
     mp_release.srcID.get := 0.U
     mp_release.txnID.get := io.id
@@ -528,7 +532,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         * 3. If the snoop is SnpCleanShared
         * Otherwise, the dirty bit should stay the same as before.
         */
-      dirty = !snpToN && !snpToB && req_chiOpcode =/= SnpCleanShared && meta.dirty ||
+      dirty = !snpToN && !snpToB && req_chiOpcode =/= SnpCleanShared && (dirResult.hit && meta.dirty) ||
         isSnpOnceX(req_chiOpcode) && probeDirty,
       state = Mux(
         snpToN,
