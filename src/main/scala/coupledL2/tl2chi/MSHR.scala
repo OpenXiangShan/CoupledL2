@@ -185,15 +185,24 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     req_chiOpcode === SnpCleanShared ||
     req_chiOpcode === SnpCleanInvalid
   )
-  val doRespData_retToSrc_nonFwd = req.retToSrc.get && meta.state === BRANCH && 
+  // *NOTICE: Careful on future implementation of adding 'isSnpToNFwd' into condition
+  //          'doRespData_retToSrc_fwd'. For now, 'isSnpToNFwd' only covers SnpUniqueFwd,
+  //          which should never return data to Home Node except No Fwd to Requester.
+  //          No Fwds on DCT are not implemented because Fwded responses are always perferred.
+  val doRespData_retToSrc_fwd = req.retToSrc.get && 
+    (isSnpToBFwd(req_chiOpcode) /*|| isSnpToNFwd(req_chiOpcode)*/)
+  val doRespData_retToSrc_nonFwd = req.retToSrc.get && dirResult.hit && meta.state === BRANCH && 
     (isSnpToBNonFwd(req_chiOpcode) || isSnpToNNonFwd(req_chiOpcode))
-  val doRespData = doRespData_dirty || doRespData_retToSrc_nonFwd
+  val doRespData = doRespData_dirty || doRespData_retToSrc_fwd || doRespData_retToSrc_nonFwd
 
   dontTouch(doRespData_dirty)
   dontTouch(doRespData_retToSrc_nonFwd)
 
-  assert(!(req_valid && isSnpCleanX(req_chiOpcode) && req.retToSrc.get),
-    "specification failure: received SnpClean/SnpCleanFwd with RetToSrc = 1")
+  // *NOTICE: SnpUniqueStash was included in condition 'doRespData_retToSrc_nonFwd', while
+  //          the 'retToSrc' of SnpUniqueStash must be bound to 0, and whether responding 
+  //          SnpRespData or SnpResp was not determined by 'retToSrc'.
+  assert(!(req_valid && req_chiOpcode === SnpUniqueStash && req.retToSrc.get),
+    "specification failure: received SnpUniqueStash with RetToSrc = 1")
 
   /**
     * About which snoop should echo SnpResp[Data]Fwded instead of SnpResp[Data]:
@@ -253,10 +262,13 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     snpToN -> I,
     snpToB -> SC,
     (isSnpOnceX(req_chiOpcode) || isSnpStashX(req_chiOpcode)) ->
-      Mux(probeDirty || meta.dirty, UD, metaChi),
-    isSnpCleanShared(req_chiOpcode) -> Mux(isT(meta.state), UC, metaChi)
+      Mux(dirResult.hit, Mux(probeDirty || meta.dirty, UD, metaChi), I),
+    isSnpCleanShared(req_chiOpcode) -> 
+      Mux(dirResult.hit, Mux(isT(meta.state), UC, metaChi), I)
   )), I)
-  val respPassDirty = ((dirResult.hit && meta.dirty) || probeDirty) && (
+  val respPassDirty = ((dirResult.hit && meta.dirty) || 
+                       probeDirty ||
+                       (req.snpHitRelease && req.snpHitReleaseWithData)) && (
     snpToB ||
     req_chiOpcode === SnpUnique ||
     req_chiOpcode === SnpUniqueStash ||
