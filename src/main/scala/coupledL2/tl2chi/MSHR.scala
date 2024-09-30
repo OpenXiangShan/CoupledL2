@@ -196,6 +196,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val doRespData = doRespData_dirty || doRespData_retToSrc_fwd || doRespData_retToSrc_nonFwd
 
   dontTouch(doRespData_dirty)
+  dontTouch(doRespData_retToSrc_fwd)
   dontTouch(doRespData_retToSrc_nonFwd)
 
   // *NOTICE: SnpUniqueStash was included in condition 'doRespData_retToSrc_nonFwd', while
