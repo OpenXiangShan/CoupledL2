@@ -166,6 +166,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val req_cmoFlush = req.cmoTask && req.opcode === 1.U
   val req_cmoInval = req.cmoTask && req.opcode === 2.U
 
+  val hitDirty = dirResult.hit && meta.dirty || probeDirty
+  val hitDirtyOrWriteBack = hitDirty || req.snpHitRelease && req.snpHitReleaseWithData
+
   /**
     * About which snoop should echo SnpRespData[Fwded] instead of SnpResp[Fwded]:
     * 1. When the snooped block is dirty, always echo SnpRespData[Fwded], except for SnpMakeInvalid*, SnpStash*,
@@ -175,9 +178,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     * 3. When the snoop opcode is non-forwarding non-stashing snoop, echo SnpRespData if RetToSrc = 1 as long as the
     *    cache line is Shared Clean and the snoopee retains a copy of the cache line.
     */
-  val doRespData_dirty = ((dirResult.hit && meta.dirty) || 
-                          probeDirty || 
-                          (req.snpHitRelease && req.snpHitReleaseWithData)) && (
+  val doRespData_dirty = hitDirtyOrWriteBack && (
     req_chiOpcode === SnpOnce ||
     snpToB ||
     req_chiOpcode === SnpUnique ||
@@ -267,9 +268,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     isSnpCleanShared(req_chiOpcode) -> 
       Mux(isT(meta.state), UC, metaChi)
   )), I)
-  val respPassDirty = ((dirResult.hit && meta.dirty) || 
-                       probeDirty ||
-                       (req.snpHitRelease && req.snpHitReleaseWithData)) && (
+  val respPassDirty = hitDirtyOrWriteBack && (
     snpToB ||
     req_chiOpcode === SnpUnique ||
     req_chiOpcode === SnpUniqueStash ||
@@ -281,9 +280,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     SC,
     Mux(isSnpToNFwd(req_chiOpcode), UC /*UC_UD*/, I)
   )
-  val fwdPassDirty = isSnpToNFwd(req_chiOpcode) && (
-    (dirResult.hit && meta.dirty) || probeDirty ||
-    (req.snpHitRelease && req.snpHitReleaseWithData))
+  val fwdPassDirty = isSnpToNFwd(req_chiOpcode) && hitDirtyOrWriteBack
 
   /*TXRSP for CompAck */
     val txrsp_task = {
@@ -524,7 +521,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_probeack.way := dirResult.way
     mp_probeack.fromL2pft.foreach(_ := false.B)
     mp_probeack.needHint.foreach(_ := false.B)
-    mp_probeack.dirty := (dirResult.hit && meta.dirty) || probeDirty
+    mp_probeack.dirty := hitDirty
     mp_probeack.meta := MetaEntry(
       /**
         * Under what circumstances should the dirty bit be cleared:
@@ -731,7 +728,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_dct.way := dirResult.way
     mp_dct.fromL2pft.foreach(_ := false.B)
     mp_dct.needHint.foreach(_ := false.B)
-    mp_dct.dirty := (dirResult.hit && meta.dirty) || probeDirty
+    mp_dct.dirty := hitDirty
     mp_dct.meta := MetaEntry()
     mp_dct.metaWen := false.B // meta is written by SnpResp[Data]Fwded, not CompData
     mp_dct.tagWen := false.B
