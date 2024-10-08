@@ -82,7 +82,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   initState.elements.foreach(_._2 := true.B)
   val state     = RegInit(new FSMState(), initState)
 
-  assert(!(dirResult.hit && !isT(meta.state) && meta.dirty),
+  assert(!(req_valid && dirResult.hit && !isT(meta.state) && meta.dirty),
     "directory valid read with dirty under non-T state")
 
   /**
