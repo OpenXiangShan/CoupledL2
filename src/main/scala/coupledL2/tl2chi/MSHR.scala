@@ -263,9 +263,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     snpToN -> I,
     snpToB -> SC,
     (isSnpOnceX(req_chiOpcode) || isSnpStashX(req_chiOpcode)) ->
-      Mux(dirResult.hit, Mux(probeDirty || meta.dirty, UD, metaChi), I),
+      Mux(probeDirty || meta.dirty, UD, metaChi),
     isSnpCleanShared(req_chiOpcode) -> 
-      Mux(dirResult.hit, Mux(isT(meta.state), UC, metaChi), I)
+      Mux(isT(meta.state), UC, metaChi)
   )), I)
   val respPassDirty = ((dirResult.hit && meta.dirty) || 
                        probeDirty ||
