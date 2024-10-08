@@ -21,7 +21,7 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import utility.{FastArbiter, ParallelMax, ParallelPriorityMux, Pipeline, RegNextN, XSPerfAccumulate}
+import utility.{FastArbiter, ParallelMax, ParallelPriorityMux, Pipeline, RegNextN, XSPerfAccumulate, PipelineConnect}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tile.MaxHartIdBits
 import freechips.rocketchip.tilelink._
@@ -446,9 +446,11 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
 
         cmo_sink_node match {
           case Some(x) =>
-            slice.io.cmoReq.valid := x.in.head._1.valid && bank_eq(x.in.head._1.bits.address >> offsetBits, i, bankBits)
-            slice.io.cmoReq.bits :=  x.in.head._1.bits
-            x.in.head._1.ready := slice.io.cmoReq.ready
+            val cmoReq = Wire(DecoupledIO(new CMOReq))
+            cmoReq.valid := x.in.head._1.valid && bank_eq(x.in.head._1.bits.address >> offsetBits, i, bankBits)
+            cmoReq.bits := x.in.head._1.bits
+            x.in.head._1.ready := cmoReq.ready
+            PipelineConnect(cmoReq, slice.io.cmoReq, slice.io.cmoReq.ready, false.B, false.B)
           case None =>
             slice.io.cmoReq.valid := false.B
             slice.io.cmoReq.bits.opcode :=  0.U
