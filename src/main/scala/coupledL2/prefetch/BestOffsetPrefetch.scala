@@ -25,6 +25,7 @@ import chisel3.util._
 import coupledL2.{HasCoupledL2Parameters, L2TlbReq, L2ToL1TlbIO, TlbCmd, Pbmt}
 import coupledL2.utils.ReplacementPolicy
 import scopt.Read
+import freechips.rocketchip.util.SeqToAugmentedSeq
 
 case class BOPParameters(
   virtualTrain: Boolean = true,
@@ -444,7 +445,7 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
 
   val s0_invalid_vec = wayMap(w => !valids(w) && !alloc(w))
   val s0_has_invalid_way = s0_invalid_vec.asUInt.orR
-  val s0_invalid_oh = ParallelPriorityMux(s0_invalid_vec.zipWithIndex.map(x => x._1 -> UIntToOH(x._2.U(REQ_FILTER_SIZE.W))))
+  val s0_invalid_oh = PriorityEncoderOH(s0_invalid_vec).asUInt
 
   val s0_req_valid = io.in_req.valid && !s0_conflict_prev && !s0_match && s0_has_invalid_way
   val s0_tlb_fire_oh = VecInit(tlb_req_arb.io.in.map(_.fire)).asUInt
@@ -486,8 +487,8 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
     alloc(i) := s1_valid && s1_invalid_oh(i)
     pf_fired(i) := s0_pf_fire_oh(i)
     exp_drop(i) := s3_tlb_fire_oh(i) && s3_tlb_resp_valid && !s3_tlb_resp.miss && (
-      (e.needT && (s3_tlb_resp.excp.head.pf.st || s3_tlb_resp.excp.head.af.st)) ||
-      (!e.needT && (s3_tlb_resp.excp.head.pf.ld || s3_tlb_resp.excp.head.af.ld)) ||
+      (e.needT && (s3_tlb_resp.excp.head.pf.st || s3_tlb_resp.excp.head.gpf.st || s3_tlb_resp.excp.head.af.st)) ||
+      (!e.needT && (s3_tlb_resp.excp.head.pf.ld || s3_tlb_resp.excp.head.gpf.ld || s3_tlb_resp.excp.head.af.ld)) ||
       io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt)
     )
     val miss = s3_tlb_fire_oh(i) && s3_tlb_resp_valid && s3_tlb_resp.miss
@@ -532,6 +533,7 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
     tlb_req_arb.io.in(i).bits.size := 3.U
     tlb_req_arb.io.in(i).bits.kill := false.B
     tlb_req_arb.io.in(i).bits.no_translate := false.B
+    tlb_req_arb.io.in(i).bits.isPrefetch := true.B
 
     pf_req_arb.io.in(i).valid := can_send_pf(i)
     pf_req_arb.io.in(i).bits := e.toPrefetchReq()
@@ -541,8 +543,8 @@ class PrefetchReqBuffer(implicit p: Parameters) extends BOPModule{
   XSPerfAccumulate("tlb_miss", io.tlb_req.resp.valid && io.tlb_req.resp.bits.miss)
   XSPerfAccumulate("tlb_excp",
     s3_tlb_resp_valid && !s3_tlb_resp.miss && (
-      (s3_tlb_resp.excp.head.pf.st || s3_tlb_resp.excp.head.af.st) ||
-      (s3_tlb_resp.excp.head.pf.ld || s3_tlb_resp.excp.head.af.ld) ||
+      (s3_tlb_resp.excp.head.pf.st || s3_tlb_resp.excp.head.gpf.st || s3_tlb_resp.excp.head.af.st) ||
+      (s3_tlb_resp.excp.head.pf.ld || s3_tlb_resp.excp.head.gpf.ld || s3_tlb_resp.excp.head.af.ld) ||
       io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt)
   ))
   XSPerfAccumulate("tlb_excp_uncache", s3_tlb_resp_valid && (io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt)))

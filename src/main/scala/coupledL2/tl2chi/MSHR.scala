@@ -218,7 +218,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   io.tasks.txreq.valid := !state.s_acquire && !((req_cmoClean || req_cmoFlush) && (!state.w_releaseack || !state.w_rprobeacklast)) ||
                           !state.s_reissue.getOrElse(false.B) && !state.w_grant && gotRetryAck && gotPCrdGrant ||
                           release_valid2
-  io.tasks.txrsp.valid := !state.s_compack.get && state.w_grant
+  io.tasks.txrsp.valid := !state.s_compack.get && state.w_grantfirst && state.w_grant
   io.tasks.source_b.valid := !state.s_pprobe || !state.s_rprobe
   val mp_release_valid = release_valid1
   val mp_cbwrdata_valid = !state.s_cbwrdata.getOrElse(true.B) && state.w_releaseack
@@ -521,7 +521,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         INVALID,
         Mux(snpToB, BRANCH, meta.state)
       ),
-      clients = Fill(clientBits, !probeGotN && !snpToN),
+      clients = meta.clients & Fill(clientBits, !probeGotN && !snpToN),
       alias = meta.alias, //[Alias] Keep alias bits unchanged
       prefetch = !snpToN && meta_pft,
       accessed = !snpToN && meta.accessed
