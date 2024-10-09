@@ -21,7 +21,7 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import utility.{FastArbiter, ParallelMax, ParallelPriorityMux, Pipeline, RegNextN, XSPerfAccumulate, PipelineConnect}
+import utility.{FastArbiter, ParallelMax, ParallelPriorityMux, Pipeline, RegNextN, XSPerfAccumulate, HasPerfEvents, PipelineConnect}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tile.MaxHartIdBits
 import freechips.rocketchip.tilelink._
@@ -115,6 +115,9 @@ trait HasCoupledL2Parameters {
   def outerSinkBits = edgeOut.bundle.sinkBits
 
   def sam = cacheParams.sam
+
+  // Hardware Performance Monitor
+  def numPCntHc: Int = 12
 
   def getClientBitOH(sourceId: UInt): UInt = {
     if (clientBits == 0) {
@@ -275,7 +278,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
   val tpmeta_source_node = if(hasTPPrefetcher) Some(BundleBridgeSource(() => DecoupledIO(new TPmetaReq(hartIdLen, node.in.head._2.bundle.addressBits, offsetBits)))) else None
   val tpmeta_sink_node = if(hasTPPrefetcher) Some(BundleBridgeSink(Some(() => ValidIO(new TPmetaResp(hartIdLen, node.in.head._2.bundle.addressBits, offsetBits))))) else None
 
-  abstract class BaseCoupledL2Imp(wrapper: LazyModule) extends LazyModuleImp(wrapper) {
+  abstract class BaseCoupledL2Imp(wrapper: LazyModule) extends LazyModuleImp(wrapper) with HasPerfEvents {
     val banks = node.in.size
     val bankBits = log2Ceil(banks)
     val l2TlbParams: Parameters = p.alterPartial {
@@ -460,6 +463,11 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
 
         slice
     }
+    val perfEvents = Seq(("noEvent", 0.U)) ++ slices.zipWithIndex.map {
+      case (slide, slide_idx) => 
+        slide.getPerfEvents.map{case (str, idx) => ("Slice" + slide_idx.toString + "_" + str, idx)}
+    }.flatten
+    generatePerfEvent()
 
     cmo_source_node match {
       case Some(x) =>

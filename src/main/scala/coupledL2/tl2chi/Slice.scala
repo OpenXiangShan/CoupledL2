@@ -209,4 +209,8 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   rxrsp.io.out <> io.out.rx.rsp
 
   io_pCrd <> mshrCtl.io.pCrd
+
+  /* ===== Hardware Performance Monitor ===== */
+  val perfEvents = Seq(mshrCtl, mainPipe).flatMap(_.getPerfEvents)
+  generatePerfEvent()
 }

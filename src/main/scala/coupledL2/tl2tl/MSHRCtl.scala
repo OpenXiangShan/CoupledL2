@@ -37,7 +37,7 @@ class MSHRSelector(implicit p: Parameters) extends L2Module {
   })
 }
 
-class MSHRCtl(implicit p: Parameters) extends L2Module {
+class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
   val io = IO(new Bundle() {
     /* interact with req arb */
     val fromReqArb = Input(new Bundle() {
@@ -212,4 +212,29 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
       XSPerfMax("mshr_latency", timer, enable)
     }
   }
+
+  val hpm_timers = RegInit(VecInit(Seq.fill(mshrsAll)(0.U(10.W))))
+  // TODO: Is the width(4.W) proper here?
+  val lmiss = Wire(Vec(mshrsAll, UInt(4.W)))
+  for (((hpm_timer, m), i) <- hpm_timers.zip(mshrs).zipWithIndex) {
+    when (m.io.alloc.valid) {
+      hpm_timer := 1.U
+    }.otherwise {
+      hpm_timer := hpm_timer + 1.U
+    }
+    val enable = m.io.status.valid && m.io.status.bits.will_free
+    when (enable && hpm_timer > 200.U) {
+      lmiss(i) := 1.U
+    }.otherwise {
+      lmiss(i) := 0.U
+    }
+  }
+
+  val perfEvents = Seq(
+    ("l2_cache_refill", acquireUnit.io.sourceA.fire && acquireUnit.io.task.bits.opcode === AcquireBlock),
+    ("l2_cache_rd_refill", acquireUnit.io.sourceA.fire && acquireUnit.io.task.bits.opcode === AcquireBlock),
+    ("l2_cache_wr_refill", false.B),
+    ("l2_cache_long_miss", lmiss.reduce(_ + _))
+  )
+  generatePerfEvent()
 }
