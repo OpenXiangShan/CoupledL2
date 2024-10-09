@@ -30,7 +30,7 @@ import coupledL2.utils._
 import coupledL2.debug._
 import coupledL2.prefetch.{PfSource, PrefetchTrain}
 
-class MainPipe(implicit p: Parameters) extends L2Module {
+class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   val io = IO(new Bundle() {
     /* receive task from arbiter at stage 2 */
     val taskFromArb_s2 = Flipped(ValidIO(new TaskBundle()))
@@ -153,6 +153,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   val mshr_probeack_s3      = mshr_req_s3 && req_s3.fromB && req_s3.opcode(2, 1) === ProbeAck(2, 1) // ProbeAck or ProbeAckData from mshr
   val mshr_probeackdata_s3  = mshr_req_s3 && req_s3.fromB && req_s3.opcode === ProbeAckData
   val mshr_release_s3       = mshr_req_s3 && req_s3.opcode(2, 1) === Release(2, 1) // voluntary Release or ReleaseData from mshr
+  val mshr_releasedata_s3   = mshr_req_s3 && req_s3.opcode === ReleaseData
 
   val meta_has_clients_s3   = meta_s3.clients.orR
   val req_needT_s3          = needT(req_s3.opcode, req_s3.param) // require T status to handle req
@@ -713,4 +714,17 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   io.toMonitor.allocMSHR_s3.valid := io.toMSHRCtl.mshr_alloc_s3.valid
   io.toMonitor.allocMSHR_s3.bits  := io.fromMSHRCtl.mshr_alloc_ptr
   io.toMonitor.metaW_s3 := io.metaWReq
+
+  /* ===== Hardware Performance Monitor ===== */
+  val perfEvents = Seq(
+    ("l2_cache_access", task_s3.valid && (sinkA_req_s3 && !req_prefetch_s3 || sinkC_req_s3)),
+    ("l2_cache_l2wb", task_s3.valid && (mshr_releasedata_s3 || mshr_probeackdata_s3)),
+    ("l2_cache_l1wb", task_s3.valid && sinkC_req_s3 && (req_s3.opcode === ReleaseData)),
+    ("l2_cache_wb_victim", task_s3.valid && mshr_releasedata_s3),
+    ("l2_cache_wb_cleaning_coh", task_s3.valid && mshr_probeackdata_s3),
+    ("l2_cache_access_rd", task_s3.valid && sinkA_req_s3 && !req_prefetch_s3),
+    ("l2_cache_access_wr", task_s3.valid && sinkC_req_s3),
+    ("l2_cache_inv", task_s3.valid && sinkB_req_s3 && (req_s3.param === toN))
+  )
+  generatePerfEvent()
 }

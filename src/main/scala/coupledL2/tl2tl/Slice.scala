@@ -205,4 +205,8 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
 
   val monitor = Module(new Monitor())
   monitor.io.fromMainPipe <> mainPipe.io.toMonitor
+
+  /* ===== Hardware Performance Monitor ===== */
+  val perfEvents = Seq(mshrCtl, mainPipe).flatMap(_.getPerfEvents)
+  generatePerfEvent()
 }
