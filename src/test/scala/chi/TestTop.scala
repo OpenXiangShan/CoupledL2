@@ -167,7 +167,7 @@ object TestTopCHIHelper {
       case L2ParamKey => L2Param(
         ways                = 4,
         sets                = 128,
-        clientCaches        = Seq(L1Param(aliasBitsOpt = Some(2))),
+        clientCaches        = Seq(L1Param(aliasBitsOpt = Some(2), vaddrBitsOpt = Some(36))),
         // echoField        = Seq(DirtyField),
         enablePerf          = false,
         enableRollingDB     = enableChiselDB && true,
@@ -176,12 +176,16 @@ object TestTopCHIHelper {
         elaboratedTopDown   = false,
         FPGAPlatform        = FPGAPlatform,
 
+        // prefetch
+        prefetch            = Seq(BOPParameters()),
+
         // using external RN-F SAM
         sam                 = Seq(AddressSet.everything -> 0)
       )
     })
 
     ChiselDB.init(enableChiselDB)
+    Constantin.init(false)
 
     val top = DisableMonitors(p => LazyModule(fTop(p)))(config)
 
