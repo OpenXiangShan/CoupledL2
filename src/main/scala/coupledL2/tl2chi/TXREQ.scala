@@ -61,6 +61,9 @@ class TXREQ(implicit p: Parameters) extends TL2CHIL2Module {
 //    pipeStatus_s1.valid.asUInt +
     1.U - s2ReturnCredit.asUInt + //Fix Timing: always take credit and s2 return if not take 
     queueCnt
+
+  assert(inflightCnt <= mshrsAll.U, "in-flight overflow at TXREQ")
+
   val noSpace = inflightCnt >= mshrsAll.U
 
   io.toReqArb.blockMSHRReqEntrance := noSpace

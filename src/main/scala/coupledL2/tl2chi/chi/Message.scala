@@ -23,6 +23,9 @@ import org.chipsalliance.cde.config.Parameters
 import org.chipsalliance.cde.config.Field
 import scala.math.max
 import coupledL2.TaskBundle
+import coupledL2.tl2chi.CHICohStates._
+import coupledL2.tl2chi.CHICohStateTrans._
+import coupledL2.tl2chi.CHICohStateFwdedTrans._
 
 case object CHIIssue extends Field[String](Issue.B)
 
@@ -47,6 +50,137 @@ object CHICohStates {
     require(state.getWidth == width)
     state | Mux(pd, PassDirty, 0.U)
   }
+}
+
+class CHICohStateTrans(val resp: () => UInt)
+
+object CHICohStateTrans {
+
+  val CopyBackWrData_I = new CHICohStateTrans(() => I)
+  val CopyBackWrData_UC = new CHICohStateTrans(() => UC)
+  val CopyBackWrData_SC = new CHICohStateTrans(() => SC)
+  val CopyBackWrData_UD_PD = new CHICohStateTrans(() => UD_PD)
+  val CopyBackWrData_SD_PD = new CHICohStateTrans(() => SD_PD)
+
+  val CompData_I = new CHICohStateTrans(() => I)
+  val CompData_UC = new CHICohStateTrans(() => UC)
+  val CompData_SC = new CHICohStateTrans(() => SC)
+  val CompData_UD_PD = new CHICohStateTrans(() => UD_PD)
+  val CompData_SD_PD = new CHICohStateTrans(() => SD_PD)
+
+  val DataSepResp_I = new CHICohStateTrans(() => I)
+  val DataSepResp_UC = new CHICohStateTrans(() => UC)
+  val DataSepResp_SC = new CHICohStateTrans(() => SC)
+  val DataSepResp_UD_PD = new CHICohStateTrans(() => UD_PD)
+
+  val RespSepData_I = new CHICohStateTrans(() => I)
+  val RespSepData_UC = new CHICohStateTrans(() => UC)
+  val RespSepData_SC = new CHICohStateTrans(() => SC)
+  val RespSepData_UD_PD = new CHICohStateTrans(() => UD_PD)
+
+  val SnpResp_I = new CHICohStateTrans(() => I)
+  val SnpResp_SC = new CHICohStateTrans(() => SC)
+  val SnpResp_UC = new CHICohStateTrans(() => UC)
+  val SnpResp_UD = new CHICohStateTrans(() => UD)
+  val SnpResp_SD = new CHICohStateTrans(() => SD)
+
+  val SnpRespData_I = new CHICohStateTrans(() => I)
+  val SnpRespData_UC_UD = new CHICohStateTrans(() => UC)
+  val SnpRespData_SC = new CHICohStateTrans(() => SC)
+  val SnpRespData_SD = new CHICohStateTrans(() => SD)
+  val SnpRespData_I_PD = new CHICohStateTrans(() => I_PD)
+  val SnpRespData_UC_PD = new CHICohStateTrans(() => UC_PD)
+  val SnpRespData_SC_PD = new CHICohStateTrans(() => SC_PD)
+
+  val SnpRespDataPtl_I_PD = new CHICohStateTrans(() => I_PD)
+  val SnpRespDataPtl_UD = new CHICohStateTrans(() => UD)
+}
+
+class CHICohStateTransSet(val channel: () => UInt, val opcode: UInt, val set: Seq[CHICohStateTrans])
+
+object CHICohStateTransSet {
+
+  def isValid(set: CHICohStateTransSet, channel: UInt, opcode: UInt, resp: UInt): Bool = {
+    channel =/= set.channel() || opcode =/= set.opcode || VecInit(set.set.map(t => t.resp() === resp)).asUInt.orR
+  }
+
+  def ofCopyBackWrData(opcode: UInt) = new CHICohStateTransSet(() => CHIChannel.TXDAT, opcode, Seq(
+    CopyBackWrData_I, CopyBackWrData_UC, CopyBackWrData_SC,
+    CopyBackWrData_UD_PD, CopyBackWrData_SD_PD
+  ))
+  def ofCompData(opcode: UInt) = new CHICohStateTransSet(() => CHIChannel.TXDAT, opcode, Seq(
+    CompData_I, CompData_UC, CompData_SC, 
+    CompData_UD_PD, CompData_SD_PD
+  ))
+  def ofDataSepResp(opcode: UInt) = new CHICohStateTransSet(() => CHIChannel.TXDAT, opcode, Seq(
+    DataSepResp_I, DataSepResp_UC, DataSepResp_SC, DataSepResp_UD_PD
+  ))
+  def ofRespSepData(opcode: UInt) = new CHICohStateTransSet(() => CHIChannel.TXRSP, opcode, Seq(
+    RespSepData_I, RespSepData_UC, RespSepData_SC, RespSepData_UD_PD
+  ))
+  def ofSnpResp(opcode: UInt) = new CHICohStateTransSet(() => CHIChannel.TXRSP, opcode, Seq(
+    SnpResp_I, SnpResp_SC, SnpResp_UC, SnpResp_UD, SnpResp_SD,
+  ))
+  def ofSnpRespData(opcode: UInt) = new CHICohStateTransSet(() => CHIChannel.TXDAT, opcode, Seq(
+    SnpRespData_I, SnpRespData_UC_UD, SnpRespData_SC, SnpRespData_SD,
+    SnpRespData_I_PD, SnpRespData_UC_PD, SnpRespData_SC_PD
+  ))
+  def ofSnpRespDataPtl(opcode: UInt) = new CHICohStateTransSet(() => CHIChannel.TXDAT, opcode, Seq(
+    SnpRespDataPtl_I_PD, SnpRespDataPtl_UD
+  ))
+  def ofNonCopyBackWrData(opcode: UInt) = new CHICohStateTransSet(() => CHIChannel.TXDAT, opcode, Seq(new CHICohStateTrans(() => 0.U)))
+  def ofNCBWrDataCompAck(opcode: UInt) = new CHICohStateTransSet(() => CHIChannel.TXDAT, opcode, Seq(new CHICohStateTrans(() => 0.U)))
+  def ofWriteDataCancel(opcode: UInt) = new CHICohStateTransSet(() => CHIChannel.TXDAT, opcode, Seq(new CHICohStateTrans(() => 0.U)))
+}
+
+class CHICohStateFwdedTrans(val resp: () => UInt, val fwdState: () => UInt)
+
+object CHICohStateFwdedTrans {
+
+  val SnpResp_I_Fwded_I = new CHICohStateFwdedTrans(() => I, () => I)
+  val SnpResp_I_Fwded_SC = new CHICohStateFwdedTrans(() => I, () => SC)
+  val SnpResp_I_Fwded_UC = new CHICohStateFwdedTrans(() => I, () => UC)
+  val SnpResp_I_Fwded_UD_PD = new CHICohStateFwdedTrans(() => I, () => UD_PD)
+  val SnpResp_I_Fwded_SD_PD = new CHICohStateFwdedTrans(() => I, () => SD_PD)
+  val SnpResp_SC_Fwded_I = new CHICohStateFwdedTrans(() => SC, () => I)
+  val SnpResp_SC_Fwded_SC = new CHICohStateFwdedTrans(() => SC, () => SC)
+  val SnpResp_SC_Fwded_SD_PD = new CHICohStateFwdedTrans(() => SC, () => SD_PD)
+  val SnpResp_UC_UD_Fwded_I = new CHICohStateFwdedTrans(() => UC, () => I)
+  val SnpResp_SD_Fwded_I = new CHICohStateFwdedTrans(() => SD, () => I)
+  val SnpResp_SD_Fwded_SC = new CHICohStateFwdedTrans(() => SD, () => SC)
+
+  val SnpRespData_I_Fwded_SC = new CHICohStateFwdedTrans(() => I, () => SC)
+  val SnpRespData_I_Fwded_SD_PD = new CHICohStateFwdedTrans(() => I, () => SD_PD)
+  val SnpRespData_SC_Fwded_SC = new CHICohStateFwdedTrans(() => SC, () => SC)
+  val SnpRespData_SC_Fwded_SD_PD = new CHICohStateFwdedTrans(() => SC, () => SD_PD)
+  val SnpRespData_SD_Fwded_SC = new CHICohStateFwdedTrans(() => SD, () => SC)
+  val SnpRespData_I_PD_Fwded_I = new CHICohStateFwdedTrans(() => I_PD, () => I)
+  val SnpRespData_I_PD_Fwded_SC = new CHICohStateFwdedTrans(() => I_PD, () => SC)
+  val SnpRespData_SC_PD_Fwded_I = new CHICohStateFwdedTrans(() => SC_PD, () => I)
+  val SnpRespData_SC_PD_Fwded_SC = new CHICohStateFwdedTrans(() => SC_PD, () => SC)
+}
+
+class CHICohStateFwdedTransSet(val channel: () => UInt, val opcode: UInt, val set: Seq[CHICohStateFwdedTrans])
+
+object CHICohStateFwdedTransSet {
+  
+  def isValid(set: CHICohStateFwdedTransSet, channel: UInt, opcode: UInt, resp: UInt, fwdState: UInt): Bool =
+    channel =/= set.channel() || opcode =/= set.opcode || VecInit(set.set.map(t => t.resp() === resp && t.fwdState() === fwdState)).asUInt.orR
+  
+  def ofSnpResp(opcode: UInt) = new CHICohStateFwdedTransSet(() => CHIChannel.TXRSP, opcode, Seq(
+    SnpResp_I_Fwded_I, SnpResp_I_Fwded_SC, SnpResp_I_Fwded_UC,
+    SnpResp_I_Fwded_UD_PD, SnpResp_I_Fwded_SD_PD,
+    SnpResp_SC_Fwded_I, SnpResp_SC_Fwded_SC, SnpResp_SC_Fwded_SD_PD,
+    SnpResp_UC_UD_Fwded_I,
+    SnpResp_SD_Fwded_I, SnpResp_SD_Fwded_SC
+  ))
+  def ofSnpRespData(opcode: UInt)  = new CHICohStateFwdedTransSet(() => CHIChannel.TXDAT, opcode, Seq(
+    SnpRespData_I_Fwded_SC, SnpRespData_I_Fwded_SD_PD,
+    SnpRespData_SC_Fwded_SC, SnpRespData_SC_Fwded_SD_PD,
+    SnpRespData_SD_Fwded_SC,
+    SnpRespData_I_PD_Fwded_I, SnpRespData_I_PD_Fwded_SC,
+    SnpRespData_SC_PD_Fwded_I, SnpRespData_SC_PD_Fwded_SC
+  ))
 }
 
 object OrderEncodings {
