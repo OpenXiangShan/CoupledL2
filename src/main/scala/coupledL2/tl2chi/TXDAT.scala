@@ -69,8 +69,11 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module {
   val inflightCnt = PopCount(Cat(pipeStatus_s3_s5.map(s => s.valid && s.bits.toTXDAT && (s.bits.fromB || s.bits.mshrTask)))) +
     PopCount(Cat(pipeStatus_s2.map(s => s.valid && Mux(s.bits.mshrTask, s.bits.toTXDAT, s.bits.fromB)))) +
     queueCnt
+
+  assert(inflightCnt <= mshrsAll.U, "in-flight overflow at TXDAT")
+
   val noSpaceForSinkBReq = inflightCnt >= mshrsAll.U
-  val noSpaceForMSHRReq = inflightCnt >= (mshrsAll-1).U
+  val noSpaceForMSHRReq = inflightCnt >= (mshrsAll-2).U
 
   io.toReqArb.blockSinkBReqEntrance := noSpaceForSinkBReq
   io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq
