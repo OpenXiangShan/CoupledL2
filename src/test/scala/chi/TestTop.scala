@@ -97,6 +97,9 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(imp
         TLLogger(s"L2_L1[${i}].UL[${j}]", !cacheParams.FPGAPlatform && cacheParams.enableTLLog) :=
         l1i
     }
+
+    CHILogger(s"L3_L2[${i}]", !cacheParams.FPGAPlatform && cacheParams.enableTLLog)
+      .io.up <> l2.module.io_chi
     
     l2.managerNode :=
       TLXbar() :=*

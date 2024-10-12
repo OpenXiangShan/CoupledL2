@@ -37,7 +37,7 @@ class CHILogger(name: String, enable: Boolean)(implicit p: Parameters) extends M
 object CHILogger extends HasCHIMsgParameters {
   // packed_flit = true: just dump the whole flit as UInt
   // packed_flit = false: separate every field
-  val packed_flit = false
+  val packed_flit = true
 
   // ** !! gather all distinct fields from CHI bundles !! **
   val all_bundles = Seq(new CHIREQ, new CHIRSP, new CHIDAT, new CHISNP)
