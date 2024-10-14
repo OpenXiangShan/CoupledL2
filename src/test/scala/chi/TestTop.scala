@@ -61,6 +61,9 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, iss
     }
   }
 
+  val l1cmo_req_nodes = (0 until numCores).map(i => BundleBridgeSource(Some(() => DecoupledIO(new CMOReq))))
+  val l1cmo_resp_nodes = (0 until numCores).map(i => BundleBridgeSink(Some(() => DecoupledIO(new CMOResp))))
+
   // val l2 = LazyModule(new TL2CHICoupledL2())
   val l2_nodes = (0 until numCores).map(i => LazyModule(new TL2CHICoupledL2()(new Config((site, here, up) => {
     case L2ParamKey => cacheParams.copy(
@@ -98,6 +101,9 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, iss
         TLLogger(s"L2_L1[${i}].UL[${j}]", !cacheParams.FPGAPlatform && cacheParams.enableTLLog) :=
         l1i
     }
+
+    l2.cmo_sink_node.foreach(_ := l1cmo_req_nodes(i))
+    l2.cmo_source_node.foreach(l1cmo_resp_nodes(i) := _)
     
     l2.managerNode :=
       TLXbar() :=*
@@ -140,6 +146,15 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, iss
       }
     }
 
+    if (cacheParams.hasCMO) {
+      l1cmo_req_nodes.zipWithIndex.foreach { case (node, i) =>
+        node.makeIOs()(ValName(s"cmo_req_$i"))  
+      }
+      l1cmo_resp_nodes.zipWithIndex.foreach { case (node, i) =>
+        node.makeIOs()(ValName(s"cmo_resp_$i"))  
+      }
+    }
+
     val io = IO(Vec(numCores, new Bundle() {
       val chi = new PortIO()(p.alterPartial { case CHIIssue => issue })
     }))
@@ -175,6 +190,9 @@ object TestTopCHIHelper {
         enableTLLog         = enableChiselDB && true,
         elaboratedTopDown   = false,
         FPGAPlatform        = FPGAPlatform,
+
+        // CMO
+        hasCMO              = true,
 
         // prefetch
         prefetch            = Seq(BOPParameters()),
