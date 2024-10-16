@@ -147,9 +147,14 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, iss
 
     l2_nodes.zipWithIndex.foreach { case (l2, i) =>
 
-      val chilogger = CHILogger(s"L3_L2[${i}]", issue, !cacheParams.FPGAPlatform && cacheParams.enableCHILog)
-      chilogger.io.up <> l2.module.io_chi
-      chilogger.io.down <> io(i).chi
+      if (!cacheParams.FPGAPlatform && cacheParams.enableCHILog) {
+        val chilogger = CHILogger(s"L3_L2[${i}]", issue, true)
+        chilogger.io.up <> l2.module.io_chi
+        chilogger.io.down <> io(i).chi
+      }
+      else {
+        l2.module.io_chi <> io(i).chi
+      }
 
       dontTouch(l2.module.io)
 
