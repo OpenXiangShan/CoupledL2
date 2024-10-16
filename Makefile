@@ -14,14 +14,14 @@ init:
 compile:
 	mill -i CoupledL2.compile
 
-PASS_ARGS = ISSUE=$(ISSUE) NUM_CORE=$(NUM_CORE) NUM_TL_UL=$(NUM_TL_UL) NUM_SLICE=$(NUM_SLICE) \
-			WITH_CHISELDB=$(WITH_CHISELDB) WITH_TLLOG=$(WITH_TLLOG) WITH_CHILOG=$(WITH_CHILOG) \
-			FPGA=$(FPGA)
+CHI_PASS_ARGS = ISSUE=$(ISSUE) NUM_CORE=$(NUM_CORE) NUM_TL_UL=$(NUM_TL_UL) NUM_SLICE=$(NUM_SLICE) \
+			    WITH_CHISELDB=$(WITH_CHISELDB) WITH_TLLOG=$(WITH_TLLOG) WITH_CHILOG=$(WITH_CHILOG) \
+			    FPGA=$(FPGA)
 
 TOP = TestTop
-TOP_ARGS = --issue $(ISSUE) --core $(NUM_CORE) --tl-ul $(NUM_TL_UL) --bank $(NUM_SLICE) \
-		   --chiseldb $(WITH_CHISELDB) --tllog $(WITH_TLLOG) --chilog $(WITH_CHILOG) \
-		   --fpga $(FPGA)
+CHI_TOP_ARGS = --issue $(ISSUE) --core $(NUM_CORE) --tl-ul $(NUM_TL_UL) --bank $(NUM_SLICE) \
+		   	   --chiseldb $(WITH_CHISELDB) --tllog $(WITH_TLLOG) --chilog $(WITH_CHILOG) \
+		       --fpga $(FPGA)
 BUILD_DIR = ./build
 TOP_V = $(BUILD_DIR)/$(TOP).v
 SIM_MEM_ARGS = --infer-rw --repl-seq-mem -c:$(TOP):-o:$(TOP).v.conf
@@ -29,7 +29,11 @@ MEM_GEN = ./scripts/vlsi_mem_gen
 MEM_GEN_SEP = ./scripts/gen_sep_mem.sh
 
 test-top:
-	mill -i CoupledL2.test.runMain coupledL2.$(TOP)_$(SYSTEM) -td $(BUILD_DIR) $(SIM_MEM_ARGS) $(TOP_ARGS)
+	mill -i CoupledL2.test.runMain coupledL2.$(TOP)_$(SYSTEM) -td $(BUILD_DIR) $(SIM_MEM_ARGS)
+	$(MEM_GEN_SEP) "$(MEM_GEN)" "$(TOP_V).conf" "$(BUILD_DIR)"
+
+test-top-chi:
+	mill -i CoupledL2.test.runMain coupledL2.$(TOP)_$(SYSTEM) -td $(BUILD_DIR) $(SIM_MEM_ARGS) $(CHI_TOP_ARGS)
 	$(MEM_GEN_SEP) "$(MEM_GEN)" "$(TOP_V).conf" "$(BUILD_DIR)"
 
 test-top-l2:
@@ -47,20 +51,17 @@ test-top-l2l3l2:
 test-top-fullsys:
 	$(MAKE) test-top SYSTEM=fullSys
 
-test-top-chi:
-	$(MAKE) test-top SYSTEM=CHIL2 $(PASS_ARGS)
-
 test-top-chi-dualcore-0ul:
-	$(MAKE) test-top SYSTEM=CHIL2 $(PASS_ARGS) NUM_CORE=2 NUM_TL_UL=0
+	$(MAKE) test-top-chi SYSTEM=CHIL2 $(CHI_PASS_ARGS) NUM_CORE=2 NUM_TL_UL=0
 
 test-top-chi-dualcore-2ul:
-	$(MAKE) test-top SYSTEM=CHIL2 $(PASS_ARGS) NUM_CORE=2 NUM_TL_UL=2
+	$(MAKE) test-top-chi SYSTEM=CHIL2 $(CHI_PASS_ARGS) NUM_CORE=2 NUM_TL_UL=2
 
 test-top-chi-quadcore-0ul:
-	$(MAKE) test-top SYSTEM=CHIL2 $(PASS_ARGS) NUM_CORE=4 NUM_TL_UL=0
+	$(MAKE) test-top-chi SYSTEM=CHIL2 $(CHI_PASS_ARGS) NUM_CORE=4 NUM_TL_UL=0
 
 test-top-chi-quadcore-2ul:
-	$(MAKE) test-top SYSTEM=CHIL2 $(PASS_ARGS) NUM_CORE=4 NUM_TL_UL=2
+	$(MAKE) test-top-chi SYSTEM=CHIL2 $(CHI_PASS_ARGS) NUM_CORE=4 NUM_TL_UL=2
 
 clean:
 	rm -rf ./build
