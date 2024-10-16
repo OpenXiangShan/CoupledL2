@@ -232,7 +232,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   io.pCrd.query.bits.pCrdType := pCrdType
   io.pCrd.query.bits.srcID := srcID
 
-  io.waitOnReadReceipt.foreach(_ := !w_readreceipt.get && (s_txreq || !allowRetry))
+  io.waitOnReadReceipt.foreach(_ := !w_readreceipt.get && s_txreq)
 }
 
 class MMIOBridgeImp(outer: MMIOBridge) extends LazyModuleImp(outer)
