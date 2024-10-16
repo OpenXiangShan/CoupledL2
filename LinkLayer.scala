@@ -177,7 +177,7 @@ class LCredit2Decoupled[T <: Bundle](
 
   assert(!accept || queue.io.enq.ready)
 
-  io.in.lcrdv := lcreditOut
+  io.in.lcrdv := RegNext(lcreditOut, init = false.B)
 
   io.out <> queue.io.deq
   val opcodeElements = queue.io.deq.bits.elements.filter(_._1 == "opcode")
@@ -220,36 +220,37 @@ class Decoupled2LCredit[T <: Bundle](gen: T) extends Module {
     val state = Input(new LinkState())
   })
 
+  val out = Wire(io.out.cloneType)
+
   val state = io.state.state
   val disableFlit = state === LinkStates.STOP || state === LinkStates.ACTIVATE
   val disableLCredit = state === LinkStates.STOP
-  val acceptLCredit = io.out.lcrdv && !disableLCredit
+  val acceptLCredit = out.lcrdv && !disableLCredit
 
   // The maximum number of L-Credits that a receiver can provide is 15.
   val lcreditsMax = 15
   val lcreditPool = RegInit(0.U(log2Up(lcreditsMax).W))
 
   val returnLCreditValid = !io.in.valid && state === LinkStates.DEACTIVATE && lcreditPool =/= 0.U
+  val flitv = io.in.fire || returnLCreditValid
 
   when (acceptLCredit) {
-    when (!io.out.flitv) {
+    when (!flitv) {
       lcreditPool := lcreditPool + 1.U
       assert(lcreditPool + 1.U =/= 0.U, "L-Credit pool overflow")
     }
   }.otherwise {
-    when (io.out.flitv) {
+    when (flitv) {
       lcreditPool := lcreditPool - 1.U
     }
   }
 
   io.in.ready := lcreditPool =/= 0.U && !disableFlit
-  io.out.flitpend := true.B
-  io.out.flitv := io.in.fire || returnLCreditValid
-  io.out.flit := Mux(
-    io.in.valid,
-    Cat(io.in.bits.getElements.map(_.asUInt)),
-    0.U // LCrdReturn
-  )
+
+  io.out <> out
+  out.flitpend := RegNext(true.B, init = false.B) // TODO
+  out.flitv := RegNext(flitv, init = false.B)
+  out.flit := RegEnable(Mux(io.in.valid, Cat(io.in.bits.getElements.map(_.asUInt)), 0.U /* LCrdReturn */), flitv)
 }
 
 object Decoupled2LCredit {
