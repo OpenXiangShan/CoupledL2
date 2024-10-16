@@ -28,40 +28,43 @@ SIM_MEM_ARGS = --infer-rw --repl-seq-mem -c:$(TOP):-o:$(TOP).v.conf
 MEM_GEN = ./scripts/vlsi_mem_gen
 MEM_GEN_SEP = ./scripts/gen_sep_mem.sh
 
-test-top:
+gen-test-top:
 	mill -i CoupledL2.test.runMain coupledL2.$(TOP)_$(SYSTEM) -td $(BUILD_DIR) $(SIM_MEM_ARGS)
 	$(MEM_GEN_SEP) "$(MEM_GEN)" "$(TOP_V).conf" "$(BUILD_DIR)"
 
-test-top-chi:
+gen-test-top-chi:
 	mill -i CoupledL2.test.runMain coupledL2.$(TOP)_$(SYSTEM) -td $(BUILD_DIR) $(SIM_MEM_ARGS) $(CHI_TOP_ARGS)
 	$(MEM_GEN_SEP) "$(MEM_GEN)" "$(TOP_V).conf" "$(BUILD_DIR)"
 
 test-top-l2:
-	$(MAKE) test-top SYSTEM=L2
+	$(MAKE) gen-test-top SYSTEM=L2
 
 test-top-l2standalone:
-	$(MAKE) test-top SYSTEM=L2_Standalone
+	$(MAKE) gen-test-top SYSTEM=L2_Standalone
 
 test-top-l2l3:
-	$(MAKE) test-top SYSTEM=L2L3
+	$(MAKE) gen-test-top SYSTEM=L2L3
 
 test-top-l2l3l2:
-	$(MAKE) test-top SYSTEM=L2L3L2
+	$(MAKE) gen-test-top SYSTEM=L2L3L2
 
 test-top-fullsys:
-	$(MAKE) test-top SYSTEM=fullSys
+	$(MAKE) gen-test-top SYSTEM=fullSys
+
+test-top-chi:
+	$(MAKE) gen-test-top-chi SYSTEM=CHIL2 $(CHI_PASS_ARGS) NUM_CORE=2 NUM_TL_UL=0
 
 test-top-chi-dualcore-0ul:
-	$(MAKE) test-top-chi SYSTEM=CHIL2 $(CHI_PASS_ARGS) NUM_CORE=2 NUM_TL_UL=0
+	$(MAKE) gen-test-top-chi SYSTEM=CHIL2 $(CHI_PASS_ARGS) NUM_CORE=2 NUM_TL_UL=0
 
 test-top-chi-dualcore-2ul:
-	$(MAKE) test-top-chi SYSTEM=CHIL2 $(CHI_PASS_ARGS) NUM_CORE=2 NUM_TL_UL=2
+	$(MAKE) gen-test-top-chi SYSTEM=CHIL2 $(CHI_PASS_ARGS) NUM_CORE=2 NUM_TL_UL=2
 
 test-top-chi-quadcore-0ul:
-	$(MAKE) test-top-chi SYSTEM=CHIL2 $(CHI_PASS_ARGS) NUM_CORE=4 NUM_TL_UL=0
+	$(MAKE) gen-test-top-chi SYSTEM=CHIL2 $(CHI_PASS_ARGS) NUM_CORE=4 NUM_TL_UL=0
 
 test-top-chi-quadcore-2ul:
-	$(MAKE) test-top-chi SYSTEM=CHIL2 $(CHI_PASS_ARGS) NUM_CORE=4 NUM_TL_UL=2
+	$(MAKE) gen-test-top-chi SYSTEM=CHIL2 $(CHI_PASS_ARGS) NUM_CORE=4 NUM_TL_UL=2
 
 clean:
 	rm -rf ./build
