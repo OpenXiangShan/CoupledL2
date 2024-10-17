@@ -52,7 +52,7 @@ test-top-fullsys:
 	$(MAKE) gen-test-top SYSTEM=fullSys
 
 test-top-chi:
-	$(MAKE) gen-test-top-chi SYSTEM=CHIL2 $(CHI_PASS_ARGS) NUM_CORE=2 NUM_TL_UL=0
+	$(MAKE) gen-test-top-chi SYSTEM=CHIL2 $(CHI_PASS_ARGS)
 
 test-top-chi-dualcore-0ul:
 	$(MAKE) gen-test-top-chi SYSTEM=CHIL2 $(CHI_PASS_ARGS) NUM_CORE=2 NUM_TL_UL=0
