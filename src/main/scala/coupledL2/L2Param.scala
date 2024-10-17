@@ -100,6 +100,8 @@ case class L2Param(
   enableMonitor: Boolean = true,
   // TLLog
   enableTLLog: Boolean = true,
+  // CHILog
+  enableCHILog: Boolean = true,
   // TopDown
   elaboratedTopDown: Boolean = true,
   // env
