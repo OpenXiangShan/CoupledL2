@@ -24,7 +24,7 @@ import freechips.rocketchip.util._
 import scala.collection.immutable.{ListMap, SeqMap}
 import utility.ChiselDB
 
-class CHILogger(name: String, enable: Boolean, flit_as_is: Boolean = false)
+class CHILogger(name: String, enable: Boolean)
                (implicit val p: Parameters) extends Module with HasCHIOpcodes {
 
   val io = IO(new Bundle() {
@@ -35,7 +35,8 @@ class CHILogger(name: String, enable: Boolean, flit_as_is: Boolean = false)
 
   // packed_flit = true: just dump the whole flit as UInt
   // packed_flit = false: separate every field
-  val packed_flit = flit_as_is
+  val packed_flit = !p(CHIIssue).equals(Issue.B)
+  // *NOTICE: (or TODO) Non-packed flit mode for Issue E.b was currently broken.
 
   // ** !! gather all distinct fields from CHI bundles !! **
   val all_bundles = Seq(new CHIREQ, new CHIRSP, new CHIDAT, new CHISNP)
@@ -181,8 +182,15 @@ class CHILogger(name: String, enable: Boolean, flit_as_is: Boolean = false)
 
 object CHILogger {
   
-  def apply(name: String, enable: Boolean = true)(implicit p: Parameters) = {
-    val logger = Module(new CHILogger(name, enable))
+  def apply(name: String, enable: Boolean)(implicit p: Parameters) = {
+    val logger = Module(new CHILogger(name, enable)(p))
+    logger
+  }
+
+  def apply(name: String, issue: String, enable: Boolean)(implicit p: Parameters) = {
+    val logger = Module(new CHILogger(name, enable)(
+      p.alterPartial { case CHIIssue => issue }
+    ))
     logger
   }
 }
