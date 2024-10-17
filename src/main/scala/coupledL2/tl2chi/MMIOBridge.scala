@@ -38,7 +38,7 @@ class MMIOBridge()(implicit p: Parameters) extends LazyModule
     */
   val beuRange = AddressSet(0x38010000, 4096 - 1)
   val peripheralRange = AddressSet(
-    0x0, 0x7fffffff
+    0x0, 0xffffffffffffL
   ).subtract(beuRange)
 
   val mmioNode = TLManagerNode(Seq(TLSlavePortParameters.v1(
