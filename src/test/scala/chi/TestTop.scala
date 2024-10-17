@@ -86,7 +86,7 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, iss
 
   val bankBinders = (0 until numCores).map(_ => BankBinder(banks, 64))
 
-  l1d_nodes.zip(l2_nodes).zipWithIndex.foreach { case ((l1d, l2), i) =>
+  val mmio_nodes = l1d_nodes.zip(l2_nodes).zipWithIndex.map { case ((l1d, l2), i) =>
     val l1xbar = TLXbar()
     l1xbar := 
       TLBuffer() :=
@@ -105,9 +105,7 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, iss
       bankBinders(i) :*=
       l2.node :*=
       l1xbar
-    /**
-      * MMIO: make diplomacy happy
-      */
+
     val mmioClientNode = TLClientNode(Seq(
       TLMasterPortParameters.v1(
         clients = Seq(TLMasterParameters.v1(
@@ -116,6 +114,8 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, iss
       )
     ))
     l2.mmioBridge.mmioNode := mmioClientNode
+
+    mmioClientNode
   }
 
   lazy val module = new LazyModuleImp(this){
@@ -139,6 +139,11 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, iss
           node.makeIOs()(ValName(s"master_ul_port_${i}_${j}"))
         }
       }
+    }
+
+    mmio_nodes.zipWithIndex.foreach {
+      case (node, i) =>
+        node.makeIOs()(ValName(s"mmio_port_$i"))
     }
 
     val io = IO(Vec(numCores, new Bundle() {
