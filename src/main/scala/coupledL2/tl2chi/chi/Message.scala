@@ -167,14 +167,14 @@ object CHICohStateFwdedTransSet {
   def isValid(set: CHICohStateFwdedTransSet, channel: UInt, opcode: UInt, resp: UInt, fwdState: UInt): Bool =
     channel =/= set.channel() || opcode =/= set.opcode || VecInit(set.set.map(t => t.resp() === resp && t.fwdState() === fwdState)).asUInt.orR
   
-  def ofSnpResp(opcode: UInt) = new CHICohStateFwdedTransSet(() => CHIChannel.TXRSP, opcode, Seq(
+  def ofSnpRespFwded(opcode: UInt) = new CHICohStateFwdedTransSet(() => CHIChannel.TXRSP, opcode, Seq(
     SnpResp_I_Fwded_I, SnpResp_I_Fwded_SC, SnpResp_I_Fwded_UC,
     SnpResp_I_Fwded_UD_PD, SnpResp_I_Fwded_SD_PD,
     SnpResp_SC_Fwded_I, SnpResp_SC_Fwded_SC, SnpResp_SC_Fwded_SD_PD,
     SnpResp_UC_UD_Fwded_I,
     SnpResp_SD_Fwded_I, SnpResp_SD_Fwded_SC
   ))
-  def ofSnpRespData(opcode: UInt)  = new CHICohStateFwdedTransSet(() => CHIChannel.TXDAT, opcode, Seq(
+  def ofSnpRespDataFwded(opcode: UInt)  = new CHICohStateFwdedTransSet(() => CHIChannel.TXDAT, opcode, Seq(
     SnpRespData_I_Fwded_SC, SnpRespData_I_Fwded_SD_PD,
     SnpRespData_SC_Fwded_SC, SnpRespData_SC_Fwded_SD_PD,
     SnpRespData_SD_Fwded_SC,
