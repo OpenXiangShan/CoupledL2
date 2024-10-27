@@ -378,7 +378,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val need_data_a = dirResult_s3.hit && (req_get_s3 || req_acquireBlock_s3)
   val need_data_b = sinkB_req_s3 && (doRespData || doFwd || dirResult_s3.hit && meta_s3.state === TRUNK)
   val need_data_mshr_repl = mshr_refill_s3 && need_repl && !retry
-  val ren = need_data_a || need_data_b || need_data_mshr_repl
+  val need_data_cmo = (cmo_clean_s3 || cmo_flush_s3) && !meta_has_clients_s3 && dirResult_s3.hit && meta_s3.dirty
+  val ren = need_data_a || need_data_b || need_data_mshr_repl || need_data_cmo
 
   val wen_c = sinkC_req_s3 && isParamFromT(req_s3.param) && req_s3.opcode(0) && dirResult_s3.hit
   val wen_mshr = req_s3.dsWen && (
@@ -421,7 +422,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val need_write_releaseBuf = need_probe_s3_a ||
     cache_alias ||
     need_data_b && need_mshr_s3_b ||
-    need_data_mshr_repl
+    need_data_mshr_repl ||
+    (cmo_clean_s3 || cmo_flush_s3) && !meta_has_clients_s3 && dirResult_s3.hit && meta_s3.dirty
   // B: need_write_refillBuf indicates that DS should be read and the data will be written into RefillBuffer
   //    when L1 AcquireBlock but L2 AcquirePerm to L3, we need to prepare data for L1
   //    but this will no longer happen, cuz we always AcquireBlock for L1 AcquireBlock

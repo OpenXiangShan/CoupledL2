@@ -840,6 +840,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     }.elsewhen (mp_cbwrdata_valid) {
       state.s_cbwrdata.get := true.B
       meta.state := INVALID
+      meta.dirty := false.B
     }.elsewhen (mp_probeack_valid) {
       state.s_probeack := true.B
     }.elsewhen (mp_dct_valid) {
