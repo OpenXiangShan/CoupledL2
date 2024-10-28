@@ -798,8 +798,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
 
   /* ======== Assertions for DCT forwarded snoop ======== */
   Seq(
-    ("SnpResp", CHICohStateFwdedTransSet.ofSnpResp(SnpResp)),
-    ("SnpRespData", CHICohStateFwdedTransSet.ofSnpRespData(SnpRespData))
+    ("SnpRespFwded", CHICohStateFwdedTransSet.ofSnpRespFwded(SnpRespFwded)),
+    ("SnpRespDataFwded", CHICohStateFwdedTransSet.ofSnpRespDataFwded(SnpRespDataFwded))
   ).foreach { case (name, set) => {
     assert(!mp_valid || CHICohStateFwdedTransSet.isValid(set, 
         mp.txChannel, mp.chiOpcode.get, mp.resp.get, mp.fwdState.get),
