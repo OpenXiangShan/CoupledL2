@@ -423,7 +423,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     cache_alias ||
     need_data_b && need_mshr_s3_b ||
     need_data_mshr_repl ||
-    (cmo_clean_s3 || cmo_flush_s3) && !meta_has_clients_s3 && dirResult_s3.hit && meta_s3.dirty
+    need_data_cmo
   // B: need_write_refillBuf indicates that DS should be read and the data will be written into RefillBuffer
   //    when L1 AcquireBlock but L2 AcquirePerm to L3, we need to prepare data for L1
   //    but this will no longer happen, cuz we always AcquireBlock for L1 AcquireBlock
