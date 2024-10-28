@@ -11,6 +11,7 @@ import huancun._
 import coupledL2.prefetch._
 import coupledL2.tl2chi._
 import utility._
+import scala.collection.mutable.ArrayBuffer
 
 class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue: String = "B")(implicit p: Parameters) extends LazyModule
   with HasCHIMsgParameters {
@@ -145,7 +146,16 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, iss
     }))
 
     l2_nodes.zipWithIndex.foreach { case (l2, i) =>
-      l2.module.io_chi <> io(i).chi
+
+      if (!cacheParams.FPGAPlatform && cacheParams.enableCHILog) {
+        val chilogger = CHILogger(s"L3_L2[${i}]", issue, true)
+        chilogger.io.up <> l2.module.io_chi
+        chilogger.io.down <> io(i).chi
+      }
+      else {
+        l2.module.io_chi <> io(i).chi
+      }
+
       dontTouch(l2.module.io)
 
       l2.module.io.hartId := i.U
@@ -154,15 +164,16 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, iss
       l2.module.io.l2_tlb_req <> DontCare
     }
   }
-
 }
 
 
 object TestTopCHIHelper {
-  def gen(fTop: Parameters => TestTop_CHIL2)(args: Array[String]) = {
-    val FPGAPlatform    = false
-    val enableChiselDB  = !FPGAPlatform && true
-    
+  def gen(fTop: Parameters => TestTop_CHIL2,
+          onFPGAPlatform: Boolean,
+          enableChiselDB: Boolean,
+          enableTLLog: Boolean,
+          enableCHILog: Boolean)(args: Array[String]) = {
+
     val config = new Config((_, _, _) => {
       case L2ParamKey => L2Param(
         ways                = 4,
@@ -170,11 +181,12 @@ object TestTopCHIHelper {
         clientCaches        = Seq(L1Param(aliasBitsOpt = Some(2), vaddrBitsOpt = Some(36))),
         // echoField        = Seq(DirtyField),
         enablePerf          = false,
-        enableRollingDB     = enableChiselDB && true,
-        enableMonitor       = enableChiselDB && true,
-        enableTLLog         = enableChiselDB && true,
+        enableRollingDB     = !onFPGAPlatform && enableChiselDB,
+        enableMonitor       = !onFPGAPlatform && enableChiselDB,
+        enableTLLog         = !onFPGAPlatform && enableChiselDB && enableTLLog,
+        enableCHILog        = !onFPGAPlatform && enableChiselDB && enableCHILog,
         elaboratedTopDown   = false,
-        FPGAPlatform        = FPGAPlatform,
+        FPGAPlatform        = onFPGAPlatform,
 
         // prefetch
         prefetch            = Seq(BOPParameters()),
@@ -199,158 +211,65 @@ object TestTopCHIHelper {
 }
 
 
-object TestTop_CHI_DualCore_0UL extends App {
+object TestTop_CHIL2 extends App {
 
-  TestTopCHIHelper.gen(p => new TestTop_CHIL2(
-    numCores = 2,
-    numULAgents = 0,
-    banks = 4)(p)
-  )(args)
-}
+  val usage = """
+Usage: TestTop_CHIL2 [<--option> <values>]
 
-object TestTop_CHI_DualCore_2UL extends App {
+      --issue <chi_issue>       specify AMBA CHI Issue of downstream, B by default
+      --core <core_count>       specify core count, 2 by default
+      --tl-ul <tl_ul_count>     specify TileLink-UL upstream count, 0 by default
+      --bank <bank_count>       specify bank (slice) count, 4 by default
+      --fpga <1>                generate for FPGA platform
+      --chiseldb <1>            enable ChisleDB
+      --tllog <1>               enable TLLogger under ChiselDB
+      --chilog <1>              enable CHILogger under ChiselDB
+  """
 
-  TestTopCHIHelper.gen(p => new TestTop_CHIL2(
-    numCores = 2,
-    numULAgents = 2,
-    banks = 4)(p)
-  )(args)
-}
+  if (args.contains("--help"))
+  {
+    println(usage)
+    System.exit(-1)
+  }
 
-object TestTop_CHI_DualCore_0UL_Eb extends App {
+  var varArgs = ArrayBuffer(args:_*)
+  var varArgsDropped = 0
 
-  TestTopCHIHelper.gen(p => new TestTop_CHIL2(
-    numCores = 2,
-    numULAgents = 0,
-    banks = 4,
-    issue = "E.b")(p)
-  )(args)
-}
+  var numCores: Int = 2
+  var numULAgents: Int = 0
+  var numBanks: Int = 4
+  var issue: String = "B"
+  var onFPGAPlatform: Boolean = false
+  var enableChiselDB: Boolean = false
+  var enableTLLog: Boolean = false
+  var enableCHILog: Boolean = false
 
-object TestTop_CHI_DualCore_2UL_Eb extends App {
+  val varArgsToDrop = args.sliding(2, 1).zipWithIndex.collect {
+    case (Array("--issue", value), i) => (issue = value, i)
+    case (Array("--core", value), i) => (numCores = value.toInt, i)
+    case (Array("--tl-ul", value), i) => (numULAgents = value.toInt, i)
+    case (Array("--bank", value), i) => (numBanks = value.toInt, i)
+    case (Array("--fpga", value), i) => (onFPGAPlatform = value.toInt != 0, i)
+    case (Array("--chiseldb", value), i) => (enableChiselDB = value.toInt != 0, i)
+    case (Array("--tllog", value), i) => (enableTLLog = value.toInt != 0, i)
+    case (Array("--chilog", value), i) => (enableCHILog = value.toInt != 0, i)
+  }
 
-  TestTopCHIHelper.gen(p => new TestTop_CHIL2(
-    numCores = 2,
-    numULAgents = 2,
-    banks = 4,
-    issue = "E.b")(p)
-  )(args)
-}
+  varArgsToDrop.map(_._2).foreach(i => {
+    varArgs.remove(i - varArgsDropped, 2)
+    varArgsDropped = varArgsDropped + 2
+  })
+  varArgs.trimToSize
 
-
-
-object TestTop_CHI_QuadCore_0UL extends App {
-
-  TestTopCHIHelper.gen(p => new TestTop_CHIL2(
-    numCores = 4,
-    numULAgents = 0,
-    banks = 1)(p)
-  )(args)
-}
-
-object TestTop_CHI_QuadCore_2UL extends App {
-
-  TestTopCHIHelper.gen(p => new TestTop_CHIL2(
-    numCores = 4,
-    numULAgents = 2,
-    banks = 1)(p)
-  )(args)
-}
-
-object TestTop_CHI_QuadCore_0UL_Eb extends App {
-
-  TestTopCHIHelper.gen(p => new TestTop_CHIL2(
-    numCores = 4,
-    numULAgents = 0,
-    banks = 1,
-    issue = "E.b")(p)
-  )(args)
-}
-
-object TestTop_CHI_QuadCore_2UL_Eb extends App {
-
-  TestTopCHIHelper.gen(p => new TestTop_CHIL2(
-    numCores = 4,
-    numULAgents = 2,
-    banks = 1,
-    issue = "E.b")(p)
-  )(args)
-}
-
-
-object TestTop_CHI_OctaCore_0UL extends App {
-
-  TestTopCHIHelper.gen(p => new TestTop_CHIL2(
-    numCores = 8,
-    numULAgents = 0,
-    banks = 1)(p)
-  )(args)
-}
-
-object TestTop_CHI_OctaCore_2UL extends App {
-
-  TestTopCHIHelper.gen(p => new TestTop_CHIL2(
-    numCores = 8,
-    numULAgents = 2,
-    banks = 1)(p)
-  )(args)
-}
-
-object TestTop_CHI_OctaCore_0UL_Eb extends App {
-
-  TestTopCHIHelper.gen(p => new TestTop_CHIL2(
-    numCores = 8,
-    numULAgents = 0,
-    banks = 1,
-    issue = "E.b")(p)
-  )(args)
-}
-
-object TestTop_CHI_OctaCore_2UL_Eb extends App {
-
-  TestTopCHIHelper.gen(p => new TestTop_CHIL2(
-    numCores = 8,
-    numULAgents = 2,
-    banks = 1,
-    issue = "E.b")(p)
-  )(args)
-}
-
-
-object TestTop_CHI_HexaCore_0UL extends App {
-
-  TestTopCHIHelper.gen(p => new TestTop_CHIL2(
-    numCores = 16,
-    numULAgents = 0,
-    banks = 1)(p)
-  )(args)
-}
-
-object TestTop_CHI_HexaCore_2UL extends App {
-
-  TestTopCHIHelper.gen(p => new TestTop_CHIL2(
-    numCores = 16,
-    numULAgents = 2,
-    banks = 1)(p)
-  )(args)
-}
-
-object TestTop_CHI_HexaCore_0UL_Eb extends App {
-
-  TestTopCHIHelper.gen(p => new TestTop_CHIL2(
-    numCores = 16,
-    numULAgents = 0,
-    banks = 1,
-    issue = "E.b")(p)
-  )(args)
-}
-
-object TestTop_CHI_HexaCore_2UL_Eb extends App {
-
-  TestTopCHIHelper.gen(p => new TestTop_CHIL2(
-    numCores = 16,
-    numULAgents = 2,
-    banks = 1,
-    issue = "E.b")(p)
-  )(args)
+  TestTopCHIHelper.gen(
+    p => new TestTop_CHIL2(
+      numCores,
+      numULAgents,
+      numBanks,
+      issue)(p), 
+    onFPGAPlatform,
+    enableChiselDB,
+    enableTLLog,
+    enableCHILog
+  )(varArgs.toArray)
 }
