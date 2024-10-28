@@ -48,14 +48,14 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, iss
     masterNode
   }
 
-  val l1d_nodes = (0 until numCores).map(i => createClientNode(s"l1d$i", 32))
+  val l1d_nodes = (0 until numCores).map(i => createClientNode(s"l1d$i", 64))
   val l1i_nodes = (0 until numCores).map {i =>
     (0 until numULAgents).map { j =>
       TLClientNode(Seq(
         TLMasterPortParameters.v1(
           clients = Seq(TLMasterParameters.v1(
             name = s"l1i${i}_${j}",
-            sourceId = IdRange(0, 32)
+            sourceId = IdRange(0, 64)
           ))
         )
       ))
@@ -109,7 +109,8 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, iss
     val mmioClientNode = TLClientNode(Seq(
       TLMasterPortParameters.v1(
         clients = Seq(TLMasterParameters.v1(
-          "uncache"
+          name = "uncache",
+          sourceId = IdRange(0, 16)
         ))
       )
     ))
