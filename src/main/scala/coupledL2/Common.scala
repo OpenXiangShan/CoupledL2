@@ -431,3 +431,9 @@ class PCrdGrantMatcher(val numPorts: Int) extends Module {
     p.pCrdType === io.rxrsp.bits.pCrdType
   }).asUInt
 }
+
+class L2CacheErrorInfo(implicit p: Parameters) extends L2Bundle {
+  val valid = Bool()
+  val address = UInt(40.W)
+}
+
