@@ -69,6 +69,15 @@ trait HasCoupledL2Parameters {
 
   def mmioBridgeSize = cacheParams.mmioBridgeSize
 
+  // ECC
+  def enableECC = cacheParams.enableTagECC || cacheParams.enableDataECC
+  def enableTagECC = cacheParams.enableTagECC
+  def encTagBits = cacheParams.tagCode.width(tagBits)
+  def eccTagBits = encTagBits - tagBits
+  def enableDataECC = cacheParams.enableDataECC
+  def encDataBits = cacheParams.dataCode.width(blockBytes * 8)
+  def eccDataBits = encDataBits - blockBytes * 8
+
   // Prefetch
   def prefetchers = cacheParams.prefetch
   def prefetchOpt = if(prefetchers.nonEmpty) Some(true) else None
@@ -295,6 +304,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         val robHeadPaddr = Flipped(Valid(UInt(36.W)))
         val l2MissMatch = Output(Bool())
       }
+      val error = Output(new L2CacheErrorInfo())
     })
 
     // Display info
@@ -451,6 +461,21 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         slide.getPerfEvents.map{case (str, idx) => ("Slice" + slide_idx.toString + "_" + str, idx)}
     }.flatten
     generatePerfEvent()
+
+    // ECC error
+    if (enableECC) {
+      val l2ECCArb = Module(new Arbiter(new L2CacheErrorInfo(), slices.size))
+      val slices_l2ECC = slices.zipWithIndex.map {
+        case (s, i) => s.io.error
+      }
+      l2ECCArb.io.in <> VecInit(slices_l2ECC)
+      l2ECCArb.io.out.ready := true.B
+      io.error.valid := l2ECCArb.io.out.fire && l2ECCArb.io.out.bits.valid
+      io.error.address := l2ECCArb.io.out.bits.address
+    } else {
+      io.error.valid := false.B
+      io.error.address := 0.U.asTypeOf(io.error.address)
+    }
 
     // Refill hint
     if (enableHintGuidedGrant) {

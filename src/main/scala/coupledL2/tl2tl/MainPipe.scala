@@ -76,6 +76,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
       val req_s3 = ValidIO(new DSRequest)
       val rdata_s5 = Input(new DSBlock)
       val wdata_s3 = Output(new DSBlock)
+      val error_s5 = Input(Bool())
     }
 
     /* send Release/Grant/ProbeAck via SourceC/D channels */
@@ -103,6 +104,9 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
     val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain))
 
     val toMonitor = Output(new MainpipeMoni())
+
+    /* ECC error*/
+    val error = ValidIO(new L2CacheErrorInfo)
   })
 
   val resetFinish = RegInit(false.B)
@@ -132,6 +136,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
   /* ======== Enchantment ======== */
   val dirResult_s3    = io.dirResp_s3
+  val tagError_s3     = io.dirResp_s3.error
   val meta_s3         = dirResult_s3.meta
   val req_s3          = task_s3.bits
 
@@ -191,7 +196,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   // Allocation of MSHR: new request only
   val alloc_state = WireInit(0.U.asTypeOf(new FSMState()))
   alloc_state.elements.foreach(_._2 := true.B)
-  io.toMSHRCtl.mshr_alloc_s3.valid := task_s3.valid && !mshr_req_s3 && need_mshr_s3
+  io.toMSHRCtl.mshr_alloc_s3.valid := task_s3.valid && !mshr_req_s3 && need_mshr_s3 && !tagError_s3
   io.toMSHRCtl.mshr_alloc_s3.bits.dirResult := dirResult_s3
   io.toMSHRCtl.mshr_alloc_s3.bits.state := alloc_state
 
@@ -406,8 +411,8 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
     mshr_refill_s3 && !retry,
     req_s3.fromC || req_s3.fromA && !need_mshr_s3 && !data_unready_s3 && req_s3.opcode =/= Hint
   ) // prefetch-hit will not generate response
-  c_s3.valid := task_s3.valid && isC_s3
-  d_s3.valid := task_s3.valid && isD_s3
+  c_s3.valid := task_s3.valid && isC_s3 && !tagError_s3
+  d_s3.valid := task_s3.valid && isD_s3 && !tagError_s3
   c_s3.bits.task      := source_req_s3
   c_s3.bits.data.data := data_s3
   d_s3.bits.task      := source_req_s3
@@ -447,6 +452,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   val ren_s4 = RegInit(false.B)
   val need_write_releaseBuf_s4 = RegInit(false.B)
   val isC_s4, isD_s4 = RegInit(false.B)
+  val tagError_s4 = RegInit(false.B)
   task_s4.valid := task_s3.valid && !req_drop_s3
   when (task_s3.valid && !req_drop_s3) {
     task_s4.bits := source_req_s3
@@ -458,6 +464,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
     need_write_releaseBuf_s4 := need_write_releaseBuf
     isC_s4 := isC_s3
     isD_s4 := isD_s3
+    tagError_s4 := tagError_s3
   }
 
   // A-alias-Acquire should send neither C nor D
@@ -474,8 +481,8 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   val req_drop_s4 = !need_write_releaseBuf_s4 && chnl_fire_s4
 
   val c_d_valid_s4 = task_s4.valid && !RegNext(chnl_fire_s3, false.B)
-  c_s4.valid := c_d_valid_s4 && isC_s4
-  d_s4.valid := c_d_valid_s4 && isD_s4
+  c_s4.valid := c_d_valid_s4 && isC_s4 && !tagError_s4
+  d_s4.valid := c_d_valid_s4 && isD_s4 && !tagError_s4
   c_s4.bits.task := task_s4.bits
   c_s4.bits.data.data := data_s4
   d_s4.bits.task := task_s4.bits
@@ -488,6 +495,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   val data_s5 = Reg(UInt((blockBytes * 8).W))
   val need_write_releaseBuf_s5 = RegInit(false.B)
   val isC_s5, isD_s5 = RegInit(false.B)
+  val tagError_s5 = RegInit(false.B)
   // those hit@s3 and ready to fire@s5, and Now wait@s4
   val pendingC_s4 = task_s4.bits.fromB && !task_s4.bits.mshrTask && task_s4.bits.opcode === ProbeAckData
   val pendingD_s4 = task_s4.bits.fromA && !task_s4.bits.mshrTask &&
@@ -503,8 +511,11 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
     // except for those ready at s3/s4 (isC/D_s4), sink resps are also ready to fire at s5
     isC_s5 := isC_s4 || pendingC_s4
     isD_s5 := isD_s4 || pendingD_s4
+    tagError_s5 := tagError_s4
   }
   val rdata_s5 = io.toDS.rdata_s5.data
+  val dataError_s5 = io.toDS.error_s5
+  val error_s5 = tagError_s5 || dataError_s5
   val out_data_s5 = Mux(!task_s5.bits.mshrTask, rdata_s5, data_s5)
   val chnl_fire_s5 = c_s5.fire || d_s5.fire
 
@@ -525,11 +536,12 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   io.releaseBufWrite.bits.beatMask := Fill(beatSize, true.B)
 
   val c_d_valid_s5 = task_s5.valid && !RegNext(chnl_fire_s4, false.B) && !RegNextN(chnl_fire_s3, 2, Some(false.B))
-  c_s5.valid := c_d_valid_s5 && isC_s5
-  d_s5.valid := c_d_valid_s5 && isD_s5
+  c_s5.valid := c_d_valid_s5 && isC_s5 && !error_s5
+  d_s5.valid := c_d_valid_s5 && isD_s5 && !tagError_s5
   c_s5.bits.task := task_s5.bits
   c_s5.bits.data.data := out_data_s5
   d_s5.bits.task := task_s5.bits
+  d_s5.bits.task.corrupt := error_s5
   d_s5.bits.data.data := out_data_s5
 
   /* ======== BlockInfo ======== */
@@ -638,6 +650,10 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
   io.toSourceC <> c_arb.io.out
   io.toSourceD <> d_arb.io.out
+
+  io.error.valid := task_s5.valid
+  io.error.bits.valid := error_s5
+  io.error.bits.address := Cat(task_s5.bits.tag, task_s5.bits.set, task_s5.bits.off)
 
   /* ===== Performance counters ===== */
   // num of mshr req
