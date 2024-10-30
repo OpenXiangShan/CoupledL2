@@ -77,6 +77,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       val req_s3 = ValidIO(new DSRequest)
       val rdata_s5 = Input(new DSBlock)
       val wdata_s3 = Output(new DSBlock)
+      val error_s5 = Input(Bool())
     }
 
     /* send Grant via SourceD channel */
@@ -108,6 +109,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
     /* top-down monitor */
     // TODO
+
+    /* ECC error*/
+    val error = ValidIO(new L2CacheErrorInfo)
   })
 
   require(chiOpt.isDefined)
@@ -139,6 +143,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   /* ======== Enchantment ======== */
   val dirResult_s3    = io.dirResp_s3
+  val tagError_s3     = io.dirResp_s3.error
   val meta_s3         = dirResult_s3.meta
   val req_s3          = task_s3.bits
 
@@ -241,7 +246,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   /* Signals to MSHR Ctl */
   val alloc_state = WireInit(0.U.asTypeOf(new FSMState()))
   alloc_state.elements.foreach(_._2 := true.B)
-  io.toMSHRCtl.mshr_alloc_s3.valid := task_s3.valid && !mshr_req_s3 && need_mshr_s3
+  io.toMSHRCtl.mshr_alloc_s3.valid := task_s3.valid && !mshr_req_s3 && need_mshr_s3 && !tagError_s3
   io.toMSHRCtl.mshr_alloc_s3.bits.dirResult := dirResult_s3
   io.toMSHRCtl.mshr_alloc_s3.bits.state := alloc_state
   io.toMSHRCtl.mshr_alloc_s3.bits.task match { case task =>
@@ -542,7 +547,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   txreq_s3.valid := task_s3.valid && isTXREQ_s3
   txrsp_s3.valid := task_s3.valid && isTXRSP_s3
   txdat_s3.valid := task_s3.valid && isTXDAT_s3_ready
-  d_s3.valid := task_s3.valid && isD_s3_ready
+  d_s3.valid := task_s3.valid && isD_s3_ready && !tagError_s3 // TODO: need check
   txreq_s3.bits := source_req_s3.toCHIREQBundle()
   txrsp_s3.bits := source_req_s3
   txdat_s3.bits.task := source_req_s3
@@ -606,6 +611,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val ren_s4 = RegInit(false.B)
   val need_write_releaseBuf_s4 = RegInit(false.B)
   val isD_s4, isTXREQ_s4, isTXRSP_s4, isTXDAT_s4 = RegInit(false.B)
+  val tagError_s4 = RegInit(false.B)
   val pendingTXDAT_s4 = task_s4.bits.fromB && !task_s4.bits.mshrTask && task_s4.bits.toTXDAT
   val pendingD_s4 = task_s4.bits.fromA && !task_s4.bits.mshrTask && (
     task_s4.bits.opcode === GrantData || task_s4.bits.opcode === AccessAckData
@@ -628,6 +634,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     isTXREQ_s4 := isTXREQ_s3
     isTXRSP_s4 := isTXRSP_s3
     isTXDAT_s4 := isTXDAT_s3
+    tagError_s4 := tagError_s3
   }
 
   // for reqs that CANNOT give response in MainPipe, but needs to write releaseBuf/refillBuf
@@ -636,7 +643,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val req_drop_s4 = !need_write_releaseBuf_s4 && chnl_fire_s4
 
   val chnl_valid_s4 = task_s4.valid && !RegNext(chnl_fire_s3, false.B)
-  d_s4.valid := chnl_valid_s4 && isD_s4
+  d_s4.valid := chnl_valid_s4 && isD_s4 && !tagError_s4 // TODO: need check
   txreq_s4.valid := chnl_valid_s4 && isTXREQ_s4
   txrsp_s4.valid := chnl_valid_s4 && isTXRSP_s4
   txdat_s4.valid := chnl_valid_s4 && isTXDAT_s4
@@ -653,6 +660,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val data_s5 = Reg(UInt((blockBytes * 8).W))
   val need_write_releaseBuf_s5 = RegInit(false.B)
   val isD_s5, isTXREQ_s5, isTXRSP_s5, isTXDAT_s5 = RegInit(false.B)
+  val tagError_s5 = RegInit(false.B)
 
 
   task_s5.valid := task_s4.valid && !req_drop_s4
@@ -666,8 +674,11 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     isTXREQ_s5 := isTXREQ_s4
     isTXRSP_s5 := isTXRSP_s4
     isTXDAT_s5 := isTXDAT_s4 || pendingTXDAT_s4
+    tagError_s5 := tagError_s4
   }
   val rdata_s5 = io.toDS.rdata_s5.data
+  val dataError_s5 = io.toDS.error_s5
+  val error_s5 = tagError_s5 || dataError_s5
   val out_data_s5 = Mux(task_s5.bits.mshrTask || task_s5.bits.snpHitReleaseWithData, data_s5, rdata_s5)
   val chnl_fire_s5 = d_s5.fire || txreq_s5.fire || txrsp_s5.fire || txdat_s5.fire
 
@@ -701,7 +712,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   io.releaseBufWrite.bits.beatMask := Fill(beatSize, true.B)
 
   val chnl_valid_s5 = task_s5.valid && !RegNext(chnl_fire_s4, false.B) && !RegNextN(chnl_fire_s3, 2, Some(false.B))
-  d_s5.valid := chnl_valid_s5 && isD_s5
+  d_s5.valid := chnl_valid_s5 && isD_s5 && !tagError_s5 // TODO: need check
   txreq_s5.valid := chnl_valid_s5 && isTXREQ_s5
   txrsp_s5.valid := chnl_valid_s5 && isTXRSP_s5
   txdat_s5.valid := chnl_valid_s5 && isTXDAT_s5
@@ -857,6 +868,10 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   arb(txreq, io.toTXREQ, Some("toTXREQ"))
   arb(txrsp, io.toTXRSP, Some("toTXRSP"))
   arb(txdat, io.toTXDAT, Some("toTXDAT"))
+
+  io.error.valid := task_s5.valid
+  io.error.bits.valid := error_s5
+  io.error.bits.address := Cat(task_s5.bits.tag, task_s5.bits.set, task_s5.bits.off)
 
 
   /* ===== Performance counters ===== */
