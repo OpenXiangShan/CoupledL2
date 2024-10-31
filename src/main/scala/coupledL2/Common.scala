@@ -373,7 +373,7 @@ class TlbExceptionBundle extends Bundle {
   val instr = Output(Bool())
 }
 class L2TlbReq(implicit p: Parameters) extends L2Bundle{
-  val vaddr = Output(UInt((fullVAddrBits+offsetBits).W))
+  val vaddr = Output(UInt((fullVAddrBits).W))
   val cmd = Output(TlbCmd())
   val isPrefetch = Output(Bool())
   val size = Output(UInt(log2Ceil(log2Ceil(XLEN/8) + 1).W))
