@@ -143,7 +143,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   val hartid = cacheParams.hartId
   // 0 / 1: whether to enable temporal prefetcher
-  private val enableTP = Constantin.createRecord("enableTP"+hartid.toString, initValue = 1)
+  private val enableTP = Constantin.createRecord("tp_enable"+hartid.toString, initValue = 1)
   // 0 ~ N: throttle cycles for each prefetch request
   private val tpThrottleCycles = Constantin.createRecord("tp_throttleCycles"+hartid.toString, initValue = 4)
   // 0 / 1: whether request to set as trigger on meta hit
