@@ -379,6 +379,8 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     val releaseSourceD = Wire(Vec(banks, Bool()))
     val allCanFire = (RegNextN(!hintFire, sliceAhead) && RegNextN(!hintFire, sliceAhead + 1)) || Cat(releaseSourceD).orR
 
+    val cmoSinkReady = Wire(Vec(node.in.length, Bool()))
+
     val slices = node.in.zip(node.out).zipWithIndex.map {
       case (((in, edgeIn), (out, edgeOut)), i) =>
         require(in.params.dataBits == out.params.dataBits)
@@ -450,24 +452,33 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         cmo_sink_node match {
           case Some(x) =>
             val cmoReq = Wire(DecoupledIO(new CMOReq))
-            cmoReq.valid := x.in.head._1.valid && bank_eq(x.in.head._1.bits.address >> offsetBits, i, bankBits)
+            val bankSelect = bank_eq(x.in.head._1.bits.address >> offsetBits, i, bankBits)
+            cmoReq.valid := x.in.head._1.valid && bankSelect
             cmoReq.bits := x.in.head._1.bits
-            x.in.head._1.ready := cmoReq.ready
             PipelineConnect(cmoReq, slice.io.cmoReq, slice.io.cmoReq.ready, false.B, false.B)
+            cmoSinkReady(i) := cmoReq.ready && bankSelect
           case None =>
             slice.io.cmoReq.valid := false.B
             slice.io.cmoReq.bits.opcode :=  0.U
             slice.io.cmoReq.bits.address := 0.U
             slice.io.cmoResp.ready := false.B
+            cmoSinkReady(i) := false.B
         }
 
         slice
     }
+
     val perfEvents = Seq(("noEvent", 0.U)) ++ slices.zipWithIndex.map {
       case (slide, slide_idx) => 
         slide.getPerfEvents.map{case (str, idx) => ("Slice" + slide_idx.toString + "_" + str, idx)}
     }.flatten
     generatePerfEvent()
+
+    cmo_sink_node match {
+      case Some(x) =>
+        x.in.head._1.ready := cmoSinkReady.orR
+      case None =>
+    }
 
     cmo_source_node match {
       case Some(x) =>
