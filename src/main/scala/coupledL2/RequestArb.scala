@@ -93,13 +93,6 @@ class RequestArb(implicit p: Parameters) extends L2Module
   val s2_ready  = Wire(Bool())
   val mshr_task_s1 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
 
-  val cmo_task_s1 = Wire(Valid(new TaskBundle()))
-  cmo_task_s1.valid := (if (io.cmoTask.isDefined) io.dirRead_s1.ready && io.cmoTask.get.valid && resetFinish else false.B)
-  cmo_task_s1.bits := (if (io.cmoTask.isDefined) io.cmoTask.get.bits else 0.U.asTypeOf(new TaskBundle))
-  if (io.cmoTask.isDefined) {
-    io.cmoTask.get.ready := io.dirRead_s1.ready && resetFinish && s2_ready
-  }
-
   val s1_needs_replRead = mshr_task_s1.valid && mshr_task_s1.bits.fromA && mshr_task_s1.bits.replTask && (
     mshr_task_s1.bits.opcode(2, 1) === Grant(2, 1) ||
     mshr_task_s1.bits.opcode === AccessAckData ||
@@ -109,7 +102,7 @@ class RequestArb(implicit p: Parameters) extends L2Module
   /* ======== Stage 0 ======== */
   // if mshr_task_s1 is replRead, it might stall and wait for dirRead.ready, so we block new mshrTask from entering
   // TODO: will cause msTask path vacant for one-cycle after replRead, since not use Flow so as to avoid ready propagation
-  io.mshrTask.ready := !io.fromGrantBuffer.blockMSHRReqEntrance && !s1_needs_replRead && !(mshr_task_s1.valid && !s2_ready) && !cmo_task_s1.valid &&
+  io.mshrTask.ready := !io.fromGrantBuffer.blockMSHRReqEntrance && !s1_needs_replRead && !(mshr_task_s1.valid && !s2_ready) &&
     (if (io.fromSourceC.isDefined) !io.fromSourceC.get.blockMSHRReqEntrance else true.B) &&
     (if (io.fromTXDAT.isDefined) !io.fromTXDAT.get.blockMSHRReqEntrance else true.B) &&
     (if (io.fromTXRSP.isDefined) !io.fromTXRSP.get.blockMSHRReqEntrance else true.B) &&
@@ -148,7 +141,7 @@ class RequestArb(implicit p: Parameters) extends L2Module
 
   // TODO: A Hint is allowed to enter if !s2_ready for mcp2_stall
 
-  val sink_ready_basic = io.dirRead_s1.ready && resetFinish && !mshr_task_s1.valid && !cmo_task_s1.valid && s2_ready
+  val sink_ready_basic = io.dirRead_s1.ready && resetFinish && !mshr_task_s1.valid && s2_ready
 
   io.sinkA.ready := sink_ready_basic && !block_A && !sinkValids(1) && !sinkValids(0) // SinkC prior to SinkA & SinkB
   io.sinkB.ready := sink_ready_basic && !block_B && !sinkValids(0) // SinkB prior to SinkA
@@ -158,9 +151,17 @@ class RequestArb(implicit p: Parameters) extends L2Module
   chnl_task_s1.valid := io.dirRead_s1.ready && sinkValids.orR && resetFinish
   chnl_task_s1.bits := ParallelPriorityMux(sinkValids, Seq(C_task, B_task, A_task))
 
+  // put CMO at the lowest priority because it goes in at s1
+  val cmo_task_s1 = Wire(Valid(new TaskBundle()))
+  cmo_task_s1.valid := (if (io.cmoTask.isDefined) io.dirRead_s1.ready && io.cmoTask.get.valid && resetFinish else false.B)
+  cmo_task_s1.bits := (if (io.cmoTask.isDefined) io.cmoTask.get.bits else 0.U.asTypeOf(new TaskBundle))
+  if (io.cmoTask.isDefined) {
+    io.cmoTask.get.ready := io.dirRead_s1.ready && resetFinish && s2_ready && !mshr_task_s1.valid && !chnl_task_s1.valid
+  }
+
   // mshr_task_s1 is s1_[reg]
   // task_s1 is [wire] to s2_reg
-  val task_s1 = Mux(cmo_task_s1.valid, cmo_task_s1, Mux(mshr_task_s1.valid, mshr_task_s1, chnl_task_s1))
+  val task_s1 = Mux(mshr_task_s1.valid, mshr_task_s1, Mux(chnl_task_s1.valid, chnl_task_s1, cmo_task_s1))
   val s1_to_s2_valid = task_s1.valid && !mshr_replRead_stall
 
   s1_cango  := task_s1.valid && !mshr_replRead_stall
