@@ -81,9 +81,6 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val useProbeData = Bool()               // data source, true for ReleaseBuf and false for RefillBuf
   val mshrRetry = Bool()                  // is retry task for mshr conflict
 
-  // For CMO request
-  val cmoTask = Bool()
-
   // For Intent
   val fromL2pft = prefetchOpt.map(_ => Bool()) // Is the prefetch req from L2(BOP) or from L1 prefetch?
                                           // If true, MSHR should send an ack to L2 prefetcher.
@@ -324,16 +321,6 @@ class PrefetchRecv extends Bundle {
 class L2ToL1Hint(implicit p: Parameters) extends Bundle {
   val sourceId = UInt(32.W)    // tilelink sourceID
   val isKeyword = Bool()       // miss entry keyword
-}
-
-// custom l2 - l1 CMO inst req
-class CMOReq(implicit p: Parameters) extends Bundle {
-  val opcode = UInt(3.W)   // 0-cbo.clean, 1-cbo.flush, 2-cbo.inval, 3-cbo.zero
-  val address = UInt(64.W)
-}
-// custom l2 - l1 CMO inst resp(ack)
-class CMOResp(implicit p: Parameters) extends Bundle {
-  val address = UInt(64.W)
 }
 
 // custom l2 - l1 tlb

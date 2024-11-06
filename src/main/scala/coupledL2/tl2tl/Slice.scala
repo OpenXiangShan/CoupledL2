@@ -160,9 +160,6 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   sinkC.io.c <> inBuf.c(io.in.c)
   io.in.d <> inBuf.d(grantBuf.io.d)
   grantBuf.io.e <> inBuf.e(io.in.e)
-  io.cmoReq.ready := false.B
-  io.cmoResp.valid := false.B
-  io.cmoResp.bits := 0.U.asTypeOf(new CMOResp)
 
   /* connect downward channels */
   io.out.a <> outBuf.a(mshrCtl.io.sourceA)
