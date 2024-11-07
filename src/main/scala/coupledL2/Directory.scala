@@ -271,7 +271,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   val set_s3 = req_s3.set
   val replacerInfo_s3 = req_s3.replacerInfo
   val eccTag_s3 = Cat(eccAll_s3(way_s3), tag_s3)
-  val error_s3 = cacheParams.tagCode.decode(eccTag_s3).error //TODO: distinguish correctable or
+  val error_s3 = cacheParams.tagCode.decode(eccTag_s3).error && reqValid_s3 && meta_s3.state =/= MetaData.INVALID //TODO: distinguish correctable or
 
   io.resp.valid      := reqValid_s3
   io.resp.bits.hit   := hit_s3
