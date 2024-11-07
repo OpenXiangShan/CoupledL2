@@ -826,6 +826,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     when (mp_grant_valid) {
       state.s_refill := true.B
       state.s_retry := true.B
+      when (mp_grant.opcode === CBOAck) {
+        state.s_cmoresp := true.B
+      }
     }.elsewhen (mp_release_valid) {
       state.s_release := true.B
       // when (!state.s_reissue.get) {
@@ -843,9 +846,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     }.elsewhen (mp_dct_valid) {
       state.s_dct.get := true.B
     }
-  }
-  when (mp_grant_valid && mp.opcode === CBOAck) {
-    state.s_cmoresp := true.B
   }
 
   /*                      Handling response
