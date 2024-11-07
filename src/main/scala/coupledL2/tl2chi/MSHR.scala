@@ -318,7 +318,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       *  AcquireBlock NtoB    |  ReadNotSharedDirty
       *  AcquireBlock NtoT    |  ReadUnique
       *  AcquirePerm NtoT     |  MakeUnique
-      *  AcquirePerm BtoT     |  ReadUnique
+      *  AcquirePerm BtoT     |  MakeUnique
       *  PrefetchRead         |  ReadNotSharedDirty
       *  PrefetchWrite        |  ReadUnique
       */
@@ -334,6 +334,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       (release_valid2 && isWriteBackFull)                -> WriteBackFull,
       (release_valid2 && !isWriteBackFull)               -> Evict,
       (req.opcode === AcquirePerm && req.param === NtoT) -> MakeUnique,
+      (req.opcode === AcquirePerm && req.param === BtoT) -> MakeUnique,
       req_needT                                          -> ReadUnique,
       req_needB /* Default */                            -> ReadNotSharedDirty
     ))
