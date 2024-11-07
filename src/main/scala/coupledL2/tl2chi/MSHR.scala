@@ -333,8 +333,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       req_cmoInval                                       -> MakeInvalid,
       (release_valid2 && isWriteBackFull)                -> WriteBackFull,
       (release_valid2 && !isWriteBackFull)               -> Evict,
-      (req.opcode === AcquirePerm && req.param === NtoT) -> MakeUnique,
-      (req.opcode === AcquirePerm && req.param === BtoT) -> MakeUnique,
+      (req.opcode === AcquirePerm)                       -> MakeUnique,
       req_needT                                          -> ReadUnique,
       req_needB /* Default */                            -> ReadNotSharedDirty
     ))
