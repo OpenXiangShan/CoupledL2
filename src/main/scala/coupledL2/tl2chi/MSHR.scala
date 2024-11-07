@@ -286,7 +286,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     val txrsp_task = {
       val orsp = io.tasks.txrsp.bits
       orsp := 0.U.asTypeOf(io.tasks.txrsp.bits.cloneType)
-      orsp.tgtID := Mux(req.opcode === AcquirePerm && req.param === NtoT, srcid, homenid)
+      orsp.tgtID := Mux(req.opcode === AcquirePerm, srcid, homenid)
       orsp.srcID := 0.U
       orsp.txnID := dbid
       orsp.dbID := 0.U
