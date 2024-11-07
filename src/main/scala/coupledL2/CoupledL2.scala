@@ -205,7 +205,7 @@ trait HasCoupledL2Parameters {
     case _ if sizeBytes >= 1024        => (sizeBytes / 1024) + "KB"
     case _                            => "B"
   }
-
+  
   def print_bundle_fields(fs: Seq[BundleFieldBase], prefix: String) = {
     if(fs.nonEmpty){
       println(fs.map{f => s"$prefix/${f.key.name}: (${f.data.getWidth}-bit)"}.mkString("\n"))
@@ -228,7 +228,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
 
   val cmo_sink_node = if(hasCMO) Some(BundleBridgeSink(Some(() => DecoupledIO(new CMOReq)))) else None
   val cmo_source_node = if(hasCMO) Some(BundleBridgeSource(Some(() => DecoupledIO(new CMOResp)))) else None
-
+  
   val managerPortParams = (m: TLSlavePortParameters) => TLSlavePortParameters.v1(
     m.managers.map { m =>
       m.v2copy(
@@ -252,7 +252,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     requestKeys = cacheParams.reqKey,
     endSinkId = idsAll
   )
-
+  
   val clientPortParams = (m: TLMasterPortParameters) => TLMasterPortParameters.v2(
     Seq(
       TLMasterParameters.v2(
@@ -346,8 +346,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         prefetcher.get.io.recv_addr.valid := x.in.head._1.addr_valid
         prefetcher.get.io.recv_addr.bits.addr := x.in.head._1.addr
         prefetcher.get.io.recv_addr.bits.pfSource := x.in.head._1.pf_source
-        // prefetcher.get.io_l2_pf_en := x.in.head._1.l2_pf_en
-        prefetcher.get.io_l2_pf_en := false.B
+        prefetcher.get.io_l2_pf_en := x.in.head._1.l2_pf_en
       case None =>
         prefetcher.foreach{
           p =>
@@ -506,7 +505,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     slices.zip(node.out).zipWithIndex.foreach {
       case ((slice, (out, _)), i) =>
         slice match {
-          case slice: tl2tl.Slice =>
+          case slice: tl2tl.Slice => 
             out <> slice.io.out
             out.a.bits.address := restoreAddress(slice.io.out.a.bits.address, i)
             out.c.bits.address := restoreAddress(slice.io.out.c.bits.address, i)
@@ -540,7 +539,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     }
 
     // ==================== XSPerf Counters ====================
-    val grant_data_fire = slices.map { slice =>
+    val grant_data_fire = slices.map { slice => 
       val (first, _, _, _) = node.in.head._2.count(slice.io.in.d)
       slice.io.in.d.fire && first && slice.io.in.d.bits.opcode === GrantData
     }

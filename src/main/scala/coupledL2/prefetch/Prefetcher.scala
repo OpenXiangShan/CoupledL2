@@ -348,7 +348,6 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     if (hasBOP)          pbop.get.io.req.valid -> pbop.get.io.req.bits   else false.B -> 0.U.asTypeOf(io.req.bits),
     if (hasTPPrefetcher) tp.get.io.req.valid -> tp.get.io.req.bits       else false.B -> 0.U.asTypeOf(io.req.bits)
   ))
-  pftQueue.io.enq.valid := false.B
 
   pipe.io.in <> pftQueue.io.deq
   io.req <> pipe.io.out
