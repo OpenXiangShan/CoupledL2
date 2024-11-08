@@ -188,7 +188,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   txreq.bits.txnID := io.id
   txreq.bits.opcode := ParallelLookUp(req.opcode, Seq(
     Get -> ReadNoSnp,
-    PutFullData -> WriteNoSnpFull,
+    PutFullData -> WriteNoSnpPtl,
     PutPartialData -> WriteNoSnpPtl
   ))
   txreq.bits.size := req.size
