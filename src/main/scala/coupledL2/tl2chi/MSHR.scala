@@ -286,7 +286,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     val txrsp_task = {
       val orsp = io.tasks.txrsp.bits
       orsp := 0.U.asTypeOf(io.tasks.txrsp.bits.cloneType)
-      orsp.tgtID := Mux(req.opcode === AcquirePerm, srcid, homenid)
+      orsp.tgtID := Mux(req_acquirePerm, srcid, homenid)
       orsp.srcID := 0.U
       orsp.txnID := dbid
       orsp.dbID := 0.U
@@ -333,7 +333,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       req_cmoInval                                       -> MakeInvalid,
       (release_valid2 && isWriteBackFull)                -> WriteBackFull,
       (release_valid2 && !isWriteBackFull)               -> Evict,
-      (req.opcode === AcquirePerm)                       -> MakeUnique,
+      req_acquirePerm                                    -> MakeUnique,
       req_needT                                          -> ReadUnique,
       req_needB /* Default */                            -> ReadNotSharedDirty
     ))
@@ -856,8 +856,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       TL                    CHI             CHI Resp              CHI channel 
   -----------------------------------------------------------------------------
   AcquireBlock       |  ReadNotShareDirty |  CompData           |    rxdat 
-  AcquirePerm(miss)  |  ReadUnique        |  CompData           |    rxdat 
-  AcquirePerm(hit B) |  MakeUnique        |  Comp               |    rxrsp <- TODO
+  AcquirePerm(hit B) |  MakeUnique        |  Comp               |    rxrsp <-
   Get                |  ReadClean         |  CompData           |    rxdat 
   Hint               |  ReadNotShareDirty |  CompData           |    rxdat 
   Release            |  WriteBackFull     |  CompDBID           |    rxrsp 
