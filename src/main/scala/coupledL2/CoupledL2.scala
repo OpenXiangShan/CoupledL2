@@ -304,7 +304,6 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         val robHeadPaddr = Flipped(Valid(UInt(36.W)))
         val l2MissMatch = Output(Bool())
       }
-      val error = Output(new L2CacheErrorInfo())
     })
 
     // Display info
@@ -475,7 +474,6 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     } else {
       io.error.valid := false.B
       io.error.address := 0.U.asTypeOf(io.error.address)
-    }
 
     // Refill hint
     if (enableHintGuidedGrant) {
