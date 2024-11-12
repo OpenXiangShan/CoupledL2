@@ -109,9 +109,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
     /* top-down monitor */
     // TODO
-
-    /* ECC error*/
-    val error = ValidIO(new L2CacheErrorInfo)
   })
 
   require(chiOpt.isDefined)
@@ -869,10 +866,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   arb(txreq, io.toTXREQ, Some("toTXREQ"))
   arb(txrsp, io.toTXRSP, Some("toTXRSP"))
   arb(txdat, io.toTXDAT, Some("toTXDAT"))
-
-  io.error.valid := task_s5.valid
-  io.error.bits.valid := error_s5
-  io.error.bits.address := Cat(task_s5.bits.tag, task_s5.bits.set, task_s5.bits.off)
 
 
   /* ===== Performance counters ===== */

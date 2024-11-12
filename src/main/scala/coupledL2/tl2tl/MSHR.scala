@@ -61,6 +61,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val gotT = RegInit(false.B) // L3 might return T even though L2 wants B
   val gotDirty = RegInit(false.B)
   val gotGrantData = RegInit(false.B)
+  val gotGrantDataCorrupt = RegInit(false.B)
   val probeDirty = RegInit(false.B)
   val probeGotN = RegInit(false.B)
 
@@ -83,6 +84,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     gotT        := false.B
     gotDirty    := false.B
     gotGrantData := false.B
+    gotGrantDataCorrupt := false.B
     probeDirty  := false.B
     probeGotN   := false.B
     timer       := 1.U
@@ -182,6 +184,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_release.param := Mux(isT(meta.state), TtoN, BtoN)
     mp_release.size := 0.U(msgSizeBits.W)
     mp_release.sourceId := 0.U(sourceIdBits.W)
+    mp_release.corrupt := req.corrupt
     mp_release.bufIdx := 0.U(bufIdxBits.W)
     mp_release.needProbeAckData := false.B
     mp_release.mshrTask := true.B
@@ -232,6 +235,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     )
     mp_probeack.size := 0.U(msgSizeBits.W)
     mp_probeack.sourceId := 0.U(sourceIdBits.W)
+    mp_probeack.corrupt := false.B
     mp_probeack.bufIdx := 0.U(bufIdxBits.W)
     mp_probeack.needProbeAckData := false.B
     mp_probeack.mshrTask := true.B
@@ -357,6 +361,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_grant.wayMask := 0.U(cacheParams.ways.W)
     mp_grant.mshrRetry := !state.s_retry
     mp_grant.reqSource := 0.U(MemReqSource.reqSourceBits.W)
+    mp_grant.corrupt := gotGrantDataCorrupt
 
     // Add merge grant task for Acquire and late Prefetch
     mp_grant.mergeA := mergeA || io.aMergeTask.valid
@@ -469,6 +474,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     }
     when(d_resp.bits.opcode === GrantData) {
       gotGrantData := true.B
+      gotGrantDataCorrupt := d_resp.bits.corrupt
     }
     when(d_resp.bits.opcode === ReleaseAck) {
       state.w_releaseack := true.B
