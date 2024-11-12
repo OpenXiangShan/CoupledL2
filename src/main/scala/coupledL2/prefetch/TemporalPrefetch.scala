@@ -17,10 +17,10 @@
   * Acknowledgement
   *
   * This implementation is inspired by several key papers:
-  * [1] Hao Wu, Nathella Krishnendra, Pusdesris Joseph, Sunwoo Dam, Jain Akanksha, and Lin Calvin. "[Temporal
-  * prefetching without the off-chip metadata.](https://doi.org/10.1145/3352460.3358300)" Proceedings of the 52nd Annual
-  * IEEE/ACM International Symposium on Microarchitecture. 2019.
-  * [2] Ainsworth Sam, and Lev Mukhanov. "[Triangel: A High-Performance, Accurate, Timely On-Chip Temporal Prefetcher.]
+  * [1] Hao Wu, Krishnendra Nathella, Joseph Pusdesris, Dam Sunwoo, Akanksha Jain, and Calvin Lin. "[Temporal
+  * prefetching without the off-chip metadata.](https://doi.org/10.1145/3352460.3358300)" Proceedings of the 52nd
+  * Annual IEEE/ACM International Symposium on Microarchitecture. 2019.
+  * [2] Sam Ainsworth, and Lev Mukhanov. "[Triangel: A High-Performance, Accurate, Timely On-Chip Temporal Prefetcher.]
   * (https://doi.org/10.1109/ISCA59077.2024.00090)" 2024 ACM/IEEE 51st Annual International Symposium on Computer
   * Architecture. 2024.
   * *************************************************************************************
