@@ -12,6 +12,15 @@
  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
  *
  * See the Mulan PSL v2 for more details.
+ *
+ *
+ * Acknowledgement
+ *
+ * This implementation is inspired by several key papers:
+ * [1] Pierre Michaud. "[A Best-Offset Prefetcher.](https://inria.hal.science/hal-01165600/)" 2nd Data Prefetching
+ * Championship. 2015.
+ * [2] Pierre Michaud. "[Best-Offset Hardware Prefetching.](https://doi.org/10.1109/HPCA.2016.7446087)" 2016 IEEE
+ * International Symposium on High Performance Computer Architecture (HPCA). IEEE, 2016.
  * *************************************************************************************
  */
 

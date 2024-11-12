@@ -12,6 +12,14 @@
   * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
   *
   * See the Mulan PSL v2 for more details.
+  *
+  *
+  * Acknowledgement
+  *
+  * This implementation is inspired by several key papers:
+  * [1] Jaleel Aamer, Theobald B. Kevin, Steely C. Simon, and Emer Joel. "[High performance cache replacement using
+  * re-reference interval prediction (RRIP).](https://doi.org/10.1145/1816038.1815971)" ACM SIGARCH computer
+  * architecture news 38.3 (2010): 60-71.
   * *************************************************************************************
   */
 
