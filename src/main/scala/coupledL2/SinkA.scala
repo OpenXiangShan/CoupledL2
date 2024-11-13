@@ -33,7 +33,9 @@ class SinkA(implicit p: Parameters) extends L2Module {
     val prefetchReq = prefetchOpt.map(_ => Flipped(DecoupledIO(new PrefetchReq)))
     val task = DecoupledIO(new TaskBundle)
   })
-  assert(!(io.a.valid && io.a.bits.opcode(2, 1) === 0.U), "no Put")
+  assert(!(io.a.valid && (io.a.bits.opcode === PutFullData ||
+                          io.a.bits.opcode === PutPartialData)),
+    "no Put");
 
   def fromTLAtoTaskBundle(a: TLBundleA): TaskBundle = {
     val task = Wire(new TaskBundle)
