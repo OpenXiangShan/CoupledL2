@@ -65,7 +65,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val vaddr = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W)) // vaddr passed by client cache
   // from L1 load miss require 
   val isKeyword = isKeywordBitsOpt.map(_ => Bool())
-  val opcode = UInt(3.W)                  // type of the task operation
+  val opcode = UInt(4.W)                  // type of the task operation
   val param = UInt(3.W)
   val size = UInt(msgSizeBits.W)
   val sourceId = UInt(sourceIdBits.W)     // tilelink sourceID
