@@ -238,6 +238,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   ms_task.snpHitReleaseIdx := 0.U
   ms_task.denied           := false.B
   ms_task.corrupt          := false.B
+  ms_task.tagErr           := false.B
 
   /* ======== Resps to SinkA/B/C Reqs ======== */
   val sink_resp_s3 = WireInit(0.U.asTypeOf(Valid(new TaskBundle))) // resp for sinkA/B/C request that does not need to alloc mshr

@@ -184,7 +184,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_release.param := Mux(isT(meta.state), TtoN, BtoN)
     mp_release.size := 0.U(msgSizeBits.W)
     mp_release.sourceId := 0.U(sourceIdBits.W)
-    mp_release.corrupt := req.corrupt
+    mp_release.corrupt := false.B
     mp_release.bufIdx := 0.U(bufIdxBits.W)
     mp_release.needProbeAckData := false.B
     mp_release.mshrTask := true.B

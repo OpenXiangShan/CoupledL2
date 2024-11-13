@@ -98,6 +98,7 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module {
 
   io.out.valid := taskValid
   io.out.bits := toCHIDATBundle(taskR.task, beat, beatsOH)
+  io.out.bits.respErr := Mux(taskR.task.corrupt, Mux(taskR.task.tagErr, RespErrEncodings.NDERR, RespErrEncodings.DERR), RespErrEncodings.OK)
 
   when (io.out.fire) {
     beatValids := VecInit(next_beatsOH.asBools)
