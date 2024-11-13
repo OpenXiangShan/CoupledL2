@@ -413,7 +413,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_release.fromL2pft.foreach(_ := false.B)
     mp_release.needHint.foreach(_ := false.B)
     mp_release.dirty := false.B//meta.dirty && meta.state =/= INVALID || probeDirty
-    mp_release.metaWen := cmo_cbo_invalidation  // when clean/flush, invalid line by mshr(when replace, invalid by directory)
+    mp_release.metaWen := cmo_cbo_invalidation  // when flush/inval, invalid line by mshr(when replace, invalid by directory)
     mp_release.meta := MetaEntry()
     mp_release.tagWen := false.B
     mp_release.dsWen := true.B // write refillData to DS
@@ -655,7 +655,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       pfsrc = PfSource.fromMemReqSource(req.reqSource),
       accessed = req_acquire || req_get
     )
-    mp_grant.metaWen := true.B
+    mp_grant.metaWen := !cmo_cbo
     mp_grant.tagWen := !dirResult.hit
     mp_grant.dsWen := gotGrantData || probeDirty && (req_get || req.aliasTask.getOrElse(false.B))
     mp_grant.fromL2pft.foreach(_ := req.fromL2pft.get)
