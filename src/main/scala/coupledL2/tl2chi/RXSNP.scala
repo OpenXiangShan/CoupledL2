@@ -95,7 +95,9 @@ class RXSNP(
   }
 
   val STALL_CNT_MAX = 28000.U
-  assert(stallCnt <= STALL_CNT_MAX, "stallCnt full! maybe there is a deadlock! addr => 0x%x req_opcode => %d txn_id => %d", rxsnp.bits.addr, rxsnp.bits.opcode, rxsnp.bits.txnID);
+  assert(stallCnt <= STALL_CNT_MAX,
+    "stallCnt full! maybe there is a deadlock! addr => 0x%x req_opcode => %d txn_id => %d",
+    rxsnp.bits.addr, rxsnp.bits.opcode, rxsnp.bits.txnID)
 
   assert(!(stall && rxsnp.fire))
 
@@ -146,6 +148,7 @@ class RXSNP(
     task.chiOpcode.foreach(_ := snp.opcode)
     task.pCrdType.foreach(_ := 0.U)
     task.retToSrc.foreach(_ := snp.retToSrc)
+    task.traceTag.foreach(_ := snp.traceTag)
     task
   }
 

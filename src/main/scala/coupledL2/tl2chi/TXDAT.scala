@@ -141,6 +141,7 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module {
     dat.data := beat
     dat.resp := task.resp.get
     dat.fwdState := task.fwdState.get
+    dat.traceTag := task.traceTag.get
 
     dat
   }
