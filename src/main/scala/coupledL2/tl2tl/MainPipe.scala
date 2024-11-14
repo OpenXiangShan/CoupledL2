@@ -133,10 +133,11 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
   /* ======== Enchantment ======== */
   val dirResult_s3    = io.dirResp_s3
-  val tagError_s3     = io.dirResp_s3.error
   val meta_s3         = dirResult_s3.meta
   val req_s3          = task_s3.bits
-  val error_s3        = tagError_s3 || meta_s3.error
+
+  val tagError_s3     = io.dirResp_s3.error || meta_s3.tagErr
+  val dataError_s3    = meta_s3.dataErr
 
   val mshr_req_s3     = req_s3.mshrTask
   val sink_req_s3     = !mshr_req_s3
@@ -238,7 +239,6 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   ms_task.snpHitReleaseIdx := 0.U
   ms_task.denied           := false.B
   ms_task.corrupt          := false.B
-  ms_task.tagErr           := false.B
 
   /* ======== Resps to SinkA/B/C Reqs ======== */
   val sink_resp_s3 = WireInit(0.U.asTypeOf(Valid(new TaskBundle))) // resp for sinkA/B/C request that does not need to alloc mshr
@@ -351,7 +351,8 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
     clients = Fill(clientBits, true.B),
     alias = Some(metaW_s3_a_alias),
     accessed = true.B,
-    error = meta_s3.error
+    tagErr = meta_s3.tagErr,
+    dataErr = meta_s3.dataErr
   )
   val metaW_s3_b = Mux(req_s3.param === toN, MetaEntry(),
     MetaEntry(
@@ -359,8 +360,8 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
       state = BRANCH,
       clients = meta_s3.clients,
       alias = meta_s3.alias,
-      accessed = meta_s3.accessed,
-      error = meta_s3.error
+      tagErr = meta_s3.tagErr,
+      dataErr = meta_s3.dataErr
     )
   )
 
@@ -370,11 +371,13 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
     clients = Fill(clientBits, !isToN(req_s3.param)),
     alias = meta_s3.alias,
     accessed = meta_s3.accessed,
-    error = Mux(wen_c, req_s3.corrupt, meta_s3.error) // update error when write DS
+    tagErr = Mux(wen_c, req_s3.denied, meta_s3.tagErr),
+    dataErr = Mux(wen_c, req_s3.corrupt, meta_s3.dataErr) // update error when write DS
   )
   // use merge_meta if mergeA
   val metaW_s3_mshr = WireInit(Mux(req_s3.mergeA, req_s3.aMergeTask.meta, req_s3.meta))
-  metaW_s3_mshr.error := req_s3.corrupt
+  metaW_s3_mshr.tagErr := req_s3.denied
+  metaW_s3_mshr.dataErr := req_s3.corrupt
 
   val metaW_way = Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.way, // grant always use replResp way
     Mux(mshr_req_s3, req_s3.way, dirResult_s3.way))
@@ -455,7 +458,8 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   val ren_s4 = RegInit(false.B)
   val need_write_releaseBuf_s4 = RegInit(false.B)
   val isC_s4, isD_s4 = RegInit(false.B)
-  val error_s4 = RegInit(false.B)
+  val tagError_s4 = RegInit(false.B)
+  val dataError_s4 = RegInit(false.B)
   task_s4.valid := task_s3.valid && !req_drop_s3
   when (task_s3.valid && !req_drop_s3) {
     task_s4.bits := source_req_s3
@@ -467,7 +471,8 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
     need_write_releaseBuf_s4 := need_write_releaseBuf
     isC_s4 := isC_s3
     isD_s4 := isD_s3
-    error_s4 := error_s3
+    tagError_s4 := tagError_s3
+    dataError_s4 := dataError_s3
   }
 
   // A-alias-Acquire should send neither C nor D
@@ -498,7 +503,8 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   val data_s5 = Reg(UInt((blockBytes * 8).W))
   val need_write_releaseBuf_s5 = RegInit(false.B)
   val isC_s5, isD_s5 = RegInit(false.B)
-  val tagMetaError_s5 = RegInit(false.B)
+  val tagError_s5 = RegInit(false.B)
+  val dataMetaError_s5 = RegInit(false.B)
   // those hit@s3 and ready to fire@s5, and Now wait@s4
   val pendingC_s4 = task_s4.bits.fromB && !task_s4.bits.mshrTask && task_s4.bits.opcode === ProbeAckData
   val pendingD_s4 = task_s4.bits.fromA && !task_s4.bits.mshrTask &&
@@ -514,11 +520,11 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
     // except for those ready at s3/s4 (isC/D_s4), sink resps are also ready to fire at s5
     isC_s5 := isC_s4 || pendingC_s4
     isD_s5 := isD_s4 || pendingD_s4
-    tagMetaError_s5 := error_s4
+    tagError_s5 := tagError_s4
+    dataMetaError_s5 := dataError_s4
   }
   val rdata_s5 = io.toDS.rdata_s5.data
-  val dataError_s5 = io.toDS.error_s5
-  val error_s5 = tagMetaError_s5 || dataError_s5
+  val dataError_s5 = io.toDS.error_s5 || dataMetaError_s5
   val out_data_s5 = Mux(!task_s5.bits.mshrTask, rdata_s5, data_s5)
   val chnl_fire_s5 = c_s5.fire || d_s5.fire
 
@@ -542,10 +548,12 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   c_s5.valid := c_d_valid_s5 && isC_s5
   d_s5.valid := c_d_valid_s5 && isD_s5
   c_s5.bits.task := task_s5.bits
-  c_s5.bits.task.corrupt := Mux(!task_s5.bits.mshrTask, error_s5, task_s5.bits.corrupt)
+  c_s5.bits.task.denied := Mux(!task_s5.bits.mshrTask, tagError_s5, task_s5.bits.denied)
+  c_s5.bits.task.corrupt := Mux(!task_s5.bits.mshrTask, dataError_s5, task_s5.bits.corrupt)
   c_s5.bits.data.data := out_data_s5
   d_s5.bits.task := task_s5.bits
-  d_s5.bits.task.corrupt := Mux(!task_s5.bits.mshrTask, error_s5, task_s5.bits.corrupt)
+  d_s5.bits.task.denied := Mux(!task_s5.bits.mshrTask, tagError_s5, task_s5.bits.denied)
+  d_s5.bits.task.corrupt := Mux(!task_s5.bits.mshrTask, dataError_s5, task_s5.bits.corrupt)
   d_s5.bits.data.data := out_data_s5
 
   /* ======== BlockInfo ======== */

@@ -61,9 +61,11 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val gotT = RegInit(false.B) // L3 might return T even though L2 wants B
   val gotDirty = RegInit(false.B)
   val gotGrantData = RegInit(false.B)
-  val gotGrantDataCorrupt = RegInit(false.B)
   val probeDirty = RegInit(false.B)
   val probeGotN = RegInit(false.B)
+
+  val denied = RegInit(false.B)
+  val corrupt = RegInit(false.B)
 
   val timer = RegInit(0.U(64.W)) // for performance analysis
 
@@ -84,9 +86,10 @@ class MSHR(implicit p: Parameters) extends L2Module {
     gotT        := false.B
     gotDirty    := false.B
     gotGrantData := false.B
-    gotGrantDataCorrupt := false.B
     probeDirty  := false.B
     probeGotN   := false.B
+    denied      := false.B
+    corrupt     := false.B
     timer       := 1.U
   }
 
@@ -361,7 +364,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_grant.wayMask := 0.U(cacheParams.ways.W)
     mp_grant.mshrRetry := !state.s_retry
     mp_grant.reqSource := 0.U(MemReqSource.reqSourceBits.W)
-    mp_grant.corrupt := gotGrantDataCorrupt
+    mp_grant.denied := denied
+    mp_grant.corrupt := corrupt
 
     // Add merge grant task for Acquire and late Prefetch
     mp_grant.mergeA := mergeA || io.aMergeTask.valid
@@ -474,7 +478,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     }
     when(d_resp.bits.opcode === GrantData) {
       gotGrantData := true.B
-      gotGrantDataCorrupt := d_resp.bits.corrupt
+      corrupt := d_resp.bits.corrupt
     }
     when(d_resp.bits.opcode === ReleaseAck) {
       state.w_releaseack := true.B
