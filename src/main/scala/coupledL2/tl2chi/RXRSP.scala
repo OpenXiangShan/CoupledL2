@@ -49,6 +49,7 @@ class RXRSP(implicit p: Parameters) extends TL2CHIL2Module {
   io.in.respInfo.pCrdType.get  := io.out.bits.pCrdType
   io.in.respInfo.respErr.get   := io.out.bits.respErr
   io.in.respInfo.last          := true.B
+  io.in.respInfo.traceTag.get  := io.out.bits.traceTag
 
   io.out.ready := true.B
 

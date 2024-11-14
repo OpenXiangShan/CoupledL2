@@ -105,6 +105,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val gotPCrdGrant = RegInit(false.B)
   val denied = RegInit(false.B)
   val corrupt = RegInit(false.B)
+  val cbWrDataTraceTag = RegInit(false.B)
   val metaChi = ParallelLookUp(
     Cat(meta.dirty, meta.state),
     Seq(
@@ -141,6 +142,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     pcrdtype := 0.U
     denied := false.B
     corrupt := false.B
+    cbWrDataTraceTag := false.B
 
     retryTimes := 0.U
     backoffTimer := 0.U
@@ -291,13 +293,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       orsp.txnID := dbid
       orsp.dbID := 0.U
       orsp.opcode := CompAck
-//      orsp.resperr := 0.U
       orsp.resp  := 0.U
       orsp.fwdState := 0.U
-//      orsp.stashhit := 0.U
-//      orsp.datapull :=0.U
-//      orsp.pcrdtype := 0.U
-//      orsp.tracetag := 0.U
+      orsp.traceTag := req.traceTag.get
     }
 
   /*TXREQ for Transaction Request*/
@@ -491,6 +489,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_cbwrdata.pCrdType.get := 0.U // TODO
     mp_cbwrdata.retToSrc.get := req.retToSrc.get // DontCare
     mp_cbwrdata.expCompAck.get := false.B
+    mp_cbwrdata.traceTag.get := cbWrDataTraceTag
     mp_cbwrdata
   }
 
@@ -503,11 +502,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_probeack.alias.foreach(_ := 0.U)
     mp_probeack.vaddr.foreach(_ := 0.U)
     mp_probeack.isKeyword.foreach(_ := false.B)
-    mp_probeack.opcode := 0.U /* Mux(
-      meta.dirty && isT(meta.state) || probeDirty || req.needProbeAckData,
-      ProbeAckData,
-      ProbeAck
-    ) */ // DontCare
+    mp_probeack.opcode := 0.U
     mp_probeack.param := DontCare
     mp_probeack.size := log2Ceil(blockBytes).U
     mp_probeack.sourceId := 0.U(sourceIdBits.W)
@@ -573,6 +568,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_probeack.pCrdType.get := 0.U
     mp_probeack.retToSrc.get := req.retToSrc.get // DontCare
     mp_probeack.expCompAck.get := false.B
+    mp_probeack.traceTag.get := req.traceTag.get
     mp_probeack.snpHitRelease := req.snpHitRelease
     mp_probeack.snpHitReleaseWithData := req.snpHitReleaseWithData
     mp_probeack.snpHitReleaseIdx := req.snpHitReleaseIdx
@@ -751,6 +747,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_dct.pCrdType.get := 0.U // DontCare
     mp_dct.retToSrc.get := false.B // DontCare
     mp_dct.expCompAck.get := false.B // DontCare
+    mp_dct.traceTag.get := req.traceTag.get
     mp_dct.snpHitRelease := req.snpHitRelease
     mp_dct.snpHitReleaseWithData := req.snpHitReleaseWithData
     mp_dct.snpHitReleaseIdx := req.snpHitReleaseIdx
@@ -919,6 +916,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       homenid := rxdat.bits.homeNID.getOrElse(0.U)
       denied := denied || nderr
       corrupt := corrupt || derr || nderr
+      req.traceTag.get := req.traceTag.get || rxdat.bits.traceTag.getOrElse(false.B)
     }
   }
 
@@ -931,6 +929,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       homenid := rxrsp.bits.srcID.getOrElse(0.U)
       dbid := rxrsp.bits.dbID.getOrElse(0.U)
       denied := denied || nderr
+      req.traceTag.get := rxrsp.bits.traceTag.get
     }
 
     when (rxrsp.bits.chiOpcode.get === Comp) {
@@ -942,11 +941,13 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         gotT := rxrspIsU
         gotDirty := false.B
         denied := denied || nderr
+        req.traceTag.get := rxrsp.bits.traceTag.get
       }
 
       // There is a pending Evict transaction waiting for the Comp resp
       when (!state.w_releaseack) {
         state.w_releaseack := true.B
+        // There is no CompAck for Comp in response of Evict. Thus there is no need to record TraceTag.
       }
 
       // Comp for Dataless transaction that include CompAck
@@ -958,6 +959,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       state.w_releaseack := true.B
       srcid := rxrsp.bits.srcID.getOrElse(0.U)
       dbid := rxrsp.bits.dbID.getOrElse(0.U)
+      cbWrDataTraceTag := rxrsp.bits.traceTag.get
     }
     when (rxrsp.bits.chiOpcode.get === RetryAck) {
       srcid := rxrsp.bits.srcID.getOrElse(0.U)
