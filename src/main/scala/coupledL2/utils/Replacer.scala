@@ -18,8 +18,8 @@
   *
   * This implementation is inspired by several key papers:
   * [1] Aamer Jaleel, Kevin B. Theobald, Simon C. Steely, and Joel Emer. "[High performance cache replacement using
-  * re-reference interval prediction (RRIP).](https://doi.org/10.1145/1815961.1815971)" Proceedings of the 37th annual
-  * international symposium on Computer architecture. 2010.
+  * re-reference interval prediction (RRIP).](https://doi.org/10.1145/1815961.1815971)" 37th Annual International
+  * Symposium on Computer Architecture (ISCA). 2010.
   * *************************************************************************************
   */
 
