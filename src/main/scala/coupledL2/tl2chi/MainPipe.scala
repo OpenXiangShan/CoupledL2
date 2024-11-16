@@ -379,7 +379,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val need_data_b = sinkB_req_s3 && (doRespData || doFwd || dirResult_s3.hit && meta_s3.state === TRUNK)
   val need_data_mshr_repl = mshr_refill_s3 && need_repl && !retry
   val need_data_cmo = dirResult_s3.hit && cmo_cbo_retention_s3 && !meta_has_clients_s3 && meta_s3.dirty
-  val ren = need_data_a || need_data_b || need_data_mshr_repl
+  val ren = need_data_a || need_data_b || need_data_mshr_repl || need_data_cmo
 
   val wen_c = sinkC_req_s3 && isParamFromT(req_s3.param) && req_s3.opcode(0) && dirResult_s3.hit
   val wen_mshr = req_s3.dsWen && (
@@ -816,7 +816,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       alloc_state.w_releaseack := false.B
     }
     // need CMOAck
-    alloc_state.s_cmoresp := !cmo_cbo_s3
+    when (cmo_cbo_s3) {
+      alloc_state.s_cmoresp := false.B
+    }
   }
 
   when (req_s3.fromB) {
