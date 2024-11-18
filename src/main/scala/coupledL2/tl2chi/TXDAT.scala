@@ -143,6 +143,7 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module {
     dat.resp := task.resp.get
     dat.fwdState := task.fwdState.get
     dat.traceTag := task.traceTag.get
+    dat.dataCheck := Cat((0 until DATACHECK_WIDTH).map(i => (beat(64 * (i + 1) - 1, 64 * i).xorR ^ false.B).asUInt))
 
     dat
   }

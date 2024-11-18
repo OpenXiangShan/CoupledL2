@@ -37,6 +37,9 @@ class RXDAT(implicit p: Parameters) extends TL2CHIL2Module {
   val first = (io.out.bits.dataID === "b00".U)
   val last  = (io.out.bits.dataID === "b10".U)
 
+  // Data Check
+  val dataCheck = (0 until DATACHECK_WIDTH).map(i => io.out.bits.dataCheck(i) ^ io.out.bits.data(64 * (i + 1) - 1, 64 * i).xorR)
+
   /* Write Refill Buffer*/
   io.refillBufWrite.valid := io.out.valid
   io.refillBufWrite.bits.id := io.out.bits.txnID
@@ -63,7 +66,7 @@ class RXDAT(implicit p: Parameters) extends TL2CHIL2Module {
   io.in.respInfo.pCrdType.get  := DontCare // RXDAT Channel does not have a pCrdType field
   io.in.respInfo.respErr.get   := io.out.bits.respErr
   io.in.respInfo.traceTag.get  := io.out.bits.traceTag
-  io.in.respInfo.corrupt       := io.out.bits.respErr === RespErrEncodings.DERR || io.out.bits.respErr === RespErrEncodings.NDERR
+  io.in.respInfo.corrupt       := io.out.bits.respErr === RespErrEncodings.DERR || io.out.bits.respErr === RespErrEncodings.NDERR || dataCheck.reduce(_ & _)
 
   io.out.ready := true.B
 
