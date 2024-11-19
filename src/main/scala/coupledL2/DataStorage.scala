@@ -38,7 +38,13 @@ class DSBlock(implicit p: Parameters) extends L2Bundle {
   val data = UInt((blockBytes * 8).W)
 }
 
-case object HasDataEccParam
+class DSECCBlock(implicit p: Parameters) extends L2Bundle {
+  val data = if (enableDataECC) {
+    UInt(encDataPaddingBits.W)
+  } else {
+    UInt((blockBytes * 8).W)
+  }
+}
 
 class DataStorage(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
@@ -63,28 +69,15 @@ class DataStorage(implicit p: Parameters) extends L2Module {
     encData(encDataBits - 1, blockBytes * 8)
   }
 
-  val dataECCParam = if(enableDataECC) Some(HasDataEccParam) else None
-
   // read data is set MultiCycle Path 2
   val array = Module(new SplittedSRAM(
-    gen = new DSBlock,
+    gen = new DSECCBlock,
     set = blocks,
     way = 1,
     dataSplit = 4,
     singlePort = true,
     readMCP2 = true
   ))
-
-  val eccArray = dataECCParam.map {
-    case _ =>
-      val array = Module(new SRAMTemplate(
-        gen = UInt(eccDataBits.W),
-        set = blocks,
-        way = 1,
-        singlePort = true,
-      ))
-      array
-  }
 
   val masked_clock = ClockGate(false.B, io.en, clock)
   array.clock := masked_clock
@@ -93,36 +86,30 @@ class DataStorage(implicit p: Parameters) extends L2Module {
   val wen = io.req.valid && io.req.bits.wen
   val ren = io.req.valid && !io.req.bits.wen
 
+  val arrayWrite = Wire(new DSECCBlock)
+  val arrayWriteData = if (enableDataECC) {
+    cacheParams.dataCode.encode(io.wdata.data).pad(encDataPaddingBits)
+  } else {
+    io.wdata.data
+  }
+  arrayWrite.data := arrayWriteData
+
+  val arrayRead = array.io.r.resp.data(0)
+  val dataRead = Wire(new DSBlock)
+  dataRead.data := arrayRead.data(blockBytes * 8 - 1, 0)
+
   // make sure SRAM input signals will not change during the two cycles
   // TODO: This check is done elsewhere
-  array.io.w.apply(wen, io.wdata, arrayIdx, 1.U)
+  array.io.w.apply(wen, arrayWrite, arrayIdx, 1.U)
   array.io.r.apply(ren, arrayIdx)
 
-  // ECC R/W
-  val eccRead = Wire(UInt(eccDataBits.W))
-  eccArray match {
-    case Some(ecc) =>
-      eccRead := ecc.io.r(ren, arrayIdx).resp.data(0)
-    case None =>
-      eccRead := 0.U.asTypeOf(eccRead)
-  }
-  eccArray match {
-    case Some(ecc) =>
-      ecc.io.w(
-        wen,
-        get_ecc_from_encData(cacheParams.tagCode.encode(io.wdata.data)),
-        arrayIdx,
-        1.U
-      )
-    case None =>
-  }
 
-  val eccData = Cat(eccRead, array.io.r.resp.data(0).data)
+  val eccData = arrayRead.data(encDataBits, 0)
   val error = cacheParams.dataCode.decode(eccData).error && RegNext(RegNext(io.req.valid))
 
   // for timing, we set this as multicycle path
   // s3 read, s4 pass and s5 to destination
-  io.rdata := array.io.r.resp.data(0)
+  io.rdata := dataRead
   io.error := error
 
   assert(!io.en || !RegNext(io.en, false.B),

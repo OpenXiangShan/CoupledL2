@@ -77,6 +77,7 @@ trait HasCoupledL2Parameters {
   def enableDataECC = cacheParams.enableDataECC
   def encDataBits = cacheParams.dataCode.width(blockBytes * 8)
   def eccDataBits = encDataBits - blockBytes * 8
+  val encDataPaddingBits = if (encDataBits % 4 == 0) encDataBits else ((encDataBits + 3) / 4) * 4 // SRAM datasplit = 4
 
   // Prefetch
   def prefetchers = cacheParams.prefetch
