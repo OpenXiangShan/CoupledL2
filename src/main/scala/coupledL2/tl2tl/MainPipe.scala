@@ -104,6 +104,9 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
     val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain))
 
     val toMonitor = Output(new MainpipeMoni())
+
+    /* ECC error*/
+    val error = ValidIO(new L2CacheErrorInfo)
   })
 
   val resetFinish = RegInit(false.B)
@@ -138,6 +141,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
   val tagError_s3     = io.dirResp_s3.error || meta_s3.tagErr
   val dataError_s3    = meta_s3.dataErr
+  val l2Error_s3      = io.dirResp_s3.error
 
   val mshr_req_s3     = req_s3.mshrTask
   val sink_req_s3     = !mshr_req_s3
@@ -460,6 +464,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   val isC_s4, isD_s4 = RegInit(false.B)
   val tagError_s4 = RegInit(false.B)
   val dataError_s4 = RegInit(false.B)
+  val l2Error_s4 = RegInit(false.B)
   task_s4.valid := task_s3.valid && !req_drop_s3
   when (task_s3.valid && !req_drop_s3) {
     task_s4.bits := source_req_s3
@@ -473,6 +478,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
     isD_s4 := isD_s3
     tagError_s4 := tagError_s3
     dataError_s4 := dataError_s3
+    l2Error_s4 := l2Error_s3
   }
 
   // A-alias-Acquire should send neither C nor D
@@ -505,6 +511,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   val isC_s5, isD_s5 = RegInit(false.B)
   val tagError_s5 = RegInit(false.B)
   val dataMetaError_s5 = RegInit(false.B)
+  val l2TagError_s5 = RegInit(false.B)
   // those hit@s3 and ready to fire@s5, and Now wait@s4
   val pendingC_s4 = task_s4.bits.fromB && !task_s4.bits.mshrTask && task_s4.bits.opcode === ProbeAckData
   val pendingD_s4 = task_s4.bits.fromA && !task_s4.bits.mshrTask &&
@@ -522,9 +529,11 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
     isD_s5 := isD_s4 || pendingD_s4
     tagError_s5 := tagError_s4
     dataMetaError_s5 := dataError_s4
+    l2TagError_s5 := l2Error_s4
   }
   val rdata_s5 = io.toDS.rdata_s5.data
   val dataError_s5 = io.toDS.error_s5 || dataMetaError_s5
+  val l2Error_s5 = l2TagError_s5 || io.toDS.error_s5
   val out_data_s5 = Mux(!task_s5.bits.mshrTask, rdata_s5, data_s5)
   val chnl_fire_s5 = c_s5.fire || d_s5.fire
 
@@ -662,6 +671,10 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
   io.toSourceC <> c_arb.io.out
   io.toSourceD <> d_arb.io.out
+
+  io.error.valid := task_s5.valid
+  io.error.bits.valid := l2Error_s5 // if not enableECC, should be false
+  io.error.bits.address := Cat(task_s5.bits.tag, task_s5.bits.set, task_s5.bits.off)
 
   /* ===== Performance counters ===== */
   // num of mshr req

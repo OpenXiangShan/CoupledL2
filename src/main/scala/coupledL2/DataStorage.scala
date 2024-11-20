@@ -105,7 +105,11 @@ class DataStorage(implicit p: Parameters) extends L2Module {
 
 
   val eccData = arrayRead.data(encDataBits, 0)
-  val error = cacheParams.dataCode.decode(eccData).error && RegNext(RegNext(io.req.valid))
+  val error = if (enableDataECC) {
+    cacheParams.dataCode.decode(eccData).error && RegNext(RegNext(io.req.valid))
+  } else {
+    false.B
+  }
 
   // for timing, we set this as multicycle path
   // s3 read, s4 pass and s5 to destination
