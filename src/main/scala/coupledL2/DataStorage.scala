@@ -104,9 +104,9 @@ class DataStorage(implicit p: Parameters) extends L2Module {
   array.io.r.apply(ren, arrayIdx)
 
 
-  val eccData = arrayRead.data(encDataBits, 0)
+  val eccData = arrayRead.data(encDataBits - 1, 0)
   val error = if (enableDataECC) {
-    cacheParams.dataCode.decode(eccData).error && RegNext(RegNext(io.req.valid))
+    cacheParams.dataCode.decode(eccData).error && RegNext(RegNext(io.req.valid && !io.req.bits.wen))
   } else {
     false.B
   }
