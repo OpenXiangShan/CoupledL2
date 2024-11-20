@@ -109,6 +109,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
     /* top-down monitor */
     // TODO
+
+    /* ECC error*/
+    val error = ValidIO(new L2CacheErrorInfo)
   })
 
   require(chiOpt.isDefined)
@@ -145,6 +148,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   val tagError_s3     = io.dirResp_s3.error || meta_s3.tagErr
   val dataError_s3    = meta_s3.dataErr
+  val l2Error_s3      = io.dirResp_s3.error
 
   val mshr_req_s3     = req_s3.mshrTask
   val sink_req_s3     = !mshr_req_s3
@@ -635,6 +639,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val isD_s4, isTXREQ_s4, isTXRSP_s4, isTXDAT_s4 = RegInit(false.B)
   val tagError_s4 = RegInit(false.B)
   val dataError_s4 = RegInit(false.B)
+  val l2Error_s4 = RegInit(false.B)
   val pendingTXDAT_s4 = task_s4.bits.fromB && !task_s4.bits.mshrTask && task_s4.bits.toTXDAT
   val pendingD_s4 = task_s4.bits.fromA && !task_s4.bits.mshrTask && (
     task_s4.bits.opcode === GrantData || task_s4.bits.opcode === AccessAckData
@@ -659,6 +664,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     isTXDAT_s4 := isTXDAT_s3
     tagError_s4 := tagError_s3
     dataError_s4 := dataError_s3
+    l2Error_s4 := l2Error_s3
   }
 
   // for reqs that CANNOT give response in MainPipe, but needs to write releaseBuf/refillBuf
@@ -686,7 +692,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val isD_s5, isTXREQ_s5, isTXRSP_s5, isTXDAT_s5 = RegInit(false.B)
   val tagError_s5 = RegInit(false.B)
   val dataMetaError_s5 = RegInit(false.B)
-
+  val l2TagError_s5 = RegInit(false.B)
 
   task_s5.valid := task_s4.valid && !req_drop_s4
 
@@ -701,9 +707,11 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     isTXDAT_s5 := isTXDAT_s4 || pendingTXDAT_s4
     tagError_s5 := tagError_s4
     dataMetaError_s5 := dataError_s4
+    l2TagError_s5 := l2Error_s4
   }
   val rdata_s5 = io.toDS.rdata_s5.data
   val dataError_s5 = io.toDS.error_s5 || dataMetaError_s5
+  val l2Error_s5 = l2TagError_s5 || io.toDS.error_s5
   val out_data_s5 = Mux(task_s5.bits.mshrTask || task_s5.bits.snpHitReleaseWithData, data_s5, rdata_s5)
   val chnl_fire_s5 = d_s5.fire || txreq_s5.fire || txrsp_s5.fire || txdat_s5.fire
 
@@ -884,6 +892,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   arb(txrsp, io.toTXRSP, Some("toTXRSP"))
   arb(txdat, io.toTXDAT, Some("toTXDAT"))
 
+  io.error.valid := task_s5.valid
+  io.error.bits.valid := l2Error_s5 // if not enableECC, should be false
+  io.error.bits.address := Cat(task_s5.bits.tag, task_s5.bits.set, task_s5.bits.off)
 
   /* ===== Performance counters ===== */
   // num of mshr req
