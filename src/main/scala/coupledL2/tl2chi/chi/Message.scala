@@ -300,6 +300,7 @@ trait HasCHIMsgParameters {
   def BE_WIDTH = DATA_WIDTH / 8
   def DATA_WIDTH = 256
   def DATACHECK_WIDTH = DATA_WIDTH / 64
+  def POISON_WIDTH = DATAID_WIDTH / 64
   def TAG_WIDTH = DATA_WIDTH / 32
   def TAG_UPDATE_WIDTH = DATA_WIDTH / 128
 
@@ -454,6 +455,7 @@ class CHIDAT(implicit p: Parameters) extends CHIBundle {
   val data = UInt(DATA_WIDTH.W)
 
   val dataCheck = UInt(DATACHECK_WIDTH.W)
+  val poision = UInt(POISON_WIDTH.W)
 
   /* MSB */
 }
