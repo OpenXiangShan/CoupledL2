@@ -103,6 +103,9 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   // for Release to read refillBuf and write to DS
   val replTask = Bool()
 
+  // for CMO
+  val cmoTask = Bool()
+
   // for TopDown Monitor (# TopDown)
   val reqSource = UInt(MemReqSource.reqSourceBits.W)
 
@@ -203,12 +206,17 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle with HasTLChannelBits {
   val mergeA = Bool() // whether the mshr already merge an acquire(avoid alias merge)
 
   val w_grantfirst = Bool()
+  val s_release = Bool()
   val s_refill = Bool()
+  val s_cmoresp = Bool()
   val w_releaseack = Bool()
   val w_replResp = Bool()
   val w_rprobeacklast = Bool()
 
   val replaceData = Bool() // If there is a replace, WriteBackFull or Evict
+
+  // exclude Release toB for nested snoop of releases
+  val releaseToB = Bool()
 }
 
 class RespInfoBundle(implicit p: Parameters) extends L2Bundle
@@ -249,7 +257,7 @@ class FSMState(implicit p: Parameters) extends L2Bundle {
   // val s_grantack = Bool() // respond grantack downwards, moved to GrantBuf
   // val s_triggerprefetch = prefetchOpt.map(_ => Bool())
   val s_retry = Bool()    // need retry when conflict
-  val s_cmoresp = Bool()  // resp upwards for finishing cmo inst
+  val s_cmoresp = Bool()  // resp upwards for finishing CMO transactions
 
   // wait
   val w_rprobeackfirst = Bool()

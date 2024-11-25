@@ -131,7 +131,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
   // Performance counters
   // num of reqs
   XSPerfAccumulate("sinkA_req", io.task.fire)
-  XSPerfAccumulate("sinkA_acquire_req", io.a.fire && io.a.bits.opcode(2, 1) === AcquireBlock(2, 1))
+  XSPerfAccumulate("sinkA_acquire_req", io.a.fire && (io.a.bits.opcode === AcquirePerm || io.a.bits.opcode === AcquireBlock))
   XSPerfAccumulate("sinkA_acquireblock_req", io.a.fire && io.a.bits.opcode === AcquireBlock)
   XSPerfAccumulate("sinkA_acquireperm_req", io.a.fire && io.a.bits.opcode === AcquirePerm)
   XSPerfAccumulate("sinkA_get_req", io.a.fire && io.a.bits.opcode === Get)

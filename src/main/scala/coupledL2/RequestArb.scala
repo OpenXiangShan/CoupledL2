@@ -93,7 +93,8 @@ class RequestArb(implicit p: Parameters) extends L2Module
   val mshr_task_s1 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
 
   val s1_needs_replRead = mshr_task_s1.valid && mshr_task_s1.bits.fromA && mshr_task_s1.bits.replTask && (
-    mshr_task_s1.bits.opcode(2, 1) === Grant(2, 1) ||
+    mshr_task_s1.bits.opcode === Grant ||
+    mshr_task_s1.bits.opcode === GrantData ||
     mshr_task_s1.bits.opcode === AccessAckData ||
     mshr_task_s1.bits.opcode === HintAck && mshr_task_s1.bits.dsWen
   )
@@ -218,10 +219,11 @@ class RequestArb(implicit p: Parameters) extends L2Module
       task_s2.bits.chiOpcode.get === Evict
     )
   } else {
-    task_s2.bits.opcode(2, 1) === Release(2, 1)
+    task_s2.bits.opcode === Release ||
+    task_s2.bits.opcode === ReleaseData
   })
   io.refillBufRead_s2.valid := mshrTask_s2 && (
-    task_s2.bits.fromB && task_s2.bits.opcode(2, 1) === ProbeAck(2, 1) && task_s2.bits.replTask || // ???
+    task_s2.bits.fromB && (task_s2.bits.opcode === ProbeAck || task_s2.bits.opcode === ProbeAckData) && task_s2.bits.replTask || // ???
     releaseRefillData ||
     mshrTask_s2_a_upwards && !task_s2.bits.useProbeData)
   io.refillBufRead_s2.bits.id := task_s2.bits.mshrId
@@ -239,6 +241,12 @@ class RequestArb(implicit p: Parameters) extends L2Module
   val dctNeedData = if (enableCHI) {
     task_s2.bits.toTXDAT && task_s2.bits.chiOpcode.get === CompData
   } else false.B
+  val cmoNeedData = if (enableCHI) {
+    task_s2.bits.toTXREQ && task_s2.bits.cmoTask && (
+      task_s2.bits.chiOpcode.get === WriteCleanFull ||
+      task_s2.bits.chiOpcode.get === WriteBackFull
+    )
+  } else false.B
   val snpHitReleaseNeedData = if (enableCHI) {
     !mshrTask_s2 && task_s2.bits.fromB && task_s2.bits.snpHitReleaseWithData
   } else false.B
@@ -247,6 +255,7 @@ class RequestArb(implicit p: Parameters) extends L2Module
     releaseNeedData ||
       snoopNeedData ||
       dctNeedData ||
+      cmoNeedData ||
       mshrTask_s2_a_upwards && task_s2.bits.useProbeData,
     task_s2.valid && snpHitReleaseNeedData
   )

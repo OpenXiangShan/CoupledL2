@@ -172,6 +172,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   val mshr_dct_s3               = mshr_req_s3 && req_s3.toTXDAT && req_s3.chiOpcode.get === CompData
 
+  val mshr_writeCleanFull_s3    = mshr_req_s3 && req_s3.toTXREQ && req_s3.chiOpcode.get === WriteCleanFull
   val mshr_writeBackFull_s3     = mshr_req_s3 && req_s3.toTXREQ && req_s3.chiOpcode.get === WriteBackFull
   val mshr_evict_s3             = mshr_req_s3 && req_s3.toTXREQ && req_s3.chiOpcode.get === Evict
   
@@ -193,12 +194,23 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   /* ======== Interact with MSHR ======== */
   val acquire_on_miss_s3 = req_acquire_s3 || req_prefetch_s3 || req_get_s3
   val acquire_on_hit_s3 = meta_s3.state === BRANCH && req_needT_s3 && !req_prefetch_s3
-  val need_acquire_s3_a = cmo_cbo_s3 || req_s3.fromA && Mux(
+  val need_acquire_s3_a = req_s3.fromA && (Mux(
     dirResult_s3.hit,
     acquire_on_hit_s3,
     acquire_on_miss_s3
+  ) || cmo_cbo_s3)
+  val need_probe_s3_a = dirResult_s3.hit && meta_has_clients_s3 && (
+    req_get_s3 && (meta_s3.state === TRUNK) ||
+    req_cbo_clean_s3 && (meta_s3.state === TRUNK) ||
+    req_cbo_flush_s3 ||
+    req_cbo_inval_s3
   )
-  val need_probe_s3_a = (req_get_s3 || cmo_cbo_s3) && dirResult_s3.hit && meta_has_clients_s3 && meta_s3.state === TRUNK
+  val need_release_s3_a = dirResult_s3.hit && (
+    req_cbo_clean_s3 && (!need_probe_s3_a && meta_s3.dirty) ||
+    req_cbo_flush_s3 && (isValid(meta_s3.state)) ||
+    req_cbo_inval_s3 && (isValid(meta_s3.state))
+  )
+  val need_cmoresp_s3_a = cmo_cbo_s3
   val need_compack_s3_a = !cmo_cbo_s3
 
   val need_mshr_s3_a = need_acquire_s3_a || need_probe_s3_a || cache_alias
@@ -252,7 +264,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     task.wayMask := 0.U(cacheParams.ways.W)
     // TODO
   }
-  
+
   /* ======== Resps to SinkA/B/C Reqs ======== */
   val sink_resp_s3 = WireInit(0.U.asTypeOf(Valid(new TaskBundle)))
   val sink_resp_s3_a_promoteT = dirResult_s3.hit && isT(meta_s3.state)
@@ -378,12 +390,13 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val need_data_a = dirResult_s3.hit && (req_get_s3 || req_acquireBlock_s3)
   val need_data_b = sinkB_req_s3 && (doRespData || doFwd || dirResult_s3.hit && meta_s3.state === TRUNK)
   val need_data_mshr_repl = mshr_refill_s3 && need_repl && !retry
-  val need_data_cmo = dirResult_s3.hit && cmo_cbo_retention_s3 && !meta_has_clients_s3 && meta_s3.dirty
+  val need_data_cmo = cmo_cbo_retention_s3 && dirResult_s3.hit && meta_s3.dirty
   val ren = need_data_a || need_data_b || need_data_mshr_repl || need_data_cmo
 
   val wen_c = sinkC_req_s3 && isParamFromT(req_s3.param) && req_s3.opcode(0) && dirResult_s3.hit
   val wen_mshr = req_s3.dsWen && (
-    mshr_snpRespX_s3 || mshr_snpRespDataX_s3 || mshr_writeBackFull_s3 || mshr_evict_s3 ||
+    mshr_snpRespX_s3 || mshr_snpRespDataX_s3 ||
+    mshr_writeCleanFull_s3 || mshr_writeBackFull_s3 || mshr_evict_s3 ||
     mshr_refill_s3 && !need_repl && !retry
   )
   val wen = wen_c || wen_mshr
@@ -539,7 +552,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     mshr_snpRespDataX_s3 || mshr_cbWrData_s3 || mshr_dct_s3,
     req_s3.fromB && !need_mshr_s3 && (doRespDataHitRelease || doRespData && !data_unready_s3) && !txdat_s3_latch.B
   )
-  val isTXREQ_s3 = mshr_req_s3 && (mshr_writeBackFull_s3 || mshr_evict_s3)
+  val isTXREQ_s3 = mshr_req_s3 && (mshr_writeBackFull_s3 || mshr_writeCleanFull_s3 || mshr_evict_s3)
 
   txreq_s3.valid := task_s3.valid && isTXREQ_s3
   txrsp_s3.valid := task_s3.valid && isTXRSP_s3
@@ -793,8 +806,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   // Initial state assignment
   // ! Caution: s_ and w_ are false-as-valid
   when (req_s3.fromA) {
-    alloc_state.s_refill := false.B
-    alloc_state.w_replResp := dirResult_s3.hit
+    alloc_state.s_refill := cmo_cbo_s3
+    alloc_state.w_replResp := cmo_cbo_s3 || dirResult_s3.hit
     // need Acquire downwards
     when (need_acquire_s3_a) {
       alloc_state.s_acquire := false.B
@@ -811,12 +824,12 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       alloc_state.w_rprobeacklast := false.B
     }
     // need Release dirty block downwards by CMO
-    when (cmo_cbo_retention_s3 && dirResult_s3.hit && meta_s3.dirty) {
+    when (need_release_s3_a) {
       alloc_state.s_release := false.B
       alloc_state.w_releaseack := false.B
     }
     // need CMOAck
-    when (cmo_cbo_s3) {
+    when (need_cmoresp_s3_a) {
       alloc_state.s_cmoresp := false.B
     }
   }
