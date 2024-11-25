@@ -112,11 +112,13 @@ trait HasPrefetcherHelper extends HasCircularQueuePtrHelper with HasCoupledL2Par
 class PrefetchReq(implicit p: Parameters) extends PrefetchBundle {
   val tag = UInt(fullTagBits.W)
   val set = UInt(setBits.W)
+  // NOTE: the vaddr is the train address for response update, not virtual address of prefetch paddr.
   val vaddr = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W))
   val needT = Bool()
   val source = UInt(sourceIdBits.W)
   val pfSource = UInt(MemReqSource.reqSourceBits.W)
 
+  def addr: UInt = Cat(tag, set, 0.U(offsetBits.W))
   def isBOP:Bool = pfSource === MemReqSource.Prefetch2L2BOP.id.U
   def isPBOP:Bool = pfSource === MemReqSource.Prefetch2L2PBOP.id.U
   def isSMS:Bool = pfSource === MemReqSource.Prefetch2L2SMS.id.U
@@ -288,8 +290,9 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val pfRcv = if (hasReceiver) Some(Module(new PrefetchReceiver())) else None
 
   // =================== Connection for each Prefetcher =====================
+  // Rcv > VBOP > PBOP > TP
   if (hasBOP) {
-    vbop.get.io.req.ready := true.B
+    vbop.get.io.req.ready :=  (if(hasReceiver) !pfRcv.get.io.req.valid else true.B)
     vbop.get.io.train <> io.train
     vbop.get.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
     vbop.get.io.resp <> io.resp
@@ -297,7 +300,9 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     vbop.get.io.tlb_req <> io.tlb_req
     vbop.get.io.pbopCrossPage := true.B // pbop.io.pbopCrossPage // let vbop have noting to do with pbop
 
-    pbop.get.io.req.ready := true.B
+    pbop.get.io.req.ready :=  
+      (if(hasReceiver) !pfRcv.get.io.req.valid else true.B) &&
+      (if(hasBOP) !vbop.get.io.req.valid else true.B)
     pbop.get.io.train <> io.train
     pbop.get.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
     pbop.get.io.resp <> io.resp
@@ -370,4 +375,50 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   XSPerfAccumulate("prefetch_req_selectTP", hasTPReq && !hasReceiverReq && !hasVBOPReq && !hasPBOPReq)
   XSPerfAccumulate("prefetch_req_SMS_other_overlapped",
     hasReceiverReq && (hasVBOPReq || hasPBOPReq || hasTPReq))
+
+  // NOTE: set basicDB false when debug over
+  // TODO: change the enable signal to not target the BOP
+  class TrainEntry extends Bundle{
+    val paddr = UInt(fullAddressBits.W)
+    val vaddr = UInt(fullVAddrBits.W)
+    val needT = Bool()
+    val hit = Bool()
+    val prefetched = Bool()
+    val source = UInt(sourceIdBits.W)
+    val pfsource = UInt(PfSource.pfSourceBits.W)
+    val reqsource = UInt(MemReqSource.reqSourceBits.W)
+  }
+  val trainTT = ChiselDB.createTable("L2PrefetchTrainTable", new TrainEntry, basicDB = false)
+  val e1 = Wire(new TrainEntry)
+  e1.paddr := io.train.bits.addr
+  e1.vaddr := io.train.bits.vaddr.getOrElse(0.U) << offsetBits
+  e1.needT := io.train.bits.needT
+  e1.hit := io.train.bits.hit
+  e1.prefetched := io.train.bits.prefetched
+  e1.source := io.train.bits.source
+  e1.pfsource := io.train.bits.pfsource
+  e1.reqsource := io.train.bits.reqsource
+  trainTT.log(
+    data = e1,
+    en = io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U),
+    site = "L2Train_onlyBOP",
+    clock, reset
+  )
+
+  class PrefetchEntry extends Bundle{
+    val paddr = UInt(fullAddressBits.W)
+    val needT = Bool()
+    val pfsource = UInt(MemReqSource.reqSourceBits.W)
+  }
+  val pfTT = ChiselDB.createTable("L2PrefetchPrefetchTable", new PrefetchEntry, basicDB = false)
+  val e2 = Wire(new PrefetchEntry)
+  e2.paddr := io.req.bits.addr
+  e2.needT := io.req.bits.needT
+  e2.pfsource := io.req.bits.pfSource
+  pfTT.log(
+    data = e2,
+    en = io.req.fire && io.req.bits.pfSource === MemReqSource.Prefetch2L2BOP.id.U,
+    site = "L2Prefetch_onlyBOP",
+    clock, reset
+  )
 }

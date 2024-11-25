@@ -111,31 +111,32 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
    */
   // prefetch accuracy calculation
   val l2prefetchSent = dirResultMatchVec(
-    r =>  !r.hit &&
-      (r.replacerInfo.reqSource === MemReqSource.Prefetch2L2BOP.id.U ||
-       r.replacerInfo.reqSource === MemReqSource.Prefetch2L2PBOP.id.U ||
-       r.replacerInfo.reqSource === MemReqSource.Prefetch2L2SMS.id.U ||
-       r.replacerInfo.reqSource === MemReqSource.Prefetch2L2Stride.id.U ||
-       r.replacerInfo.reqSource === MemReqSource.Prefetch2L2Stream.id.U ||
-       r.replacerInfo.reqSource === MemReqSource.Prefetch2L2TP.id.U)
+    r => (
+      r.replacerInfo.reqSource === MemReqSource.Prefetch2L2BOP.id.U ||
+      r.replacerInfo.reqSource === MemReqSource.Prefetch2L2PBOP.id.U ||
+      r.replacerInfo.reqSource === MemReqSource.Prefetch2L2SMS.id.U ||
+      r.replacerInfo.reqSource === MemReqSource.Prefetch2L2Stride.id.U ||
+      r.replacerInfo.reqSource === MemReqSource.Prefetch2L2Stream.id.U ||
+      r.replacerInfo.reqSource === MemReqSource.Prefetch2L2TP.id.U
+    )
   )
   val l2prefetchSentBOP = dirResultMatchVec(
-    r => !r.hit && r.replacerInfo.reqSource === MemReqSource.Prefetch2L2BOP.id.U
+    r => r.replacerInfo.reqSource === MemReqSource.Prefetch2L2BOP.id.U
   )
   val l2prefetchSentPBOP = dirResultMatchVec(
-    r => !r.hit && r.replacerInfo.reqSource === MemReqSource.Prefetch2L2PBOP.id.U
+    r => r.replacerInfo.reqSource === MemReqSource.Prefetch2L2PBOP.id.U
   )
   val l2prefetchSentSMS = dirResultMatchVec(
-    r => !r.hit && r.replacerInfo.reqSource === MemReqSource.Prefetch2L2SMS.id.U
+    r => r.replacerInfo.reqSource === MemReqSource.Prefetch2L2SMS.id.U
   )
   val l2prefetchSentStride = dirResultMatchVec(
-    r => !r.hit && r.replacerInfo.reqSource === MemReqSource.Prefetch2L2Stride.id.U
+    r => r.replacerInfo.reqSource === MemReqSource.Prefetch2L2Stride.id.U
   )
   val l2prefetchSentStream = dirResultMatchVec(
-    r => !r.hit && r.replacerInfo.reqSource === MemReqSource.Prefetch2L2Stream.id.U
+    r => r.replacerInfo.reqSource === MemReqSource.Prefetch2L2Stream.id.U
   )
   val l2prefetchSentTP = dirResultMatchVec(
-    r => !r.hit && r.replacerInfo.reqSource === MemReqSource.Prefetch2L2TP.id.U
+    r => r.replacerInfo.reqSource === MemReqSource.Prefetch2L2TP.id.U
   )
 
   val l2prefetchUseful = dirResultMatchVec(
@@ -169,6 +170,9 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   val l2demandRequest = dirResultMatchVec(
     r => reqFromCPU(r)
   )
+  
+  // TODO: get difference prefetchSrc for detailed analysis
+  // FIXME lyq: it's abnormal l2prefetchLate / l2prefetchUseful is more than 1
   val l2prefetchLate = io.latePF
 
   // PF Accuracy

@@ -93,6 +93,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   val pCrdType = Reg(UInt(PCRDTYPE_WIDTH.W))
   val denied = Reg(Bool())
   val corrupt = Reg(Bool())
+  val traceTag = Reg(Bool())
   val isRead = req.opcode === Get
 
   val wordBits = io.req.bits.data.getWidth // 64
@@ -117,6 +118,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
     allowRetry := true.B
     denied := false.B
     corrupt := false.B
+    traceTag := false.B
     when (io.req.bits.opcode === Get) {
       w_compdata := false.B
       w_readreceipt.foreach(_ := false.B)
@@ -155,6 +157,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
       w_dbidresp := true.B
       srcID := rxrsp.bits.srcID
       dbID := rxrsp.bits.dbID
+      traceTag := rxrsp.bits.traceTag
     }
     when (rxrsp.bits.opcode === CompDBIDResp || rxrsp.bits.opcode === Comp) {
       denied := denied || rxrsp.bits.respErr === RespErrEncodings.NDERR
@@ -188,7 +191,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   txreq.bits.txnID := io.id
   txreq.bits.opcode := ParallelLookUp(req.opcode, Seq(
     Get -> ReadNoSnp,
-    PutFullData -> WriteNoSnpFull,
+    PutFullData -> WriteNoSnpPtl,
     PutPartialData -> WriteNoSnpPtl
   ))
   txreq.bits.size := req.size
@@ -224,6 +227,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
     List.tabulate(words)(i => i.U -> (ZeroExt(req.mask, BE_WIDTH) << (i * wordBytes)))
   )
   txdat.bits.data := Fill(words, req.data) & FillInterleaved(8, txdat.bits.be)
+  txdat.bits.traceTag := traceTag
 
   rxrsp.ready := (!w_comp || !w_dbidresp || !w_readreceipt.getOrElse(true.B)) && s_txreq
   rxdat.ready := !w_compdata && s_txreq
