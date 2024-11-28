@@ -1142,7 +1142,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val nestedwb_match = req_valid && meta.state =/= INVALID &&
     dirResult.set === io.nestedwb.set &&
     dirResult.tag === io.nestedwb.tag &&
-    (state.w_replResp || !state.s_cmoresp)
+    (state.w_replResp || (!state.s_cmoresp && dirResult.hit))
   val nestedwb_hit_match = req_valid && dirResult.hit &&
     dirResult.set === io.nestedwb.set &&
     dirResult.tag === io.nestedwb.tag
