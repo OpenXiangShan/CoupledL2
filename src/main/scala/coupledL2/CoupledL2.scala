@@ -194,7 +194,7 @@ trait HasCoupledL2Parameters {
 
   def odOpGen(r: UInt) = {
     val grantOp = GrantData
-    val opSeq = Seq(AccessAck, AccessAck, AccessAckData, AccessAckData, AccessAckData, HintAck, grantOp, Grant, CBOAck, CBOAck, CBOAck)
+    val opSeq = Seq(AccessAck, AccessAck, AccessAckData, AccessAckData, AccessAckData, HintAck, grantOp, Grant, 0.U, 0.U, 0.U, 0.U, CBOAck, CBOAck, CBOAck)
     val opToA = VecInit(opSeq)(r)
     opToA
   }
