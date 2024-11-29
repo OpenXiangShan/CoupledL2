@@ -991,7 +991,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
 
     when (rxrsp.bits.chiOpcode.get === Comp) {
       // There is a pending Read transaction waiting for the Comp resp
-      when (!state.w_grant) {
+      // *NOTICE: In CMO transactions, releases (if there was one) always happen before acquire
+      when (!state.w_grant && (state.s_cmoresp || state.w_releaseack)) {
         state.w_grantfirst := true.B
         state.w_grantlast := true.B
         state.w_grant := true.B
