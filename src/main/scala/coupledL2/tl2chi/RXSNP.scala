@@ -67,22 +67,32 @@ class RXSNP(
     *    should be **blocked**, because Once the Probe is issued the slave should not issue further Probes on the block
     *    until it receives a ProbeAck.
     * 2. After MSHR receives all the ProbeAcks of rProbe, the snoop of Y should be nested.
+    * 3. In CMO transactions (reusing some replacing datapathes), before MSHR finishing all the rProbes and sending
+    *    release tasks to MainPipe (DS write was done in release tasks on MainPipe), the incoming snoop of Y should 
+    *    be **blocked**.
     */
+  val cmoBlockSnpMask = VecInit(io.msInfo.map(s => 
+    s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && s.bits.dirHit && isValid(s.bits.metaState) &&
+    !s.bits.s_cmoresp && (!s.bits.s_release || !s.bits.w_rprobeacklast) &&
+    !s.bits.willFree
+  )).asUInt
+  val cmoBlockSnp = cmoBlockSnpMask.orR
   val replaceBlockSnpMask = VecInit(io.msInfo.map(s =>
     s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && !s.bits.dirHit && isValid(s.bits.metaState) &&
-    s.bits.w_replResp && (!s.bits.w_rprobeacklast || s.bits.w_releaseack || !RegNext(s.bits.w_replResp)) &&
+    s.bits.s_cmoresp && s.bits.w_replResp && (!s.bits.w_rprobeacklast || s.bits.w_releaseack || !RegNext(s.bits.w_replResp)) &&
     !s.bits.willFree
   )).asUInt
   val replaceBlockSnp = replaceBlockSnpMask.orR
   val replaceNestSnpMask = VecInit(io.msInfo.map(s =>
-      s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && !s.bits.dirHit && s.bits.metaState =/= INVALID &&
+      s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && 
+      (!s.bits.dirHit || (!s.bits.s_cmoresp && !s.bits.releaseToB)) && s.bits.metaState =/= INVALID &&
       RegNext(s.bits.w_replResp) && s.bits.w_rprobeacklast && !s.bits.w_releaseack
     )).asUInt
   val replaceDataMask = VecInit(io.msInfo.map(_.bits.replaceData)).asUInt
 
   task := fromSnpToTaskBundle(rxsnp.bits)
 
-  val stall = reqBlockSnp || replaceBlockSnp // addrConflict || replaceConflict
+  val stall = reqBlockSnp || replaceBlockSnp || cmoBlockSnp // addrConflict || replaceConflict
   io.task.valid := rxsnp.valid && !stall
   io.task.bits := task
   rxsnp.ready := io.task.ready && !stall

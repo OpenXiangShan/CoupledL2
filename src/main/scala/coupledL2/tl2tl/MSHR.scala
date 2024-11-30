@@ -552,10 +552,13 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.msInfo.bits.mergeA := mergeA
   io.msInfo.bits.w_grantfirst := state.w_grantfirst
   io.msInfo.bits.s_refill := state.s_refill
+  io.msInfo.bits.s_release := state.s_release
+  io.msInfo.bits.s_cmoresp := false.B
   io.msInfo.bits.w_releaseack := state.w_releaseack
   io.msInfo.bits.w_replResp := state.w_replResp
   io.msInfo.bits.w_rprobeacklast := state.w_rprobeacklast
   io.msInfo.bits.replaceData := mp_release.opcode === ReleaseData
+  io.msInfo.bits.releaseToB := false.B
   io.msInfo.bits.metaState := meta.state
   io.msInfo.bits.channel := req.channel
 

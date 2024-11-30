@@ -65,7 +65,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val vaddr = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W)) // vaddr passed by client cache
   // from L1 load miss require 
   val isKeyword = isKeywordBitsOpt.map(_ => Bool())
-  val opcode = UInt(3.W)                  // type of the task operation
+  val opcode = UInt(4.W)                  // type of the task operation
   val param = UInt(3.W)
   val size = UInt(msgSizeBits.W)
   val sourceId = UInt(sourceIdBits.W)     // tilelink sourceID
@@ -80,9 +80,6 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val aliasTask = aliasBitsOpt.map(_ => Bool()) // Anti-alias
   val useProbeData = Bool()               // data source, true for ReleaseBuf and false for RefillBuf
   val mshrRetry = Bool()                  // is retry task for mshr conflict
-
-  // For CMO request
-  val cmoTask = Bool()
 
   // For Intent
   val fromL2pft = prefetchOpt.map(_ => Bool()) // Is the prefetch req from L2(BOP) or from L1 prefetch?
@@ -105,6 +102,9 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   // for Grant to read replacer to choose a replaced way
   // for Release to read refillBuf and write to DS
   val replTask = Bool()
+
+  // for CMO
+  val cmoTask = Bool()
 
   // for TopDown Monitor (# TopDown)
   val reqSource = UInt(MemReqSource.reqSourceBits.W)
@@ -207,12 +207,17 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle with HasTLChannelBits {
   val mergeA = Bool() // whether the mshr already merge an acquire(avoid alias merge)
 
   val w_grantfirst = Bool()
+  val s_release = Bool()
   val s_refill = Bool()
+  val s_cmoresp = Bool()
   val w_releaseack = Bool()
   val w_replResp = Bool()
   val w_rprobeacklast = Bool()
 
   val replaceData = Bool() // If there is a replace, WriteBackFull or Evict
+
+  // exclude Release toB for nested snoop of releases
+  val releaseToB = Bool()
 }
 
 class RespInfoBundle(implicit p: Parameters) extends L2Bundle
@@ -254,7 +259,7 @@ class FSMState(implicit p: Parameters) extends L2Bundle {
   // val s_grantack = Bool() // respond grantack downwards, moved to GrantBuf
   // val s_triggerprefetch = prefetchOpt.map(_ => Bool())
   val s_retry = Bool()    // need retry when conflict
-  val s_cmoresp = Bool()  // resp upwards for finishing cmo inst
+  val s_cmoresp = Bool()  // resp upwards for finishing CMO transactions
 
   // wait
   val w_rprobeackfirst = Bool()
@@ -326,16 +331,6 @@ class PrefetchRecv extends Bundle {
 class L2ToL1Hint(implicit p: Parameters) extends Bundle {
   val sourceId = UInt(32.W)    // tilelink sourceID
   val isKeyword = Bool()       // miss entry keyword
-}
-
-// custom l2 - l1 CMO inst req
-class CMOReq(implicit p: Parameters) extends Bundle {
-  val opcode = UInt(3.W)   // 0-cbo.clean, 1-cbo.flush, 2-cbo.inval, 3-cbo.zero
-  val address = UInt(64.W)
-}
-// custom l2 - l1 CMO inst resp(ack)
-class CMOResp(implicit p: Parameters) extends Bundle {
-  val address = UInt(64.W)
 }
 
 // custom l2 - l1 tlb

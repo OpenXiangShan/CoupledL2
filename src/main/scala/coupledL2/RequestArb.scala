@@ -41,7 +41,6 @@ class RequestArb(implicit p: Parameters) extends L2Module
     val sinkB    = Flipped(DecoupledIO(new TaskBundle))
     val sinkC    = Flipped(DecoupledIO(new TaskBundle))
     val mshrTask = Flipped(DecoupledIO(new TaskBundle))
-    val cmoTask  = if (hasCMO) Some(Flipped(DecoupledIO(new TaskBundle))) else None
 
     /* read/write directory */
     val dirRead_s1 = DecoupledIO(new DirRead())  // To directory, read meta/tag
@@ -94,7 +93,8 @@ class RequestArb(implicit p: Parameters) extends L2Module
   val mshr_task_s1 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
 
   val s1_needs_replRead = mshr_task_s1.valid && mshr_task_s1.bits.fromA && mshr_task_s1.bits.replTask && (
-    mshr_task_s1.bits.opcode(2, 1) === Grant(2, 1) ||
+    mshr_task_s1.bits.opcode === Grant ||
+    mshr_task_s1.bits.opcode === GrantData ||
     mshr_task_s1.bits.opcode === AccessAckData ||
     mshr_task_s1.bits.opcode === HintAck && mshr_task_s1.bits.dsWen
   )
@@ -151,17 +151,9 @@ class RequestArb(implicit p: Parameters) extends L2Module
   chnl_task_s1.valid := io.dirRead_s1.ready && sinkValids.orR && resetFinish
   chnl_task_s1.bits := ParallelPriorityMux(sinkValids, Seq(C_task, B_task, A_task))
 
-  // put CMO at the lowest priority because it goes in at s1
-  val cmo_task_s1 = Wire(Valid(new TaskBundle()))
-  cmo_task_s1.valid := (if (io.cmoTask.isDefined) io.dirRead_s1.ready && io.cmoTask.get.valid && resetFinish else false.B)
-  cmo_task_s1.bits := (if (io.cmoTask.isDefined) io.cmoTask.get.bits else 0.U.asTypeOf(new TaskBundle))
-  if (io.cmoTask.isDefined) {
-    io.cmoTask.get.ready := io.dirRead_s1.ready && resetFinish && s2_ready && !mshr_task_s1.valid && !chnl_task_s1.valid
-  }
-
   // mshr_task_s1 is s1_[reg]
   // task_s1 is [wire] to s2_reg
-  val task_s1 = Mux(mshr_task_s1.valid, mshr_task_s1, Mux(chnl_task_s1.valid, chnl_task_s1, cmo_task_s1))
+  val task_s1 = Mux(mshr_task_s1.valid, mshr_task_s1, chnl_task_s1)
   val s1_to_s2_valid = task_s1.valid && !mshr_replRead_stall
 
   s1_cango  := task_s1.valid && !mshr_replRead_stall
@@ -172,7 +164,7 @@ class RequestArb(implicit p: Parameters) extends L2Module
 
   /* Meta read request */
   // ^ only sinkA/B/C tasks need to read directory
-  io.dirRead_s1.valid := s2_ready && (chnl_task_s1.valid && !mshr_task_s1.valid || s1_needs_replRead && !io.fromMainPipe.blockG_s1 || cmo_task_s1.valid)
+  io.dirRead_s1.valid := s2_ready && (chnl_task_s1.valid && !mshr_task_s1.valid || s1_needs_replRead && !io.fromMainPipe.blockG_s1)
   io.dirRead_s1.bits.set := task_s1.bits.set
   io.dirRead_s1.bits.tag := task_s1.bits.tag
   // invalid way which causes mshr_retry
@@ -227,10 +219,11 @@ class RequestArb(implicit p: Parameters) extends L2Module
       task_s2.bits.chiOpcode.get === Evict
     )
   } else {
-    task_s2.bits.opcode(2, 1) === Release(2, 1)
+    task_s2.bits.opcode === Release ||
+    task_s2.bits.opcode === ReleaseData
   })
   io.refillBufRead_s2.valid := mshrTask_s2 && (
-    task_s2.bits.fromB && task_s2.bits.opcode(2, 1) === ProbeAck(2, 1) && task_s2.bits.replTask || // ???
+    task_s2.bits.fromB && (task_s2.bits.opcode === ProbeAck || task_s2.bits.opcode === ProbeAckData) && task_s2.bits.replTask || // ???
     releaseRefillData ||
     mshrTask_s2_a_upwards && !task_s2.bits.useProbeData)
   io.refillBufRead_s2.bits.id := task_s2.bits.mshrId
@@ -248,6 +241,12 @@ class RequestArb(implicit p: Parameters) extends L2Module
   val dctNeedData = if (enableCHI) {
     task_s2.bits.toTXDAT && task_s2.bits.chiOpcode.get === CompData
   } else false.B
+  val cmoNeedData = if (enableCHI) {
+    task_s2.bits.toTXREQ && task_s2.bits.cmoTask && (
+      task_s2.bits.chiOpcode.get === WriteCleanFull ||
+      task_s2.bits.chiOpcode.get === WriteBackFull
+    )
+  } else false.B
   val snpHitReleaseNeedData = if (enableCHI) {
     !mshrTask_s2 && task_s2.bits.fromB && task_s2.bits.snpHitReleaseWithData
   } else false.B
@@ -256,6 +255,7 @@ class RequestArb(implicit p: Parameters) extends L2Module
     releaseNeedData ||
       snoopNeedData ||
       dctNeedData ||
+      cmoNeedData ||
       mshrTask_s2_a_upwards && task_s2.bits.useProbeData,
     task_s2.valid && snpHitReleaseNeedData
   )
