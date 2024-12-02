@@ -482,21 +482,6 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       io.error.address := 0.U.asTypeOf(io.error.address)
     }
 
-    // ECC error
-    if (enableECC) {
-      val l2ECCArb = Module(new Arbiter(new L2CacheErrorInfo(), slices.size))
-      val slices_l2ECC = slices.zipWithIndex.map {
-        case (s, i) => s.io.error
-      }
-      l2ECCArb.io.in <> VecInit(slices_l2ECC)
-      l2ECCArb.io.out.ready := true.B
-      io.error.valid := l2ECCArb.io.out.fire && l2ECCArb.io.out.bits.valid
-      io.error.address := l2ECCArb.io.out.bits.address
-    } else {
-      io.error.valid := false.B
-      io.error.address := 0.U.asTypeOf(io.error.address)
-    }
-
     // Refill hint
     if (enableHintGuidedGrant) {
       // for timing consideration, hint should latch one cycle before sending to L1
