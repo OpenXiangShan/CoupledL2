@@ -12,6 +12,7 @@ import org.chipsalliance.cde.config._
 import coupledL2._
 import coupledL2.tl2chi._
 import cc.xiangshan.openncb._
+import cc.xiangshan.openncb.chi._
 import utility._
 
 class TestTop_L3()(implicit p: Parameters) extends LazyModule with HasCHIMsgParameters {
@@ -44,7 +45,7 @@ object TestTop_L3 extends App {
   ))
 }
 
-class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(implicit p: Parameters) extends LazyModule
+class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue: String = Issue.Eb)(implicit p: Parameters) extends LazyModule
   with HasCHIMsgParameters {
   
   /*   L1D(L1I)* L1D(L1I)* ... L1D(L1I)*
@@ -99,7 +100,7 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(implic
       hartId              = i,
     )
     case EnableCHI => true
-    case CHIIssue => "B"
+    case CHIIssue => issue
     case huancun.BankBitsKey => log2Ceil(banks)
     case MaxHartIdBits => log2Up(numCores)
     case LogUtilsOptionsKey => LogUtilsOptions(
@@ -115,7 +116,7 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(implic
   }))))
 
   val l3Bridge = LazyModule(new OpenNCB()(new Config((site, here, up) => {
-    case CHIIssue => "B"
+    case CHIIssue => issue
     case NCBParametersKey => new NCBParameters(
       axiMasterOrder      = EnumAXIMasterOrder.WriteAddress,
       readCompDMT         = false,
@@ -190,7 +191,7 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(implic
     }
 
     val l3 = Module(new OpenLLC()(new Config((site, here, up) => {
-      case CHIIssue => "B"
+      case CHIIssue => issue
       case OpenLLCParamKey => OpenLLCParam(
         clientCaches = Seq.fill(numCores)(cacheParams.copy(
           ways = 2,
@@ -204,9 +205,12 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(implic
     })))
 
     l2_nodes.zipWithIndex.foreach { case (l2, i) =>
+      /*
       val chilogger = CHILogger(s"L3_L2[${i}]", true)
       chilogger.io.up <> l2.module.io_chi
       l3.io.rn(i) <> chilogger.io.down
+      */
+      l2.module.io_chi <> l3.io.rn(i)
       dontTouch(l2.module.io)
 
       l2.module.io.hartId := i.U
@@ -215,9 +219,12 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(implic
       l2.module.io.l2_tlb_req <> DontCare
     }
 
+    /*
     val chilogger = CHILogger(s"MEM_L3", true)
     l3.io.sn.connect(chilogger.io.up)
     l3Bridge.module.io.chi.connect(chilogger.io.down)
+    */
+    l3.io.sn <> l3Bridge.module.io.chi
     l3.io.nodeID := numCores.U(NODEID_WIDTH.W)
   }
 }
