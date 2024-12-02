@@ -108,7 +108,7 @@ class DataStorage(implicit p: Parameters) extends L2Module {
   val dataRead = Wire(new DSBlock)
   // dataRead.data := arrayRead.data(blockBytes * 8 - 1, 0)
   val bankDataRead = if (enableDataECC) {
-    Cat(VecInit(Seq.tabulate(4)(i => arrayRead.data(encDataBankBits * (i + 1) - 1, encDataBankBits * i)(blockBytes * 2 - 1, 0))))
+    Cat(VecInit(Seq.tabulate(eccDataBankSplit)(i => arrayRead.data(encDataBankBits * (i + 1) - 1, encDataBankBits * i)(blockBytes * 2 - 1, 0))))
   } else {
     arrayRead.data
   }
@@ -123,7 +123,7 @@ class DataStorage(implicit p: Parameters) extends L2Module {
   //  val eccData = arrayRead.data(encDataBits - 1, 0)
   val error = if (enableDataECC) {
     // cacheParams.dataCode.decode(eccData).error && RegNext(RegNext(io.req.valid && !io.req.bits.wen))
-    VecInit(Seq.tabulate(4)(i => arrayRead.data(encDataBankBits * (i + 1) - 1, encDataBankBits * i))).
+    VecInit(Seq.tabulate(eccDataBankSplit)(i => arrayRead.data(encDataBankBits * (i + 1) - 1, encDataBankBits * i))).
       map(data => cacheParams.dataCode.decode(data).error).reduce(_ | _) && RegNext(RegNext(io.req.valid && !io.req.bits.wen))
   } else {
     false.B
