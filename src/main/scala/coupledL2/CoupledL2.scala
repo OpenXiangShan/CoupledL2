@@ -480,6 +480,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     } else {
       io.error.valid := false.B
       io.error.address := 0.U.asTypeOf(io.error.address)
+    }
 
     // ECC error
     if (enableECC) {
