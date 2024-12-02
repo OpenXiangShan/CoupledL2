@@ -121,10 +121,10 @@ class DataStorage(implicit p: Parameters) extends L2Module {
 
 
   //  val eccData = arrayRead.data(encDataBits - 1, 0)
-  val eccData = VecInit(Seq.tabulate(4)(i => arrayRead.data(encDataBankBits * (i + 1) - 1, encDataBankBits * i)))
   val error = if (enableDataECC) {
     // cacheParams.dataCode.decode(eccData).error && RegNext(RegNext(io.req.valid && !io.req.bits.wen))
-    eccData.map(data => cacheParams.dataCode.decode(data).error).reduce(_ | _) && RegNext(RegNext(io.req.valid && !io.req.bits.wen))
+    VecInit(Seq.tabulate(4)(i => arrayRead.data(encDataBankBits * (i + 1) - 1, encDataBankBits * i))).
+      map(data => cacheParams.dataCode.decode(data).error).reduce(_ | _) && RegNext(RegNext(io.req.valid && !io.req.bits.wen))
   } else {
     false.B
   }

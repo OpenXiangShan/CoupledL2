@@ -560,7 +560,11 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
         prefetch = Seq(BOPParameters(
           rrTableEntries = 16,
           rrTagBits = 6
-        ))
+        )),
+        tagECC = Some("secded"),
+        dataECC = Some("secded"),
+        enableTagECC = true,
+        enableDataECC = true,
       )
       case BankBitsKey => 0
       case LogUtilsOptionsKey => LogUtilsOptions(
