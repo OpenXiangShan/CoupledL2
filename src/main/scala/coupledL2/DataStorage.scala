@@ -73,11 +73,6 @@ class DataStorage(implicit p: Parameters) extends L2Module {
     val wdata = Input(new DSBlock)
   })
 
-  def get_ecc_from_encData(encData: UInt) = {
-    require(encData.getWidth == encDataBits)
-    encData(encDataBits - 1, blockBytes * 8)
-  }
-
   // read data is set MultiCycle Path 2
   val array = Module(new SplittedSRAM(
     gen = new DSECCBankBlock,

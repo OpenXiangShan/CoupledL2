@@ -165,6 +165,7 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
       dataECC = Some("secded"),
       enableTagECC = true,
       enableDataECC = true,
+      dataCheck = Some("oddparity"),
     )
     case BankBitsKey => 0
     case LogUtilsOptionsKey => LogUtilsOptions(
@@ -403,6 +404,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
       dataECC = Some("secded"),
       enableTagECC = true,
       enableDataECC = true,
+      dataCheck = Some("oddparity"),
     )
     case BankBitsKey => 0
     case LogUtilsOptionsKey => LogUtilsOptions(
@@ -565,6 +567,7 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
         dataECC = Some("secded"),
         enableTagECC = true,
         enableDataECC = true,
+        dataCheck = Some("oddparity"),
       )
       case BankBitsKey => 0
       case LogUtilsOptionsKey => LogUtilsOptions(

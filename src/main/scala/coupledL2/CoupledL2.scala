@@ -72,15 +72,24 @@ trait HasCoupledL2Parameters {
   // ECC
   def enableECC = cacheParams.enableTagECC || cacheParams.enableDataECC
   def enableTagECC = cacheParams.enableTagECC
+  def eccDataBankSplit = 4 // SRAM dataSplit = 4
   def encTagBits = cacheParams.tagCode.width(tagBits)
   def eccTagBits = encTagBits - tagBits
   def enableDataECC = cacheParams.enableDataECC
   def encDataBits = cacheParams.dataCode.width(blockBytes * 8)
   def eccDataBits = encDataBits - blockBytes * 8
-  def encDataPaddingBits = if (encDataBits % 4 == 0) encDataBits else ((encDataBits + 3) / 4) * 4 // SRAM datasplit = 4
+  def encDataPaddingBits = ((encDataBits + 3) / eccDataBankSplit) * eccDataBankSplit
   def encDataBankBits = cacheParams.dataCode.width(blockBytes * 2)
   def eccDataBankBits = encDataBits - blockBytes * 2
-  def eccDataBankSplit = 4
+
+  // DataCheck
+  def dataCheckMethod : Int = cacheParams.dataCheck.getOrElse("none").toLowerCase match {
+    case "none" => 0
+    case "oddparity" => 1
+    case "secded" => 2
+    case _ => 0
+  }
+  def enableDataCheck = enableCHI && dataCheckMethod != 0
 
   // Prefetch
   def prefetchers = cacheParams.prefetch
@@ -473,10 +482,9 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       val l2ECCArb = Module(new Arbiter(new L2CacheErrorInfo(), slices.size))
       val slices_l2ECC = slices.zipWithIndex.map {
         case (s, i) =>
-          val bankAddress = Cat(i.U, s.io.error.bits.address(addressBits - 1, 0))
           val sliceError = Wire(DecoupledIO(new L2CacheErrorInfo()))
           sliceError := s.io.error
-          sliceError.bits.address := bankAddress
+          sliceError.bits.address := restoreAddress(s.io.error.bits.address, i)
           sliceError
       }
       l2ECCArb.io.in <> VecInit(slices_l2ECC)
