@@ -304,6 +304,11 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       case EdgeOutKey => node.out.head._2
       case BankBitsKey => bankBits
     }
+    val l2ECCParams: Parameters = p.alterPartial {
+      case EdgeInKey => node.in.head._2
+      // case EdgeOutKey => node.out.head._2
+      // case BankBitsKey => bankBits
+    } // currently only EdgeInKey is used
 
     require(banks == node.in.size)
 
@@ -317,7 +322,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         val robHeadPaddr = Flipped(Valid(UInt(36.W)))
         val l2MissMatch = Output(Bool())
       }
-      val error = Output(new L2CacheErrorInfo())
+      val error = Output(new L2CacheErrorInfo()(l2ECCParams))
     })
 
     // Display info
@@ -479,10 +484,10 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
 
     // ECC error
     if (enableECC) {
-      val l2ECCArb = Module(new Arbiter(new L2CacheErrorInfo(), slices.size))
+      val l2ECCArb = Module(new Arbiter(new L2CacheErrorInfo()(l2ECCParams), slices.size))
       val slices_l2ECC = slices.zipWithIndex.map {
         case (s, i) =>
-          val sliceError = Wire(DecoupledIO(new L2CacheErrorInfo()))
+          val sliceError = Wire(DecoupledIO(new L2CacheErrorInfo()(l2ECCParams)))
           sliceError := s.io.error
           sliceError.bits.address := restoreAddress(s.io.error.bits.address, i)
           sliceError
