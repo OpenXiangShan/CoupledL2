@@ -472,7 +472,12 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     if (enableECC) {
       val l2ECCArb = Module(new Arbiter(new L2CacheErrorInfo(), slices.size))
       val slices_l2ECC = slices.zipWithIndex.map {
-        case (s, i) => s.io.error
+        case (s, i) =>
+          val bankAddress = Cat(i.U, s.io.error.bits.address(addressBits - 1, 0))
+          val sliceError = Wire(DecoupledIO(new L2CacheErrorInfo()))
+          sliceError := s.io.error
+          sliceError.bits.address := bankAddress
+          sliceError
       }
       l2ECCArb.io.in <> VecInit(slices_l2ECC)
       l2ECCArb.io.out.ready := true.B
