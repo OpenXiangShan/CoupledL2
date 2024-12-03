@@ -79,7 +79,8 @@ class SinkC(implicit p: Parameters) extends L2Module {
     task.param := c.param
     task.size := c.size
     task.sourceId := c.source
-    task.corrupt := c.corrupt
+    task.corrupt := c.corrupt && (c.opcode == ProbeAckData).asBool
+    task.denied := c.corrupt && (c.opcode == ProbeAck).asBool
     task.bufIdx := 0.U(bufIdxBits.W)
     task.needProbeAckData := false.B
     task.mshrTask := false.B
