@@ -160,7 +160,12 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
       prefetch = Seq(BOPParameters(
         rrTableEntries = 16,
         rrTagBits = 6
-      ))
+      )),
+      tagECC = Some("secded"),
+      dataECC = Some("secded"),
+      enableTagECC = true,
+      enableDataECC = true,
+      dataCheck = Some("oddparity"),
     )
     case BankBitsKey => 0
     case LogUtilsOptionsKey => LogUtilsOptions(
@@ -394,7 +399,12 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
       sets = 128,
       clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
       echoField = Seq(DirtyField()),
-      hartId = i
+      hartId = i,
+      tagECC = Some("secded"),
+      dataECC = Some("secded"),
+      enableTagECC = true,
+      enableDataECC = true,
+      dataCheck = Some("oddparity"),
     )
     case BankBitsKey => 0
     case LogUtilsOptionsKey => LogUtilsOptions(
@@ -552,7 +562,12 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
         prefetch = Seq(BOPParameters(
           rrTableEntries = 16,
           rrTagBits = 6
-        ))
+        )),
+        tagECC = Some("secded"),
+        dataECC = Some("secded"),
+        enableTagECC = true,
+        enableDataECC = true,
+        dataCheck = Some("oddparity"),
       )
       case BankBitsKey => 0
       case LogUtilsOptionsKey => LogUtilsOptions(

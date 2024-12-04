@@ -21,7 +21,7 @@ import chisel3._
 import chisel3.util._
 import freechips.rocketchip.util.SetAssocLRU
 import coupledL2.utils._
-import utility.{ParallelPriorityMux, RegNextN, XSPerfAccumulate}
+import utility.{ParallelPriorityMux, RegNextN, XSPerfAccumulate, Code, SRAMTemplate}
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.prefetch.PfSource
 import freechips.rocketchip.tilelink.TLMessages._
@@ -35,6 +35,8 @@ class MetaEntry(implicit p: Parameters) extends L2Bundle {
   val prefetch = if (hasPrefetchBit) Some(Bool()) else None // whether block is prefetched
   val prefetchSrc = if (hasPrefetchSrc) Some(UInt(PfSource.pfSourceBits.W)) else None // prefetch source
   val accessed = Bool()
+  val tagErr = Bool() // ECC error from L1/L3; DataCheck for CHI
+  val dataErr = Bool()
 
   def =/=(entry: MetaEntry): Bool = {
     this.asUInt =/= entry.asUInt
@@ -47,7 +49,8 @@ object MetaEntry {
     init
   }
   def apply(dirty: Bool, state: UInt, clients: UInt, alias: Option[UInt], prefetch: Bool = false.B,
-            pfsrc: UInt = PfSource.NoWhere.id.U, accessed: Bool = false.B
+            pfsrc: UInt = PfSource.NoWhere.id.U, accessed: Bool = false.B,
+            tagErr: Bool = false.B, dataErr: Bool = false.B
   )(implicit p: Parameters) = {
     val entry = Wire(new MetaEntry)
     entry.dirty := dirty
@@ -57,6 +60,8 @@ object MetaEntry {
     entry.prefetch.foreach(_ := prefetch)
     entry.prefetchSrc.foreach(_ := pfsrc)
     entry.accessed := accessed
+    entry.tagErr := tagErr
+    entry.dataErr := dataErr
     entry
   }
 }
@@ -103,6 +108,7 @@ class TagWrite(implicit p: Parameters) extends L2Bundle {
   val wtag = UInt(tagBits.W)
 }
 
+
 class Directory(implicit p: Parameters) extends L2Module {
 
   val io = IO(new Bundle() {
@@ -122,6 +128,11 @@ class Directory(implicit p: Parameters) extends L2Module {
     (has_invalid_way, way)
   }
 
+  def get_tag_from_encTag(encTag: UInt) = {
+    require((encTag.getWidth == encTagBits))
+    encTag(tagBits - 1, 0)
+  }
+
   val sets = cacheParams.sets
   val ways = cacheParams.ways
 
@@ -130,16 +141,33 @@ class Directory(implicit p: Parameters) extends L2Module {
   val replacerWen = WireInit(false.B)
 
   // val tagArray  = Module(new SRAMTemplate(UInt(tagBits.W), sets, ways, singlePort = true))
-  val tagArray = Module(new SplittedSRAM(
-    gen = UInt(tagBits.W),
-    set = sets,
-    way = ways,
-    waySplit = 2,
-    singlePort = true,
-    readMCP2 = false
-  ))
+  val tagArray = if (enableTagECC) {
+    Module(new SplittedSRAM(
+      gen = UInt((tagBits + eccTagBits).W),
+      set = sets,
+      way = ways,
+      waySplit = 2,
+      singlePort = true,
+      readMCP2 = false
+    ))
+  } else {
+    Module(new SplittedSRAM(
+      gen = UInt(tagBits.W),
+      set = sets,
+      way = ways,
+      waySplit = 2,
+      singlePort = true,
+      readMCP2 = false
+    ))
+  }
+
   val metaArray = Module(new SRAMTemplate(new MetaEntry, sets, ways, singlePort = true))
-  val tagRead = Wire(Vec(ways, UInt(tagBits.W)))
+
+  val tagRead = if (enableTagECC) {
+    Wire(Vec(ways, UInt((tagBits + eccTagBits).W)))
+  } else {
+    Wire(Vec(ways, UInt(tagBits.W)))
+  }
   val metaRead = Wire(Vec(ways, new MetaEntry()))
 
   val resetFinish = RegInit(false.B)
@@ -165,11 +193,16 @@ class Directory(implicit p: Parameters) extends L2Module {
   val refillReqValid_s2 = RegNext(io.read.fire && io.read.bits.refill, false.B)
   val refillReqValid_s3 = RegNext(refillReqValid_s2, false.B)
 
-  // Tag R/W
+  // Tag(ECC) R/W
+  val tagWrite = if (enableTagECC) {
+    cacheParams.tagCode.encode(io.tagWReq.bits.wtag)
+  } else {
+    io.tagWReq.bits.wtag
+  }
   tagRead := tagArray.io.r(io.read.fire, io.read.bits.set).resp.data
   tagArray.io.w(
     tagWen,
-    io.tagWReq.bits.wtag,
+    tagWrite,
     io.tagWReq.bits.set,
     UIntToOH(io.tagWReq.bits.way)
   )
@@ -228,9 +261,14 @@ class Directory(implicit p: Parameters) extends L2Module {
   val hit_s3 = Cat(hitVec).orR
   val way_s3 = Mux(hit_s3, hitWay, finalWay)
   val meta_s3 = metaAll_s3(way_s3)
-  val tag_s3 = tagAll_s3(way_s3)
+  val tag_s3 = tagAll_s3(way_s3)(tagBits - 1, 0)
   val set_s3 = req_s3.set
   val replacerInfo_s3 = req_s3.replacerInfo
+  val error_s3 = if (enableTagECC) {
+    cacheParams.tagCode.decode(tagAll_s3(way_s3)).error && reqValid_s3 && meta_s3.state =/= MetaData.INVALID
+  } else {
+    false.B
+  }
 
   io.resp.valid      := reqValid_s3
   io.resp.bits.hit   := hit_s3
@@ -238,7 +276,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   io.resp.bits.meta  := meta_s3
   io.resp.bits.tag   := tag_s3
   io.resp.bits.set   := set_s3
-  io.resp.bits.error := false.B  // depends on ECC
+  io.resp.bits.error := error_s3  // depends on ECC
   io.resp.bits.replacerInfo := replacerInfo_s3
 
   dontTouch(io)
@@ -263,7 +301,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   replaceWay := repl.get_replace_way(repl_state_s3)
 
   io.replResp.valid := refillReqValid_s3
-  io.replResp.bits.tag := tagAll_s3(finalWay)
+  io.replResp.bits.tag := tagAll_s3(finalWay)(tagBits - 1, 0)
   io.replResp.bits.set := req_s3.set
   io.replResp.bits.way := finalWay
   io.replResp.bits.meta := metaAll_s3(finalWay)

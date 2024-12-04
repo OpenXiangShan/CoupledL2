@@ -50,6 +50,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.param := a.param
     task.size := a.size
     task.sourceId := a.source
+    task.corrupt := a.corrupt
     task.bufIdx := 0.U(bufIdxBits.W)
     task.needProbeAckData := false.B
     task.mshrTask := false.B
@@ -88,6 +89,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.param := Mux(req.needT, PREFETCH_WRITE, PREFETCH_READ)
     task.size := offsetBits.U
     task.sourceId := req.source
+    task.corrupt := false.B
     task.bufIdx := 0.U(bufIdxBits.W)
     task.needProbeAckData := false.B
     task.mshrTask := false.B

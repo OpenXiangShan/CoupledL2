@@ -123,6 +123,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   mainPipe.io.releaseBufResp_s3.valid := RegNext(releaseBuf.io.r.valid, false.B)
   mainPipe.io.releaseBufResp_s3.bits := releaseBuf.io.resp.data
   mainPipe.io.toDS.rdata_s5 := dataStorage.io.rdata
+  mainPipe.io.toDS.error_s5 := dataStorage.io.error
   // mainPipe.io.grantBufferHint := grantBuf.io.l1Hint
   // mainPipe.io.globalCounter := grantBuf.io.globalCounter
 
@@ -194,6 +195,8 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   sinkC.io.c <> inBuf.c(io.in.c)
   io.in.d <> inBuf.d(grantBuf.io.d)
   grantBuf.io.e <> inBuf.e(io.in.e)
+  io.error.valid := mainPipe.io.error.valid
+  io.error.bits := mainPipe.io.error.bits
 
   /* Connect downwards channels */
   io.out.tx.req <> txreq.io.out

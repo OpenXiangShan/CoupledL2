@@ -69,6 +69,28 @@ trait HasCoupledL2Parameters {
 
   def mmioBridgeSize = cacheParams.mmioBridgeSize
 
+  // ECC
+  def enableECC = cacheParams.enableTagECC || cacheParams.enableDataECC
+  def enableTagECC = cacheParams.enableTagECC
+  def eccDataBankSplit = 4 // SRAM dataSplit = 4
+  def encTagBits = cacheParams.tagCode.width(tagBits)
+  def eccTagBits = encTagBits - tagBits
+  def enableDataECC = cacheParams.enableDataECC
+  def encDataBits = cacheParams.dataCode.width(blockBytes * 8)
+  def eccDataBits = encDataBits - blockBytes * 8
+  def encDataPaddingBits = ((encDataBits + 3) / eccDataBankSplit) * eccDataBankSplit
+  def encDataBankBits = cacheParams.dataCode.width(blockBytes * 2)
+  def eccDataBankBits = encDataBits - blockBytes * 2
+
+  // DataCheck
+  def dataCheckMethod : Int = cacheParams.dataCheck.getOrElse("none").toLowerCase match {
+    case "none" => 0
+    case "oddparity" => 1
+    case "secded" => 2
+    case _ => 0
+  }
+  def enableDataCheck = enableCHI && dataCheckMethod != 0
+
   // Prefetch
   def prefetchers = cacheParams.prefetch
   def prefetchOpt = if(prefetchers.nonEmpty) Some(true) else None
@@ -282,6 +304,11 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       case EdgeOutKey => node.out.head._2
       case BankBitsKey => bankBits
     }
+    val l2ECCParams: Parameters = p.alterPartial {
+      case EdgeInKey => node.in.head._2
+      // case EdgeOutKey => node.out.head._2
+      // case BankBitsKey => bankBits
+    } // currently only EdgeInKey is used
 
     require(banks == node.in.size)
 
@@ -295,6 +322,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         val robHeadPaddr = Flipped(Valid(UInt(36.W)))
         val l2MissMatch = Output(Bool())
       }
+      val error = Output(new L2CacheErrorInfo()(l2ECCParams))
     })
 
     // Display info
@@ -413,6 +441,8 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         in.b.bits.address := restoreAddress(slice.io.in.b.bits.address, i)
         slice.io.sliceId := i.U
 
+        slice.io.error.ready := enableECC.asBool // TODO: fix the datapath as optional
+
         slice.io.prefetch.zip(prefetcher).foreach {
           case (s, p) =>
             s.req.valid := p.io.req.valid && bank_eq(p.io.req.bits.set, i, bankBits)
@@ -451,6 +481,25 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         slide.getPerfEvents.map{case (str, idx) => ("Slice" + slide_idx.toString + "_" + str, idx)}
     }.flatten
     generatePerfEvent()
+
+    // ECC error
+    if (enableECC) {
+      val l2ECCArb = Module(new Arbiter(new L2CacheErrorInfo()(l2ECCParams), slices.size))
+      val slices_l2ECC = slices.zipWithIndex.map {
+        case (s, i) =>
+          val sliceError = Wire(DecoupledIO(new L2CacheErrorInfo()(l2ECCParams)))
+          sliceError := s.io.error
+          sliceError.bits.address := restoreAddress(s.io.error.bits.address, i)
+          sliceError
+      }
+      l2ECCArb.io.in <> VecInit(slices_l2ECC)
+      l2ECCArb.io.out.ready := true.B
+      io.error.valid := l2ECCArb.io.out.fire && l2ECCArb.io.out.bits.valid
+      io.error.address := l2ECCArb.io.out.bits.address
+    } else {
+      io.error.valid := false.B
+      io.error.address := 0.U.asTypeOf(io.error.address)
+    }
 
     // Refill hint
     if (enableHintGuidedGrant) {
