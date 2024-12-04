@@ -134,6 +134,8 @@ class TaskWithData(implicit p: Parameters) extends LLCBundle {
     dat.be := Fill(BE_WIDTH, true.B)
     dat.data := data.data(beatId).data
     dat.dataID := (beatBytes * beatId * 8).U(log2Ceil(blockBytes * 8) - 1, log2Ceil(blockBytes * 8) - 2)
+    dat.dataCheck := Cat((0 until DATACHECK_WIDTH).map(i => data.data(beatId).data(8 * (i + 1) - 1, 8 * i).xorR.asUInt))
+    dat.poision := 0.U
     dat
   }
 }
