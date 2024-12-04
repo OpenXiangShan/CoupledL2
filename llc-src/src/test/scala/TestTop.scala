@@ -247,6 +247,9 @@ object TestTopSoCHelper {
         elaboratedTopDown   = false,
         FPGAPlatform        = FPGAPlatform,
 
+        // OddParity Data Check
+        dataCheck           = Some("oddparity"),
+
         // SAM for tester ICN: Home Node ID = 33
         sam                 = Seq(AddressSet.everything -> 33)
       )
