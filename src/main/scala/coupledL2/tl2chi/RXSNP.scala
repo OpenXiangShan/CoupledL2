@@ -85,8 +85,11 @@ class RXSNP(
   val replaceBlockSnp = replaceBlockSnpMask.orR
   val replaceNestSnpMask = VecInit(io.msInfo.map(s =>
       s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && 
-      (!s.bits.dirHit || (!s.bits.s_cmoresp && !s.bits.releaseToB)) && s.bits.metaState =/= INVALID &&
+      (!s.bits.dirHit || !s.bits.s_cmoresp) && s.bits.metaState =/= INVALID &&
       RegNext(s.bits.w_replResp) && s.bits.w_rprobeacklast && !s.bits.w_releaseack
+    )).asUInt
+  val releaseToBNestSnpMask = replaceNestSnpMask & VecInit(io.msInfo.map(s =>
+      s.bits.releaseToB
     )).asUInt
   val replaceDataMask = VecInit(io.msInfo.map(_.bits.replaceData)).asUInt
 
@@ -147,6 +150,7 @@ class RXSNP(
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
     task.snpHitRelease := replaceNestSnpMask.orR
+    task.snpHitReleaseToB := releaseToBNestSnpMask.orR
     task.snpHitReleaseWithData := (replaceNestSnpMask & replaceDataMask).orR
     task.snpHitReleaseIdx := PriorityEncoder(replaceNestSnpMask)
     task.tgtID.foreach(_ := 0.U) // TODO

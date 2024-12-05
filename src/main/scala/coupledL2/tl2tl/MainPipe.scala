@@ -239,6 +239,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   ms_task.aMergeTask       := req_s3.aMergeTask
   ms_task.txChannel        := 0.U
   ms_task.snpHitRelease    := false.B
+  ms_task.snpHitReleaseToB := false.B
   ms_task.snpHitReleaseWithData := false.B
   ms_task.snpHitReleaseIdx := 0.U
   ms_task.denied           := false.B
