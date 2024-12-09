@@ -42,8 +42,8 @@ class RequestArb(implicit p: Parameters) extends LLCModule with HasClientInfo wi
     val pipeInfo = Input(new PipeStatus())
     val refillInfo = Flipped(Vec(mshrs.refill, ValidIO(new BlockInfo())))
     val respInfo = Flipped(Vec(mshrs.response, ValidIO(new ResponseInfo())))
-    val snpInfo = Flipped(Vec(mshrs.snoop, ValidIO(new BlockInfo)))
-    val memInfo = Flipped(Vec(mshrs.memory, ValidIO(new BlockInfo)))
+    val snpInfo = Flipped(Vec(mshrs.snoop, ValidIO(new BlockInfo())))
+    val memInfo = Flipped(Vec(mshrs.memory, ValidIO(new MemInfo())))
   })
 
   val pipeInfo   = io.pipeInfo
@@ -62,9 +62,14 @@ class RequestArb(implicit p: Parameters) extends LLCModule with HasClientInfo wi
   val set_s1   = task_s1.bits.set
   val reqID_s1 = task_s1.bits.reqID
 
+  val isReadNotSharedDirty_s1 = !task_s1.bits.refillTask && task_s1.bits.chiOpcode === ReadNotSharedDirty
+  val isReadUnique_s1 = !task_s1.bits.refillTask && task_s1.bits.chiOpcode === ReadUnique
   val isCleanInvalid_s1 = !task_s1.bits.refillTask && task_s1.bits.chiOpcode === CleanInvalid
   val isCleanShared_s1 = !task_s1.bits.refillTask && task_s1.bits.chiOpcode === CleanShared
-  val isClean_s1 = isCleanInvalid_s1 || isCleanShared_s1
+  val isWriteCleanFull_s1 = !task_s1.bits.refillTask && task_s1.bits.chiOpcode === WriteCleanFull
+
+  val isRead_s1  = isReadNotSharedDirty_s1 || isReadUnique_s1
+  val isClean_s1 = isCleanInvalid_s1 || isCleanShared_s1 || isWriteCleanFull_s1
 
   // To prevent data hazards caused by read-after-write conflicts in the directory,
   // blocking is required when the set of s1 is the same as that of s2 or s3
@@ -109,7 +114,7 @@ class RequestArb(implicit p: Parameters) extends LLCModule with HasClientInfo wi
     (inflight_snoop +& potential_snoop) >= mshrs.snoop.U
   )
   val blockByMem = Cat(memInfo.map(e => e.valid && Cat(e.bits.tag, e.bits.set) === Cat(tag_s1, set_s1) &&
-    e.bits.opcode === WriteNoSnpFull && (task_s1.bits.refillTask  || isClean_s1))).orR ||
+    e.bits.opcode === WriteNoSnpFull && (task_s1.bits.refillTask || isClean_s1 || !e.bits.w_datRsp && isRead_s1))).orR ||
     Cat(memInfo.map(e => e.valid && e.bits.reqID === reqID_s1 && !task_s1.bits.refillTask)).orR ||
     (inflight_memAccess +& potential_memAccess) >= mshrs.memory.U
 
