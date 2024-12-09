@@ -174,6 +174,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val hitDirty = dirResult.hit && meta.dirty || probeDirty
   val hitDirtyOrWriteBack = hitDirty || req.snpHitRelease && req.snpHitReleaseWithData
 
+  val releaseToB = req_cboClean
+
   /**
     * About which snoop should echo SnpRespData[Fwded] instead of SnpResp[Fwded]:
     * 1. When the snooped block is dirty, always echo SnpRespData[Fwded], except for SnpMakeInvalid*, SnpStash*,
@@ -577,7 +579,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       prefetch = !snpToN && meta_pft,
       accessed = !snpToN && meta.accessed
     )
-    mp_probeack.metaWen := !req.snpHitRelease
+    mp_probeack.metaWen := !req.snpHitRelease || req.snpHitReleaseToB
     mp_probeack.tagWen := false.B
     mp_probeack.dsWen := !snpToN && probeDirty
     mp_probeack.wayMask := 0.U(cacheParams.ways.W)
@@ -611,6 +613,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_probeack.expCompAck.get := false.B
     mp_probeack.traceTag.get := req.traceTag.get
     mp_probeack.snpHitRelease := req.snpHitRelease
+    mp_probeack.snpHitReleaseToB := req.snpHitReleaseToB
     mp_probeack.snpHitReleaseWithData := req.snpHitReleaseWithData
     mp_probeack.snpHitReleaseIdx := req.snpHitReleaseIdx
 
@@ -792,6 +795,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_dct.expCompAck.get := false.B // DontCare
     mp_dct.traceTag.get := req.traceTag.get
     mp_dct.snpHitRelease := req.snpHitRelease
+    mp_dct.snpHitReleaseToB := req.snpHitReleaseToB
     mp_dct.snpHitReleaseWithData := req.snpHitReleaseWithData
     mp_dct.snpHitReleaseIdx := req.snpHitReleaseIdx
 
@@ -1129,7 +1133,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   io.msInfo.bits.w_replResp := state.w_replResp
   io.msInfo.bits.w_rprobeacklast := state.w_rprobeacklast
   io.msInfo.bits.replaceData := isT(meta.state) && meta.dirty || probeDirty
-  io.msInfo.bits.releaseToB := req_cboClean
+  io.msInfo.bits.releaseToB := releaseToB
   io.msInfo.bits.channel := req.channel
 
   assert(!(c_resp.valid && !io.status.bits.w_c_resp))

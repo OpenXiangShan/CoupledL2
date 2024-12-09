@@ -117,6 +117,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
 
   // Used for get data from ReleaseBuf when snoop hit with same PA 
   val snpHitRelease = Bool()
+  val snpHitReleaseToB = Bool()
   val snpHitReleaseWithData = Bool()
   val snpHitReleaseIdx = UInt(mshrBits.W) 
   // CHI
