@@ -289,7 +289,7 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes 
   txrsp.valid := txrspArb.io.out.valid
   txrsp.bits := txrspArb.io.out.bits
   txrsp.bits.chiOpcode := Mux(
-    txrspArb.io.out.bits.chiOpcode === WriteBackFull,
+    txrspArb.io.out.bits.chiOpcode === WriteBackFull || txrspArb.io.out.bits.chiOpcode === WriteCleanFull,
     CompDBIDResp,
     Comp
   )
