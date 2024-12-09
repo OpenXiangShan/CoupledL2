@@ -37,6 +37,10 @@ class MemRequest(withData: Boolean)(implicit p: Parameters) extends LLCBundle {
   val data  = if (withData) Some(new DSBlock()) else None
 }
 
+class MemInfo(implicit p: Parameters) extends BlockInfo {
+  val w_datRsp = Bool()
+}
+
 class MemEntry(implicit p: Parameters) extends TaskEntry {
   val state      = new MemState()
   val data       = new DSBlock()
@@ -68,7 +72,7 @@ class MemUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
     /* response from downstream RXRSP channel */
     val snRxrsp = Flipped(ValidIO(new Resp()))
 
-    /* snoop response from upper-level cache */
+    /* response from upper-level cache */
     val rnRxdat = Flipped(ValidIO(new RespWithData()))
     val rnRxrsp = Flipped(ValidIO(new Resp()))
 
@@ -80,15 +84,15 @@ class MemUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
     val bypassData = Vec(beatSize, ValidIO(new RespWithData()))
 
     /* memory access buffers info */
-    val memInfo = Vec(mshrs.memory, ValidIO(new BlockInfo()))
+    val memInfo = Vec(mshrs.memory, ValidIO(new MemInfo()))
 
     /* block info from ResponseUnit */
     val respInfo = Flipped(Vec(mshrs.response, ValidIO(new ResponseInfo())))
   })
 
   val memResp    = io.snRxrsp
-  val snpData    = io.rnRxdat
-  val snpResp    = io.rnRxrsp
+  val coreData   = io.rnRxdat
+  val coreResp   = io.rnRxrsp
   val txreq      = io.txreq
   val txdat      = io.txdat
   val alloc_s6   = io.fromMainPipe.alloc_s6
@@ -214,29 +218,29 @@ class MemUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
     }
   }
 
-  when(snpData.valid) {
+  when(coreData.valid) {
     val match_vec = buffer.map(e => e.valid && !e.state.w_datRsp && e.task.chiOpcode === WriteNoSnpFull &&
-      e.task.reqID === snpData.bits.txnID)
+      e.task.reqID === coreData.bits.txnID)
     assert(PopCount(match_vec) < 2.U, "Mem task repeated")
     val update = Cat(match_vec).orR
     val bufID = PriorityEncoder(match_vec)
     when(update) {
       val entry = buffer(bufID)
-      when(!snpData.bits.resp(2)) {
+      when(!coreData.bits.resp(2)) {
         entry.valid := false.B
       }.otherwise {
-        val beatId = snpData.bits.dataID >> log2Ceil(beatBytes / 16)
+        val beatId = coreData.bits.dataID >> log2Ceil(beatBytes / 16)
         val newBeatValids = entry.beatValids.asUInt | UIntToOH(beatId)
         entry.beatValids := VecInit(newBeatValids.asBools)
         entry.state.w_datRsp := newBeatValids.andR
-        entry.data.data(beatId) := snpData.bits.data
+        entry.data.data(beatId) := coreData.bits.data
       }
     }
   }
 
-  when(snpResp.valid) {
+  when(coreResp.valid) {
     val match_vec = buffer.map(e => e.valid && !e.state.w_datRsp && e.task.chiOpcode === WriteNoSnpFull &&
-      e.task.reqID === snpResp.bits.txnID)
+      e.task.reqID === coreResp.bits.txnID)
     assert(PopCount(match_vec) < 2.U, "Mem task repeated")
     val update = Cat(match_vec).orR
     val bufID = PriorityEncoder(match_vec)
@@ -286,6 +290,7 @@ class MemUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
     m.bits.set := buffer(i).task.set
     m.bits.opcode := buffer(i).task.chiOpcode
     m.bits.reqID := buffer(i).task.reqID
+    m.bits.w_datRsp := buffer(i).state.w_datRsp
   }
 
   /* Performance Counter */

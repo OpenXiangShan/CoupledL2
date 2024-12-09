@@ -43,16 +43,6 @@ class RequestBuffer(entries: Int = 8)(implicit p: Parameters) extends LLCModule 
   val insertIdx = PriorityEncoder(buffer.map(!_.valid))
   val alloc = in.fire
   when(alloc) {
-    val isReadNotSharedDirty = in.bits.chiOpcode === ReadNotSharedDirty
-    val isReadUnique         = in.bits.chiOpcode === ReadUnique
-    val isMakeUnique         = in.bits.chiOpcode === MakeUnique
-    val isWriteBackFull      = in.bits.chiOpcode === WriteBackFull
-    val isEvict              = in.bits.chiOpcode === Evict
-    val isMakeInvalid        = in.bits.chiOpcode === MakeInvalid
-    val isCleanInvalid       = in.bits.chiOpcode === CleanInvalid
-    val isCleanShared        = in.bits.chiOpcode === CleanShared
-    assert(isReadNotSharedDirty || isReadUnique || isMakeUnique || isWriteBackFull || isEvict || isMakeInvalid ||
-      isCleanInvalid || isCleanShared, "Unsupported opcode")
     val entry = buffer(insertIdx)
     entry.valid := true.B
     entry.bits := in.bits
