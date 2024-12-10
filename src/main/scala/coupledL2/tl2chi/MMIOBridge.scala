@@ -26,6 +26,7 @@ import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.HasCoupledL2Parameters
+import coupledL2.MemTypeNC
 
 class MMIOBridge()(implicit p: Parameters) extends LazyModule
   with HasCoupledL2Parameters
@@ -49,7 +50,8 @@ class MMIOBridge()(implicit p: Parameters) extends LazyModule
       supportsPutFull = TransferSizes(1, 8),
       supportsPutPartial = TransferSizes(1, 8)
     )),
-    beatBytes = 8
+    beatBytes = 8,
+    requestKeys = Seq(MemTypeNC)
   )))
 
   lazy val module = new MMIOBridgeImp(this)
@@ -59,7 +61,7 @@ class MMIOBridge()(implicit p: Parameters) extends LazyModule
 class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
 
   val needRR = true
-  val order = WireInit(if (needRR) OrderEncodings.EndpointOrder else OrderEncodings.None)
+  val bufferableNC = true
 
   val io = IO(new Bundle() {
     val req = Flipped(DecoupledIO(new TLBundleA(edge.bundle)))
@@ -95,6 +97,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   val corrupt = Reg(Bool())
   val traceTag = Reg(Bool())
   val isRead = req.opcode === Get
+  val isNC = req.user.lift(MemTypeNC).getOrElse(false.B)
 
   val wordBits = io.req.bits.data.getWidth // 64
   val wordBytes = wordBits / 8
@@ -197,10 +200,24 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   txreq.bits.size := req.size
   txreq.bits.addr := req.address
   txreq.bits.allowRetry := allowRetry
-  txreq.bits.order := order
   txreq.bits.pCrdType := Mux(allowRetry, 0.U, pCrdType)
-  txreq.bits.memAttr := MemAttr(allocate = false.B, cacheable = false.B, device = true.B, ewa = false.B)
   txreq.bits.expCompAck := false.B
+  // *Ordering and MemAttr: [when 'bufferableNC' configured to true]
+  //    PBMT::NC    -> Non-cacheable Bufferable (weakly-ordered uncached)
+  //    PBMT::IO    -> Device nRnE (strongly-ordered uncached device)
+  //    PMA uncache -> Device nRnE (strongly-ordered uncached device)
+  txreq.bits.order := {
+    if (needRR) 
+      Mux(!isNC, OrderEncodings.EndpointOrder, OrderEncodings.RequestOrder)
+    else 
+      OrderEncodings.None
+  }
+  txreq.bits.memAttr := MemAttr(
+    allocate = false.B,
+    cacheable = false.B,
+    device = !isNC,
+    ewa = if (bufferableNC) isNC else false.B
+  )
 
   io.resp.valid := !s_resp && Mux(isRead, w_compdata, w_comp && w_dbidresp && s_ncbwrdata)
   io.resp.bits.opcode := Mux(isRead, AccessAckData, AccessAck)
