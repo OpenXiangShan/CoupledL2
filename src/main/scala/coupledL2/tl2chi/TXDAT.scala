@@ -22,6 +22,7 @@ import chisel3.util._
 import utility._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.{TaskWithData, TaskBundle, DSBlock, DSBeat}
+import coupledL2.tl2chi.CHICohStates._
 
 class TXDATBlockBundle(implicit p: Parameters) extends TXBlockBundle {
   val blockSinkBReqEntrance = Bool()
@@ -29,7 +30,7 @@ class TXDATBlockBundle(implicit p: Parameters) extends TXBlockBundle {
   override def apply() = 0.U.asTypeOf(this)
 }
 
-class TXDAT(implicit p: Parameters) extends TL2CHIL2Module {
+class TXDAT(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val io = IO(new Bundle() {
     val in = Flipped(DecoupledIO(new TaskWithData()))
     val out = DecoupledIO(new CHIDAT())
@@ -117,6 +118,11 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module {
     (next_beat, next_beatsOH)
   }
 
+  def deassertData(data: UInt, mask: UInt): UInt = {
+    require(data.getWidth == mask.getWidth * 8)
+    FillInterleaved(8, mask) & data
+  }
+
   def toCHIDATBundle(task: TaskBundle, beat: UInt, beatsOH: UInt): CHIDAT = {
     val dat = WireInit(0.U.asTypeOf(new CHIDAT()))
 
@@ -137,6 +143,10 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module {
       0.U(DATACHECK_WIDTH.W)
     }
 
+    val deassertBE = task.chiOpcode.get === CopyBackWrData && task.resp.get === I ||
+      task.chiOpcode.get === WriteDataCancel
+    val be = Fill(BE_WIDTH, !deassertBE)
+
     dat.tgtID := task.tgtID.get
     dat.srcID := task.srcID.get
     dat.txnID := task.txnID.get
@@ -151,8 +161,8 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module {
       beatsOH,
       List.tabulate(beatSize)(i => (i << (beatOffsetWidth - chunkOffsetWidth)).U)
     )
-    dat.be := Fill(BE_WIDTH, 1.U(1.W))
-    dat.data := beat
+    dat.be := be
+    dat.data := deassertData(beat, be)
     dat.resp := task.resp.get
     dat.fwdState := task.fwdState.get
     dat.traceTag := task.traceTag.get
