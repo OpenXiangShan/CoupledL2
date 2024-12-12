@@ -85,7 +85,12 @@ jobs:
       # Clean artifacts folder (./tl-test-new/run) after successful run
       - name: Unit test for CHI version
         run: |
-            cd tl-test-new/dut
+            cd ./tl-test-new
+            sed -i 's/ari.target.*/ari.target = 240/g' ./configs/user.tltest.ini
+            sed -i 's/cmo.enable .*=.*/cmo.enable = 1/g' ./configs/user.tltest.ini
+            sed -i 's/cmo.enable.cbo.clean.*=.*/cmo.enable.cbo.clean = 1/g' ./configs/user.tltest.ini
+            sed -i 's/cmo.enable.cbo.flush.*=.*/cmo.enable.cbo.flush = 1/g' ./configs/user.tltest.ini
+            cd ./dut
             git clone https://github.com/OpenXiangShan/OpenLLC
             cd OpenLLC && make init
             rm -rf ./coupledL2 && ln -s ../../.. ./coupledL2
