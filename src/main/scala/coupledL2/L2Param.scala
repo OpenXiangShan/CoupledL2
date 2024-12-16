@@ -46,9 +46,12 @@ case class L1Param
   val needResolveAlias = aliasBitsOpt.nonEmpty
 }
 
-// Pass uncached memory attribute from PBMT to MMIOBridge
-case object MemTypeNC extends ControlKey[Bool]("memType_NC")
-case class MemTypeNCField() extends BundleField[Bool](MemTypeNC, Output(Bool()), _ := false.B)
+// Pass PMA and uncached memory attribute from PBMT to MMIOBridge
+case object MemBackTypeMM extends ControlKey[Bool]("memBackType_MM")
+case class MemBackTypeMMField() extends BundleField[Bool](MemBackTypeMM, Output(Bool()), _ := false.B)
+
+case object MemPageTypeNC extends ControlKey[Bool]("memPageType_NC")
+case class MemPageTypeNCField() extends BundleField[Bool](MemPageTypeNC, Output(Bool()), _ := false.B)
 
 // Pass virtual address of upper level cache
 case object VaddrKey extends ControlKey[UInt]("vaddr")
