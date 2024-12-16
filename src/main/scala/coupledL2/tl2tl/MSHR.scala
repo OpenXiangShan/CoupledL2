@@ -64,6 +64,9 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val probeDirty = RegInit(false.B)
   val probeGotN = RegInit(false.B)
 
+  val denied = RegInit(false.B)
+  val corrupt = RegInit(false.B)
+
   val timer = RegInit(0.U(64.W)) // for performance analysis
 
   /* MSHR Allocation */
@@ -85,6 +88,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
     gotGrantData := false.B
     probeDirty  := false.B
     probeGotN   := false.B
+    denied      := false.B
+    corrupt     := false.B
     timer       := 1.U
   }
 
@@ -182,6 +187,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_release.param := Mux(isT(meta.state), TtoN, BtoN)
     mp_release.size := 0.U(msgSizeBits.W)
     mp_release.sourceId := 0.U(sourceIdBits.W)
+    mp_release.corrupt := false.B
     mp_release.bufIdx := 0.U(bufIdxBits.W)
     mp_release.needProbeAckData := false.B
     mp_release.mshrTask := true.B
@@ -232,6 +238,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     )
     mp_probeack.size := 0.U(msgSizeBits.W)
     mp_probeack.sourceId := 0.U(sourceIdBits.W)
+    mp_probeack.corrupt := false.B
     mp_probeack.bufIdx := 0.U(bufIdxBits.W)
     mp_probeack.needProbeAckData := false.B
     mp_probeack.mshrTask := true.B
@@ -357,6 +364,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_grant.wayMask := 0.U(cacheParams.ways.W)
     mp_grant.mshrRetry := !state.s_retry
     mp_grant.reqSource := 0.U(MemReqSource.reqSourceBits.W)
+    mp_grant.denied := denied
+    mp_grant.corrupt := corrupt
 
     // Add merge grant task for Acquire and late Prefetch
     mp_grant.mergeA := mergeA || io.aMergeTask.valid
@@ -469,6 +478,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     }
     when(d_resp.bits.opcode === GrantData) {
       gotGrantData := true.B
+      corrupt := d_resp.bits.corrupt
     }
     when(d_resp.bits.opcode === ReleaseAck) {
       state.w_releaseack := true.B
@@ -552,10 +562,13 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.msInfo.bits.mergeA := mergeA
   io.msInfo.bits.w_grantfirst := state.w_grantfirst
   io.msInfo.bits.s_refill := state.s_refill
+  io.msInfo.bits.s_release := state.s_release
+  io.msInfo.bits.s_cmoresp := false.B
   io.msInfo.bits.w_releaseack := state.w_releaseack
   io.msInfo.bits.w_replResp := state.w_replResp
   io.msInfo.bits.w_rprobeacklast := state.w_rprobeacklast
   io.msInfo.bits.replaceData := mp_release.opcode === ReleaseData
+  io.msInfo.bits.releaseToB := false.B
   io.msInfo.bits.metaState := meta.state
   io.msInfo.bits.channel := req.channel
 

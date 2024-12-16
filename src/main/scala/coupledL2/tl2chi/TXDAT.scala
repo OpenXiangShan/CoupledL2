@@ -98,6 +98,8 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module {
 
   io.out.valid := taskValid
   io.out.bits := toCHIDATBundle(taskR.task, beat, beatsOH)
+  io.out.bits.respErr := Mux(taskR.task.corrupt,
+    Mux(taskR.task.denied, RespErrEncodings.NDERR, RespErrEncodings.DERR), RespErrEncodings.OK)
 
   when (io.out.fire) {
     beatValids := VecInit(next_beatsOH.asBools)
@@ -123,6 +125,18 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module {
     val beatOffsetWidth = log2Up(beatBytes)
     val chunkOffsetWidth = log2Up(16) // DataID is assigned with the granularity of a 16-byte chunk
 
+    val dataCheck = if (enableDataCheck) {
+      dataCheckMethod match {
+        case 1 => Cat((0 until DATACHECK_WIDTH).map(i => beat(8 * (i + 1) - 1, 8 * i).xorR.asUInt))
+        case 2 =>
+          val code = new SECDEDCode
+          Cat((0 until DATACHECK_WIDTH).map(i => code.encode(beat(8 * (i + 1) - 1, 8 * i)).asUInt))
+        case _ => 0.U(DATACHECK_WIDTH.W)
+      }
+    } else {
+      0.U(DATACHECK_WIDTH.W)
+    }
+
     dat.tgtID := task.tgtID.get
     dat.srcID := task.srcID.get
     dat.txnID := task.txnID.get
@@ -141,6 +155,9 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module {
     dat.data := beat
     dat.resp := task.resp.get
     dat.fwdState := task.fwdState.get
+    dat.traceTag := task.traceTag.get
+    dat.dataCheck := dataCheck
+    dat.poision := Fill(POISON_WIDTH, task.corrupt)
 
     dat
   }

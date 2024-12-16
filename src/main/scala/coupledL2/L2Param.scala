@@ -25,7 +25,7 @@ import freechips.rocketchip.util._
 import org.chipsalliance.cde.config.Field
 import huancun.{AliasKey, CacheParameters, IsHitKey, PrefetchKey}
 import coupledL2.prefetch._
-import utility.{MemReqSource, ReqSourceKey}
+import utility.{MemReqSource, ReqSourceKey, Code}
 
 case object EnableCHI extends Field[Boolean](false)
 
@@ -113,8 +113,13 @@ case class L2Param(
   elaboratedTopDown: Boolean = true,
   // env
   FPGAPlatform: Boolean = false,
-  // CMO
-  hasCMO: Boolean = false,
+  // ECC
+  tagECC: Option[String] = None,
+  dataECC: Option[String] = None,
+  enableTagECC: Boolean = false,
+  enableDataECC: Boolean = false,
+  // DataCheck
+  dataCheck: Option[String] = None,
 
   // Network layer SAM
   sam: Seq[(AddressSet, Int)] = Seq(AddressSet.everything -> 0)
@@ -126,6 +131,9 @@ case class L2Param(
     blockGranularity = log2Ceil(sets),
     blockBytes = blockBytes
   )
+
+  def tagCode: Code = Code.fromString(tagECC)
+  def dataCode: Code = Code.fromString(dataECC)
 }
 
 case object L2ParamKey extends Field[L2Param](L2Param())

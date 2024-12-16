@@ -103,6 +103,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   mainPipe.io.fromMSHRCtl <> mshrCtl.io.toMainPipe
   mainPipe.io.bufResp <> sinkC.io.bufResp
   mainPipe.io.toDS.rdata_s5 := dataStorage.io.rdata
+  mainPipe.io.toDS.error_s5 := dataStorage.io.error
   mainPipe.io.refillBufResp_s3.valid := RegNext(refillBuf.io.r.valid, false.B)
   mainPipe.io.refillBufResp_s3.bits := refillBuf.io.resp.data
   mainPipe.io.releaseBufResp_s3.valid := RegNext(releaseBuf.io.r.valid, false.B)
@@ -160,9 +161,8 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   sinkC.io.c <> inBuf.c(io.in.c)
   io.in.d <> inBuf.d(grantBuf.io.d)
   grantBuf.io.e <> inBuf.e(io.in.e)
-  io.cmoReq.ready := false.B
-  io.cmoResp.valid := false.B
-  io.cmoResp.bits := 0.U.asTypeOf(new CMOResp)
+  io.error.valid := mainPipe.io.error.valid
+  io.error.bits := mainPipe.io.error.bits
 
   /* connect downward channels */
   io.out.a <> outBuf.a(mshrCtl.io.sourceA)

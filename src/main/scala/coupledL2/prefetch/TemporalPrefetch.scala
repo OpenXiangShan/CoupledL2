@@ -12,6 +12,17 @@
   * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
   *
   * See the Mulan PSL v2 for more details.
+  *
+  *
+  * Acknowledgement
+  *
+  * This implementation is inspired by several key papers:
+  * [1] Hao Wu, Krishnendra Nathella, Joseph Pusdesris, Dam Sunwoo, Akanksha Jain, and Calvin Lin. "[Temporal
+  * Prefetching Without the Off-Chip Metadata.](https://doi.org/10.1145/3352460.3358300)" 52nd Annual IEEE/ACM
+  * International Symposium on Microarchitecture (MICRO). 2019.
+  * [2] Sam Ainsworth, and Lev Mukhanov. "[Triangel: A High-Performance, Accurate, Timely On-Chip Temporal Prefetcher.]
+  * (https://doi.org/10.1109/ISCA59077.2024.00090)" ACM/IEEE 51st Annual International Symposium on Computer
+  * Architecture (ISCA). 2024.
   * *************************************************************************************
   */
 
@@ -143,7 +154,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   val hartid = cacheParams.hartId
   // 0 / 1: whether to enable temporal prefetcher
-  private val enableTP = Constantin.createRecord("enableTP"+hartid.toString, initValue = 1)
+  private val enableTP = Constantin.createRecord("tp_enable"+hartid.toString, initValue = 1)
   // 0 ~ N: throttle cycles for each prefetch request
   private val tpThrottleCycles = Constantin.createRecord("tp_throttleCycles"+hartid.toString, initValue = 4)
   // 0 / 1: whether request to set as trigger on meta hit

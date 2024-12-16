@@ -13,7 +13,7 @@ import coupledL2.tl2chi._
 import utility._
 import scala.collection.mutable.ArrayBuffer
 
-class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue: String = "B")(implicit p: Parameters) extends LazyModule
+class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(implicit p: Parameters) extends LazyModule
   with HasCHIMsgParameters {
 
   /*   L1D(L1I)* L1D(L1I)* ... L1D(L1I)*
@@ -48,14 +48,14 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, iss
     masterNode
   }
 
-  val l1d_nodes = (0 until numCores).map(i => createClientNode(s"l1d$i", 32))
+  val l1d_nodes = (0 until numCores).map(i => createClientNode(s"l1d$i", 64))
   val l1i_nodes = (0 until numCores).map {i =>
     (0 until numULAgents).map { j =>
       TLClientNode(Seq(
         TLMasterPortParameters.v1(
           clients = Seq(TLMasterParameters.v1(
             name = s"l1i${i}_${j}",
-            sourceId = IdRange(0, 32)
+            sourceId = IdRange(0, 64)
           ))
         )
       ))
@@ -68,8 +68,8 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, iss
       name                = s"L2_$i",
       hartId              = i,
     )
-    case EnableCHI => true
-    case CHIIssue => issue
+    case CHIIssue => p(CHIIssue)
+    case EnableCHI => p(EnableCHI)
     case BankBitsKey => log2Ceil(banks)
     case MaxHartIdBits => log2Up(numCores)
     case LogUtilsOptionsKey => LogUtilsOptions(
@@ -86,7 +86,7 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, iss
 
   val bankBinders = (0 until numCores).map(_ => BankBinder(banks, 64))
 
-  l1d_nodes.zip(l2_nodes).zipWithIndex.foreach { case ((l1d, l2), i) =>
+  val mmio_nodes = l1d_nodes.zip(l2_nodes).zipWithIndex.map { case ((l1d, l2), i) =>
     val l1xbar = TLXbar()
     l1xbar := 
       TLBuffer() :=
@@ -99,23 +99,24 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, iss
         TLLogger(s"L2_L1[${i}].UL[${j}]", !cacheParams.FPGAPlatform && cacheParams.enableTLLog) :=
         l1i
     }
-    
+
     l2.managerNode :=
       TLXbar() :=*
       bankBinders(i) :*=
       l2.node :*=
       l1xbar
-    /**
-      * MMIO: make diplomacy happy
-      */
+
     val mmioClientNode = TLClientNode(Seq(
       TLMasterPortParameters.v1(
         clients = Seq(TLMasterParameters.v1(
-          "uncache"
+          name = "uncache",
+          sourceId = IdRange(0, 16)
         ))
       )
     ))
     l2.mmioBridge.mmioNode := mmioClientNode
+
+    mmioClientNode
   }
 
   lazy val module = new LazyModuleImp(this){
@@ -141,14 +142,20 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, iss
       }
     }
 
+    mmio_nodes.zipWithIndex.foreach {
+      case (node, i) =>
+        node.makeIOs()(ValName(s"mmio_port_$i"))
+    }
+
     val io = IO(Vec(numCores, new Bundle() {
-      val chi = new PortIO()(p.alterPartial { case CHIIssue => issue })
+      val chi = new PortIO
+      val nodeId = Input(UInt(NODEID_WIDTH.W))
     }))
 
     l2_nodes.zipWithIndex.foreach { case (l2, i) =>
 
       if (!cacheParams.FPGAPlatform && cacheParams.enableCHILog) {
-        val chilogger = CHILogger(s"L3_L2[${i}]", issue, true)
+        val chilogger = CHILogger(s"L3_L2[${i}]", true)
         chilogger.io.up <> l2.module.io_chi
         chilogger.io.down <> io(i).chi
       }
@@ -159,7 +166,7 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, iss
       dontTouch(l2.module.io)
 
       l2.module.io.hartId := i.U
-      l2.module.io_nodeID := (i + 1).U
+      l2.module.io_nodeID := io(i).nodeId
       l2.module.io.debugTopDown := DontCare
       l2.module.io.l2_tlb_req <> DontCare
     }
@@ -169,6 +176,7 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, iss
 
 object TestTopCHIHelper {
   def gen(fTop: Parameters => TestTop_CHIL2,
+          issue: String,
           onFPGAPlatform: Boolean,
           enableChiselDB: Boolean,
           enableTLLog: Boolean,
@@ -194,6 +202,8 @@ object TestTopCHIHelper {
         // using external RN-F SAM
         sam                 = Seq(AddressSet.everything -> 0)
       )
+      case CHIIssue => issue
+      case EnableCHI => true
     })
 
     ChiselDB.init(enableChiselDB)
@@ -265,8 +275,8 @@ Usage: TestTop_CHIL2 [<--option> <values>]
     p => new TestTop_CHIL2(
       numCores,
       numULAgents,
-      numBanks,
-      issue)(p), 
+      numBanks)(p), 
+    issue,
     onFPGAPlatform,
     enableChiselDB,
     enableTLLog,

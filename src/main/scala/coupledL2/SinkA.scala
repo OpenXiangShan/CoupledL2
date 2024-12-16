@@ -33,7 +33,9 @@ class SinkA(implicit p: Parameters) extends L2Module {
     val prefetchReq = prefetchOpt.map(_ => Flipped(DecoupledIO(new PrefetchReq)))
     val task = DecoupledIO(new TaskBundle)
   })
-  assert(!(io.a.valid && io.a.bits.opcode(2, 1) === 0.U), "no Put")
+  assert(!(io.a.valid && (io.a.bits.opcode === PutFullData ||
+                          io.a.bits.opcode === PutPartialData)),
+    "no Put");
 
   def fromTLAtoTaskBundle(a: TLBundleA): TaskBundle = {
     val task = Wire(new TaskBundle)
@@ -48,6 +50,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.param := a.param
     task.size := a.size
     task.sourceId := a.source
+    task.corrupt := a.corrupt
     task.bufIdx := 0.U(bufIdxBits.W)
     task.needProbeAckData := false.B
     task.mshrTask := false.B
@@ -86,6 +89,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.param := Mux(req.needT, PREFETCH_WRITE, PREFETCH_READ)
     task.size := offsetBits.U
     task.sourceId := req.source
+    task.corrupt := false.B
     task.bufIdx := 0.U(bufIdxBits.W)
     task.needProbeAckData := false.B
     task.mshrTask := false.B
@@ -129,7 +133,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
   // Performance counters
   // num of reqs
   XSPerfAccumulate("sinkA_req", io.task.fire)
-  XSPerfAccumulate("sinkA_acquire_req", io.a.fire && io.a.bits.opcode(2, 1) === AcquireBlock(2, 1))
+  XSPerfAccumulate("sinkA_acquire_req", io.a.fire && (io.a.bits.opcode === AcquirePerm || io.a.bits.opcode === AcquireBlock))
   XSPerfAccumulate("sinkA_acquireblock_req", io.a.fire && io.a.bits.opcode === AcquireBlock)
   XSPerfAccumulate("sinkA_acquireperm_req", io.a.fire && io.a.bits.opcode === AcquirePerm)
   XSPerfAccumulate("sinkA_get_req", io.a.fire && io.a.bits.opcode === Get)

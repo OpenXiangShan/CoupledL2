@@ -19,8 +19,8 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import coupledL2.utils.{HoldUnless, SRAMTemplate, SplittedSRAM}
-import utility.ClockGate
+import coupledL2.utils.{HoldUnless, SplittedSRAM}
+import utility.{ClockGate, SRAMTemplate}
 import org.chipsalliance.cde.config.Parameters
 
 class DSRequest(implicit p: Parameters) extends L2Bundle {
@@ -38,11 +38,31 @@ class DSBlock(implicit p: Parameters) extends L2Bundle {
   val data = UInt((blockBytes * 8).W)
 }
 
+class DSECCBlock(implicit p: Parameters) extends L2Bundle {
+  val data = if (enableDataECC) {
+    UInt(encDataPaddingBits.W)
+  } else {
+    UInt((blockBytes * 8).W)
+  }
+}
+
+class DSECCBankBlock(implicit p: Parameters) extends L2Bundle {
+  val data = if (enableDataECC) {
+    UInt((encDataBankBits * 4).W)
+  } else {
+    UInt((blockBytes * 8).W)
+  }
+}
+
+
 class DataStorage(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     // en is the actual r/w valid from mainpipe (last for one cycle)
     // en is used to generate gated_clock for SRAM
     val en = Input(Bool())
+
+    // ECC error
+    val error = Output(Bool())
 
     // 1. there is only 1 read or write request in the same cycle,
     // so only 1 req port is necessary
@@ -55,7 +75,7 @@ class DataStorage(implicit p: Parameters) extends L2Module {
 
   // read data is set MultiCycle Path 2
   val array = Module(new SplittedSRAM(
-    gen = new DSBlock,
+    gen = new DSECCBankBlock,
     set = blocks,
     way = 1,
     dataSplit = 4,
@@ -70,14 +90,44 @@ class DataStorage(implicit p: Parameters) extends L2Module {
   val wen = io.req.valid && io.req.bits.wen
   val ren = io.req.valid && !io.req.bits.wen
 
+  val arrayWrite = Wire(new DSECCBankBlock)
+  val arrayWriteData = if (enableDataECC) {
+    // cacheParams.dataCode.encode(io.wdata.data).pad(encDataPaddingBits)
+    Cat(VecInit(Seq.tabulate(4)(i => io.wdata.data((blockBytes * 2) * (i + 1) - 1, (blockBytes * 2) * i))).map(data => cacheParams.dataCode.encode(data)))
+  } else {
+    io.wdata.data
+  }
+  arrayWrite.data := arrayWriteData
+
+  val arrayRead = array.io.r.resp.data(0)
+  val dataRead = Wire(new DSBlock)
+  // dataRead.data := arrayRead.data(blockBytes * 8 - 1, 0)
+  val bankDataRead = if (enableDataECC) {
+    Cat(VecInit(Seq.tabulate(eccDataBankSplit)(i => arrayRead.data(encDataBankBits * (i + 1) - 1, encDataBankBits * i)(blockBytes * 2 - 1, 0))))
+  } else {
+    arrayRead.data
+  }
+  dataRead.data := bankDataRead
+
   // make sure SRAM input signals will not change during the two cycles
   // TODO: This check is done elsewhere
-  array.io.w.apply(wen, io.wdata, arrayIdx, 1.U)
+  array.io.w.apply(wen, arrayWrite, arrayIdx, 1.U)
   array.io.r.apply(ren, arrayIdx)
+
+
+  //  val eccData = arrayRead.data(encDataBits - 1, 0)
+  val error = if (enableDataECC) {
+    // cacheParams.dataCode.decode(eccData).error && RegNext(RegNext(io.req.valid && !io.req.bits.wen))
+    VecInit(Seq.tabulate(eccDataBankSplit)(i => arrayRead.data(encDataBankBits * (i + 1) - 1, encDataBankBits * i))).
+      map(data => cacheParams.dataCode.decode(data).error).reduce(_ | _) && RegNext(RegNext(io.req.valid && !io.req.bits.wen))
+  } else {
+    false.B
+  }
 
   // for timing, we set this as multicycle path
   // s3 read, s4 pass and s5 to destination
-  io.rdata := array.io.r.resp.data(0)
+  io.rdata := dataRead
+  io.error := error
 
   assert(!io.en || !RegNext(io.en, false.B),
     "Continuous SRAM req prohibited under MCP2!")

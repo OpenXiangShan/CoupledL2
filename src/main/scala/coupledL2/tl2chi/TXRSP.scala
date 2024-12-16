@@ -88,6 +88,7 @@ class TXRSP(implicit p: Parameters) extends TL2CHIL2Module {
     rsp.opcode := task.chiOpcode.get
     rsp.resp := task.resp.get
     rsp.fwdState := task.fwdState.get
+    rsp.traceTag := task.traceTag.get
     // TODO: Finish this
     rsp
   }

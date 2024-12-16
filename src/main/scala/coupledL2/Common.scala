@@ -65,7 +65,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val vaddr = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W)) // vaddr passed by client cache
   // from L1 load miss require 
   val isKeyword = isKeywordBitsOpt.map(_ => Bool())
-  val opcode = UInt(3.W)                  // type of the task operation
+  val opcode = UInt(4.W)                  // type of the task operation
   val param = UInt(3.W)
   val size = UInt(msgSizeBits.W)
   val sourceId = UInt(sourceIdBits.W)     // tilelink sourceID
@@ -80,9 +80,6 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val aliasTask = aliasBitsOpt.map(_ => Bool()) // Anti-alias
   val useProbeData = Bool()               // data source, true for ReleaseBuf and false for RefillBuf
   val mshrRetry = Bool()                  // is retry task for mshr conflict
-
-  // For CMO request
-  val cmoTask = Bool()
 
   // For Intent
   val fromL2pft = prefetchOpt.map(_ => Bool()) // Is the prefetch req from L2(BOP) or from L1 prefetch?
@@ -106,6 +103,9 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   // for Release to read refillBuf and write to DS
   val replTask = Bool()
 
+  // for CMO
+  val cmoTask = Bool()
+
   // for TopDown Monitor (# TopDown)
   val reqSource = UInt(MemReqSource.reqSourceBits.W)
 
@@ -117,6 +117,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
 
   // Used for get data from ReleaseBuf when snoop hit with same PA 
   val snpHitRelease = Bool()
+  val snpHitReleaseToB = Bool()
   val snpHitReleaseWithData = Bool()
   val snpHitReleaseIdx = UInt(mshrBits.W) 
   // CHI
@@ -135,6 +136,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val expCompAck = chiOpt.map(_ => Bool())
   val allowRetry = chiOpt.map(_ => Bool())
   val memAttr = chiOpt.map(_ => new MemAttr)
+  val traceTag = chiOpt.map(_ => Bool())
 
   def toCHIREQBundle(): CHIREQ = {
     val req = WireInit(0.U.asTypeOf(new CHIREQ()))
@@ -206,12 +208,17 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle with HasTLChannelBits {
   val mergeA = Bool() // whether the mshr already merge an acquire(avoid alias merge)
 
   val w_grantfirst = Bool()
+  val s_release = Bool()
   val s_refill = Bool()
+  val s_cmoresp = Bool()
   val w_releaseack = Bool()
   val w_replResp = Bool()
   val w_rprobeacklast = Bool()
 
   val replaceData = Bool() // If there is a replace, WriteBackFull or Evict
+
+  // exclude Release toB for nested snoop of releases
+  val releaseToB = Bool()
 }
 
 class RespInfoBundle(implicit p: Parameters) extends L2Bundle
@@ -222,6 +229,7 @@ class RespInfoBundle(implicit p: Parameters) extends L2Bundle
   val last = Bool() // last beat
   val dirty = Bool() // only used for sinkD resps
   val isHit = Bool() // only used for sinkD resps
+  val corrupt = Bool()
  //CHI
   val chiOpcode = chiOpt.map(_ => UInt(OPCODE_WIDTH.W))
   val txnID = chiOpt.map(_ => UInt(TXNID_WIDTH.W))
@@ -231,6 +239,7 @@ class RespInfoBundle(implicit p: Parameters) extends L2Bundle
   val resp = chiOpt.map(_ => UInt(RESP_WIDTH.W))
   val pCrdType = chiOpt.map(_ => UInt(PCRDTYPE_WIDTH.W))
   val respErr = chiOpt.map(_ => UInt(RESPERR_WIDTH.W))
+  val traceTag = chiOpt.map(_ => Bool())
 }
 
 class RespBundle(implicit p: Parameters) extends L2Bundle {
@@ -252,7 +261,7 @@ class FSMState(implicit p: Parameters) extends L2Bundle {
   // val s_grantack = Bool() // respond grantack downwards, moved to GrantBuf
   // val s_triggerprefetch = prefetchOpt.map(_ => Bool())
   val s_retry = Bool()    // need retry when conflict
-  val s_cmoresp = Bool()  // resp upwards for finishing cmo inst
+  val s_cmoresp = Bool()  // resp upwards for finishing CMO transactions
 
   // wait
   val w_rprobeackfirst = Bool()
@@ -326,16 +335,6 @@ class L2ToL1Hint(implicit p: Parameters) extends Bundle {
   val isKeyword = Bool()       // miss entry keyword
 }
 
-// custom l2 - l1 CMO inst req
-class CMOReq(implicit p: Parameters) extends Bundle {
-  val opcode = UInt(3.W)   // 0-cbo.clean, 1-cbo.flush, 2-cbo.inval, 3-cbo.zero
-  val address = UInt(64.W)
-}
-// custom l2 - l1 CMO inst resp(ack)
-class CMOResp(implicit p: Parameters) extends Bundle {
-  val address = UInt(64.W)
-}
-
 // custom l2 - l1 tlb
 // FIXME lyq: Tlbcmd and TlbExceptionBundle, how to use L1 corresponding bundles?
 object TlbCmd {
@@ -373,7 +372,7 @@ class TlbExceptionBundle extends Bundle {
   val instr = Output(Bool())
 }
 class L2TlbReq(implicit p: Parameters) extends L2Bundle{
-  val vaddr = Output(UInt((fullVAddrBits+offsetBits).W))
+  val vaddr = Output(UInt((fullVAddrBits).W))
   val cmd = Output(TlbCmd())
   val isPrefetch = Output(Bool())
   val size = Output(UInt(log2Ceil(log2Ceil(XLEN/8) + 1).W))
@@ -430,4 +429,9 @@ class PCrdGrantMatcher(val numPorts: Int) extends Module {
     p.srcID === io.rxrsp.bits.srcID &&
     p.pCrdType === io.rxrsp.bits.pCrdType
   }).asUInt
+}
+
+class L2CacheErrorInfo(implicit p: Parameters) extends L2Bundle {
+  val valid = Bool()
+  val address = UInt(addressBits.W)
 }

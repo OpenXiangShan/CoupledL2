@@ -167,14 +167,14 @@ object CHICohStateFwdedTransSet {
   def isValid(set: CHICohStateFwdedTransSet, channel: UInt, opcode: UInt, resp: UInt, fwdState: UInt): Bool =
     channel =/= set.channel() || opcode =/= set.opcode || VecInit(set.set.map(t => t.resp() === resp && t.fwdState() === fwdState)).asUInt.orR
   
-  def ofSnpResp(opcode: UInt) = new CHICohStateFwdedTransSet(() => CHIChannel.TXRSP, opcode, Seq(
+  def ofSnpRespFwded(opcode: UInt) = new CHICohStateFwdedTransSet(() => CHIChannel.TXRSP, opcode, Seq(
     SnpResp_I_Fwded_I, SnpResp_I_Fwded_SC, SnpResp_I_Fwded_UC,
     SnpResp_I_Fwded_UD_PD, SnpResp_I_Fwded_SD_PD,
     SnpResp_SC_Fwded_I, SnpResp_SC_Fwded_SC, SnpResp_SC_Fwded_SD_PD,
     SnpResp_UC_UD_Fwded_I,
     SnpResp_SD_Fwded_I, SnpResp_SD_Fwded_SC
   ))
-  def ofSnpRespData(opcode: UInt)  = new CHICohStateFwdedTransSet(() => CHIChannel.TXDAT, opcode, Seq(
+  def ofSnpRespDataFwded(opcode: UInt)  = new CHICohStateFwdedTransSet(() => CHIChannel.TXDAT, opcode, Seq(
     SnpRespData_I_Fwded_SC, SnpRespData_I_Fwded_SD_PD,
     SnpRespData_SC_Fwded_SC, SnpRespData_SC_Fwded_SD_PD,
     SnpRespData_SD_Fwded_SC,
@@ -300,6 +300,7 @@ trait HasCHIMsgParameters {
   def BE_WIDTH = DATA_WIDTH / 8
   def DATA_WIDTH = 256
   def DATACHECK_WIDTH = DATA_WIDTH / 8
+  def POISON_WIDTH = DATA_WIDTH / 64
   def TAG_WIDTH = DATA_WIDTH / 32
   def TAG_UPDATE_WIDTH = DATA_WIDTH / 128
 
@@ -452,6 +453,9 @@ class CHIDAT(implicit p: Parameters) extends CHIBundle {
   val rsvdc = UInt(DAT_RSVDC_WIDTH.W)
   val be = UInt(BE_WIDTH.W)
   val data = UInt(DATA_WIDTH.W)
+
+  val dataCheck = UInt(DATACHECK_WIDTH.W)
+  val poision = UInt(POISON_WIDTH.W)
 
   /* MSB */
 }

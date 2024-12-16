@@ -114,6 +114,9 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     s.valid && addrConflict(a, s.bits) && !s.bits.willFree)).asUInt
   def conflict(a: TaskBundle): Bool = conflictMask(a).orR
 
+  def conflictMaskFromA(a: TaskBundle): UInt =
+    conflictMask(a) & VecInit(io.mshrInfo.map(_.bits.fromA)).asUInt
+
   def latePrefetch(a: TaskBundle): Bool = VecInit(io.mshrInfo.map(s =>
     s.valid && s.bits.isPrefetch && sameAddr(a, s.bits) && !s.bits.willFree &&
     a.fromA && (a.opcode === AcquireBlock || a.opcode === AcquirePerm)
@@ -133,6 +136,12 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   // other flags
   val in      = io.in.bits
   val full    = Cat(buffer.map(_.valid)).andR
+
+  //
+  val mshrConflictMask = conflictMask(in)
+  val mshrConflictMaskFromA = conflictMaskFromA(in)
+  dontTouch(mshrConflictMask)
+  dontTouch(mshrConflictMaskFromA)
 
   // incoming Acquire can be merged with late_pf MSHR block
   val mergeAMask = VecInit(io.mshrInfo.map(s =>
@@ -204,7 +213,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     entry.waitMS  := conflictMask(in)
 
 //    entry.depMask := depMask
-    assert(PopCount(conflictMask(in)) <= 2.U)
+    assert(PopCount(conflictMaskFromA(in)) <= 2.U)
   }
 
   /* ======== Issue ======== */
