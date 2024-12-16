@@ -74,6 +74,8 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   //          by the HN (Home Node) on bus with Endpoint Ordering.
   val bufferableNC = true
 
+  require(!bufferableNC || needRR , "DO NOT set 'bufferableNC = true' when 'needRR = false'")
+
   val io = IO(new Bundle() {
     val req = Flipped(DecoupledIO(new TLBundleA(edge.bundle)))
     val resp = DecoupledIO(new TLBundleD(edge.bundle))
