@@ -48,7 +48,7 @@ case class L1Param
 
 // Pass uncached memory attribute from PBMT to MMIOBridge
 case object MemTypeNC extends ControlKey[Bool]("memType_NC")
-case class MemTypeNCField() extends BundleField[Bool](MemTypeNC, Output(Bool()), _ := true.B)
+case class MemTypeNCField() extends BundleField[Bool](MemTypeNC, Output(Bool()), _ := false.B)
 
 // Pass virtual address of upper level cache
 case object VaddrKey extends ControlKey[UInt]("vaddr")
