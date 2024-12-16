@@ -1,5 +1,2 @@
-*       @Ivyfeather @linjuanZ
-src/main/scala/coupledL2/Directory.scala @cailuoshan @linjuanZ
-src/main/scala/coupledL2/utils/ @cailuoshan @linjuanZ
-src/main/scala/coupledL2/prefetch/ @Maxpicca-Li
-src/test/scala/ @Kumonda221-CrO3
+*       @Ivyfeather @Kumonda221-CrO3 @linjuanZ
+src/main/scala/coupledL2/prefetch/ @Maxpicca-Li @linjuanZ
