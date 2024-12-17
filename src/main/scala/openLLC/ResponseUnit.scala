@@ -265,8 +265,7 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes 
   }
 
   /* Issue */
-  val isRead = buffer.map(e => e.task.chiOpcode === ReadUnique || e.task.chiOpcode === ReadNotSharedDirty ||
-    e.task.chiOpcode === ReadNoSnp)
+  val isRead = buffer.map(e => e.task.chiOpcode === ReadUnique || e.task.chiOpcode === ReadNotSharedDirty)
   txdatArb.io.in.zip(buffer).zip(isRead).foreach { case ((in, e), r) =>
     in.valid := e.valid && e.state.w_datRsp && e.state.w_snpRsp && e.state.s_urgentRead && !e.state.s_comp && r
     in.bits.task := e.task
