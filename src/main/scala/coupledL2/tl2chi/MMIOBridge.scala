@@ -26,6 +26,7 @@ import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.HasCoupledL2Parameters
+import coupledL2.{MemBackTypeMM, MemPageTypeNC}
 
 class MMIOBridge()(implicit p: Parameters) extends LazyModule
   with HasCoupledL2Parameters
@@ -49,7 +50,8 @@ class MMIOBridge()(implicit p: Parameters) extends LazyModule
       supportsPutFull = TransferSizes(1, 8),
       supportsPutPartial = TransferSizes(1, 8)
     )),
-    beatBytes = 8
+    beatBytes = 8,
+    requestKeys = Seq(MemBackTypeMM, MemPageTypeNC)
   )))
 
   lazy val module = new MMIOBridgeImp(this)
@@ -59,7 +61,20 @@ class MMIOBridge()(implicit p: Parameters) extends LazyModule
 class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
 
   val needRR = true
-  val order = WireInit(if (needRR) OrderEncodings.EndpointOrder else OrderEncodings.None)
+
+  // *NOTICE: DO NOT set 'bufferableNC = true' when 'needRR = false', 
+  //          since the ordering between NC and IO described in SvPBMT was maintained by 'fence iorw, iorw'.
+  //          And alias with NC and IO must not cause loss of coherency due to SvPBMT, which was NOT guaranteed
+  //          by CHI specification in which case obtaining different EWA from different agents.
+  //
+  //          1) For Memory backend, the observability of possible weakly-ordered intermediate states were determined
+  //          by the core (the processor pipeline, store buffer, etc.) because there is no ordering guarantee from HN.
+  //
+  //          2) For Device backend, the observability of possible weakly-ordered intermediate states were determined
+  //          by the HN (Home Node) on bus with Endpoint Ordering.
+  val bufferableNC = true
+
+  require(!bufferableNC || needRR , "DO NOT set 'bufferableNC = true' when 'needRR = false'")
 
   val io = IO(new Bundle() {
     val req = Flipped(DecoupledIO(new TLBundleA(edge.bundle)))
@@ -95,6 +110,8 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   val corrupt = Reg(Bool())
   val traceTag = Reg(Bool())
   val isRead = req.opcode === Get
+  val isBackTypeMM = req.user.lift(MemBackTypeMM).getOrElse(false.B)
+  val isPageTypeNC = req.user.lift(MemPageTypeNC).getOrElse(false.B)
 
   val wordBits = io.req.bits.data.getWidth // 64
   val wordBytes = wordBits / 8
@@ -197,10 +214,33 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   txreq.bits.size := req.size
   txreq.bits.addr := req.address
   txreq.bits.allowRetry := allowRetry
-  txreq.bits.order := order
   txreq.bits.pCrdType := Mux(allowRetry, 0.U, pCrdType)
-  txreq.bits.memAttr := MemAttr(allocate = false.B, cacheable = false.B, device = true.B, ewa = false.B)
   txreq.bits.expCompAck := false.B
+  // *Ordering and MemAttr: 
+  // ---------------------------------------------------------
+  // [when 'bufferableNC' configured to false]
+  //    PMA = MM   , PBMT = NC -> Non-cacheable Non-bufferable
+  //    PMA = MM   , PBMT = IO -> Non-cacheable Non-bufferable
+  //    PMA = NC/IO, PBMT = NC -> Device nRnE (no reorder, no early acknowlegment)
+  //    PMA = NC/IO, PBMT = IO -> Device nRnE (no reorder, no early acknowlegment)
+  // ---------------------------------------------------------
+  // [when 'bufferableNC' configured to true]
+  //    PMA = MM   , PBMT = NC -> Non-cacheable Bufferable
+  //    PMA = MM   , PBMT = IO -> Non-cacheable Bufferable
+  //    PMA = NC/IO, PBMT = NC -> Device nRE  (no reorder, early acknowlegment)
+  //    PMA = NC/IO, PBMT = IO -> Device nRnE (no reorder, no early acknowlegment)
+  txreq.bits.order := {
+    if (needRR) 
+      Mux(!isBackTypeMM, OrderEncodings.EndpointOrder, OrderEncodings.RequestOrder)
+    else 
+      OrderEncodings.None
+  }
+  txreq.bits.memAttr := MemAttr(
+    allocate = false.B,
+    cacheable = false.B,
+    device = !isBackTypeMM,
+    ewa = if (bufferableNC) (isPageTypeNC || isBackTypeMM) else false.B
+  )
 
   io.resp.valid := !s_resp && Mux(isRead, w_compdata, w_comp && w_dbidresp && s_ncbwrdata)
   io.resp.bits.opcode := Mux(isRead, AccessAckData, AccessAck)
