@@ -254,6 +254,8 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         rxrsp <> linkMonitor.io.in.rx.rsp
         rxdat <> linkMonitor.io.in.rx.dat
         io_chi <> linkMonitor.io.out
+        //all slices flush done -> exit coherency
+        io_chi.syscoreq <> !Cat(slices.zipWithIndex.map { case (s, i) => s.io.l2FlushDone}).andR
         linkMonitor.io.nodeID := io_nodeID
     }
   }

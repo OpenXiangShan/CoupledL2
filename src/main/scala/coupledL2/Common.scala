@@ -105,6 +105,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
 
   // for CMO
   val cmoTask = Bool()
+  val cmoAll = Bool()
 
   // for TopDown Monitor (# TopDown)
   val reqSource = UInt(MemReqSource.reqSourceBits.W)
@@ -434,4 +435,14 @@ class PCrdGrantMatcher(val numPorts: Int) extends Module {
 class L2CacheErrorInfo(implicit p: Parameters) extends L2Bundle {
   val valid = Bool()
   val address = UInt(addressBits.W)
+}
+
+class IOCMOAll(implicit p: Parameters) extends Bundle {
+  val l2Flush = Input(Bool())
+  val l2FlushDone = Output(Bool())
+
+  val cmoLineDone = Input(Bool())
+  val mshrValid = Input(Bool())
+  val cmoAllWait = Output(Bool())
+  val cmoAllBlock = Output(Bool())
 }

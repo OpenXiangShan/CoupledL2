@@ -32,10 +32,21 @@ class SinkA(implicit p: Parameters) extends L2Module {
     val a = Flipped(DecoupledIO(new TLBundleA(edgeIn.bundle)))
     val prefetchReq = prefetchOpt.map(_ => Flipped(DecoupledIO(new PrefetchReq)))
     val task = DecoupledIO(new TaskBundle)
+    val cmoAll = new IOCMOAll 
   })
   assert(!(io.a.valid && (io.a.bits.opcode === PutFullData ||
                           io.a.bits.opcode === PutPartialData)),
     "no Put");
+
+  // flush L2 all control defines
+  val numSets = 1 << setBits 
+  val numWays = 1 << wayBits
+  val set = RegInit(0.U(setBits.W))
+  val way = RegInit(0.U(wayBits.W)) 
+  val sIDLE :: sCMOREQ :: sWAITLINE :: sDONE :: Nil = Enum(4)
+  val state = RegInit(sIDLE)
+  val cmoAllValid = (state ===sCMOREQ)
+  val cmoAllBlock = (state ===sCMOREQ) || (state === sWAITLINE)
 
   def fromTLAtoTaskBundle(a: TLBundleA): TaskBundle = {
     val task = Wire(new TaskBundle)
@@ -43,10 +54,10 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.channel := "b001".U
     task.txChannel := 0.U
     task.tag := parseAddress(a.address)._1
-    task.set := parseAddress(a.address)._2
+    task.set := Mux(cmoAllValid, set, parseAddress(a.address)._2)
     task.off := parseAddress(a.address)._3
     task.alias.foreach(_ := a.user.lift(AliasKey).getOrElse(0.U))
-    task.opcode := a.opcode
+    task.opcode := Mux(cmoAllValid, 13.U, a.opcode)
     task.param := a.param
     task.size := a.size
     task.sourceId := a.source
@@ -61,7 +72,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.fromL2pft.foreach(_ := false.B)
     task.needHint.foreach(_ := a.user.lift(PrefetchKey).getOrElse(false.B))
     task.dirty := false.B
-    task.way := 0.U(wayBits.W)
+    task.way := Mux(cmoAllValid, way, 0.U(wayBits.W))
     task.meta := 0.U.asTypeOf(new MetaEntry)
     task.metaWen := false.B
     task.tagWen := false.B
@@ -74,6 +85,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.isKeyword.foreach(_ := a.echo.lift(IsKeywordKey).getOrElse(false.B))
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+    task.cmoAll := cmoAllValid
     task
   }
   def fromPrefetchReqtoTaskBundle(req: PrefetchReq): TaskBundle = {
@@ -115,20 +127,65 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task
   }
   if (prefetchOpt.nonEmpty) {
-    io.task.valid := io.a.valid || io.prefetchReq.get.valid
+    io.task.valid := io.a.valid && !io.cmoAll.cmoAllBlock || io.prefetchReq.get.valid || cmoAllValid
     io.task.bits := Mux(
-      io.a.valid,
+      io.a.valid || cmoAllValid,
       fromTLAtoTaskBundle(io.a.bits),
       fromPrefetchReqtoTaskBundle(io.prefetchReq.get.bits
     ))
 
-    io.a.ready := io.task.ready
+    io.a.ready := io.task.ready && !io.cmoAll.cmoAllBlock
     io.prefetchReq.get.ready := io.task.ready && !io.a.valid
   } else {
-    io.task.valid := io.a.valid
+    io.task.valid := io.a.valid && !io.cmoAll.cmoAllBlock || cmoAllValid
     io.task.bits := fromTLAtoTaskBundle(io.a.bits)
-    io.a.ready := io.task.ready
+    io.a.ready := io.task.ready && !io.cmoAll.cmoAllBlock
   }
+
+   /*
+    Flush L2 All means search all L2$ VALID cacheLine and RELEASE to Downwords memory:
+   -------------------------------------------------------------------------------------------------------
+          Step in Step                                                   |    Interface 
+   ----------------------------------------------------------------------|--------------------------------
+   0. Core initiate flush L2$ All operation                              |  io.cmoAll.l2Flush 
+   1. wait all mshrs done, block sinkA/B/C by ready until l2 flush done  |  io.cmoAll.cmoAllBlock 
+   2. search all cacheline set with a loop (0 ~ numSets)                 |  io.task.set
+   3. for each set, search all ways with a loop (0 ~ numWays)            |  io.task.way
+   4. if cacheline is VALID, after cmo flush, Mainpipe send back resp    |  io.cmoAll.cmoLineDone
+   5. if cacheline is INVALID, MainPipe drop it and send back resp       |  io.cmoAll.cmoLineDone
+   6. after all slices is flushed, inform Core                           |  io.l2FlushDone 
+   7. after all slices is flushed, exit coherency                        |  TL2CHICoupledL2.io_chi.syscoreq
+   ---------------------------------------------------------------------------------------------------------*/
+  io.cmoAll.l2FlushDone := (state === sDONE)
+  io.cmoAll.cmoAllWait := (state === sWAITLINE)
+  io.cmoAll.cmoAllBlock := cmoAllBlock
+  dontTouch(io.cmoAll.l2FlushDone)
+  dontTouch(io.cmoAll.cmoAllWait)
+
+  val counter = RegInit(0.U(32.W))
+  counter := counter+1.U
+  val l2Flush = counter > 180000.U
+
+  when (state === sIDLE && l2Flush && !io.cmoAll.mshrValid) {
+    state := sCMOREQ
+  }
+  when ((state === sCMOREQ) && io.task.fire) {
+    state := sWAITLINE
+  }
+  when (state === sWAITLINE && (io.cmoAll.cmoLineDone)) {
+    when (set===(numSets-1).U && way===(numWays-1).U) { 
+      state := sDONE
+    }.otherwise {
+      when(way ===(numWays -1).U) {
+        way:=0.U
+        set:=set+1.U
+      }.otherwise {
+        way:=way+1.U
+      }
+      state := sCMOREQ
+    }
+  }
+//  assert(!(io.a.valid && cmoAllBlock), "Has sinkA when l2 flush .....");
 
   // Performance counters
   // num of reqs

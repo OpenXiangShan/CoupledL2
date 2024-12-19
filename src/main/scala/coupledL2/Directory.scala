@@ -75,6 +75,10 @@ class DirRead(implicit p: Parameters) extends L2Bundle {
   // dirRead when refill
   val refill = Bool()
   val mshrId = UInt(mshrBits.W)
+  // when flush l2
+  val cmoAll = Bool()
+  val cmoWay = UInt(wayBits.W) 
+
 }
 
 class DirResult(implicit p: Parameters) extends L2Bundle {
@@ -257,15 +261,14 @@ class Directory(implicit p: Parameters) extends L2Module {
     chosenWay,
     PriorityEncoder(freeWayMask_s3)
   )
-
-  val hit_s3 = Cat(hitVec).orR
-  val way_s3 = Mux(hit_s3, hitWay, finalWay)
+  val hit_s3 = Cat(hitVec).orR || req_s3.cmoAll
+  val way_s3 = Mux(req_s3.cmoAll, req_s3.cmoWay, Mux(hit_s3, hitWay, finalWay))
   val meta_s3 = metaAll_s3(way_s3)
   val tag_s3 = tagAll_s3(way_s3)(tagBits - 1, 0)
   val set_s3 = req_s3.set
   val replacerInfo_s3 = req_s3.replacerInfo
   val error_s3 = if (enableTagECC) {
-    cacheParams.tagCode.decode(tagAll_s3(way_s3)).error && reqValid_s3 && meta_s3.state =/= MetaData.INVALID
+    cacheParams.tagCode.decode(tagAll_s3(way_s3)).error && reqValid_s3 && !req_s3.cmoAll && meta_s3.state =/= MetaData.INVALID
   } else {
     false.B
   }
