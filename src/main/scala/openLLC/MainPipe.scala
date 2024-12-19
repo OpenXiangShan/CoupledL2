@@ -402,7 +402,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   comp_s4.bits.state.w_datRsp := !(readNotSharedDirty_s4 || readUnique_s4)
   comp_s4.bits.state.w_snpRsp := !Cat(snpVec_comp_s4).orR
   comp_s4.bits.state.w_compack := !(readUnique_s4 || readNotSharedDirty_s4 || makeUnique_s4)
-  comp_s4.bits.state.w_comp := !(cleanInvalid_s4 && self_hit_s4 && selfDirty_s4)
+  comp_s4.bits.state.w_comp := !(cleanReq_s4 && self_hit_s4 && selfDirty_s4)
   comp_s4.bits.task := comp_task_s4
 
   /**  Read/Write request to MemUnit **/
