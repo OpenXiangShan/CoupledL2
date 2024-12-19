@@ -19,12 +19,13 @@ package coupledL2.tl2tl
 
 import chisel3._
 import chisel3.util._
+import coupledL2._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
+import huancun.DirtyKey
+import huancun.IsHitKey
 import org.chipsalliance.cde.config.Parameters
-import coupledL2._
 import utility.XSPerfAccumulate
-import huancun.{DirtyKey, IsHitKey}
 
 class grantAckQEntry(implicit p: Parameters) extends L2Bundle {
   val source = UInt(sourceIdBits.W)
@@ -46,7 +47,7 @@ class RefillUnit(implicit p: Parameters) extends L2Module {
   val hasData = io.sinkD.bits.opcode(0)
   val isGrant = io.sinkD.bits.opcode === Grant || io.sinkD.bits.opcode === GrantData
 
-  val grantAckQ = Module(new Queue(new grantAckQEntry, entries=mshrsAll, pipe=false, flow=false))
+  val grantAckQ = Module(new Queue(new grantAckQEntry, entries = mshrsAll, pipe = false, flow = false))
 
   grantAckQ.io.enq.valid := isGrant && io.sinkD.valid && first
   grantAckQ.io.enq.bits.source := io.sinkD.bits.source
@@ -80,13 +81,16 @@ class RefillUnit(implicit p: Parameters) extends L2Module {
   // count refillData all zero
   // (assume beat0 and beat1 of the same block always come continuously, no intersection)
   val zero = RegInit(true.B)
-  when (io.refillBufWrite.valid) {
-    when (beat === beatSize.U) {
+  when(io.refillBufWrite.valid) {
+    when(beat === beatSize.U) {
       zero := true.B // init as true
-    } .otherwise {
+    }.otherwise {
       zero := zero & io.sinkD.bits.data === 0.U // if beat not 0.U, clear 'zero'
     }
   }
-  XSPerfAccumulate("sinkD_from_L3_zero", io.refillBufWrite.valid && beat === beatSize.U && zero && io.sinkD.bits.data === 0.U)
-  XSPerfAccumulate("sinkD_from_L3_all",  io.refillBufWrite.valid && beat === beatSize.U)
+  XSPerfAccumulate(
+    "sinkD_from_L3_zero",
+    io.refillBufWrite.valid && beat === beatSize.U && zero && io.sinkD.bits.data === 0.U
+  )
+  XSPerfAccumulate("sinkD_from_L3_all", io.refillBufWrite.valid && beat === beatSize.U)
 }

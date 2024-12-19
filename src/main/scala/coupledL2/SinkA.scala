@@ -19,13 +19,15 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import org.chipsalliance.cde.config.Parameters
-import freechips.rocketchip.tilelink._
-import freechips.rocketchip.tilelink.TLMessages._
-import freechips.rocketchip.tilelink.TLHints._
 import coupledL2.prefetch.PrefetchReq
-import huancun.{AliasKey, PrefetchKey}
-import utility.{MemReqSource, XSPerfAccumulate}
+import freechips.rocketchip.tilelink._
+import freechips.rocketchip.tilelink.TLHints._
+import freechips.rocketchip.tilelink.TLMessages._
+import huancun.AliasKey
+import huancun.PrefetchKey
+import org.chipsalliance.cde.config.Parameters
+import utility.MemReqSource
+import utility.XSPerfAccumulate
 
 class SinkA(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
@@ -33,9 +35,11 @@ class SinkA(implicit p: Parameters) extends L2Module {
     val prefetchReq = prefetchOpt.map(_ => Flipped(DecoupledIO(new PrefetchReq)))
     val task = DecoupledIO(new TaskBundle)
   })
-  assert(!(io.a.valid && (io.a.bits.opcode === PutFullData ||
-                          io.a.bits.opcode === PutPartialData)),
-    "no Put");
+  assert(
+    !(io.a.valid && (io.a.bits.opcode === PutFullData ||
+      io.a.bits.opcode === PutPartialData)),
+    "no Put"
+  );
 
   def fromTLAtoTaskBundle(a: TLBundleA): TaskBundle = {
     val task = Wire(new TaskBundle)
@@ -70,7 +74,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.reqSource := a.user.lift(utility.ReqSourceKey).getOrElse(MemReqSource.NoWhere.id.U)
     task.replTask := false.B
     task.vaddr.foreach(_ := a.user.lift(VaddrKey).getOrElse(0.U))
-    //miss acquire keyword
+    // miss acquire keyword
     task.isKeyword.foreach(_ := a.echo.lift(IsKeywordKey).getOrElse(false.B))
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
@@ -119,8 +123,8 @@ class SinkA(implicit p: Parameters) extends L2Module {
     io.task.bits := Mux(
       io.a.valid,
       fromTLAtoTaskBundle(io.a.bits),
-      fromPrefetchReqtoTaskBundle(io.prefetchReq.get.bits
-    ))
+      fromPrefetchReqtoTaskBundle(io.prefetchReq.get.bits)
+    )
 
     io.a.ready := io.task.ready
     io.prefetchReq.get.ready := io.task.ready && !io.a.valid
@@ -133,7 +137,10 @@ class SinkA(implicit p: Parameters) extends L2Module {
   // Performance counters
   // num of reqs
   XSPerfAccumulate("sinkA_req", io.task.fire)
-  XSPerfAccumulate("sinkA_acquire_req", io.a.fire && (io.a.bits.opcode === AcquirePerm || io.a.bits.opcode === AcquireBlock))
+  XSPerfAccumulate(
+    "sinkA_acquire_req",
+    io.a.fire && (io.a.bits.opcode === AcquirePerm || io.a.bits.opcode === AcquireBlock)
+  )
   XSPerfAccumulate("sinkA_acquireblock_req", io.a.fire && io.a.bits.opcode === AcquireBlock)
   XSPerfAccumulate("sinkA_acquireperm_req", io.a.fire && io.a.bits.opcode === AcquirePerm)
   XSPerfAccumulate("sinkA_get_req", io.a.fire && io.a.bits.opcode === Get)
@@ -147,10 +154,18 @@ class SinkA(implicit p: Parameters) extends L2Module {
   // cycels stalled by mainpipe
   val stall = io.task.valid && !io.task.ready
   XSPerfAccumulate("sinkA_stall_by_mainpipe", stall)
-  XSPerfAccumulate("sinkA_acquire_stall_by_mainpipe", stall &&
-    (io.task.bits.opcode === AcquireBlock || io.task.bits.opcode === AcquirePerm))
+  XSPerfAccumulate(
+    "sinkA_acquire_stall_by_mainpipe",
+    stall &&
+      (io.task.bits.opcode === AcquireBlock || io.task.bits.opcode === AcquirePerm)
+  )
   XSPerfAccumulate("sinkA_get_stall_by_mainpipe", stall && io.task.bits.opcode === Get)
-  XSPerfAccumulate("sinkA_put_stall_by_mainpipe", stall &&
-    (io.task.bits.opcode === PutFullData || io.task.bits.opcode === PutPartialData))
-  prefetchOpt.foreach { _ => XSPerfAccumulate("sinkA_prefetch_stall_by_mainpipe", stall && io.task.bits.opcode === Hint) }
+  XSPerfAccumulate(
+    "sinkA_put_stall_by_mainpipe",
+    stall &&
+      (io.task.bits.opcode === PutFullData || io.task.bits.opcode === PutPartialData)
+  )
+  prefetchOpt.foreach { _ =>
+    XSPerfAccumulate("sinkA_prefetch_stall_by_mainpipe", stall && io.task.bits.opcode === Hint)
+  }
 }

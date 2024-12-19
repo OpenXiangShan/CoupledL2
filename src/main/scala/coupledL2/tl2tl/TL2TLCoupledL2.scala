@@ -19,16 +19,21 @@ package coupledL2.tl2tl
 
 import chisel3._
 import chisel3.util._
-import utility.{FastArbiter, Pipeline, ParallelPriorityMux, RegNextN}
+import coupledL2._
+import coupledL2.prefetch._
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.util._
-import org.chipsalliance.cde.config.{Parameters, Field}
+import huancun.TPmetaReq
+import huancun.TPmetaResp
+import org.chipsalliance.cde.config.Field
+import org.chipsalliance.cde.config.Parameters
 import scala.math.max
-import coupledL2._
-import coupledL2.prefetch._
-import huancun.{TPmetaReq, TPmetaResp}
+import utility.FastArbiter
+import utility.ParallelPriorityMux
+import utility.Pipeline
+import utility.RegNextN
 
 class TL2TLCoupledL2(implicit p: Parameters) extends CoupledL2Base {
 

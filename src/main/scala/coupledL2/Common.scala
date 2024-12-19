@@ -19,10 +19,14 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink.TLPermissions._
+import org.chipsalliance.cde.config.Parameters
+import tl2chi.CHIREQ
+import tl2chi.HasCHIChannelBits
+import tl2chi.HasCHIMsgParameters
+import tl2chi.MemAttr
+import tl2chi.OrderEncodings
 import utility.MemReqSource
-import tl2chi.{HasCHIMsgParameters, HasCHIChannelBits, CHIREQ, MemAttr, OrderEncodings}
 
 abstract class L2Module(implicit val p: Parameters) extends Module with HasCoupledL2Parameters
 abstract class L2Bundle(implicit val p: Parameters) extends Bundle with HasCoupledL2Parameters
@@ -63,27 +67,27 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val off = UInt(offsetBits.W)
   val alias = aliasBitsOpt.map(_ => UInt(aliasBitsOpt.get.W)) // color bits in cache-alias issue
   val vaddr = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W)) // vaddr passed by client cache
-  // from L1 load miss require 
+  // from L1 load miss require
   val isKeyword = isKeywordBitsOpt.map(_ => Bool())
-  val opcode = UInt(4.W)                  // type of the task operation
+  val opcode = UInt(4.W) // type of the task operation
   val param = UInt(3.W)
   val size = UInt(msgSizeBits.W)
-  val sourceId = UInt(sourceIdBits.W)     // tilelink sourceID
-  val bufIdx = UInt(bufIdxBits.W)         // idx of SinkC buffer
-  val needProbeAckData = Bool()           // only used for SinkB reqs, whether L3 needs probeAckData
+  val sourceId = UInt(sourceIdBits.W) // tilelink sourceID
+  val bufIdx = UInt(bufIdxBits.W) // idx of SinkC buffer
+  val needProbeAckData = Bool() // only used for SinkB reqs, whether L3 needs probeAckData
   val denied = Bool()
   val corrupt = Bool()
 
   // MSHR may send Release(Data) or Grant(Data) or ProbeAck(Data) through Main Pipe
-  val mshrTask = Bool()                   // is task from mshr
-  val mshrId = UInt(mshrBits.W)           // mshr entry index (used only in mshr-task)
+  val mshrTask = Bool() // is task from mshr
+  val mshrId = UInt(mshrBits.W) // mshr entry index (used only in mshr-task)
   val aliasTask = aliasBitsOpt.map(_ => Bool()) // Anti-alias
-  val useProbeData = Bool()               // data source, true for ReleaseBuf and false for RefillBuf
-  val mshrRetry = Bool()                  // is retry task for mshr conflict
+  val useProbeData = Bool() // data source, true for ReleaseBuf and false for RefillBuf
+  val mshrRetry = Bool() // is retry task for mshr conflict
 
   // For Intent
   val fromL2pft = prefetchOpt.map(_ => Bool()) // Is the prefetch req from L2(BOP) or from L1 prefetch?
-                                          // If true, MSHR should send an ack to L2 prefetcher.
+  // If true, MSHR should send an ack to L2 prefetcher.
   val needHint = prefetchOpt.map(_ => Bool())
 
   // For DirtyKey in Release
@@ -115,11 +119,11 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val mergeA = Bool()
   val aMergeTask = new MergeTaskBundle()
 
-  // Used for get data from ReleaseBuf when snoop hit with same PA 
+  // Used for get data from ReleaseBuf when snoop hit with same PA
   val snpHitRelease = Bool()
   val snpHitReleaseToB = Bool()
   val snpHitReleaseWithData = Bool()
-  val snpHitReleaseIdx = UInt(mshrBits.W) 
+  val snpHitReleaseIdx = UInt(mshrBits.W)
   // CHI
   val tgtID = chiOpt.map(_ => UInt(TGTID_WIDTH.W))
   val srcID = chiOpt.map(_ => UInt(SRCID_WIDTH.W))
@@ -146,7 +150,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
     req.txnID := txnID.getOrElse(0.U)
     req.opcode := chiOpcode.getOrElse(0.U)
     req.addr := Cat(tag, set, 0.U(offsetBits.W))
-    req.allowRetry := allowRetry.getOrElse(true.B)  //TODO: consider retry
+    req.allowRetry := allowRetry.getOrElse(true.B) // TODO: consider retry
     req.pCrdType := pCrdType.getOrElse(0.U)
     req.expCompAck := expCompAck.getOrElse(false.B)
     req.memAttr := memAttr.getOrElse(MemAttr())
@@ -222,15 +226,14 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle with HasTLChannelBits {
 }
 
 class RespInfoBundle(implicit p: Parameters) extends L2Bundle
-    with HasCHIMsgParameters
-{
+  with HasCHIMsgParameters {
   val opcode = UInt(3.W)
   val param = UInt(3.W)
   val last = Bool() // last beat
   val dirty = Bool() // only used for sinkD resps
   val isHit = Bool() // only used for sinkD resps
   val corrupt = Bool()
- //CHI
+  // CHI
   val chiOpcode = chiOpt.map(_ => UInt(OPCODE_WIDTH.W))
   val txnID = chiOpt.map(_ => UInt(TXNID_WIDTH.W))
   val srcID = chiOpt.map(_ => UInt(SRCID_WIDTH.W))
@@ -252,16 +255,16 @@ class RespBundle(implicit p: Parameters) extends L2Bundle {
 
 class FSMState(implicit p: Parameters) extends L2Bundle {
   // schedule
-  val s_acquire = Bool()  // acquire downwards
-  val s_rprobe = Bool()   // probe upwards, caused by replace
-  val s_pprobe = Bool()   // probe upwards, casued by probe
-  val s_release = Bool()  // release downwards
+  val s_acquire = Bool() // acquire downwards
+  val s_rprobe = Bool() // probe upwards, caused by replace
+  val s_pprobe = Bool() // probe upwards, casued by probe
+  val s_release = Bool() // release downwards
   val s_probeack = Bool() // respond probeack downwards
-  val s_refill = Bool()   // respond grant upwards
+  val s_refill = Bool() // respond grant upwards
   // val s_grantack = Bool() // respond grantack downwards, moved to GrantBuf
   // val s_triggerprefetch = prefetchOpt.map(_ => Bool())
-  val s_retry = Bool()    // need retry when conflict
-  val s_cmoresp = Bool()  // resp upwards for finishing CMO transactions
+  val s_retry = Bool() // need retry when conflict
+  val s_cmoresp = Bool() // resp upwards for finishing CMO transactions
 
   // wait
   val w_rprobeackfirst = Bool()
@@ -331,39 +334,39 @@ class PrefetchRecv extends Bundle {
 
 // custom l2 - l1 interface
 class L2ToL1Hint(implicit p: Parameters) extends Bundle {
-  val sourceId = UInt(32.W)    // tilelink sourceID
-  val isKeyword = Bool()       // miss entry keyword
+  val sourceId = UInt(32.W) // tilelink sourceID
+  val isKeyword = Bool() // miss entry keyword
 }
 
 // custom l2 - l1 tlb
 // FIXME lyq: Tlbcmd and TlbExceptionBundle, how to use L1 corresponding bundles?
 object TlbCmd {
-  def read  = "b00".U
+  def read = "b00".U
   def write = "b01".U
-  def exec  = "b10".U
+  def exec = "b10".U
 
-  def atom_read  = "b100".U // lr
+  def atom_read = "b100".U // lr
   def atom_write = "b101".U // sc / amo
 
   def apply() = UInt(3.W)
-  def isRead(a: UInt) = a(1,0)===read
-  def isWrite(a: UInt) = a(1,0)===write
-  def isExec(a: UInt) = a(1,0)===exec
+  def isRead(a: UInt) = a(1, 0) === read
+  def isWrite(a: UInt) = a(1, 0) === write
+  def isExec(a: UInt) = a(1, 0) === exec
 
   def isAtom(a: UInt) = a(2)
-  def isAmo(a: UInt) = a===atom_write // NOTE: sc mixed
+  def isAmo(a: UInt) = a === atom_write // NOTE: sc mixed
 }
 
 // Svpbmt extension
 object Pbmt {
-  def pma:  UInt = "b00".U  // None
-  def nc:   UInt = "b01".U  // Non-cacheable, idempotent, weakly-ordered (RVWMO), main memory
-  def io:   UInt = "b10".U  // Non-cacheable, non-idempotent, strongly-ordered (I/O ordering), I/O
-  def rsvd: UInt = "b11".U  // Reserved for future standard use
+  def pma: UInt = "b00".U // None
+  def nc: UInt = "b01".U // Non-cacheable, idempotent, weakly-ordered (RVWMO), main memory
+  def io: UInt = "b10".U // Non-cacheable, non-idempotent, strongly-ordered (I/O ordering), I/O
+  def rsvd: UInt = "b11".U // Reserved for future standard use
   def width: Int = 2
-  
+
   def apply() = UInt(width.W)
-  def isUncache(a: UInt) = a===nc || a===io
+  def isUncache(a: UInt) = a === nc || a === io
 }
 
 class TlbExceptionBundle extends Bundle {
@@ -371,11 +374,11 @@ class TlbExceptionBundle extends Bundle {
   val st = Output(Bool())
   val instr = Output(Bool())
 }
-class L2TlbReq(implicit p: Parameters) extends L2Bundle{
-  val vaddr = Output(UInt((fullVAddrBits).W))
+class L2TlbReq(implicit p: Parameters) extends L2Bundle {
+  val vaddr = Output(UInt(fullVAddrBits.W))
   val cmd = Output(TlbCmd())
   val isPrefetch = Output(Bool())
-  val size = Output(UInt(log2Ceil(log2Ceil(XLEN/8) + 1).W))
+  val size = Output(UInt(log2Ceil(log2Ceil(XLEN / 8) + 1).W))
   val kill = Output(Bool()) // Use for blocked tlb that need sync with other module like icache
   val no_translate = Output(Bool()) // do not translate, but still do pmp/pma check
 }
@@ -383,11 +386,14 @@ class L2TlbResp(nDups: Int = 1)(implicit p: Parameters) extends L2Bundle {
   val paddr = Vec(nDups, Output(UInt(fullAddressBits.W)))
   val pbmt = Output(Pbmt.apply())
   val miss = Output(Bool())
-  val excp = Vec(nDups, new Bundle {
-    val gpf = new TlbExceptionBundle()
-    val pf = new TlbExceptionBundle()
-    val af = new TlbExceptionBundle()
-  })
+  val excp = Vec(
+    nDups,
+    new Bundle {
+      val gpf = new TlbExceptionBundle()
+      val pf = new TlbExceptionBundle()
+      val af = new TlbExceptionBundle()
+    }
+  )
 }
 
 class PMPRespBundle(implicit p: Parameters) extends L2Bundle {
@@ -398,7 +404,7 @@ class PMPRespBundle(implicit p: Parameters) extends L2Bundle {
   val atomic = Output(Bool())
 }
 
-class L2ToL1TlbIO(nRespDups: Int = 1)(implicit p: Parameters) extends L2Bundle{
+class L2ToL1TlbIO(nRespDups: Int = 1)(implicit p: Parameters) extends L2Bundle {
   val req = DecoupledIO(new L2TlbReq)
   val req_kill = Output(Bool())
   val resp = Flipped(DecoupledIO(new L2TlbResp(nRespDups)))
@@ -406,11 +412,14 @@ class L2ToL1TlbIO(nRespDups: Int = 1)(implicit p: Parameters) extends L2Bundle{
 }
 
 class PCrdGrantMatcherIO(val numPorts: Int) extends Bundle {
-  val io_waitPCrdInfo = Input(Vec(numPorts, new Bundle {
-    val valid = Bool()
-    val srcID = UInt(7.W)
-    val pCrdType = UInt(4.W)
-  }))
+  val io_waitPCrdInfo = Input(Vec(
+    numPorts,
+    new Bundle {
+      val valid = Bool()
+      val srcID = UInt(7.W)
+      val pCrdType = UInt(4.W)
+    }
+  ))
   val rxrsp = Input(new Bundle {
     val bits = new Bundle {
       val srcID = UInt(7.W)

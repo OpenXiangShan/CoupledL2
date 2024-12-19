@@ -30,24 +30,28 @@ package coupledL2.prefetch
 
 import chisel3._
 import chisel3.util._
-import org.chipsalliance.cde.config.Parameters
-import utility.{ChiselDB, Constantin, MemReqSource, SRAMTemplate}
 import coupledL2.HasCoupledL2Parameters
 import coupledL2.utils.ReplacementPolicy
-import huancun.{TPmetaReq, TPmetaResp}
+import huancun.TPmetaReq
+import huancun.TPmetaResp
+import org.chipsalliance.cde.config.Parameters
+import utility.ChiselDB
+import utility.Constantin
+import utility.MemReqSource
+import utility.SRAMTemplate
 
 case class TPParameters(
-    tpTableEntries: Int = 16384,
-    tpTableAssoc: Int = 16,
-    vaddrBits: Int = 39,
-    blockOffBits: Int = 6,
-    dataReadQueueDepth: Int = 8,
-    dataWriteQueueDepth: Int = 4,
-    tpDataQueueDepth: Int = 8,
-    triggerQueueDepth: Int = 4,
-    throttleCycles: Int = 4,  // unused yet
-    replacementPolicy: String = "random",
-    debug: Boolean = false
+  tpTableEntries: Int = 16384,
+  tpTableAssoc: Int = 16,
+  vaddrBits: Int = 39,
+  blockOffBits: Int = 6,
+  dataReadQueueDepth: Int = 8,
+  dataWriteQueueDepth: Int = 4,
+  tpDataQueueDepth: Int = 8,
+  triggerQueueDepth: Int = 4,
+  throttleCycles: Int = 4, // unused yet
+  replacementPolicy: String = "random",
+  debug: Boolean = false
 ) extends PrefetchParameters {
   override val hasPrefetchBit: Boolean = true
   override val hasPrefetchSrc: Boolean = true
@@ -79,12 +83,12 @@ trait HasTPParams extends HasCoupledL2Parameters {
 abstract class TPBundle(implicit val p: Parameters) extends Bundle with HasTPParams
 abstract class TPModule(implicit val p: Parameters) extends Module with HasTPParams
 
-class tpMetaEntry(implicit p:Parameters) extends TPBundle {
+class tpMetaEntry(implicit p: Parameters) extends TPBundle {
   val valid = Bool()
-  val triggerTag = UInt((vaddrBits-blockOffBits-tpTableSetBits).W)
+  val triggerTag = UInt((vaddrBits - blockOffBits - tpTableSetBits).W)
 }
 
-class tpDataEntry(implicit p:Parameters) extends TPBundle {
+class tpDataEntry(implicit p: Parameters) extends TPBundle {
   val rawData = Vec(tpEntryMaxLen, UInt(fullAddressBits.W))
   // val rawData_debug = Vec(tpEntryMaxLen, UInt(vaddrBits.W))
   // TODO: val compressedData = UInt(512.W)
@@ -125,23 +129,30 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     val hartid = Input(UInt(hartIdLen.W))
   })
 
-  def parseVaddr(x: UInt): (UInt, UInt) = {
-    (x(x.getWidth-1, tpTableSetBits), x(tpTableSetBits-1, 0))
-  }
+  def parseVaddr(x: UInt): (UInt, UInt) =
+    (x(x.getWidth - 1, tpTableSetBits), x(tpTableSetBits - 1, 0))
 
-  def parsePaddr(x: UInt): (UInt, UInt) = {
-    (x(x.getWidth-1, tpTableSetBits+blockOffBits), x(tpTableSetBits+blockOffBits-1, blockOffBits))
-  }
+  def parsePaddr(x: UInt): (UInt, UInt) =
+    (x(x.getWidth - 1, tpTableSetBits + blockOffBits), x(tpTableSetBits + blockOffBits - 1, blockOffBits))
 
-  def recoverVaddr(x: UInt): UInt = {
+  def recoverVaddr(x: UInt): UInt =
     (x << offsetBits.U).asUInt
-  }
 
   val tpMetaTable = Module(
     new SRAMTemplate(new tpMetaEntry(), set = tpTableNrSet, way = tpTableAssoc, shouldReset = false, singlePort = true)
   )
-  val dataReadQueue = Module(new Queue(new TPmetaReq(hartIdLen, fullAddressBits, offsetBits), dataReadQueueDepth, pipe = false, flow = false))
-  val dataWriteQueue = Module(new Queue(new TPmetaReq(hartIdLen, fullAddressBits, offsetBits), dataWriteQueueDepth, pipe = false, flow = false))
+  val dataReadQueue = Module(new Queue(
+    new TPmetaReq(hartIdLen, fullAddressBits, offsetBits),
+    dataReadQueueDepth,
+    pipe = false,
+    flow = false
+  ))
+  val dataWriteQueue = Module(new Queue(
+    new TPmetaReq(hartIdLen, fullAddressBits, offsetBits),
+    dataWriteQueueDepth,
+    pipe = false,
+    flow = false
+  ))
   val tpDataQueue = Module(new Queue(new tpDataEntry(), tpDataQueueDepth + 1, pipe = false, flow = false))
   val triggerQueue = Module(new Queue(new triggerBundle(), triggerQueueDepth, pipe = false, flow = false))
   val triggerQEmpty = !triggerQueue.io.deq.valid
@@ -154,19 +165,19 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   val hartid = cacheParams.hartId
   // 0 / 1: whether to enable temporal prefetcher
-  private val enableTP = Constantin.createRecord("tp_enable"+hartid.toString, initValue = 1)
+  private val enableTP = Constantin.createRecord("tp_enable" + hartid.toString, initValue = 1)
   // 0 ~ N: throttle cycles for each prefetch request
-  private val tpThrottleCycles = Constantin.createRecord("tp_throttleCycles"+hartid.toString, initValue = 4)
+  private val tpThrottleCycles = Constantin.createRecord("tp_throttleCycles" + hartid.toString, initValue = 4)
   // 0 / 1: whether request to set as trigger on meta hit
-  private val hitAsTrigger = Constantin.createRecord("tp_hitAsTrigger"+hartid.toString, initValue = 1)
+  private val hitAsTrigger = Constantin.createRecord("tp_hitAsTrigger" + hartid.toString, initValue = 1)
   // 1 ~ triggerQueueDepth: enqueue threshold for triggerQueue
-  private val triggerThres = Constantin.createRecord("tp_triggerThres"+hartid.toString, initValue = 1)
+  private val triggerThres = Constantin.createRecord("tp_triggerThres" + hartid.toString, initValue = 1)
   // 1 ~ tpEntryMaxLen: record threshold for recorder and sender (storage size will not be affected)
-  private val recordThres = Constantin.createRecord("tp_recordThres"+hartid.toString, initValue = tpEntryMaxLen)
+  private val recordThres = Constantin.createRecord("tp_recordThres" + hartid.toString, initValue = tpEntryMaxLen)
   // 0 / 1: whether to train on vaddr
-  private val trainOnVaddr = Constantin.createRecord("tp_trainOnVaddr"+hartid.toString, initValue = 0)
+  private val trainOnVaddr = Constantin.createRecord("tp_trainOnVaddr" + hartid.toString, initValue = 0)
   // 0 / 1: whether to eliminate L1 prefetch request training
-  private val trainOnL1PF = Constantin.createRecord("tp_trainOnL1PF"+hartid.toString, initValue = 0)
+  private val trainOnL1PF = Constantin.createRecord("tp_trainOnL1PF" + hartid.toString, initValue = 0)
 
   if (vaddrBitsOpt.isEmpty) {
     assert(!trainOnVaddr)
@@ -181,7 +192,6 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val (vtag_s0, vset_s0) = if (vaddrBitsOpt.nonEmpty) parseVaddr(trainVaddr) else (0.U, 0.U)
   val (ptag_s0, pset_s0) = parsePaddr(trainPaddr)
   val metas = tpMetaTable.io.r(s0_valid, Mux(trainOnVaddr.orR, vset_s0, pset_s0)).resp.data
-
 
   /* Stage 1: parse tpMeta to judge hit or miss, choose the victim */
 
@@ -200,15 +210,14 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val debug_tagVec = VecInit(metas.map(x => Mux(s1_valid, x.triggerTag, 0.U)))
   dontTouch(debug_metaValidVec)
   dontTouch(debug_tagVec)
-  */
+   */
 
   val hitVec = tagMatchVec.zip(metaValidVec).map(x => x._1 && x._2)
   val hitWay = OHToUInt(hitVec)
-  val victimWay = repl.get_replace_way(0.U /*never mind for random*/)
+  val victimWay = repl.get_replace_way(0.U /*never mind for random*/ )
 
   val hit_s1 = Cat(hitVec).orR
   val way_s1 = Mux(hit_s1, hitWay, victimWay)
-
 
   /* Stage 2: access tpData on meta hit, record it on meta miss */
 
@@ -219,7 +228,8 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val pset_s2 = RegEnable(pset_s1, s1_valid)
   val train_s2 = RegEnable(train_s1, s1_valid)
 
-  val triggerEnq_s2 = s2_valid && !triggerQFull && (Mux(hitAsTrigger.orR, hit_s2, false.B) || (triggerQueue.io.count < triggerThres))
+  val triggerEnq_s2 =
+    s2_valid && !triggerQFull && (Mux(hitAsTrigger.orR, hit_s2, false.B) || (triggerQueue.io.count < triggerThres))
   val dorecord_s2 = s2_valid && !triggerEnq_s2 && !triggerQEmpty // && !hit_s2
 
   triggerQueue.io.enq.valid := triggerEnq_s2
@@ -236,11 +246,10 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   dataReadQueue.io.enq.bits.rawData := DontCare
   dataReadQueue.io.enq.bits.hartid := io.hartid
 
-
   /* Async Stage: try to fetch or write tpData */
 
   // dataReadQueue/dataWriteQueue dequeue
-  val pendingRead = RegInit(0.U)  // TODO: monitor pending read request and throttle it
+  val pendingRead = RegInit(0.U) // TODO: monitor pending read request and throttle it
   dataReadQueue.io.deq.ready := io.tpmeta_port.req.ready && !dataWriteQueue.io.deq.valid
   dataWriteQueue.io.deq.ready := io.tpmeta_port.req.ready
 
@@ -250,13 +259,11 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   io.tpmeta_port.req.valid := readReqValid || writeReqValid
   io.tpmeta_port.req.bits := Mux(writeReqValid, dataWriteQueue.io.deq.bits, dataReadQueue.io.deq.bits)
 
-
   /* Async Stage: get tpMeta and insert it into tpDataQueue */
 
   tpDataQueue.io.enq.valid := io.tpmeta_port.resp.valid && io.tpmeta_port.resp.bits.hartid === io.hartid
   tpDataQueue.io.enq.bits.rawData := io.tpmeta_port.resp.bits.rawData
   assert(tpDataQueue.io.enq.ready === true.B) // tpDataQueue is never full
-
 
   /* Recorder logic TODO: compress data based on max delta */
 
@@ -272,7 +279,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     recorder_idx := recorder_idx + 1.U
     recorder_data(recorder_idx) := record_data_in >> offsetBits.U // eliminate cacheline offset
     assert((record_data_in >> offsetBits.U)(fullAddressBits - 1, metaDataLength) === 0.U)
-    when(recorder_idx === (recordThres-1.U)) {
+    when(recorder_idx === (recordThres - 1.U)) {
       write_record := true.B
       recorder_idx := 0.U
       write_record_trigger := triggerQueue.io.deq.bits
@@ -320,7 +327,6 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   }
   // TODO: resolve r/w conflict
 
-
   /* Send prefetch request */
 
   val do_sending = RegInit(false.B)
@@ -338,7 +344,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   when(tpDataQueue.io.deq.fire) {
     sending_data := tpDataQueue.io.deq.bits.rawData
     // sending_data_debug := tpDataQueue.io.deq.bits.rawData_debug
-    sending_idx := 1.U  // TODO: dismiss the first addr because it is the trigger
+    sending_idx := 1.U // TODO: dismiss the first addr because it is the trigger
     do_sending := true.B
   }
   when(((do_sending && !tpDataQFull) || sending_throttle =/= 0.U) && (sending_throttle =/= tpThrottleCycles)) {
@@ -350,7 +356,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     if (debug) {
       printf("[TP] sending data: %x\n", current_sending_data)
     }
-    when(sending_idx === (recordThres-1.U)) {
+    when(sending_idx === (recordThres - 1.U)) {
       do_sending := false.B
     }
   }
@@ -365,7 +371,6 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   io.resp.ready := true.B
   io.train.ready := resetFinish
-
 
   /* Performance collection */
   val triggerDB = ChiselDB.createTable("tptrigger", new triggerBundle(), basicDB = debug)

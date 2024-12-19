@@ -19,16 +19,16 @@ package coupledL2.tl2tl
 
 import chisel3._
 import chisel3.util._
-import org.chipsalliance.cde.config.Parameters
-import freechips.rocketchip.tilelink.TLPermissions._
-import utility.MemReqSource
 import coupledL2._
+import freechips.rocketchip.tilelink.TLPermissions._
+import org.chipsalliance.cde.config.Parameters
+import utility.MemReqSource
 
 // MSHR exposes signals to MSHRCtl
 class MSHRStatus(implicit p: Parameters) extends L2Bundle with HasTLChannelBits {
-  val set         = UInt(setBits.W)
-  val reqTag      = UInt(tagBits.W)
-  val metaTag     = UInt(tagBits.W)
+  val set = UInt(setBits.W)
+  val reqTag = UInt(tagBits.W)
+  val metaTag = UInt(tagBits.W)
   val needsRepl = Bool()
   val w_c_resp = Bool()
   val w_d_resp = Bool()

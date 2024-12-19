@@ -19,15 +19,16 @@ package coupledL2.tl2tl
 
 import chisel3._
 import chisel3.util._
+import coupledL2._
+import coupledL2.debug._
+import coupledL2.prefetch.PrefetchIO
+import coupledL2.utils._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.util.leftOR
 import org.chipsalliance.cde.config.Parameters
-import coupledL2._
-import coupledL2.utils._
-import coupledL2.debug._
-import coupledL2.prefetch.PrefetchIO
-import utility.{RegNextN, XSPerfHistogram}
+import utility.RegNextN
+import utility.XSPerfHistogram
 
 class OuterBundle(params: TLBundleParameters) extends TLBundle(params) with BaseOuterBundle
 
@@ -136,7 +137,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   grantBuf.io.d_task <> mainPipe.io.toSourceD
   grantBuf.io.fromReqArb.status_s1 := reqArb.io.status_s1
   grantBuf.io.pipeStatusVec := reqArb.io.status_vec ++ mainPipe.io.status_vec_toD
-  mshrCtl.io.pipeStatusVec(0) := (reqArb.io.status_vec)(1) // s2 status
+  mshrCtl.io.pipeStatusVec(0) := reqArb.io.status_vec(1) // s2 status
   mshrCtl.io.pipeStatusVec(1) := mainPipe.io.status_vec_toD(0) // s3 status
 
   io.prefetch.foreach {
@@ -174,14 +175,13 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   dontTouch(io.in)
   dontTouch(io.out)
 
-  topDownOpt.foreach (
-    _ => {
-      io_msStatus.get        := mshrCtl.io.msStatus.get
+  topDownOpt.foreach {
+    _ =>
+      io_msStatus.get := mshrCtl.io.msStatus.get
       io.dirResult.get.valid := directory.io.resp.valid && !directory.io.replResp.valid // exclude MSHR-Grant read-dir
-      io.dirResult.get.bits  := directory.io.resp.bits
-      io.latePF.get          := a_reqBuf.io.hasLatePF
-    }
-  )
+      io.dirResult.get.bits := directory.io.resp.bits
+      io.latePF.get := a_reqBuf.io.hasLatePF
+  }
 
   if (cacheParams.enablePerf) {
     val a_begin_times = RegInit(VecInit(Seq.fill(sourceIdAll)(0.U(64.W))))
@@ -189,7 +189,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
     timer := timer + 1.U
     a_begin_times.zipWithIndex.foreach {
       case (r, i) =>
-        when (sinkA.io.a.fire && sinkA.io.a.bits.source === i.U) {
+        when(sinkA.io.a.fire && sinkA.io.a.bits.source === i.U) {
           r := timer
         }
     }

@@ -26,48 +26,40 @@ import freechips.rocketchip.tilelink._
 object MetaData {
   val stateBits = 2
   def INVALID: UInt = 0.U(stateBits.W) // way is empty
-  def BRANCH:  UInt = 1.U(stateBits.W) // outer slave cache is trunk
-  def TRUNK:   UInt = 2.U(stateBits.W) // unique inner master cache is trunk
-  def TIP:     UInt = 3.U(stateBits.W) // we are trunk, inner masters are branch
+  def BRANCH: UInt = 1.U(stateBits.W) // outer slave cache is trunk
+  def TRUNK: UInt = 2.U(stateBits.W) // unique inner master cache is trunk
+  def TIP: UInt = 3.U(stateBits.W) // we are trunk, inner masters are branch
 
-  def needB(opcode: UInt, param: UInt): Bool = {
+  def needB(opcode: UInt, param: UInt): Bool =
     opcode === TLMessages.Get ||
-    opcode === TLMessages.AcquireBlock && param === TLPermissions.NtoB ||
-    opcode === TLMessages.Hint && param === TLHints.PREFETCH_READ
-  }
+      opcode === TLMessages.AcquireBlock && param === TLPermissions.NtoB ||
+      opcode === TLMessages.Hint && param === TLHints.PREFETCH_READ
   // Does a request need trunk to be handled?
-  def needT(opcode: UInt, param: UInt): Bool = {
+  def needT(opcode: UInt, param: UInt): Bool =
     !opcode(2) ||
-    (opcode === TLMessages.Hint && param === TLHints.PREFETCH_WRITE) ||
-    ((opcode === TLMessages.AcquireBlock || opcode === TLMessages.AcquirePerm) && param =/= TLPermissions.NtoB)
-  }
+      (opcode === TLMessages.Hint && param === TLHints.PREFETCH_WRITE) ||
+      ((opcode === TLMessages.AcquireBlock || opcode === TLMessages.AcquirePerm) && param =/= TLPermissions.NtoB)
   // Does a request prove the client need not be probed?
-  def skipProbeN(opcode: UInt): Bool = {
+  def skipProbeN(opcode: UInt): Bool =
     // Acquire(toB) and Get => is N, so no probe
     // Acquire(*toT) => is N or B, but need T, so no probe
     // Hint => could be anything, so probe IS needed
     // Put* => is N or B, so probe IS needed
     opcode === TLMessages.AcquireBlock || opcode === TLMessages.AcquirePerm || opcode === TLMessages.Get
-  }
-  def isToN(param: UInt): Bool = {
+  def isToN(param: UInt): Bool =
     param === TLPermissions.TtoN || param === TLPermissions.BtoN || param === TLPermissions.NtoN
-  }
-  def isToB(param: UInt): Bool = {
+  def isToB(param: UInt): Bool =
     param === TLPermissions.TtoB || param === TLPermissions.BtoB
-  }
   def isT(state: UInt): Bool = state(1)
-  def isParamFromT(param: UInt): Bool = {
+  def isParamFromT(param: UInt): Bool =
     param === TLPermissions.TtoN || param === TLPermissions.TtoB || param === TLPermissions.TtoT
-  }
-  def hintMiss(state: UInt, param: UInt): Bool = {
+  def hintMiss(state: UInt, param: UInt): Bool =
     param === TLHints.PREFETCH_WRITE && !isT(state) ||
-    param === TLHints.PREFETCH_READ && state === INVALID
-  }
-  def growFrom(param: UInt): UInt = {
+      param === TLHints.PREFETCH_READ && state === INVALID
+  def growFrom(param: UInt): UInt =
     Mux1H(
       Seq(TLPermissions.NtoB, TLPermissions.NtoT, TLPermissions.BtoT).map(param === _),
       Seq(INVALID, INVALID, BRANCH)
     )
-  }
   def isValid(state: UInt): Bool = state > INVALID
 }

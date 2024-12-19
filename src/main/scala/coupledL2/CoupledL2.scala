@@ -21,16 +21,26 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import utility.{FastArbiter, ParallelMax, ParallelPriorityMux, Pipeline, RegNextN, XSPerfAccumulate, HasPerfEvents, PipelineConnect}
+import coupledL2.prefetch._
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tile.MaxHartIdBits
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.util._
-import org.chipsalliance.cde.config.{Parameters, Field}
+import huancun.BankBitsKey
+import huancun.TPmetaReq
+import huancun.TPmetaResp
+import org.chipsalliance.cde.config.Field
+import org.chipsalliance.cde.config.Parameters
 import scala.math.max
-import coupledL2.prefetch._
-import huancun.{TPmetaReq, TPmetaResp, BankBitsKey}
+import utility.FastArbiter
+import utility.HasPerfEvents
+import utility.ParallelMax
+import utility.ParallelPriorityMux
+import utility.Pipeline
+import utility.PipelineConnect
+import utility.RegNextN
+import utility.XSPerfAccumulate
 
 trait HasCoupledL2Parameters {
   val p: Parameters
@@ -50,15 +60,15 @@ trait HasCoupledL2Parameters {
   def beatBits = offsetBits - log2Ceil(beatBytes)
   def stateBits = MetaData.stateBits
   def chiOpt = if (enableCHI) Some(true) else None
-  def aliasBitsOpt = if(cacheParams.clientCaches.isEmpty) None
-                  else cacheParams.clientCaches.head.aliasBitsOpt
+  def aliasBitsOpt = if (cacheParams.clientCaches.isEmpty) None
+  else cacheParams.clientCaches.head.aliasBitsOpt
   // vaddr without offset bits
-  def vaddrBitsOpt = if(cacheParams.clientCaches.isEmpty) None
-                  else cacheParams.clientCaches.head.vaddrBitsOpt
+  def vaddrBitsOpt = if (cacheParams.clientCaches.isEmpty) None
+  else cacheParams.clientCaches.head.vaddrBitsOpt
   def fullVAddrBits = vaddrBitsOpt.getOrElse(0) + offsetBits
   // from L1 load miss cache require
-  def isKeywordBitsOpt = if(cacheParams.clientCaches.isEmpty) None
-                  else cacheParams.clientCaches.head.isKeywordBitsOpt
+  def isKeywordBitsOpt = if (cacheParams.clientCaches.isEmpty) None
+  else cacheParams.clientCaches.head.isKeywordBitsOpt
 
   def pageOffsetBits = log2Ceil(cacheParams.pageBytes)
 
@@ -83,7 +93,7 @@ trait HasCoupledL2Parameters {
   def eccDataBankBits = encDataBits - blockBytes * 2
 
   // DataCheck
-  def dataCheckMethod : Int = cacheParams.dataCheck.getOrElse("none").toLowerCase match {
+  def dataCheckMethod: Int = cacheParams.dataCheck.getOrElse("none").toLowerCase match {
     case "none" => 0
     case "oddparity" => 1
     case "secded" => 2
@@ -93,13 +103,13 @@ trait HasCoupledL2Parameters {
 
   // Prefetch
   def prefetchers = cacheParams.prefetch
-  def prefetchOpt = if(prefetchers.nonEmpty) Some(true) else None
+  def prefetchOpt = if (prefetchers.nonEmpty) Some(true) else None
   def hasBOP = prefetchers.exists(_.isInstanceOf[BOPParameters])
   def hasReceiver = prefetchers.exists(_.isInstanceOf[PrefetchReceiverParams])
   def hasTPPrefetcher = prefetchers.exists(_.isInstanceOf[TPParameters])
   def hasPrefetchBit = prefetchers.exists(_.hasPrefetchBit) // !! TODO.test this
   def hasPrefetchSrc = prefetchers.exists(_.hasPrefetchSrc)
-  def topDownOpt = if(cacheParams.elaboratedTopDown) Some(true) else None
+  def topDownOpt = if (cacheParams.elaboratedTopDown) Some(true) else None
 
   def enableHintGuidedGrant = true
 
@@ -117,14 +127,14 @@ trait HasCoupledL2Parameters {
   def hartIdLen: Int = p(MaxHartIdBits)
 
   def mshrsAll = cacheParams.mshrs
-  def idsAll = 256// ids of L2 //TODO: Paramterize like this: max(mshrsAll * 2, sourceIdAll * 2)
+  def idsAll = 256 // ids of L2 //TODO: Paramterize like this: max(mshrsAll * 2, sourceIdAll * 2)
   def mshrBits = log2Up(idsAll)
   // id of 0XXXX refers to mshrId
   // id of 1XXXX refers to reqs that do not enter mshr
   // require(isPow2(idsAll))
 
   def grantBufSize = mshrsAll
-  def grantBufInflightSize = mshrsAll //TODO: lack or excessive? !! WARNING
+  def grantBufInflightSize = mshrsAll // TODO: lack or excessive? !! WARNING
 
   // width params with bank idx (used in prefetcher / ctrl unit)
   def fullAddressBits = edgeIn.bundle.addressBits
@@ -140,22 +150,19 @@ trait HasCoupledL2Parameters {
   // Hardware Performance Monitor
   def numPCntHc: Int = 12
 
-  def getClientBitOH(sourceId: UInt): UInt = {
+  def getClientBitOH(sourceId: UInt): UInt =
     if (clientBits == 0) {
       0.U
     } else {
       Cat(
         edgeIn.client.clients
           .filter(_.supports.probe)
-          .map(c => {
-            c.sourceId.contains(sourceId).asInstanceOf[Bool]
-          })
+          .map(c => c.sourceId.contains(sourceId).asInstanceOf[Bool])
           .reverse
       )
     }
-  }
 
-  def getSourceId(client: UInt): UInt = {
+  def getSourceId(client: UInt): UInt =
     if (clientBits == 0) {
       0.U
     } else {
@@ -166,7 +173,6 @@ trait HasCoupledL2Parameters {
           .map(c => c.sourceId.start.U)
       )
     }
-  }
 
   def parseFullAddress(x: UInt): (UInt, UInt, UInt) = {
     val offset = x // TODO: check address mapping
@@ -182,23 +188,20 @@ trait HasCoupledL2Parameters {
     (tag(tagBits - 1, 0), set(setBits - 1, 0), offset(offsetBits - 1, 0))
   }
 
-  def restoreAddress(x: UInt, idx: Int) = {
+  def restoreAddress(x: UInt, idx: Int) =
     restoreAddressUInt(x, idx.U)
-  }
 
-  def restoreAddressUInt(x: UInt, idx: UInt) = {
-    if(bankBits == 0){
+  def restoreAddressUInt(x: UInt, idx: UInt) =
+    if (bankBits == 0) {
       x
     } else {
       val high = x >> offsetBits
       val low = x(offsetBits - 1, 0)
       Cat(high, idx(bankBits - 1, 0), low)
     }
-  }
 
-  def getPPN(x: UInt): UInt = {
+  def getPPN(x: UInt): UInt =
     x(x.getWidth - 1, pageOffsetBits)
-  }
 
   def arb[T <: Bundle](in: Seq[DecoupledIO[T]], out: DecoupledIO[T], name: Option[String] = None): Unit = {
     val arb = Module(new Arbiter[T](chiselTypeOf(out.bits), in.size))
@@ -216,26 +219,40 @@ trait HasCoupledL2Parameters {
 
   def odOpGen(r: UInt) = {
     val grantOp = GrantData
-    val opSeq = Seq(AccessAck, AccessAck, AccessAckData, AccessAckData, AccessAckData, HintAck, grantOp, Grant, 0.U, 0.U, 0.U, 0.U, CBOAck, CBOAck, CBOAck)
+    val opSeq = Seq(
+      AccessAck,
+      AccessAck,
+      AccessAckData,
+      AccessAckData,
+      AccessAckData,
+      HintAck,
+      grantOp,
+      Grant,
+      0.U,
+      0.U,
+      0.U,
+      0.U,
+      CBOAck,
+      CBOAck,
+      CBOAck
+    )
     val opToA = VecInit(opSeq)(r)
     opToA
   }
 
   def sizeBytesToStr(sizeBytes: Double): String = sizeBytes match {
     case _ if sizeBytes >= 1024 * 1024 => (sizeBytes / 1024 / 1024) + "MB"
-    case _ if sizeBytes >= 1024        => (sizeBytes / 1024) + "KB"
-    case _                            => "B"
-  }
-  
-  def print_bundle_fields(fs: Seq[BundleFieldBase], prefix: String) = {
-    if(fs.nonEmpty){
-      println(fs.map{f => s"$prefix/${f.key.name}: (${f.data.getWidth}-bit)"}.mkString("\n"))
-    }
+    case _ if sizeBytes >= 1024 => (sizeBytes / 1024) + "KB"
+    case _ => "B"
   }
 
-  def bank_eq(set: UInt, bankId: Int, bankBits: Int): Bool = {
-    if(bankBits == 0) true.B else set(bankBits - 1, 0) === bankId.U
-  }
+  def print_bundle_fields(fs: Seq[BundleFieldBase], prefix: String) =
+    if (fs.nonEmpty) {
+      println(fs.map(f => s"$prefix/${f.key.name}: (${f.data.getWidth}-bit)").mkString("\n"))
+    }
+
+  def bank_eq(set: UInt, bankId: Int, bankBits: Int): Bool =
+    if (bankBits == 0) true.B else set(bankBits - 1, 0) === bankId.U
 }
 
 abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with HasCoupledL2Parameters {
@@ -245,56 +262,64 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
   val access = TransferSizes(1, blockBytes)
 
   val pf_recv_node: Option[BundleBridgeSink[PrefetchRecv]] =
-    if(hasReceiver) Some(BundleBridgeSink(Some(() => new PrefetchRecv))) else None
+    if (hasReceiver) Some(BundleBridgeSink(Some(() => new PrefetchRecv))) else None
 
-  val managerPortParams = (m: TLSlavePortParameters) => TLSlavePortParameters.v1(
-    m.managers.map { m =>
-      m.v2copy(
-        regionType = if (m.regionType >= RegionType.UNCACHED) RegionType.CACHED else m.regionType,
-        supports = TLMasterToSlaveTransferSizes(
-          acquireB = xfer,
-          acquireT = if (m.supportsAcquireT) xfer else TransferSizes.none,
-          arithmetic = if (m.supportsAcquireT) atom else TransferSizes.none,
-          logical = if (m.supportsAcquireT) atom else TransferSizes.none,
-          get = access,
-          putFull = if (m.supportsAcquireT) access else TransferSizes.none,
-          putPartial = if (m.supportsAcquireT) access else TransferSizes.none,
-          hint = access
-        ),
-        fifoId = None
-      )
-    },
-    beatBytes = 32,
-    minLatency = 2,
-    responseFields = cacheParams.respField,
-    requestKeys = cacheParams.reqKey,
-    endSinkId = idsAll
-  )
-  
-  val clientPortParams = (m: TLMasterPortParameters) => TLMasterPortParameters.v2(
-    Seq(
-      TLMasterParameters.v2(
-        name = cacheParams.name,
-        supports = TLSlaveToMasterTransferSizes(
-          probe = xfer
-        ),
-        sourceId = IdRange(0, idsAll)
-      )
-    ),
-    channelBytes = cacheParams.channelBytes,
-    minLatency = 1,
-    echoFields = cacheParams.echoField,
-    requestFields = cacheParams.reqField,
-    responseKeys = cacheParams.respKey
-  )
+  val managerPortParams = (m: TLSlavePortParameters) =>
+    TLSlavePortParameters.v1(
+      m.managers.map { m =>
+        m.v2copy(
+          regionType = if (m.regionType >= RegionType.UNCACHED) RegionType.CACHED else m.regionType,
+          supports = TLMasterToSlaveTransferSizes(
+            acquireB = xfer,
+            acquireT = if (m.supportsAcquireT) xfer else TransferSizes.none,
+            arithmetic = if (m.supportsAcquireT) atom else TransferSizes.none,
+            logical = if (m.supportsAcquireT) atom else TransferSizes.none,
+            get = access,
+            putFull = if (m.supportsAcquireT) access else TransferSizes.none,
+            putPartial = if (m.supportsAcquireT) access else TransferSizes.none,
+            hint = access
+          ),
+          fifoId = None
+        )
+      },
+      beatBytes = 32,
+      minLatency = 2,
+      responseFields = cacheParams.respField,
+      requestKeys = cacheParams.reqKey,
+      endSinkId = idsAll
+    )
+
+  val clientPortParams = (m: TLMasterPortParameters) =>
+    TLMasterPortParameters.v2(
+      Seq(
+        TLMasterParameters.v2(
+          name = cacheParams.name,
+          supports = TLSlaveToMasterTransferSizes(
+            probe = xfer
+          ),
+          sourceId = IdRange(0, idsAll)
+        )
+      ),
+      channelBytes = cacheParams.channelBytes,
+      minLatency = 1,
+      echoFields = cacheParams.echoField,
+      requestFields = cacheParams.reqField,
+      responseKeys = cacheParams.respKey
+    )
 
   val node = TLAdapterNode(
     clientFn = clientPortParams,
     managerFn = managerPortParams
   )
 
-  val tpmeta_source_node = if(hasTPPrefetcher) Some(BundleBridgeSource(() => DecoupledIO(new TPmetaReq(hartIdLen, node.in.head._2.bundle.addressBits, offsetBits)))) else None
-  val tpmeta_sink_node = if(hasTPPrefetcher) Some(BundleBridgeSink(Some(() => ValidIO(new TPmetaResp(hartIdLen, node.in.head._2.bundle.addressBits, offsetBits))))) else None
+  val tpmeta_source_node = if (hasTPPrefetcher) Some(BundleBridgeSource(() =>
+    DecoupledIO(new TPmetaReq(hartIdLen, node.in.head._2.bundle.addressBits, offsetBits))
+  ))
+  else None
+  val tpmeta_sink_node = if (hasTPPrefetcher) Some(BundleBridgeSink(Some(() =>
+    ValidIO(new TPmetaResp(hartIdLen, node.in.head._2.bundle.addressBits, offsetBits))
+  )))
+  else None
 
   abstract class BaseCoupledL2Imp(wrapper: LazyModule) extends LazyModuleImp(wrapper) with HasPerfEvents {
     val banks = node.in.size
@@ -314,7 +339,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
 
     val io = IO(new Bundle {
       val hartId = Input(UInt(hartIdLen.W))
-    //  val l2_hint = Valid(UInt(32.W))
+      //  val l2_hint = Valid(UInt(32.W))
       val l2_hint = ValidIO(new L2ToL1Hint())
       val l2_tlb_req = new L2ToL1TlbIO(nRespDups = 1)(l2TlbParams)
       val debugTopDown = new Bundle {
@@ -328,9 +353,11 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     // Display info
     val sizeBytes = cacheParams.toCacheParams.capacity.toDouble
     val sizeStr = sizeBytesToStr(sizeBytes)
-    println(s"====== Inclusive TL-${if (enableCHI) "CHI" else "TL"} ${cacheParams.name} ($sizeStr * $banks-bank)  ======")
+    println(
+      s"====== Inclusive TL-${if (enableCHI) "CHI" else "TL"} ${cacheParams.name} ($sizeStr * $banks-bank)  ======"
+    )
     println(s"prefetch: ${cacheParams.prefetch}")
-    println(s"bankBits: ${bankBits}")
+    println(s"bankBits: $bankBits")
     println(s"replacement: ${cacheParams.replacement}")
     println(s"replace policy: ${cacheParams.releaseData}")
     println(s"sets:${cacheParams.sets} ways:${cacheParams.ways} blockBytes:${cacheParams.blockBytes}")
@@ -341,7 +368,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     node.edges.in.headOption.foreach { n =>
       n.client.clients.zipWithIndex.foreach {
         case (c, i) =>
-          println(s"\t${i} <= ${c.name};" +
+          println(s"\t$i <= ${c.name};" +
             s"\tsourceRange: ${c.sourceId.start}~${c.sourceId.end}")
       }
     }
@@ -372,7 +399,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         prefetcher.get.io.recv_addr.bits.pfSource := x.in.head._1.pf_source
         prefetcher.get.io_l2_pf_en := x.in.head._1.l2_pf_en
       case None =>
-        prefetcher.foreach{
+        prefetcher.foreach {
           p =>
             p.io.recv_addr := 0.U.asTypeOf(p.io.recv_addr)
             p.io_l2_pf_en := false.B
@@ -453,13 +480,19 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
             prefetchTrains.get(i) <> train
             prefetchResps.get(i) <> resp
             // restore to full address
-            if(bankBits != 0){
+            if (bankBits != 0) {
               val train_full_addr = Cat(
-                train.bits.tag, train.bits.set, i.U(bankBits.W), 0.U(offsetBits.W)
+                train.bits.tag,
+                train.bits.set,
+                i.U(bankBits.W),
+                0.U(offsetBits.W)
               )
               val (train_tag, train_set, _) = s.parseFullAddress(train_full_addr)
               val resp_full_addr = Cat(
-                resp.bits.tag, resp.bits.set, i.U(bankBits.W), 0.U(offsetBits.W)
+                resp.bits.tag,
+                resp.bits.set,
+                i.U(bankBits.W),
+                0.U(offsetBits.W)
               )
               val (resp_tag, resp_set, _) = s.parseFullAddress(resp_full_addr)
               prefetchTrains.get(i).bits.tag := train_tag
@@ -477,8 +510,8 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     }
 
     val perfEvents = Seq(("noEvent", 0.U)) ++ slices.zipWithIndex.map {
-      case (slide, slide_idx) => 
-        slide.getPerfEvents.map{case (str, idx) => ("Slice" + slide_idx.toString + "_" + str, idx)}
+      case (slide, slide_idx) =>
+        slide.getPerfEvents.map { case (str, idx) => ("Slice" + slide_idx.toString + "_" + str, idx) }
     }.flatten
     generatePerfEvent()
 
@@ -512,9 +545,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       // should only Hint for DCache
       val (sourceIsDcache, dcacheSourceIdStart) = node.in.head._2.client.clients
         .filter(_.supports.probe)
-        .map(c => {
-          (c.sourceId.contains(l1HintArb.io.out.bits.sourceId).asInstanceOf[Bool], c.sourceId.start.U)
-        }).head
+        .map(c => (c.sourceId.contains(l1HintArb.io.out.bits.sourceId).asInstanceOf[Bool], c.sourceId.start.U)).head
 
       l1HintArb.io.in <> VecInit(slices_l1Hint)
       io.l2_hint.valid := l1HintArb.io.out.fire && sourceIsDcache
@@ -531,7 +562,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     slices.zip(node.out).zipWithIndex.foreach {
       case ((slice, (out, _)), i) =>
         slice match {
-          case slice: tl2tl.Slice => 
+          case slice: tl2tl.Slice =>
             out <> slice.io.out
             out.a.bits.address := restoreAddress(slice.io.out.a.bits.address, i)
             out.c.bits.address := restoreAddress(slice.io.out.c.bits.address, i)
@@ -540,11 +571,13 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     }
 
     // ==================== TopDown ====================
-    val topDown = topDownOpt.map(_ => Module(new TopDownMonitor()(p.alterPartial {
-      case EdgeInKey => node.in.head._2
-      case EdgeOutKey => node.out.head._2
-      case BankBitsKey => bankBits
-    })))
+    val topDown = topDownOpt.map(_ =>
+      Module(new TopDownMonitor()(p.alterPartial {
+        case EdgeInKey => node.in.head._2
+        case EdgeOutKey => node.out.head._2
+        case BankBitsKey => bankBits
+      }))
+    )
     topDown match {
       case Some(t) =>
         t.io.msStatus.zip(slices).foreach {
@@ -565,7 +598,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     }
 
     // ==================== XSPerf Counters ====================
-    val grant_data_fire = slices.map { slice => 
+    val grant_data_fire = slices.map { slice =>
       val (first, _, _, _) = node.in.head._2.count(slice.io.in.d)
       slice.io.in.d.fire && first && slice.io.in.d.bits.opcode === GrantData
     }

@@ -17,26 +17,28 @@
 
 package coupledL2.prefetch
 
-import org.chipsalliance.cde.config.Parameters
 import chisel3._
 import chisel3.util._
-import freechips.rocketchip.tilelink._
 import coupledL2._
-import utility.{MemReqSource, Pipeline, Constantin}
+import freechips.rocketchip.tilelink._
+import org.chipsalliance.cde.config.Parameters
+import utility.Constantin
+import utility.MemReqSource
+import utility.Pipeline
 
 // TODO: PrefetchReceiver is temporarily used since L1&L2 do not support Hint.
 // TODO: Delete this after Hint is accomplished.
 
 case class PrefetchReceiverParams(n: Int = 32) extends PrefetchParameters {
-  override val hasPrefetchBit:  Boolean = true
-  override val hasPrefetchSrc:  Boolean = true
+  override val hasPrefetchBit: Boolean = true
+  override val hasPrefetchSrc: Boolean = true
   override val inflightEntries: Int = n
 }
 
 class PrefetchReceiver()(implicit p: Parameters) extends PrefetchModule {
   val io = IO(new PrefetchIO())
   // 0 / 1: whether to enable
-  private val enable = Constantin.createRecord("pfRcv_enable"+cacheParams.hartId.toString, initValue = 1)
+  private val enable = Constantin.createRecord("pfRcv_enable" + cacheParams.hartId.toString, initValue = 1)
 
   // just ignore train reqs
   io.train.ready := true.B

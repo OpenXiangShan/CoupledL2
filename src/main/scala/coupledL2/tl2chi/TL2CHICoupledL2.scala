@@ -19,15 +19,20 @@ package coupledL2.tl2chi
 
 import chisel3._
 import chisel3.util._
-import utility.{FastArbiter, Pipeline, ParallelPriorityMux, RegNextN, RRArbiterInit}
+import coupledL2._
+import coupledL2.prefetch._
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.util._
-import org.chipsalliance.cde.config.{Parameters, Field}
+import org.chipsalliance.cde.config.Field
+import org.chipsalliance.cde.config.Parameters
 import scala.math.max
-import coupledL2._
-import coupledL2.prefetch._
+import utility.FastArbiter
+import utility.ParallelPriorityMux
+import utility.Pipeline
+import utility.RegNextN
+import utility.RRArbiterInit
 
 abstract class TL2CHIL2Bundle(implicit val p: Parameters) extends Bundle
   with HasCoupledL2Parameters
@@ -35,7 +40,6 @@ abstract class TL2CHIL2Bundle(implicit val p: Parameters) extends Bundle
 abstract class TL2CHIL2Module(implicit val p: Parameters) extends Module
   with HasCoupledL2Parameters
   with HasCHIMsgParameters
-
 
 class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
 
@@ -87,7 +91,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
     mmioNode.edges.in.headOption.foreach { n =>
       n.client.clients.zipWithIndex.foreach {
         case (c, i) =>
-          println(s"\t${i} <= ${c.name};" +
+          println(s"\t$i <= ${c.name};" +
             s"\tsourceRange: ${c.sourceId.start}~${c.sourceId.end}")
       }
     }
@@ -107,13 +111,12 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
       * +----------------+---------------------------+  
       *
       */
-    def setSliceID(txnID: UInt, sliceID: UInt, mmio: Bool): UInt = {
+    def setSliceID(txnID: UInt, sliceID: UInt, mmio: Bool): UInt =
       Mux(
         mmio,
         Cat(1.U(1.W), txnID.tail(1)),
         Cat(0.U(1.W), if (banks <= 1) txnID.tail(1) else Cat(sliceID(bankBits - 1, 0), txnID.tail(bankBits + 1)))
       )
-    }
     def getSliceID(txnID: UInt): UInt = if (banks <= 1) 0.U else txnID.tail(1).head(bankBits)
     def restoreTXNID(txnID: UInt): UInt = {
       val mmio = txnID.head(1).asBool
@@ -168,24 +171,31 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
 
         val mshrEntryCount = mshrPCrdQuerys.length
 
-        val pCrdQueue = Module(new Queue(new Bundle {
-          val pCrdType = UInt(PCRDTYPE_WIDTH.W)
-          val srcID = UInt(SRCID_WIDTH.W)
-        }, entries = mshrEntryCount))
+        val pCrdQueue = Module(new Queue(
+          new Bundle {
+            val pCrdType = UInt(PCRDTYPE_WIDTH.W)
+            val srcID = UInt(SRCID_WIDTH.W)
+          },
+          entries = mshrEntryCount
+        ))
 
         // PCredit hit by MSHRs
-        val mshrPCrdHits = mshrPCrdQuerys.map((_, pCrdQueue.io.deq)).map { case (q, h) => {
-          q.valid && h.valid && q.bits.pCrdType === h.bits.pCrdType && q.bits.srcID === h.bits.srcID
-        }}
+        val mshrPCrdHits = mshrPCrdQuerys.map((_, pCrdQueue.io.deq)).map {
+          case (q, h) => {
+            q.valid && h.valid && q.bits.pCrdType === h.bits.pCrdType && q.bits.srcID === h.bits.srcID
+          }
+        }
 
         // PCredit dispatch arbitration
         val mshrPCrdArbGrants = Wire(Vec(mshrEntryCount, Bool()))
-        val mshrPCrdArbIn = mshrPCrdHits.zip(mshrPCrdArbGrants).map { case (hit, grant) => {
-          val arbPort = Wire(Decoupled(new EmptyBundle))
-          arbPort.valid := hit
-          grant := arbPort.ready
-          arbPort
-        }}
+        val mshrPCrdArbIn = mshrPCrdHits.zip(mshrPCrdArbGrants).map {
+          case (hit, grant) => {
+            val arbPort = Wire(Decoupled(new EmptyBundle))
+            arbPort.valid := hit
+            grant := arbPort.ready
+            arbPort
+          }
+        }
 
         val mshrPCrdArbOut = {
           val arbPort = Wire(Decoupled(new EmptyBundle))
@@ -208,7 +218,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         pCrdQueue.io.enq.bits.srcID := pCrdGrantSrcID_s1
 
         val grantCnt = RegInit(0.U(64.W))
-        when (pCrdQueue.io.deq.ready) {
+        when(pCrdQueue.io.deq.ready) {
           grantCnt := grantCnt + 1.U
         }
         dontTouch(grantCnt)
@@ -243,7 +253,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         rxdat.ready := Mux(
           rxdatIsMMIO,
           mmio.io.rx.dat.ready,
-          Cat(slices.zipWithIndex.map { case (s, i) => s.io.out.rx.dat.ready && rxdatSliceID === i.U}).orR
+          Cat(slices.zipWithIndex.map { case (s, i) => s.io.out.rx.dat.ready && rxdatSliceID === i.U }).orR
         )
 
         val linkMonitor = Module(new LinkMonitor)

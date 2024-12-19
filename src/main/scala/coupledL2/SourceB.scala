@@ -1,4 +1,3 @@
-
 /** *************************************************************************************
  * Copyright (c) 2020-2021 Institute of Computing Technology, Chinese Academy of Sciences
  * Copyright (c) 2020-2021 Peng Cheng Laboratory
@@ -26,16 +25,16 @@ import org.chipsalliance.cde.config.Parameters
 import utility._
 
 class GrantStatus(implicit p: Parameters) extends L2Bundle {
-  val valid  = Bool()
-  val set     = UInt(setBits.W)
-  val tag     = UInt(tagBits.W)
+  val valid = Bool()
+  val set = UInt(setBits.W)
+  val tag = UInt(tagBits.W)
 }
 
 class ProbeEntry(implicit p: Parameters) extends L2Bundle {
   val valid = Bool()
-  val rdy   = Bool()
+  val rdy = Bool()
   val waitG = UInt(sourceIdBits.W) // grantEntry probe is waiting for, sourceId as Idx
-  val task  = new SourceBReq()
+  val task = new SourceBReq()
 }
 
 // send B reqs to upper level cache
@@ -53,13 +52,13 @@ class SourceB(implicit p: Parameters) extends L2Module {
 
   def toTLBundleB(task: SourceBReq) = {
     val b = Wire(new TLBundleB(edgeIn.bundle))
-    b.opcode  := task.opcode
-    b.param   := task.param
-    b.size    := offsetBits.U
-    b.source  := dcacheSourceIdStart
+    b.opcode := task.opcode
+    b.param := task.param
+    b.size := offsetBits.U
+    b.source := dcacheSourceIdStart
     b.address := Cat(task.tag, task.set, 0.U(offsetBits.W))
-    b.mask    := Fill(beatBytes, 1.U(1.W))
-    b.data    := Cat(task.alias.getOrElse(0.U), 0.U(1.W)) // this is the same as HuanCun
+    b.mask := Fill(beatBytes, 1.U(1.W))
+    b.data := Cat(task.alias.getOrElse(0.U), 0.U(1.W)) // this is the same as HuanCun
     b.corrupt := false.B
     b
   }
@@ -67,42 +66,42 @@ class SourceB(implicit p: Parameters) extends L2Module {
   /* ======== Data Structure ======== */
   // TODO: check XSPerf whether 4 entries is enough
   val entries = 4
-  val probes  = RegInit(VecInit(
+  val probes = RegInit(VecInit(
     Seq.fill(entries)(0.U.asTypeOf(new ProbeEntry))
   ))
 
   /* ======== Enchantment ======== */
-  val full  = Cat(probes.map(_.valid)).andR
+  val full = Cat(probes.map(_.valid)).andR
 
   // comparing with #sourceIdAll entries might have timing issues
   // but worry not, we can delay cycles cuz not critical
   val conflictMask = io.grantStatus.map(s =>
     s.valid && s.set === io.task.bits.set && s.tag === io.task.bits.tag
   )
-  val conflict     = Cat(conflictMask).orR
+  val conflict = Cat(conflictMask).orR
 
   val noReadyEntry = Wire(Bool())
 
   /* ======== Alloc ======== */
-  io.task.ready   := !full
+  io.task.ready := !full
 
   val insertIdx = PriorityEncoder(probes.map(!_.valid))
-  val alloc     = !full && io.task.valid
+  val alloc = !full && io.task.valid
   when(alloc) {
     val p = probes(insertIdx)
     p.valid := true.B
-    p.rdy   := !conflict
+    p.rdy := !conflict
     p.waitG := OHToUInt(conflictMask)
-    p.task  := io.task.bits
+    p.task := io.task.bits
     assert(PopCount(conflictMask) <= 1.U)
   }
 
   /* ======== Issue ======== */
   val issueArb = Module(new FastArbiter(new SourceBReq, entries))
-  issueArb.io.in zip probes foreach{
+  issueArb.io.in zip probes foreach {
     case (i, p) =>
       i.valid := p.valid && p.rdy
-      i.bits  := p.task
+      i.bits := p.task
       when(i.fire) {
         p.valid := false.B
       }
@@ -119,10 +118,10 @@ class SourceB(implicit p: Parameters) extends L2Module {
 
   /* ======== Output ======== */
   io.sourceB.valid := issueArb.io.out.valid
-  io.sourceB.bits  := toTLBundleB(issueArb.io.out.bits)
+  io.sourceB.bits := toTLBundleB(issueArb.io.out.bits)
 
   /* ======== Perf ======== */
-  for(i <- 0 until entries){
+  for (i <- 0 until entries) {
     val update = PopCount(probes.map(_.valid)) === i.U
     XSPerfAccumulate(s"probe_buffer_util_$i", update)
   }

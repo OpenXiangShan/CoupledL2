@@ -19,10 +19,13 @@ package coupledL2.tl2chi
 
 import chisel3._
 import chisel3.util._
-import utility._
-import org.chipsalliance.cde.config.Parameters
-import coupledL2.{TaskWithData, TaskBundle, DSBlock, DSBeat}
+import coupledL2.DSBeat
+import coupledL2.DSBlock
+import coupledL2.TaskBundle
+import coupledL2.TaskWithData
 import coupledL2.tl2chi.CHICohStates._
+import org.chipsalliance.cde.config.Parameters
+import utility._
 
 class TXDATBlockBundle(implicit p: Parameters) extends TXBlockBundle {
   val blockSinkBReqEntrance = Bool()
@@ -67,14 +70,15 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val pipeStatus_s3_s5 = pipeStatus_s1_s5.drop(2)
   // inflightCnt equals the number of reqs on s2~s5 that may flow into TXDAT soon, plus queueCnt.
   // The calculation of inflightCnt might be imprecise and leads to false positive back pressue.
-  val inflightCnt = PopCount(Cat(pipeStatus_s3_s5.map(s => s.valid && s.bits.toTXDAT && (s.bits.fromB || s.bits.mshrTask)))) +
-    PopCount(Cat(pipeStatus_s2.map(s => s.valid && Mux(s.bits.mshrTask, s.bits.toTXDAT, s.bits.fromB)))) +
-    queueCnt
+  val inflightCnt =
+    PopCount(Cat(pipeStatus_s3_s5.map(s => s.valid && s.bits.toTXDAT && (s.bits.fromB || s.bits.mshrTask)))) +
+      PopCount(Cat(pipeStatus_s2.map(s => s.valid && Mux(s.bits.mshrTask, s.bits.toTXDAT, s.bits.fromB)))) +
+      queueCnt
 
   assert(inflightCnt <= mshrsAll.U, "in-flight overflow at TXDAT")
 
   val noSpaceForSinkBReq = inflightCnt >= mshrsAll.U
-  val noSpaceForMSHRReq = inflightCnt >= (mshrsAll-2).U
+  val noSpaceForMSHRReq = inflightCnt >= (mshrsAll - 2).U
 
   io.toReqArb.blockSinkBReqEntrance := noSpaceForSinkBReq
   io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq
@@ -87,7 +91,7 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   queue.io.deq.ready := dequeueReady
   queueData0.io.deq.ready := dequeueReady
   queueData1.io.deq.ready := dequeueReady
-  when (queue.io.deq.fire) {
+  when(queue.io.deq.fire) {
     beatValids.foreach(_ := true.B)
     taskR.task := queue.io.deq.bits
     taskR.data := Cat(queueData1.io.deq.bits.data, queueData0.io.deq.bits.data).asTypeOf(new DSBlock)
@@ -99,10 +103,13 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
 
   io.out.valid := taskValid
   io.out.bits := toCHIDATBundle(taskR.task, beat, beatsOH)
-  io.out.bits.respErr := Mux(taskR.task.corrupt,
-    Mux(taskR.task.denied, RespErrEncodings.NDERR, RespErrEncodings.DERR), RespErrEncodings.OK)
+  io.out.bits.respErr := Mux(
+    taskR.task.corrupt,
+    Mux(taskR.task.denied, RespErrEncodings.NDERR, RespErrEncodings.DERR),
+    RespErrEncodings.OK
+  )
 
-  when (io.out.fire) {
+  when(io.out.fire) {
     beatValids := VecInit(next_beatsOH.asBools)
   }
 

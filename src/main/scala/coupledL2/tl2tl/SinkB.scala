@@ -19,11 +19,11 @@ package coupledL2.tl2tl
 
 import chisel3._
 import chisel3.util._
-import org.chipsalliance.cde.config.Parameters
+import coupledL2._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
-import coupledL2._
+import org.chipsalliance.cde.config.Parameters
 import utility.MemReqSource
 
 class SinkB(implicit p: Parameters) extends L2Module {
@@ -70,6 +70,6 @@ class SinkB(implicit p: Parameters) extends L2Module {
 
   // when conflict, we block B req from entering SinkB
   io.task.valid := io.b.valid && !addrConflict && !replaceConflict
-  io.task.bits  := task
+  io.task.bits := task
   io.b.ready := io.task.ready && !addrConflict && !replaceConflict
 }

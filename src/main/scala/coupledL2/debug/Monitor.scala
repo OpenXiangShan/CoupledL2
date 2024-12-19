@@ -2,12 +2,12 @@ package coupledL2.debug
 
 import chisel3._
 import chisel3.util._
-import org.chipsalliance.cde.config.Parameters
+import coupledL2._
+import coupledL2.MetaData._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
-import coupledL2._
-import coupledL2.MetaData._
+import org.chipsalliance.cde.config.Parameters
 import utility._
 
 class MainpipeMoni(implicit p: Parameters) extends L2Bundle {
@@ -44,14 +44,14 @@ class Monitor(implicit p: Parameters) extends L2Module {
 //  val nestedWBValid = Input(Bool())
   })
 
-  val mp            = io.fromMainPipe
-  val s2_valid      = mp.task_s2.valid
-  val req_s2        = mp.task_s2.bits
-  val s3_valid      = mp.task_s3.valid
-  val req_s3        = mp.task_s3.bits
-  val mshr_req_s3   = req_s3.mshrTask
-  val dirResult_s3  = mp.dirResult_s3
-  val meta_s3       = mp.dirResult_s3.meta
+  val mp = io.fromMainPipe
+  val s2_valid = mp.task_s2.valid
+  val req_s2 = mp.task_s2.bits
+  val s3_valid = mp.task_s3.valid
+  val req_s3 = mp.task_s3.bits
+  val mshr_req_s3 = req_s3.mshrTask
+  val dirResult_s3 = mp.dirResult_s3
+  val meta_s3 = mp.dirResult_s3.meta
 
   /* ======== MainPipe Assertions ======== */
   // ! Release w/o data will not trigger nestedWBValid, either
@@ -62,13 +62,17 @@ class Monitor(implicit p: Parameters) extends L2Module {
 //    "C Release should always hit or have some MSHR meta nested, Tag %x Set %x",
 //    req_s3.tag, req_s3.set)
 
-  assert(RegNext(!(s3_valid && !mshr_req_s3 && dirResult_s3.hit &&
-    meta_s3.state === TRUNK && !meta_s3.clients.orR)),
-    "Trunk should have some client hit")
+  assert(
+    RegNext(!(s3_valid && !mshr_req_s3 && dirResult_s3.hit &&
+      meta_s3.state === TRUNK && !meta_s3.clients.orR)),
+    "Trunk should have some client hit"
+  )
 
-  assert(RegNext(!(s3_valid && req_s3.fromC && dirResult_s3.hit &&
-    !meta_s3.clients.orR)),
-    "Invalid Client should not send Release")
+  assert(
+    RegNext(!(s3_valid && req_s3.fromC && dirResult_s3.hit &&
+      !meta_s3.clients.orR)),
+    "Invalid Client should not send Release"
+  )
 
   // assertion for set blocking
   // A channel task @s1 never have same-set task @s2/s3
@@ -82,7 +86,6 @@ class Monitor(implicit p: Parameters) extends L2Module {
 //    "chosen-chnTask-s1 and s3 task same set, failed in blocking")
 
 //   TODO: whether mshrGrant also need such blocking, since it reads dir as well
-
 
   /* ======== ChiselDB ======== */
   if (cacheParams.enableMonitor && !cacheParams.FPGAPlatform) {

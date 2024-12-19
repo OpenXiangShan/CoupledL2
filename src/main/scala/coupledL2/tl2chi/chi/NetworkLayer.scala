@@ -32,9 +32,8 @@ import utility.ParallelPriorityMux
 class SAM(sam: Seq[(AddressSet, Int)]) {
   def check(x: UInt): Bool = Cat(sam.map(_._1.contains(x))).orR
 
-  def lookup(x: UInt): UInt = {
+  def lookup(x: UInt): UInt =
     ParallelPriorityMux(sam.map(m => (m._1.contains(x), m._2.U)))
-  }
 }
 
 object SAM {

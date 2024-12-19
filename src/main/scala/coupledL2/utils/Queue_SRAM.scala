@@ -18,10 +18,10 @@
 package coupledL2.utils
 
 import chisel3._
-import chisel3.util._
-import chisel3.experimental.{requireIsChiselType, Direction}
+import chisel3.experimental.Direction
+import chisel3.experimental.requireIsChiselType
 import chisel3.reflect.DataMirror
-
+import chisel3.util._
 import scala.annotation.nowarn
 
 /** A hardware module implementing a Queue
@@ -40,14 +40,13 @@ import scala.annotation.nowarn
  * }}}
  */
 class Queue_SRAM[T <: Data](
-                        val gen:            T,
-                        val entries:        Int,
-                        val pipe:           Boolean = false,
-                        val flow:           Boolean = false,
-                        val useSyncReadMem: Boolean = false,
-                        val hasFlush:       Boolean = false
-                      )()
-  extends Module() {
+  val gen: T,
+  val entries: Int,
+  val pipe: Boolean = false,
+  val flow: Boolean = false,
+  val useSyncReadMem: Boolean = false,
+  val hasFlush: Boolean = false
+)() extends Module() {
   require(entries > -1, "Queue must have non-negative number of entries")
   require(entries != 0, "Use companion object Queue.apply for zero entries")
   val genType = if (DataMirror.internal.isSynthesizable(gen)) {
@@ -106,16 +105,16 @@ class Queue_SRAM[T <: Data](
   }
 
   if (flow) {
-    when(io.enq.valid) { io.deq.valid := true.B }
+    when(io.enq.valid)(io.deq.valid := true.B)
     when(empty) {
       io.deq.bits := io.enq.bits
       do_deq := false.B
-      when(io.deq.ready) { do_enq := false.B }
+      when(io.deq.ready)(do_enq := false.B)
     }
   }
 
   if (pipe) {
-    when(io.deq.ready) { io.enq.ready := true.B }
+    when(io.deq.ready)(io.enq.ready := true.B)
   }
 
   val ptr_diff = enq_ptr.value - deq_ptr.value
@@ -153,13 +152,13 @@ object Queue_SRAM {
    */
   @nowarn("cat=deprecation&msg=TransitName")
   def apply[T <: Data](
-                        enq:            ReadyValidIO[T],
-                        entries:        Int = 2,
-                        pipe:           Boolean = false,
-                        flow:           Boolean = false,
-                        useSyncReadMem: Boolean = false,
-                        flush:          Option[Bool] = None
-                      ): DecoupledIO[T] = {
+    enq: ReadyValidIO[T],
+    entries: Int = 2,
+    pipe: Boolean = false,
+    flow: Boolean = false,
+    useSyncReadMem: Boolean = false,
+    flush: Option[Bool] = None
+  ): DecoupledIO[T] =
     if (entries == 0) {
       val deq = Wire(new DecoupledIO(chiselTypeOf(enq.bits)))
       deq.valid := enq.valid
@@ -174,7 +173,6 @@ object Queue_SRAM {
       enq.ready := q.io.enq.ready
       q.io.deq
     }
-  }
 
   /** Create a queue and supply a [[IrrevocableIO]] containing the product.
    * Casting from [[DecoupledIO]] is safe here because we know the [[Queue]] has
@@ -197,13 +195,13 @@ object Queue_SRAM {
    * }}}
    */
   def irrevocable[T <: Data](
-                              enq:            ReadyValidIO[T],
-                              entries:        Int = 2,
-                              pipe:           Boolean = false,
-                              flow:           Boolean = false,
-                              useSyncReadMem: Boolean = false,
-                              flush:          Option[Bool] = None
-                            ): IrrevocableIO[T] = {
+    enq: ReadyValidIO[T],
+    entries: Int = 2,
+    pipe: Boolean = false,
+    flow: Boolean = false,
+    useSyncReadMem: Boolean = false,
+    flush: Option[Bool] = None
+  ): IrrevocableIO[T] = {
     val deq = apply(enq, entries, pipe, flow, useSyncReadMem, flush)
     require(entries > 0, "Zero-entry queues don't guarantee Irrevocability")
     val irr = Wire(new IrrevocableIO(chiselTypeOf(deq.bits)))

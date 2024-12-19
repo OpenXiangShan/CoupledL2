@@ -19,9 +19,11 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import coupledL2.utils.{HoldUnless, SplittedSRAM}
-import utility.{ClockGate, SRAMTemplate}
+import coupledL2.utils.HoldUnless
+import coupledL2.utils.SplittedSRAM
 import org.chipsalliance.cde.config.Parameters
+import utility.ClockGate
+import utility.SRAMTemplate
 
 class DSRequest(implicit p: Parameters) extends L2Bundle {
   val way = UInt(wayBits.W)
@@ -53,7 +55,6 @@ class DSECCBankBlock(implicit p: Parameters) extends L2Bundle {
     UInt((blockBytes * 8).W)
   }
 }
-
 
 class DataStorage(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
@@ -93,7 +94,9 @@ class DataStorage(implicit p: Parameters) extends L2Module {
   val arrayWrite = Wire(new DSECCBankBlock)
   val arrayWriteData = if (enableDataECC) {
     // cacheParams.dataCode.encode(io.wdata.data).pad(encDataPaddingBits)
-    Cat(VecInit(Seq.tabulate(4)(i => io.wdata.data((blockBytes * 2) * (i + 1) - 1, (blockBytes * 2) * i))).map(data => cacheParams.dataCode.encode(data)))
+    Cat(VecInit(Seq.tabulate(4)(i => io.wdata.data((blockBytes * 2) * (i + 1) - 1, (blockBytes * 2) * i))).map(data =>
+      cacheParams.dataCode.encode(data)
+    ))
   } else {
     io.wdata.data
   }
@@ -103,7 +106,9 @@ class DataStorage(implicit p: Parameters) extends L2Module {
   val dataRead = Wire(new DSBlock)
   // dataRead.data := arrayRead.data(blockBytes * 8 - 1, 0)
   val bankDataRead = if (enableDataECC) {
-    Cat(VecInit(Seq.tabulate(eccDataBankSplit)(i => arrayRead.data(encDataBankBits * (i + 1) - 1, encDataBankBits * i)(blockBytes * 2 - 1, 0))))
+    Cat(VecInit(Seq.tabulate(eccDataBankSplit)(i =>
+      arrayRead.data(encDataBankBits * (i + 1) - 1, encDataBankBits * i)(blockBytes * 2 - 1, 0)
+    )))
   } else {
     arrayRead.data
   }
@@ -114,12 +119,12 @@ class DataStorage(implicit p: Parameters) extends L2Module {
   array.io.w.apply(wen, arrayWrite, arrayIdx, 1.U)
   array.io.r.apply(ren, arrayIdx)
 
-
   //  val eccData = arrayRead.data(encDataBits - 1, 0)
   val error = if (enableDataECC) {
     // cacheParams.dataCode.decode(eccData).error && RegNext(RegNext(io.req.valid && !io.req.bits.wen))
-    VecInit(Seq.tabulate(eccDataBankSplit)(i => arrayRead.data(encDataBankBits * (i + 1) - 1, encDataBankBits * i))).
-      map(data => cacheParams.dataCode.decode(data).error).reduce(_ | _) && RegNext(RegNext(io.req.valid && !io.req.bits.wen))
+    VecInit(Seq.tabulate(eccDataBankSplit)(i => arrayRead.data(encDataBankBits * (i + 1) - 1, encDataBankBits * i))).map(
+      data => cacheParams.dataCode.decode(data).error
+    ).reduce(_ | _) && RegNext(RegNext(io.req.valid && !io.req.bits.wen))
   } else {
     false.B
   }
@@ -129,12 +134,15 @@ class DataStorage(implicit p: Parameters) extends L2Module {
   io.rdata := dataRead
   io.error := error
 
-  assert(!io.en || !RegNext(io.en, false.B),
-    "Continuous SRAM req prohibited under MCP2!")
+  assert(!io.en || !RegNext(io.en, false.B), "Continuous SRAM req prohibited under MCP2!")
 
-  assert(!(RegNext(io.en) && (io.req.asUInt =/= RegNext(io.req.asUInt))),
-    s"DataStorage req fails to hold for 2 cycles!")
+  assert(
+    !(RegNext(io.en) && (io.req.asUInt =/= RegNext(io.req.asUInt))),
+    s"DataStorage req fails to hold for 2 cycles!"
+  )
 
-  assert(!(RegNext(io.en && io.req.bits.wen) && (io.wdata.asUInt =/= RegNext(io.wdata.asUInt))),
-    s"DataStorage wdata fails to hold for 2 cycles!")
+  assert(
+    !(RegNext(io.en && io.req.bits.wen) && (io.wdata.asUInt =/= RegNext(io.wdata.asUInt))),
+    s"DataStorage wdata fails to hold for 2 cycles!"
+  )
 }
