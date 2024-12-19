@@ -50,15 +50,12 @@ trait HasCoupledL2Parameters {
   def beatBits = offsetBits - log2Ceil(beatBytes)
   def stateBits = MetaData.stateBits
   def chiOpt = if (enableCHI) Some(true) else None
-  def aliasBitsOpt = if (cacheParams.clientCaches.isEmpty) None
-  else cacheParams.clientCaches.head.aliasBitsOpt
+  def aliasBitsOpt = if (cacheParams.clientCaches.isEmpty) None else cacheParams.clientCaches.head.aliasBitsOpt
   // vaddr without offset bits
-  def vaddrBitsOpt = if (cacheParams.clientCaches.isEmpty) None
-  else cacheParams.clientCaches.head.vaddrBitsOpt
+  def vaddrBitsOpt = if (cacheParams.clientCaches.isEmpty) None else cacheParams.clientCaches.head.vaddrBitsOpt
   def fullVAddrBits = vaddrBitsOpt.getOrElse(0) + offsetBits
   // from L1 load miss cache require
-  def isKeywordBitsOpt = if (cacheParams.clientCaches.isEmpty) None
-  else cacheParams.clientCaches.head.isKeywordBitsOpt
+  def isKeywordBitsOpt = if (cacheParams.clientCaches.isEmpty) None else cacheParams.clientCaches.head.isKeywordBitsOpt
 
   def pageOffsetBits = log2Ceil(cacheParams.pageBytes)
 
@@ -311,14 +308,16 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     managerFn = managerPortParams
   )
 
-  val tpmeta_source_node = if (hasTPPrefetcher) Some(BundleBridgeSource(() =>
-    DecoupledIO(new TPmetaReq(hartIdLen, node.in.head._2.bundle.addressBits, offsetBits))
-  ))
-  else None
-  val tpmeta_sink_node = if (hasTPPrefetcher) Some(BundleBridgeSink(Some(() =>
-    ValidIO(new TPmetaResp(hartIdLen, node.in.head._2.bundle.addressBits, offsetBits))
-  )))
-  else None
+  val tpmeta_source_node = if (hasTPPrefetcher) {
+    Some(BundleBridgeSource(() =>
+      DecoupledIO(new TPmetaReq(hartIdLen, node.in.head._2.bundle.addressBits, offsetBits))
+    ))
+  } else None
+  val tpmeta_sink_node = if (hasTPPrefetcher) {
+    Some(BundleBridgeSink(Some(() =>
+      ValidIO(new TPmetaResp(hartIdLen, node.in.head._2.bundle.addressBits, offsetBits))
+    )))
+  } else None
 
   abstract class BaseCoupledL2Imp(wrapper: LazyModule) extends LazyModuleImp(wrapper) with HasPerfEvents {
     val banks = node.in.size
@@ -352,9 +351,8 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     // Display info
     val sizeBytes = cacheParams.toCacheParams.capacity.toDouble
     val sizeStr = sizeBytesToStr(sizeBytes)
-    println(
-      s"====== Inclusive TL-${if (enableCHI) "CHI" else "TL"} ${cacheParams.name} ($sizeStr * $banks-bank)  ======"
-    )
+    println(s"====== Inclusive TL-${if (enableCHI) "CHI" else "TL"} ${cacheParams.name} " +
+      "($sizeStr * $banks-bank)  ======")
     println(s"prefetch: ${cacheParams.prefetch}")
     println(s"bankBits: ${bankBits}")
     println(s"replacement: ${cacheParams.replacement}")

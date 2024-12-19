@@ -182,9 +182,11 @@ class Directory(implicit p: Parameters) extends L2Module {
   // Replacer
   val repl = ReplacementPolicy.fromString(cacheParams.replacement, ways)
   val random_repl = cacheParams.replacement == "random"
-  val replacer_sram_opt = if (random_repl) None
-  else
+  val replacer_sram_opt = if (random_repl) {
+    None
+  } else {
     Some(Module(new SRAMTemplate(UInt(repl.nBits.W), sets, 1, singlePort = true, shouldReset = true)))
+  }
 
   /* ====== Generate response signals ====== */
   // hit/way calculation in stage 3, Cuz SRAM latency is high under high frequency
@@ -318,14 +320,19 @@ class Directory(implicit p: Parameters) extends L2Module {
   /* ====== Update ====== */
   // PLRU: update replacer only when A hit or refill, at stage 3
   // RRIP: update replacer when A/C hit or refill
+  // TODO: this is ugly
   val updateHit = if (cacheParams.replacement == "drrip" || cacheParams.replacement == "srrip") {
-    reqValid_s3 && hit_s3 &&
-    ((req_s3.replacerInfo.channel(
-      0
-    ) && (req_s3.replacerInfo.opcode === AcquirePerm || req_s3.replacerInfo.opcode === AcquireBlock || req_s3.replacerInfo.opcode === Hint)) ||
-      (req_s3.replacerInfo.channel(
-        2
-      ) && (req_s3.replacerInfo.opcode === Release || req_s3.replacerInfo.opcode === ReleaseData)))
+    reqValid_s3 && hit_s3 && (
+      req_s3.replacerInfo.channel(0) && (
+        req_s3.replacerInfo.opcode === AcquirePerm ||
+          req_s3.replacerInfo.opcode === AcquireBlock ||
+          req_s3.replacerInfo.opcode === Hint
+      ) ||
+        req_s3.replacerInfo.channel(2) && (
+          req_s3.replacerInfo.opcode === Release ||
+            req_s3.replacerInfo.opcode === ReleaseData
+        )
+    )
   } else {
     reqValid_s3 && hit_s3 && req_s3.replacerInfo.channel(0) &&
     (req_s3.replacerInfo.opcode === AcquirePerm || req_s3.replacerInfo.opcode === AcquireBlock)
@@ -336,9 +343,11 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   // hit-Promotion, miss-Insertion for RRIP
   // origin-bit marks whether the data_block is reused
-  val origin_bit_opt = if (random_repl) None
-  else
+  val origin_bit_opt = if (random_repl) {
+    None
+  } else {
     Some(Module(new SRAMTemplate(Bool(), sets, ways, singlePort = true, shouldReset = true)))
+  }
   val origin_bits_r = origin_bit_opt.get.io.r(io.read.fire, io.read.bits.set).resp.data
   val origin_bits_hold = Wire(Vec(ways, Bool()))
   origin_bits_hold := HoldUnless(origin_bits_r, RegNext(io.read.fire, false.B))
