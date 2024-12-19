@@ -182,9 +182,11 @@ class Directory(implicit p: Parameters) extends L2Module {
   // Replacer
   val repl = ReplacementPolicy.fromString(cacheParams.replacement, ways)
   val random_repl = cacheParams.replacement == "random"
-  val replacer_sram_opt = if (random_repl) None
-  else
+  val replacer_sram_opt = if (random_repl) {
+    None
+  } else {
     Some(Module(new SRAMTemplate(UInt(repl.nBits.W), sets, 1, singlePort = true, shouldReset = true)))
+  }
 
   /* ====== Generate response signals ====== */
   // hit/way calculation in stage 3, Cuz SRAM latency is high under high frequency
