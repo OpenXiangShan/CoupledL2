@@ -22,7 +22,7 @@ import chisel3.util._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import org.chipsalliance.cde.config.Parameters
-import utility.{MemReqSource, XSPerfAccumulate, RRArbiterInit}
+import utility.{MemReqSource, RRArbiterInit, XSPerfAccumulate}
 
 class PipeBufferResp(implicit p: Parameters) extends L2Bundle {
   val data = Vec(beatSize, UInt((beatBytes * 8).W))
@@ -49,7 +49,8 @@ class SinkC(implicit p: Parameters) extends L2Module {
 
   // dataBuf entry is valid when Release has data
   // taskBuf entry is valid when ReqArb is not ready to receive C tasks
-  val dataBuf = RegInit(VecInit(Seq.fill(bufBlocks)(VecInit(Seq.fill(beatSize)(0.U.asTypeOf(UInt((beatBytes * 8).W)))))))
+  val dataBuf =
+    RegInit(VecInit(Seq.fill(bufBlocks)(VecInit(Seq.fill(beatSize)(0.U.asTypeOf(UInt((beatBytes * 8).W)))))))
   val beatValids = RegInit(VecInit(Seq.fill(bufBlocks)(VecInit(Seq.fill(beatSize)(false.B)))))
   val dataValids = VecInit(beatValids.map(_.asUInt.orR)).asUInt
   val taskBuf = RegInit(VecInit(Seq.fill(bufBlocks)(0.U.asTypeOf(new TaskBundle))))
@@ -104,9 +105,9 @@ class SinkC(implicit p: Parameters) extends L2Module {
     task
   }
 
-  when (io.c.fire && isRelease) {
-    when (hasData) {
-      when (first) {
+  when(io.c.fire && isRelease) {
+    when(hasData) {
+      when(first) {
         dataBuf(nextPtr)(beat) := io.c.bits.data
         beatValids(nextPtr)(beat) := true.B
       }.otherwise {
@@ -117,8 +118,8 @@ class SinkC(implicit p: Parameters) extends L2Module {
     }
   }
 
-  when (io.c.fire && isRelease && last) {
-    when (hasData) {
+  when(io.c.fire && isRelease && last) {
+    when(hasData) {
       taskValids(nextPtrReg) := true.B
       taskBuf(nextPtrReg) := toTaskBundle(io.c.bits)
       taskBuf(nextPtrReg).bufIdx := nextPtrReg
@@ -134,7 +135,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
     case (in, i) =>
       in.valid := taskValids(i)
       in.bits := taskBuf(i)
-      when (in.fire) {
+      when(in.fire) {
         taskValids(i) := false.B
       }
   }
@@ -157,8 +158,8 @@ class SinkC(implicit p: Parameters) extends L2Module {
   io.resp.respInfo.corrupt := io.c.bits.corrupt
 
   // keep the first beat of ProbeAckData
-  val probeAckDataBuf = RegEnable(io.c.bits.data, 0.U((beatBytes * 8).W),
-    io.c.valid && io.c.bits.opcode === ProbeAckData && first)
+  val probeAckDataBuf =
+    RegEnable(io.c.bits.data, 0.U((beatBytes * 8).W), io.c.valid && io.c.bits.opcode === ProbeAckData && first)
 
   io.releaseBufWrite.valid := io.c.valid && io.c.bits.opcode === ProbeAckData && last
   io.releaseBufWrite.bits.id := 0.U(mshrBits.W) // id is given by MSHRCtl by comparing address to the MSHRs
@@ -197,6 +198,6 @@ class SinkC(implicit p: Parameters) extends L2Module {
   XSPerfAccumulate("sinkC_buf_full", full)
 
   XSPerfAccumulate("NewDataNestC", io.refillBufWrite.valid)
-  //!!WARNING: TODO: if this is zero, that means fucntion [Release-new-data written into refillBuf]
+  // !!WARNING: TODO: if this is zero, that means fucntion [Release-new-data written into refillBuf]
   // is never tested, and may have flaws
 }

@@ -31,7 +31,7 @@ import org.chipsalliance.cde.config.Parameters
 import chisel3.DontCare.:=
 import chisel3._
 import chisel3.util._
-import coupledL2.{HasCoupledL2Parameters, L2TlbReq, L2ToL1TlbIO, TlbCmd, Pbmt}
+import coupledL2.{HasCoupledL2Parameters, L2TlbReq, L2ToL1TlbIO, Pbmt, TlbCmd}
 import coupledL2.utils.ReplacementPolicy
 import scopt.Read
 import freechips.rocketchip.util.SeqToAugmentedSeq
@@ -39,11 +39,11 @@ import freechips.rocketchip.util.SeqToAugmentedSeq
 case class BOPParameters(
   virtualTrain: Boolean = true,
   rrTableEntries: Int = 256,
-  rrTagBits:      Int = 12,
-  scoreBits:      Int = 5,
-  roundMax:       Int = 50,
-  badScore:       Int = 2,
-  tlbReplayCnt:   Int = 10,
+  rrTagBits: Int = 12,
+  scoreBits: Int = 5,
+  roundMax: Int = 50,
+  badScore: Int = 2,
+  tlbReplayCnt: Int = 10,
   dQEntries: Int = 16,
   dQLatency: Int = 175,
   dQMaxLatency: Int = 256,
@@ -61,24 +61,23 @@ case class BOPParameters(
     50, 54, 60, 64, 72, 75, 80, 81,
     90, 96, 100, 108, 120, 125, 128, 135,
     144, 150, 160, 162, 180, 192, 200, 216,
-    225, 240, 243, 250/*, 256*/
+    225, 240, 243, 250 /*, 256*/
   )
-  )
-    extends PrefetchParameters {
-  override val hasPrefetchBit:  Boolean = true
-  override val hasPrefetchSrc:  Boolean = true
+) extends PrefetchParameters {
+  override val hasPrefetchBit: Boolean = true
+  override val hasPrefetchSrc: Boolean = true
   override val inflightEntries: Int = 16
 }
 
 trait HasBOPParams extends HasPrefetcherHelper {
   def bopParams = prefetchers.find {
-      case p: BOPParameters => true
-      case _ => false
-    }.get.asInstanceOf[BOPParameters]
+    case p: BOPParameters => true
+    case _ => false
+  }.get.asInstanceOf[BOPParameters]
 
   // train address space: virtual or physical
   def virtualTrain = bopParams.virtualTrain
-  def fullAddrBits = if(virtualTrain) fullVAddrBits else fullAddressBits
+  def fullAddrBits = if (virtualTrain) fullVAddrBits else fullAddressBits
   def noOffsetAddrBits = fullAddrBits - offsetBits
   override val REQ_FILTER_SIZE = 16
 
@@ -161,10 +160,10 @@ class RecentRequestTable(name: String)(implicit p: Parameters) extends BOPModule
   //    or: |  ...  |    12-bit tag    |  8-bit hash1  |  6-bit cache offset  |
   //        +-------+------------------+---------------+----------------------+
   def lineAddr(addr: UInt) = addr(fullAddrBits - 1, offsetBits)
-  def hash1(addr:    UInt) = lineAddr(addr)(rrIdxBits - 1, 0)
-  def hash2(addr:    UInt) = lineAddr(addr)(2 * rrIdxBits - 1, rrIdxBits)
-  def idx(addr:      UInt) = hash1(addr) ^ hash2(addr)
-  def tag(addr:      UInt) = lineAddr(addr)(rrTagBits + rrIdxBits - 1, rrIdxBits)
+  def hash1(addr: UInt) = lineAddr(addr)(rrIdxBits - 1, 0)
+  def hash2(addr: UInt) = lineAddr(addr)(2 * rrIdxBits - 1, rrIdxBits)
+  def idx(addr: UInt) = hash1(addr) ^ hash2(addr)
+  def tag(addr: UInt) = lineAddr(addr)(rrTagBits + rrIdxBits - 1, rrIdxBits)
   def rrTableEntry() = new Bundle {
     val valid = Bool()
     val tag = UInt(rrTagBits.W)
@@ -194,10 +193,10 @@ class RecentRequestTable(name: String)(implicit p: Parameters) extends BOPModule
   io.r.resp.bits.ptr := RegNext(io.r.req.bits.ptr)
   io.r.resp.bits.hit := rData.valid && rData.tag === RegNext(tag(rAddr))
 
-  class WRRTEntry extends Bundle{
+  class WRRTEntry extends Bundle {
     val addr = UInt(fullAddrBits.W)
   }
-  val wrrt = ChiselDB.createTable(name+"WriteRecentRequestTable", new WRRTEntry, basicDB = false)
+  val wrrt = ChiselDB.createTable(name + "WriteRecentRequestTable", new WRRTEntry, basicDB = false)
   val e = Wire(new WRRTEntry)
   e.addr := wAddr
   wrrt.log(e, io.w.valid && !io.r.req.valid, site = "RecentRequestTable", clock, reset)
@@ -212,8 +211,8 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
     val test = new TestOffsetBundle
   })
 
-  private val badscoreConstant = Constantin.createRecord(name+"_badScore", bopParams.badScore)
-  private val roundMaxConstant = Constantin.createRecord(name+"_roundMax", roundMax)
+  private val badscoreConstant = Constantin.createRecord(name + "_badScore", bopParams.badScore)
+  private val roundMaxConstant = Constantin.createRecord(name + "_roundMax", roundMax)
 
   val prefetchOffset = RegInit(2.U(offsetWidth.W))
   val prefetchDisable = RegInit(false.B)
@@ -223,7 +222,7 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
   val offList = WireInit(VecInit(offsetList.map(off => off.S(offsetWidth.W).asUInt)))
   val ptr = RegInit(0.U(scoreTableIdxBits.W))
   val round = RegInit(0.U(roundBits.W))
-  
+
   val bestOffset = RegInit(2.U(offsetWidth.W)) // the entry with the highest score while traversing
   val bestScore = RegInit(0.U)
   val testOffset = offList(ptr)
@@ -301,11 +300,15 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
 
   for (off <- offsetList) {
     if (off < 0) {
-      XSPerfAccumulate("best_offset_neg_" + (-off).toString + "_learning_phases",
-        Mux(state === s_idle, (bestOffset === off.S(offsetWidth.W).asUInt).asUInt, 0.U))
+      XSPerfAccumulate(
+        "best_offset_neg_" + (-off).toString + "_learning_phases",
+        Mux(state === s_idle, (bestOffset === off.S(offsetWidth.W).asUInt).asUInt, 0.U)
+      )
     } else {
-      XSPerfAccumulate("best_offset_pos_" + off.toString + "_learning_phases",
-        Mux(state === s_idle, (bestOffset === off.U).asUInt, 0.U))
+      XSPerfAccumulate(
+        "best_offset_pos_" + off.toString + "_learning_phases",
+        Mux(state === s_idle, (bestOffset === off.U).asUInt, 0.U)
+      )
     }
   }
 
@@ -317,20 +320,20 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
     val offsets = Vec(offsetList.length, UInt(offsetWidth.W))
     val scores = Vec(offsetList.length, UInt(scoreBits.W))
   }
-  val l2BopTrainTable = ChiselDB.createTable(name+"OffsetScoreTable", new BopTrainEntry, basicDB = false)
+  val l2BopTrainTable = ChiselDB.createTable(name + "OffsetScoreTable", new BopTrainEntry, basicDB = false)
   val data = Wire(new BopTrainEntry)
   data.bestOffset := bestOffset
   data.bestScore := bestScore
-  for (i <- 0 until offsetList.length){
+  for (i <- 0 until offsetList.length) {
     data.offsets(i) := offList(i)
     data.scores(i) := st(i).score
   }
   // l2BopTrainTable.log(data = data, en = (state === s_idle) && !isBad, site = name+"OffsetScoreTable", clock, reset)
-  l2BopTrainTable.log(data = data, en = (state === s_idle) && !isBad, site = name+"OffsetScoreTable", clock, reset)
+  l2BopTrainTable.log(data = data, en = (state === s_idle) && !isBad, site = name + "OffsetScoreTable", clock, reset)
 
 }
 
-class BopReqBundle(implicit p: Parameters) extends BOPBundle{
+class BopReqBundle(implicit p: Parameters) extends BOPBundle {
   val full_vaddr = UInt(fullVAddrBits.W)
   val base_vaddr = UInt(vaddrBitsOpt.getOrElse(0).W)
   val needT = Bool()
@@ -341,8 +344,8 @@ class BopReqBundle(implicit p: Parameters) extends BOPBundle{
 class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
   // for tlb req
   val paddrValid = Bool()
-  val vaddrNoOffset = UInt((fullVAddrBits-offsetBits).W)
-  val baseVaddr = UInt((fullVAddrBits-offsetBits).W)
+  val vaddrNoOffset = UInt((fullVAddrBits - offsetBits).W)
+  val baseVaddr = UInt((fullVAddrBits - offsetBits).W)
   val paddrNoOffset = UInt(fullVAddrBits.W)
   val replayEn = Bool()
   val replayCnt = UInt(4.W)
@@ -382,25 +385,25 @@ class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
 
   def update_paddr(paddr: UInt) = {
     paddrValid := true.B
-    paddrNoOffset := paddr(paddr.getWidth-1, offsetBits)
+    paddrNoOffset := paddr(paddr.getWidth - 1, offsetBits)
     replayEn := false.B
     replayCnt := 0.U
   }
 
 }
 
-class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends BOPModule{
+class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends BOPModule {
   val io = IO(new Bundle() {
     val in_req = Flipped(ValidIO(new BopReqBundle))
     val tlb_req = new L2ToL1TlbIO(nRespDups = 1)
     val out_req = DecoupledIO(new PrefetchReq)
   })
 
-  val firstTlbReplayCnt = Constantin.createRecord(name+"_firstTlbReplayCnt", bopParams.tlbReplayCnt)
+  val firstTlbReplayCnt = Constantin.createRecord(name + "_firstTlbReplayCnt", bopParams.tlbReplayCnt)
   // if full then drop new req, so there is no need to use s1_evicted_oh & replacement
   val valids = Seq.fill(REQ_FILTER_SIZE)(RegInit(false.B))
   val entries = Seq.fill(REQ_FILTER_SIZE)(Reg(new BopReqBufferEntry))
-  //val replacement = ReplacementPolicy.fromString("plru", REQ_FILTER_SIZE)
+  // val replacement = ReplacementPolicy.fromString("plru", REQ_FILTER_SIZE)
   val tlb_req_arb = Module(new RRArbiterInit(new L2TlbReq, REQ_FILTER_SIZE))
   val pf_req_arb = Module(new RRArbiterInit(new PrefetchReq, REQ_FILTER_SIZE))
 
@@ -426,10 +429,10 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
     val v = valids(i)
     val e = entries(i)
     v &&
-      e.vaddrNoOffset === get_block_vaddr(req.full_vaddr) &&
-      e.baseVaddr === req.base_vaddr &&
-      e.needT === req.needT &&
-      e.source === req.source
+    e.vaddrNoOffset === get_block_vaddr(req.full_vaddr) &&
+    e.baseVaddr === req.base_vaddr &&
+    e.needT === req.needT &&
+    e.source === req.source
   }
 
   /* timing description:
@@ -459,8 +462,8 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
   // FIXME lyq: the comparision logic is very complicated, is there a way to simplify
   val s0_match_oh = VecInit(entries.indices.map(i =>
     valids(i) && entries(i).vaddrNoOffset === s0_in_flag &&
-    entries(i).needT === s0_in_req.needT && entries(i).source === s0_in_req.source &&
-    entries(i).baseVaddr === s0_in_req.base_vaddr
+      entries(i).needT === s0_in_req.needT && entries(i).source === s0_in_req.source &&
+      entries(i).baseVaddr === s0_in_req.base_vaddr
   )).asUInt
   val s0_match = Cat(s0_match_oh).orR
 
@@ -471,15 +474,14 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
   val s0_req_valid = io.in_req.valid && !s0_conflict_prev && !s0_match && s0_has_invalid_way
   val s0_tlb_fire_oh = VecInit(tlb_req_arb.io.in.map(_.fire)).asUInt
   val s0_pf_fire_oh = VecInit(pf_req_arb.io.in.map(_.fire)).asUInt
-  //val s0_access_way = Mux(s0_match, OHToUInt(s0_match_oh), OHToUInt(s0_replace_oh))
-  //when(s0_req_valid){
+  // val s0_access_way = Mux(s0_match, OHToUInt(s0_match_oh), OHToUInt(s0_replace_oh))
+  // when(s0_req_valid){
   //  replacement.access(s0_access_way)
-  //}
+  // }
   XSPerfAccumulate("recv_req", io.in_req.valid)
   XSPerfAccumulate("recv_req_drop_conflict", io.in_req.valid && s0_conflict_prev)
   XSPerfAccumulate("recv_req_drop_match", io.in_req.valid && !s0_conflict_prev && s0_match)
   XSPerfAccumulate("recv_req_drop_full", io.in_req.valid && !s0_conflict_prev && !s0_match && !s0_has_invalid_way)
-
 
   /* s1 update and replace */
   val s1_valid = RegNext(s0_req_valid, false.B)
@@ -504,51 +506,53 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
   val miss_first_replay = Wire(Vec(REQ_FILTER_SIZE, Bool()))
   val pf_fired = Wire(Vec(REQ_FILTER_SIZE, Bool()))
   val tlb_fired = Wire(Vec(REQ_FILTER_SIZE, Bool()))
-  for ((e, i) <- entries.zipWithIndex){
+  for ((e, i) <- entries.zipWithIndex) {
     alloc(i) := s1_valid && s1_invalid_oh(i)
     pf_fired(i) := s0_pf_fire_oh(i)
     exp_drop(i) := s3_tlb_fire_oh(i) && s3_tlb_resp_valid && !s3_tlb_resp.miss && (
       (e.needT && (s3_tlb_resp.excp.head.pf.st || s3_tlb_resp.excp.head.gpf.st || s3_tlb_resp.excp.head.af.st)) ||
-      (!e.needT && (s3_tlb_resp.excp.head.pf.ld || s3_tlb_resp.excp.head.gpf.ld || s3_tlb_resp.excp.head.af.ld)) ||
-      io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt)
+        (!e.needT && (s3_tlb_resp.excp.head.pf.ld || s3_tlb_resp.excp.head.gpf.ld || s3_tlb_resp.excp.head.af.ld)) ||
+        io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt)
     )
     val miss = s3_tlb_fire_oh(i) && s3_tlb_resp_valid && s3_tlb_resp.miss
     tlb_fired(i) := s3_tlb_fire_oh(i) && s3_tlb_resp_valid && !s3_tlb_resp.miss && !exp_drop(i)
     miss_drop(i) := miss && e.replayEn
     miss_first_replay(i) := miss && !e.replayEn
-    
+
     // old data: update replayCnt
     when(valids(i) && e.replayCnt.orR) {
       e.replayCnt := e.replayCnt - 1.U
     }
     // recent data: update tlb resp
-    when(tlb_fired(i)){
+    when(tlb_fired(i)) {
       e.update_paddr(s3_tlb_resp.paddr.head)
     }.elsewhen(miss_drop(i)) { // miss
       invalid_entry(i)
-    }.elsewhen(miss_first_replay(i)){
+    }.elsewhen(miss_first_replay(i)) {
       e.replayCnt := firstTlbReplayCnt
       e.replayEn := 1.U
-    }.elsewhen(exp_drop(i)){
+    }.elsewhen(exp_drop(i)) {
       invalid_entry(i)
     }
     // issue data: update pf
-    when(pf_fired(i)){
+    when(pf_fired(i)) {
       invalid_entry(i)
     }
     // new data: update data
-    when(alloc(i)){
+    when(alloc(i)) {
       alloc_entry(i, s1_alloc_entry)
     }
   }
 
   /* tlb & pf */
-  for((e, i) <- entries.zipWithIndex){
-    tlb_req_arb.io.in(i).valid := valids(i) && !e.paddrValid && !s1_tlb_fire_oh(i) && !s2_tlb_fire_oh(i) && !s3_tlb_fire_oh(i) && !e.replayCnt.orR
+  for ((e, i) <- entries.zipWithIndex) {
+    tlb_req_arb.io.in(i).valid := valids(i) && !e.paddrValid && !s1_tlb_fire_oh(i) && !s2_tlb_fire_oh(
+      i
+    ) && !s3_tlb_fire_oh(i) && !e.replayCnt.orR
     tlb_req_arb.io.in(i).bits.vaddr := e.get_tlb_vaddr()
     when(e.needT) {
       tlb_req_arb.io.in(i).bits.cmd := TlbCmd.write
-    }.otherwise{
+    }.otherwise {
       tlb_req_arb.io.in(i).bits.cmd := TlbCmd.read
     }
     tlb_req_arb.io.in(i).bits.size := 3.U
@@ -562,20 +566,25 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
 
   XSPerfAccumulate("tlb_req", io.tlb_req.req.valid)
   XSPerfAccumulate("tlb_miss", io.tlb_req.resp.valid && io.tlb_req.resp.bits.miss)
-  XSPerfAccumulate("tlb_excp",
+  XSPerfAccumulate(
+    "tlb_excp",
     s3_tlb_resp_valid && !s3_tlb_resp.miss && (
       (s3_tlb_resp.excp.head.pf.st || s3_tlb_resp.excp.head.gpf.st || s3_tlb_resp.excp.head.af.st) ||
-      (s3_tlb_resp.excp.head.pf.ld || s3_tlb_resp.excp.head.gpf.ld || s3_tlb_resp.excp.head.af.ld) ||
-      io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt)
-  ))
-  XSPerfAccumulate("tlb_excp_uncache", s3_tlb_resp_valid && (io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt)))
+        (s3_tlb_resp.excp.head.pf.ld || s3_tlb_resp.excp.head.gpf.ld || s3_tlb_resp.excp.head.af.ld) ||
+        io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt)
+    )
+  )
+  XSPerfAccumulate(
+    "tlb_excp_uncache",
+    s3_tlb_resp_valid && (io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt))
+  )
   XSPerfAccumulate("entry_alloc", PopCount(alloc))
   XSPerfAccumulate("entry_miss_first_replay", PopCount(miss_first_replay))
   XSPerfAccumulate("entry_miss_drop", PopCount(miss_drop))
   XSPerfAccumulate("entry_excp", PopCount(exp_drop))
   XSPerfAccumulate("entry_merge", io.in_req.valid && s0_match)
   XSPerfAccumulate("entry_pf_fire", PopCount(pf_fired))
-  
+
   /*
   val enTalbe = WireInit(Constantin.createRecord(name+"_isWriteL2BopTable", 1.U))
   val l2BOPTable = ChiselDB. createTable("L2BOPTable", new BopReqBufferEntry, basicDB = false)
@@ -590,11 +599,11 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
       )
     }
   }
-  */
+   */
 }
 
-class DelayQueue(name: String = "")(implicit p: Parameters) extends  BOPModule{
-  val io = IO(new Bundle(){
+class DelayQueue(name: String = "")(implicit p: Parameters) extends BOPModule {
+  val io = IO(new Bundle() {
     val in = Flipped(DecoupledIO(UInt(noOffsetAddrBits.W)))
     val out = DecoupledIO(UInt(fullAddrBits.W))
     // only record `fullAddrBits - offsetBits` bits
@@ -604,7 +613,7 @@ class DelayQueue(name: String = "")(implicit p: Parameters) extends  BOPModule{
   /* Setting */
   val IdxWidth = log2Up(dQEntries)
   val LatencyWidth = log2Up(dQMaxLatency)
-  class Entry extends Bundle{
+  class Entry extends Bundle {
     val addrNoOffset = UInt(noOffsetAddrBits.W)
     val cnt = UInt(LatencyWidth.W)
   }
@@ -617,7 +626,7 @@ class DelayQueue(name: String = "")(implicit p: Parameters) extends  BOPModule{
   val outValid = !empty && !queue(head).cnt.orR && valids(head)
 
   /* In & Out */
-  var setDqLatency = Constantin.createRecord(name+"_delayQueueLatency", dQLatency)
+  var setDqLatency = Constantin.createRecord(name + "_delayQueueLatency", dQLatency)
   when(io.in.valid && !full) {
     // if queue is full, we drop the new request
     queue(tail).addrNoOffset := io.in.bits
@@ -630,7 +639,7 @@ class DelayQueue(name: String = "")(implicit p: Parameters) extends  BOPModule{
     when(full && !io.deq.ready) {
       head := head + 1.U
     }
-    */
+     */
   }
   when(outValid && io.out.ready) {
     valids(head) := false.B
@@ -641,8 +650,8 @@ class DelayQueue(name: String = "")(implicit p: Parameters) extends  BOPModule{
   io.out.bits := Cat(queue(head).addrNoOffset, 0.U(offsetBits.W))
 
   /* Update */
-  for(i <- 0 until dQEntries){
-    when(queue(i).cnt.orR){
+  for (i <- 0 until dQEntries) {
+    when(queue(i).cnt.orR) {
       queue(i).cnt := queue(i).cnt - 1.U
     }
   }
@@ -660,12 +669,12 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   val io = IO(new Bundle() {
     val train = Flipped(DecoupledIO(new PrefetchTrain))
     val pbopCrossPage = Input(Bool())
-    val tlb_req = new L2ToL1TlbIO(nRespDups= 1)
+    val tlb_req = new L2ToL1TlbIO(nRespDups = 1)
     val req = DecoupledIO(new PrefetchReq)
     val resp = Flipped(DecoupledIO(new PrefetchResp))
   })
   // 0 / 1: whether to enable
-  private val enable = Constantin.createRecord("vbop_enable"+cacheParams.hartId.toString, initValue = 1)
+  private val enable = Constantin.createRecord("vbop_enable" + cacheParams.hartId.toString, initValue = 1)
 
   val delayQueue = Module(new DelayQueue("vbop"))
   val rrTable = Module(new RecentRequestTable("vbop"))
@@ -680,12 +689,13 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   val prefetchDisable = scoreTable.io.prefetchDisable
   // NOTE: vaddr from l1 to l2 has no offset bits
   val s0_reqVaddr = io.train.bits.vaddr.getOrElse(0.U)
-  val s0_oldFullAddr = if(virtualTrain) Cat(io.train.bits.vaddr.getOrElse(0.U), 0.U(offsetBits.W)) else io.train.bits.addr
-  val s0_oldFullAddrNoOff = s0_oldFullAddr(s0_oldFullAddr.getWidth-1, offsetBits)
+  val s0_oldFullAddr =
+    if (virtualTrain) Cat(io.train.bits.vaddr.getOrElse(0.U), 0.U(offsetBits.W)) else io.train.bits.addr
+  val s0_oldFullAddrNoOff = s0_oldFullAddr(s0_oldFullAddr.getWidth - 1, offsetBits)
   val s0_newFullAddr = s0_oldFullAddr + signedExtend((prefetchOffset << offsetBits), fullAddrBits)
   val s0_crossPage = getPPN(s0_newFullAddr) =/= getPPN(s0_oldFullAddr) // unequal tags
-  val respFullAddr = if(virtualTrain) Cat(io.resp.bits.vaddr.getOrElse(0.U), 0.U(offsetBits.W))
-                 else io.resp.bits.addr - signedExtend((prefetchOffset << offsetBits), fullAddrBits)
+  val respFullAddr = if (virtualTrain) Cat(io.resp.bits.vaddr.getOrElse(0.U), 0.U(offsetBits.W))
+  else io.resp.bits.addr - signedExtend((prefetchOffset << offsetBits), fullAddrBits)
 
   rrTable.io.r <> scoreTable.io.test
   rrTable.io.w <> delayQueue.io.out
@@ -706,9 +716,9 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
 
   // pipeline control signal
   when(s0_fire) {
-    if(virtualTrain) s1_req_valid := true.B
+    if (virtualTrain) s1_req_valid := true.B
     else s1_req_valid := !s0_crossPage // stop prefetch when prefetch req crosses pages
-  }.elsewhen(s1_fire){
+  }.elsewhen(s1_fire) {
     s1_req_valid := false.B
   }
 
@@ -730,10 +740,10 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
 
   // different situation
   val reqFilter = Module(new PrefetchReqBuffer)
-  when(prefetchDisable || !virtualTrain.B){
+  when(prefetchDisable || !virtualTrain.B) {
     reqFilter.io.in_req.valid := false.B
     reqFilter.io.in_req.bits := DontCare
-  }.otherwise{
+  }.otherwise {
     reqFilter.io.in_req.valid := s1_req_valid
     reqFilter.io.in_req.bits.full_vaddr := s1_newFullAddr
     reqFilter.io.in_req.bits.base_vaddr := s1_reqVaddr
@@ -742,7 +752,7 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     reqFilter.io.in_req.bits.isBOP := true.B
   }
 
-  if(virtualTrain){
+  if (virtualTrain) {
     io.tlb_req <> reqFilter.io.tlb_req
     io.req <> reqFilter.io.out_req
     io.req.valid := enable.orR && reqFilter.io.out_req.valid
@@ -773,10 +783,10 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   XSPerfAccumulate("bop_train", io.train.fire)
   XSPerfAccumulate("bop_resp", io.resp.fire)
   XSPerfAccumulate("bop_train_stall_for_st_not_ready", io.train.valid && !scoreTable.io.req.ready)
-  if(virtualTrain){
+  if (virtualTrain) {
     XSPerfAccumulate("bop_train_stall_for_tlb_not_ready", io.train.valid && !io.tlb_req.req.ready)
     // XSPerfAccumulate("bop_req_drop", out_drop_req)
-  }else{
+  } else {
     XSPerfAccumulate("bop_cross_page", scoreTable.io.req.fire && s0_crossPage)
   }
   XSPerfAccumulate("bop_drop_for_disable", scoreTable.io.req.fire && prefetchDisable)
@@ -791,7 +801,7 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   })
 
   // 0 / 1: whether to enable
-  private val enable = Constantin.createRecord("pbop_enable"+cacheParams.hartId.toString, initValue = 1)
+  private val enable = Constantin.createRecord("pbop_enable" + cacheParams.hartId.toString, initValue = 1)
 
   val delayQueue = Module(new DelayQueue("pbop"))
   val rrTable = Module(new RecentRequestTable("pbop"))
@@ -800,7 +810,7 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   val prefetchOffset = scoreTable.io.prefetchOffset
   val prefetchDisable = scoreTable.io.prefetchDisable
   val oldAddr = io.train.bits.addr
-  val oldAddrNoOff = oldAddr(oldAddr.getWidth-1, offsetBits)
+  val oldAddrNoOff = oldAddr(oldAddr.getWidth - 1, offsetBits)
   val newAddr = oldAddr + signedExtend((prefetchOffset << offsetBits), fullAddressBits)
 
   rrTable.io.r <> scoreTable.io.test

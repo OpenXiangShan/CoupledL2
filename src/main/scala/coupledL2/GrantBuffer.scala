@@ -28,8 +28,8 @@ import coupledL2.prefetch.PrefetchResp
 // record info of those with Grant sent, yet GrantAck not received
 // used to block Probe upwards
 class InflightGrantEntry(implicit p: Parameters) extends L2Bundle {
-  val set   = UInt(setBits.W)
-  val tag   = UInt(tagBits.W)
+  val set = UInt(setBits.W)
+  val tag = UInt(tagBits.W)
 }
 
 class TaskWithData(implicit p: Parameters) extends L2Bundle {
@@ -115,7 +115,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   val grantQueueData0 = Module(new Queue(new GrantQueueData(), entries = mshrsAll))
   val grantQueueData1 = Module(new Queue(new GrantQueueData(), entries = mshrsAll))
 
-  val inflightGrant = RegInit(VecInit(Seq.fill(grantBufInflightSize){
+  val inflightGrant = RegInit(VecInit(Seq.fill(grantBufInflightSize) {
     0.U.asTypeOf(Valid(new InflightGrantEntry))
   }))
 
@@ -154,13 +154,17 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   mergeAtask.mergeA := false.B
   mergeAtask.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
   val inflight_insertIdx = PriorityEncoder(inflightGrant.map(!_.valid))
-  val grantQueue_enq_isKeyword = Mux(io.d_task.bits.task.mergeA, mergeAtask.isKeyword.getOrElse(false.B), io.d_task.bits.task.isKeyword.getOrElse(false.B))
+  val grantQueue_enq_isKeyword = Mux(
+    io.d_task.bits.task.mergeA,
+    mergeAtask.isKeyword.getOrElse(false.B),
+    io.d_task.bits.task.isKeyword.getOrElse(false.B)
+  )
   // The following is organized in the order of data flow
   // =========== save d_task in queue[FIFO] ===========
   grantQueue.io.enq.valid := io.d_task.valid && (dtaskOpcode =/= HintAck || io.d_task.bits.task.mergeA)
   grantQueue.io.enq.bits.task := Mux(io.d_task.bits.task.mergeA, mergeAtask, io.d_task.bits.task)
   grantQueue.io.enq.bits.task.isKeyword.foreach(_ := grantQueue_enq_isKeyword)
-  //grantQueue.io.enq.bits.task.isKeyword.foreach(_ := io.d_task.bits.task.isKeyword.getOrElse(false.B))
+  // grantQueue.io.enq.bits.task.isKeyword.foreach(_ := io.d_task.bits.task.isKeyword.getOrElse(false.B))
   grantQueue.io.enq.bits.grantid := inflight_insertIdx
   val enqData = io.d_task.bits.data.asTypeOf(Vec(beatSize, new DSBeat))
   grantQueueData0.io.enq.valid := grantQueue.io.enq.valid
@@ -177,13 +181,13 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   require(beatSize == 2)
   val deqValid = grantQueue.io.deq.valid
   val deqTask = grantQueue.io.deq.bits.task
- // val deqTask.isKeyword.foreach(_ := grantQueue.io.deq.bits.task.isKeyword)
-  val deqId   = grantQueue.io.deq.bits.grantid
+  // val deqTask.isKeyword.foreach(_ := grantQueue.io.deq.bits.task.isKeyword)
+  val deqId = grantQueue.io.deq.bits.grantid
   val deqData = VecInit(Seq(grantQueueData0.io.deq.bits.data, grantQueueData1.io.deq.bits.data))
 
   // grantBuf: to keep the remaining unsent beat of GrantData
   val grantBufValid = RegInit(false.B)
-  val grantBuf =  RegInit(0.U.asTypeOf(new Bundle() {
+  val grantBuf = RegInit(0.U.asTypeOf(new Bundle() {
     val task = new TaskBundle()
     val data = new DSBeat()
     val grantid = UInt(mshrBits.W)
@@ -198,8 +202,8 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     grantBufValid := true.B
     grantBuf.task := deqTask
     grantBuf.task.isKeyword.foreach(_ := deqTask.isKeyword.getOrElse(false.B))
-   // grantBuf.data := deqData(1)
-   grantBuf.data := Mux(deqTask.isKeyword.getOrElse(false.B),deqData(0),deqData(1))
+    // grantBuf.data := deqData(1)
+    grantBuf.data := Mux(deqTask.isKeyword.getOrElse(false.B), deqData(0), deqData(1))
     grantBuf.grantid := deqId
   }
   when(grantBufValid && io.d.ready) {
@@ -210,24 +214,24 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   io.d.bits := Mux(
     grantBufValid,
     toTLBundleD(grantBuf.task, grantBuf.data.data, grantBuf.grantid),
-   // toTLBundleD(deqTask, deqData(0).data, deqId)
-    toTLBundleD(deqTask, Mux(deqTask.isKeyword.getOrElse(false.B),deqData(1).data,deqData(0).data), deqId)
+    // toTLBundleD(deqTask, deqData(0).data, deqId)
+    toTLBundleD(deqTask, Mux(deqTask.isKeyword.getOrElse(false.B), deqData(1).data, deqData(0).data), deqId)
   )
-
 
   XSPerfAccumulate("toTLBundleD_valid", deqValid)
   XSPerfAccumulate("toTLBundleD_valid_isKeyword", deqValid && deqTask.isKeyword.getOrElse(false.B))
   XSPerfAccumulate("toTLBundleD_fire", deqValid && io.d.ready)
   XSPerfAccumulate("toTLBundleD_fire_isKeyword", deqValid && io.d.ready && deqTask.isKeyword.getOrElse(false.B))
- /* val d_isKeyword = Mux(
+  /* val d_isKeyword = Mux(
     grantBufValid,
     grantBuf.task.isKeyword,
     deqTask.isKeyword
   )*/
   io.d.bits.echo.lift(IsKeywordKey).foreach(_ := Mux(
-    grantBufValid, 
-    grantBuf.task.isKeyword.getOrElse(false.B), 
-    deqTask.isKeyword.getOrElse(false.B)))
+    grantBufValid,
+    grantBuf.task.isKeyword.getOrElse(false.B),
+    deqTask.isKeyword.getOrElse(false.B)
+  ))
 
   // =========== send response to prefetcher ===========
   val pftRespEntry = new Bundle() {
@@ -262,25 +266,28 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
 
   // =========== record unreceived GrantAck ===========
   // Addrs with Grant sent and GrantAck not received
-  when (io.d_task.fire && (dtaskOpcode === Grant || dtaskOpcode === GrantData || io.d_task.bits.task.mergeA)) {
+  when(io.d_task.fire && (dtaskOpcode === Grant || dtaskOpcode === GrantData || io.d_task.bits.task.mergeA)) {
     // choose an empty entry
     val entry = inflightGrant(inflight_insertIdx)
     entry.valid := true.B
-    entry.bits.set    := io.d_task.bits.task.set
-    entry.bits.tag    := io.d_task.bits.task.tag
+    entry.bits.set := io.d_task.bits.task.set
+    entry.bits.tag := io.d_task.bits.task.tag
   }
   val inflight_full = Cat(inflightGrant.map(_.valid)).andR
-  assert(!(inflight_full & (io.d_task.fire && (dtaskOpcode === Grant || dtaskOpcode === GrantData || io.d_task.bits.task.mergeA))), "inflightGrant entries overflow")
+  assert(
+    !(inflight_full & (io.d_task.fire && (dtaskOpcode === Grant || dtaskOpcode === GrantData || io.d_task.bits.task.mergeA))),
+    "inflightGrant entries overflow"
+  )
 
   // report status to SourceB to block same-addr Probe
   io.grantStatus zip inflightGrant foreach {
     case (g, i) =>
       g.valid := i.valid
-      g.tag   := i.bits.tag
-      g.set   := i.bits.set
+      g.tag := i.bits.tag
+      g.set := i.bits.set
   }
 
-  when (io.e.fire) {
+  when(io.e.fire) {
     assert(io.e.bits.sink < grantBufInflightSize.U, "GrantBuf: e.sink overflow inflightGrant size")
     inflightGrant(io.e.bits.sink).valid := false.B
   }
@@ -299,7 +306,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   // for timing consideration, drop s1 info, so always reserve one entry for it
   val noSpaceForMSHRReq = PopCount(VecInit(io.pipeStatusVec.tail.map { case s =>
     s.valid && (s.bits.fromA || s.bits.fromC)
-  }).asUInt) + grantQueueCnt >= (mshrsAll-1).U
+  }).asUInt) + grantQueueCnt >= (mshrsAll - 1).U
   val noSpaceWaitSinkEForMSHRReq = PopCount(VecInit(io.pipeStatusVec.tail.map { case s =>
     s.valid && s.bits.fromA
   }).asUInt) + PopCount(VecInit(inflightGrant.map(x => x.valid))) >= (mshrsAll - 1).U
@@ -307,25 +314,35 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   // Ideally, it should only block Prefetch from entering MainPipe
   // But since it is extremely rare that pftRespQueue of 10 would be full, we just block all Entrance here, simpler logic
   // TODO: consider optimize this
-  val noSpaceForSinkPft = prefetchOpt.map(_ => PopCount(VecInit(io.pipeStatusVec.tail.map { case s =>
-    s.valid && s.bits.fromA
-  }).asUInt) + pftRespQueue.get.io.count >= pftQueueLen.U)
-  val noSpaceForMSHRPft = prefetchOpt.map(_ => PopCount(VecInit(io.pipeStatusVec.tail.map { case s =>
-    s.valid && s.bits.fromA
-  }).asUInt) + pftRespQueue.get.io.count >= (pftQueueLen-1).U)
+  val noSpaceForSinkPft = prefetchOpt.map(_ =>
+    PopCount(VecInit(io.pipeStatusVec.tail.map { case s =>
+      s.valid && s.bits.fromA
+    }).asUInt) + pftRespQueue.get.io.count >= pftQueueLen.U
+  )
+  val noSpaceForMSHRPft = prefetchOpt.map(_ =>
+    PopCount(VecInit(io.pipeStatusVec.tail.map { case s =>
+      s.valid && s.bits.fromA
+    }).asUInt) + pftRespQueue.get.io.count >= (pftQueueLen - 1).U
+  )
 
-  io.toReqArb.blockSinkReqEntrance.blockA_s1 := noSpaceForSinkReq || noSpaceWaitSinkEForSinkReq || noSpaceForSinkPft.getOrElse(false.B)
-  io.toReqArb.blockSinkReqEntrance.blockB_s1 := Cat(inflightGrant.map(g => g.valid &&
-    g.bits.set === io.fromReqArb.status_s1.b_set && g.bits.tag === io.fromReqArb.status_s1.b_tag)).orR
-  //TODO: or should we still Stall B req?
+  io.toReqArb.blockSinkReqEntrance.blockA_s1 := noSpaceForSinkReq || noSpaceWaitSinkEForSinkReq || noSpaceForSinkPft.getOrElse(
+    false.B
+  )
+  io.toReqArb.blockSinkReqEntrance.blockB_s1 := Cat(inflightGrant.map(g =>
+    g.valid &&
+      g.bits.set === io.fromReqArb.status_s1.b_set && g.bits.tag === io.fromReqArb.status_s1.b_tag
+  )).orR
+  // TODO: or should we still Stall B req?
   // A-replace related rprobe is handled in SourceB
   io.toReqArb.blockSinkReqEntrance.blockC_s1 := noSpaceForSinkReq
   io.toReqArb.blockSinkReqEntrance.blockG_s1 := false.B // this is not used
-  io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq || noSpaceWaitSinkEForMSHRReq || noSpaceForMSHRPft.getOrElse(false.B)
+  io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq || noSpaceWaitSinkEForMSHRReq || noSpaceForMSHRPft.getOrElse(
+    false.B
+  )
 
   // =========== XSPerf ===========
   if (cacheParams.enablePerf) {
-    val timers = RegInit(VecInit(Seq.fill(grantBufInflightSize){0.U(64.W)}))
+    val timers = RegInit(VecInit(Seq.fill(grantBufInflightSize) { 0.U(64.W) }))
     inflightGrant zip timers map {
       case (e, t) =>
         when(e.valid) { t := t + 1.U }

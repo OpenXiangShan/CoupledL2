@@ -1,4 +1,3 @@
-
 /** *************************************************************************************
   * Copyright (c) 2020-2021 Institute of Computing Technology, Chinese Academy of Sciences
   * Copyright (c) 2020-2021 Peng Cheng Laboratory
@@ -38,7 +37,8 @@ class MMIOBridge()(implicit p: Parameters) extends LazyModule
     */
   val beuRange = AddressSet(0x38010000, 4096 - 1)
   val peripheralRange = AddressSet(
-    0x0, 0xffffffffffffL
+    0x0,
+    0xffffffffffffL
   ).subtract(beuRange)
 
   val mmioNode = TLManagerNode(Seq(TLSlavePortParameters.v1(
@@ -108,21 +108,21 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   val txdat = io.chi.tx.dat
   val rxdat = io.chi.rx.dat
   val rxrsp = io.chi.rx.rsp
-  
+
   /**
     * Entry allocation
     */
-  when (io.req.fire) {
+  when(io.req.fire) {
     s_txreq := false.B
     s_resp := false.B
     allowRetry := true.B
     denied := false.B
     corrupt := false.B
     traceTag := false.B
-    when (io.req.bits.opcode === Get) {
+    when(io.req.bits.opcode === Get) {
       w_compdata := false.B
       w_readreceipt.foreach(_ := false.B)
-    }.elsewhen (io.req.bits.opcode === PutFullData || io.req.bits.opcode === PutPartialData) {
+    }.elsewhen(io.req.bits.opcode === PutFullData || io.req.bits.opcode === PutPartialData) {
       w_comp := false.B
       w_dbidresp := false.B
       s_ncbwrdata := false.B
@@ -132,10 +132,10 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   /**
     * State flags recover
     */
-  when (txreq.fire) {
+  when(txreq.fire) {
     s_txreq := true.B
   }
-  when (rxdat.fire) {
+  when(rxdat.fire) {
     w_compdata := true.B
     rdata := rxdat.bits.data
     val nderr = rxdat.bits.respErr === RespErrEncodings.NDERR
@@ -143,41 +143,41 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
     denied := denied || nderr
     corrupt := corrupt || derr || nderr
   }
-  when (io.resp.fire) {
+  when(io.resp.fire) {
     s_resp := true.B
   }
-  when (rxrsp.fire) {
-    when (rxrsp.bits.opcode === CompDBIDResp || rxrsp.bits.opcode === Comp) {
+  when(rxrsp.fire) {
+    when(rxrsp.bits.opcode === CompDBIDResp || rxrsp.bits.opcode === Comp) {
       w_comp := true.B
     }
-    when (
+    when(
       rxrsp.bits.opcode === CompDBIDResp || rxrsp.bits.opcode === DBIDResp ||
-      ENABLE_ISSUE_Eb.B && rxrsp.bits.opcode === DBIDRespOrd
+        ENABLE_ISSUE_Eb.B && rxrsp.bits.opcode === DBIDRespOrd
     ) {
       w_dbidresp := true.B
       srcID := rxrsp.bits.srcID
       dbID := rxrsp.bits.dbID
       traceTag := rxrsp.bits.traceTag
     }
-    when (rxrsp.bits.opcode === CompDBIDResp || rxrsp.bits.opcode === Comp) {
+    when(rxrsp.bits.opcode === CompDBIDResp || rxrsp.bits.opcode === Comp) {
       denied := denied || rxrsp.bits.respErr === RespErrEncodings.NDERR
       // TODO: d_corrupt is reserved and must be 0 in TileLink
     }
-    when (rxrsp.bits.opcode === RetryAck) {
+    when(rxrsp.bits.opcode === RetryAck) {
       s_txreq := false.B
       w_pcrdgrant := false.B
       allowRetry := false.B
       pCrdType := rxrsp.bits.pCrdType
       srcID := rxrsp.bits.srcID
     }
-    when (rxrsp.bits.opcode === ReadReceipt) {
+    when(rxrsp.bits.opcode === ReadReceipt) {
       w_readreceipt.foreach(_ := true.B)
     }
   }
-  when (txdat.fire) {
+  when(txdat.fire) {
     s_ncbwrdata := true.B
   }
-  when (io.pCrd.grant) {
+  when(io.pCrd.grant) {
     w_pcrdgrant := true.B
   }
 
@@ -189,11 +189,14 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   txreq.bits := 0.U.asTypeOf(txreq.bits.cloneType)
   txreq.bits.tgtID := SAM(sam).lookup(txreq.bits.addr)
   txreq.bits.txnID := io.id
-  txreq.bits.opcode := ParallelLookUp(req.opcode, Seq(
-    Get -> ReadNoSnp,
-    PutFullData -> WriteNoSnpPtl,
-    PutPartialData -> WriteNoSnpPtl
-  ))
+  txreq.bits.opcode := ParallelLookUp(
+    req.opcode,
+    Seq(
+      Get -> ReadNoSnp,
+      PutFullData -> WriteNoSnpPtl,
+      PutPartialData -> WriteNoSnpPtl
+    )
+  )
   txreq.bits.size := req.size
   txreq.bits.addr := req.address
   txreq.bits.allowRetry := allowRetry
@@ -300,7 +303,8 @@ class MMIOBridgeImp(outer: MMIOBridge) extends LazyModuleImp(outer)
   }).orR
   io.rx.rsp.ready := true.B
   assert(!io.rx.rsp.valid || Cat(entries.zipWithIndex.map { case (entry, i) =>
-    entry.io.chi.rx.rsp.ready && io.rx.rsp.bits.txnID === i.U }).orR)
+    entry.io.chi.rx.rsp.ready && io.rx.rsp.bits.txnID === i.U
+  }).orR)
 
   dontTouch(io)
   dontTouch(bus)

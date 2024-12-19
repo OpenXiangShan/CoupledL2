@@ -26,9 +26,9 @@ import freechips.rocketchip.tilelink._
 object MetaData {
   val stateBits = 2
   def INVALID: UInt = 0.U(stateBits.W) // way is empty
-  def BRANCH:  UInt = 1.U(stateBits.W) // outer slave cache is trunk
-  def TRUNK:   UInt = 2.U(stateBits.W) // unique inner master cache is trunk
-  def TIP:     UInt = 3.U(stateBits.W) // we are trunk, inner masters are branch
+  def BRANCH: UInt = 1.U(stateBits.W) // outer slave cache is trunk
+  def TRUNK: UInt = 2.U(stateBits.W) // unique inner master cache is trunk
+  def TIP: UInt = 3.U(stateBits.W) // we are trunk, inner masters are branch
 
   def needB(opcode: UInt, param: UInt): Bool = {
     opcode === TLMessages.Get ||

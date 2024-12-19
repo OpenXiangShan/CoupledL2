@@ -24,8 +24,7 @@ import freechips.rocketchip.util._
 import scala.collection.immutable.{ListMap, SeqMap}
 import utility.ChiselDB
 
-class CHILogger(name: String, enable: Boolean)
-               (implicit val p: Parameters) extends Module with HasCHIOpcodes {
+class CHILogger(name: String, enable: Boolean)(implicit val p: Parameters) extends Module with HasCHIOpcodes {
 
   val io = IO(new Bundle() {
     val up = Flipped(new PortIO)
@@ -48,7 +47,7 @@ class CHILogger(name: String, enable: Boolean)
     ListMap("ordering" -> UInt(3.W)) ++ ListMap("opcode" -> UInt(OPCODE_WIDTH.W))
 
   val max_flit_width = all_bundles.map(ChannelIO(_).flit.getWidth).max
-  if(packed_flit) { println(s"max_flit_width: ${max_flit_width}") }
+  if (packed_flit) { println(s"max_flit_width: ${max_flit_width}") }
   val all_fields_packed = ListMap("channel" -> UInt(3.W), "flitAll" -> UInt(max_flit_width.W))
 
   val all_fields_final = {
@@ -62,12 +61,12 @@ class CHILogger(name: String, enable: Boolean)
   track(io.down, this.clock, this.reset)(name)
 
   def track(out: PortIO, clock: Clock, reset: Reset)(name: String) = {
-    val txreq = out.tx.req  // channel = 0
-    val rxrsp = out.rx.rsp  // channel = 1
-    val rxdat = out.rx.dat  // channel = 2
-    val rxsnp = out.rx.snp  // channel = 3
-    val txrsp = out.tx.rsp  // channel = 4
-    val txdat = out.tx.dat  // channel = 5
+    val txreq = out.tx.req // channel = 0
+    val rxrsp = out.rx.rsp // channel = 1
+    val rxdat = out.rx.dat // channel = 2
+    val rxsnp = out.rx.snp // channel = 3
+    val txrsp = out.tx.rsp // channel = 4
+    val txdat = out.tx.dat // channel = 5
     val all_chns = Seq(txreq, rxrsp, rxdat, rxsnp, txrsp, txdat)
 
     // ======== log ========
@@ -134,7 +133,11 @@ class CHILogger(name: String, enable: Boolean)
       val rxsnp_addr_full = Cat(rxsnp_flit.addr, 0.U(3.W)) // Snp addr is [PA_MSB-1:3]
       rxsnp_log.elements("addr") := rxsnp_addr_full
       // txrsp may be CompAck or SnpResp[Fwded]
-      txrsp_log.elements("addr") := Mux(txrsp_flit.opcode === CompAck, dbid_addrs(txrsp_flit.txnID), rxsnp_addrs(txrsp_flit.txnID))
+      txrsp_log.elements("addr") := Mux(
+        txrsp_flit.opcode === CompAck,
+        dbid_addrs(txrsp_flit.txnID),
+        rxsnp_addrs(txrsp_flit.txnID)
+      )
       // txdat may be SnpResp[Fwded]Data or CompData(DCT) CbWriteData (or NcbWriteData TODO)
       txdat_log.elements("addr") := Mux(
         txdat_flit.opcode === CopyBackWrData || txdat_flit.opcode === NonCopyBackWrData,
@@ -149,7 +152,9 @@ class CHILogger(name: String, enable: Boolean)
       when(rxsnp.flitv) {
         rxsnp_addrs(rxsnp_flit.txnID) := rxsnp_addr_full
       }
-      when(rxrsp.flitv && (rxrsp_flit.opcode === CompDBIDResp || rxrsp_flit.opcode === Comp || rxrsp_flit.opcode === DBIDResp)) {
+      when(
+        rxrsp.flitv && (rxrsp_flit.opcode === CompDBIDResp || rxrsp_flit.opcode === Comp || rxrsp_flit.opcode === DBIDResp)
+      ) {
         val addr = txreq_addrs(rxrsp_flit.txnID)
         dbid_addrs(rxrsp_flit.dbID) := addr
       }
@@ -181,7 +186,7 @@ class CHILogger(name: String, enable: Boolean)
 }
 
 object CHILogger {
-  
+
   def apply(name: String, enable: Boolean)(implicit p: Parameters) = {
     val logger = Module(new CHILogger(name, enable)(p))
     logger

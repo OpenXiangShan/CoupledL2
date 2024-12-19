@@ -40,13 +40,13 @@ import scala.annotation.nowarn
  * }}}
  */
 class Queue_SRAM[T <: Data](
-                        val gen:            T,
-                        val entries:        Int,
-                        val pipe:           Boolean = false,
-                        val flow:           Boolean = false,
-                        val useSyncReadMem: Boolean = false,
-                        val hasFlush:       Boolean = false
-                      )()
+  val gen: T,
+  val entries: Int,
+  val pipe: Boolean = false,
+  val flow: Boolean = false,
+  val useSyncReadMem: Boolean = false,
+  val hasFlush: Boolean = false
+)()
   extends Module() {
   require(entries > -1, "Queue must have non-negative number of entries")
   require(entries != 0, "Use companion object Queue.apply for zero entries")
@@ -153,13 +153,13 @@ object Queue_SRAM {
    */
   @nowarn("cat=deprecation&msg=TransitName")
   def apply[T <: Data](
-                        enq:            ReadyValidIO[T],
-                        entries:        Int = 2,
-                        pipe:           Boolean = false,
-                        flow:           Boolean = false,
-                        useSyncReadMem: Boolean = false,
-                        flush:          Option[Bool] = None
-                      ): DecoupledIO[T] = {
+    enq: ReadyValidIO[T],
+    entries: Int = 2,
+    pipe: Boolean = false,
+    flow: Boolean = false,
+    useSyncReadMem: Boolean = false,
+    flush: Option[Bool] = None
+  ): DecoupledIO[T] = {
     if (entries == 0) {
       val deq = Wire(new DecoupledIO(chiselTypeOf(enq.bits)))
       deq.valid := enq.valid
@@ -197,13 +197,13 @@ object Queue_SRAM {
    * }}}
    */
   def irrevocable[T <: Data](
-                              enq:            ReadyValidIO[T],
-                              entries:        Int = 2,
-                              pipe:           Boolean = false,
-                              flow:           Boolean = false,
-                              useSyncReadMem: Boolean = false,
-                              flush:          Option[Bool] = None
-                            ): IrrevocableIO[T] = {
+    enq: ReadyValidIO[T],
+    entries: Int = 2,
+    pipe: Boolean = false,
+    flow: Boolean = false,
+    useSyncReadMem: Boolean = false,
+    flush: Option[Bool] = None
+  ): IrrevocableIO[T] = {
     val deq = apply(enq, entries, pipe, flow, useSyncReadMem, flush)
     require(entries > 0, "Zero-entry queues don't guarantee Irrevocability")
     val irr = Wire(new IrrevocableIO(chiselTypeOf(deq.bits)))

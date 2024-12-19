@@ -174,14 +174,12 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   dontTouch(io.in)
   dontTouch(io.out)
 
-  topDownOpt.foreach (
-    _ => {
-      io_msStatus.get        := mshrCtl.io.msStatus.get
-      io.dirResult.get.valid := directory.io.resp.valid && !directory.io.replResp.valid // exclude MSHR-Grant read-dir
-      io.dirResult.get.bits  := directory.io.resp.bits
-      io.latePF.get          := a_reqBuf.io.hasLatePF
-    }
-  )
+  topDownOpt.foreach(_ => {
+    io_msStatus.get := mshrCtl.io.msStatus.get
+    io.dirResult.get.valid := directory.io.resp.valid && !directory.io.replResp.valid // exclude MSHR-Grant read-dir
+    io.dirResult.get.bits := directory.io.resp.bits
+    io.latePF.get := a_reqBuf.io.hasLatePF
+  })
 
   if (cacheParams.enablePerf) {
     val a_begin_times = RegInit(VecInit(Seq.fill(sourceIdAll)(0.U(64.W))))
@@ -189,7 +187,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
     timer := timer + 1.U
     a_begin_times.zipWithIndex.foreach {
       case (r, i) =>
-        when (sinkA.io.a.fire && sinkA.io.a.bits.source === i.U) {
+        when(sinkA.io.a.fire && sinkA.io.a.bits.source === i.U) {
           r := timer
         }
     }

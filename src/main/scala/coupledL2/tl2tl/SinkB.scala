@@ -70,6 +70,6 @@ class SinkB(implicit p: Parameters) extends L2Module {
 
   // when conflict, we block B req from entering SinkB
   io.task.valid := io.b.valid && !addrConflict && !replaceConflict
-  io.task.bits  := task
+  io.task.bits := task
   io.b.ready := io.task.ready && !addrConflict && !replaceConflict
 }

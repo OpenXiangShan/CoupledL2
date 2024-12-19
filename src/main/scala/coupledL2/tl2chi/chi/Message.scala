@@ -104,33 +104,86 @@ object CHICohStateTransSet {
     channel =/= set.channel() || opcode =/= set.opcode || VecInit(set.set.map(t => t.resp() === resp)).asUInt.orR
   }
 
-  def ofCopyBackWrData(opcode: UInt) = new CHICohStateTransSet(() => CHIChannel.TXDAT, opcode, Seq(
-    CopyBackWrData_I, CopyBackWrData_UC, CopyBackWrData_SC,
-    CopyBackWrData_UD_PD, CopyBackWrData_SD_PD
-  ))
-  def ofCompData(opcode: UInt) = new CHICohStateTransSet(() => CHIChannel.TXDAT, opcode, Seq(
-    CompData_I, CompData_UC, CompData_SC, 
-    CompData_UD_PD, CompData_SD_PD
-  ))
-  def ofDataSepResp(opcode: UInt) = new CHICohStateTransSet(() => CHIChannel.TXDAT, opcode, Seq(
-    DataSepResp_I, DataSepResp_UC, DataSepResp_SC, DataSepResp_UD_PD
-  ))
-  def ofRespSepData(opcode: UInt) = new CHICohStateTransSet(() => CHIChannel.TXRSP, opcode, Seq(
-    RespSepData_I, RespSepData_UC, RespSepData_SC, RespSepData_UD_PD
-  ))
-  def ofSnpResp(opcode: UInt) = new CHICohStateTransSet(() => CHIChannel.TXRSP, opcode, Seq(
-    SnpResp_I, SnpResp_SC, SnpResp_UC, SnpResp_UD, SnpResp_SD,
-  ))
-  def ofSnpRespData(opcode: UInt) = new CHICohStateTransSet(() => CHIChannel.TXDAT, opcode, Seq(
-    SnpRespData_I, SnpRespData_UC_UD, SnpRespData_SC, SnpRespData_SD,
-    SnpRespData_I_PD, SnpRespData_UC_PD, SnpRespData_SC_PD
-  ))
-  def ofSnpRespDataPtl(opcode: UInt) = new CHICohStateTransSet(() => CHIChannel.TXDAT, opcode, Seq(
-    SnpRespDataPtl_I_PD, SnpRespDataPtl_UD
-  ))
-  def ofNonCopyBackWrData(opcode: UInt) = new CHICohStateTransSet(() => CHIChannel.TXDAT, opcode, Seq(new CHICohStateTrans(() => 0.U)))
-  def ofNCBWrDataCompAck(opcode: UInt) = new CHICohStateTransSet(() => CHIChannel.TXDAT, opcode, Seq(new CHICohStateTrans(() => 0.U)))
-  def ofWriteDataCancel(opcode: UInt) = new CHICohStateTransSet(() => CHIChannel.TXDAT, opcode, Seq(new CHICohStateTrans(() => 0.U)))
+  def ofCopyBackWrData(opcode: UInt) = new CHICohStateTransSet(
+    () => CHIChannel.TXDAT,
+    opcode,
+    Seq(
+      CopyBackWrData_I,
+      CopyBackWrData_UC,
+      CopyBackWrData_SC,
+      CopyBackWrData_UD_PD,
+      CopyBackWrData_SD_PD
+    )
+  )
+  def ofCompData(opcode: UInt) = new CHICohStateTransSet(
+    () => CHIChannel.TXDAT,
+    opcode,
+    Seq(
+      CompData_I,
+      CompData_UC,
+      CompData_SC,
+      CompData_UD_PD,
+      CompData_SD_PD
+    )
+  )
+  def ofDataSepResp(opcode: UInt) = new CHICohStateTransSet(
+    () => CHIChannel.TXDAT,
+    opcode,
+    Seq(
+      DataSepResp_I,
+      DataSepResp_UC,
+      DataSepResp_SC,
+      DataSepResp_UD_PD
+    )
+  )
+  def ofRespSepData(opcode: UInt) = new CHICohStateTransSet(
+    () => CHIChannel.TXRSP,
+    opcode,
+    Seq(
+      RespSepData_I,
+      RespSepData_UC,
+      RespSepData_SC,
+      RespSepData_UD_PD
+    )
+  )
+  def ofSnpResp(opcode: UInt) = new CHICohStateTransSet(
+    () => CHIChannel.TXRSP,
+    opcode,
+    Seq(
+      SnpResp_I,
+      SnpResp_SC,
+      SnpResp_UC,
+      SnpResp_UD,
+      SnpResp_SD
+    )
+  )
+  def ofSnpRespData(opcode: UInt) = new CHICohStateTransSet(
+    () => CHIChannel.TXDAT,
+    opcode,
+    Seq(
+      SnpRespData_I,
+      SnpRespData_UC_UD,
+      SnpRespData_SC,
+      SnpRespData_SD,
+      SnpRespData_I_PD,
+      SnpRespData_UC_PD,
+      SnpRespData_SC_PD
+    )
+  )
+  def ofSnpRespDataPtl(opcode: UInt) = new CHICohStateTransSet(
+    () => CHIChannel.TXDAT,
+    opcode,
+    Seq(
+      SnpRespDataPtl_I_PD,
+      SnpRespDataPtl_UD
+    )
+  )
+  def ofNonCopyBackWrData(opcode: UInt) =
+    new CHICohStateTransSet(() => CHIChannel.TXDAT, opcode, Seq(new CHICohStateTrans(() => 0.U)))
+  def ofNCBWrDataCompAck(opcode: UInt) =
+    new CHICohStateTransSet(() => CHIChannel.TXDAT, opcode, Seq(new CHICohStateTrans(() => 0.U)))
+  def ofWriteDataCancel(opcode: UInt) =
+    new CHICohStateTransSet(() => CHIChannel.TXDAT, opcode, Seq(new CHICohStateTrans(() => 0.U)))
 }
 
 class CHICohStateFwdedTrans(val resp: () => UInt, val fwdState: () => UInt)
@@ -163,24 +216,44 @@ object CHICohStateFwdedTrans {
 class CHICohStateFwdedTransSet(val channel: () => UInt, val opcode: UInt, val set: Seq[CHICohStateFwdedTrans])
 
 object CHICohStateFwdedTransSet {
-  
+
   def isValid(set: CHICohStateFwdedTransSet, channel: UInt, opcode: UInt, resp: UInt, fwdState: UInt): Bool =
-    channel =/= set.channel() || opcode =/= set.opcode || VecInit(set.set.map(t => t.resp() === resp && t.fwdState() === fwdState)).asUInt.orR
-  
-  def ofSnpRespFwded(opcode: UInt) = new CHICohStateFwdedTransSet(() => CHIChannel.TXRSP, opcode, Seq(
-    SnpResp_I_Fwded_I, SnpResp_I_Fwded_SC, SnpResp_I_Fwded_UC,
-    SnpResp_I_Fwded_UD_PD, SnpResp_I_Fwded_SD_PD,
-    SnpResp_SC_Fwded_I, SnpResp_SC_Fwded_SC, SnpResp_SC_Fwded_SD_PD,
-    SnpResp_UC_UD_Fwded_I,
-    SnpResp_SD_Fwded_I, SnpResp_SD_Fwded_SC
-  ))
-  def ofSnpRespDataFwded(opcode: UInt)  = new CHICohStateFwdedTransSet(() => CHIChannel.TXDAT, opcode, Seq(
-    SnpRespData_I_Fwded_SC, SnpRespData_I_Fwded_SD_PD,
-    SnpRespData_SC_Fwded_SC, SnpRespData_SC_Fwded_SD_PD,
-    SnpRespData_SD_Fwded_SC,
-    SnpRespData_I_PD_Fwded_I, SnpRespData_I_PD_Fwded_SC,
-    SnpRespData_SC_PD_Fwded_I, SnpRespData_SC_PD_Fwded_SC
-  ))
+    channel =/= set.channel() || opcode =/= set.opcode || VecInit(set.set.map(t =>
+      t.resp() === resp && t.fwdState() === fwdState
+    )).asUInt.orR
+
+  def ofSnpRespFwded(opcode: UInt) = new CHICohStateFwdedTransSet(
+    () => CHIChannel.TXRSP,
+    opcode,
+    Seq(
+      SnpResp_I_Fwded_I,
+      SnpResp_I_Fwded_SC,
+      SnpResp_I_Fwded_UC,
+      SnpResp_I_Fwded_UD_PD,
+      SnpResp_I_Fwded_SD_PD,
+      SnpResp_SC_Fwded_I,
+      SnpResp_SC_Fwded_SC,
+      SnpResp_SC_Fwded_SD_PD,
+      SnpResp_UC_UD_Fwded_I,
+      SnpResp_SD_Fwded_I,
+      SnpResp_SD_Fwded_SC
+    )
+  )
+  def ofSnpRespDataFwded(opcode: UInt) = new CHICohStateFwdedTransSet(
+    () => CHIChannel.TXDAT,
+    opcode,
+    Seq(
+      SnpRespData_I_Fwded_SC,
+      SnpRespData_I_Fwded_SD_PD,
+      SnpRespData_SC_Fwded_SC,
+      SnpRespData_SC_Fwded_SD_PD,
+      SnpRespData_SD_Fwded_SC,
+      SnpRespData_I_PD_Fwded_I,
+      SnpRespData_I_PD_Fwded_SC,
+      SnpRespData_SC_PD_Fwded_I,
+      SnpRespData_SC_PD_Fwded_SC
+    )
+  )
 }
 
 object OrderEncodings {
@@ -203,7 +276,6 @@ object RespErrEncodings {
   def DERR = "b10".U(width.W) // Data Error
   def NDERR = "b11".U(width.W) // Non-data Error
 }
-
 
 /**
   * This object collects constants and related helper methods
@@ -259,7 +331,10 @@ trait HasCHIMsgParameters {
   def QOS_WIDTH = 4
   def TGTID_WIDTH = NODEID_WIDTH
   def SRCID_WIDTH = NODEID_WIDTH
-  def TXNID_WIDTH = issue_config("TXNID_WIDTH") // An 8-bit field is defined for the TxnID to accommodate up to 256 outstanding transactions
+  def TXNID_WIDTH =
+    issue_config(
+      "TXNID_WIDTH"
+    ) // An 8-bit field is defined for the TxnID to accommodate up to 256 outstanding transactions
   def LPID_WITH_PADDING_WIDTH = issue_config("LPID_WITH_PADDING_WIDTH")
   def LPID_WIDTH = 5
   def RETURNNID_WIDTH = NODEID_WIDTH
@@ -267,7 +342,6 @@ trait HasCHIMsgParameters {
   def STASHNID_WIDTH = NODEID_WIDTH
   def STASHLPID_WIDTH = LPID_WIDTH
   def TAGOP_WIDTH = 2
-
 
   def REQ_OPCODE_WIDTH = issue_config("REQ_OPCODE_WIDTH")
   def RSP_OPCODE_WIDTH = issue_config("RSP_OPCODE_WIDTH")
@@ -306,8 +380,8 @@ trait HasCHIMsgParameters {
 
   // User defined
   /*
-  * Currently don't care about *::RSVDC, and the width is tied to 4.
-  */
+   * Currently don't care about *::RSVDC, and the width is tied to 4.
+   */
   def REQ_RSVDC_WIDTH = 4 // Permitted RSVDC bus widths X = 0, 4, 12, 16, 24, 32
   def DAT_RSVDC_WIDTH = 4 // Permitted RSVDC bus widths Y = 0, 4, 12, 16, 24, 32
   def CBUSY_WIDTH = 3 // E.b field. The width is tied to 3. Custom completer state indicator.
@@ -354,7 +428,7 @@ class CHIREQ(implicit p: Parameters) extends CHIBundle {
 
   val returnNID = UInt(RETURNNID_WIDTH.W) // Used for DMT
   def stashNID = returnNID // Used for Stash
-  def slcRepHint = returnTxnID(6, 0)  // E.b field
+  def slcRepHint = returnTxnID(6, 0) // E.b field
 
   val stashNIDValid = Bool() // Used for Stash
   def endian = stashNIDValid // Used for Atomic
@@ -437,7 +511,8 @@ class CHIDAT(implicit p: Parameters) extends CHIBundle {
   val fwdState = UInt(FWDSTATE_WIDTH.W) // Used for DCT
   val dataSourceHi = field_Eb(UInt((DATASOURCE_WIDTH - FWDSTATE_WIDTH).W))
   def dataPull = fwdState // Used for Stash
-  def dataSource = if (ENABLE_ISSUE_Eb) Cat(dataSourceHi.get, fwdState) else fwdState // Indicates Data source in a response
+  def dataSource =
+    if (ENABLE_ISSUE_Eb) Cat(dataSourceHi.get, fwdState) else fwdState // Indicates Data source in a response
 
   val cBusy = field_Eb(UInt(CBUSY_WIDTH.W))
 

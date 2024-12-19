@@ -156,7 +156,7 @@ class SourceC(implicit p: Parameters) extends L2Module {
   }).asUInt) + sourceCQueueCnt >= mshrsAll.U
   val noSpaceForMSHRReq = PopCount(VecInit(io.pipeStatusVec.tail.map { case s =>
     s.valid && (s.bits.fromA || s.bits.fromB)
-  }).asUInt) + sourceCQueueCnt >= (mshrsAll-1).U
+  }).asUInt) + sourceCQueueCnt >= (mshrsAll - 1).U
 
   io.toReqArb.blockSinkBReqEntrance := noSpaceForSinkBReq
   io.toReqArb.blockMSHRReqEntrance := noSpaceForMSHRReq
@@ -215,8 +215,8 @@ class SourceC(implicit p: Parameters) extends L2Module {
   io.out.bits := toTLBundleC(taskR.task, beat)
 
   val hasData = io.out.bits.opcode(0)
-  when (io.out.fire) {
-    when (hasData) {
+  when(io.out.fire) {
+    when(hasData) {
       beatValids := VecInit(next_beatsOH.asBools)
     }.otherwise {
       beatValids.foreach(_ := false.B)
