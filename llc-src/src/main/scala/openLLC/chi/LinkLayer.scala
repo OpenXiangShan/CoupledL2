@@ -74,6 +74,10 @@ class RNLinkMonitor(implicit p: Parameters) extends LLCModule {
   val txState = RegInit(LinkStates.STOP)
   val rxState = RegInit(LinkStates.STOP)
 
+  // Record the upstream request node's ID
+  val rnID = RegEnable(rxOut.req.flit.asTypeOf(new CHIREQ()).elements.filter(_._1 == "srcID").head._2,
+    0.U(NODEID_WIDTH.W), rxOut.req.flitv)
+
   Seq(txState, rxState).zip(MixedVecInit(Seq(txOut, rxOut))).foreach { case (state, link) =>
     state := MuxLookup(Cat(link.linkactivereq, link.linkactiveack), LinkStates.STOP)(Seq(
       Cat(true.B, false.B) -> LinkStates.ACTIVATE,
@@ -87,16 +91,10 @@ class RNLinkMonitor(implicit p: Parameters) extends LLCModule {
   val rxreqDeact, rxrspDeact, rxdatDeact = Wire(Bool())
   val rxDeact = rxreqDeact && rxrspDeact && rxdatDeact
   Decoupled2LCredit(setSrcID(txIn.snp, io.nodeID), txOut.snp, LinkState(txState), Some("txsnp"))
-  Decoupled2LCredit(setSrcID(txIn.rsp, io.nodeID), txOut.rsp, LinkState(txState), Some("txrsp"))
-  Decoupled2LCredit(setSrcID(txIn.dat, io.nodeID), txOut.dat, LinkState(txState), Some("txdat"))
-  LCredit2Decoupled(
-    setSrcID(
-      setTgtID(rxOut.req, new CHIREQ(), rxOut.req.flit.asTypeOf(new CHIREQ()).srcID),
-      new CHIREQ(),
-      io.entranceID
-    ),
-    rxIn.req, LinkState(rxState), rxreqDeact, Some("rxreq"), maxLCreditNum
-  )
+  Decoupled2LCredit(setTgtID(setSrcID(txIn.rsp, io.nodeID), rnID.asUInt), txOut.rsp, LinkState(txState), Some("txrsp"))
+  Decoupled2LCredit(setTgtID(setSrcID(txIn.dat, io.nodeID), rnID.asUInt), txOut.dat, LinkState(txState), Some("txdat"))
+  LCredit2Decoupled(setSrcID(setTgtID(rxOut.req, new CHIREQ(), rxOut.req.flit.asTypeOf(new CHIREQ()).srcID),
+      new CHIREQ(), io.entranceID), rxIn.req, LinkState(rxState), rxreqDeact, Some("rxreq"), maxLCreditNum)
   LCredit2Decoupled(setSrcID(rxOut.rsp, new CHIRSP(), io.entranceID), rxIn.rsp,
     LinkState(rxState), rxrspDeact, Some("rxrsp"), maxLCreditNum)
   LCredit2Decoupled(setSrcID(rxOut.dat, new CHIRSP(), io.entranceID), rxIn.dat,
@@ -124,6 +122,13 @@ class RNLinkMonitor(implicit p: Parameters) extends LLCModule {
     out
   }
 
+  def setTgtID[T <: Bundle](in: DecoupledIO[T], tgtID: UInt): DecoupledIO[T] = {
+    val out = Wire(in.cloneType)
+    out <> in
+    out.bits.elements.filter(_._1 == "tgtID").head._2 := tgtID
+    out
+  }
+
   def setTgtID[T <: Bundle](in: ChannelIO[T], gen: T, tgtID: UInt): ChannelIO[T] = {
     val out = Wire(in.cloneType)
     out <> in
@@ -132,7 +137,7 @@ class RNLinkMonitor(implicit p: Parameters) extends LLCModule {
   }
 }
 
-class SNLinkMonitor(implicit p: Parameters) extends LLCModule {
+class SNLinkMonitor(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   private val maxLCreditNum = 15
 
   val io = IO(new Bundle() {
@@ -140,6 +145,9 @@ class SNLinkMonitor(implicit p: Parameters) extends LLCModule {
     val out = new NoSnpPortIO()
     val nodeID = Input(UInt(NODEID_WIDTH.W))
   })
+
+  def reqFromMMIO(req: CHIREQ): Bool = req.txnID(TXNID_WIDTH - 1)
+  def datFromMMIO(dat: CHIDAT): Bool = dat.opcode === NonCopyBackWrData
 
   val txState = RegInit(LinkStates.STOP)
   val rxState = RegInit(LinkStates.STOP)
@@ -156,8 +164,10 @@ class SNLinkMonitor(implicit p: Parameters) extends LLCModule {
   /* IO assignment */
   val rxrspDeact, rxdatDeact = Wire(Bool())
   val rxDeact = rxrspDeact && rxdatDeact
-  Decoupled2LCredit(setSrcID(io.in.tx.req, io.nodeID), io.out.tx.req, LinkState(txState), Some("txreq"))
-  Decoupled2LCredit(setSrcID(io.in.tx.dat, io.nodeID), io.out.tx.dat, LinkState(txState), Some("txdat"))
+  Decoupled2LCredit(setSrcID(io.in.tx.req, Mux(reqFromMMIO(io.in.tx.req.bits), io.in.tx.req.bits.srcID, io.nodeID)),
+    io.out.tx.req, LinkState(txState), Some("txreq"))
+  Decoupled2LCredit(setSrcID(io.in.tx.dat, Mux(datFromMMIO(io.in.tx.dat.bits), io.in.tx.dat.bits.srcID, io.nodeID)),
+    io.out.tx.dat, LinkState(txState), Some("txdat"))
   LCredit2Decoupled(io.out.rx.rsp, io.in.rx.rsp, LinkState(rxState), rxrspDeact, Some("rxrsp"), maxLCreditNum)
   LCredit2Decoupled(io.out.rx.dat, io.in.rx.dat, LinkState(rxState), rxdatDeact, Some("rxdat"), maxLCreditNum)
 

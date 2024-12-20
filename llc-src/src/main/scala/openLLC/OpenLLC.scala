@@ -47,6 +47,8 @@ class OpenLLC(implicit p: Parameters) extends LLCModule with HasClientInfo {
   println(s"CHI DAT Flit Width: ${io.rn(0).rx.dat.flit.getWidth}")
   println(s"CHI Port Width: ${io.rn(0).getWidth}")
 
+  val mmioDiverger = Module(new MMIODiverger())
+  val mmioMerger = Module(new MMIOMerger())
   val rnXbar = Module(new RNXbar())
   val snXbar = Module(new SNXbar())
   val snLinkMonitor = Module(new SNLinkMonitor())
@@ -56,17 +58,20 @@ class OpenLLC(implicit p: Parameters) extends LLCModule with HasClientInfo {
     rnLinkMonitor.io.out <> io.rn(i)
     rnLinkMonitor.io.entranceID := i.U
     rnLinkMonitor.io.nodeID := io.nodeID
-    rnXbar.io.in(i) <> rnLinkMonitor.io.in
+    mmioDiverger.io.in(i) <> rnLinkMonitor.io.in
+    rnXbar.io.in(i) <> mmioDiverger.io.out.cache(i)
   }
 
   for (j <- 0 until banks) {
     val slice = Module(new Slice())
     slice.io.in <> rnXbar.io.out(j)
-    rnXbar.io.snpMasks(j) := slice.io.snpMask 
+    rnXbar.io.snpMasks(j) := slice.io.snpMask
     snXbar.io.in(j) <> slice.io.out
   }
-  
-  snLinkMonitor.io.in <> snXbar.io.out
+
+  mmioMerger.io.in.cache <> snXbar.io.out
+  mmioMerger.io.in.uncache <> mmioDiverger.io.out.uncache
+  snLinkMonitor.io.in <> mmioMerger.io.out
   snLinkMonitor.io.nodeID := io.nodeID
 
   io.sn <> snLinkMonitor.io.out
