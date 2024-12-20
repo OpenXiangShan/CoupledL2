@@ -51,7 +51,7 @@ class RNXbar(implicit p: Parameters) extends LLCModule {
 
     txrspArbs(i).io.in.zip(io.in.map(_.tx.rsp)).foreach { case (in, e) =>
       in.valid := e.valid && { if (banks == 1) true.B else
-        e.bits.txnID(TXNID_WIDTH - 1, TXNID_WIDTH - bankBits) === i.U }
+        e.bits.txnID(TXNID_WIDTH - 2, TXNID_WIDTH - bankBits - 1) === i.U }
       in.bits  := e.bits
     }
     txrspArbs(i).io.out.ready := io.out(i).tx.rsp.ready
@@ -60,7 +60,7 @@ class RNXbar(implicit p: Parameters) extends LLCModule {
 
     txdatArbs(i).io.in.zip(io.in.map(_.tx.dat)).foreach { case (in, e) =>
       in.valid := e.valid && { if (banks == 1) true.B else
-        e.bits.txnID(TXNID_WIDTH - 1, TXNID_WIDTH - bankBits) === i.U }
+        e.bits.txnID(TXNID_WIDTH - 2, TXNID_WIDTH - bankBits - 1) === i.U }
       in.bits  := e.bits
     }
     txdatArbs(i).io.out.ready := io.out(i).tx.dat.ready
@@ -132,10 +132,10 @@ class SNXbar(implicit p: Parameters) extends LLCModule {
     io.in(i).tx.req.ready := txreqArb.io.out.fire && txreqArb.io.chosen === i.U
     io.in(i).tx.dat.ready := txdatArb.io.out.fire && txdatArb.io.chosen === i.U
     io.in(i).rx.dat.valid := io.out.rx.dat.valid && { if (banks == 1) true.B else
-      io.out.rx.dat.bits.txnID(TXNID_WIDTH - 1, TXNID_WIDTH - bankBits) === i.U }
+      io.out.rx.dat.bits.txnID(TXNID_WIDTH - 2, TXNID_WIDTH - bankBits - 1) === i.U }
     io.in(i).rx.dat.bits  := io.out.rx.dat.bits
     io.in(i).rx.rsp.valid := io.out.rx.rsp.valid && { if (banks == 1) true.B else
-      io.out.rx.rsp.bits.txnID(TXNID_WIDTH - 1, TXNID_WIDTH - bankBits) === i.U }
+      io.out.rx.rsp.bits.txnID(TXNID_WIDTH - 2, TXNID_WIDTH - bankBits - 1) === i.U }
     io.in(i).rx.rsp.bits  := io.out.rx.rsp.bits
   }
 
@@ -148,11 +148,11 @@ class SNXbar(implicit p: Parameters) extends LLCModule {
   io.out.tx.dat.bits  := txdatArb.io.out.bits
   io.out.rx.dat.ready := Cat(io.in.zipWithIndex.map { case (e, i) =>
     e.rx.dat.fire && { if (banks == 1) true.B else
-      io.out.rx.dat.bits.txnID(TXNID_WIDTH - 1, TXNID_WIDTH - bankBits) === i.U }
+      io.out.rx.dat.bits.txnID(TXNID_WIDTH - 2, TXNID_WIDTH - bankBits - 1) === i.U }
   }).orR
   io.out.rx.rsp.ready := Cat(io.in.zipWithIndex.map { case (e, i) =>
     e.rx.rsp.fire && { if (banks == 1) true.B else
-      io.out.rx.rsp.bits.txnID(TXNID_WIDTH - 1, TXNID_WIDTH - bankBits) === i.U }
+      io.out.rx.rsp.bits.txnID(TXNID_WIDTH - 2, TXNID_WIDTH - bankBits - 1) === i.U }
   }).orR
 
 }

@@ -29,7 +29,20 @@ class RXREQ (implicit p: Parameters) extends LLCModule {
     val task = DecoupledIO(new Task())
   })
 
-  val id_pool = RegInit(0.U((TXNID_WIDTH - bankBits).W))
+  // Outer interface connection
+  /**
+    * TxnID space arrangement:
+    * If this is a cacheable request:
+    * +----------------+-----------+---------------+
+    * |    0.U(1.W)    |  SliceID  |  Inner TxnID  |
+    * +----------------+-----------+---------------+
+    * Otherwise this is an MMIO request:
+    * +----------------+-----------+---------------+
+    * |    1.U(1.W)    |        Inner TxnID        |
+    * +----------------+---------------------------+  
+    *
+    */
+  val id_pool = RegInit(0.U((TXNID_WIDTH - bankBits - 1).W))
   when(io.task.fire) {
     id_pool := id_pool + 1.U // maybe fail if in-flight transactions exceed (256/banks) ?
   }
@@ -47,7 +60,7 @@ class RXREQ (implicit p: Parameters) extends LLCModule {
     task.off := off
     task.size := r.size
     task.refillTask := false.B
-    task.reqID := Cat(bank, id_pool)
+    task.reqID := Cat(0.U(1.W), bank, id_pool)
     // this follows coupledL2.tl2chi.TaskBundle.toCHIReqBundle
     task.tgtID := r.tgtID
     task.srcID := r.srcID
