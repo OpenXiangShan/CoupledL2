@@ -19,26 +19,25 @@ package coupledL2
 
 import chisel3._
 import chisel3.util.log2Ceil
-import freechips.rocketchip.diplomacy.{BufferParams, AddressSet}
+import freechips.rocketchip.diplomacy.{AddressSet, BufferParams}
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util._
 import org.chipsalliance.cde.config.Field
 import huancun.{AliasKey, CacheParameters, IsHitKey, PrefetchKey}
 import coupledL2.prefetch._
-import utility.{MemReqSource, ReqSourceKey, Code}
+import utility.{Code, MemReqSource, ReqSourceKey}
 
 case object EnableCHI extends Field[Boolean](false)
 
 // L1 Cache Params, used for TestTop generation
-case class L1Param
-(
+case class L1Param(
   name: String = "L1D",
   sets: Int = 32,
   ways: Int = 8,
   blockBytes: Int = 64,
   aliasBitsOpt: Option[Int] = None,
   vaddrBitsOpt: Option[Int] = None,
-  isKeywordBitsOpt : Option[Boolean] = None
+  isKeywordBitsOpt: Option[Boolean] = None
 ) {
   val capacity = sets * ways * blockBytes
   val setBits = log2Ceil(sets)
@@ -86,7 +85,6 @@ case class L2Param(
   // Manager
   reqKey: Seq[BundleKeyBase] = Seq(AliasKey, VaddrKey, PrefetchKey, ReqSourceKey),
   respField: Seq[BundleFieldBase] = Nil,
-
   innerBuf: TLBufferParams = TLBufferParams(),
   outerBuf: TLBufferParams = TLBufferParams(
     a = BufferParams.default,
@@ -95,7 +93,6 @@ case class L2Param(
     d = BufferParams.default,
     e = BufferParams.default
   ),
-
   hartId: Int = 0,
   // Prefetch
   prefetch: Seq[PrefetchParameters] = Nil,

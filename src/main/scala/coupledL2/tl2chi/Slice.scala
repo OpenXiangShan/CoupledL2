@@ -138,21 +138,20 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   mshrCtl.io.replResp := directory.io.replResp
   mshrCtl.io.aMergeTask := reqBuf.io.aMergeTask
   // TODO: This is ugly
-  mshrCtl.io.pipeStatusVec(0) := (reqArb.io.status_vec)(1) // s2 status
+  mshrCtl.io.pipeStatusVec(0) := reqArb.io.status_vec(1) // s2 status
   mshrCtl.io.pipeStatusVec(1) := mainPipe.io.status_vec_toD(0) // s3 status
 
   /* Read and write release buffer */
   releaseBuf.io.r := reqArb.io.releaseBufRead_s2
-  val nestedWriteReleaseBuf,
-    sinkCWriteReleaseBuf,
-    mpWriteReleaseBuf = Wire(Valid(new MSHRBufWrite()))
+  val nestedWriteReleaseBuf, sinkCWriteReleaseBuf, mpWriteReleaseBuf = Wire(Valid(new MSHRBufWrite()))
   nestedWriteReleaseBuf.valid := mshrCtl.io.nestedwbDataId.valid
   nestedWriteReleaseBuf.bits.data := mainPipe.io.nestedwbData
   nestedWriteReleaseBuf.bits.id := mshrCtl.io.nestedwbDataId.bits
   nestedWriteReleaseBuf.bits.beatMask := Fill(beatSize, true.B)
-  sinkCWriteReleaseBuf match { case x =>
-    x := sinkC.io.releaseBufWrite
-    x.bits.id := mshrCtl.io.releaseBufWriteId
+  sinkCWriteReleaseBuf match {
+    case x =>
+      x := sinkC.io.releaseBufWrite
+      x.bits.id := mshrCtl.io.releaseBufWriteId
   }
   mpWriteReleaseBuf := mainPipe.io.releaseBufWrite
   releaseBuf.io.w <> VecInit(Seq(
@@ -178,14 +177,12 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
 
   /* IO Connection */
   io.l1Hint <> mainPipe.io.l1Hint
-  topDownOpt.foreach (
-    _ => {
-      io_msStatus.get := mshrCtl.io.msStatus.get
-      io.dirResult.get.valid := directory.io.resp.valid && !directory.io.replResp.valid // exclude MSHR-Grant read-dir
-      io.dirResult.get.bits := directory.io.resp.bits
-      io.latePF.get := reqBuf.io.hasLatePF
-    }
-  )
+  topDownOpt.foreach(_ => {
+    io_msStatus.get := mshrCtl.io.msStatus.get
+    io.dirResult.get.valid := directory.io.resp.valid && !directory.io.replResp.valid // exclude MSHR-Grant read-dir
+    io.dirResult.get.bits := directory.io.resp.bits
+    io.latePF.get := reqBuf.io.hasLatePF
+  })
 
   /* Connect upwards channels */
   val inBuf = cacheParams.innerBuf

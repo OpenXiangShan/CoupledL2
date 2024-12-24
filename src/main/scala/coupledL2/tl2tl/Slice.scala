@@ -136,7 +136,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   grantBuf.io.d_task <> mainPipe.io.toSourceD
   grantBuf.io.fromReqArb.status_s1 := reqArb.io.status_s1
   grantBuf.io.pipeStatusVec := reqArb.io.status_vec ++ mainPipe.io.status_vec_toD
-  mshrCtl.io.pipeStatusVec(0) := (reqArb.io.status_vec)(1) // s2 status
+  mshrCtl.io.pipeStatusVec(0) := reqArb.io.status_vec(1) // s2 status
   mshrCtl.io.pipeStatusVec(1) := mainPipe.io.status_vec_toD(0) // s3 status
 
   io.prefetch.foreach {
@@ -174,14 +174,12 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   dontTouch(io.in)
   dontTouch(io.out)
 
-  topDownOpt.foreach (
-    _ => {
-      io_msStatus.get        := mshrCtl.io.msStatus.get
-      io.dirResult.get.valid := directory.io.resp.valid && !directory.io.replResp.valid // exclude MSHR-Grant read-dir
-      io.dirResult.get.bits  := directory.io.resp.bits
-      io.latePF.get          := a_reqBuf.io.hasLatePF
-    }
-  )
+  topDownOpt.foreach(_ => {
+    io_msStatus.get := mshrCtl.io.msStatus.get
+    io.dirResult.get.valid := directory.io.resp.valid && !directory.io.replResp.valid // exclude MSHR-Grant read-dir
+    io.dirResult.get.bits := directory.io.resp.bits
+    io.latePF.get := a_reqBuf.io.hasLatePF
+  })
 
   if (cacheParams.enablePerf) {
     val a_begin_times = RegInit(VecInit(Seq.fill(sourceIdAll)(0.U(64.W))))
@@ -189,7 +187,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
     timer := timer + 1.U
     a_begin_times.zipWithIndex.foreach {
       case (r, i) =>
-        when (sinkA.io.a.fire && sinkA.io.a.bits.source === i.U) {
+        when(sinkA.io.a.fire && sinkA.io.a.bits.source === i.U) {
           r := timer
         }
     }

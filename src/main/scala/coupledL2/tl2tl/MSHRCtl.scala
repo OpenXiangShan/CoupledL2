@@ -98,7 +98,8 @@ class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
   val pipeReqCount = PopCount(Cat(io.pipeStatusVec.map(_.valid))) // TODO: consider add !mshrTask to optimize
   val mshrCount = PopCount(Cat(mshrs.map(_.io.status.valid)))
   val mshrFull = pipeReqCount + mshrCount >= mshrsAll.U
-  val a_mshrFull = pipeReqCount + mshrCount >= (mshrsAll-1).U // the last idle mshr should not be allocated for channel A req
+  val a_mshrFull =
+    pipeReqCount + mshrCount >= (mshrsAll - 1).U // the last idle mshr should not be allocated for channel A req
   val mshrSelector = Module(new MSHRSelector())
   mshrSelector.io.idle := mshrs.map(m => !m.io.status.valid)
   val selectedMSHROH = mshrSelector.io.out.bits
@@ -115,7 +116,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
       m.io.id := i.U
       m.io.alloc.valid := selectedMSHROH(i) && io.fromMainPipe.mshr_alloc_s3.valid
       m.io.alloc.bits := io.fromMainPipe.mshr_alloc_s3.bits
-      m.io.alloc.bits.task.isKeyword.foreach(_:= io.fromMainPipe.mshr_alloc_s3.bits.task.isKeyword.getOrElse(false.B))
+      m.io.alloc.bits.task.isKeyword.foreach(_ := io.fromMainPipe.mshr_alloc_s3.bits.task.isKeyword.getOrElse(false.B))
 
       m.io.resps.sink_c.valid := io.resps.sinkC.valid && resp_sinkC_match_vec(i)
       m.io.resps.sink_c.bits := io.resps.sinkC.respInfo
@@ -133,7 +134,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
   }
 
   io.toReqArb.blockC_s1 := false.B
-  io.toReqArb.blockB_s1 := mshrFull   // conflict logic in SinkB
+  io.toReqArb.blockB_s1 := mshrFull // conflict logic in SinkB
   io.toReqArb.blockA_s1 := a_mshrFull // conflict logic in ReqBuf
   io.toReqArb.blockG_s1 := false.B
 
@@ -167,7 +168,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
   dontTouch(io.sourceA)
 
-  topDownOpt.foreach (_ =>
+  topDownOpt.foreach(_ =>
     io.msStatus.get.zip(mshrs).foreach {
       case (in, s) => in := s.io.status
     }
@@ -175,9 +176,14 @@ class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
   // Performance counters
   XSPerfAccumulate("capacity_conflict_to_sinkA", a_mshrFull)
   XSPerfAccumulate("capacity_conflict_to_sinkB", mshrFull)
-  XSPerfHistogram("mshr_alloc", io.toMainPipe.mshr_alloc_ptr,
+  XSPerfHistogram(
+    "mshr_alloc",
+    io.toMainPipe.mshr_alloc_ptr,
     enable = io.fromMainPipe.mshr_alloc_s3.valid,
-    start = 0, stop = mshrsAll, step = 1)
+    start = 0,
+    stop = mshrsAll,
+    step = 1
+  )
   // prefetchOpt.foreach {
   //   _ =>
   //     XSPerfAccumulate("prefetch_trains", io.prefetchTrain.get.fire)
@@ -201,14 +207,13 @@ class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
     val timers = RegInit(VecInit(Seq.fill(mshrsAll)(0.U(64.W))))
     for (((timer, m), i) <- timers.zip(mshrs).zipWithIndex) {
-      when (m.io.alloc.valid) {
+      when(m.io.alloc.valid) {
         timer := 1.U
       }.otherwise {
         timer := timer + 1.U
       }
       val enable = m.io.status.valid && m.io.status.bits.will_free
-      XSPerfHistogram("mshr_latency_" + Integer.toString(i, 10),
-        timer, enable, 0, 300, 10)
+      XSPerfHistogram("mshr_latency_" + Integer.toString(i, 10), timer, enable, 0, 300, 10)
       XSPerfMax("mshr_latency", timer, enable)
     }
   }
@@ -217,13 +222,13 @@ class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
   // TODO: Is the width(4.W) proper here?
   val lmiss = Wire(Vec(mshrsAll, UInt(4.W)))
   for (((hpm_timer, m), i) <- hpm_timers.zip(mshrs).zipWithIndex) {
-    when (m.io.alloc.valid) {
+    when(m.io.alloc.valid) {
       hpm_timer := 1.U
     }.otherwise {
       hpm_timer := hpm_timer + 1.U
     }
     val enable = m.io.status.valid && m.io.status.bits.will_free
-    when (enable && hpm_timer > 200.U) {
+    when(enable && hpm_timer > 200.U) {
       lmiss(i) := 1.U
     }.otherwise {
       lmiss(i) := 0.U

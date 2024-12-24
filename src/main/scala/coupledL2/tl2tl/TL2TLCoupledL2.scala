@@ -19,12 +19,12 @@ package coupledL2.tl2tl
 
 import chisel3._
 import chisel3.util._
-import utility.{FastArbiter, Pipeline, ParallelPriorityMux, RegNextN}
+import utility.{FastArbiter, ParallelPriorityMux, Pipeline, RegNextN}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.util._
-import org.chipsalliance.cde.config.{Parameters, Field}
+import org.chipsalliance.cde.config.{Field, Parameters}
 import scala.math.max
 import coupledL2._
 import coupledL2.prefetch._
