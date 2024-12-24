@@ -196,8 +196,11 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
                               meta_s3.alias.getOrElse(0.U) =/= req_s3.alias.getOrElse(0.U)
 
   val mshr_refill_s3 = mshr_accessackdata_s3 || mshr_hintack_s3 || mshr_grant_s3 // needs refill to L2 DS
-  val retry = io.replResp.bits.retry
-  val need_repl = io.replResp.bits.meta.state =/= INVALID && req_s3.replTask
+  val replResp_valid_s3 = io.replResp.valid
+  val replResp_valid_s4 = RegNext(io.replResp.valid, init = false)
+  val replResp_valid_hold = replResp_valid_s3 || replResp_valid_s4
+  val retry = replResp_valid_hold && io.replResp.bits.retry
+  val need_repl = replResp_valid_hold && io.replResp.bits.meta.state =/= INVALID && req_s3.replTask
 
   /* ======== Interact with MSHR ======== */
   val acquire_on_miss_s3 = req_acquire_s3 || req_prefetch_s3 || req_get_s3
