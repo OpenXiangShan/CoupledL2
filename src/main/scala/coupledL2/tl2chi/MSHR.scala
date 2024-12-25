@@ -581,7 +581,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     )
     mp_probeack.metaWen := !req.snpHitRelease || req.snpHitReleaseToB
     mp_probeack.tagWen := false.B
-    mp_probeack.dsWen := !snpToN && probeDirty
+    mp_probeack.dsWen := !snpToN && probeDirty && meta.clients.orR
     mp_probeack.wayMask := 0.U(cacheParams.ways.W)
     mp_probeack.reqSource := 0.U(MemReqSource.reqSourceBits.W)
     mp_probeack.replTask := false.B
@@ -1142,7 +1142,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   /* ======== Handling Nested C ======== */
   // for A miss, only when replResp do we finally choose a way, allowing nested C
   // for A-alias, always allowing nested C (state.w_replResp === true.B)
-  // for CMO, always allowing nested C (state.s_cmoresp === false.B)
+  // for CMO, always allowing nested C on directory hit (state.s_cmoresp === false.B)
   val nestedwb_match = req_valid && meta.state =/= INVALID &&
     dirResult.set === io.nestedwb.set &&
     dirResult.tag === io.nestedwb.tag &&
@@ -1154,6 +1154,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   when (nestedwb_match) {
     when (io.nestedwb.c_set_dirty) {
       meta.dirty := true.B
+      meta.clients := Fill(clientBits, false.B)
     }
     when (io.nestedwb.b_inv_dirty && req.fromA) {
       meta.dirty := false.B
