@@ -250,14 +250,10 @@ class RequestArb(implicit p: Parameters) extends L2Module
   val snpHitReleaseNeedData = if (enableCHI) {
     !mshrTask_s2 && task_s2.bits.fromB && task_s2.bits.snpHitReleaseWithData
   } else false.B
-  io.releaseBufRead_s2.valid := Mux(
+  io.releaseBufRead_s2.valid := task_s2.valid && Mux(
     mshrTask_s2,
-    releaseNeedData ||
-      snoopNeedData ||
-      dctNeedData ||
-      cmoNeedData ||
-      mshrTask_s2_a_upwards && task_s2.bits.useProbeData,
-    task_s2.valid && snpHitReleaseNeedData
+    task_s2.bits.readProbeDataDown || mshrTask_s2_a_upwards && task_s2.bits.useProbeData,
+    snpHitReleaseNeedData
   )
   io.releaseBufRead_s2.bits.id := Mux(
     task_s2.bits.snpHitRelease,
