@@ -21,7 +21,7 @@ import chisel3._
 import chisel3.util._
 import freechips.rocketchip.util.SetAssocLRU
 import coupledL2.utils._
-import utility.{ParallelPriorityMux, RegNextN, XSPerfAccumulate, Code, SRAMTemplate}
+import utility.{Code, ParallelPriorityMux, RegNextN, SRAMTemplate, XSPerfAccumulate}
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.prefetch.PfSource
 import freechips.rocketchip.tilelink.TLMessages._
@@ -29,7 +29,7 @@ import freechips.rocketchip.tilelink.TLMessages._
 class MetaEntry(implicit p: Parameters) extends L2Bundle {
   val dirty = Bool()
   val state = UInt(stateBits.W)
-  val clients = UInt(clientBits.W)  // valid-bit of clients
+  val clients = UInt(clientBits.W) // valid-bit of clients
   // TODO: record specific state of clients instead of just 1-bit
   val alias = aliasBitsOpt.map(width => UInt(width.W)) // alias bits of client
   val prefetch = if (hasPrefetchBit) Some(Bool()) else None // whether block is prefetched
@@ -48,9 +48,16 @@ object MetaEntry {
     val init = WireInit(0.U.asTypeOf(new MetaEntry))
     init
   }
-  def apply(dirty: Bool, state: UInt, clients: UInt, alias: Option[UInt], prefetch: Bool = false.B,
-            pfsrc: UInt = PfSource.NoWhere.id.U, accessed: Bool = false.B,
-            tagErr: Bool = false.B, dataErr: Bool = false.B
+  def apply(
+    dirty: Bool,
+    state: UInt,
+    clients: UInt,
+    alias: Option[UInt],
+    prefetch: Bool = false.B,
+    pfsrc: UInt = PfSource.NoWhere.id.U,
+    accessed: Bool = false.B,
+    tagErr: Bool = false.B,
+    dataErr: Bool = false.B
   )(implicit p: Parameters) = {
     val entry = Wire(new MetaEntry)
     entry.dirty := dirty
@@ -81,7 +88,7 @@ class DirResult(implicit p: Parameters) extends L2Bundle {
   val hit = Bool()
   val tag = UInt(tagBits.W)
   val set = UInt(setBits.W)
-  val way = UInt(wayBits.W)  // hit way or victim way
+  val way = UInt(wayBits.W) // hit way or victim way
   val meta = new MetaEntry()
   val error = Bool()
   val replacerInfo = new ReplacerInfo() // for TopDown usage
@@ -108,7 +115,6 @@ class TagWrite(implicit p: Parameters) extends L2Bundle {
   val wtag = UInt(tagBits.W)
 }
 
-
 class Directory(implicit p: Parameters) extends L2Module {
 
   val io = IO(new Bundle() {
@@ -129,14 +135,14 @@ class Directory(implicit p: Parameters) extends L2Module {
   }
 
   def get_tag_from_encTag(encTag: UInt) = {
-    require((encTag.getWidth == encTagBits))
+    require(encTag.getWidth == encTagBits)
     encTag(tagBits - 1, 0)
   }
 
   val sets = cacheParams.sets
   val ways = cacheParams.ways
 
-  val tagWen  = io.tagWReq.valid
+  val tagWen = io.tagWReq.valid
   val metaWen = io.metaWReq.valid
   val replacerWen = WireInit(false.B)
 
@@ -176,7 +182,8 @@ class Directory(implicit p: Parameters) extends L2Module {
   // Replacer
   val repl = ReplacementPolicy.fromString(cacheParams.replacement, ways)
   val random_repl = cacheParams.replacement == "random"
-  val replacer_sram_opt = if(random_repl) None else
+  val replacer_sram_opt = if (random_repl) None
+  else
     Some(Module(new SRAMTemplate(UInt(repl.nBits.W), sets, 1, singlePort = true, shouldReset = true)))
 
   /* ====== Generate response signals ====== */
@@ -184,7 +191,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   /* stage 1: io.read.fire, access Tag/Meta
      stage 2: get Tag/Meta, latch
      stage 3: calculate hit/way and chosen meta/tag by way
-  */
+   */
   val reqValid_s2 = RegNext(io.read.fire, false.B)
   val reqValid_s3 = RegNext(reqValid_s2, false.B)
   val req_s2 = RegEnable(io.read.bits, 0.U.asTypeOf(io.read.bits), io.read.fire)
@@ -219,7 +226,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   val metaAll_s3 = RegEnable(metaRead, 0.U.asTypeOf(metaRead), reqValid_s2)
   val tagAll_s3 = RegEnable(tagRead, 0.U.asTypeOf(tagRead), reqValid_s2)
 
-  val tagMatchVec = tagAll_s3.map(_ (tagBits - 1, 0) === req_s3.tag)
+  val tagMatchVec = tagAll_s3.map(_(tagBits - 1, 0) === req_s3.tag)
   val metaValidVec = metaAll_s3.map(_.state =/= MetaData.INVALID)
   val hitVec = tagMatchVec.zip(metaValidVec).map(x => x._1 && x._2)
 
@@ -235,9 +242,9 @@ class Directory(implicit p: Parameters) extends L2Module {
       0.U(ways.W)
     )
   )).reduceTree(_ | _)
-  
+
   val freeWayMask_s3 = RegEnable(~occWayMask_s2, refillReqValid_s2)
-  val refillRetry = !(freeWayMask_s3.orR)
+  val refillRetry = !freeWayMask_s3.orR
 
   val hitWay = OHToUInt(hitVec)
   val replaceWay = WireInit(UInt(wayBits.W), 0.U)
@@ -270,13 +277,13 @@ class Directory(implicit p: Parameters) extends L2Module {
     false.B
   }
 
-  io.resp.valid      := reqValid_s3
-  io.resp.bits.hit   := hit_s3
-  io.resp.bits.way   := way_s3
-  io.resp.bits.meta  := meta_s3
-  io.resp.bits.tag   := tag_s3
-  io.resp.bits.set   := set_s3
-  io.resp.bits.error := error_s3  // depends on ECC
+  io.resp.valid := reqValid_s3
+  io.resp.bits.hit := hit_s3
+  io.resp.bits.way := way_s3
+  io.resp.bits.meta := meta_s3
+  io.resp.bits.tag := tag_s3
+  io.resp.bits.set := set_s3
+  io.resp.bits.error := error_s3 // depends on ECC
   io.resp.bits.replacerInfo := replacerInfo_s3
 
   dontTouch(io)
@@ -287,8 +294,8 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   /* ======!! Replacement logic !!====== */
   /* ====== Read, choose replaceWay ====== */
-  val repl_state_s3 = if(random_repl) {
-    when(io.tagWReq.fire){
+  val repl_state_s3 = if (random_repl) {
+    when(io.tagWReq.fire) {
       repl.miss
     }
     0.U
@@ -311,10 +318,14 @@ class Directory(implicit p: Parameters) extends L2Module {
   /* ====== Update ====== */
   // PLRU: update replacer only when A hit or refill, at stage 3
   // RRIP: update replacer when A/C hit or refill
-  val updateHit = if(cacheParams.replacement == "drrip" || cacheParams.replacement == "srrip"){
+  val updateHit = if (cacheParams.replacement == "drrip" || cacheParams.replacement == "srrip") {
     reqValid_s3 && hit_s3 &&
-    ((req_s3.replacerInfo.channel(0) && (req_s3.replacerInfo.opcode === AcquirePerm || req_s3.replacerInfo.opcode === AcquireBlock || req_s3.replacerInfo.opcode === Hint)) ||
-     (req_s3.replacerInfo.channel(2) && (req_s3.replacerInfo.opcode === Release || req_s3.replacerInfo.opcode === ReleaseData)))
+    ((req_s3.replacerInfo.channel(
+      0
+    ) && (req_s3.replacerInfo.opcode === AcquirePerm || req_s3.replacerInfo.opcode === AcquireBlock || req_s3.replacerInfo.opcode === Hint)) ||
+      (req_s3.replacerInfo.channel(
+        2
+      ) && (req_s3.replacerInfo.opcode === Release || req_s3.replacerInfo.opcode === ReleaseData)))
   } else {
     reqValid_s3 && hit_s3 && req_s3.replacerInfo.channel(0) &&
     (req_s3.replacerInfo.opcode === AcquirePerm || req_s3.replacerInfo.opcode === AcquireBlock)
@@ -325,29 +336,35 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   // hit-Promotion, miss-Insertion for RRIP
   // origin-bit marks whether the data_block is reused
-  val origin_bit_opt = if(random_repl) None else
+  val origin_bit_opt = if (random_repl) None
+  else
     Some(Module(new SRAMTemplate(Bool(), sets, ways, singlePort = true, shouldReset = true)))
   val origin_bits_r = origin_bit_opt.get.io.r(io.read.fire, io.read.bits.set).resp.data
   val origin_bits_hold = Wire(Vec(ways, Bool()))
   origin_bits_hold := HoldUnless(origin_bits_r, RegNext(io.read.fire, false.B))
   origin_bit_opt.get.io.w(
-      !resetFinish || replacerWen,
-      Mux(resetFinish, hit_s3, false.B),
-      Mux(resetFinish, req_s3.set, resetIdx),
-      UIntToOH(way_s3)
+    !resetFinish || replacerWen,
+    Mux(resetFinish, hit_s3, false.B),
+    Mux(resetFinish, req_s3.set, resetIdx),
+    UIntToOH(way_s3)
   )
   val rrip_req_type = WireInit(0.U(4.W))
   // [3]: 0-firstuse, 1-reuse;
   // [2]: 0-acquire, 1-release;
   // [1]: 0-non-prefetch, 1-prefetch;
   // [0]: 0-not-refill, 1-refill
-  rrip_req_type := Cat(origin_bits_hold(way_s3),
+  rrip_req_type := Cat(
+    origin_bits_hold(way_s3),
     req_s3.replacerInfo.channel(2),
-    (!refillReqValid_s3 && req_s3.replacerInfo.channel(0) && req_s3.replacerInfo.opcode === Hint) || (req_s3.replacerInfo.channel(2) && metaAll_s3(way_s3).prefetch.getOrElse(false.B)) || (refillReqValid_s3 && req_s3.replacerInfo.refill_prefetch),
+    (!refillReqValid_s3 && req_s3.replacerInfo.channel(
+      0
+    ) && req_s3.replacerInfo.opcode === Hint) || (req_s3.replacerInfo.channel(2) && metaAll_s3(
+      way_s3
+    ).prefetch.getOrElse(false.B)) || (refillReqValid_s3 && req_s3.replacerInfo.refill_prefetch),
     req_s3.refill
   )
 
-  if(cacheParams.replacement == "srrip"){
+  if (cacheParams.replacement == "srrip") {
     val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3, hit_s3, inv, rrip_req_type)
     val repl_init = Wire(Vec(ways, UInt(2.W)))
     repl_init.foreach(_ := 2.U(2.W))
@@ -357,19 +374,20 @@ class Directory(implicit p: Parameters) extends L2Module {
       Mux(resetFinish, set_s3, resetIdx),
       1.U
     )
-    
-  } else if(cacheParams.replacement == "drrip"){
+
+  } else if (cacheParams.replacement == "drrip") {
     // Set Dueling
-    val PSEL = RegInit(512.U(10.W)) //32-monitor sets, 10-bits psel
+    val PSEL = RegInit(512.U(10.W)) // 32-monitor sets, 10-bits psel
     // track monitor sets' hit rate for each policy
     // basic SDMs complement-selection policy: srrip--set_idx[group-:]==set_idx[group_offset-:]; brrip--set_idx[group-:]==!set_idx[group_offset-:]
     val setBits = log2Ceil(sets)
     val half_setBits = setBits >> 1
-    val match_a = set_s3(setBits-1,setBits-half_setBits-1)===set_s3(setBits-half_setBits-1,0)  // 512 sets [8:4][4:0]
-    val match_b = set_s3(setBits-1,setBits-half_setBits-1)===(~set_s3(setBits-half_setBits-1,0))
-    when(refillReqValid_s3 && match_a && !hit_s3 && (PSEL=/=1023.U)){  //SDMs_srrip miss
+    val match_a =
+      set_s3(setBits - 1, setBits - half_setBits - 1) === set_s3(setBits - half_setBits - 1, 0) // 512 sets [8:4][4:0]
+    val match_b = set_s3(setBits - 1, setBits - half_setBits - 1) === (~set_s3(setBits - half_setBits - 1, 0))
+    when(refillReqValid_s3 && match_a && !hit_s3 && (PSEL =/= 1023.U)) { // SDMs_srrip miss
       PSEL := PSEL + 1.U
-    } .elsewhen(refillReqValid_s3 && match_b && !hit_s3 && (PSEL=/=0.U)){ //SDMs_brrip miss
+    }.elsewhen(refillReqValid_s3 && match_b && !hit_s3 && (PSEL =/= 0.U)) { // SDMs_brrip miss
       PSEL := PSEL - 1.U
     }
     // decide use which policy by policy selection counter, for insertion
@@ -377,9 +395,11 @@ class Directory(implicit p: Parameters) extends L2Module {
        else if PSEL(MSB)==0: use srrip
        else if PSEL(MSB)==1: use brrip */
     val repl_type = WireInit(false.B)
-    repl_type := Mux(match_a, false.B, 
-                    Mux(match_b, true.B,
-                      Mux(PSEL(9)===0.U, false.B, true.B)))    // false.B - srrip, true.B - brrip
+    repl_type := Mux(
+      match_a,
+      false.B,
+      Mux(match_b, true.B, Mux(PSEL(9) === 0.U, false.B, true.B))
+    ) // false.B - srrip, true.B - brrip
 
     val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3, hit_s3, inv, repl_type, rrip_req_type)
 

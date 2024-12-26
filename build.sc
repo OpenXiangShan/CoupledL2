@@ -85,7 +85,7 @@ object huancun extends SbtModule with HasChisel {
   )
 }
 
-object CoupledL2 extends SbtModule with HasChisel with millbuild.common.CoupledL2Module {
+object CoupledL2 extends SbtModule with HasChisel with millbuild.common.CoupledL2Module with ScalafmtModule {
 
   override def millSourcePath = millOuterCtx.millSourcePath
 

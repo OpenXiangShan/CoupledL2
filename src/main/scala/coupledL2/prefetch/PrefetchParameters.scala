@@ -24,13 +24,13 @@ import coupledL2._
 import utility.MemReqSource
 
 trait PrefetchParameters {
-  val hasPrefetchBit:  Boolean
-  val hasPrefetchSrc:  Boolean
+  val hasPrefetchBit: Boolean
+  val hasPrefetchSrc: Boolean
   val inflightEntries: Int // max num of inflight prefetch reqs
 }
 
 trait HasPrefetchParameters extends HasCoupledL2Parameters {
-  val inflightEntries = if(prefetchers.nonEmpty) prefetchers.map(_.inflightEntries).max else 0
+  val inflightEntries = if (prefetchers.nonEmpty) prefetchers.map(_.inflightEntries).max else 0
 }
 
 abstract class PrefetchBundle(implicit val p: Parameters) extends Bundle with HasPrefetchParameters
@@ -38,12 +38,12 @@ abstract class PrefetchModule(implicit val p: Parameters) extends Module with Ha
 
 object PfSource extends Enumeration {
   val NoWhere = Value("NoWhere")
-  val SMS     = Value("SMS")
-  val BOP     = Value("BOP")
-  val PBOP     = Value("PBOP")
-  val Stream  = Value("Stream")
-  val Stride  = Value("Stride")
-  val TP      = Value("TP")
+  val SMS = Value("SMS")
+  val BOP = Value("BOP")
+  val PBOP = Value("PBOP")
+  val Stream = Value("Stream")
+  val Stride = Value("Stride")
+  val TP = Value("TP")
 
   val PfSourceCount = Value("PfSourceCount")
   val pfSourceBits = log2Ceil(PfSourceCount.id)
@@ -51,12 +51,12 @@ object PfSource extends Enumeration {
   def fromMemReqSource(s: UInt): UInt = {
     val pfsrc = WireInit(NoWhere.id.U.asTypeOf(UInt(pfSourceBits.W)))
     switch(s) {
-      is (MemReqSource.Prefetch2L2BOP.id.U) { pfsrc := BOP.id.U }
-      is (MemReqSource.Prefetch2L2PBOP.id.U) { pfsrc := PBOP.id.U }
-      is (MemReqSource.Prefetch2L2SMS.id.U) { pfsrc := SMS.id.U }
-      is (MemReqSource.Prefetch2L2TP.id.U)  { pfsrc := TP.id.U  }
-      is (MemReqSource.Prefetch2L2Stream.id.U) { pfsrc := Stream.id.U }
-      is (MemReqSource.Prefetch2L2Stride.id.U) { pfsrc := Stride.id.U }
+      is(MemReqSource.Prefetch2L2BOP.id.U) { pfsrc := BOP.id.U }
+      is(MemReqSource.Prefetch2L2PBOP.id.U) { pfsrc := PBOP.id.U }
+      is(MemReqSource.Prefetch2L2SMS.id.U) { pfsrc := SMS.id.U }
+      is(MemReqSource.Prefetch2L2TP.id.U) { pfsrc := TP.id.U }
+      is(MemReqSource.Prefetch2L2Stream.id.U) { pfsrc := Stream.id.U }
+      is(MemReqSource.Prefetch2L2Stride.id.U) { pfsrc := Stride.id.U }
     }
     pfsrc
   }

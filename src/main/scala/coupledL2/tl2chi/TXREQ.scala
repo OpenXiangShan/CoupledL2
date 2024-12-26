@@ -46,7 +46,7 @@ class TXREQ(implicit p: Parameters) extends TL2CHIL2Module {
 
   // TODO: an mshrsAll-entry queue is too much, evaluate for a proper size later
   val queue = Module(new Queue(new CHIREQ, entries = mshrsAll, flow = false))
-  
+
   // Back pressure logic from TXREQ
   val queueCnt = queue.io.count
   // TODO: this may be imprecise, review this later
@@ -59,7 +59,7 @@ class TXREQ(implicit p: Parameters) extends TL2CHIL2Module {
   // The calculation of inflightCnt might be imprecise and leads to false positive back pressue.
   val inflightCnt = PopCount(Cat(pipeStatus_s2_s5.map(s => s.valid && s.bits.mshrTask && s.bits.toTXREQ))) +
 //    pipeStatus_s1.valid.asUInt +
-    1.U - s2ReturnCredit.asUInt + //Fix Timing: always take credit and s2 return if not take 
+    1.U - s2ReturnCredit.asUInt + // Fix Timing: always take credit and s2 return if not take
     queueCnt
 
   assert(inflightCnt <= mshrsAll.U, "in-flight overflow at TXREQ")

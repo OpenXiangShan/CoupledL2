@@ -19,12 +19,12 @@ package coupledL2.tl2chi
 
 import chisel3._
 import chisel3.util._
-import utility.{FastArbiter, Pipeline, ParallelPriorityMux, RegNextN, RRArbiterInit}
+import utility.{FastArbiter, ParallelPriorityMux, Pipeline, RegNextN, RRArbiterInit}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.util._
-import org.chipsalliance.cde.config.{Parameters, Field}
+import org.chipsalliance.cde.config.{Field, Parameters}
 import scala.math.max
 import coupledL2._
 import coupledL2.prefetch._
@@ -35,7 +35,6 @@ abstract class TL2CHIL2Bundle(implicit val p: Parameters) extends Bundle
 abstract class TL2CHIL2Module(implicit val p: Parameters) extends Module
   with HasCoupledL2Parameters
   with HasCHIMsgParameters
-
 
 class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
 
@@ -168,24 +167,31 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
 
         val mshrEntryCount = mshrPCrdQuerys.length
 
-        val pCrdQueue = Module(new Queue(new Bundle {
-          val pCrdType = UInt(PCRDTYPE_WIDTH.W)
-          val srcID = UInt(SRCID_WIDTH.W)
-        }, entries = mshrEntryCount))
+        val pCrdQueue = Module(new Queue(
+          new Bundle {
+            val pCrdType = UInt(PCRDTYPE_WIDTH.W)
+            val srcID = UInt(SRCID_WIDTH.W)
+          },
+          entries = mshrEntryCount
+        ))
 
         // PCredit hit by MSHRs
-        val mshrPCrdHits = mshrPCrdQuerys.map((_, pCrdQueue.io.deq)).map { case (q, h) => {
-          q.valid && h.valid && q.bits.pCrdType === h.bits.pCrdType && q.bits.srcID === h.bits.srcID
-        }}
+        val mshrPCrdHits = mshrPCrdQuerys.map((_, pCrdQueue.io.deq)).map {
+          case (q, h) => {
+            q.valid && h.valid && q.bits.pCrdType === h.bits.pCrdType && q.bits.srcID === h.bits.srcID
+          }
+        }
 
         // PCredit dispatch arbitration
         val mshrPCrdArbGrants = Wire(Vec(mshrEntryCount, Bool()))
-        val mshrPCrdArbIn = mshrPCrdHits.zip(mshrPCrdArbGrants).map { case (hit, grant) => {
-          val arbPort = Wire(Decoupled(new EmptyBundle))
-          arbPort.valid := hit
-          grant := arbPort.ready
-          arbPort
-        }}
+        val mshrPCrdArbIn = mshrPCrdHits.zip(mshrPCrdArbGrants).map {
+          case (hit, grant) => {
+            val arbPort = Wire(Decoupled(new EmptyBundle))
+            arbPort.valid := hit
+            grant := arbPort.ready
+            arbPort
+          }
+        }
 
         val mshrPCrdArbOut = {
           val arbPort = Wire(Decoupled(new EmptyBundle))
@@ -208,7 +214,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         pCrdQueue.io.enq.bits.srcID := pCrdGrantSrcID_s1
 
         val grantCnt = RegInit(0.U(64.W))
-        when (pCrdQueue.io.deq.ready) {
+        when(pCrdQueue.io.deq.ready) {
           grantCnt := grantCnt + 1.U
         }
         dontTouch(grantCnt)
@@ -243,7 +249,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         rxdat.ready := Mux(
           rxdatIsMMIO,
           mmio.io.rx.dat.ready,
-          Cat(slices.zipWithIndex.map { case (s, i) => s.io.out.rx.dat.ready && rxdatSliceID === i.U}).orR
+          Cat(slices.zipWithIndex.map { case (s, i) => s.io.out.rx.dat.ready && rxdatSliceID === i.U }).orR
         )
 
         val linkMonitor = Module(new LinkMonitor)

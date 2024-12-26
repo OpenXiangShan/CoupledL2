@@ -60,9 +60,9 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
 
     /* receive resps */
     val resps = Input(new Bundle() {
-      val sinkC = new RespBundle()  //probeAck from core
-      val rxrsp = new RespBundle()  //releaseAck(CompDBID) from CHI
-      val rxdat = new RespBundle()  //AcquireBlock(CompData) from CHI
+      val sinkC = new RespBundle() // probeAck from core
+      val rxrsp = new RespBundle() // releaseAck(CompDBID) from CHI
+      val rxdat = new RespBundle() // AcquireBlock(CompData) from CHI
     })
 
     val releaseBufWriteId = Output(UInt(mshrBits.W))
@@ -102,7 +102,8 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
   val pipeReqCount = PopCount(Cat(io.pipeStatusVec.map(_.valid))) // TODO: consider add !mshrTask to optimize
   val mshrCount = PopCount(Cat(mshrs.map(_.io.status.valid)))
   val mshrFull = pipeReqCount + mshrCount >= mshrsAll.U
-  val a_mshrFull = pipeReqCount + mshrCount >= (mshrsAll-1).U // the last idle mshr should not be allocated for channel A req
+  val a_mshrFull =
+    pipeReqCount + mshrCount >= (mshrsAll - 1).U // the last idle mshr should not be allocated for channel A req
   val mshrSelector = Module(new MSHRSelector())
   val selectedMSHROH = mshrSelector.io.out.bits
 
@@ -122,7 +123,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
       m.io.id := i.U
       m.io.alloc.valid := selectedMSHROH(i) && io.fromMainPipe.mshr_alloc_s3.valid
       m.io.alloc.bits := io.fromMainPipe.mshr_alloc_s3.bits
-      m.io.alloc.bits.task.isKeyword.foreach(_:= io.fromMainPipe.mshr_alloc_s3.bits.task.isKeyword.getOrElse(false.B))
+      m.io.alloc.bits.task.isKeyword.foreach(_ := io.fromMainPipe.mshr_alloc_s3.bits.task.isKeyword.getOrElse(false.B))
 
       m.io.resps.sinkC.valid := io.resps.sinkC.valid && resp_sinkC_match_vec(i)
       m.io.resps.sinkC.bits := io.resps.sinkC.respInfo
@@ -130,7 +131,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
       m.io.resps.rxdat.valid := m.io.status.valid && io.resps.rxdat.valid && io.resps.rxdat.mshrId === i.U
       m.io.resps.rxdat.bits := io.resps.rxdat.respInfo
 
-      m.io.resps.rxrsp.valid := m.io.status.valid && io.resps.rxrsp.valid/* && !isPCrdGrant*/ && (io.resps.rxrsp.mshrId === i.U)
+      m.io.resps.rxrsp.valid := m.io.status.valid && io.resps.rxrsp.valid /* && !isPCrdGrant*/ && (io.resps.rxrsp.mshrId === i.U)
       m.io.resps.rxrsp.bits := io.resps.rxrsp.respInfo
 
       m.io.replResp.valid := io.replResp.valid && io.replResp.bits.mshrId === i.U
@@ -146,11 +147,11 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
 
   /* Reserve 1 entry for SinkB */
   io.toReqArb.blockC_s1 := false.B
-  io.toReqArb.blockB_s1 := mshrFull   // conflict logic in SinkB
+  io.toReqArb.blockB_s1 := mshrFull // conflict logic in SinkB
   io.toReqArb.blockA_s1 := a_mshrFull // conflict logic in ReqBuf
   io.toReqArb.blockG_s1 := false.B
 
-   /* Acquire downwards to TXREQ*/
+  /* Acquire downwards to TXREQ*/
   fastArb(mshrs.map(_.io.tasks.txreq), io.toTXREQ, Some("txreq"))
 
   /* Response downwards to TXRSP*/
@@ -165,7 +166,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
   /* Arbitrate MSHR task to RequestArbiter */
   fastArb(mshrs.map(_.io.tasks.mainpipe), io.mshrTask, Some("mshr_task"))
 
-  /* releaseBuf link to MSHR id */ 
+  /* releaseBuf link to MSHR id */
   io.releaseBufWriteId := ParallelPriorityMux(resp_sinkC_match_vec, (0 until mshrsAll).map(i => i.U))
 
   /* Nest writeback check */
@@ -175,16 +176,15 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
   })
   assert(RegNext(PopCount(mshrs.map(_.io.nestedwbData)) <= 1.U), "should only be one nestedwbData")
 
-
   /* Status for topDown monitor */
-  topDownOpt.foreach (_ =>
+  topDownOpt.foreach(_ =>
     io.msStatus.get.zip(mshrs).foreach {
       case (in, s) => in := s.io.status
     }
   )
 
   /* Performance counters */
-/*  XSPerfAccumulate("capacity_conflict_to_sinkA", a_mshrFull)
+  /*  XSPerfAccumulate("capacity_conflict_to_sinkA", a_mshrFull)
   XSPerfAccumulate("capacity_conflict_to_sinkB", mshrFull)
   XSPerfHistogram("mshr_alloc", io.toMainPipe.mshr_alloc_ptr,
     enable = io.fromMainPipe.mshr_alloc_s3.valid,
@@ -193,7 +193,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
     val start = 0
     val stop = 100
     val step = 5
-    val acquire_period = ParallelMux(mshrs.map { case m => m.io.resps.sink_d.valid -> m.acquire_period }) 
+    val acquire_period = ParallelMux(mshrs.map { case m => m.io.resps.sink_d.valid -> m.acquire_period })
     val release_period = ParallelMux(mshrs.map { case m => m.io.resps.sink_d.valid -> m.release_period })
     val probe_period = ParallelMux(mshrs.map { case m => m.io.resps.sink_c.valid -> m.probe_period })
     val acquire_period_en = io.resps.rxdat.valid &&
@@ -204,7 +204,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
     XSPerfHistogram("acquire_period", acquire_period, acquire_period_en, start, stop, step)
     XSPerfHistogram("release_period", release_period, release_period_en, start, stop, step)
     XSPerfHistogram("probe_period", probe_period, probe_period_en, start, stop, step)
- 
+
     val timers = RegInit(VecInit(Seq.fill(mshrsAll)(0.U(64.W))))
     for (((timer, m), i) <- timers.zip(mshrs).zipWithIndex) {
       when (m.io.alloc.valid) {
@@ -223,13 +223,13 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
   // TODO: Is the width(4.W) proper here?
   val lmiss = Wire(Vec(mshrsAll, UInt(4.W)))
   for (((hpm_timer, m), i) <- hpm_timers.zip(mshrs).zipWithIndex) {
-    when (m.io.alloc.valid) {
+    when(m.io.alloc.valid) {
       hpm_timer := 1.U
     }.otherwise {
       hpm_timer := hpm_timer + 1.U
     }
     val enable = m.io.status.valid && m.io.status.bits.will_free
-    when (enable && hpm_timer > 200.U) {
+    when(enable && hpm_timer > 200.U) {
       lmiss(i) := 1.U
     }.otherwise {
       lmiss(i) := 0.U
@@ -244,4 +244,3 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
   )
   generatePerfEvent()
 }
-

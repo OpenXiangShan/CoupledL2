@@ -109,10 +109,10 @@ class DecoupledNoSnpPortIO(implicit p: Parameters) extends Bundle {
 object LinkStates {
   val width = 2
 
-  def STOP        = 0.U(width.W)
-  def ACTIVATE    = 1.U(width.W)
-  def RUN         = 2.U(width.W)
-  def DEACTIVATE  = 3.U(width.W)
+  def STOP = 0.U(width.W)
+  def ACTIVATE = 1.U(width.W)
+  def RUN = 2.U(width.W)
+  def DEACTIVATE = 3.U(width.W)
 }
 
 class LinkState extends Bundle {
@@ -153,15 +153,15 @@ class LCredit2Decoupled[T <: Bundle](
   val lcreditOut = (lcreditPool > queue.io.count) && enableLCredit
 
   val ready = lcreditInflight =/= 0.U
-  val accept = ready && io.in.flitv //&& RegNext(io.in.flitpend) -> TODO flitpend for LowPower
+  val accept = ready && io.in.flitv // && RegNext(io.in.flitpend) -> TODO flitpend for LowPower
 
-  when (lcreditOut) {
-    when (!accept) {
+  when(lcreditOut) {
+    when(!accept) {
       lcreditInflight := lcreditInflight + 1.U
       lcreditPool := lcreditPool - 1.U
     }
   }.otherwise {
-    when (accept) {
+    when(accept) {
       lcreditInflight := lcreditInflight - 1.U
       lcreditPool := lcreditPool + 1.U
     }
@@ -181,9 +181,9 @@ class LCredit2Decoupled[T <: Bundle](
 
   io.out <> queue.io.deq
   val opcodeElements = queue.io.deq.bits.elements.filter(_._1 == "opcode")
-  require (opcodeElements.size == 1)
+  require(opcodeElements.size == 1)
   for ((_, opcode) <- opcodeElements) {
-    when (queue.io.deq.valid && opcode === 0.U) {
+    when(queue.io.deq.valid && opcode === 0.U) {
       // This is a *LCrdReturn flit
       queue.io.deq.ready := true.B
       io.out.valid := false.B
@@ -234,13 +234,13 @@ class Decoupled2LCredit[T <: Bundle](gen: T) extends Module {
   val returnLCreditValid = !io.in.valid && state === LinkStates.DEACTIVATE && lcreditPool =/= 0.U
   val flitv = io.in.fire || returnLCreditValid
 
-  when (acceptLCredit) {
-    when (!flitv) {
+  when(acceptLCredit) {
+    when(!flitv) {
       lcreditPool := lcreditPool + 1.U
       assert(lcreditPool + 1.U =/= 0.U, "L-Credit pool overflow")
     }
   }.otherwise {
-    when (flitv) {
+    when(flitv) {
       lcreditPool := lcreditPool - 1.U
     }
   }
@@ -250,7 +250,7 @@ class Decoupled2LCredit[T <: Bundle](gen: T) extends Module {
   io.out <> out
   out.flitpend := RegNext(true.B, init = false.B) // TODO
   out.flitv := RegNext(flitv, init = false.B)
-  out.flit := RegEnable(Mux(io.in.valid, Cat(io.in.bits.getElements.map(_.asUInt)), 0.U /* LCrdReturn */), flitv)
+  out.flit := RegEnable(Mux(io.in.valid, Cat(io.in.bits.getElements.map(_.asUInt)), 0.U /* LCrdReturn */ ), flitv)
 }
 
 object Decoupled2LCredit {
@@ -262,7 +262,7 @@ object Decoupled2LCredit {
   ): Unit = {
     val mod = Module(new Decoupled2LCredit(left.bits.cloneType))
     suggestName.foreach(name => mod.suggestName(s"Decoupled2LCredit_${name}"))
-    
+
     mod.io.in <> left
     right <> mod.io.out
     mod.io.state := state
@@ -312,13 +312,13 @@ class LinkMonitor(implicit p: Parameters) extends L2Module with HasCHIOpcodes {
   val pCrdGrantCnt = RegInit(0.U(64.W))
   val noAllowRetryCnt = RegInit(0.U(64.W))
 
-  when (io.in.rx.rsp.fire && io.in.rx.rsp.bits.opcode === RetryAck) {
+  when(io.in.rx.rsp.fire && io.in.rx.rsp.bits.opcode === RetryAck) {
     retryAckCnt := retryAckCnt + 1.U
   }
-  when (io.in.rx.rsp.fire && io.in.rx.rsp.bits.opcode === PCrdGrant) {
+  when(io.in.rx.rsp.fire && io.in.rx.rsp.bits.opcode === PCrdGrant) {
     pCrdGrantCnt := pCrdGrantCnt + 1.U
   }
-  when (io.in.tx.req.fire && !io.in.tx.req.bits.allowRetry) {
+  when(io.in.tx.req.fire && !io.in.tx.req.bits.allowRetry) {
     noAllowRetryCnt := noAllowRetryCnt + 1.U
   }
 

@@ -22,7 +22,7 @@ import chisel3.util._
 import utility._
 import org.chipsalliance.cde.config.Parameters
 import scala.collection.View.Fill
-import coupledL2.{TaskBundle, MSHRInfo, MetaEntry, MergeTaskBundle}
+import coupledL2.{MergeTaskBundle, MetaEntry, MSHRInfo, TaskBundle}
 import coupledL2.MetaData._
 
 class RXSNP(
@@ -55,8 +55,8 @@ class RXSNP(
     */
   val reqBlockSnpMask = VecInit(io.msInfo.map(s =>
     s.valid && s.bits.set === task.set && s.bits.reqTag === task.tag &&
-    (s.bits.w_grantfirst || s.bits.aliasTask.getOrElse(false.B) && !s.bits.w_rprobeacklast) &&
-    (s.bits.blockRefill || s.bits.w_releaseack) && !s.bits.willFree
+      (s.bits.w_grantfirst || s.bits.aliasTask.getOrElse(false.B) && !s.bits.w_rprobeacklast) &&
+      (s.bits.blockRefill || s.bits.w_releaseack) && !s.bits.willFree
   )).asUInt
   val reqBlockSnp = reqBlockSnpMask.orR
 
@@ -71,26 +71,28 @@ class RXSNP(
     *    release tasks to MainPipe (DS write was done in release tasks on MainPipe), the incoming snoop of Y should 
     *    be **blocked**.
     */
-  val cmoBlockSnpMask = VecInit(io.msInfo.map(s => 
+  val cmoBlockSnpMask = VecInit(io.msInfo.map(s =>
     s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && s.bits.dirHit && isValid(s.bits.metaState) &&
-    !s.bits.s_cmoresp && (!s.bits.s_release || !s.bits.w_rprobeacklast) &&
-    !s.bits.willFree
+      !s.bits.s_cmoresp && (!s.bits.s_release || !s.bits.w_rprobeacklast) &&
+      !s.bits.willFree
   )).asUInt
   val cmoBlockSnp = cmoBlockSnpMask.orR
   val replaceBlockSnpMask = VecInit(io.msInfo.map(s =>
     s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && !s.bits.dirHit && isValid(s.bits.metaState) &&
-    s.bits.s_cmoresp && s.bits.w_replResp && (!s.bits.w_rprobeacklast || s.bits.w_releaseack || !RegNext(s.bits.w_replResp)) &&
-    !s.bits.willFree
+      s.bits.s_cmoresp && s.bits.w_replResp && (!s.bits.w_rprobeacklast || s.bits.w_releaseack || !RegNext(
+        s.bits.w_replResp
+      )) &&
+      !s.bits.willFree
   )).asUInt
   val replaceBlockSnp = replaceBlockSnpMask.orR
   val replaceNestSnpMask = VecInit(io.msInfo.map(s =>
-      s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && 
+    s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag &&
       (!s.bits.dirHit || !s.bits.s_cmoresp) && s.bits.metaState =/= INVALID &&
       RegNext(s.bits.w_replResp) && s.bits.w_rprobeacklast && !s.bits.w_releaseack
-    )).asUInt
+  )).asUInt
   val releaseToBNestSnpMask = replaceNestSnpMask & VecInit(io.msInfo.map(s =>
-      s.bits.releaseToB
-    )).asUInt
+    s.bits.releaseToB
+  )).asUInt
   val replaceDataMask = VecInit(io.msInfo.map(_.bits.replaceData)).asUInt
 
   task := fromSnpToTaskBundle(rxsnp.bits)
@@ -108,9 +110,13 @@ class RXSNP(
   }
 
   val STALL_CNT_MAX = 28000.U
-  assert(stallCnt <= STALL_CNT_MAX,
+  assert(
+    stallCnt <= STALL_CNT_MAX,
     "stallCnt full! maybe there is a deadlock! addr => 0x%x req_opcode => %d txn_id => %d",
-    rxsnp.bits.addr, rxsnp.bits.opcode, rxsnp.bits.txnID)
+    rxsnp.bits.addr,
+    rxsnp.bits.opcode,
+    rxsnp.bits.txnID
+  )
 
   assert(!(stall && rxsnp.fire))
 

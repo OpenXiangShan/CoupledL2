@@ -56,7 +56,7 @@ class MSHRBuffer(wPorts: Int = 1)(implicit p: Parameters) extends L2Module {
       when(wens.orR) {
         // block := w_data
         block.zip(w_beatSel.asBools).zipWithIndex.foreach { case ((beat, sel), i) =>
-          when (sel) { beat := w_data.data((i+1) * beatBytes * 8 - 1, i * beatBytes * 8) }
+          when(sel) { beat := w_data.data((i + 1) * beatBytes * 8 - 1, i * beatBytes * 8) }
         }
       }
   }
