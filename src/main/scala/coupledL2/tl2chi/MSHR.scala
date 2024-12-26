@@ -158,6 +158,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val req_get = req.opcode === Get
   val req_prefetch = req.opcode === Hint
 
+  val req_mayRepl = req_acquire || req_get || req_prefetch
+
   val req_chiOpcode = req.chiOpcode.get
 
   val snpToN = isSnpToN(req_chiOpcode)
@@ -167,8 +169,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val req_cboFlush = req.fromA && req.opcode === CBOFlush
   val req_cboInval = req.fromA && req.opcode === CBOInval
 
-  val cmo_cbo_retention = req_cboClean || req_cboFlush
-  val cmo_cbo_invalidation = req_cboFlush || req_cboInval
   val cmo_cbo = req_cboClean || req_cboFlush || req_cboInval
 
   val hitDirty = dirResult.hit && meta.dirty || probeDirty
@@ -1146,7 +1146,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val nestedwb_match = req_valid && meta.state =/= INVALID &&
     dirResult.set === io.nestedwb.set &&
     dirResult.tag === io.nestedwb.tag &&
-    (state.w_replResp && (state.s_cmoresp || dirResult.hit))
+    state.w_replResp && 
+    (state.s_cmoresp || dirResult.hit) &&   // exclude CMO on directory miss
+    (req_mayRepl || dirResult.hit)          // exclude non-repl tasks (e.g. Forward Snoop) on directory miss
   val nestedwb_hit_match = req_valid && dirResult.hit &&
     dirResult.set === io.nestedwb.set &&
     dirResult.tag === io.nestedwb.tag
