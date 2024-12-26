@@ -311,7 +311,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   // TODO(retry-immutability): It's harmless but not strictly standard to allow WriteBackFull to be degenerated
   //                           to Evict on write retry.
   val isWriteCleanFull = req_cboClean
-  val isWriteBackFull = !req_cboClean && !req_cboInval && (isT(meta.state) && meta.dirty || probeDirty)
+  val isWriteBackFull = !req_cboClean && !req_cboInval && (isT(meta.state) || probeDirty)
   val isEvict = !isWriteCleanFull && !isWriteBackFull
   val a_task = {
     val oa = io.tasks.txreq.bits
