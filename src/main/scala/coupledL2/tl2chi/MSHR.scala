@@ -158,6 +158,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val req_get = req.opcode === Get
   val req_prefetch = req.opcode === Hint
 
+  val req_mayRepl = req_acquire || req_get || req_prefetch
+
   val req_chiOpcode = req.chiOpcode.get
 
   val snpToN = isSnpToN(req_chiOpcode)
@@ -1146,7 +1148,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val nestedwb_match = req_valid && meta.state =/= INVALID &&
     dirResult.set === io.nestedwb.set &&
     dirResult.tag === io.nestedwb.tag &&
-    (state.w_replResp && (state.s_cmoresp || dirResult.hit))
+    state.w_replResp && (state.s_cmoresp && req_mayRepl || dirResult.hit)
   val nestedwb_hit_match = req_valid && dirResult.hit &&
     dirResult.set === io.nestedwb.set &&
     dirResult.tag === io.nestedwb.tag
