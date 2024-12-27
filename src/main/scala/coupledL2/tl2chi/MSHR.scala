@@ -416,7 +416,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     // and it needs to write refillData to DS, so useProbeData is set false according to DS.wdata logic
     // * but on CMO requests, data were not fetched by the refill procedure, but written to releaseBuf
     //   by mainpipe, so useProbeData is set to true to write data from releaseBuf into DS
-    mp_release.useProbeData := cmo_cbo
+    mp_release.useProbeData := false.B
+    mp_release.readProbeDataDown := false.B
     mp_release.mshrRetry := false.B
     mp_release.way := dirResult.way
     mp_release.fromL2pft.foreach(_ := false.B)
@@ -451,6 +452,12 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
 
     // CMO
     when (cmo_cbo) {
+      mp_release.useProbeData := true.B
+      mp_release.readProbeDataDown := ParallelPriorityMux(Seq(
+        req_cboClean  -> true.B,
+        req_cboFlush  -> isWriteBackFull,
+        req_cboInval  -> false.B
+      ))
       mp_release.param := ParallelPriorityMux(Seq(
         req_cboClean  -> TtoB,
         req_cboFlush  -> Mux(isT(meta.state), TtoN, BtoN),
@@ -496,6 +503,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_cbwrdata.mshrId := io.id
     mp_cbwrdata.aliasTask.foreach(_ := false.B)
     mp_cbwrdata.useProbeData := false.B // DontCare
+    mp_cbwrdata.readProbeDataDown := true.B
     mp_cbwrdata.mshrRetry := false.B
     mp_cbwrdata.way := dirResult.way
     mp_cbwrdata.fromL2pft.foreach(_ := false.B)
@@ -547,6 +555,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_probeack.mshrId := io.id
     mp_probeack.aliasTask.foreach(_ := false.B)
     mp_probeack.useProbeData := true.B // write [probeAckData] to DS, if not probed toN // ???
+    mp_probeack.readProbeDataDown := doRespData || mp_probeack.dsWen
     mp_probeack.mshrRetry := false.B
     mp_probeack.way := dirResult.way
     mp_probeack.fromL2pft.foreach(_ := false.B)
@@ -671,6 +680,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       (req.aliasTask.getOrElse(false.B) && 
         !(dirResult.meta.state === BRANCH && req_needT) 
       )
+    mp_grant.readProbeDataDown := false.B
     mp_grant.dirty := false.B
 
     mp_grant.meta := MetaEntry(
@@ -765,6 +775,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_dct.mshrId := io.id
     mp_dct.aliasTask.foreach(_ := false.B)
     mp_dct.useProbeData := true.B
+    mp_dct.readProbeDataDown := true.B
     mp_dct.mshrRetry := false.B
     mp_dct.way := dirResult.way
     mp_dct.fromL2pft.foreach(_ := false.B)

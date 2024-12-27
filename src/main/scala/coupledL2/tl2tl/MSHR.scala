@@ -196,6 +196,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     // mp_release definitely read releaseBuf and refillBuf at ReqArb
     // and it needs to write refillData to DS, so useProbeData is set false according to DS.wdata logic
     mp_release.useProbeData := false.B
+    mp_release.readProbeDataDown := mp_release.opcode === ReleaseData
     mp_release.mshrRetry := false.B
     mp_release.way := dirResult.way
     mp_release.fromL2pft.foreach(_ := false.B)
@@ -245,6 +246,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_probeack.mshrId := io.id
     mp_probeack.aliasTask.foreach(_ := false.B)
     mp_probeack.useProbeData := true.B // write [probeAckData] to DS, if not probed toN
+    mp_probeack.readProbeDataDown := mp_probeack.opcode === ProbeAckData
     mp_probeack.mshrRetry := false.B
     mp_probeack.way := dirResult.way
     mp_probeack.fromL2pft.foreach(_ := false.B)
@@ -328,6 +330,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
       (req.aliasTask.getOrElse(false.B) && 
         !(dirResult.meta.state === BRANCH && req_needT) 
       )
+    mp_grant.readProbeDataDown := false.B
     mp_grant.dirty := false.B
 
     mp_grant.meta := MetaEntry(

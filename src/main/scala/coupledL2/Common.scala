@@ -81,6 +81,9 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val useProbeData = Bool()               // data source, true for ReleaseBuf and false for RefillBuf
   val mshrRetry = Bool()                  // is retry task for mshr conflict
 
+  val readProbeDataDown = Bool()          // whether data from ReleaseBuf was needed on mainpipe by downward operations
+                                          // reads by upwards was handled in RequestArb by 'mshrTask_s2_a_upwards'
+
   // For Intent
   val fromL2pft = prefetchOpt.map(_ => Bool()) // Is the prefetch req from L2(BOP) or from L1 prefetch?
                                           // If true, MSHR should send an ack to L2 prefetcher.
