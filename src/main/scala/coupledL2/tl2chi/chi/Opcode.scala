@@ -188,6 +188,10 @@ trait HasCHIOpcodes extends HasCHIMsgParameters {
     opcode === SnpUniqueFwd 
   }
 
+  def isSnpOnceFwd(opcode: UInt): Bool = {
+    opcode === SnpOnceFwd
+  }
+
   def isSnpUniqueX(opcode: UInt): Bool = {
     opcode === SnpUnique || opcode === SnpUniqueFwd || opcode === SnpUniqueStash
   }
