@@ -404,6 +404,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   comp_s4.bits.state.w_compack := !(readUnique_s4 || readNotSharedDirty_s4 || makeUnique_s4)
   comp_s4.bits.state.w_comp := !(cleanReq_s4 && self_hit_s4 && selfDirty_s4)
   comp_s4.bits.task := comp_task_s4
+  comp_s4.bits.is_miss := (readNotSharedDirty_s4 || readUnique_s4) && !self_hit_s4
 
   /**  Read/Write request to MemUnit **/
   val mem_task_s4 = WireInit(req_s4)
@@ -482,6 +483,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   comp_s6.bits.state.w_comp := true.B
   comp_s6.bits.task := req_s6
   comp_s6.bits.data.get := rdata_s6
+  comp_s6.bits.is_miss := false.B
 
   // Update memory when a dirty block is cleaned
   mem_s6.valid := task_s6.valid && cleanSelfDirty_s6

@@ -57,7 +57,8 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
    */
   override lazy val desiredName: String = "TestTop"
   val delayFactor = 0.5
-  val cacheParams = p(L2ParamKey)
+  val l2Params = p(L2ParamKey)
+  val l3Params = p(OpenLLCParamKey)
 
   def createClientNode(name: String, sources: Int) = {
     val masterNode = TLClientNode(Seq(
@@ -66,14 +67,14 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
           TLMasterParameters.v1(
             name = name,
             sourceId = IdRange(0, sources),
-            supportsProbe = TransferSizes(cacheParams.blockBytes)
+            supportsProbe = TransferSizes(l2Params.blockBytes)
           )
         ),
-        channelBytes = TLChannelBeatBytes(cacheParams.blockBytes),
+        channelBytes = TLChannelBeatBytes(l2Params.blockBytes),
         minLatency = 1,
         echoFields = Nil,
         requestFields = Seq(huancun.AliasField(2)),
-        responseKeys = cacheParams.respKey
+        responseKeys = l2Params.respKey
       )
     ))
     masterNode
@@ -95,7 +96,7 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
 
   // val l2 = LazyModule(new TL2CHICoupledL2())
   val l2_nodes = (0 until numCores).map(i => LazyModule(new TL2CHICoupledL2()(new Config((site, here, up) => {
-    case L2ParamKey => cacheParams.copy(
+    case L2ParamKey => l2Params.copy(
       name                = s"L2_$i",
       hartId              = i,
     )
@@ -134,13 +135,13 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
     val l1xbar = TLXbar()
     l1xbar := 
       TLBuffer() :=
-      TLLogger(s"L2_L1[${i}].C[0]", !cacheParams.FPGAPlatform && cacheParams.enableTLLog) := 
+      TLLogger(s"L2_L1[${i}].C[0]", !l2Params.FPGAPlatform && l2Params.enableTLLog) := 
       l1d
 
     l1i_nodes(i).zipWithIndex.foreach { case (l1i, j) =>
       l1xbar :=
         TLBuffer() :=
-        TLLogger(s"L2_L1[${i}].UL[${j}]", !cacheParams.FPGAPlatform && cacheParams.enableTLLog) :=
+        TLLogger(s"L2_L1[${i}].UL[${j}]", !l2Params.FPGAPlatform && l2Params.enableTLLog) :=
         l1i
     }
     
@@ -192,15 +193,20 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
 
     val l3 = Module(new OpenLLC()(new Config((site, here, up) => {
       case CHIIssue => issue
-      case OpenLLCParamKey => OpenLLCParam(
-        clientCaches = Seq.fill(numCores)(cacheParams.copy(
-          ways = 2,
-          sets = 2,
-        )),
+      case OpenLLCParamKey => l3Params.copy(
+        clientCaches    = Seq.fill(numCores)(l2Params.copy(ways = 2, sets = 2)),
         fullAddressBits = ADDR_WIDTH,
-        banks = 1,
-        ways = 2,
-        sets = 2
+        hartIds         = 0 until numCores
+      )
+      case LogUtilsOptionsKey => LogUtilsOptions(
+        false,
+        here(OpenLLCParamKey).enablePerf,
+        here(OpenLLCParamKey).FPGAPlatform
+      )
+      case PerfCounterOptionsKey => PerfCounterOptions(
+        here(OpenLLCParamKey).enablePerf && !here(OpenLLCParamKey).FPGAPlatform,
+        false,
+        0
       )
     })))
 
@@ -226,6 +232,7 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
     */
     l3.io.sn <> l3Bridge.module.io.chi
     l3.io.nodeID := numCores.U(NODEID_WIDTH.W)
+    l3.io.debugTopDown := DontCare
   }
 }
 
@@ -252,6 +259,16 @@ object TestTopSoCHelper {
 
         // SAM for tester ICN: Home Node ID = 33
         sam                 = Seq(AddressSet.everything -> 33)
+      )
+      case OpenLLCParamKey => OpenLLCParam(
+        ways                = 2,
+        sets                = 2,
+        banks               = 1,
+        clientCaches        = Seq(L2Param()),
+        enablePerf          = false,
+        enableRollingDB     = false,
+        elaboratedTopDown   = false,
+        FPGAPlatform        = FPGAPlatform
       )
     })
 
