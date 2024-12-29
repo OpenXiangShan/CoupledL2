@@ -38,9 +38,13 @@ case class OpenLLCParam
   replacement: String = "plru",
   clientCaches: Seq[L2Param] = Nil,
   banks: Int = 4,
+  FPGAPlatform: Boolean = false,
 
   // Performance analysis
   enablePerf: Boolean = true,
+  enableRollingDB: Boolean = true,
+  elaboratedTopDown: Boolean = true,
+  hartIds: Seq[Int] = Seq[Int](),
 
   // Network layer SAM
   sam: Seq[(AddressSet, Int)] = Seq(AddressSet.everything -> 0)
@@ -82,6 +86,9 @@ trait HasOpenLLCParameters {
 
   def numRNs = cacheParams.clientCaches.size
   def inclusion = if (numRNs == 1) "Exclusive" else "Non-inclusive"
+
+  def topDownOpt  = if(cacheParams.elaboratedTopDown) Some(true) else None
+  def hartIds = cacheParams.hartIds
 
   def timeoutThreshold = 20000
 
