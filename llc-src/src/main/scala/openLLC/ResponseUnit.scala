@@ -37,18 +37,21 @@ class ResponseRequest(withData: Boolean)(implicit p: Parameters) extends LLCBund
   val state = new ResponseState()
   val task  = new Task()
   val data  = if (withData) Some(new DSBlock()) else None
+  val is_miss = Bool()
 }
 
 class ResponseEntry(implicit p: Parameters) extends TaskEntry {
   val state = new ResponseState()
   val data = new DSBlock()
   val beatValids = Vec(beatSize, Bool())
+  val is_miss = Bool()
 }
 
 class ResponseInfo(implicit p: Parameters) extends BlockInfo {
   val w_snpRsp = Bool()
   val w_compdata = Bool()
   val w_compack = Bool()
+  val is_miss = Bool()
 }
 
 class ResponseUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
@@ -124,6 +127,7 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes 
     entry.task := alloc_s6.bits.task
     entry.data := alloc_s6.bits.data.get
     entry.beatValids := VecInit(Seq.fill(beatSize)(true.B))
+    entry.is_miss := alloc_s6.bits.is_miss
   }
 
   when(canAlloc_s4) {
@@ -132,6 +136,7 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes 
     entry.state := alloc_s4.bits.state
     entry.task := alloc_s4.bits.task
     entry.beatValids := VecInit(Seq.fill(beatSize)(false.B))
+    entry.is_miss := alloc_s4.bits.is_miss
   }
 
   assert(!(full_s6 && alloc_s6.valid || full_s4 && alloc_s4.valid) , "ResponseBuf overflow")
@@ -342,6 +347,7 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes 
     m.bits.w_snpRsp := buffer(i).state.w_snpRsp
     m.bits.w_compack := buffer(i).state.w_compack || io.rnRxrsp.valid && io.rnRxrsp.bits.opcode === CompAck &&
       io.rnRxrsp.bits.txnID === buffer(i).task.reqID
+    m.bits.is_miss := buffer(i).is_miss
   }
 
   /* Performance Counter */
