@@ -38,6 +38,10 @@ class OpenLLC(implicit p: Parameters) extends LLCModule with HasClientInfo {
     val rn = Vec(numRNs, Flipped(new PortIO))
     val sn = new NoSnpPortIO
     val nodeID = Input(UInt())
+    val debugTopDown = new Bundle() {
+      val robHeadPaddr = Vec(cacheParams.hartIds.length, Flipped(Valid(UInt(48.W))))
+      val addrMatch = Vec(cacheParams.hartIds.length, Output(Bool()))
+    }
   })
 
   println(s"CHI Issue Version: ${p(CHIIssue)}")
@@ -52,6 +56,14 @@ class OpenLLC(implicit p: Parameters) extends LLCModule with HasClientInfo {
   val rnXbar = Module(new RNXbar())
   val snXbar = Module(new SNXbar())
   val snLinkMonitor = Module(new SNLinkMonitor())
+  val topDown = topDownOpt.map(_ => Module(new TopDownMonitor()))
+  val slices = (0 until banks).map { i =>
+    val slice = Module(new Slice())
+    slice.io.in <> rnXbar.io.out(i)
+    rnXbar.io.snpMasks(i) := slice.io.snpMask 
+    snXbar.io.in(i) <> slice.io.out
+    slice
+  }
 
   for (i <- 0 until numRNs) {
     val rnLinkMonitor = Module(new RNLinkMonitor())
@@ -62,13 +74,6 @@ class OpenLLC(implicit p: Parameters) extends LLCModule with HasClientInfo {
     rnXbar.io.in(i) <> mmioDiverger.io.out.cache(i)
   }
 
-  for (j <- 0 until banks) {
-    val slice = Module(new Slice())
-    slice.io.in <> rnXbar.io.out(j)
-    rnXbar.io.snpMasks(j) := slice.io.snpMask
-    snXbar.io.in(j) <> slice.io.out
-  }
-
   mmioMerger.io.in.cache <> snXbar.io.out
   mmioMerger.io.in.uncache <> mmioDiverger.io.out.uncache
   snLinkMonitor.io.in <> mmioMerger.io.out
@@ -77,4 +82,13 @@ class OpenLLC(implicit p: Parameters) extends LLCModule with HasClientInfo {
   io.sn <> snLinkMonitor.io.out
 
   dontTouch(io)
+
+  topDown match {
+    case Some(t) =>
+      t.io.msStatus.zip(slices).foreach {
+        case (in, s) => in := s.io.msStatus.get
+      }
+      t.io.debugTopDown <> io.debugTopDown
+    case None => io.debugTopDown.addrMatch.foreach(_ := false.B)
+  }
 }

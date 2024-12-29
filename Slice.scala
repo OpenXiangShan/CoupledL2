@@ -29,6 +29,7 @@ class Slice()(implicit p: Parameters) extends LLCModule {
     val in = Flipped(new DecoupledPortIO)
     val out = new DecoupledNoSnpPortIO
     val snpMask = Output(Vec(numRNs, Bool()))
+    val msStatus = topDownOpt.map(_ => Vec(mshrs.response, ValidIO(new ResponseInfo())))
   })
 
   val txUp = io.in.rx
@@ -136,4 +137,10 @@ class Slice()(implicit p: Parameters) extends LLCModule {
 
   io.snpMask := txsnpUp.io.snpMask
 
+  topDownOpt.foreach {_ =>
+    io.msStatus.get.zip(responseUnit.io.respInfo).foreach {
+      case (sink, src) =>
+        sink := src
+    }
+  }
 }
