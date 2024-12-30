@@ -123,6 +123,8 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val snpHitReleaseToB = Bool()
   val snpHitReleaseWithData = Bool()
   val snpHitReleaseIdx = UInt(mshrBits.W) 
+  val snpHitReleaseMetaState = UInt(2.W)
+  val snpHitReleaseMetaDirty = Bool()
   // CHI
   val tgtID = chiOpt.map(_ => UInt(TGTID_WIDTH.W))
   val srcID = chiOpt.map(_ => UInt(SRCID_WIDTH.W))
@@ -200,6 +202,7 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle with HasTLChannelBits {
 
   val metaTag = UInt(tagBits.W)
   val metaState = UInt(stateBits.W)
+  val metaDirty = Bool()
   val dirHit = Bool()
 
   // to drop duplicate prefetch reqs

@@ -809,6 +809,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_dct.snpHitReleaseToB := req.snpHitReleaseToB
     mp_dct.snpHitReleaseWithData := req.snpHitReleaseWithData
     mp_dct.snpHitReleaseIdx := req.snpHitReleaseIdx
+    mp_dct.snpHitReleaseMetaState := req.snpHitReleaseMetaState
+    mp_dct.snpHitReleaseMetaDirty := req.snpHitReleaseMetaDirty
 
     mp_dct
   }
@@ -1131,6 +1133,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   io.msInfo.bits.dirHit := dirResult.hit
   io.msInfo.bits.metaTag := dirResult.tag
   io.msInfo.bits.metaState := meta.state
+  io.msInfo.bits.metaDirty := meta.dirty
   io.msInfo.bits.willFree := will_free
   io.msInfo.bits.isAcqOrPrefetch := req_acquire || req_prefetch
   io.msInfo.bits.isPrefetch := req_prefetch

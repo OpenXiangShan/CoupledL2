@@ -93,6 +93,15 @@ class RXSNP(
     )).asUInt
   val replaceDataMask = VecInit(io.msInfo.map(_.bits.replaceData)).asUInt
 
+  val replaceNestSnpMetaState = ParallelOR(io.msInfo.zip(replaceNestSnpMask.asBools).map { case (ms, hit) => {
+    Mux(hit, ms.bits.metaState, 0.U)
+  }})
+  val replaceNestSnpMetaDirty = ParallelOR(io.msInfo.zip(replaceNestSnpMask.asBools).map { case (ms, hit) => {
+    Mux(hit, ms.bits.metaDirty, false.B)
+  }})
+
+  assert(PopCount(replaceNestSnpMask) <= 1.U, "multiple replace nest snoop")
+
   task := fromSnpToTaskBundle(rxsnp.bits)
 
   val stall = reqBlockSnp || replaceBlockSnp || cmoBlockSnp // addrConflict || replaceConflict
@@ -152,6 +161,8 @@ class RXSNP(
     task.snpHitRelease := replaceNestSnpMask.orR
     task.snpHitReleaseToB := releaseToBNestSnpMask.orR
     task.snpHitReleaseWithData := (replaceNestSnpMask & replaceDataMask).orR
+    task.snpHitReleaseMetaState := replaceNestSnpMetaState
+    task.snpHitReleaseMetaDirty := replaceNestSnpMetaDirty
     task.snpHitReleaseIdx := PriorityEncoder(replaceNestSnpMask)
     task.tgtID.foreach(_ := 0.U) // TODO
     task.srcID.foreach(_ := snp.srcID)

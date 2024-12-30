@@ -306,7 +306,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   // Resp[2: 0] = {PassDirty, CacheState[1: 0]}
   val respCacheState = WireInit(I)
   val respPassDirty = dirResult_s3.hit && meta_s3.state === TIP && meta_s3.dirty &&
-    !(neverRespData || req_s3.chiOpcode.get === SnpOnce)
+    !(neverRespData || req_s3.chiOpcode.get === SnpOnce) && !isSnpStashX(req_s3.chiOpcode.get)
+
   when (dirResult_s3.hit) {
     when (isSnpToB(req_s3.chiOpcode.get)) {
       respCacheState := SC
@@ -320,6 +321,17 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     }
     when (req_s3.chiOpcode.get === SnpCleanShared) {
       respCacheState := Mux(meta_s3.state === BRANCH, SC, UC)
+    }
+  }
+
+  when (req_s3.snpHitRelease) {
+    // *NOTICE: On Stash, the cache state must maintain unchanged on nested WriteBack
+    when (isSnpStashX(req_s3.chiOpcode.get)) {
+      respCacheState := Mux(
+        req_s3.snpHitReleaseMetaState === BRANCH,
+        SC,
+        Mux(req_s3.snpHitReleaseMetaDirty, UD, UC)
+      )
     }
   }
 
@@ -598,8 +610,12 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     * Snoop nesting happens when:
     * 1. snoop nests a copy-back request
     * 2. snoop nests a Read/MakeUnique request
+    * 
+    * *NOTICE: Never allow 'b_inv_dirty' on SnpStash* and other future snoops that would
+    *          leave cache line state untouched.
     */
-  io.nestedwb.b_inv_dirty := task_s3.valid && task_s3.bits.fromB && source_req_s3.snpHitRelease
+  io.nestedwb.b_inv_dirty := task_s3.valid && task_s3.bits.fromB && source_req_s3.snpHitRelease &&
+    !isSnpStashX(req_s3.chiOpcode.get)
   io.nestedwb.b_toB.foreach(_ :=
     task_s3.valid && task_s3.bits.fromB && source_req_s3.metaWen && source_req_s3.meta.state === BRANCH
   )
