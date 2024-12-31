@@ -97,6 +97,8 @@ case class L2Param(
   ),
 
   hartId: Int = 0,
+  // memory
+  PmemRanges: Seq[(BigInt, BigInt)] = Seq((0x80000000L, 0x80000000000L)),
   // Prefetch
   prefetch: Seq[PrefetchParameters] = Nil,
   // Performance analysis
