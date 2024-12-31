@@ -201,7 +201,10 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     (isSnpToBFwd(req_chiOpcode) /*|| isSnpToNFwd(req_chiOpcode)*/)
   val doRespData_retToSrc_nonFwd = req.retToSrc.get && dirResult.hit && meta.state === BRANCH && 
     (isSnpToBNonFwd(req_chiOpcode) || isSnpToNNonFwd(req_chiOpcode) || req_chiOpcode === SnpOnce)
-  val doRespData_once = dirResult.hit && isSnpOnceX(req_chiOpcode)
+  // doRespData_once includes SnpOnceFwd(nested) UD -> I and SnpOnce UC -> UC/I(non-nested/nested)
+  // TODO: too ugly, any better way?
+  val doRespData_once = req.snpHitRelease && req.snpHitReleaseMetaDirty && req_chiOpcode === SnpOnceFwd ||
+                        (dirResult.hit && !meta.dirty || req.snpHitRelease && !req.snpHitReleaseMetaDirty) && req_chiOpcode === SnpOnce
   val doRespData = doRespData_dirty || doRespData_retToSrc_fwd || doRespData_retToSrc_nonFwd || doRespData_once
 
   dontTouch(doRespData_dirty)
@@ -272,7 +275,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val respCacheState = Mux(dirResult.hit, ParallelPriorityMux(Seq(
     snpToN -> I,
     snpToB -> SC,
-    (isSnpOnceX(req_chiOpcode) || isSnpStashX(req_chiOpcode)) ->
+    isSnpOnceX(req_chiOpcode) ->
+      Mux(req.snpHitRelease, I, Mux(probeDirty || meta.dirty, UD, metaChi)),
+    isSnpStashX(req_chiOpcode) ->
       Mux(probeDirty || meta.dirty, UD, metaChi),
     isSnpCleanShared(req_chiOpcode) -> 
       Mux(isT(meta.state), UC, metaChi)
@@ -283,8 +288,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     req_chiOpcode === SnpUniqueStash ||
     req_chiOpcode === SnpCleanShared ||
     req_chiOpcode === SnpCleanInvalid ||
-    req_chiOpcode === SnpOnce ||
-    req_chiOpcode === SnpOnceFwd
+    isSnpOnceX(req_chiOpcode) && req.snpHitRelease && req.snpHitReleaseMetaDirty
   )
   val fwdCacheState = Mux(
     isSnpToBFwd(req_chiOpcode),
