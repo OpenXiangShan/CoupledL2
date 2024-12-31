@@ -201,7 +201,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     (isSnpToBFwd(req_chiOpcode) /*|| isSnpToNFwd(req_chiOpcode)*/)
   val doRespData_retToSrc_nonFwd = req.retToSrc.get && dirResult.hit && meta.state === BRANCH && 
     (isSnpToBNonFwd(req_chiOpcode) || isSnpToNNonFwd(req_chiOpcode))
-  val doRespData_once = dirResult.hit && meta.state === TRUNK && isSnpOnceX(req_chiOpcode)
+  val doRespData_once = hitDirty && isSnpOnceX(req_chiOpcode)
   val doRespData = doRespData_dirty || doRespData_retToSrc_fwd || doRespData_retToSrc_nonFwd || doRespData_once
 
   dontTouch(doRespData_dirty)
@@ -282,14 +282,16 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     req_chiOpcode === SnpUnique ||
     req_chiOpcode === SnpUniqueStash ||
     req_chiOpcode === SnpCleanShared ||
-    req_chiOpcode === SnpCleanInvalid
+    req_chiOpcode === SnpCleanInvalid ||
+    req_chiOpcode === SnpOnce ||
+    req_chiOpcode === SnpOnceFwd
   )
   val fwdCacheState = Mux(
     isSnpToBFwd(req_chiOpcode),
     SC,
     Mux(isSnpToNFwd(req_chiOpcode), UC /*UC_UD*/, I)
   )
-  val fwdPassDirty = isSnpToNFwd(req_chiOpcode) && hitDirtyOrWriteBack
+  val fwdPassDirty = (isSnpToNFwd(req_chiOpcode) || isSnpOnceX(req_chiOpcode)) && hitDirtyOrWriteBack
 
   /*TXRSP for CompAck */
     val txrsp_task = {
