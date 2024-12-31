@@ -203,8 +203,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     (isSnpToBNonFwd(req_chiOpcode) || isSnpToNNonFwd(req_chiOpcode) || req_chiOpcode === SnpOnce)
   // doRespData_once includes SnpOnceFwd(nested) UD -> I and SnpOnce UC -> UC/I(non-nested/nested)
   // TODO: too ugly, any better way?
-  val doRespData_once = req.snpHitRelease && req.snpHitReleaseMetaDirty && req_chiOpcode === SnpOnceFwd ||
-                        (dirResult.hit && !meta.dirty || req.snpHitRelease && !req.snpHitReleaseMetaDirty) && req_chiOpcode === SnpOnce
+  val doRespData_once = req.snpHitRelease && req.snpHitReleaseWithData && req.snpHitReleaseMetaDirty && req_chiOpcode === SnpOnceFwd ||
+                        (dirResult.hit && !meta.dirty || req.snpHitRelease && req.snpHitReleaseWithData && !req.snpHitReleaseMetaDirty) && req_chiOpcode === SnpOnce
   val doRespData = doRespData_dirty || doRespData_retToSrc_fwd || doRespData_retToSrc_nonFwd || doRespData_once
 
   dontTouch(doRespData_dirty)
@@ -288,7 +288,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     req_chiOpcode === SnpUniqueStash ||
     req_chiOpcode === SnpCleanShared ||
     req_chiOpcode === SnpCleanInvalid ||
-    isSnpOnceX(req_chiOpcode) && req.snpHitRelease && req.snpHitReleaseMetaDirty
+    isSnpOnceX(req_chiOpcode) && req.snpHitRelease && req.snpHitReleaseWithData && req.snpHitReleaseMetaDirty
   )
   val fwdCacheState = Mux(
     isSnpToBFwd(req_chiOpcode),
