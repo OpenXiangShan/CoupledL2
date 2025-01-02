@@ -312,7 +312,11 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   //                           to Evict on write retry.
   val isWriteCleanFull = req_cboClean
   val isWriteBackFull = !req_cboClean && !req_cboInval && (isT(meta.state) && meta.dirty || probeDirty)
-  val isEvict = !isWriteCleanFull && !isWriteBackFull
+  val isWriteEvictFull = false.B
+  val isWriteEvictOrEvict = p(CHIIssue) match {
+    case Issue.Eb => !isWriteCleanFull && !isWriteBackFull && !isWriteEvictFull
+    case _        => false.B }
+  val isEvict = !isWriteCleanFull && !isWriteBackFull && !isWriteEvictFull && !isWriteEvictOrEvict
   val a_task = {
     val oa = io.tasks.txreq.bits
     oa := 0.U.asTypeOf(io.tasks.txreq.bits.cloneType)
@@ -337,6 +341,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     oa.opcode := ParallelPriorityMux(Seq(
       (release_valid2 && isWriteCleanFull)               -> WriteCleanFull,
       (release_valid2 && isWriteBackFull)                -> WriteBackFull,
+      (release_valid2 && isWriteEvictFull)               -> WriteEvictFull,
+      (release_valid2 && isWriteEvictOrEvict)            -> WriteEvictOrEvict,
       (release_valid2 && isEvict)                        -> Evict,
       req_cboClean                                       -> CleanShared,
       req_cboFlush                                       -> CleanInvalid,
@@ -1019,10 +1025,14 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         req.traceTag.get := rxrsp.bits.traceTag.get
       }
 
-      // There is a pending Evict transaction waiting for the Comp resp
+      // There is a pending Evict/WriteEvictOrEvict transaction waiting for the Comp resp
       when (!state.w_releaseack) {
         state.w_releaseack := true.B
         // There is no CompAck for Comp in response of Evict. Thus there is no need to record TraceTag.
+        when (isWriteEvictOrEvict) {
+          // For WriteEvictOrEvict, drop CopyBackWrData on Comp
+          state.s_cbwrdata.get := true.B
+        }
       }
 
       // Comp for Dataless transaction that include CompAck
@@ -1222,9 +1232,12 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     io.tasks.mainpipe.fire && io.tasks.mainpipe.bits.opcode === WriteBackFull && io.tasks.mainpipe.bits.toTXREQ
   val wcFire = io.tasks.txreq.fire && io.tasks.txreq.bits.opcode === WriteCleanFull ||
     io.tasks.mainpipe.fire && io.tasks.mainpipe.bits.opcode === WriteCleanFull && io.tasks.mainpipe.bits.toTXREQ
+  val weFire = io.tasks.txreq.fire && io.tasks.txreq.bits.opcode === WriteEvictFull ||
+    io.tasks.mainpipe.fire && io.tasks.mainpipe.bits.opcode === WriteEvictFull && io.tasks.mainpipe.bits.toTXREQ
   assert(!RegNext(evictFire) || state.s_cbwrdata.get, "There should be no CopyBackWrData after Evict")
   assert(!RegNext(wbFire) || !state.s_cbwrdata.get, "There must be a CopyBackWrData after WriteBack")
   assert(!RegNext(wcFire) || !state.s_cbwrdata.get, "There must be a CopyBackWrData after WriteClean")
+  assert(!RegNext(weFire) || !state.s_cbwrdata.get, "There must be a CopyBackWrData after WriteEvictFull")
 
   /* ======== Performance counters ======== */
   // time stamp
