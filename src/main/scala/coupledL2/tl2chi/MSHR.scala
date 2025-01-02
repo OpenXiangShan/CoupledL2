@@ -447,7 +447,12 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_release.txnID.get := io.id
     mp_release.homeNID.get := 0.U
     mp_release.dbID.get := 0.U 
-    mp_release.chiOpcode.get := Mux(isWriteBackFull, WriteBackFull, Evict)
+    mp_release.chiOpcode.get := ParallelPriorityMux(Seq(
+      isWriteBackFull       -> WriteBackFull,
+      isWriteEvictFull      -> WriteEvictFull,
+      isWriteEvictOrEvict   -> WriteEvictOrEvict,
+      isEvict /* Default */ -> Evict
+    ))
     mp_release.resp.get := 0.U // DontCare
     mp_release.fwdState.get := 0.U // DontCare
     mp_release.pCrdType.get := 0.U // DontCare // TODO: consider retry of WriteBackFull/Evict
