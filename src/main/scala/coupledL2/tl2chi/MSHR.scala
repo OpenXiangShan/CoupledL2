@@ -295,7 +295,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     SC,
     Mux(isSnpToNFwd(req_chiOpcode), UC /*UC_UD*/, I)
   )
-  val fwdPassDirty = (isSnpToNFwd(req_chiOpcode) || isSnpOnceX(req_chiOpcode)) && hitDirtyOrWriteBack
+  val fwdPassDirty = isSnpToNFwd(req_chiOpcode) && hitDirtyOrWriteBack
 
   /*TXRSP for CompAck */
     val txrsp_task = {
