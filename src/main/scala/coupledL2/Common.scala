@@ -321,6 +321,8 @@ class NestedWriteback(implicit p: Parameters) extends L2Bundle {
   val tag = UInt(tagBits.W)
   // Nested ReleaseData sets block dirty
   val c_set_dirty = Bool()
+  // Nested Release sets block TIP
+  val c_set_tip = Bool()
   // Nested Snoop invalidates block
   val b_inv_dirty = Bool()
 
