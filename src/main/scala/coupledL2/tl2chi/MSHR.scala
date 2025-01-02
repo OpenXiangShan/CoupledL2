@@ -313,9 +313,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val isWriteCleanFull = req_cboClean
   val isWriteBackFull = !req_cboClean && !req_cboInval && (isT(meta.state) && meta.dirty || probeDirty)
   val isWriteEvictFull = false.B
-  val isWriteEvictOrEvict = p(CHIIssue) match {
-    case Issue.Eb => !isWriteCleanFull && !isWriteBackFull && !isWriteEvictFull
-    case _        => false.B }
+  val isWriteEvictOrEvict = !isWriteCleanFull && !isWriteBackFull && !isWriteEvictFull && afterIssueE.B
   val isEvict = !isWriteCleanFull && !isWriteBackFull && !isWriteEvictFull && !isWriteEvictOrEvict
   val a_task = {
     val oa = io.tasks.txreq.bits
@@ -457,9 +455,10 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_release.fwdState.get := 0.U // DontCare
     mp_release.pCrdType.get := 0.U // DontCare // TODO: consider retry of WriteBackFull/Evict
     mp_release.retToSrc.get := req.retToSrc.get
+    mp_release.likelyshared.get := Mux(isWriteEvictOrEvict, meta.state === BRANCH, false.B)
     mp_release.expCompAck.get := false.B
     mp_release.allowRetry.get := state.s_reissue.getOrElse(false.B)
-    mp_release.memAttr.get := MemAttr(allocate = isWriteBackFull, cacheable = true.B, device = false.B, ewa = true.B)
+    mp_release.memAttr.get := MemAttr(allocate = !isEvict, cacheable = true.B, device = false.B, ewa = true.B)
 
     // CMO
     when (cmo_cbo) {
