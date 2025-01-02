@@ -172,8 +172,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val cmo_cbo = req_cboClean || req_cboFlush || req_cboInval
 
   val hitDirty = dirResult.hit && meta.dirty || probeDirty
-  val hitDirtyOrWriteBack = hitDirty || req.snpHitRelease && req.snpHitReleaseWithData
-  val snpNested = req.snpHitRelease && req.snpHitReleaseWithData
+  val hitWriteBack = req.snpHitRelease && req.snpHitReleaseWithData
+  val hitDirtyOrWriteBack = hitDirty || hitWriteBack
 
   val releaseToB = req_cboClean
 
@@ -203,13 +203,13 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val doRespData_retToSrc_nonFwd = req.retToSrc.get && (
     dirResult.hit && meta.state === BRANCH &&
       (isSnpToBNonFwd(req_chiOpcode) || isSnpToNNonFwd(req_chiOpcode) || isSnpOnce(req_chiOpcode)) ||
-    snpNested && req.snpHitReleaseMetaState === BRANCH &&
+    hitWriteBack && req.snpHitReleaseMetaState === BRANCH &&
        isSnpOnce(req_chiOpcode))
   // doRespData_once includes SnpOnceFwd(nested) UD -> I and SnpOnce UC -> UC/I(non-nested/nested)
-  val doRespData_once = snpNested && req.snpHitReleaseMetaDirty &&
+  val doRespData_once = hitWriteBack && req.snpHitReleaseMetaDirty &&
       isSnpOnceFwd(req_chiOpcode) ||
     (dirResult.hit && !meta.dirty && meta.state =/= BRANCH ||
-      snpNested && !req.snpHitReleaseMetaDirty && req.snpHitReleaseMetaState =/= BRANCH) &&
+      hitWriteBack && !req.snpHitReleaseMetaDirty && req.snpHitReleaseMetaState =/= BRANCH) &&
       isSnpOnce(req_chiOpcode)
   val doRespData = doRespData_dirty || doRespData_retToSrc_fwd || doRespData_retToSrc_nonFwd || doRespData_once
 
@@ -228,7 +228,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     * 1. When the snoop opcode is Snp*Fwd and the snooped block is valid.
     */
   val doFwd = isSnpXFwd(req_chiOpcode) && dirResult.hit
-  val doFwdHitRelease = isSnpXFwd(req_chiOpcode) && req.snpHitRelease && req.snpHitReleaseWithData
+  val doFwdHitRelease = isSnpXFwd(req_chiOpcode) && hitWriteBack
 
   val gotUD = meta.dirty //TC/TTC -> UD
   val promoteT_normal =  dirResult.hit && meta_no_client && meta.state === TIP
@@ -294,7 +294,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     req_chiOpcode === SnpUniqueStash ||
     req_chiOpcode === SnpCleanShared ||
     req_chiOpcode === SnpCleanInvalid ||
-    isSnpOnceX(req_chiOpcode) && snpNested && req.snpHitReleaseMetaDirty
+    isSnpOnceX(req_chiOpcode) && hitWriteBack && req.snpHitReleaseMetaDirty
   )
   val fwdCacheState = Mux(
     isSnpToBFwd(req_chiOpcode),
