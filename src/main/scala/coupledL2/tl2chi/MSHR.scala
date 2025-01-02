@@ -352,7 +352,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     oa.size := log2Ceil(blockBytes).U
     oa.addr := Cat(Mux(release_valid2, dirResult.tag, req.tag), req.set, 0.U(offsetBits.W))
     oa.ns := false.B
-    oa.likelyshared := false.B
+    oa.likelyshared := Mux(isWriteEvictOrEvict, meta.state === BRANCH, false.B)
     oa.allowRetry := state.s_reissue.getOrElse(false.B)
     oa.order := OrderEncodings.None
     oa.pCrdType := Mux(!state.s_reissue.getOrElse(false.B), pcrdtype, 0.U)
@@ -488,6 +488,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         req_cboFlush  -> Mux(isWriteBackFull, WriteBackFull, Evict),
         req_cboInval  -> Evict
       ))
+      mp_release.likelyshared.get := false.B
       mp_release.memAttr.get := MemAttr(allocate = false.B, cacheable = true.B, device = false.B, ewa = true.B)
     }
 
@@ -541,6 +542,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_cbwrdata.fwdState.get := 0.U
     mp_cbwrdata.pCrdType.get := 0.U // TODO
     mp_cbwrdata.retToSrc.get := req.retToSrc.get // DontCare
+    mp_cbwrdata.likelyshared.get := false.B
     mp_cbwrdata.expCompAck.get := false.B
     mp_cbwrdata.traceTag.get := cbWrDataTraceTag
     mp_cbwrdata
@@ -629,6 +631,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_probeack.fwdState.get := setPD(fwdCacheState, fwdPassDirty)
     mp_probeack.pCrdType.get := 0.U
     mp_probeack.retToSrc.get := req.retToSrc.get // DontCare
+    mp_probeack.likelyshared.get := false.B
     mp_probeack.expCompAck.get := false.B
     mp_probeack.traceTag.get := req.traceTag.get
     mp_probeack.snpHitRelease := req.snpHitRelease
@@ -813,6 +816,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_dct.fwdState.get := 0.U
     mp_dct.pCrdType.get := 0.U // DontCare
     mp_dct.retToSrc.get := false.B // DontCare
+    mp_dct.likelyshared.get := false.B
     mp_dct.expCompAck.get := false.B // DontCare
     mp_dct.traceTag.get := req.traceTag.get
     mp_dct.snpHitRelease := req.snpHitRelease

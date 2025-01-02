@@ -138,6 +138,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val fwdState = chiOpt.map(_ => UInt(FWDSTATE_WIDTH.W))
   val pCrdType = chiOpt.map(_ => UInt(PCRDTYPE_WIDTH.W))
   val retToSrc = chiOpt.map(_ => Bool()) // only used in snoop
+  val likelyshared = chiOpt.map(_ => Bool())
   val expCompAck = chiOpt.map(_ => Bool())
   val allowRetry = chiOpt.map(_ => Bool())
   val memAttr = chiOpt.map(_ => new MemAttr)
@@ -154,6 +155,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
     req.allowRetry := allowRetry.getOrElse(true.B)  //TODO: consider retry
     req.pCrdType := pCrdType.getOrElse(0.U)
     req.expCompAck := expCompAck.getOrElse(false.B)
+    req.likelyshared := likelyshared.getOrElse(false.B)
     req.memAttr := memAttr.getOrElse(MemAttr())
     req.snpAttr := true.B
     req.order := OrderEncodings.None
