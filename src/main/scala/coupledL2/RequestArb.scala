@@ -216,6 +216,8 @@ class RequestArb(implicit p: Parameters) extends L2Module
   val releaseRefillData = task_s2.bits.replTask && (if (enableCHI) {
     task_s2.bits.toTXREQ && (
       task_s2.bits.chiOpcode.get === WriteBackFull ||
+      task_s2.bits.chiOpcode.get === WriteEvictFull ||
+      task_s2.bits.chiOpcode.get === WriteEvictOrEvict && afterIssueE.B ||
       task_s2.bits.chiOpcode.get === Evict
     )
   } else {
