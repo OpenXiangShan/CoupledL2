@@ -1,9 +1,10 @@
 package coupledL2
 
 import chisel3._
-import chisel3.util._
+import chisel3.util.log2Ceil
 import org.chipsalliance.cde.config._
-import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
+import chisel3.stage.ChiselGeneratorAnnotation
+import circt.stage.{ChiselStage, FirtoolOption}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tile.MaxHartIdBits
 import freechips.rocketchip.tilelink._
@@ -67,6 +68,7 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
     case PerfCounterOptionsKey => PerfCounterOptions(
       here(L2ParamKey).enablePerf && !here(L2ParamKey).FPGAPlatform,
       here(L2ParamKey).enableRollingDB && !here(L2ParamKey).FPGAPlatform,
+      XSPerfLevel.NORMAL,
       0
     )
   }))))
@@ -178,6 +180,7 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
     case PerfCounterOptionsKey => PerfCounterOptions(
       here(L2ParamKey).enablePerf && !here(L2ParamKey).FPGAPlatform,
       here(L2ParamKey).enableRollingDB && !here(L2ParamKey).FPGAPlatform,
+      XSPerfLevel.NORMAL,
       0
     )
   })))
@@ -208,6 +211,7 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
     case PerfCounterOptionsKey => PerfCounterOptions(
       here(HCCacheParamsKey).enablePerf && !here(HCCacheParamsKey).FPGAPlatform,
       false,
+      XSPerfLevel.NORMAL,
       0
     )
   })))
@@ -319,6 +323,7 @@ class TestTop_L2_Standalone()(implicit p: Parameters) extends LazyModule {
     case PerfCounterOptionsKey => PerfCounterOptions(
       here(L2ParamKey).enablePerf && !here(L2ParamKey).FPGAPlatform,
       here(L2ParamKey).enableRollingDB && !here(L2ParamKey).FPGAPlatform,
+      XSPerfLevel.NORMAL,
       0
     )
   })))
@@ -420,6 +425,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
     case PerfCounterOptionsKey => PerfCounterOptions(
       here(L2ParamKey).enablePerf && !here(L2ParamKey).FPGAPlatform,
       here(L2ParamKey).enableRollingDB && !here(L2ParamKey).FPGAPlatform,
+      XSPerfLevel.NORMAL,
       i
     )
   }))))
@@ -451,6 +457,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
     case PerfCounterOptionsKey => PerfCounterOptions(
       here(HCCacheParamsKey).enablePerf && !here(HCCacheParamsKey).FPGAPlatform,
       false,
+      XSPerfLevel.NORMAL,
       0
     )
   })))
@@ -585,6 +592,7 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
       case PerfCounterOptionsKey => PerfCounterOptions(
         here(L2ParamKey).enablePerf && !here(L2ParamKey).FPGAPlatform,
         here(L2ParamKey).enableRollingDB && !here(L2ParamKey).FPGAPlatform,
+        XSPerfLevel.NORMAL,
         i
       )
     })))
@@ -626,6 +634,7 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
     case PerfCounterOptionsKey => PerfCounterOptions(
       here(HCCacheParamsKey).enablePerf && !here(HCCacheParamsKey).FPGAPlatform,
       false,
+      XSPerfLevel.NORMAL,
       0
     )
   })))
@@ -666,6 +675,7 @@ object TestTop_L2 extends App {
 
   val top = DisableMonitors(p => LazyModule(new TestTop_L2()(p)) )(config)
   (new ChiselStage).execute(args, Seq(
+    FirtoolOption("--disable-annotation-unknown"),
     ChiselGeneratorAnnotation(() => top.module)
   ))
 
@@ -684,6 +694,7 @@ object TestTop_L2_Standalone extends App {
 
   val top = DisableMonitors(p => LazyModule(new TestTop_L2_Standalone()(p)) )(config)
   (new ChiselStage).execute(args, Seq(
+    FirtoolOption("--disable-annotation-unknown"),
     ChiselGeneratorAnnotation(() => top.module)
   ))
 
@@ -706,6 +717,7 @@ object TestTop_L2L3 extends App {
 
   val top = DisableMonitors(p => LazyModule(new TestTop_L2L3()(p)) )(config)
   (new ChiselStage).execute(args, Seq(
+    FirtoolOption("--disable-annotation-unknown"),
     ChiselGeneratorAnnotation(() => top.module)
   ))
 
@@ -729,6 +741,7 @@ object TestTop_L2L3L2 extends App {
 
   val top = DisableMonitors(p => LazyModule(new TestTop_L2L3L2()(p)))(config)
   (new ChiselStage).execute(args, Seq(
+    FirtoolOption("--disable-annotation-unknown"),
     ChiselGeneratorAnnotation(() => top.module)
   ))
 
@@ -751,6 +764,7 @@ object TestTop_fullSys extends App {
 
   val top = DisableMonitors(p => LazyModule(new TestTop_fullSys()(p)))(config)
   (new ChiselStage).execute(args, Seq(
+    FirtoolOption("--disable-annotation-unknown"),
     ChiselGeneratorAnnotation(() => top.module)
   ))
 

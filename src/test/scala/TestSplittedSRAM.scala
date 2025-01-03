@@ -2,13 +2,13 @@ package coupledL2
 
 import coupledL2.utils._
 import chisel3._
-import chisel3.util._
 import chiseltest._
 import chiseltest.RawTester.test
 import chisel3.experimental._
 import chisel3.testers._
 import org.chipsalliance.cde.config._
-import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
+import chisel3.stage.ChiselGeneratorAnnotation
+import circt.stage.ChiselStage
 import scala.collection.mutable.ArrayBuffer
 import chiseltest.WriteVcdAnnotation
 import scala.util.Random

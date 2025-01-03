@@ -24,17 +24,17 @@ CHI_TOP_ARGS = --issue $(ISSUE) --core $(NUM_CORE) --tl-ul $(NUM_TL_UL) --bank $
 		       --fpga $(FPGA)
 BUILD_DIR = ./build
 TOP_V = $(BUILD_DIR)/$(TOP).v
-SIM_MEM_ARGS = --infer-rw --repl-seq-mem -c:$(TOP):-o:$(TOP).v.conf
-MEM_GEN = ./scripts/vlsi_mem_gen
-MEM_GEN_SEP = ./scripts/gen_sep_mem.sh
+SIM_MEM_ARGS =
+MEM_GEN =
+MEM_GEN_SEP =
 
 gen-test-top:
-	mill -i CoupledL2.test.runMain coupledL2.$(TOP)_$(SYSTEM) -td $(BUILD_DIR) $(SIM_MEM_ARGS)
-	$(MEM_GEN_SEP) "$(MEM_GEN)" "$(TOP_V).conf" "$(BUILD_DIR)"
+	mill -i CoupledL2.test.runMain coupledL2.$(TOP)_$(SYSTEM) -td $(BUILD_DIR) $(SIM_MEM_ARGS) --target systemverilog
+#	$(MEM_GEN_SEP) "$(MEM_GEN)" "$(TOP_V).conf" "$(BUILD_DIR)"
 
 gen-test-top-chi:
-	mill -i CoupledL2.test.runMain coupledL2.$(TOP)_$(SYSTEM) -td $(BUILD_DIR) $(SIM_MEM_ARGS) $(CHI_TOP_ARGS)
-	$(MEM_GEN_SEP) "$(MEM_GEN)" "$(TOP_V).conf" "$(BUILD_DIR)"
+	mill -i CoupledL2.test.runMain coupledL2.$(TOP)_$(SYSTEM) -td $(BUILD_DIR) $(SIM_MEM_ARGS) $(CHI_TOP_ARGS) --target systemverilog
+#	$(MEM_GEN_SEP) "$(MEM_GEN)" "$(TOP_V).conf" "$(BUILD_DIR)"
 
 test-top-l2:
 	$(MAKE) gen-test-top SYSTEM=L2

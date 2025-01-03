@@ -10,14 +10,14 @@ import $file.`rocket-chip`.cde.common
 import $file.`rocket-chip`.hardfloat.build
 
 val defaultVersions = Map(
-  "chisel3" -> "3.6.0",
-  "chisel3-plugin" -> "3.6.0",
-  "chiseltest" -> "0.6.2",
-  "scala" -> "2.13.10",
+  "chisel" -> ("org.chipsalliance", "6.6.0"),
+  "chisel-plugin" -> ("org.chipsalliance", "6.6.0"),
+  "chiseltest" -> ("edu.berkeley.cs", "6.0.0"),
+  "scala" -> ("", "2.13.15"),
 )
 
-def getVersion(dep: String, org: String = "edu.berkeley.cs", cross: Boolean = false) = {
-  val version = sys.env.getOrElse(dep + "Version", defaultVersions(dep))
+def getVersion(dep: String, cross: Boolean = false) = {
+  val (org, version) = sys.env.getOrElse(dep + "Version", defaultVersions(dep))
   if (cross)
     ivy"$org:::$dep:$version"
   else
@@ -29,16 +29,16 @@ trait HasChisel extends ScalaModule {
 
   def chiselPluginJar: T[Option[PathRef]] = None
 
-  def chiselIvy: Option[Dep] = Some(getVersion("chisel3"))
+  def chiselIvy: Option[Dep] = Some(getVersion("chisel"))
 
-  def chiselPluginIvy: Option[Dep] = Some(getVersion("chisel3-plugin", cross=true))
+  def chiselPluginIvy: Option[Dep] = Some(getVersion("chisel-plugin", cross=true))
 
-  override def scalaVersion = defaultVersions("scala")
+  override def scalaVersion = defaultVersions("scala")._2
 
   override def scalacOptions = super.scalacOptions() ++
     Agg("-language:reflectiveCalls", "-Ymacro-annotations", "-Ytasty-reader")
 
-  override def ivyDeps = super.ivyDeps() ++ Agg(chiselIvy.get)
+  override def ivyDeps = super.ivyDeps() ++ Agg(chiselIvy.get) ++ Agg(ivy"org.chipsalliance:llvm-firtool:1.62.1")
 
   override def scalacPluginIvyDeps = super.scalacPluginIvyDeps() ++ Agg(chiselPluginIvy.get)
 }

@@ -1,9 +1,10 @@
 package coupledL2
 
 import chisel3._
-import chisel3.util._
+import chisel3.util.{log2Up, log2Ceil}
+import chisel3.stage.ChiselGeneratorAnnotation
+import circt.stage.{ChiselStage, FirtoolOption}
 import org.chipsalliance.cde.config._
-import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tile.MaxHartIdBits
@@ -80,6 +81,7 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(imp
     case PerfCounterOptionsKey => PerfCounterOptions(
       here(L2ParamKey).enablePerf && !here(L2ParamKey).FPGAPlatform,
       here(L2ParamKey).enableRollingDB && !here(L2ParamKey).FPGAPlatform,
+      XSPerfLevel.NORMAL,
       i
     )
   }))))
@@ -223,6 +225,7 @@ object TestTopCHIHelper {
     val top = DisableMonitors(p => LazyModule(fTop(p)))(config)
 
     (new ChiselStage).execute(args, Seq(
+      FirtoolOption("--disable-annotation-unknown"),
       ChiselGeneratorAnnotation(() => top.module)
     ))
 
