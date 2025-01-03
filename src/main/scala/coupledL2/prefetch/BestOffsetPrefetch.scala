@@ -508,8 +508,7 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
     alloc(i) := s1_valid && s1_invalid_oh(i)
     pf_fired(i) := s0_pf_fire_oh(i)
     exp_drop(i) := s3_tlb_fire_oh(i) && s3_tlb_resp_valid && !s3_tlb_resp.miss && (
-      (e.needT && (s3_tlb_resp.excp.head.pf.st || s3_tlb_resp.excp.head.gpf.st || s3_tlb_resp.excp.head.af.st)) ||
-      (!e.needT && (s3_tlb_resp.excp.head.pf.ld || s3_tlb_resp.excp.head.gpf.ld || s3_tlb_resp.excp.head.af.ld)) ||
+      s3_tlb_resp.excp.head.pf.ld || s3_tlb_resp.excp.head.gpf.ld || s3_tlb_resp.excp.head.af.ld ||
       io.tlb_req.pmp_resp.ld || io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt)
     )
     val miss = s3_tlb_fire_oh(i) && s3_tlb_resp_valid && s3_tlb_resp.miss
@@ -546,11 +545,7 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
   for((e, i) <- entries.zipWithIndex){
     tlb_req_arb.io.in(i).valid := valids(i) && !e.paddrValid && !s1_tlb_fire_oh(i) && !s2_tlb_fire_oh(i) && !s3_tlb_fire_oh(i) && !e.replayCnt.orR
     tlb_req_arb.io.in(i).bits.vaddr := e.get_tlb_vaddr()
-    when(e.needT) {
-      tlb_req_arb.io.in(i).bits.cmd := TlbCmd.write
-    }.otherwise{
-      tlb_req_arb.io.in(i).bits.cmd := TlbCmd.read
-    }
+    tlb_req_arb.io.in(i).bits.cmd := TlbCmd.read
     tlb_req_arb.io.in(i).bits.size := 3.U
     tlb_req_arb.io.in(i).bits.kill := false.B
     tlb_req_arb.io.in(i).bits.no_translate := false.B
@@ -562,14 +557,12 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
 
   XSPerfAccumulate("tlb_req", io.tlb_req.req.valid)
   XSPerfAccumulate("tlb_miss", io.tlb_req.resp.valid && io.tlb_req.resp.bits.miss)
-  XSPerfAccumulate("tlb_excp",
-    s3_tlb_resp_valid && !s3_tlb_resp.miss && (
-      (s3_tlb_resp.excp.head.pf.st || s3_tlb_resp.excp.head.gpf.st || s3_tlb_resp.excp.head.af.st) ||
-      (s3_tlb_resp.excp.head.pf.ld || s3_tlb_resp.excp.head.gpf.ld || s3_tlb_resp.excp.head.af.ld) ||
-      io.tlb_req.pmp_resp.ld || io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt)
+  XSPerfAccumulate("tlb_excp", s3_tlb_resp_valid && !s3_tlb_resp.miss && (
+    s3_tlb_resp.excp.head.pf.ld || s3_tlb_resp.excp.head.gpf.ld || s3_tlb_resp.excp.head.af.ld ||
+    io.tlb_req.pmp_resp.ld || io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt)
   ))
-  XSPerfAccumulate("tlb_excp_pmp_af", s3_tlb_resp_valid && io.tlb_req.pmp_resp.ld)
-  XSPerfAccumulate("tlb_excp_uncache", s3_tlb_resp_valid && (io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt)))
+  XSPerfAccumulate("tlb_excp_pmp_af", s3_tlb_resp_valid && !s3_tlb_resp.miss && io.tlb_req.pmp_resp.ld)
+  XSPerfAccumulate("tlb_excp_uncache", s3_tlb_resp_valid && !s3_tlb_resp.miss && (io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt)))
   XSPerfAccumulate("entry_alloc", PopCount(alloc))
   XSPerfAccumulate("entry_miss_first_replay", PopCount(miss_first_replay))
   XSPerfAccumulate("entry_miss_drop", PopCount(miss_drop))
