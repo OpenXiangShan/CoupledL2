@@ -21,7 +21,7 @@ import chisel3._
 import chisel3.util._
 import utility._
 import org.chipsalliance.cde.config.Parameters
-import freechips.rocketchip.tilelink._
+import utility.mbist.MbistPipeline
 import coupledL2._
 
 /* virtual address */
@@ -338,6 +338,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
 
     tp.get.io.tpmeta_port <> tpio.tpmeta_port.get
   }
+  private val mbistPl = MbistPipeline.PlaceMbistPipeline(2, "MbistPipeL2Prefetcher", cacheParams.hasMbist && (hasBOP || hasTPPrefetcher))
 
   // =================== Connection of all Prefetchers =====================
   /* prefetchers -> pftQueue -> pipe -> Slices.SinkA */

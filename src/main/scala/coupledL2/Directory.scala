@@ -19,7 +19,7 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import freechips.rocketchip.util.SetAssocLRU
+import utility.mbist.MbistPipeline
 import coupledL2.utils._
 import utility.{ParallelPriorityMux, RegNextN, XSPerfAccumulate, Code, SRAMTemplate}
 import org.chipsalliance.cde.config.Parameters
@@ -141,6 +141,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   val replacerWen = WireInit(false.B)
 
   // val tagArray  = Module(new SRAMTemplate(UInt(tagBits.W), sets, ways, singlePort = true))
+  private val mbist = p(L2ParamKey).hasMbist
   val tagArray = if (enableTagECC) {
     Module(new SplittedSRAM(
       gen = UInt((tagBits + eccTagBits).W),
@@ -148,7 +149,8 @@ class Directory(implicit p: Parameters) extends L2Module {
       way = ways,
       waySplit = 2,
       singlePort = true,
-      readMCP2 = false
+      readMCP2 = false,
+      hasMbist = mbist
     ))
   } else {
     Module(new SplittedSRAM(
@@ -157,11 +159,12 @@ class Directory(implicit p: Parameters) extends L2Module {
       way = ways,
       waySplit = 2,
       singlePort = true,
-      readMCP2 = false
+      readMCP2 = false,
+      hasMbist = mbist
     ))
   }
 
-  val metaArray = Module(new SRAMTemplate(new MetaEntry, sets, ways, singlePort = true))
+  val metaArray = Module(new SRAMTemplate(new MetaEntry, sets, ways, singlePort = true, hasMbist = mbist))
 
   val tagRead = if (enableTagECC) {
     Wire(Vec(ways, UInt((tagBits + eccTagBits).W)))
@@ -177,7 +180,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   val repl = ReplacementPolicy.fromString(cacheParams.replacement, ways)
   val random_repl = cacheParams.replacement == "random"
   val replacer_sram_opt = if(random_repl) None else
-    Some(Module(new SRAMTemplate(UInt(repl.nBits.W), sets, 1, singlePort = true, shouldReset = true)))
+    Some(Module(new SRAMTemplate(UInt(repl.nBits.W), sets, 1, singlePort = true, shouldReset = true, hasMbist = mbist)))
 
   /* ====== Generate response signals ====== */
   // hit/way calculation in stage 3, Cuz SRAM latency is high under high frequency
@@ -326,7 +329,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   // hit-Promotion, miss-Insertion for RRIP
   // origin-bit marks whether the data_block is reused
   val origin_bit_opt = if(random_repl) None else
-    Some(Module(new SRAMTemplate(Bool(), sets, ways, singlePort = true, shouldReset = true)))
+    Some(Module(new SRAMTemplate(Bool(), sets, ways, singlePort = true, shouldReset = true, hasMbist = mbist)))
   val origin_bits_r = origin_bit_opt.get.io.r(io.read.fire, io.read.bits.set).resp.data
   val origin_bits_hold = Wire(Vec(ways, Bool()))
   origin_bits_hold := HoldUnless(origin_bits_r, RegNext(io.read.fire, false.B))
@@ -346,7 +349,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     (!refillReqValid_s3 && req_s3.replacerInfo.channel(0) && req_s3.replacerInfo.opcode === Hint) || (req_s3.replacerInfo.channel(2) && metaAll_s3(way_s3).prefetch.getOrElse(false.B)) || (refillReqValid_s3 && req_s3.replacerInfo.refill_prefetch),
     req_s3.refill
   )
-
+  private val mbistPl = MbistPipeline.PlaceMbistPipeline(1, "L2Directory", mbist)
   if(cacheParams.replacement == "srrip"){
     val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3, hit_s3, inv, rrip_req_type)
     val repl_init = Wire(Vec(ways, UInt(2.W)))

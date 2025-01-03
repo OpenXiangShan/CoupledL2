@@ -19,9 +19,9 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import coupledL2.utils.{HoldUnless, GatedSplittedSRAM}
-import utility.{ClockGate, SRAMTemplate}
+import coupledL2.utils.GatedSplittedSRAM
 import org.chipsalliance.cde.config.Parameters
+import utility.mbist.MbistPipeline
 
 class DSRequest(implicit p: Parameters) extends L2Bundle {
   val way = UInt(wayBits.W)
@@ -80,9 +80,12 @@ class DataStorage(implicit p: Parameters) extends L2Module {
     way = 1,
     dataSplit = 4,
     singlePort = true,
-    readMCP2 = true
+    readMCP2 = true,
+    hasMbist = p(L2ParamKey).hasMbist,
+    extraHold = true
   ))
   array.io_en := io.en
+  private val mbistPl = MbistPipeline.PlaceMbistPipeline(1, "L2DataStorage", p(L2ParamKey).hasMbist)
 
   val arrayIdx = Cat(io.req.bits.way, io.req.bits.set)
   val wen = io.req.valid && io.req.bits.wen
