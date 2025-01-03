@@ -33,7 +33,7 @@ import scala.math.max
 import coupledL2.prefetch._
 import huancun.{BankBitsKey, TPmetaReq, TPmetaResp}
 import utility.mbist.{MbistInterface, MbistPipeline}
-import utility.sram.SramHelper
+import utility.sram.{SramBroadcastBundle, SramHelper}
 
 trait HasCoupledL2Parameters {
   val p: Parameters
@@ -329,6 +329,8 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         val l2MissMatch = Output(Bool())
       }
       val error = Output(new L2CacheErrorInfo()(l2ECCParams))
+      val dft = if(cacheParams.hasMbist) Some(Input(new SramBroadcastBundle)) else None
+      val dft_reset = if(cacheParams.hasMbist) Some(Input(new DFTResetSignals())) else None
     })
 
     // Display info
@@ -600,15 +602,10 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     XSPerfAccumulate("ok2Hints", okHint)
 
     private val sigFromSrams = if (cacheParams.hasMbist) Some(SramHelper.genBroadCastBundleTop()) else None
-    val dft = if (cacheParams.hasMbist) Some(IO(sigFromSrams.get.cloneType)) else None
-    val dft_out = if (cacheParams.hasMbist) Some(IO(Output(sigFromSrams.get.cloneType))) else None
-    val dft_reset = IO(Input(new DFTResetSignals))
-    val dft_reset_out = IO(Output(new DFTResetSignals))
-    dft_reset_out := dft_reset
-
+    private val cg = if (cacheParams.hasMbist) Some(utility.ClockGate.genTeSrc) else None
     if (cacheParams.hasMbist) {
-      sigFromSrams.get := dft.get
-      dft_out.get := dft.get
+      cg.get.cgen := io.dft.get.cgen
+      sigFromSrams.get := io.dft.get
     }
 
     private val mbistPl = MbistPipeline.PlaceMbistPipeline(Int.MaxValue, "L2Cache", cacheParams.hasMbist)
