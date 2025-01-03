@@ -328,9 +328,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     // *NOTICE: On Stash, the cache state must maintain unchanged on nested WriteBack
     when (isSnpStashX(req_s3.chiOpcode.get)) {
       respCacheState := Mux(
-        req_s3.snpHitReleaseMetaState === BRANCH,
+        req_s3.snpHitReleaseState === BRANCH,
         SC,
-        Mux(req_s3.snpHitReleaseMetaDirty, UD, UC)
+        Mux(req_s3.snpHitReleaseDirty, UD, UC)
       )
     }
   }
@@ -606,6 +606,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   // This serves as VALID signal
   // c_set_dirty is true iff Release has Data
   io.nestedwb.c_set_dirty := task_s3.valid && task_s3.bits.fromC && task_s3.bits.opcode === ReleaseData && task_s3.bits.param === TtoN
+  io.nestedwb.c_set_tip := task_s3.valid && task_s3.bits.fromC && task_s3.bits.opcode === Release && task_s3.bits.param === TtoN
   /**
     * Snoop nesting happens when:
     * 1. snoop nests a copy-back request
