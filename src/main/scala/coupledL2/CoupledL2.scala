@@ -322,6 +322,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         val robHeadPaddr = Flipped(Valid(UInt(36.W)))
         val l2MissMatch = Output(Bool())
       }
+      val l2Miss = Output(Bool())
       val error = Output(new L2CacheErrorInfo()(l2ECCParams))
     })
 
@@ -563,6 +564,8 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         t.io.debugTopDown <> io.debugTopDown
       case None => io.debugTopDown.l2MissMatch := false.B
     }
+
+    io.l2Miss := RegNext(slices.map(_.io.l2Miss).reduce(_ || _))
 
     // ==================== XSPerf Counters ====================
     val grant_data_fire = slices.map { slice => 
