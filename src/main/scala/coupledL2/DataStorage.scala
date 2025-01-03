@@ -22,6 +22,7 @@ import chisel3.util._
 import coupledL2.utils.{HoldUnless, SplittedSRAM}
 import utility.{ClockGate, SRAMTemplate}
 import org.chipsalliance.cde.config.Parameters
+import utility.mbist.MbistPipeline
 
 class DSRequest(implicit p: Parameters) extends L2Bundle {
   val way = UInt(wayBits.W)
@@ -80,10 +81,12 @@ class DataStorage(implicit p: Parameters) extends L2Module {
     way = 1,
     dataSplit = 4,
     singlePort = true,
-    readMCP2 = true
+    readMCP2 = true,
+    hasMbist = p(L2ParamKey).hasMbist
   ))
-
-  val masked_clock = ClockGate(false.B, io.en, clock)
+  private val mbistPl = MbistPipeline.PlaceMbistPipeline(1, "L2DataStorage", p(L2ParamKey).hasMbist)
+  val te = ClockGate.genTeSink.cgen
+  val masked_clock = ClockGate(te, io.en, clock)
   array.clock := masked_clock
 
   val arrayIdx = Cat(io.req.bits.way, io.req.bits.set)
