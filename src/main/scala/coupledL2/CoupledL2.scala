@@ -69,9 +69,6 @@ trait HasCoupledL2Parameters {
 
   def mmioBridgeSize = cacheParams.mmioBridgeSize
 
-  // Memory
-  def PmemRanges = cacheParams.PmemRanges
-
   // ECC
   def enableECC = cacheParams.enableTagECC || cacheParams.enableDataECC
   def enableTagECC = cacheParams.enableTagECC

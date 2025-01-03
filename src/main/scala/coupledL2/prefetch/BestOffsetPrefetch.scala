@@ -34,7 +34,7 @@ import chisel3.util._
 import coupledL2.{HasCoupledL2Parameters, L2TlbReq, L2ToL1TlbIO, TlbCmd, Pbmt}
 import coupledL2.utils.ReplacementPolicy
 import scopt.Read
-import freechips.rocketchip.util._
+import freechips.rocketchip.util.SeqToAugmentedSeq
 
 case class BOPParameters(
   virtualTrain: Boolean = true,
@@ -499,38 +499,23 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
   val s3_tlb_resp = RegEnable(io.tlb_req.resp.bits, io.tlb_req.resp.valid)
 
   /* entry update */
-  val drop = Wire(Vec(REQ_FILTER_SIZE, Bool()))
-  val drop_excp = Wire(Vec(REQ_FILTER_SIZE, Bool()))
-  val drop_miss = Wire(Vec(REQ_FILTER_SIZE, Bool()))
-  val drop_uncache = Wire(Vec(REQ_FILTER_SIZE, Bool()))
-  val drop_pmp = Wire(Vec(REQ_FILTER_SIZE, Bool()))
-  val drop_range = Wire(Vec(REQ_FILTER_SIZE, Bool()))
+  val exp_drop = Wire(Vec(REQ_FILTER_SIZE, Bool()))
+  val miss_drop = Wire(Vec(REQ_FILTER_SIZE, Bool()))
   val miss_first_replay = Wire(Vec(REQ_FILTER_SIZE, Bool()))
   val pf_fired = Wire(Vec(REQ_FILTER_SIZE, Bool()))
   val tlb_fired = Wire(Vec(REQ_FILTER_SIZE, Bool()))
   for ((e, i) <- entries.zipWithIndex){
     alloc(i) := s1_valid && s1_invalid_oh(i)
     pf_fired(i) := s0_pf_fire_oh(i)
-    
-    val tlb_hit = s3_tlb_fire_oh(i) && s3_tlb_resp_valid && !s3_tlb_resp.miss
-    val tlb_miss = s3_tlb_fire_oh(i) && s3_tlb_resp_valid && s3_tlb_resp.miss
-    miss_first_replay(i) := tlb_miss && !e.replayEn
-    
-    drop_excp(i) := tlb_hit && (
-      (e.needT && (s3_tlb_resp.excp.head.pf.st || s3_tlb_resp.excp.head.gpf.st || s3_tlb_resp.excp.head.af.st)) ||
-      (!e.needT && (s3_tlb_resp.excp.head.pf.ld || s3_tlb_resp.excp.head.gpf.ld || s3_tlb_resp.excp.head.af.ld)) ||
-      io.tlb_req.pmp_resp.ld
+    exp_drop(i) := s3_tlb_fire_oh(i) && s3_tlb_resp_valid && !s3_tlb_resp.miss && (
+      s3_tlb_resp.excp.head.pf.ld || s3_tlb_resp.excp.head.gpf.ld || s3_tlb_resp.excp.head.af.ld ||
+      io.tlb_req.pmp_resp.ld || io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt)
     )
-    drop_uncache(i) := tlb_hit && (io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt))
-    drop_pmp(i) := tlb_hit && io.tlb_req.pmp_resp.ld
-    drop_range(i) := tlb_hit && !PmemRanges.map(range =>
-      s3_tlb_resp.paddr.head.inRange(range._1.U, range._2.U)
-    ).reduce(_ || _)
-    drop_miss(i) := tlb_miss && e.replayEn
-    drop(i) := drop_excp(i) || drop_uncache(i) || drop_pmp(i) || drop_range(i) || drop_miss(i)
-
-    tlb_fired(i) := tlb_hit && !drop(i)
-
+    val miss = s3_tlb_fire_oh(i) && s3_tlb_resp_valid && s3_tlb_resp.miss
+    tlb_fired(i) := s3_tlb_fire_oh(i) && s3_tlb_resp_valid && !s3_tlb_resp.miss && !exp_drop(i)
+    miss_drop(i) := miss && e.replayEn
+    miss_first_replay(i) := miss && !e.replayEn
+    
     // old data: update replayCnt
     when(valids(i) && e.replayCnt.orR) {
       e.replayCnt := e.replayCnt - 1.U
@@ -538,11 +523,13 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
     // recent data: update tlb resp
     when(tlb_fired(i)){
       e.update_paddr(s3_tlb_resp.paddr.head)
-    }.elsewhen(drop(i)) { // miss
+    }.elsewhen(miss_drop(i)) { // miss
       invalid_entry(i)
     }.elsewhen(miss_first_replay(i)){
       e.replayCnt := firstTlbReplayCnt
       e.replayEn := 1.U
+    }.elsewhen(exp_drop(i)){
+      invalid_entry(i)
     }
     // issue data: update pf
     when(pf_fired(i)){
@@ -558,11 +545,7 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
   for((e, i) <- entries.zipWithIndex){
     tlb_req_arb.io.in(i).valid := valids(i) && !e.paddrValid && !s1_tlb_fire_oh(i) && !s2_tlb_fire_oh(i) && !s3_tlb_fire_oh(i) && !e.replayCnt.orR
     tlb_req_arb.io.in(i).bits.vaddr := e.get_tlb_vaddr()
-    when(e.needT) {
-      tlb_req_arb.io.in(i).bits.cmd := TlbCmd.write
-    }.otherwise{
-      tlb_req_arb.io.in(i).bits.cmd := TlbCmd.read
-    }
+    tlb_req_arb.io.in(i).bits.cmd := TlbCmd.read
     tlb_req_arb.io.in(i).bits.size := 3.U
     tlb_req_arb.io.in(i).bits.kill := false.B
     tlb_req_arb.io.in(i).bits.no_translate := false.B
@@ -574,16 +557,18 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
 
   XSPerfAccumulate("tlb_req", io.tlb_req.req.valid)
   XSPerfAccumulate("tlb_miss", io.tlb_req.resp.valid && io.tlb_req.resp.bits.miss)
+  XSPerfAccumulate("tlb_excp", s3_tlb_resp_valid && !s3_tlb_resp.miss && (
+    s3_tlb_resp.excp.head.pf.ld || s3_tlb_resp.excp.head.gpf.ld || s3_tlb_resp.excp.head.af.ld ||
+    io.tlb_req.pmp_resp.ld || io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt)
+  ))
+  XSPerfAccumulate("tlb_excp_pmp_af", s3_tlb_resp_valid && !s3_tlb_resp.miss && io.tlb_req.pmp_resp.ld)
+  XSPerfAccumulate("tlb_excp_uncache", s3_tlb_resp_valid && !s3_tlb_resp.miss && (io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt)))
   XSPerfAccumulate("entry_alloc", PopCount(alloc))
   XSPerfAccumulate("entry_miss_first_replay", PopCount(miss_first_replay))
+  XSPerfAccumulate("entry_miss_drop", PopCount(miss_drop))
+  XSPerfAccumulate("entry_excp", PopCount(exp_drop))
   XSPerfAccumulate("entry_merge", io.in_req.valid && s0_match)
   XSPerfAccumulate("entry_pf_fire", PopCount(pf_fired))
-  XSPerfAccumulate("entry_total_drop", PopCount(drop))
-  XSPerfAccumulate("entry_drop_excp", PopCount(drop_excp))
-  XSPerfAccumulate("entry_drop_miss", PopCount(drop_miss))
-  XSPerfAccumulate("entry_drop_uncache", PopCount(drop_uncache))
-  XSPerfAccumulate("entry_drop_pmp", PopCount(drop_pmp))
-  XSPerfAccumulate("entry_drop_range", PopCount(drop_range))
   
   /*
   val enTalbe = WireInit(Constantin.createRecord(name+"_isWriteL2BopTable", 1.U))
