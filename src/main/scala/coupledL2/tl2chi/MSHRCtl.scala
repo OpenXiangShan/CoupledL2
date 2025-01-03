@@ -83,6 +83,9 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
 
     /* to Slice Top for pCrd info.*/
     val pCrd = Vec(mshrsAll, new PCrdQueryBundle)
+
+    /* for TopDown */
+    val l2Miss = Output(Bool())
   })
 
   /*MSHR allocation pointer gen -> to Mainpipe*/
@@ -106,6 +109,12 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
   val mshrSelector = Module(new MSHRSelector())
   val selectedMSHROH = mshrSelector.io.out.bits
 
+  io.l2Miss := Cat(mshrs.map { m =>
+    m.io.status.valid && m.io.status.bits.channel(0) && (
+      m.io.status.bits.reqSource === MemReqSource.CPULoadData.id.U ||
+      m.io.status.bits.reqSource === MemReqSource.CPUStoreData.id.U
+    )
+  }).orR
   mshrSelector.io.idle := mshrs.map(m => !m.io.status.valid)
   io.toMainPipe.mshr_alloc_ptr := OHToUInt(selectedMSHROH)
 

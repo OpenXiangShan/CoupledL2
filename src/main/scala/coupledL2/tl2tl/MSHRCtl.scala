@@ -90,6 +90,9 @@ class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
     /* for TopDown Monitor */
     val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
+
+    /* for TopDown */
+    val l2Miss = Output(Bool())
   })
 
   val mshrs = Seq.fill(mshrsAll) { Module(new MSHR()) }
@@ -103,6 +106,12 @@ class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
   mshrSelector.io.idle := mshrs.map(m => !m.io.status.valid)
   val selectedMSHROH = mshrSelector.io.out.bits
   io.toMainPipe.mshr_alloc_ptr := OHToUInt(selectedMSHROH)
+  io.l2Miss := Cat(mshrs.map { m =>
+    m.io.status.valid && m.io.status.bits.channel(0) && (
+      m.io.status.bits.reqSource === MemReqSource.CPULoadData.id.U ||
+      m.io.status.bits.reqSource === MemReqSource.CPUStoreData.id.U
+    )
+  }).orR
 
   val resp_sinkC_match_vec = mshrs.map { mshr =>
     val status = mshr.io.status.bits

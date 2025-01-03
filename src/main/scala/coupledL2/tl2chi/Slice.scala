@@ -186,6 +186,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
       io.latePF.get := reqBuf.io.hasLatePF
     }
   )
+  io.l2Miss := mshrCtl.io.l2Miss
 
   /* Connect upwards channels */
   val inBuf = cacheParams.innerBuf

@@ -182,6 +182,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
       io.latePF.get          := a_reqBuf.io.hasLatePF
     }
   )
+  io.l2Miss := mshrCtl.io.l2Miss
 
   if (cacheParams.enablePerf) {
     val a_begin_times = RegInit(VecInit(Seq.fill(sourceIdAll)(0.U(64.W))))
