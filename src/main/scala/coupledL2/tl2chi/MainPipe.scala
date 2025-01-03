@@ -328,9 +328,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     // *NOTICE: On Stash, the cache state must maintain unchanged on nested WriteBack
     when (isSnpStashX(req_s3.chiOpcode.get)) {
       respCacheState := Mux(
-        req_s3.snpHitReleaseMetaState === BRANCH,
+        req_s3.snpHitReleaseState === BRANCH,
         SC,
-        Mux(req_s3.snpHitReleaseMetaDirty, UD, UC)
+        Mux(req_s3.snpHitReleaseDirty, UD, UC)
       )
     }
   }

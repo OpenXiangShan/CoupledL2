@@ -203,13 +203,13 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val doRespData_retToSrc_nonFwd = req.retToSrc.get && (
     dirResult.hit && meta.state === BRANCH &&
       (isSnpToBNonFwd(req_chiOpcode) || isSnpToNNonFwd(req_chiOpcode) || isSnpOnce(req_chiOpcode)) ||
-    hitWriteBack && req.snpHitReleaseMetaState === BRANCH &&
+    hitWriteBack && req.snpHitReleaseState === BRANCH &&
        isSnpOnce(req_chiOpcode))
   // doRespData_once includes SnpOnceFwd(nested) UD -> I and SnpOnce UC -> UC/I(non-nested/nested)
-  val doRespData_once = hitWriteBack && req.snpHitReleaseMetaDirty &&
+  val doRespData_once = hitWriteBack && req.snpHitReleaseDirty &&
       isSnpOnceFwd(req_chiOpcode) ||
     (dirResult.hit && !meta.dirty && meta.state =/= BRANCH ||
-      hitWriteBack && !req.snpHitReleaseMetaDirty && req.snpHitReleaseMetaState =/= BRANCH) &&
+      hitWriteBack && !req.snpHitReleaseDirty && req.snpHitReleaseState =/= BRANCH) &&
       isSnpOnce(req_chiOpcode)
   val doRespData = doRespData_dirty || doRespData_retToSrc_fwd || doRespData_retToSrc_nonFwd || doRespData_once
 
@@ -294,7 +294,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     req_chiOpcode === SnpUniqueStash ||
     req_chiOpcode === SnpCleanShared ||
     req_chiOpcode === SnpCleanInvalid ||
-    isSnpOnceX(req_chiOpcode) && hitWriteBack && req.snpHitReleaseMetaDirty
+    isSnpOnceX(req_chiOpcode) && hitWriteBack && req.snpHitReleaseDirty
   )
   val fwdCacheState = Mux(
     isSnpToBFwd(req_chiOpcode),
@@ -822,8 +822,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_dct.snpHitReleaseToB := req.snpHitReleaseToB
     mp_dct.snpHitReleaseWithData := req.snpHitReleaseWithData
     mp_dct.snpHitReleaseIdx := req.snpHitReleaseIdx
-    mp_dct.snpHitReleaseMetaState := req.snpHitReleaseMetaState
-    mp_dct.snpHitReleaseMetaDirty := req.snpHitReleaseMetaDirty
+    mp_dct.snpHitReleaseState := req.snpHitReleaseState
+    mp_dct.snpHitReleaseDirty := req.snpHitReleaseDirty
 
     mp_dct
   }
@@ -1147,6 +1147,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   io.msInfo.bits.metaTag := dirResult.tag
   io.msInfo.bits.metaState := meta.state
   io.msInfo.bits.metaDirty := meta.dirty
+  io.msInfo.bits.probeDirty := probeDirty
   io.msInfo.bits.willFree := will_free
   io.msInfo.bits.isAcqOrPrefetch := req_acquire || req_prefetch
   io.msInfo.bits.isPrefetch := req_prefetch
