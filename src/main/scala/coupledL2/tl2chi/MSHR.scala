@@ -356,7 +356,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     oa.allowRetry := state.s_reissue.getOrElse(false.B)
     oa.order := OrderEncodings.None
     oa.pCrdType := Mux(!state.s_reissue.getOrElse(false.B), pcrdtype, 0.U)
-    oa.expCompAck := !release_valid2 && !cmo_cbo
+    oa.expCompAck := (!release_valid2 || release_valid2 && isWriteEvictOrEvict) && !cmo_cbo
     oa.memAttr := MemAttr(
       cacheable = true.B,
       allocate = !(release_valid2 && isEvict),
@@ -456,7 +456,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_release.pCrdType.get := 0.U // DontCare // TODO: consider retry of WriteBackFull/Evict
     mp_release.retToSrc.get := req.retToSrc.get
     mp_release.likelyshared.get := Mux(isWriteEvictOrEvict, meta.state === BRANCH, false.B)
-    mp_release.expCompAck.get := false.B
+    mp_release.expCompAck.get := isWriteEvictOrEvict
     mp_release.allowRetry.get := state.s_reissue.getOrElse(false.B)
     mp_release.memAttr.get := MemAttr(allocate = !isEvict, cacheable = true.B, device = false.B, ewa = true.B)
 
@@ -1037,9 +1037,13 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       when (!state.w_releaseack) {
         state.w_releaseack := true.B
         // There is no CompAck for Comp in response of Evict. Thus there is no need to record TraceTag.
+        // Except on WriteEvictOrEvict:
         when (isWriteEvictOrEvict) {
+          req.traceTag.get := rxrsp.bits.traceTag.get
           // For WriteEvictOrEvict, drop CopyBackWrData on Comp
           state.s_cbwrdata.get := true.B
+          // Schedule CompAck on Comp
+          state.s_compack.get := false.B
         }
       }
 
