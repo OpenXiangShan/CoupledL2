@@ -326,7 +326,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val isWriteCleanFull = req_cboClean
   val isWriteBackFull = !req_cboClean && !req_cboInval && (isT(meta.state) && meta.dirty || probeDirty)
   val isWriteEvictFull = false.B
-  val isWriteEvictOrEvict = !isWriteCleanFull && !isWriteBackFull && !isWriteEvictFull && afterIssueE.B
+  val isWriteEvictOrEvict = onIssueEbOrElse(!isWriteCleanFull && !isWriteBackFull && !isWriteEvictFull, false.B)
   val isEvict = !isWriteCleanFull && !isWriteBackFull && !isWriteEvictFull && !isWriteEvictOrEvict
   val a_task = {
     val oa = io.tasks.txreq.bits
@@ -353,7 +353,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       (release_valid2 && isWriteCleanFull)               -> WriteCleanFull,
       (release_valid2 && isWriteBackFull)                -> WriteBackFull,
       (release_valid2 && isWriteEvictFull)               -> WriteEvictFull,
-      (release_valid2 && isWriteEvictOrEvict)            -> WriteEvictOrEvict,
+      (release_valid2 && isWriteEvictOrEvict)            -> onIssueEbOrElse(WriteEvictOrEvict, DontCare),
       (release_valid2 && isEvict)                        -> Evict,
       req_cboClean                                       -> CleanShared,
       req_cboFlush                                       -> CleanInvalid,
@@ -461,7 +461,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_release.chiOpcode.get := ParallelPriorityMux(Seq(
       isWriteBackFull       -> WriteBackFull,
       isWriteEvictFull      -> WriteEvictFull,
-      isWriteEvictOrEvict   -> WriteEvictOrEvict,
+      isWriteEvictOrEvict   -> onIssueEbOrElse(WriteEvictOrEvict, DontCare),
       isEvict /* Default */ -> Evict
     ))
     mp_release.resp.get := 0.U // DontCare
@@ -868,8 +868,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   Seq(
     ("CopyBackWrData", CHICohStateTransSet.ofCopyBackWrData(CopyBackWrData)),
     ("CompData", CHICohStateTransSet.ofCompData(CompData)),
-    ("DataSepResp", CHICohStateTransSet.ofDataSepResp(DataSepResp)),
-    ("RespSepData", CHICohStateTransSet.ofRespSepData(RespSepData)),
     ("SnpResp", CHICohStateTransSet.ofSnpResp(SnpResp)),
     ("SnpRespData", CHICohStateTransSet.ofSnpRespData(SnpRespData)),
     ("SnpRespDataPtl", CHICohStateTransSet.ofSnpRespDataPtl(SnpRespDataPtl)),
@@ -880,6 +878,17 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         mp.txChannel, mp.chiOpcode.get, mp.resp.get),
       s"invalid Resp for ${name}")
   }}
+
+  ifIssueEb {
+    Seq(
+      ("DataSepResp", CHICohStateTransSet.ofDataSepResp(DataSepResp)),
+      ("RespSepData", CHICohStateTransSet.ofRespSepData(RespSepData))
+    ).foreach { case (name, set) => {
+      assert(!mp_valid || CHICohStateTransSet.isValid(set, 
+          mp.txChannel, mp.chiOpcode.get, mp.resp.get),
+        s"invalid Resp for ${name}")
+    }}
+  }
 
   /* ======== Assertions for DCT forwarded snoop ======== */
   Seq(
@@ -993,16 +1002,18 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   when (rxdat.valid) {
     val nderr = rxdat.bits.respErr.getOrElse(OK) === NDERR
     val derr = rxdat.bits.respErr.getOrElse(OK) === DERR
-    when (rxdat.bits.chiOpcode.get === DataSepResp) {
-      require(beatSize == 2) // TODO: This is ugly
-      beatCnt := beatCnt + 1.U
-      state.w_grantfirst := true.B
-      state.w_grantlast := state.w_grantfirst && beatCnt === (beatSize - 1).U
-      gotT := rxdatIsU || rxdatIsU_PD
-      gotDirty := gotDirty || rxdatIsU_PD
-      gotGrantData := true.B
-      denied := denied || nderr
-      corrupt := corrupt || derr || nderr
+    ifIssueEb {
+      when (rxdat.bits.chiOpcode.get === DataSepResp) {
+        require(beatSize == 2) // TODO: This is ugly
+        beatCnt := beatCnt + 1.U
+        state.w_grantfirst := true.B
+        state.w_grantlast := state.w_grantfirst && beatCnt === (beatSize - 1).U
+        gotT := rxdatIsU || rxdatIsU_PD
+        gotDirty := gotDirty || rxdatIsU_PD
+        gotGrantData := true.B
+        denied := denied || nderr
+        corrupt := corrupt || derr || nderr
+      }
     }
 
     when (rxdat.bits.chiOpcode.get === CompData) {
@@ -1024,13 +1035,15 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   // RXRSP
   when (rxrsp.valid) {
     val nderr = rxrsp.bits.respErr.getOrElse(OK) === NDERR
-    when (rxrsp.bits.chiOpcode.get === RespSepData) {
-      state.w_grant := true.B
-      srcid := rxrsp.bits.srcID.getOrElse(0.U)
-      homenid := rxrsp.bits.srcID.getOrElse(0.U)
-      dbid := rxrsp.bits.dbID.getOrElse(0.U)
-      denied := denied || nderr
-      req.traceTag.get := rxrsp.bits.traceTag.get
+    ifIssueEb {
+      when (rxrsp.bits.chiOpcode.get === RespSepData) {
+        state.w_grant := true.B
+        srcid := rxrsp.bits.srcID.getOrElse(0.U)
+        homenid := rxrsp.bits.srcID.getOrElse(0.U)
+        dbid := rxrsp.bits.dbID.getOrElse(0.U)
+        denied := denied || nderr
+        req.traceTag.get := rxrsp.bits.traceTag.get
+      }
     }
 
     when (rxrsp.bits.chiOpcode.get === Comp) {

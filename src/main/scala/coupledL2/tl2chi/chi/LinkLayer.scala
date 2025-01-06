@@ -171,8 +171,11 @@ class LCredit2Decoupled[T <: Bundle](
   // queue.io.enq.bits := io.in.bits
   var lsb = 0
   queue.io.enq.bits.getElements.reverse.foreach { case e =>
-    e := io.in.flit(lsb + e.asUInt.getWidth - 1, lsb).asTypeOf(e.cloneType)
-    lsb += e.asUInt.getWidth
+    val elementWidth = e.asUInt.getWidth
+    if (elementWidth > 0) {
+      e := io.in.flit(lsb + elementWidth - 1, lsb).asTypeOf(e.cloneType)
+      lsb += elementWidth
+    }
   }
 
   assert(!accept || queue.io.enq.ready)
