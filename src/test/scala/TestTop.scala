@@ -15,11 +15,18 @@ import utility._
 
 
 import scala.collection.mutable.ArrayBuffer
+import coupledL2.TestTop_CHIL2.enableTLLog
 
 object baseConfig {
   def apply(maxHartIdBits: Int) = {
     new Config((_, _, _) => {
       case MaxHartIdBits => maxHartIdBits
+      case L2ParamKey => L2Param(
+        ways                = 8,
+        sets                = 512,
+        channelBytes        = TLChannelBeatBytes(64),
+        blockBytes = 128
+      )
     })
   }
 }
@@ -55,15 +62,19 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
     masterNode
   }
 
-  val l1d_nodes = (0 until 1) map( i => createClientNode(s"l1d$i", 32))
+  val l1d_nodes = (0 until 2) map( i => createClientNode(s"l1d$i", 32))
   val master_nodes = l1d_nodes
 
   val l2 = LazyModule(new TL2TLCoupledL2()((baseConfig(1).alter((site, here, up) => {
-    case BankBitsKey => 0
+    case BankBitsKey => log2Ceil(8)
     case LogUtilsOptionsKey => LogUtilsOptions(
       false,
       here(L2ParamKey).enablePerf,
       here(L2ParamKey).FPGAPlatform
+    )
+    case L2ParamKey => cacheParams.copy(
+      channelBytes        = TLChannelBeatBytes(64),
+      blockBytes          = 128
     )
     case PerfCounterOptionsKey => PerfCounterOptions(
       here(L2ParamKey).enablePerf && !here(L2ParamKey).FPGAPlatform,
@@ -73,7 +84,7 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
     )
   }))))
   val xbar = TLXbar()
-  val ram = LazyModule(new TLRAM(AddressSet(0, 0xff_ffffL), beatBytes = 32))
+  val ram = LazyModule(new TLRAM(AddressSet(0, 0xff_ffffL), beatBytes = 64))
 
   for (l1d <- l1d_nodes) {
     xbar := TLBuffer() := l1d
@@ -81,7 +92,7 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
 
   ram.node :=
     TLXbar() :=*
-      TLFragmenter(32, 64) :=*
+      TLFragmenter(64, 128) :=*
       TLCacheCork() :=*
       TLDelayer(delayFactor) :=*
       l2.node :=* xbar
@@ -151,13 +162,30 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
       ))
     )
   ))
-  val master_nodes = Seq(l1d, l1i)
-
+  // 使用 flatMap 生成扁平的 matrix_nodes 序列
+  val matrix_nodes = (0 until 1).flatMap { i =>
+    (0 until 8).map { j =>
+      TLClientNode(Seq(
+        TLMasterPortParameters.v1(
+          clients = Seq(TLMasterParameters.v1(
+            name = s"matrix${i}_${j}",
+            sourceId = IdRange(0, 32),
+            // supportsProbe = TransferSizes(cacheParams.blockBytes)// 缓存一致性管理
+          ))
+        )
+      ))
+    }
+  }
+  val master_nodes = Seq(l1d, l1i) ++ matrix_nodes
+  val l2_banks=8
+  val l3_banks=8
   val l2 = LazyModule(new TL2TLCoupledL2()(baseConfig(1).alter((site, here, up) => {
     case L2ParamKey => L2Param(
       name = s"l2",
-      ways = 4,
-      sets = 128,
+      ways = 8,
+      sets = 512,
+      channelBytes        = TLChannelBeatBytes(32),
+      blockBytes          = 64,
       clientCaches = Seq(L1Param(aliasBitsOpt = Some(2), vaddrBitsOpt = Some(16))),
       echoField = Seq(DirtyField()),
       prefetch = Seq(BOPParameters(
@@ -171,7 +199,8 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
       dataCheck = Some("oddparity"),
       enablePoison = true,
     )
-    case BankBitsKey => 0
+    // case huancun.BankBitsKey => log2Ceil(8)
+    case BankBitsKey => log2Ceil(l2_banks)
     case LogUtilsOptionsKey => LogUtilsOptions(
       false,
       here(L2ParamKey).enablePerf,
@@ -189,14 +218,14 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
     case HCCacheParamsKey => HCCacheParameters(
       name = "l3",
       level = 3,
-      ways = 4,
-      sets = 128,
+      ways = 16,
+      sets = 4096,
       inclusive = false,
       clientCaches = Seq(
         CacheParameters(
           name = s"l2",
-          sets = 128,
-          ways = 4 + 2,
+          sets = 4096,
+          ways = 16,
           blockGranularity = log2Ceil(128)
         ),
       ),
@@ -216,20 +245,31 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
     )
   })))
 
-  val xbar = TLXbar()
+  val l1xbar = TLXbar()
+  val l2xbar = TLXbar()
+  val l3xbar = TLXbar()
+  val l2bankBinders = BankBinder(l2_banks, 64)
+  val l3bankBinders = BankBinder(l3_banks, 64)
   val ram = LazyModule(new TLRAM(AddressSet(0, 0xff_ffffL), beatBytes = 32))
 
-  xbar := TLBuffer() := l1i
-  xbar := TLBuffer() := l1d
+  // 连接所有 master_nodes 到 xbar，通过 TLBuffer
+  master_nodes.foreach { node =>
+    l1xbar := TLBuffer() := node
+  }
+  // l2bankBinders := TLBuffer() := l1xbar
+  l2bankBinders :*= l2.node :*= TLBuffer() :*= l1xbar
+  l3xbar :=TLBuffer() :*=l2xbar :=*l2bankBinders
 
   ram.node :=
+    TLXbar() :=
+    TLFragmenter(32, 64) :=
+    TLCacheCork() :=
+    TLClientsMerger() :=
+    TLDelayer(delayFactor) :=
+    TLLogger(s"MEM_L3", true) :=
     TLXbar() :=*
-    TLFragmenter(32, 64) :=*
-    TLCacheCork() :=*
-    TLDelayer(delayFactor) :=*
-    l3.node :=*
-    TLBuffer() :=
-    l2.node :=* xbar
+    l3bankBinders :*=
+    l3.node :*= l3xbar
 
   lazy val module = new LazyModuleImp(this) {
     val timer = WireDefault(0.U(64.W))

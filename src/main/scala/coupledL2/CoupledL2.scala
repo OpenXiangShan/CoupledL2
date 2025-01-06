@@ -416,7 +416,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
 
     val slices = node.in.zip(node.out).zipWithIndex.map {
       case (((in, edgeIn), (out, edgeOut)), i) =>
-        require(in.params.dataBits == out.params.dataBits)
+        require(in.params.dataBits == out.params.dataBits,s"in.params.dataBits${in.params.dataBits}!=out.params.dataBits${out.params.dataBits}")
         val rst_L2 = reset
         val slice = withReset(rst_L2) {
           if (enableCHI) {

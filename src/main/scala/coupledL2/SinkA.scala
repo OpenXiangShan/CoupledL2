@@ -34,9 +34,9 @@ class SinkA(implicit p: Parameters) extends L2Module {
     val task = DecoupledIO(new TaskBundle)
     val cmoAll = Option.when(cacheParams.enableL2Flush) (new IOCMOAll)
   })
-  assert(!(io.a.valid && (io.a.bits.opcode === PutFullData ||
-                          io.a.bits.opcode === PutPartialData)),
-    "no Put");
+  // assert(!(io.a.valid && (io.a.bits.opcode === PutFullData ||
+  //                         io.a.bits.opcode === PutPartialData)),
+  //   "no Put");
 
   // flush L2 all control defines
   val set = Option.when(cacheParams.enableL2Flush)(RegInit(0.U(setBits.W))) 
