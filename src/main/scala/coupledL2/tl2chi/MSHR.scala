@@ -464,7 +464,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         req_cboInval  -> Mux(isT(meta.state), TtoN, BtoN)
       ))
       mp_release.meta := Mux(req_cboClean, meta, MetaEntry())
-      mp_release.meta.dirty := dirResult.hit && meta.dirty || probeDirty
+      mp_release.meta.dirty := false.B
       mp_release.meta.state := Mux(req_cboClean,
         // *NOTICE: SnpCleanShared derives upper Probe toB for now,
         //          so TRUNK should be turned into TIP.
