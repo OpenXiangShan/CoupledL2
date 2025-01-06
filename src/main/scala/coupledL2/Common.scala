@@ -123,8 +123,8 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val snpHitReleaseToB = Bool()
   val snpHitReleaseWithData = Bool()
   val snpHitReleaseIdx = UInt(mshrBits.W) 
-  val snpHitReleaseMetaState = UInt(2.W)
-  val snpHitReleaseMetaDirty = Bool()
+  val snpHitReleaseState = UInt(2.W)
+  val snpHitReleaseDirty = Bool()
   // CHI
   val tgtID = chiOpt.map(_ => UInt(TGTID_WIDTH.W))
   val srcID = chiOpt.map(_ => UInt(SRCID_WIDTH.W))
@@ -203,6 +203,7 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle with HasTLChannelBits {
   val metaTag = UInt(tagBits.W)
   val metaState = UInt(stateBits.W)
   val metaDirty = Bool()
+  val probeDirty = Bool()
   val dirHit = Bool()
 
   // to drop duplicate prefetch reqs
@@ -321,6 +322,8 @@ class NestedWriteback(implicit p: Parameters) extends L2Bundle {
   val tag = UInt(tagBits.W)
   // Nested ReleaseData sets block dirty
   val c_set_dirty = Bool()
+  // Nested Release sets block TIP
+  val c_set_tip = Bool()
   // Nested Snoop invalidates block
   val b_inv_dirty = Bool()
 
