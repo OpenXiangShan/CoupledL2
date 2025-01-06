@@ -144,6 +144,14 @@ trait HasCHIOpcodes extends HasCHIMsgParameters {
     opcode === SnpOnce || opcode === SnpOnceFwd
   }
 
+  def isSnpOnce(opcode: UInt): Bool = {
+    opcode === SnpOnce
+  }
+
+  def isSnpOnceFwd(opcode: UInt): Bool = {
+    opcode === SnpOnceFwd
+  }
+
   def isSnpCleanX(opcode: UInt): Bool = {
     opcode === SnpClean || opcode === SnpCleanFwd
   }
