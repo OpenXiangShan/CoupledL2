@@ -399,8 +399,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       ),
       Mux(dirResult.hit && meta.state === TRUNK,
         ParallelPriorityMux(Seq(
-          req_get       -> toB,
-          req_cboClean  -> toT
+          req_get             -> toB,
+          req_cboClean        -> toT,
+          true.B /*default*/  -> toN
         )),
         toN
       )
@@ -484,7 +485,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         req_cboInval  -> false.B
       ))
       mp_release.param := ParallelPriorityMux(Seq(
-        req_cboClean  -> TtoB,
+        req_cboClean  -> TtoT,
         req_cboFlush  -> Mux(isT(meta.state), TtoN, BtoN),
         req_cboInval  -> Mux(isT(meta.state), TtoN, BtoN)
       ))
@@ -955,6 +956,13 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     }
     when (c_resp.bits.opcode === ProbeAckData) {
       probeDirty := true.B
+      // *NOTICE: Clear 'snpHitRelease' on newer ProbeAckData.
+      //          This would be caused by in-flight older release with data deriving an
+      //          upper Probe toT.
+      //          On later ProbeAckData with newer data, this probe should no longer be
+      //          considered as nesting a Release.
+      req.snpHitRelease := false.B
+      req.snpHitReleaseWithData := false.B
     }
     when (isToN(c_resp.bits.param)) {
       probeGotN := true.B
