@@ -80,6 +80,11 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
             name = s"matrix${i}_${j}",
             sourceId = IdRange(0, 32),
             // supportsProbe = TransferSizes(cacheParams.blockBytes)// 缓存一致性管理
+            // supportsProbe = TransferSizes.none,
+            // supportsProbe = TransferSizes(1,cacheParams.blockBytes),
+            // supportsGet = TransferSizes(1,cacheParams.blockBytes),
+            // supportsPutFull = TransferSizes(1,cacheParams.blockBytes),
+            // supportsPutPartial = TransferSizes(1,cacheParams.blockBytes),
           ))
         )
       ))
