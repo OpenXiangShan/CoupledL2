@@ -917,10 +917,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         state.s_cbwrdata.get := isEvict
       }
     }
-    when (io.tasks.txreq.bits.opcode === WriteEvictOrEvict) { // TODO: CHI version control
-      // Mark on WriteEvictOrEvict for TxnID selection of CompAck on Comp
-      req_writeEvictOrEvict := true.B
-    }
   }
   when (io.tasks.txrsp.fire) {
     state.s_compack.get := true.B
@@ -945,6 +941,10 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       // }
       // TODO(retry-immutability): Don't degenerate WriteCleanFull to Evict
       state.s_cbwrdata.get := isEvict
+      when (mp_release.chiOpcode.get === WriteEvictOrEvict) { // TODO: CHI version control
+        // Mark on WriteEvictOrEvict for TxnID selection of CompAck on Comp
+        req_writeEvictOrEvict := true.B
+      }
     }.elsewhen (mp_cbwrdata_valid) {
       state.s_cbwrdata.get := true.B
       meta.state := INVALID
