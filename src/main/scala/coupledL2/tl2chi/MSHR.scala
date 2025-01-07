@@ -400,7 +400,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       Mux(dirResult.hit && meta.state === TRUNK,
         ParallelPriorityMux(Seq(
           req_get             -> toB,
-          req_cboClean        -> toT,
+          req_cboClean        -> toB,
           true.B /*default*/  -> toN
         )),
         toN
@@ -485,13 +485,21 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         req_cboInval  -> false.B
       ))
       mp_release.param := ParallelPriorityMux(Seq(
-        req_cboClean  -> TtoT,
+        req_cboClean  -> TtoB,
         req_cboFlush  -> Mux(isT(meta.state), TtoN, BtoN),
         req_cboInval  -> Mux(isT(meta.state), TtoN, BtoN)
       ))
       mp_release.meta := Mux(req_cboClean, meta, MetaEntry())
       mp_release.meta.dirty := false.B
-      mp_release.meta.state := Mux(req_cboClean, meta.state, INVALID)
+      mp_release.meta.state := Mux(req_cboClean,
+        // *NOTICE: CBOClean derives upper Probe toB for now,
+        //          so TRUNK should be turned into TIP.
+        //
+        //          ** IMPORTANT **
+        //          For operations that require subsequent Release, derived upper Probes
+        //          must be set to 'toB' to simplify and correct Release nesting mechanism.
+        Mux(meta.state === TRUNK, TIP, meta.state),
+        INVALID)
       mp_release.metaWen := true.B
       mp_release.dsWen := probeDirty
       mp_release.replTask := false.B
@@ -956,13 +964,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     }
     when (c_resp.bits.opcode === ProbeAckData) {
       probeDirty := true.B
-      // *NOTICE: Clear 'snpHitRelease' on newer ProbeAckData.
-      //          This would be caused by in-flight older release with data deriving an
-      //          upper Probe toT.
-      //          On later ProbeAckData with newer data, this probe should no longer be
-      //          considered as nesting a Release.
-      req.snpHitRelease := false.B
-      req.snpHitReleaseWithData := false.B
     }
     when (isToN(c_resp.bits.param)) {
       probeGotN := true.B
