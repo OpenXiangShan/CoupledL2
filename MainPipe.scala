@@ -126,9 +126,11 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   val cleanInvalid_s3       = !refill_task_s3 && opcode_s3 === CleanInvalid
   val cleanShared_s3        = !refill_task_s3 && opcode_s3 === CleanShared
   val writeCleanFull_s3     = !refill_task_s3 && opcode_s3 === WriteCleanFull
+  val writeEvictOrEvict_s3  = !refill_task_s3 && opcode_s3 === WriteEvictOrEvict && afterIssueE.B
 
-  assert(!task_s3.valid || refill_task_s3 || readNotSharedDirty_s3 || readUnique_s3 || makeUnique_s3 || writeBackFull_s3 ||
-    evict_s3 || makeInvalid_s3 || cleanInvalid_s3 || cleanShared_s3 || writeCleanFull_s3, "Unsupported opcode")
+  assert(!task_s3.valid || refill_task_s3 ||
+    readNotSharedDirty_s3 || readUnique_s3 || makeUnique_s3 || writeBackFull_s3 || evict_s3 || makeInvalid_s3 ||
+    cleanInvalid_s3 || cleanShared_s3 || writeCleanFull_s3 || writeEvictOrEvict_s3, "Unsupported opcode")
 
   /**
     * Requests have different coherence states after processing
@@ -140,7 +142,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
     */
   val exclusiveReq_s3 = readUnique_s3 || readNotSharedDirty_s3 && !peerRNs_hit_s3 || makeUnique_s3
   val sharedReq_s3    = readNotSharedDirty_s3 && peerRNs_hit_s3
-  val releaseReq_s3   = writeBackFull_s3 || evict_s3
+  val releaseReq_s3   = writeBackFull_s3 || evict_s3 || writeEvictOrEvict_s3
   val invalidReq_s3   = makeInvalid_s3 || cleanInvalid_s3
   val cleanReq_s3     = cleanInvalid_s3 || cleanShared_s3
 
@@ -257,6 +259,8 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   val cleanInvalid_s4       = RegNext(cleanInvalid_s3, false.B)
   val cleanShared_s4        = RegNext(cleanShared_s3, false.B)
   val writeCleanFull_s4     = RegNext(writeCleanFull_s3, false.B)
+  val writeEvictOrEvict_s4  = RegNext(writeEvictOrEvict_s3, false.B)
+
   val sharedReq_s4          = RegNext(sharedReq_s3, false.B)
   val exclusiveReq_s4       = RegNext(exclusiveReq_s3, false.B)
   val releaseReq_s4         = RegNext(releaseReq_s3, false.B)
@@ -355,7 +359,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
     ).asBools
   )
   refill_s4.valid := task_s4.valid && (
-    (sharedReq_s4 || writeBackFull_s4) && !self_hit_s4 ||
+    (sharedReq_s4 || writeBackFull_s4 || writeEvictOrEvict_s4) && !self_hit_s4 ||
     replace_snoop_s4
   )
   refill_s4.bits.state.s_refill := false.B
@@ -401,10 +405,11 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   comp_s4.bits.state.s_urgentRead := true.B
   comp_s4.bits.state.w_datRsp := !(readNotSharedDirty_s4 || readUnique_s4)
   comp_s4.bits.state.w_snpRsp := !Cat(snpVec_comp_s4).orR
-  comp_s4.bits.state.w_compack := !(readUnique_s4 || readNotSharedDirty_s4 || makeUnique_s4)
+  comp_s4.bits.state.w_compack := !(readUnique_s4 || readNotSharedDirty_s4 || makeUnique_s4 ||
+    writeEvictOrEvict_s4 && self_hit_s4)
   comp_s4.bits.state.w_comp := !(cleanReq_s4 && self_hit_s4 && selfDirty_s4)
   comp_s4.bits.task := comp_task_s4
-  comp_s4.bits.is_miss := (readNotSharedDirty_s4 || readUnique_s4) && !self_hit_s4
+  comp_s4.bits.is_miss := !self_hit_s4
 
   /**  Read/Write request to MemUnit **/
   val mem_task_s4 = WireInit(req_s4)

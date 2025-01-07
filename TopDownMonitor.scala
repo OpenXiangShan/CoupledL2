@@ -20,9 +20,10 @@ package openLLC
 import org.chipsalliance.cde.config.Parameters
 import chisel3._
 import chisel3.util._
+import coupledL2.tl2chi._
 import utility.{XSPerfAccumulate}
 
-class TopDownMonitor()(implicit p: Parameters) extends LLCModule {
+class TopDownMonitor()(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   val io = IO(new Bundle() {
     val msStatus = Vec(banks, Vec(mshrs.response, Flipped(ValidIO(new ResponseInfo()))))
     val debugTopDown = new Bundle() {
@@ -43,7 +44,7 @@ class TopDownMonitor()(implicit p: Parameters) extends LLCModule {
                               else Cat(ms.bits.tag, ms.bits.set, i.U(bankBits - 1, 0))
             val pBlockAddr  = (pAddr.bits >> 6.U).asUInt
 
-            val isMiss   = ms.valid && ms.bits.is_miss
+            val isMiss = ms.valid && ms.bits.is_miss && (ms.bits.opcode === ReadNotSharedDirty || ms.bits.opcode === ReadUnique)
             pAddr.valid && msBlockAddr === pBlockAddr && isMiss
         }
     }

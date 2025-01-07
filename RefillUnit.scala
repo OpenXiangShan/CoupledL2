@@ -30,7 +30,7 @@ class RefillBufRead(implicit p: Parameters) extends LLCBundle {
 
 class RefillState(implicit p: Parameters) extends LLCBundle {
   val s_refill = Bool()
-  val w_datRsp   = Bool()
+  val w_datRsp = Bool()
   val w_snpRsp = Bool()
 }
 
@@ -99,13 +99,14 @@ class RefillUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
     when(canUpdate) {
       val entry = buffer(update_id)
       val isWriteBackFull = entry.task.chiOpcode === WriteBackFull
+      val isWriteEvictOrEvict = entry.task.chiOpcode === WriteEvictOrEvict
       val inv_CBWrData = rspData.bits.resp === I
       val cancel = isWriteBackFull && inv_CBWrData
       val clients_hit = entry.dirResult.clients.hit
       val clients_meta = entry.dirResult.clients.meta
 
       assert(
-        !isWriteBackFull || inv_CBWrData || clients_hit && clients_meta(rspData.bits.srcID).valid,
+        !isWriteBackFull && !isWriteEvictOrEvict || inv_CBWrData || clients_hit && clients_meta(rspData.bits.srcID).valid,
         "Non-exist block release?(addr: 0x%x)",
         Cat(entry.task.tag, entry.task.set, entry.task.bank, entry.task.off)
       )
