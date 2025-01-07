@@ -85,6 +85,8 @@ trait HasCHIOpcodes extends HasCHIMsgParameters {
   def AtomicCompare         = 0x39.U(REQ_OPCODE_WIDTH.W)
   def PrefetchTgt           = 0x3A.U(REQ_OPCODE_WIDTH.W)
 
+  def WriteEvictOrEvict     = 0x42.U(REQ_OPCODE_WIDTH.W)
+
   /**
     * RSP
     */

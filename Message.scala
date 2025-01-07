@@ -220,6 +220,11 @@ trait HasCHIMsgParameters {
   def ENABLE_ISSUE_Eb = p(CHIIssue) == Issue.Eb
   def ENABLE_ISSUE_B = p(CHIIssue) == Issue.B
 
+  def afterIssueE = p(CHIIssue) match {
+    case Issue.Eb => true
+    case _        => false
+  }
+
   val ISSUE_B_CONFIG = Map(
     "NODEID_WIDTH" -> 7,
     "TXNID_WIDTH" -> 8,
