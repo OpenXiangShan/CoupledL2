@@ -397,9 +397,11 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         toB,
         Mux(snpToN, toN, toT)
       ),
-      Mux(
-        (req_get || req_cboClean) && dirResult.hit && meta.state === TRUNK,
-        toB,
+      Mux(dirResult.hit && meta.state === TRUNK,
+        ParallelPriorityMux(Seq(
+          req_get       -> toB,
+          req_cboClean  -> toT
+        )),
         toN
       )
     )
@@ -488,11 +490,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       ))
       mp_release.meta := Mux(req_cboClean, meta, MetaEntry())
       mp_release.meta.dirty := false.B
-      mp_release.meta.state := Mux(req_cboClean,
-        // *NOTICE: SnpCleanShared derives upper Probe toB for now,
-        //          so TRUNK should be turned into TIP.
-        Mux(meta.state === TRUNK, TIP, meta.state),
-        INVALID)
+      mp_release.meta.state := Mux(req_cboClean, meta.state, INVALID)
       mp_release.metaWen := true.B
       mp_release.dsWen := probeDirty
       mp_release.replTask := false.B
@@ -599,14 +597,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       state = Mux(
         snpToN,
         INVALID,
-        Mux(snpToB, 
-          BRANCH,
-          // *NOTICE: SnpCleanShared derives upper Probe toB for now,
-          //          so TRUNK should be turned into TIP.
-          Mux(meta.state === TRUNK && req_chiOpcode === SnpCleanShared,
-            TIP,
-            meta.state)
-        )
+        Mux(snpToB, BRANCH, meta.state)
       ),
       clients = meta.clients & Fill(clientBits, !probeGotN && !snpToN),
       alias = meta.alias, //[Alias] Keep alias bits unchanged
