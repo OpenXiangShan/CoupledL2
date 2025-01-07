@@ -326,7 +326,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val isWriteCleanFull = req_cboClean
   val isWriteBackFull = !req_cboClean && !req_cboInval && (isT(meta.state) && meta.dirty || probeDirty)
   val isWriteEvictFull = false.B
-  val isWriteEvictOrEvict = !isWriteCleanFull && !isWriteBackFull && !isWriteEvictFull && afterIssueE.B
+  val isWriteEvictOrEvict = !req_cboFlush && !req_cboInval && !isWriteCleanFull && !isWriteBackFull && !isWriteEvictFull && afterIssueE.B
   val isEvict = !isWriteCleanFull && !isWriteBackFull && !isWriteEvictFull && !isWriteEvictOrEvict
   val a_task = {
     val oa = io.tasks.txreq.bits
