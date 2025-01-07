@@ -182,6 +182,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   val mshr_writeCleanFull_s3    = mshr_req_s3 && req_s3.toTXREQ && req_s3.chiOpcode.get === WriteCleanFull
   val mshr_writeBackFull_s3     = mshr_req_s3 && req_s3.toTXREQ && req_s3.chiOpcode.get === WriteBackFull
+  val mshr_writeEvictFull_s3    = mshr_req_s3 && req_s3.toTXREQ && req_s3.chiOpcode.get === WriteEvictFull
+  val mshr_writeEvictOrEvict_s3 = mshr_req_s3 && req_s3.toTXREQ && req_s3.chiOpcode.get === WriteEvictOrEvict && afterIssueE.B
   val mshr_evict_s3             = mshr_req_s3 && req_s3.toTXREQ && req_s3.chiOpcode.get === Evict
   
   val mshr_cbWrData_s3          = mshr_req_s3 && req_s3.toTXDAT && req_s3.chiOpcode.get === CopyBackWrData
@@ -419,7 +421,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val wen_c = sinkC_req_s3 && isParamFromT(req_s3.param) && req_s3.opcode(0) && dirResult_s3.hit
   val wen_mshr = req_s3.dsWen && (
     mshr_snpRespX_s3 || mshr_snpRespDataX_s3 ||
-    mshr_writeCleanFull_s3 || mshr_writeBackFull_s3 || mshr_evict_s3 ||
+    mshr_writeCleanFull_s3 || mshr_writeBackFull_s3 || 
+    mshr_writeEvictFull_s3 || mshr_writeEvictOrEvict_s3 || mshr_evict_s3 ||
     mshr_refill_s3 && !need_repl && !retry
   )
   val wen = wen_c || wen_mshr
@@ -583,7 +586,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     mshr_snpRespDataX_s3 || mshr_cbWrData_s3 || mshr_dct_s3,
     req_s3.fromB && !need_mshr_s3 && (doRespDataHitRelease || doRespData && !data_unready_s3) && !txdat_s3_latch.B
   )
-  val isTXREQ_s3 = mshr_req_s3 && (mshr_writeBackFull_s3 || mshr_writeCleanFull_s3 || mshr_evict_s3)
+  val isTXREQ_s3 = mshr_req_s3 && (mshr_writeBackFull_s3 || mshr_writeCleanFull_s3 || 
+     mshr_writeEvictFull_s3 || mshr_writeEvictOrEvict_s3 || mshr_evict_s3)
 
   txreq_s3.valid := task_s3.valid && isTXREQ_s3
   txrsp_s3.valid := task_s3.valid && isTXRSP_s3
@@ -931,6 +935,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   XSPerfAccumulate("mshr_snpRespDataPtl_req", task_s3.valid && mshr_snpRespDataPtl_s3)
   XSPerfAccumulate("mshr_snpRespDataFwded_req", task_s3.valid && mshr_snpRespDataFwded_s3)
   XSPerfAccumulate("mshr_writeBackFull", task_s3.valid && mshr_writeBackFull_s3)
+  XSPerfAccumulate("mshr_writeEvictFull", task_s3.valid && mshr_writeEvictFull_s3)
+  XSPerfAccumulate("mshr_writeEvictOrEvict", task_s3.valid && mshr_writeEvictOrEvict_s3)
   XSPerfAccumulate("mshr_evict_s3", task_s3.valid && mshr_evict_s3)
   
 

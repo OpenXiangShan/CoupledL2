@@ -325,7 +325,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   //                           to Evict on write retry.
   val isWriteCleanFull = req_cboClean
   val isWriteBackFull = !req_cboClean && !req_cboInval && (isT(meta.state) && meta.dirty || probeDirty)
-  val isEvict = !isWriteCleanFull && !isWriteBackFull
+  val isWriteEvictFull = false.B
+  val isWriteEvictOrEvict = !isWriteCleanFull && !isWriteBackFull && !isWriteEvictFull && afterIssueE.B
+  val isEvict = !isWriteCleanFull && !isWriteBackFull && !isWriteEvictFull && !isWriteEvictOrEvict
   val a_task = {
     val oa = io.tasks.txreq.bits
     oa := 0.U.asTypeOf(io.tasks.txreq.bits.cloneType)
@@ -350,6 +352,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     oa.opcode := ParallelPriorityMux(Seq(
       (release_valid2 && isWriteCleanFull)               -> WriteCleanFull,
       (release_valid2 && isWriteBackFull)                -> WriteBackFull,
+      (release_valid2 && isWriteEvictFull)               -> WriteEvictFull,
+      (release_valid2 && isWriteEvictOrEvict)            -> WriteEvictOrEvict,
       (release_valid2 && isEvict)                        -> Evict,
       req_cboClean                                       -> CleanShared,
       req_cboFlush                                       -> CleanInvalid,
@@ -361,11 +365,11 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     oa.size := log2Ceil(blockBytes).U
     oa.addr := Cat(Mux(release_valid2, dirResult.tag, req.tag), req.set, 0.U(offsetBits.W))
     oa.ns := false.B
-    oa.likelyshared := false.B
+    oa.likelyshared := Mux(isWriteEvictOrEvict, meta.state === BRANCH, false.B)
     oa.allowRetry := state.s_reissue.getOrElse(false.B)
     oa.order := OrderEncodings.None
     oa.pCrdType := Mux(!state.s_reissue.getOrElse(false.B), pcrdtype, 0.U)
-    oa.expCompAck := !release_valid2 && !cmo_cbo
+    oa.expCompAck := (!release_valid2 || release_valid2 && isWriteEvictOrEvict) && !cmo_cbo
     oa.memAttr := MemAttr(
       cacheable = true.B,
       allocate = !(release_valid2 && isEvict),
@@ -454,14 +458,20 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_release.txnID.get := io.id
     mp_release.homeNID.get := 0.U
     mp_release.dbID.get := 0.U 
-    mp_release.chiOpcode.get := Mux(isWriteBackFull, WriteBackFull, Evict)
+    mp_release.chiOpcode.get := ParallelPriorityMux(Seq(
+      isWriteBackFull       -> WriteBackFull,
+      isWriteEvictFull      -> WriteEvictFull,
+      isWriteEvictOrEvict   -> WriteEvictOrEvict,
+      isEvict /* Default */ -> Evict
+    ))
     mp_release.resp.get := 0.U // DontCare
     mp_release.fwdState.get := 0.U // DontCare
     mp_release.pCrdType.get := 0.U // DontCare // TODO: consider retry of WriteBackFull/Evict
     mp_release.retToSrc.get := req.retToSrc.get
-    mp_release.expCompAck.get := false.B
+    mp_release.likelyshared.get := Mux(isWriteEvictOrEvict, meta.state === BRANCH, false.B)
+    mp_release.expCompAck.get := isWriteEvictOrEvict
     mp_release.allowRetry.get := state.s_reissue.getOrElse(false.B)
-    mp_release.memAttr.get := MemAttr(allocate = isWriteBackFull, cacheable = true.B, device = false.B, ewa = true.B)
+    mp_release.memAttr.get := MemAttr(allocate = !isEvict, cacheable = true.B, device = false.B, ewa = true.B)
 
     // CMO
     when (cmo_cbo) {
@@ -491,6 +501,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         req_cboFlush  -> Mux(isWriteBackFull, WriteBackFull, Evict),
         req_cboInval  -> Evict
       ))
+      mp_release.likelyshared.get := false.B
       mp_release.memAttr.get := MemAttr(allocate = false.B, cacheable = true.B, device = false.B, ewa = true.B)
     }
 
@@ -544,6 +555,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_cbwrdata.fwdState.get := 0.U
     mp_cbwrdata.pCrdType.get := 0.U // TODO
     mp_cbwrdata.retToSrc.get := req.retToSrc.get // DontCare
+    mp_cbwrdata.likelyshared.get := false.B
     mp_cbwrdata.expCompAck.get := false.B
     mp_cbwrdata.traceTag.get := cbWrDataTraceTag
     mp_cbwrdata
@@ -632,6 +644,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_probeack.fwdState.get := setPD(fwdCacheState, fwdPassDirty)
     mp_probeack.pCrdType.get := 0.U
     mp_probeack.retToSrc.get := req.retToSrc.get // DontCare
+    mp_probeack.likelyshared.get := false.B
     mp_probeack.expCompAck.get := false.B
     mp_probeack.traceTag.get := req.traceTag.get
     mp_probeack.snpHitRelease := req.snpHitRelease
@@ -816,6 +829,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_dct.fwdState.get := 0.U
     mp_dct.pCrdType.get := 0.U // DontCare
     mp_dct.retToSrc.get := false.B // DontCare
+    mp_dct.likelyshared.get := false.B
     mp_dct.expCompAck.get := false.B // DontCare
     mp_dct.traceTag.get := req.traceTag.get
     mp_dct.snpHitRelease := req.snpHitRelease
@@ -1032,10 +1046,18 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         req.traceTag.get := rxrsp.bits.traceTag.get
       }
 
-      // There is a pending Evict transaction waiting for the Comp resp
+      // There is a pending Evict/WriteEvictOrEvict transaction waiting for the Comp resp
       when (!state.w_releaseack) {
         state.w_releaseack := true.B
         // There is no CompAck for Comp in response of Evict. Thus there is no need to record TraceTag.
+        // Except on WriteEvictOrEvict:
+        when (isWriteEvictOrEvict) {
+          req.traceTag.get := rxrsp.bits.traceTag.get
+          // For WriteEvictOrEvict, drop CopyBackWrData on Comp
+          state.s_cbwrdata.get := true.B
+          // Schedule CompAck on Comp
+          state.s_compack.get := false.B
+        }
       }
 
       // Comp for Dataless transaction that include CompAck
@@ -1240,9 +1262,12 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     io.tasks.mainpipe.fire && io.tasks.mainpipe.bits.opcode === WriteBackFull && io.tasks.mainpipe.bits.toTXREQ
   val wcFire = io.tasks.txreq.fire && io.tasks.txreq.bits.opcode === WriteCleanFull ||
     io.tasks.mainpipe.fire && io.tasks.mainpipe.bits.opcode === WriteCleanFull && io.tasks.mainpipe.bits.toTXREQ
+  val weFire = io.tasks.txreq.fire && io.tasks.txreq.bits.opcode === WriteEvictFull ||
+    io.tasks.mainpipe.fire && io.tasks.mainpipe.bits.opcode === WriteEvictFull && io.tasks.mainpipe.bits.toTXREQ
   assert(!RegNext(evictFire) || state.s_cbwrdata.get, "There should be no CopyBackWrData after Evict")
   assert(!RegNext(wbFire) || !state.s_cbwrdata.get, "There must be a CopyBackWrData after WriteBack")
   assert(!RegNext(wcFire) || !state.s_cbwrdata.get, "There must be a CopyBackWrData after WriteClean")
+  assert(!RegNext(weFire) || !state.s_cbwrdata.get, "There must be a CopyBackWrData after WriteEvictFull")
 
   /* ======== Performance counters ======== */
   // time stamp
