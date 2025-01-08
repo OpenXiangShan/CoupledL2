@@ -126,7 +126,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   val cleanInvalid_s3       = !refill_task_s3 && opcode_s3 === CleanInvalid
   val cleanShared_s3        = !refill_task_s3 && opcode_s3 === CleanShared
   val writeCleanFull_s3     = !refill_task_s3 && opcode_s3 === WriteCleanFull
-  val writeEvictOrEvict_s3  = !refill_task_s3 && opcode_s3 === WriteEvictOrEvict && afterIssueE.B
+  val writeEvictOrEvict_s3  = !refill_task_s3 && onIssueEbOrElse(opcode_s3 === WriteEvictOrEvict, false.B)
 
   assert(!task_s3.valid || refill_task_s3 ||
     readNotSharedDirty_s3 || readUnique_s3 || makeUnique_s3 || writeBackFull_s3 || evict_s3 || makeInvalid_s3 ||
