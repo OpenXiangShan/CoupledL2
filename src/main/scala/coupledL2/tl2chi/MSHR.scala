@@ -81,6 +81,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   initState.elements.foreach(_._2 := true.B)
   val state     = RegInit(new FSMState(), initState)
 
+  val req_writeEvictOrEvict = RegInit(false.B)
+
   assert(!(req_valid && dirResult.hit && !isT(meta.state) && meta.dirty),
     "directory valid read with dirty under non-T state")
 
@@ -145,6 +147,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
 
     retryTimes := 0.U
     backoffTimer := 0.U
+
+    req_writeEvictOrEvict := false.B
   }
 
   /* ======== Enchantment ======== */
@@ -307,7 +311,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     val txrsp_task = {
       val orsp = io.tasks.txrsp.bits
       orsp := 0.U.asTypeOf(io.tasks.txrsp.bits.cloneType)
-      orsp.tgtID := Mux(req_acquirePerm, srcid, homenid)
+      orsp.tgtID := Mux(req_acquirePerm || req_writeEvictOrEvict, srcid, homenid)
       orsp.srcID := 0.U
       orsp.txnID := dbid
       orsp.dbID := 0.U
@@ -937,6 +941,12 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       // }
       // TODO(retry-immutability): Don't degenerate WriteCleanFull to Evict
       state.s_cbwrdata.get := isEvict
+      ifIssueEb {
+        when (mp_release.chiOpcode.get === WriteEvictOrEvict) {
+          // Mark on WriteEvictOrEvict for TxnID selection of CompAck on Comp
+          req_writeEvictOrEvict := true.B
+        }
+      }
     }.elsewhen (mp_cbwrdata_valid) {
       state.s_cbwrdata.get := true.B
       meta.state := INVALID
