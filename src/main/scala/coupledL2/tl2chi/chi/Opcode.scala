@@ -134,6 +134,7 @@ trait HasCHIOpcodes extends HasCHIMsgParameters {
   def SnpStashShared        = 0x0C.U(SNP_OPCODE_WIDTH.W)
   def SnpDVMOp              = 0x0D.U(SNP_OPCODE_WIDTH.W)
 
+  def SnpQuery              = Eb_OPCODE(0x10.U, SNP_OPCODE_WIDTH)
   def SnpSharedFwd          = 0x11.U(SNP_OPCODE_WIDTH.W)
   def SnpCleanFwd           = 0x12.U(SNP_OPCODE_WIDTH.W)
   def SnpOnceFwd            = 0x13.U(SNP_OPCODE_WIDTH.W)
@@ -153,6 +154,9 @@ trait HasCHIOpcodes extends HasCHIMsgParameters {
     opcode >= SnpSharedFwd
   }
 
+  def isSnpQuery(opcode: UInt): Bool = {
+    opcode === SnpQuery
+  }
 
   def isSnpOnceX(opcode: UInt): Bool = {
     opcode === SnpOnce || opcode === SnpOnceFwd
