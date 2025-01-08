@@ -164,7 +164,8 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     dat.be := be
     dat.data := deassertData(beat, be)
     dat.resp := task.resp.get
-    dat.fwdState := task.fwdState.get
+    // dat.fwdState := task.fwdState.get
+    dat.setFwdState(task.fwdState.get)
     dat.traceTag := task.traceTag.get
     dat.dataCheck := dataCheck
     dat.poision := Fill(POISON_WIDTH, task.corrupt)

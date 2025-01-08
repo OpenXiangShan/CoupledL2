@@ -22,10 +22,22 @@ import chisel3.util._
 
 trait HasCHIOpcodes extends HasCHIMsgParameters {
 
-  def Eb_REQ_OPCODE_WIDTH = ISSUE_Eb_CONFIG("REQ_OPCODE_WIDTH")
-  def Eb_RSP_OPCODE_WIDTH = ISSUE_Eb_CONFIG("RSP_OPCODE_WIDTH")
-  def Eb_SNP_OPCODE_WIDTH = ISSUE_Eb_CONFIG("SNP_OPCODE_WIDTH")
-  def Eb_DAT_OPCODE_WIDTH = ISSUE_Eb_CONFIG("DAT_OPCODE_WIDTH")
+  def Eb_OPCODE(opcode: UInt, width: Int): UInt = {
+    require(
+      opcode.getWidth <= width && issue.compareTo(Issue.Eb) >= 0,
+      s"Illegal opcode of issue ${issue}, please use onIssueXXOrElse or ifIssueXX."
+    )
+    opcode(width - 1, 0)
+  }
+
+  def onIssueEbOrElse[T <: Data](block: => T, otherwise: => T) = {
+    if (issue.compareTo(Issue.Eb) >= 0) block
+    else otherwise
+  }
+
+  def ifIssueEb(block: => Any) = {
+    if (issue.compareTo(Issue.Eb) >= 0) block
+  }
 
   /**
     * REQ
@@ -85,7 +97,7 @@ trait HasCHIOpcodes extends HasCHIMsgParameters {
   def AtomicCompare         = 0x39.U(REQ_OPCODE_WIDTH.W)
   def PrefetchTgt           = 0x3A.U(REQ_OPCODE_WIDTH.W)
 
-  def WriteEvictOrEvict     = 0x42.U(REQ_OPCODE_WIDTH.W)
+  def WriteEvictOrEvict     = Eb_OPCODE(0x42.U, REQ_OPCODE_WIDTH)
 
   /**
     * RSP
@@ -101,8 +113,8 @@ trait HasCHIOpcodes extends HasCHIMsgParameters {
   def ReadReceipt     = 0x8.U(RSP_OPCODE_WIDTH.W)
   def SnpRespFwded    = 0x9.U(RSP_OPCODE_WIDTH.W)
   // E.b
-  def RespSepData     = 0xB.U(Eb_RSP_OPCODE_WIDTH.W)
-  def DBIDRespOrd     = 0xE.U(Eb_RSP_OPCODE_WIDTH.W)
+  def RespSepData     = Eb_OPCODE(0xB.U, RSP_OPCODE_WIDTH)
+  def DBIDRespOrd     = Eb_OPCODE(0xE.U, RSP_OPCODE_WIDTH)
 
   /**
     * SNP
@@ -218,7 +230,7 @@ trait HasCHIOpcodes extends HasCHIMsgParameters {
   def SnpRespDataFwded  = 0x6.U(DAT_OPCODE_WIDTH.W)
   def WriteDataCancel   = 0x7.U(DAT_OPCODE_WIDTH.W)
   // E.b
-  def DataSepResp       = 0xB.U(Eb_DAT_OPCODE_WIDTH.W)
+  def DataSepResp       = Eb_OPCODE(0xB.U, DAT_OPCODE_WIDTH)
 
   def isSnpRespDataX(opcode: UInt): Bool = {
     opcode === SnpRespData || opcode === SnpRespDataPtl || opcode === SnpRespDataFwded
