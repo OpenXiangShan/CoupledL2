@@ -99,7 +99,7 @@ class RefillUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
     when(canUpdate) {
       val entry = buffer(update_id)
       val isWriteBackFull = entry.task.chiOpcode === WriteBackFull
-      val isWriteEvictOrEvict = entry.task.chiOpcode === WriteEvictOrEvict
+      val isWriteEvictOrEvict = onIssueEbOrElse(entry.task.chiOpcode === WriteEvictOrEvict, false.B)
       val inv_CBWrData = rspData.bits.resp === I
       val cancel = isWriteBackFull && inv_CBWrData
       val clients_hit = entry.dirResult.clients.hit
