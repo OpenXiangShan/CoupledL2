@@ -155,7 +155,7 @@ trait HasCHIOpcodes extends HasCHIMsgParameters {
   }
 
   def isSnpQuery(opcode: UInt): Bool = {
-    opcode === SnpQuery
+    onIssueEbOrElse(opcode === SnpQuery, false.B)
   }
 
   def isSnpOnceX(opcode: UInt): Bool = {
