@@ -78,6 +78,7 @@ jobs:
             rm -rf run/*.vcd run/*.fst run/*.log run/*.db
 
       - name: Tar up artifacts of Unit Test for TileLink version
+        if: always()
         run: |
             test -d ./tl-test-new/run || mkdir -p ./tl-test-new/run
             tar -zcf ${{ env.RUN_ARCHIVE_TL }} ./tl-test-new/run
@@ -100,11 +101,13 @@ jobs:
             rm -rf run/*.vcd run/*.fst run/*.log run/*.db
             
       - name: Tar up artifacts of Unit Test for CHI version
+        if: always()
         run: |
             test -d ./tl-test-new/run || mkdir -p ./tl-test-new/run
             tar -zcf ${{ env.RUN_ARCHIVE_CHI }} ./tl-test-new/run
 
       - name: Upload artifacts of Unit Test
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           path: ${{ github.workspace }}/${{ env.RUN_ARCHIVE }}*
