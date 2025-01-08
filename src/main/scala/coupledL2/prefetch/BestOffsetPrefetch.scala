@@ -144,7 +144,7 @@ class TestOffsetResp(implicit p: Parameters) extends BOPBundle {
 
 class TestOffsetBundle(implicit p: Parameters) extends BOPBundle {
   val req = DecoupledIO(new TestOffsetReq)
-  val resp = Flipped(DecoupledIO(new TestOffsetResp))
+  val resp = Flipped(ValidIO(new TestOffsetResp))
 }
 
 class RecentRequestTable(name: String)(implicit p: Parameters) extends BOPModule {
@@ -188,11 +188,20 @@ class RecentRequestTable(name: String)(implicit p: Parameters) extends BOPModule
 
   assert(!RegNext(io.w.fire && io.r.req.fire), "single port SRAM should not read and write at the same time")
 
+  /** s0: req handshake */
+  val s0_valid = rrTable.io.r.req.fire
+  /** s1: rrTable read result */
+  val s1_valid = RegNext(s0_valid, false.B)
+  val s1_ptr = RegNext(io.r.req.bits.ptr)
+  val s1_hit = rData.valid && rData.tag === RegNext(tag(rAddr))
+  /** s2: return resp to ScoreTable */
+  val s2_valid = RegNext(s1_valid, false.B)
+
   io.w.ready := rrTable.io.w.req.ready && !io.r.req.valid
   io.r.req.ready := true.B
-  io.r.resp.valid := RegNext(rrTable.io.r.req.fire, false.B)
-  io.r.resp.bits.ptr := RegNext(io.r.req.bits.ptr)
-  io.r.resp.bits.hit := rData.valid && rData.tag === RegNext(tag(rAddr))
+  io.r.resp.valid := s2_valid
+  io.r.resp.bits.ptr := RegEnable(s1_ptr, s1_valid)
+  io.r.resp.bits.hit := RegEnable(s1_hit, s1_valid)
 
   class WRRTEntry extends Bundle{
     val addr = UInt(fullAddrBits.W)
@@ -270,7 +279,7 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
       state := s_idle
     }
 
-    when(io.test.resp.fire && io.test.resp.bits.hit) {
+    when(io.test.resp.valid && io.test.resp.bits.hit) {
       val oldScore = st(io.test.resp.bits.ptr).score
       val newScore = oldScore + 1.U
       val offset = offList(io.test.resp.bits.ptr)
@@ -293,7 +302,6 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
   io.test.req.bits.addr := io.req.bits
   io.test.req.bits.testOffset := testOffset
   io.test.req.bits.ptr := ptr
-  io.test.resp.ready := true.B
 
   XSPerfAccumulate("total_learn_phase", state === s_idle)
   XSPerfAccumulate("total_bop_disable", state === s_idle && isBad)
