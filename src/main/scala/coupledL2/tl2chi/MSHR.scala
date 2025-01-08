@@ -402,6 +402,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         Mux(snpToN, toN, toT)
       ),
       Mux(
+        // *NOTICE: CBOClean derives upper Probe toB for now.
         (req_get || req_cboClean) && dirResult.hit && meta.state === TRUNK,
         toB,
         toN
@@ -493,8 +494,12 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       mp_release.meta := Mux(req_cboClean, meta, MetaEntry())
       mp_release.meta.dirty := false.B
       mp_release.meta.state := Mux(req_cboClean,
-        // *NOTICE: SnpCleanShared derives upper Probe toB for now,
+        // *NOTICE: CBOClean derives upper Probe toB for now,
         //          so TRUNK should be turned into TIP.
+        //
+        //          ** IMPORTANT **
+        //          For operations that require subsequent Release, derived upper Probes
+        //          must be set to 'toB' to simplify and correct Release nesting mechanism.
         Mux(meta.state === TRUNK, TIP, meta.state),
         INVALID)
       mp_release.metaWen := true.B
@@ -603,14 +608,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       state = Mux(
         snpToN,
         INVALID,
-        Mux(snpToB, 
-          BRANCH,
-          // *NOTICE: SnpCleanShared derives upper Probe toB for now,
-          //          so TRUNK should be turned into TIP.
-          Mux(meta.state === TRUNK && req_chiOpcode === SnpCleanShared,
-            TIP,
-            meta.state)
-        )
+        Mux(snpToB, BRANCH, meta.state)
       ),
       clients = meta.clients & Fill(clientBits, !probeGotN && !snpToN),
       alias = meta.alias, //[Alias] Keep alias bits unchanged
