@@ -42,6 +42,7 @@ class OpenLLC(implicit p: Parameters) extends LLCModule with HasClientInfo {
       val robHeadPaddr = Vec(cacheParams.hartIds.length, Flipped(Valid(UInt(48.W))))
       val addrMatch = Vec(cacheParams.hartIds.length, Output(Bool()))
     }
+    val l3Miss = Output(Bool())
   })
 
   println(s"CHI Issue Version: ${p(CHIIssue)}")
@@ -91,4 +92,6 @@ class OpenLLC(implicit p: Parameters) extends LLCModule with HasClientInfo {
       t.io.debugTopDown <> io.debugTopDown
     case None => io.debugTopDown.addrMatch.foreach(_ := false.B)
   }
+
+  io.l3Miss := RegNext(Cat(slices.map(_.io.l3Miss)).orR)
 }
