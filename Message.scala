@@ -217,93 +217,116 @@ object Issue {
 trait HasCHIMsgParameters {
   implicit val p: Parameters
 
-  def ENABLE_ISSUE_Eb = p(CHIIssue) == Issue.Eb
-  def ENABLE_ISSUE_B = p(CHIIssue) == Issue.B
+  val issue = p(CHIIssue)
 
-  def afterIssueE = p(CHIIssue) match {
-    case Issue.Eb => true
-    case _        => false
-  }
-
-  val ISSUE_B_CONFIG = Map(
+  val DEFAULT_CONFIG = Map(
+    "QOS_WIDTH" -> 4,
     "NODEID_WIDTH" -> 7,
     "TXNID_WIDTH" -> 8,
     "LPID_WITH_PADDING_WIDTH" -> 5,
+    "LPID_WIDTH" -> 5,
     "REQ_OPCODE_WIDTH" -> 6,
     "RSP_OPCODE_WIDTH" -> 4,
     "SNP_OPCODE_WIDTH" -> 5,
-    "DAT_OPCODE_WIDTH" -> 3
+    "DAT_OPCODE_WIDTH" -> 3,
+    "ADDR_WIDTH" -> 48,
+    "SIZE_WIDTH" -> 3,
+    "PCRDTYPE_WIDTH" -> 4,
+    "MEMATTR_WIDTH" -> 4,
+    "ORDER_WIDTH" -> 2,
+    "VMIDEXT_WIDTH" -> 8,
+    "RESPERR_WIDTH" -> 2,
+    "RESP_WIDTH" -> 3,
+    "FWDSTATE_WIDTH" -> 3,
+    "DATAPULL_WIDTH" -> 3,
+    "DATASOURCE_WIDTH" -> 3,
+    "CCID_WIDTH" -> 2,
+    "DATAID_WIDTH" -> 2,
+    "DATA_WIDTH" -> 256,
+    "REQ_RSVDC_WIDTH" -> 4,
+    "DAT_RSVDC_WIDTH" -> 4
   )
 
-  val ISSUE_Eb_CONFIG = Map(
+  val B_CONFIG = DEFAULT_CONFIG
+
+  val Eb_CONFIG = B_CONFIG ++ Map(
+    // new width def for existing fields
     "NODEID_WIDTH" -> 11,
     "TXNID_WIDTH" -> 12,
     "LPID_WITH_PADDING_WIDTH" -> 8,
+    "DATASOURCE_WIDTH" -> 4,
     "REQ_OPCODE_WIDTH" -> 7,
     "RSP_OPCODE_WIDTH" -> 5,
     "SNP_OPCODE_WIDTH" -> 5,
-    "DAT_OPCODE_WIDTH" -> 4
+    "DAT_OPCODE_WIDTH" -> 4,
+    // new fields
+    "CBUSY_WIDTH" -> 3,
+    "MPAM_WIDTH" -> 11,
+    "SLCREPHINT_WIDTH" -> 7,
+    "TAGOP_WIDTH" -> 2
   )
 
-  val SUPPORT_ISSUE_CONFIG = Map(
-    Issue.B -> ISSUE_B_CONFIG,
-    Issue.Eb -> ISSUE_Eb_CONFIG
-  )
+  val params = Map(
+    Issue.B -> B_CONFIG,
+    Issue.Eb -> Eb_CONFIG
+  )(issue)
 
-  def issue_config(key: String) = SUPPORT_ISSUE_CONFIG(p(CHIIssue))(key)
-
-  // Scala by-name argument
-  def field_Eb[T <: Data](d: T): Option[T] = {
-    if (ENABLE_ISSUE_Eb) Some(d) else None
+  def CONFIG(key: String): Int = {
+    if (params.contains(key)) params(key) else 0
   }
 
-  def NODEID_WIDTH = issue_config("NODEID_WIDTH")
-  require(NODEID_WIDTH >= 7 && NODEID_WIDTH <= 11)
+  def B_FIELD[T <: Data](x: T): T = x
+  // def C_FIELD[T <: Data](x: T): Option[T] = if (issue.compareTo(Issue.C) >= 0) Some(x) else None
+  // def D_FIELD[T <: Data](x: T): Option[T] = if (issue.compareTo(Issue.D) >= 0) Some(x) else None
+  // def Ea_FIELD[T <: Data](x: T): Option[T] = if (issue.compareTo(Issue.Ea) >= 0) Some(x) else None
+  def Eb_FIELD[T <: Data](x: T): Option[T] = if (issue.compareTo(Issue.Eb) >= 0) Some(x) else None
+
+  def NODEID_WIDTH = CONFIG("NODEID_WIDTH")
 
   // Transaction request fields
-  def QOS_WIDTH = 4
+  def QOS_WIDTH = CONFIG("QOS_WIDTH")
   def TGTID_WIDTH = NODEID_WIDTH
   def SRCID_WIDTH = NODEID_WIDTH
-  def TXNID_WIDTH = issue_config("TXNID_WIDTH") // An 8-bit field is defined for the TxnID to accommodate up to 256 outstanding transactions
-  def LPID_WITH_PADDING_WIDTH = issue_config("LPID_WITH_PADDING_WIDTH")
-  def LPID_WIDTH = 5
+  def TXNID_WIDTH = CONFIG("TXNID_WIDTH") // An 8-bit field is defined for the TxnID to accommodate up to 256 outstanding transactions
+  def LPID_WITH_PADDING_WIDTH = CONFIG("LPID_WITH_PADDING_WIDTH")
+  def LPID_WIDTH = CONFIG("LPID_WIDTH")
   def RETURNNID_WIDTH = NODEID_WIDTH
+  def SLCREPHINT_WIDTH = CONFIG("SLCREPHINT_WIDTH")
   def RETURNTXNID_WIDTH = TXNID_WIDTH
   def STASHNID_WIDTH = NODEID_WIDTH
   def STASHLPID_WIDTH = LPID_WIDTH
-  def TAGOP_WIDTH = 2
+  def TAGOP_WIDTH = CONFIG("TAGOP_WIDTH")
 
-
-  def REQ_OPCODE_WIDTH = issue_config("REQ_OPCODE_WIDTH")
-  def RSP_OPCODE_WIDTH = issue_config("RSP_OPCODE_WIDTH")
-  def SNP_OPCODE_WIDTH = issue_config("SNP_OPCODE_WIDTH")
-  def DAT_OPCODE_WIDTH = issue_config("DAT_OPCODE_WIDTH")
+  def REQ_OPCODE_WIDTH = CONFIG("REQ_OPCODE_WIDTH")
+  def RSP_OPCODE_WIDTH = CONFIG("RSP_OPCODE_WIDTH")
+  def SNP_OPCODE_WIDTH = CONFIG("SNP_OPCODE_WIDTH")
+  def DAT_OPCODE_WIDTH = CONFIG("DAT_OPCODE_WIDTH")
   def OPCODE_WIDTH = max(REQ_OPCODE_WIDTH, max(RSP_OPCODE_WIDTH, max(SNP_OPCODE_WIDTH, DAT_OPCODE_WIDTH)))
 
-  def ADDR_WIDTH = 48
+  def ADDR_WIDTH = CONFIG("ADDR_WIDTH")
   def SNP_ADDR_WIDTH = ADDR_WIDTH - 3
-  def SIZE_WIDTH = 3
-  def PCRDTYPE_WIDTH = 4
-  def MEMATTR_WIDTH = 4
-  def ORDER_WIDTH = OrderEncodings.width
+  def SIZE_WIDTH = CONFIG("SIZE_WIDTH")
+  def PCRDTYPE_WIDTH = CONFIG("PCRDTYPE_WIDTH")
+  def MEMATTR_WIDTH = CONFIG("MEMATTR_WIDTH")
+  def ORDER_WIDTH = CONFIG("ORDER_WIDTH")
 
   // Snoop request fields
   def FWDNID_WIDTH = NODEID_WIDTH
   def FWDTXNID_WIDTH = TXNID_WIDTH
-  def VMIDEXT_WIDTH = 8
+  def VMIDEXT_WIDTH = CONFIG("VMIDEXT_WIDTH")
 
   // Data fields && Response fields
   def HOMENID_WIDTH = NODEID_WIDTH
   def DBID_WIDTH = TXNID_WIDTH
-  def RESPERR_WIDTH = RespErrEncodings.width
-  def RESP_WIDTH = CHICohStates.width
-  def FWDSTATE_WIDTH = CHICohStates.width
-  def DATAPULL_WIDTH = 3
-  def DATASOURCE_WIDTH = if (ENABLE_ISSUE_Eb) 4 else 3
-  def CCID_WIDTH = 2
-  def DATAID_WIDTH = 2
+  def RESPERR_WIDTH = CONFIG("RESPERR_WIDTH")
+  def RESP_WIDTH = CONFIG("RESP_WIDTH")
+  def FWDSTATE_WIDTH = CONFIG("FWDSTATE_WIDTH")
+  def DATAPULL_WIDTH = CONFIG("DATAPULL_WIDTH")
+  def DATASOURCE_WIDTH = CONFIG("DATASOURCE_WIDTH")
+  def CCID_WIDTH = CONFIG("CCID_WIDTH")
+  def DATAID_WIDTH = CONFIG("DATAID_WIDTH")
   def BE_WIDTH = DATA_WIDTH / 8
-  def DATA_WIDTH = 256
+  def DATA_WIDTH = CONFIG("DATA_WIDTH")
   def DATACHECK_WIDTH = DATA_WIDTH / 8
   def POISON_WIDTH = DATA_WIDTH / 64
   def TAG_WIDTH = DATA_WIDTH / 32
@@ -313,10 +336,10 @@ trait HasCHIMsgParameters {
   /*
   * Currently don't care about *::RSVDC, and the width is tied to 4.
   */
-  def REQ_RSVDC_WIDTH = 4 // Permitted RSVDC bus widths X = 0, 4, 12, 16, 24, 32
-  def DAT_RSVDC_WIDTH = 4 // Permitted RSVDC bus widths Y = 0, 4, 12, 16, 24, 32
-  def CBUSY_WIDTH = 3 // E.b field. The width is tied to 3. Custom completer state indicator.
-  def MPAM_WIDTH = 11 // E.b field. Optional, width 0 or 11. Memory Performance and Monitoring.
+  def REQ_RSVDC_WIDTH = CONFIG("REQ_RSVDC_WIDTH") // Permitted RSVDC bus widths X = 0, 4, 12, 16, 24, 32
+  def DAT_RSVDC_WIDTH = CONFIG("DAT_RSVDC_WIDTH") // Permitted RSVDC bus widths Y = 0, 4, 12, 16, 24, 32
+  def CBUSY_WIDTH = CONFIG("CBUSY_WIDTH") // E.b field. The width is tied to 3. Custom completer state indicator.
+  def MPAM_WIDTH = CONFIG("MPAM_WIDTH") // E.b field. Optional, width 0 or 11. Memory Performance and Monitoring.
 }
 
 class MemAttr extends Bundle {
@@ -359,11 +382,11 @@ class CHIREQ(implicit p: Parameters) extends CHIBundle {
 
   val returnNID = UInt(RETURNNID_WIDTH.W) // Used for DMT
   def stashNID = returnNID // Used for Stash
-  def slcRepHint = returnTxnID(6, 0)  // E.b field
+  def slcRepHint = Eb_FIELD(returnNID(SLCREPHINT_WIDTH - 1, 0)) // Used in cache line replacement algorithms
 
   val stashNIDValid = Bool() // Used for Stash
   def endian = stashNIDValid // Used for Atomic
-  def deep = stashNIDValid // E.b field
+  def deep = Eb_FIELD(stashNIDValid) // Used in CleanSharedPersist* transactions
 
   val returnTxnID = UInt(RETURNTXNID_WIDTH.W)
   def stashLPID = returnTxnID(STASHLPID_WIDTH - 1, 0)
@@ -379,20 +402,21 @@ class CHIREQ(implicit p: Parameters) extends CHIBundle {
   val pCrdType = UInt(PCRDTYPE_WIDTH.W)
   val memAttr = new MemAttr()
   val snpAttr = Bool()
-  def doDWT = snpAttr // E.b field
+  def doDWT = Eb_FIELD(snpAttr) // Used for DWT
+
   val lpIDWithPadding = UInt(LPID_WITH_PADDING_WIDTH.W)
-  def lpID = lpIDWithPadding(LPID_WIDTH - 1, 0) // E.b field
-  def pGroupID = lpIDWithPadding // E.b field
-  def stashGroupID = lpIDWithPadding // E.b field
-  def tagGroupID = lpIDWithPadding // E.b field
+  def lpID = lpIDWithPadding(LPID_WIDTH - 1, 0)
+  def pGroupID = Eb_FIELD(lpIDWithPadding) // Used in Persistent CMO transactions
+  def stashGroupID = Eb_FIELD(lpIDWithPadding) // Used in the StashOnceSep transaction
+  def tagGroupID = Eb_FIELD(lpIDWithPadding) // Used for Memory Tagging
 
   val snoopMe = Bool() // Used for Atomic
   def excl = snoopMe // Used for Exclusive transactions
 
   val expCompAck = Bool()
-  val tagOp = field_Eb(UInt(TAGOP_WIDTH.W))
+  val tagOp = Eb_FIELD(UInt(TAGOP_WIDTH.W))
   val traceTag = Bool()
-  val mpam = field_Eb(UInt(MPAM_WIDTH.W))
+  val mpam = Eb_FIELD(UInt(MPAM_WIDTH.W))
   val rsvdc = UInt(REQ_RSVDC_WIDTH.W)
 
   /* MSB */
@@ -409,7 +433,7 @@ class CHISNP(implicit p: Parameters) extends CHIBundle {
 
   val fwdTxnID = UInt(FWDTXNID_WIDTH.W)
   def stashLPID = fwdTxnID(STASHLPID_WIDTH - 1, 0)
-  def stashLPIDValid = fwdTxnID(STASHLPID_WIDTH)
+  def stashLPIDValid = fwdTxnID(STASHLPID_WIDTH).asBool
   def vmIDExt = fwdTxnID(VMIDEXT_WIDTH - 1, 0)
 
   val opcode = UInt(SNP_OPCODE_WIDTH.W)
@@ -421,7 +445,7 @@ class CHISNP(implicit p: Parameters) extends CHIBundle {
 
   val retToSrc = Bool()
   val traceTag = Bool()
-  val mpam = field_Eb(UInt(MPAM_WIDTH.W))
+  val mpam = Eb_FIELD(UInt(MPAM_WIDTH.W))
 
   /* MSB */
 }
@@ -439,20 +463,23 @@ class CHIDAT(implicit p: Parameters) extends CHIBundle {
   val respErr = UInt(RESPERR_WIDTH.W)
   val resp = UInt(RESP_WIDTH.W)
 
-  val fwdState = UInt(FWDSTATE_WIDTH.W) // Used for DCT
-  val dataSourceHi = field_Eb(UInt((DATASOURCE_WIDTH - FWDSTATE_WIDTH).W))
-  def dataPull = fwdState // Used for Stash
-  def dataSource = if (ENABLE_ISSUE_Eb) Cat(dataSourceHi.get, fwdState) else fwdState // Indicates Data source in a response
+  val dataSource = UInt(DATASOURCE_WIDTH.W)
+  def fwdState = dataSource(FWDSTATE_WIDTH - 1, 0)
+  def dataPull = dataSource(DATAPULL_WIDTH - 1, 0)
+  def setFwdState(s: UInt): Unit = {
+    require(s.getWidth == FWDSTATE_WIDTH)
+    dataSource := s
+  }
 
-  val cBusy = field_Eb(UInt(CBUSY_WIDTH.W))
+  val cBusy = Eb_FIELD(UInt(CBUSY_WIDTH.W))
 
   val dbID = UInt(DBID_WIDTH.W)
   val ccID = UInt(CCID_WIDTH.W)
   val dataID = UInt(DATAID_WIDTH.W)
 
-  val tagOp = field_Eb(UInt(TAGOP_WIDTH.W))
-  val tag = field_Eb(UInt(TAG_WIDTH.W))
-  val tu = field_Eb(UInt(TAG_UPDATE_WIDTH.W))
+  val tagOp = Eb_FIELD(UInt(TAGOP_WIDTH.W))
+  val tag = Eb_FIELD(UInt(TAG_WIDTH.W))
+  val tu = Eb_FIELD(UInt(TAG_UPDATE_WIDTH.W))
 
   val traceTag = Bool()
   val rsvdc = UInt(DAT_RSVDC_WIDTH.W)
@@ -480,16 +507,16 @@ class CHIRSP(implicit p: Parameters) extends CHIBundle {
   val fwdState = UInt(FWDSTATE_WIDTH.W)
   def dataPull = fwdState
 
-  val cBusy = field_Eb(UInt(CBUSY_WIDTH.W))
+  val cBusy = Eb_FIELD(UInt(CBUSY_WIDTH.W))
 
   val dbID = UInt(DBID_WIDTH.W)
-  def pGroupID = dbID(LPID_WITH_PADDING_WIDTH - 1, 0)
-  def stashGroupID = dbID(LPID_WITH_PADDING_WIDTH - 1, 0)
-  def tagGroupID = dbID(LPID_WITH_PADDING_WIDTH - 1, 0)
+  def pGroupID = Eb_FIELD(dbID(LPID_WITH_PADDING_WIDTH - 1, 0))
+  def stashGroupID = Eb_FIELD(dbID(LPID_WITH_PADDING_WIDTH - 1, 0))
+  def tagGroupID = Eb_FIELD(dbID(LPID_WITH_PADDING_WIDTH - 1, 0))
 
   val pCrdType = UInt(PCRDTYPE_WIDTH.W)
 
-  val tagOp = field_Eb(UInt(TAGOP_WIDTH.W))
+  val tagOp = Eb_FIELD(UInt(TAGOP_WIDTH.W))
 
   val traceTag = Bool()
   /* MSB */
