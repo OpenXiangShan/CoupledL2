@@ -127,7 +127,7 @@ class TaskWithData(implicit p: Parameters) extends LLCBundle {
     dat.srcID := task.srcID
     dat.txnID := task.txnID
     dat.homeNID := task.homeNID
-    dat.fwdState := task.fwdState
+    dat.setFwdState(task.fwdState)
     dat.opcode := task.chiOpcode
     dat.resp := task.resp
     dat.dbID := task.dbID
