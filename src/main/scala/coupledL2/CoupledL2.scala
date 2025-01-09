@@ -392,8 +392,8 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
 
     // ** WARNING:TODO: this depends on where the latch is
     // ** if Hint latched in slice, while D-Channel latched in XSTile
-    // ** we need only [hintCycleAhead - 1] later
-    val sliceAhead = hintCycleAhead - 1
+    // ** we need only [hintCycleAhead - 2] later
+    val sliceAhead = hintCycleAhead - 2
 
     val hintChosen = Wire(UInt(banks.W))
     val hintFire = Wire(Bool())
@@ -428,7 +428,6 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
           // so we relax the restriction on grant selection.
           val sliceCanFire = RegNextN(hintFire && i.U === hintChosen, sliceAhead) ||
             RegNextN(hintFire && i.U === hintChosen && hintWithData, sliceAhead + 1)
-          val needHint = slice.io.in.d.bits.opcode === Grant || slice.io.in.d.bits.opcode === GrantData
 
           when(sliceCanFire) {
             assert(slice.io.in.d.valid)
