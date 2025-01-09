@@ -230,9 +230,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val need_mshr_s3_a = need_acquire_s3_a || need_probe_s3_a || cache_alias
   
   /**
-    * 1. For SnpOnce/SnpOnceFwd, only the latest copy of the cacheline is needed without changing the state of the
-    *    cacheline at the snoopee. Therefore L2 should only send pProbe toT (to get the latest copy) when the state
-    *    in L2 is TRUNK
+    * 1. For SnpOnce/SnpOnceFwd, SnpQuery, only the latest copy of the cacheline is needed without changing
+    *    the state of the cacheline at the snoopee. Therefore L2 should only send pProbe toT (to get the latest copy)
+    *    when the state in L2 is TRUNK
     * 2. For SnpClean/SnpCleanFwd, SnpShared/SnpSharedFwd, SnpNotSharedDirty/SnpNotSharedDirtyFwd, and SnpCleanShared,
     *    the snooped cacheline should be degraded into BRANCH state because there is no SharedDirty state or Owner
     *    state (of MOESI) in CoupledL2. Therefore L2 should only send pProbe toB to degrade upper clients when the
@@ -247,8 +247,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val canFwd = dirResult_s3.hit
   val doFwd = expectFwd && canFwd
   val doFwdHitRelease = expectFwd && req_s3.snpHitRelease && req_s3.snpHitReleaseWithData
-  val need_pprobe_s3_b_snpOnceX = req_s3.fromB && isSnpOnceX(req_s3.chiOpcode.get) &&
-    dirResult_s3.hit && meta_s3.state === TRUNK && meta_has_clients_s3
+  val need_pprobe_s3_b_snpStable = req_s3.fromB && (
+    isSnpOnceX(req_s3.chiOpcode.get) || isSnpQuery(req_s3.chiOpcode.get)
+  ) && dirResult_s3.hit && meta_s3.state === TRUNK && meta_has_clients_s3
   val need_pprobe_s3_b_snpToB = req_s3.fromB && (
     isSnpToB(req_s3.chiOpcode.get) ||
     req_s3.chiOpcode.get === SnpCleanShared
@@ -258,7 +259,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     req_s3.chiOpcode.get === SnpCleanInvalid ||
     isSnpMakeInvalidX(req_s3.chiOpcode.get)
   ) && dirResult_s3.hit && meta_has_clients_s3
-  val need_pprobe_s3_b = need_pprobe_s3_b_snpOnceX || need_pprobe_s3_b_snpToB || need_pprobe_s3_b_snpToN
+  val need_pprobe_s3_b = need_pprobe_s3_b_snpStable || need_pprobe_s3_b_snpToB || need_pprobe_s3_b_snpToN
   val need_dct_s3_b = doFwd || doFwdHitRelease // DCT
   val need_mshr_s3_b = need_pprobe_s3_b || need_dct_s3_b
 
