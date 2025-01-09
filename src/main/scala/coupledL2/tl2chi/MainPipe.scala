@@ -230,7 +230,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val need_mshr_s3_a = need_acquire_s3_a || need_probe_s3_a || cache_alias
   
   /**
-    * 1. For SnpOnce/SnpOnceFwd, SnpQuery, only the latest copy of the cacheline is needed without changing
+    * 1. For SnpOnce/SnpOnceFwd, SnpQuery, and SnpStash, only the latest copy of the cacheline is needed without changing
     *    the state of the cacheline at the snoopee. Therefore L2 should only send pProbe toT (to get the latest copy)
     *    when the state in L2 is TRUNK
     * 2. For SnpClean/SnpCleanFwd, SnpShared/SnpSharedFwd, SnpNotSharedDirty/SnpNotSharedDirtyFwd, and SnpCleanShared,
@@ -248,7 +248,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val doFwd = expectFwd && canFwd
   val doFwdHitRelease = expectFwd && req_s3.snpHitRelease && req_s3.snpHitReleaseWithData
   val need_pprobe_s3_b_snpStable = req_s3.fromB && (
-    isSnpOnceX(req_s3.chiOpcode.get) || isSnpQuery(req_s3.chiOpcode.get)
+    isSnpOnceX(req_s3.chiOpcode.get) || isSnpQuery(req_s3.chiOpcode.get) || isSnpStashX(req_s3.chiOpcode.get)
   ) && dirResult_s3.hit && meta_s3.state === TRUNK && meta_has_clients_s3
   val need_pprobe_s3_b_snpToB = req_s3.fromB && (
     isSnpToB(req_s3.chiOpcode.get) ||
