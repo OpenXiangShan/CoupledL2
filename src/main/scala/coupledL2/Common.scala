@@ -334,6 +334,14 @@ class NestedWriteback(implicit p: Parameters) extends L2Bundle {
   val b_toN = chiOpt.map(_ => Bool())
 }
 
+class PrefetchCtrlFromCore extends Bundle {
+  val l2_pf_master_en = Bool()
+  val l2_pf_recv_en = Bool()
+  val l2_pbop_en = Bool()
+  val l2_vbop_en = Bool()
+  val l2_tp_en = Bool()
+}
+
 class PrefetchRecv extends Bundle {
   val addr = UInt(64.W)
   val pf_source = UInt(MemReqSource.reqSourceBits.W)
