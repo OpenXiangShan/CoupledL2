@@ -222,10 +222,13 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   dontTouch(doRespData_retToSrc_nonFwd)
 
   // *NOTICE: SnpUniqueStash was included in condition 'doRespData_retToSrc_nonFwd', while
-  //          the 'retToSrc' of SnpUniqueStash must be bound to 0, and whether responding 
+  //          the 'retToSrc' of SnpUniqueStash must be bound to 0, and whether responding
   //          SnpRespData or SnpResp was not determined by 'retToSrc'.
+  //          the 'retToSrc' of SnpQuery must be bound to 0
   assert(!(req_valid && req_chiOpcode === SnpUniqueStash && req.retToSrc.get),
     "specification failure: received SnpUniqueStash with RetToSrc = 1")
+  assert(!(req_valid && isSnpQuery(req_chiOpcode) && req.retToSrc.get),
+    "specification failure: received SnpQuery with RetToSrc = 1")
 
   /**
     * About which snoop should echo SnpResp[Data]Fwded instead of SnpResp[Data]:
@@ -287,7 +290,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     snpToB -> SC,
     isSnpOnceX(req_chiOpcode) ->
       Mux(req.snpHitRelease, I, Mux(probeDirty || meta.dirty, UD, metaChi)),
-    isSnpStashX(req_chiOpcode) ->
+    (isSnpStashX(req_chiOpcode) || isSnpQuery(req_chiOpcode)) ->
       Mux(probeDirty || meta.dirty, UD, metaChi),
     isSnpCleanShared(req_chiOpcode) -> 
       Mux(isT(meta.state), UC, metaChi)
