@@ -877,7 +877,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_cmometaw.meta := meta
     mp_cmometaw.meta.dirty := false.B
     mp_cmometaw.meta.state := TIP // write TIP for compensation of ProbeAck TtoB by cbo.clean
-    mp_cmometaw.meta.clients := Fill(clientBits, false.B)
     mp_cmometaw.metaWen := true.B
     mp_cmometaw.tagWen := false.B
     mp_cmometaw.dsWen := false.B
@@ -1069,7 +1068,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
           state.w_releaseack := false.B
         }.otherwise {
           // meta write compensation on ProbeAck TtoB
-          state.s_cmometaw := true.B
+          state.s_cmometaw := false.B
         }
       }
     }
