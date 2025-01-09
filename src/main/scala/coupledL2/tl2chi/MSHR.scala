@@ -266,12 +266,14 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     state.w_grantlast && state.w_grant && state.w_rprobeacklast
   val mp_grant_valid = pending_grant_valid && (retryTimes < backoffThreshold.U || backoffTimer === backoffCycles.U)
   val mp_dct_valid = !state.s_dct.getOrElse(true.B) && state.s_probeack
+  val mp_cmometaw_valid = !state.s_cmometaw
   io.tasks.mainpipe.valid :=
     mp_release_valid  ||
     mp_probeack_valid ||
     mp_grant_valid    ||
     mp_cbwrdata_valid ||
-    mp_dct_valid
+    mp_dct_valid      ||
+    mp_cmometaw_valid
   // io.tasks.prefetchTrain.foreach(t => t.valid := !state.s_triggerprefetch.getOrElse(true.B))
 
   assert(state.s_refill || state.s_cmoresp, "refill not allowed on CMO operation")
@@ -415,7 +417,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     ob
   }
 
-  val mp_release, mp_probeack, mp_grant, mp_cbwrdata, mp_dct = WireInit(0.U.asTypeOf(new TaskBundle))
+  val mp_release, mp_probeack, mp_grant, mp_cbwrdata, mp_dct, mp_cmometaw = WireInit(0.U.asTypeOf(new TaskBundle))
   val mp_release_task = {
     mp_release.channel := req.channel
     mp_release.txChannel := CHIChannel.TXREQ
@@ -847,13 +849,77 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_dct
   }
 
+  val mp_cmometaw_task = {
+    mp_cmometaw.channel := 0.U
+    mp_cmometaw.txChannel := 0.U
+    mp_cmometaw.tag := req.tag
+    mp_cmometaw.set := req.set
+    mp_cmometaw.off := req.off
+    mp_cmometaw.alias.foreach(_ := 0.U)
+    mp_cmometaw.vaddr.foreach(_ := 0.U)
+    mp_cmometaw.isKeyword.foreach(_ := 0.U)
+    mp_cmometaw.opcode := 0.U // DontCare
+    mp_cmometaw.param := 0.U // DontCare
+    mp_cmometaw.size := log2Ceil(blockBytes).U
+    mp_cmometaw.sourceId := 0.U(sourceIdBits.W)
+    mp_cmometaw.bufIdx := 0.U(sourceIdBits.W)
+    mp_cmometaw.needProbeAckData := false.B
+    mp_cmometaw.mshrTask := true.B
+    mp_cmometaw.mshrId := io.id
+    mp_cmometaw.aliasTask.foreach(_ := false.B)
+    mp_cmometaw.useProbeData := false.B
+    mp_cmometaw.readProbeDataDown := false.B
+    mp_cmometaw.mshrRetry := false.B
+    mp_cmometaw.way := dirResult.way
+    mp_cmometaw.fromL2pft.foreach(_ := false.B)
+    mp_cmometaw.needHint.foreach(_ := false.B)
+    mp_cmometaw.dirty := hitDirty
+    mp_cmometaw.meta := meta
+    mp_cmometaw.meta.dirty := false.B
+    mp_cmometaw.meta.state := TIP // write TIP for compensation of ProbeAck TtoB by cbo.clean
+    mp_cmometaw.meta.clients := Fill(clientBits, false.B)
+    mp_cmometaw.metaWen := true.B
+    mp_cmometaw.tagWen := false.B
+    mp_cmometaw.dsWen := false.B
+    mp_cmometaw.wayMask := 0.U(cacheParams.ways.W)
+    mp_cmometaw.reqSource := 0.U(MemReqSource.reqSourceBits.W)
+    mp_cmometaw.replTask := false.B
+    mp_cmometaw.cmoTask := cmo_cbo
+    mp_cmometaw.mergeA := false.B
+    mp_cmometaw.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+
+    // CHI
+    mp_cmometaw.tgtID.get := 0.U
+    mp_cmometaw.srcID.get := 0.U
+    mp_cmometaw.txnID.get := 0.U
+    mp_cmometaw.homeNID.get := 0.U
+    mp_cmometaw.dbID.get := 0.U
+    mp_cmometaw.chiOpcode.get := 0.U
+    mp_cmometaw.resp.get := 0.U
+    mp_cmometaw.fwdState.get := 0.U
+    mp_cmometaw.pCrdType.get := 0.U // DontCare
+    mp_cmometaw.retToSrc.get := false.B // DontCare
+    mp_cmometaw.likelyshared.get := false.B
+    mp_cmometaw.expCompAck.get := false.B // DontCare
+    mp_cmometaw.traceTag.get := 0.U
+    mp_cmometaw.snpHitRelease := req.snpHitRelease
+    mp_cmometaw.snpHitReleaseToB := req.snpHitReleaseToB
+    mp_cmometaw.snpHitReleaseWithData := req.snpHitReleaseWithData
+    mp_cmometaw.snpHitReleaseIdx := req.snpHitReleaseIdx
+    mp_cmometaw.snpHitReleaseState := req.snpHitReleaseState
+    mp_cmometaw.snpHitReleaseDirty := req.snpHitReleaseDirty
+
+    mp_cmometaw
+  }
+
   io.tasks.mainpipe.bits := ParallelPriorityMux(
     Seq(
       mp_grant_valid         -> mp_grant,
       mp_release_valid       -> mp_release,
       mp_cbwrdata_valid      -> mp_cbwrdata,
       mp_probeack_valid      -> mp_probeack,
-      mp_dct_valid           -> mp_dct
+      mp_dct_valid           -> mp_dct,
+      mp_cmometaw_valid      -> mp_cmometaw
     )
   )
   io.tasks.mainpipe.bits.reqSource := req.reqSource
@@ -956,6 +1022,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       state.s_probeack := true.B
     }.elsewhen (mp_dct_valid) {
       state.s_dct.get := true.B
+    }.elsewhen (mp_cmometaw_valid) {
+      state.s_cmometaw := true.B
     }
   }
 
@@ -999,6 +1067,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         when (meta.dirty) {
           state.s_release := false.B
           state.w_releaseack := false.B
+        }.otherwise {
+          // meta write compensation on ProbeAck TtoB
+          state.s_cmometaw := true.B
         }
       }
     }
@@ -1154,7 +1225,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     state.s_cbwrdata.getOrElse(true.B) &&
     state.s_reissue.getOrElse(true.B) &&
     state.s_dct.getOrElse(true.B) &&
-    state.s_cmoresp
+    state.s_cmoresp &&
+    state.s_cmometaw
   val no_wait = state.w_rprobeacklast && state.w_pprobeacklast && state.w_grantlast && state.w_grant &&
     state.w_releaseack && state.w_replResp
   val will_free = no_schedule && no_wait

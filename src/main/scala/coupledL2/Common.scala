@@ -271,6 +271,7 @@ class FSMState(implicit p: Parameters) extends L2Bundle {
   // val s_triggerprefetch = prefetchOpt.map(_ => Bool())
   val s_retry = Bool()    // need retry when conflict
   val s_cmoresp = Bool()  // resp upwards for finishing CMO transactions
+  val s_cmometaw = Bool() // meta write compensation for CMO transactions
 
   // wait
   val w_rprobeackfirst = Bool()
