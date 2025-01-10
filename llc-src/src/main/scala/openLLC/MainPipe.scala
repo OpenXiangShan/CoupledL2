@@ -373,6 +373,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   refill_s4.bits.task.replSnp := replace_snoop_s4
   refill_s4.bits.dirResult.self := selfDirResp_s4
   refill_s4.bits.dirResult.clients := clientsDirResp_s4
+  refill_s4.bits.isWrite := writeBackFull_s4 || writeEvictOrEvict_s4
 
   /** Comp task to ResponseUnit **/
   val respSC_s4 = sharedReq_s4
