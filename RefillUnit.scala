@@ -38,6 +38,7 @@ class RefillRequest(implicit p: Parameters) extends LLCBundle {
   val state = new RefillState()
   val task = new Task()
   val dirResult = new DirResult()
+  val isWrite = Bool()
 }
 
 class RefillEntry(implicit p: Parameters) extends TaskEntry {
@@ -45,6 +46,7 @@ class RefillEntry(implicit p: Parameters) extends TaskEntry {
   val data = new DSBlock()
   val beatValids = Vec(beatSize, Bool())
   val dirResult = new DirResult()
+  val isWrite = Bool()
 }
 
 class RefillUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
@@ -87,6 +89,7 @@ class RefillUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
     entry.task.bufID := insertIdx
     entry.dirResult := io.alloc.bits.dirResult
     entry.beatValids := VecInit(Seq.fill(beatSize)(false.B))
+    entry.isWrite := io.alloc.bits.isWrite
   }
   assert(!full || !io.alloc.valid, "RefillBuf overflow")
 
@@ -98,15 +101,14 @@ class RefillUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
     val update_id = PriorityEncoder(update_vec)
     when(canUpdate) {
       val entry = buffer(update_id)
-      val isWriteBackFull = entry.task.chiOpcode === WriteBackFull
-      val isWriteEvictOrEvict = onIssueEbOrElse(entry.task.chiOpcode === WriteEvictOrEvict, false.B)
+      val isWrite = entry.isWrite
       val inv_CBWrData = rspData.bits.resp === I
-      val cancel = isWriteBackFull && inv_CBWrData
+      val cancel = isWrite && inv_CBWrData
       val clients_hit = entry.dirResult.clients.hit
       val clients_meta = entry.dirResult.clients.meta
 
       assert(
-        !isWriteBackFull && !isWriteEvictOrEvict || inv_CBWrData || clients_hit && clients_meta(rspData.bits.srcID).valid,
+        !isWrite || inv_CBWrData || clients_hit && clients_meta(rspData.bits.srcID).valid,
         "Non-exist block release?(addr: 0x%x)",
         Cat(entry.task.tag, entry.task.set, entry.task.bank, entry.task.off)
       )
@@ -182,8 +184,7 @@ class RefillUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
 
   /* Dealloc */
   buffer.foreach {e =>
-    val cancel = e.valid && !e.state.w_datRsp && !(e.task.chiOpcode === WriteBackFull) && e.state.w_snpRsp &&
-      !e.beatValids.asUInt.orR
+    val cancel = e.valid && !e.state.w_datRsp && !e.isWrite && e.state.w_snpRsp && !e.beatValids.asUInt.orR
     when(cancel) {
       e.valid := false.B
     }
