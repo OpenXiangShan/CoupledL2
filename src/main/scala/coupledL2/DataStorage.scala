@@ -19,7 +19,7 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import coupledL2.utils.{HoldUnless, SplittedSRAM}
+import coupledL2.utils.{HoldUnless, GatedSplittedSRAM}
 import utility.{ClockGate, SRAMTemplate}
 import org.chipsalliance.cde.config.Parameters
 
@@ -74,7 +74,7 @@ class DataStorage(implicit p: Parameters) extends L2Module {
   })
 
   // read data is set MultiCycle Path 2
-  val array = Module(new SplittedSRAM(
+  val array = Module(new GatedSplittedSRAM(
     gen = new DSECCBankBlock,
     set = blocks,
     way = 1,
@@ -82,9 +82,7 @@ class DataStorage(implicit p: Parameters) extends L2Module {
     singlePort = true,
     readMCP2 = true
   ))
-
-  val masked_clock = ClockGate(false.B, io.en, clock)
-  array.clock := masked_clock
+  array.io_en := io.en
 
   val arrayIdx = Cat(io.req.bits.way, io.req.bits.set)
   val wen = io.req.valid && io.req.bits.wen
