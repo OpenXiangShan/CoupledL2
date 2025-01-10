@@ -196,8 +196,8 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   sinkC.io.c <> inBuf.c(io.in.c)
   io.in.d <> inBuf.d(grantBuf.io.d)
   grantBuf.io.e <> inBuf.e(io.in.e)
-  io.error.valid := mainPipe.io.error.valid
-  io.error.bits := mainPipe.io.error.bits
+  io.error.valid := RegNext(mainPipe.io.error.valid, false.B)
+  io.error.bits := RegNext(mainPipe.io.error.bits)
 
   /* Connect downwards channels */
   io.out.tx.req <> txreq.io.out
