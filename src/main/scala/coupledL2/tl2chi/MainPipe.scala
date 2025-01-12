@@ -622,6 +622,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     * 
     * *NOTICE: Never allow 'b_inv_dirty' on SnpStash*, SnpQuery and other future snoops that would
     *          leave cache line state untouched.
+    * 
+    * *TODO: A SnpOnce* nesting WriteCleanFull would result in SnpResp*_I_PD, which was simple to
+    *        implement but could be further optimized.
     */
   io.nestedwb.b_inv_dirty := task_s3.valid && task_s3.bits.fromB && source_req_s3.snpHitRelease &&
     !(isSnpStashX(req_s3.chiOpcode.get) || isSnpQuery(req_s3.chiOpcode.get))
