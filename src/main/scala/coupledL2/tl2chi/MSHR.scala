@@ -1277,7 +1277,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   io.msInfo.bits.w_releaseack := state.w_releaseack
   io.msInfo.bits.w_replResp := state.w_replResp
   io.msInfo.bits.w_rprobeacklast := state.w_rprobeacklast
-  io.msInfo.bits.replaceData := isT(meta.state) && meta.dirty || probeDirty
+  io.msInfo.bits.replaceData := isT(meta.state) && meta.dirty || probeDirty || isWriteEvictFull || isWriteEvictOrEvict
   io.msInfo.bits.releaseToB := releaseToB
   io.msInfo.bits.channel := req.channel
 
