@@ -389,7 +389,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     )))
     sink_resp_s3.bits.resp.foreach(_ := Mux(
       req_s3.snpHitRelease && !(isSnpStashX(req_s3.chiOpcode.get) || isSnpQuery(req_s3.chiOpcode.get)),
-      setPD(I, req_s3.snpHitReleaseWithData && !isSnpMakeInvalidX(req_s3.chiOpcode.get)),
+      setPD(I, req_s3.snpHitReleaseWithData && req_s3.snpHitReleaseDirty && !isSnpMakeInvalidX(req_s3.chiOpcode.get)),
       setPD(respCacheState, respPassDirty && (doRespData || doRespDataHitRelease))
     ))
     sink_resp_s3.bits.fwdState.foreach(_ := setPD(fwdCacheState, fwdPassDirty))
