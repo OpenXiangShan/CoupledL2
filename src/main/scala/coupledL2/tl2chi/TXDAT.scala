@@ -133,10 +133,10 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
 
     val dataCheck = if (enableDataCheck) {
       dataCheckMethod match {
-        case 1 => Cat((0 until DATACHECK_WIDTH).map(i => beat(8 * (i + 1) - 1, 8 * i).xorR.asUInt ^ 1.U))
+        case 1 => Cat((0 until DATACHECK_WIDTH).map(i => beat(8 * (DATACHECK_WIDTH - i) - 1, 8 * (DATACHECK_WIDTH - i - 1)).xorR.asUInt ^ 1.U))
         case 2 =>
           val code = new SECDEDCode
-          Cat((0 until DATACHECK_WIDTH).map(i => code.encode(beat(8 * (i + 1) - 1, 8 * i)).asUInt))
+          Cat((0 until DATACHECK_WIDTH).map(i => code.encode(beat(8 * (DATACHECK_WIDTH - i) - 1, 8 * (DATACHECK_WIDTH - i - 1))).asUInt))
         case _ => 0.U(DATACHECK_WIDTH.W)
       }
     } else {
