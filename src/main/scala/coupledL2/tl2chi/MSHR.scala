@@ -292,9 +292,11 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     snpToN -> I,
     snpToB -> SC,
     isSnpOnceX(req_chiOpcode) ->
-      Mux(req.snpHitRelease,
+      Mux(
+        req.snpHitRelease,
         I, // also see 'nestedwb.b_inv_dirty' in MainPipe
-        Mux(probeDirty || meta.dirty, UD, metaChi)),
+        Mux(probeDirty || meta.dirty, UD, metaChi)
+      ),
     (isSnpStashX(req_chiOpcode) || isSnpQuery(req_chiOpcode)) ->
       Mux(probeDirty || meta.dirty, UD, metaChi),
     isSnpCleanShared(req_chiOpcode) -> 
