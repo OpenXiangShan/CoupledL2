@@ -160,7 +160,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
     val dataCheck = if (enableDataCheck) {
       dataCheckMethod match {
         case 1 => (0 until DATACHECK_WIDTH).map(i =>
-          rxdat.bits.dataCheck(i) ^ rdata(8 * (DATACHECK_WIDTH - i) - 1, 8 * (DATACHECK_WIDTH - i - 1)).xorR).reduce(_ & _)
+          rxdat.bits.dataCheck(i) ^ rdata(8 * (DATACHECK_WIDTH - i) - 1, 8 * (DATACHECK_WIDTH - i - 1)).xorR ^ 1.U).reduce(_ | _)
         case 2 =>
           val code = new SECDEDCode
           (0 until DATACHECK_WIDTH).map(i =>

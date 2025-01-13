@@ -41,7 +41,7 @@ class RXDAT(implicit p: Parameters) extends TL2CHIL2Module {
   val dataCheck = if (enableDataCheck) {
     dataCheckMethod match {
       case 1 => (0 until DATACHECK_WIDTH).map(i =>
-        io.out.bits.dataCheck(i) ^ io.out.bits.data(8 * (DATACHECK_WIDTH - i) - 1, 8 * (DATACHECK_WIDTH - i - 1)).xorR).reduce(_ & _)
+        io.out.bits.dataCheck(i) ^ io.out.bits.data(8 * (DATACHECK_WIDTH - i) - 1, 8 * (DATACHECK_WIDTH - i - 1)).xorR ^ 1.U).reduce(_ | _)
       case 2 =>
         val code = new SECDEDCode
         (0 until DATACHECK_WIDTH).map(i =>
