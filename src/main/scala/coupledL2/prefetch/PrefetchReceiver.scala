@@ -35,11 +35,11 @@ case class PrefetchReceiverParams(n: Int = 32) extends PrefetchParameters {
 
 class PrefetchReceiver()(implicit p: Parameters) extends PrefetchModule {
   val io = IO(new PrefetchIO())
+  val io_enable = IO(Input(Bool()))
+
   // 0 / 1: whether to enable
   private val cstEnable = Constantin.createRecord("pfRcv_enable"+cacheParams.hartId.toString, initValue = 1)
-  // l2 receive need 2 cycles to transmit from core
-  val pf_recv_en = RegNextN(io.pfCtrlFromCore.l2_pf_master_en && io.pfCtrlFromCore.l2_pf_recv_en, 2, Some(true.B))
-  val enable = pf_recv_en && cstEnable.orR
+  val enable = io_enable && cstEnable.orR
 
   // just ignore train reqs
   io.train.ready := true.B

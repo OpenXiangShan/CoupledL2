@@ -364,7 +364,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         fastArb(prefetchTrains.get, prefetcher.get.io.train, Some("prefetch_train"))
         prefetcher.get.io.req.ready := Cat(prefetchReqsReady).orR
         prefetcher.get.hartId := io.hartId
-        prefetcher.get.io.pfCtrlFromCore := io.pfCtrlFromCore
+        prefetcher.get.pfCtrlFromCore := io.pfCtrlFromCore
         fastArb(prefetchResps.get, prefetcher.get.io.resp, Some("prefetch_resp"))
         prefetcher.get.io.tlb_req <> io.l2_tlb_req
     }

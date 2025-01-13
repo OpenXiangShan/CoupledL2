@@ -165,7 +165,6 @@ class PrefetchTrain(implicit p: Parameters) extends PrefetchBundle {
 }
 
 class PrefetchIO(implicit p: Parameters) extends PrefetchBundle {
-  val pfCtrlFromCore = Input(new PrefetchCtrlFromCore)
   val train = Flipped(DecoupledIO(new PrefetchTrain))
   val tlb_req = new L2ToL1TlbIO(nRespDups= 1)
   val req = DecoupledIO(new PrefetchReq)
@@ -236,10 +235,13 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     val tpmeta_port = if (hasTPPrefetcher) Some(new tpmetaPortIO(hartIdLen, fullAddressBits, offsetBits)) else None
   })
   val hartId = IO(Input(UInt(hartIdLen.W)))
+  val pfCtrlFromCore = IO(Input(new PrefetchCtrlFromCore))
 
-  val pbop_en = io.pfCtrlFromCore.l2_pf_master_en && io.pfCtrlFromCore.l2_pbop_en
-  val vbop_en = io.pfCtrlFromCore.l2_pf_master_en && io.pfCtrlFromCore.l2_vbop_en
-  val tp_en = io.pfCtrlFromCore.l2_pf_master_en && io.pfCtrlFromCore.l2_tp_en
+  // l2 receive need 2 cycles to transmit from core
+  val pfRcv_en = RegNextN(pfCtrlFromCore.l2_pf_master_en && pfCtrlFromCore.l2_pf_recv_en, 2, Some(true.B))
+  val pbop_en = pfCtrlFromCore.l2_pf_master_en && pfCtrlFromCore.l2_pbop_en
+  val vbop_en = pfCtrlFromCore.l2_pf_master_en && pfCtrlFromCore.l2_vbop_en
+  val tp_en = pfCtrlFromCore.l2_pf_master_en && pfCtrlFromCore.l2_tp_en
 
   // =================== Prefetchers =====================
   // TODO: consider separate VBOP and PBOP in prefetch param
@@ -309,7 +311,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     pbop.get.io.resp.valid := io.resp.valid && io.resp.bits.isPBOP
   }
   if (hasReceiver) {
-    pfRcv.get.io.pfCtrlFromCore := io.pfCtrlFromCore
+    pfRcv.get.io_enable := pfRcv_en
     pfRcv.get.io.req.ready := true.B
     pfRcv.get.io.recv_addr := ValidIODelay(io.recv_addr, 2)
     pfRcv.get.io.train.valid := false.B
