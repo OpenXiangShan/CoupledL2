@@ -83,6 +83,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
 
   val req_writeEvictOrEvict = RegInit(false.B)
 
+  val req_released_chiOpcode = RegInit(0.U.asTypeOf(UInt(OPCODE_WIDTH.W)))
+
   assert(!(req_valid && dirResult.hit && !isT(meta.state) && meta.dirty),
     "directory valid read with dirty under non-T state")
 
@@ -335,8 +337,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   // *NOTICE: By the time of issuing Write Back (WriteBackFull or Evict), the directory
   //          was already updated by replacing, so we should never check directory hit
   //          on replacer-issued WriteBackFull condition.
-  // TODO(retry-immutability): It's harmless but not strictly standard to allow WriteBackFull to be degenerated
-  //                           to Evict on write retry.
   val isWriteCleanFull = req_cboClean
   val isWriteBackFull = !req_cboClean && !req_cboInval && (isT(meta.state) && meta.dirty || probeDirty)
   val isWriteEvictFull = false.B
@@ -364,11 +364,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       *  PrefetchWrite        |  ReadUnique
       */
     oa.opcode := ParallelPriorityMux(Seq(
-      (release_valid2 && isWriteCleanFull)               -> WriteCleanFull,
-      (release_valid2 && isWriteBackFull)                -> WriteBackFull,
-      (release_valid2 && isWriteEvictFull)               -> WriteEvictFull,
-      (release_valid2 && isWriteEvictOrEvict)            -> onIssueEbOrElse(WriteEvictOrEvict, DontCare),
-      (release_valid2 && isEvict)                        -> Evict,
+      release_valid2                                     -> req_released_chiOpcode,
       req_cboClean                                       -> CleanShared,
       req_cboFlush                                       -> CleanInvalid,
       req_cboInval                                       -> MakeInvalid,
@@ -379,11 +375,25 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     oa.size := log2Ceil(blockBytes).U
     oa.addr := Cat(Mux(release_valid2, dirResult.tag, req.tag), req.set, 0.U(offsetBits.W))
     oa.ns := false.B
-    oa.likelyshared := Mux(isWriteEvictOrEvict, meta.state === BRANCH, false.B)
+    // set 'LikelyShared' to 1 here when:
+    //  - WriteEvictOrEvict (on retry) with SC state
+    oa.likelyshared := Mux(
+      release_valid2,
+      req_released_chiOpcode === WriteEvictOrEvict && meta.state === BRANCH,
+      false.B
+    )
     oa.allowRetry := state.s_reissue.getOrElse(false.B)
     oa.order := OrderEncodings.None
     oa.pCrdType := Mux(!state.s_reissue.getOrElse(false.B), pcrdtype, 0.U)
-    oa.expCompAck := (!release_valid2 || release_valid2 && isWriteEvictOrEvict) && !cmo_cbo
+    // set 'ExpCompAck' to 1 here when:
+    //  - MakeUnique
+    //  - ReadUnique, ReadNotSharedDirty
+    //  - WriteEvictOrEvict (on retry)
+    oa.expCompAck := Mux(
+      release_valid2,
+      req_released_chiOpcode === WriteEvictOrEvict,
+      !cmo_cbo
+    )
     oa.memAttr := MemAttr(
       cacheable = true.B,
       allocate = !(release_valid2 && isEvict),
@@ -984,7 +994,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       gotRetryAck := false.B
       gotPCrdGrant := false.B
       when (release_valid2) {
-        // TODO(retry-immutability): Don't degenerate WriteCleanFull to Evict
         state.s_cbwrdata.get := isEvict
       }
     }
@@ -1004,13 +1013,13 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         state.s_cmoresp := true.B
       }
     }.elsewhen (mp_release_valid) {
+      req_released_chiOpcode := mp_release.chiOpcode.get
       state.s_release := true.B
       // when (!state.s_reissue.get) {
       //   state.s_reissue.get := true.B
       //   gotRetryAck := false.B
       //   gotPCrdGrant := false.B
       // }
-      // TODO(retry-immutability): Don't degenerate WriteCleanFull to Evict
       state.s_cbwrdata.get := isEvict
       ifIssueEb {
         when (mp_release.chiOpcode.get === WriteEvictOrEvict) {
