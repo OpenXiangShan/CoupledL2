@@ -160,11 +160,11 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
     val dataCheck = if (enableDataCheck) {
       dataCheckMethod match {
         case 1 => (0 until DATACHECK_WIDTH).map(i =>
-          rxdat.bits.dataCheck(i) ^ rdata(8 * (DATACHECK_WIDTH - i) - 1, 8 * (DATACHECK_WIDTH - i - 1)).xorR ^ true.B).reduce(_ | _)
+          rxdat.bits.dataCheck(i) ^ rdata(8 * (i + 1) - 1, 8 * i).xorR ^ true.B).reduce(_ | _)
         case 2 =>
           val code = new SECDEDCode
           (0 until DATACHECK_WIDTH).map(i =>
-            code.decode(Cat(rxdat.bits.dataCheck(i) ^ rdata(8 * (DATACHECK_WIDTH - i) - 1, 8 * (DATACHECK_WIDTH - i - 1)))).error).reduce(_ | _)
+            code.decode(Cat(rxdat.bits.dataCheck(i) ^ rdata(8 * (i + 1) - 1, 8 * i))).error).reduce(_ | _)
         case _ => false.B
       }
     } else {
@@ -285,10 +285,10 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   val txdata = txdat.bits.data
   val dataCheck = if (enableDataCheck) {
     dataCheckMethod match {
-      case 1 => Cat((0 until DATACHECK_WIDTH).map(i => txdata(8 * (DATACHECK_WIDTH - i) - 1, 8 * (DATACHECK_WIDTH - i - 1)).xorR.asUInt ^ 1.U))
+      case 1 => VecInit((0 until DATACHECK_WIDTH).map(i => txdata(8 * (i + 1) - 1, 8 * i).xorR ^ true.B)).asUInt
       case 2 =>
         val code = new SECDEDCode
-        Cat((0 until DATACHECK_WIDTH).map(i => code.encode(txdata(8 * (DATACHECK_WIDTH - i) - 1, 8 * (DATACHECK_WIDTH - i - 1))).asUInt))
+        VecInit((0 until DATACHECK_WIDTH).map(i => code.encode(txdata(8 * (i + 1) - 1, 8 * i)))).asUInt
       case _ => 0.U(DATACHECK_WIDTH.W)
     }
   } else {
