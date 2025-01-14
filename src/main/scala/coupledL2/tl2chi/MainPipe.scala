@@ -184,7 +184,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val mshr_writeBackFull_s3     = mshr_req_s3 && req_s3.toTXREQ && req_s3.chiOpcode.get === WriteBackFull
   val mshr_writeEvictFull_s3    = mshr_req_s3 && req_s3.toTXREQ && req_s3.chiOpcode.get === WriteEvictFull
   val mshr_writeEvictOrEvict_s3 = mshr_req_s3 && req_s3.toTXREQ &&
-    onIssueEbOrElse(req_s3.chiOpcode.get === WriteEvictOrEvict, false.B)
+    afterIssueEbOrElse(req_s3.chiOpcode.get === WriteEvictOrEvict, false.B)
   val mshr_evict_s3             = mshr_req_s3 && req_s3.toTXREQ && req_s3.chiOpcode.get === Evict
   
   val mshr_cbWrData_s3          = mshr_req_s3 && req_s3.toTXDAT && req_s3.chiOpcode.get === CopyBackWrData

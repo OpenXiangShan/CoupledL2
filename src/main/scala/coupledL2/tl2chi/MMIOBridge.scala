@@ -169,7 +169,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
     }
     when (
       rxrsp.bits.opcode === CompDBIDResp || rxrsp.bits.opcode === DBIDResp ||
-      onIssueEbOrElse(rxrsp.bits.opcode === DBIDRespOrd, false.B)
+      afterIssueEbOrElse(rxrsp.bits.opcode === DBIDRespOrd, false.B)
     ) {
       w_dbidresp := true.B
       srcID := rxrsp.bits.srcID

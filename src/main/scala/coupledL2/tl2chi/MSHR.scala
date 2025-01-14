@@ -260,7 +260,10 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   io.tasks.txreq.valid := !state.s_acquire && !(cmo_cbo && (!state.w_rprobeacklast || !state.w_releaseack || !state.s_cbwrdata.get)) || 
                           !state.s_reissue.getOrElse(false.B) && !state.w_grant && gotRetryAck && gotPCrdGrant ||
                           release_valid2
-  io.tasks.txrsp.valid := !state.s_compack.get && state.w_grantfirst && state.w_grant
+  io.tasks.txrsp.valid := !state.s_compack.get && state.w_grant &&
+    // For issue B, CompAck must not be sent until all transfers of read data have been received.
+    // For issue C and afterwards, CompAck is allowed to be sent after at least one CompData packet is received.
+    afterIssueCOrElse(state.w_grantfirst, state.w_grantlast)
   io.tasks.source_b.valid := !state.s_pprobe || !state.s_rprobe
   val mp_release_valid = release_valid1
   val mp_cbwrdata_valid = !state.s_cbwrdata.getOrElse(true.B) && state.w_releaseack
@@ -340,7 +343,10 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val isWriteCleanFull = req_cboClean
   val isWriteBackFull = !req_cboClean && !req_cboInval && (isT(meta.state) && meta.dirty || probeDirty)
   val isWriteEvictFull = false.B
-  val isWriteEvictOrEvict = onIssueEbOrElse(!req_cboFlush && !req_cboInval && !isWriteCleanFull && !isWriteBackFull && !isWriteEvictFull, false.B)
+  val isWriteEvictOrEvict = afterIssueEbOrElse(
+    !req_cboFlush && !req_cboInval && !isWriteCleanFull && !isWriteBackFull && !isWriteEvictFull,
+    false.B
+  )
   val isEvict = !isWriteCleanFull && !isWriteBackFull && !isWriteEvictFull && !isWriteEvictOrEvict
   val a_task = {
     val oa = io.tasks.txreq.bits
@@ -379,7 +385,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     //  - WriteEvictOrEvict (on retry) with SC state
     oa.likelyshared := Mux(
       release_valid2,
-      req_released_chiOpcode === WriteEvictOrEvict && meta.state === BRANCH,
+      afterIssueEbOrElse(req_released_chiOpcode === WriteEvictOrEvict && meta.state === BRANCH, false.B),
       false.B
     )
     oa.allowRetry := state.s_reissue.getOrElse(false.B)
@@ -391,7 +397,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     //  - WriteEvictOrEvict (on retry)
     oa.expCompAck := Mux(
       release_valid2,
-      req_released_chiOpcode === WriteEvictOrEvict,
+      afterIssueEbOrElse(req_released_chiOpcode === WriteEvictOrEvict, false.B),
       !cmo_cbo
     )
     oa.memAttr := MemAttr(
@@ -486,7 +492,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_release.chiOpcode.get := ParallelPriorityMux(Seq(
       isWriteBackFull       -> WriteBackFull,
       isWriteEvictFull      -> WriteEvictFull,
-      isWriteEvictOrEvict   -> onIssueEbOrElse(WriteEvictOrEvict, DontCare),
+      isWriteEvictOrEvict   -> afterIssueEbOrElse(WriteEvictOrEvict, DontCare),
       isEvict /* Default */ -> Evict
     ))
     mp_release.resp.get := 0.U // DontCare
@@ -964,7 +970,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       s"invalid Resp for ${name}")
   }}
 
-  ifIssueEb {
+  ifAfterIssueC {
     Seq(
       ("DataSepResp", CHICohStateTransSet.ofDataSepResp(DataSepResp)),
       ("RespSepData", CHICohStateTransSet.ofRespSepData(RespSepData))
@@ -1021,7 +1027,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       //   gotPCrdGrant := false.B
       // }
       state.s_cbwrdata.get := isEvict
-      ifIssueEb {
+      ifAfterIssueEb {
         when (mp_release.chiOpcode.get === WriteEvictOrEvict) {
           // Mark on WriteEvictOrEvict for TxnID selection of CompAck on Comp
           req_writeEvictOrEvict := true.B
@@ -1097,7 +1103,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   when (rxdat.valid) {
     val nderr = rxdat.bits.respErr.getOrElse(OK) === NDERR
     val derr = rxdat.bits.respErr.getOrElse(OK) === DERR
-    ifIssueEb {
+    ifAfterIssueC {
       when (rxdat.bits.chiOpcode.get === DataSepResp) {
         require(beatSize == 2) // TODO: This is ugly
         beatCnt := beatCnt + 1.U
@@ -1130,7 +1136,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   // RXRSP
   when (rxrsp.valid) {
     val nderr = rxrsp.bits.respErr.getOrElse(OK) === NDERR
-    ifIssueEb {
+    ifAfterIssueC {
       when (rxrsp.bits.chiOpcode.get === RespSepData) {
         state.w_grant := true.B
         srcid := rxrsp.bits.srcID.getOrElse(0.U)
