@@ -92,6 +92,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
 
   reqArb.io.ATag := reqBuf.io.ATag
   reqArb.io.ASet := reqBuf.io.ASet
+  reqArb.io.cmoAllBlock := sinkA.io.cmoAll.cmoAllBlock
   reqArb.io.sinkA <> reqBuf.io.out
   reqArb.io.sinkB <> rxsnp.io.task
   reqArb.io.sinkC <> sinkC.io.task
@@ -208,6 +209,13 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   rxrsp.io.out <> io.out.rx.rsp
 
   io_pCrd <> mshrCtl.io.pCrd
+
+  /* Connect l2 flush All channel */ 
+  sinkA.io.cmoAll.cmoLineDone <> mainPipe.io.cmoLineDone
+  sinkA.io.cmoAll.mshrValid := VecInit(mshrCtl.io.msInfo.map(m => m.valid)).reduce(_|_)
+  sinkA.io.cmoAll.cmoAllBlock <> mainPipe.io.cmoAllBlock
+  sinkA.io.cmoAll.l2Flush <> io.l2Flush
+  io.l2FlushDone <> sinkA.io.cmoAll.l2FlushDone
 
   /* ===== Hardware Performance Monitor ===== */
   val perfEvents = Seq(mshrCtl, mainPipe).flatMap(_.getPerfEvents)

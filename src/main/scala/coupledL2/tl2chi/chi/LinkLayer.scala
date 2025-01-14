@@ -277,6 +277,7 @@ class LinkMonitor(implicit p: Parameters) extends L2Module with HasCHIOpcodes {
     val in = Flipped(new DecoupledPortIO())
     val out = new PortIO
     val nodeID = Input(UInt(NODEID_WIDTH.W))
+    val exitco = Input(Bool())
   })
   // val s_stop :: s_activate :: s_run :: s_deactivate :: Nil = Enum(4)
 
@@ -302,14 +303,26 @@ class LinkMonitor(implicit p: Parameters) extends L2Module with HasCHIOpcodes {
   LCredit2Decoupled(io.out.rx.rsp, io.in.rx.rsp, LinkState(rxState), rxrspDeact, Some("rxrsp"))
   LCredit2Decoupled(io.out.rx.dat, io.in.rx.dat, LinkState(rxState), rxdatDeact, Some("rxdat"))
 
-  io.out.txsactive := true.B
-  io.out.tx.linkactivereq := RegNext(true.B, init = false.B)
+//  io.out.txsactive := true.B
+//  io.out.tx.linkactivereq := RegNext(true.B, init = false.B)
+//  io.out.rx.linkactiveack := RegNext(
+//    next = RegNext(io.out.rx.linkactivereq) || !rxDeact,
+//    init = false.B
+//  )
+
+//  io.out.syscoreq := true.B
+
+  //exit coherecy + deactive tx/rx when l2 flush done
+  io.out.txsactive := !io.exitco
+  io.out.tx.linkactivereq := RegNext(!io.exitco, init = false.B)
   io.out.rx.linkactiveack := RegNext(
-    next = RegNext(io.out.rx.linkactivereq) || !rxDeact,
+    next = !io.exitco && (RegNext(io.out.rx.linkactivereq) || !rxDeact),
     init = false.B
   )
 
-  io.out.syscoreq := true.B
+  io.out.syscoreq := !io.exitco
+
+
 
   val retryAckCnt = RegInit(0.U(64.W))
   val pCrdGrantCnt = RegInit(0.U(64.W))

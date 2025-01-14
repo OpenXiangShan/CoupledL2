@@ -112,6 +112,10 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
     /* ECC error*/
     val error = ValidIO(new L2CacheErrorInfo)
+
+    /* l2 flush (CMO All) */
+    val cmoAllBlock = Input(Bool())
+    val cmoLineDone = Output(Bool())
   })
 
   require(chiOpt.isDefined)
@@ -161,7 +165,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val req_prefetch_s3           = sinkA_req_s3 && req_s3.opcode === Hint
   val req_get_s3                = sinkA_req_s3 && req_s3.opcode === Get
   val req_cbo_clean_s3          = sinkA_req_s3 && req_s3.opcode === CBOClean
-  val req_cbo_flush_s3          = sinkA_req_s3 && req_s3.opcode === CBOFlush
+  val req_cbo_flush_s3          = sinkA_req_s3 && req_s3.opcode === CBOFlush && !(io.cmoAllBlock && (meta_s3.state === INVALID))
   val req_cbo_inval_s3          = sinkA_req_s3 && req_s3.opcode === CBOInval
 
   val mshr_grant_s3             = mshr_req_s3 && req_s3.fromA && (req_s3.opcode === Grant || req_s3.opcode === GrantData)
@@ -567,12 +571,12 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val txdat_s3_latch = true
   val isD_s3 = Mux(
     mshr_req_s3,
-    mshr_cmoresp_s3 || mshr_refill_s3 && !retry,
-    req_s3.fromC || req_s3.fromA && !need_mshr_s3_a && !data_unready_s3_tl && req_s3.opcode =/= Hint
+    mshr_cmoresp_s3 && !io.cmoAllBlock|| mshr_refill_s3 && !retry,
+    req_s3.fromC || req_s3.fromA && !need_mshr_s3_a && !data_unready_s3_tl && req_s3.opcode =/= Hint && !io.cmoAllBlock
   )
   val isD_s3_ready = Mux(
     mshr_req_s3,
-    mshr_cmoresp_s3 || mshr_refill_s3 && !retry,
+    mshr_cmoresp_s3 && !io.cmoAllBlock || mshr_refill_s3 && !retry,
     req_s3.fromC || req_s3.fromA && !need_mshr_s3_a && !data_unready_s3_tl && req_s3.opcode =/= Hint && !d_s3_latch.B
   )
   val isTXRSP_s3 = Mux(
@@ -927,6 +931,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   io.error.bits.valid := l2Error_s5 // if not enableECC, should be false
   io.error.bits.address := Cat(task_s5.bits.tag, task_s5.bits.set, task_s5.bits.off)
 
+  val cmoLineDrop = io.cmoAllBlock && task_s3.valid && sinkA_req_s3 && (req_s3.opcode === CBOFlush)  && (meta_s3.state === INVALID)
+  val cmoLineDone = io.cmoAllBlock && task_s3.valid && mshr_cmoresp_s3
+  io.cmoLineDone := RegNextN( ( cmoLineDone || cmoLineDrop) , 2, Some(false.B))
   /* ===== Performance counters ===== */
   // num of mshr req
   XSPerfAccumulate("mshr_grant_req", task_s3.valid && mshr_grant_s3 && !retry)

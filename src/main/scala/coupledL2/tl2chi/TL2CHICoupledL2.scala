@@ -255,6 +255,8 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         rxdat <> linkMonitor.io.in.rx.dat
         io_chi <> linkMonitor.io.out
         linkMonitor.io.nodeID := io_nodeID
+        linkMonitor.io.exitco := Cat(slices.zipWithIndex.map { case (s, i) => s.io.l2FlushDone}).andR //exit coherency
+
     }
   }
 
