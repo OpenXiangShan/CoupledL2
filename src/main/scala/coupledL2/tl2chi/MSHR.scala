@@ -70,6 +70,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val gotGrantData = RegInit(false.B)
   val probeDirty = RegInit(false.B)
   val probeGotN = RegInit(false.B)
+  val probeGotB = RegInit(false.B)
   val timer = RegInit(0.U(64.W)) // for performance analysis
   val beatCnt = RegInit(0.U(log2Ceil(beatSize).W))
 
@@ -135,6 +136,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     gotGrantData := false.B
     probeDirty  := false.B
     probeGotN   := false.B
+    probeGotB := false.B
     timer       := 1.U
     beatCnt     := 0.U
 
@@ -628,7 +630,11 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       state = Mux(
         snpToN,
         INVALID,
-        Mux(snpToB, BRANCH, meta.state)
+        Mux(
+          snpToB,
+          BRANCH,
+          Mux(meta.state === TRUNK && (probeGotB || probeGotN), TIP, meta.state)
+        )
       ),
       clients = meta.clients & Fill(clientBits, !probeGotN && !snpToN),
       alias = meta.alias, //[Alias] Keep alias bits unchanged
@@ -1068,6 +1074,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     }
     when (isToN(c_resp.bits.param)) {
       probeGotN := true.B
+    }
+    when (isToB(c_resp.bits.param)) {
+      probeGotB := true.B
     }
 
     // CMO update release on ProbeAck/ProbeAckData
