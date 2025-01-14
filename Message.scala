@@ -332,6 +332,10 @@ trait HasCHIMsgParameters {
   def TAG_WIDTH = DATA_WIDTH / 32
   def TAG_UPDATE_WIDTH = DATA_WIDTH / 128
 
+  // DataID is assigned with the granularity of a 16-byte chunk
+  def ChunkBytes = 16
+  def ChunkOffsetWidth = log2Up(ChunkBytes)
+
   // User defined
   /*
   * Currently don't care about *::RSVDC, and the width is tied to 4.
