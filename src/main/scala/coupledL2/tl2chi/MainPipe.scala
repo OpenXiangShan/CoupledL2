@@ -931,7 +931,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   io.error.bits.valid := l2Error_s5 // if not enableECC, should be false
   io.error.bits.address := Cat(task_s5.bits.tag, task_s5.bits.set, task_s5.bits.off)
 
-  val cmoLineDrop = io.cmoAllBlock && task_s3.valid && sinkA_req_s3 && (req_s3.opcode === CBOFlush)  && (meta_s3.state === INVALID)
+  val cmoLineDrop = io.cmoAllBlock && task_s3.valid && sinkA_req_s3 && (req_s3.opcode === CBOFlush) && (meta_s3.state === INVALID)
   val cmoLineDone = io.cmoAllBlock && task_s3.valid && mshr_cmoresp_s3
   io.cmoLineDone := RegNextN( ( cmoLineDone || cmoLineDrop) , 2, Some(false.B))
   /* ===== Performance counters ===== */

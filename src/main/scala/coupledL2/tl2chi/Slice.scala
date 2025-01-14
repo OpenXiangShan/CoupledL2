@@ -215,7 +215,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   sinkA.io.cmoAll.mshrValid := VecInit(mshrCtl.io.msInfo.map(m => m.valid)).reduce(_|_)
   sinkA.io.cmoAll.cmoAllBlock <> mainPipe.io.cmoAllBlock
   sinkA.io.cmoAll.l2Flush <> io.l2Flush
-  io.l2FlushDone <> sinkA.io.cmoAll.l2FlushDone
+  io.l2FlushDone <> RegNext(sinkA.io.cmoAll.l2FlushDone, false.B)
 
   /* ===== Hardware Performance Monitor ===== */
   val perfEvents = Seq(mshrCtl, mainPipe).flatMap(_.getPerfEvents)

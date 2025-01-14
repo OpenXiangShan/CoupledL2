@@ -324,8 +324,8 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       }
       val l2Miss = Output(Bool())
       val error = Output(new L2CacheErrorInfo()(l2ECCParams))
-      val l2Flush = Input(Bool())
-      val l2FlushDone = Output(Bool())
+//      val l2Flush = Input(Bool())
+//      val l2FlushDone = Output(Bool())
     })
 
     // Display info
@@ -506,7 +506,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     }
 
     //L2 Flush All
-    io.l2FlushDone := VecInit(slices.zipWithIndex.map { case (s, i) => s.io.l2FlushDone}).reduce(_&_)
+    val l2FlushDone = VecInit(slices.zipWithIndex.map { case (s, i) => s.io.l2FlushDone}).reduce(_&_)
 
     // Refill hint
     if (enableHintGuidedGrant) {
