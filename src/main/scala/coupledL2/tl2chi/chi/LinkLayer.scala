@@ -310,7 +310,6 @@ class LinkMonitor(implicit p: Parameters) extends L2Module with HasCHIOpcodes {
     next = !io.exitco && (RegNext(io.out.rx.linkactivereq) || !rxDeact),
     init = false.B
   )
-
   io.out.syscoreq := !io.exitco
 
   val retryAckCnt = RegInit(0.U(64.W))
