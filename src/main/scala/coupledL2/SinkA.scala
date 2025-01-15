@@ -26,6 +26,7 @@ import freechips.rocketchip.tilelink.TLHints._
 import coupledL2.prefetch.PrefetchReq
 import huancun.{AliasKey, PrefetchKey,PutBufferPop,PutBufferBeatEntry}
 import utility.{MemReqSource, XSPerfAccumulate, RRArbiterInit}
+import freechips.rocketchip.tilelink.TLPermissions._
 
 class SinkA(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
@@ -41,6 +42,8 @@ class SinkA(implicit p: Parameters) extends L2Module {
   assert(!(io.a.valid && (io.a.bits.opcode === PutPartialData)),"no Put!! Dont Use PutPartialData");
   //TODO io.a.bits.opcode === PutFullData
   val (first, last, _, beat) = edgeIn.count(io.a)
+  // val num = edgeIn.numBeats(io.a.bits)
+  // printf(s"num == ${num.toString()} \n")
   // 0x4 is Get
   val isPutFullData = io.a.bits.opcode === PutFullData
   val isPutPartialData = io.a.bits.opcode === PutPartialData
@@ -57,12 +60,29 @@ class SinkA(implicit p: Parameters) extends L2Module {
   val taskArb = Module(new RRArbiterInit(new TaskBundle, bufBlocks))
   val bufValids = taskValids.asUInt | dataValids
 
+  // println(s"User: ${io.a.bits.user.lift(MatrixKey).getOrElse(0.U)}")//a.user.lift(VaddrKey).getOrElse(0.U)
+  // printf(s"User: ${io.a.bits.user.lift(MatrixKey).getOrElse(0.U).toString()}\n")
+  // println(s"${io.a.bits.user.elements}\n")
+  // printf(s"${io.a.bits.user.elements}\n")
   val full = bufValids.andR
-  // val noSpace = full && hasData // Why?
+  val noSpace = full && hasData
   val nextPtr = PriorityEncoder(~bufValids)
   // since DCache uses TLArbiter for Release & ProbeAck, we assume two beats of the block will be sent continuously
   // in other words, different addresses will not interleave
   val nextPtrReg = RegEnable(nextPtr, 0.U.asTypeOf(nextPtr), io.a.fire && isPutFullData && first && hasData)
+
+  def isMatrixPut(a: TLBundleA): Bool = {
+    (a.opcode === PutFullData || a.opcode === PutPartialData) && 
+    (a.user.lift(MatrixKey).getOrElse(0.U) === 1.U)
+  }
+
+  def isMatrixGet(a: TLBundleA): Bool = {
+    val en = a.opcode === Get  && (a.user.lift(MatrixKey).getOrElse(0.U) === 1.U)
+    when(en){
+      printf("isMatrixGet\n")
+    }
+    en
+  }
 
   def fromTLAtoTaskBundle(a: TLBundleA): TaskBundle = {
     val task = Wire(new TaskBundle)
@@ -73,6 +93,8 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.set := parseAddress(a.address)._2
     task.off := parseAddress(a.address)._3
     task.alias.foreach(_ := a.user.lift(AliasKey).getOrElse(0.U))
+    // task.opcode := Mux(!isMatrixGet(a), a.opcode, AcquireBlock)
+    // task.param := Mux(!isMatrixGet(a),a.param,NtoT)
     task.opcode := a.opcode
     task.param := a.param
     task.size := a.size
@@ -93,7 +115,9 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.metaWen := false.B
     task.tagWen := false.B
     task.dsWen := false.B
-    task.wayMask := 0.U(cacheParams.ways.W)
+    task.wayMask := Mux(a.opcode===PutFullData,
+                        Fill(cacheParams.ways, "b1".U),
+                        0.U(cacheParams.ways.W))
     task.reqSource := a.user.lift(utility.ReqSourceKey).getOrElse(MemReqSource.NoWhere.id.U)
     task.replTask := false.B
     task.vaddr.foreach(_ := a.user.lift(VaddrKey).getOrElse(0.U))
@@ -184,7 +208,8 @@ class SinkA(implicit p: Parameters) extends L2Module {
   // io.refillBufWrite.bits.data.data := dataBuf(RegNext(io.task.bits.bufIdx)).asUInt
   // io.refillBufWrite.bits.beatMask := Fill(beatSize, true.B)
 
-  io.a.ready := !isPutFullData || !first || !full
+  // io.a.ready := !isPutFullData || !first || !full
+  io.a.ready := Mux(first, !noSpace, true.B)
 
   // io.bufResp.data := RegNext(RegEnable(dataBuf(io.task.bits.bufIdx), io.task.fire))
   when(RegNext(io.task.fire)) {

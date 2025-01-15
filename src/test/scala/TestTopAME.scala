@@ -61,7 +61,9 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
     ))
     masterNode
   }
-
+  val l2_banks=8
+  val l3_banks=8
+  val m_num=8
   val l1d = createClientNode(s"l1d", 32)
   val l1i = TLClientNode(Seq(
     TLMasterPortParameters.v1(
@@ -73,7 +75,7 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
   ))
   // 使用 flatMap 生成扁平的 matrix_nodes 序列
   val matrix_nodes = (0 until 1).flatMap { i =>
-    (0 until 1).map { j =>
+    (0 until m_num).map { j =>
       TLClientNode(Seq(
         TLMasterPortParameters.v1(
           clients = Seq(TLMasterParameters.v1(
@@ -85,16 +87,17 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
             // supportsGet = TransferSizes(1,cacheParams.blockBytes),
             // supportsPutFull = TransferSizes(1,cacheParams.blockBytes),
             // supportsPutPartial = TransferSizes(1,cacheParams.blockBytes),
-          ))
+            // requestFields = MatrixField
+            )),
+            requestFields = Seq(MatrixField(2))
         )
       ))
     }
   }
   val master_nodes = Seq(l1d, l1i) ++ matrix_nodes
   val c_nodes = Seq(l1d)
-  val ul_nodes = Seq(l1i)++matrix_nodes
-  val l2_banks=8
-  val l3_banks=8
+  val l1i_nodes = Seq(l1i)
+  val ul_nodes = l1i_nodes++matrix_nodes
   val l2 = LazyModule(new TL2TLCoupledL2()(baseConfig(1).alter((site, here, up) => {
     case L2ParamKey => L2Param(
       name = s"l2",
@@ -108,11 +111,11 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
         rrTableEntries = 16,
         rrTagBits = 6
       )),
-      tagECC = Some("secded"),
-      dataECC = Some("secded"),
-      enableTagECC = true,
-      enableDataECC = true,
-      dataCheck = Some("oddparity"),
+      // tagECC = Some("secded"),
+      // dataECC = Some("secded"),
+      enableTagECC = false, //XS use true
+      enableDataECC = false, //XS use true
+      // dataCheck = Some("oddparity"),
     )
     // case huancun.BankBitsKey => log2Ceil(8)
     case BankBitsKey => log2Ceil(l2_banks)
@@ -178,14 +181,16 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
 //   ul_nodes.foreach { node =>
 //     l1xbar := TLBuffer() := TLLogger(s"L2_Matrix[0]", true) := node
 //   }
-  ul_nodes.zipWithIndex map{ case(ul,i) =>
+  l1i_nodes.zipWithIndex map{ case(ul,i) =>
+        l1xbar := TLBuffer() := TLLogger(s"L2_L1I[${i}]", true) := ul
+  }
+  matrix_nodes.zipWithIndex map{ case(ul,i) =>
         l1xbar := TLBuffer() := TLLogger(s"L2_Matrix[${i}]", true) := ul
   }
   // TLLogger(s"L2_L1[${i}].C[${j}]", !cacheParams.FPGAPlatform && cacheParams.enableTLLog) :=
   // l2bankBinders := TLBuffer() := l1xbar
   l2bankBinders :*= l2.node :*= TLBuffer() :*= l1xbar
   l3xbar :=TLBuffer() :*=l2xbar :=*l2bankBinders
-
   ram.node :=
     TLXbar() :=
     TLFragmenter(32, 64) :=
@@ -216,13 +221,24 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
       case (node, i) =>
         node.makeIOs()(ValName(s"master_port_$i"))
     }
-    ul_nodes.zipWithIndex.foreach {
+    l1i_nodes.zipWithIndex.foreach {
       case (node, i) =>
-        node.makeIOs()(ValName(s"master_ul_port_0_${i}"))// FIXME
+        node.makeIOs()(ValName(s"master_ul_port_0_${i}"))
+    }
+    matrix_nodes.zipWithIndex.foreach {
+      case (node, i) =>
+        node.makeIOs()(ValName(s"master_m_port_0_${i}"))
     }
     l2.module.io.hartId := DontCare
     l2.module.io.debugTopDown <> DontCare
     l2.module.io.l2_tlb_req <> DontCare
+    l2.module.io.matrix_valid.valid:= DontCare
+    l2.module.io.matrix_valid.bits:= DontCare
+    val matrix_valid = l2.module.io.matrix_valid
+    // 连接到输出端口
+    val matrix_valid_out = IO(Valid(Bool())).suggestName(s"matrix_valid_test")
+    matrix_valid_out := matrix_valid
+
   }
 
 }

@@ -156,14 +156,20 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   val outBuf = cacheParams.outerBuf
 
   /* connect upward channels */
-  sinkA.io.a <> inBuf.a(io.in.a)
+  val sinkMX = Module(new SinkMX)
+  sinkMX.io.a <> inBuf.a(io.in.a)
+  sinkMX.io.c <> inBuf.c(io.in.c)
+  sinkA.io.a <> sinkMX.io.out_a
+  sinkC.io.c <> sinkMX.io.out_c
+  // sinkA.io.a <> inBuf.a(io.in.a)
+  // inBuf.a(io.in.a).bits.user.lift(MatrixKey).getOrElse(0.U)
   io.in.b <> inBuf.b(mshrCtl.io.sourceB)
-  sinkC.io.c <> inBuf.c(io.in.c)
+  // sinkC.io.c <> inBuf.c(io.in.c)
   io.in.d <> inBuf.d(grantBuf.io.d)
   grantBuf.io.e <> inBuf.e(io.in.e)
   io.error.valid := mainPipe.io.error.valid
   io.error.bits := mainPipe.io.error.bits
-
+  
   /* connect downward channels */
   io.out.a <> outBuf.a(mshrCtl.io.sourceA)
   sinkB.io.b <> outBuf.b(io.out.b)
