@@ -153,7 +153,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
    3. for each set, search all ways with a loop (0 ~ numWays)            |  io.task.way
    4. if cacheline is VALID, after cmo flush, Mainpipe send back resp    |  io.cmoAll.cmoLineDone
    5. if cacheline is INVALID, MainPipe drop it and send back resp       |  io.cmoAll.cmoLineDone
-   6. after all slices is flushed, inform Core                           |  io.l2FlushDone 
+   6. after all slices is flushed, inform Core                           |  io.cmoAll.l2FlushDone 
    7. after all slices is flushed, exit coherency                        |  TL2CHICoupledL2.io_chi.syscoreq
    ---------------------------------------------------------------------------------------------------------*/
   io.cmoAll.l2FlushDone := (state === sDONE)
