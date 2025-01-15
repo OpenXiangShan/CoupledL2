@@ -107,6 +107,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
     /* ECC error*/
     val error = ValidIO(new L2CacheErrorInfo)
+
   })
 
   val resetFinish = RegInit(false.B)
@@ -247,6 +248,8 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   ms_task.snpHitReleaseDirty := false.B
   ms_task.denied           := false.B
   ms_task.corrupt          := false.B
+  ms_task.corrupt          := false.B
+  ms_task.cmoAll           := false.B
 
   /* ======== Resps to SinkA/B/C Reqs ======== */
   val sink_resp_s3 = WireInit(0.U.asTypeOf(Valid(new TaskBundle))) // resp for sinkA/B/C request that does not need to alloc mshr

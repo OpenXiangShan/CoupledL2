@@ -158,13 +158,8 @@ class SinkA(implicit p: Parameters) extends L2Module {
    ---------------------------------------------------------------------------------------------------------*/
   io.cmoAll.l2FlushDone := (state === sDONE)
   io.cmoAll.cmoAllBlock := cmoAllBlock
-  dontTouch(io.cmoAll.l2FlushDone)
 
-  val counter = RegInit(0.U(32.W))
-  counter := counter+1.U
-  val l2Flush = counter > 180000.U
-
-  when (state === sIDLE && l2Flush && !io.cmoAll.mshrValid) {
+  when (state === sIDLE && io.cmoAll.l2Flush && !io.cmoAll.mshrValid) {
     state := sCMOREQ
   }
   when ((state === sCMOREQ) && io.task.fire) {

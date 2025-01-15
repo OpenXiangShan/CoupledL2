@@ -116,7 +116,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     /* l2 flush (CMO All) */
     val cmoAllBlock = Input(Bool())
     val cmoLineDone = Output(Bool())
-  })
+})
 
   require(chiOpt.isDefined)
 
