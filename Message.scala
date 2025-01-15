@@ -211,6 +211,7 @@ object RespErrEncodings {
   */
 object Issue {
   val B = "B"
+  val C = "C"
   val Eb = "E.b"
 }
 
@@ -249,7 +250,12 @@ trait HasCHIMsgParameters {
 
   val B_CONFIG = DEFAULT_CONFIG
 
-  val Eb_CONFIG = B_CONFIG ++ Map(
+  val C_CONFIG = B_CONFIG ++ Map(
+    // new width def for existing fields
+    "DAT_OPCODE_WIDTH" -> 4
+  )
+
+  val Eb_CONFIG = C_CONFIG ++ Map(
     // new width def for existing fields
     "NODEID_WIDTH" -> 11,
     "TXNID_WIDTH" -> 12,
@@ -268,6 +274,7 @@ trait HasCHIMsgParameters {
 
   val params = Map(
     Issue.B -> B_CONFIG,
+    Issue.C -> C_CONFIG,
     Issue.Eb -> Eb_CONFIG
   )(issue)
 
@@ -275,11 +282,13 @@ trait HasCHIMsgParameters {
     if (params.contains(key)) params(key) else 0
   }
 
+  def after(x: String, y: String): Boolean = x.compareTo(y) >= 0
+
   def B_FIELD[T <: Data](x: T): T = x
-  // def C_FIELD[T <: Data](x: T): Option[T] = if (issue.compareTo(Issue.C) >= 0) Some(x) else None
-  // def D_FIELD[T <: Data](x: T): Option[T] = if (issue.compareTo(Issue.D) >= 0) Some(x) else None
-  // def Ea_FIELD[T <: Data](x: T): Option[T] = if (issue.compareTo(Issue.Ea) >= 0) Some(x) else None
-  def Eb_FIELD[T <: Data](x: T): Option[T] = if (issue.compareTo(Issue.Eb) >= 0) Some(x) else None
+  def C_FIELD[T <: Data](x: T): Option[T] = if (after(issue, Issue.C)) Some(x) else None
+  // def D_FIELD[T <: Data](x: T): Option[T] = if (after(issue, Issue.D)) Some(x) else None
+  // def Ea_FIELD[T <: Data](x: T): Option[T] = if (after(issue, Issue.Ea)) Some(x) else None
+  def Eb_FIELD[T <: Data](x: T): Option[T] = if (after(issue, Issue.Eb)) Some(x) else None
 
   def NODEID_WIDTH = CONFIG("NODEID_WIDTH")
 

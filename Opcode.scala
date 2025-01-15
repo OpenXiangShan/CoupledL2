@@ -22,22 +22,26 @@ import chisel3.util._
 
 trait HasCHIOpcodes extends HasCHIMsgParameters {
 
-  def Eb_OPCODE(opcode: UInt, width: Int): UInt = {
+  def X_OPCODE(opcode: UInt, width: Int, x: String): UInt = {
     require(
-      opcode.getWidth <= width && issue.compareTo(Issue.Eb) >= 0,
-      s"Illegal opcode of issue ${issue}, please use onIssueXXOrElse or ifIssueXX."
+      opcode.getWidth <= width && after(issue, x),
+      s"Illegal opcode of issue ${issue}, please use afterIssueXXOrElse or ifAfterIssueXX."
     )
     opcode(width - 1, 0)
   }
+  def C_OPCODE(opcode: UInt, width: Int) = X_OPCODE(opcode, width, Issue.C)
+  def Eb_OPCODE(opcode: UInt, width: Int) = X_OPCODE(opcode, width, Issue.Eb)
 
-  def onIssueEbOrElse[T <: Data](block: => T, otherwise: => T) = {
-    if (issue.compareTo(Issue.Eb) >= 0) block
+  def afterIssueXOrElse[T <: Data](block: => T, otherwise: => T, x: String) = {
+    if (after(issue, x)) block
     else otherwise
   }
+  def ifAfterIssueX(block: => Any, x: String) = { if (after(issue, x)) block }
 
-  def ifIssueEb(block: => Any) = {
-    if (issue.compareTo(Issue.Eb) >= 0) block
-  }
+  def afterIssueCOrElse[T <: Data](block: => T, otherwise: => T) = afterIssueXOrElse(block, otherwise, Issue.C)
+  def afterIssueEbOrElse[T <: Data](block: => T, otherwise: => T) = afterIssueXOrElse(block, otherwise, Issue.Eb)
+  def ifAfterIssueC(block: => Any) = ifAfterIssueX(block, Issue.C)
+  def ifAfterIssueEb(block: => Any) = ifAfterIssueX(block, Issue.Eb)
 
   /**
     * REQ
@@ -112,8 +116,9 @@ trait HasCHIOpcodes extends HasCHIMsgParameters {
   def PCrdGrant       = 0x7.U(RSP_OPCODE_WIDTH.W)
   def ReadReceipt     = 0x8.U(RSP_OPCODE_WIDTH.W)
   def SnpRespFwded    = 0x9.U(RSP_OPCODE_WIDTH.W)
+  // C
+  def RespSepData     = C_OPCODE(0xB.U, RSP_OPCODE_WIDTH)
   // E.b
-  def RespSepData     = Eb_OPCODE(0xB.U, RSP_OPCODE_WIDTH)
   def DBIDRespOrd     = Eb_OPCODE(0xE.U, RSP_OPCODE_WIDTH)
 
   /**
@@ -159,7 +164,7 @@ trait HasCHIOpcodes extends HasCHIMsgParameters {
   }
 
   def isSnpQuery(opcode: UInt): Bool = {
-    onIssueEbOrElse(opcode === SnpQuery, false.B)
+    afterIssueEbOrElse(opcode === SnpQuery, false.B)
   }
 
   def isSnpOnceX(opcode: UInt): Bool = {
@@ -237,8 +242,8 @@ trait HasCHIOpcodes extends HasCHIMsgParameters {
   def SnpRespDataPtl    = 0x5.U(DAT_OPCODE_WIDTH.W)
   def SnpRespDataFwded  = 0x6.U(DAT_OPCODE_WIDTH.W)
   def WriteDataCancel   = 0x7.U(DAT_OPCODE_WIDTH.W)
-  // E.b
-  def DataSepResp       = Eb_OPCODE(0xB.U, DAT_OPCODE_WIDTH)
+  // C
+  def DataSepResp       = C_OPCODE(0xB.U, DAT_OPCODE_WIDTH)
 
   def isSnpRespDataX(opcode: UInt): Bool = {
     opcode === SnpRespData || opcode === SnpRespDataPtl || opcode === SnpRespDataFwded
