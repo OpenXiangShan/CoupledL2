@@ -322,6 +322,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       val hartId = Input(UInt(hartIdLen.W))
       val pfCtrlFromCore = Input(new PrefetchCtrlFromCore)
     //  val l2_hint = Valid(UInt(32.W))
+      val matrix_valid = Input(Valid(Bool()))
       val l2_hint = ValidIO(new L2ToL1Hint())
       val l2_tlb_req = new L2ToL1TlbIO(nRespDups = 1)(l2TlbParams)
       val debugTopDown = new Bundle {

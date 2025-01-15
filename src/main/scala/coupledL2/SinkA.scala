@@ -26,6 +26,7 @@ import freechips.rocketchip.tilelink.TLHints._
 import coupledL2.prefetch.PrefetchReq
 import huancun.{AliasKey, PrefetchKey,PutBufferPop,PutBufferBeatEntry}
 import utility.{MemReqSource, XSPerfAccumulate, RRArbiterInit}
+import freechips.rocketchip.tilelink.TLPermissions._
 
 class SinkA(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
@@ -34,9 +35,9 @@ class SinkA(implicit p: Parameters) extends L2Module {
     val task = DecoupledIO(new TaskBundle)
     val cmoAll = Option.when(cacheParams.enableL2Flush) (new IOCMOAll)
   })
-  // assert(!(io.a.valid && (io.a.bits.opcode === PutFullData ||
-  //                         io.a.bits.opcode === PutPartialData)),
-  //   "no Put");
+  assert(!(io.a.valid && (io.a.bits.opcode === PutFullData ||
+                          io.a.bits.opcode === PutPartialData)),
+    "no Put");
 
   // flush L2 all control defines
   val set = Option.when(cacheParams.enableL2Flush)(RegInit(0.U(setBits.W))) 
@@ -50,6 +51,11 @@ class SinkA(implicit p: Parameters) extends L2Module {
   val cmoAllBlock = stateVal === sCMOREQ || stateVal === sWAITLINE
   io.cmoAll.foreach { cmoAll => cmoAll.l2FlushDone := stateVal === sDONE }
   io.cmoAll.foreach { cmoAll => cmoAll.cmoAllBlock := cmoAllBlock }
+
+  def isMatrixGet(a: TLBundleA): Bool = {
+    val en = a.opcode === Get  && (a.user.lift(MatrixKey).getOrElse(0.U) === 1.U)
+    en
+  }
 
   def fromTLAtoTaskBundle(a: TLBundleA): TaskBundle = {
     val task = Wire(new TaskBundle)
@@ -80,7 +86,9 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.metaWen := false.B
     task.tagWen := false.B
     task.dsWen := false.B
-    task.wayMask := 0.U(cacheParams.ways.W)
+    task.wayMask := Mux(a.opcode===PutFullData,
+                        Fill(cacheParams.ways, "b1".U),
+                        0.U(cacheParams.ways.W))
     task.reqSource := a.user.lift(utility.ReqSourceKey).getOrElse(MemReqSource.NoWhere.id.U)
     task.replTask := false.B
     task.vaddr.foreach(_ := a.user.lift(VaddrKey).getOrElse(0.U))
@@ -172,7 +180,8 @@ class SinkA(implicit p: Parameters) extends L2Module {
   // io.refillBufWrite.bits.data.data := dataBuf(RegNext(io.task.bits.bufIdx)).asUInt
   // io.refillBufWrite.bits.beatMask := Fill(beatSize, true.B)
 
-  io.a.ready := !isPutFullData || !first || !full
+  // io.a.ready := !isPutFullData || !first || !full
+  io.a.ready := Mux(first, !noSpace, true.B)
 
   // io.bufResp.data := RegNext(RegEnable(dataBuf(io.task.bits.bufIdx), io.task.fire))
   when(RegNext(io.task.fire)) {

@@ -213,6 +213,7 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle with HasTLChannelBits {
   // to drop duplicate prefetch reqs
   val isAcqOrPrefetch = Bool()
   val isPrefetch = Bool()
+  val isPut = Bool()
 
   // whether the mshr_task already in mainpipe
   val param = UInt(3.W)

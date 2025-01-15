@@ -215,7 +215,15 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
    // toTLBundleD(deqTask, deqData(0).data, deqId)
     toTLBundleD(deqTask, Mux(deqTask.isKeyword.getOrElse(false.B),deqData(1).data,deqData(0).data), deqId)
   )
-
+  when(io.d.valid&&io.d.bits.opcode ===AccessAck){
+    // printf(s"TODO: Put AccessAck GrantBuffer\n")
+  }
+  // io.d.bits := Mux(
+  //   grantBufValid,
+  //   toTLBundleD(grantBuf.task, grantBuf.data.data, grantBuf.grantid),
+  //  // toTLBundleD(deqTask, deqData(0).data, deqId)
+  //   toTLBundleD(deqTask, Mux(deqTask.isKeyword.getOrElse(false.B),deqData(1).data,deqData(0).data), deqId)
+  // )
 
   XSPerfAccumulate("toTLBundleD_valid", deqValid)
   XSPerfAccumulate("toTLBundleD_valid_isKeyword", deqValid && deqTask.isKeyword.getOrElse(false.B))

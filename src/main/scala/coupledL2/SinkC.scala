@@ -109,10 +109,12 @@ class SinkC(implicit p: Parameters) extends L2Module {
       when (first) {
         dataBuf(nextPtr)(beat) := io.c.bits.data
         beatValids(nextPtr)(beat) := true.B
+        printf(p"SinkC First${io.c.bits.address}\n")
       }.otherwise {
         assert(last)
         dataBuf(nextPtrReg)(beat) := io.c.bits.data
         beatValids(nextPtrReg)(beat) := true.B
+        printf(p"SinkC Last${io.c.bits.address}\n")
       }
     }
   }

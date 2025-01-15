@@ -57,6 +57,10 @@ case class MemPageTypeNCField() extends BundleField[Bool](MemPageTypeNC, Output(
 case object VaddrKey extends ControlKey[UInt]("vaddr")
 case class VaddrField(width: Int) extends BundleField[UInt](VaddrKey, Output(UInt(width.W)), _ := 0.U(width.W))
 
+// Pass virtual address of upper level cache
+case object MatrixKey extends ControlKey[UInt]("matrix")
+case class MatrixField(width: Int) extends BundleField[UInt](MatrixKey, Output(UInt(width.W)), _ := 0.U(width.W))
+
 // Pass load_miss_acquire_keyword of upper level cache (L1)
 case object IsKeywordKey extends ControlKey[Bool]("isKeyword")
 case class IsKeywordField() extends BundleField[Bool](IsKeywordKey, Output(Bool()), _ := false.B)
@@ -84,7 +88,7 @@ case class L2Param(
   reqField: Seq[BundleFieldBase] = Nil,
   respKey: Seq[BundleKeyBase] = Seq(IsHitKey),
   // Manager
-  reqKey: Seq[BundleKeyBase] = Seq(AliasKey, VaddrKey, PrefetchKey, ReqSourceKey),
+  reqKey: Seq[BundleKeyBase] = Seq(AliasKey, VaddrKey, PrefetchKey, ReqSourceKey, MatrixKey),
   respField: Seq[BundleFieldBase] = Nil,
 
   innerBuf: TLBufferParams = TLBufferParams(),

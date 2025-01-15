@@ -65,11 +65,12 @@ class Monitor(implicit p: Parameters) extends L2Module {
   assert(RegNext(!(s3_valid && !mshr_req_s3 && dirResult_s3.hit &&
     meta_s3.state === TRUNK && !meta_s3.clients.orR)),
     "Trunk should have some client hit")
+  printf(p"Assert Debug: s3_valid=${s3_valid}, req_s3.fromC=${req_s3.fromC}, dirResult_s3.hit=${dirResult_s3.hit}, meta_s3.clients.orR=${meta_s3.clients.orR}\n")
 
   assert(RegNext(!(s3_valid && req_s3.fromC && dirResult_s3.hit &&
     !meta_s3.clients.orR)),
     "Invalid Client should not send Release")
-
+  // !FIXME BUG Matrix
   // assertion for set blocking
   // A channel task @s1 never have same-set task @s2/s3
   // to ensure that meta written can be read by chnTask
