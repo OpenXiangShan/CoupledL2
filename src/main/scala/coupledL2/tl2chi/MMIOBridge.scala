@@ -160,11 +160,11 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
     val dataCheck = if (enableDataCheck) {
       dataCheckMethod match {
         case 1 => (0 until DATACHECK_WIDTH).map(i =>
-          rxdat.bits.dataCheck(i) ^ rdata(8 * (i + 1) - 1, 8 * i).xorR ^ true.B).reduce(_ | _)
+          rxdat.bits.dataCheck.get(i) ^ rdata(8 * (i + 1) - 1, 8 * i).xorR ^ true.B).reduce(_ | _)
         case 2 =>
           val code = new SECDEDCode
           (0 until DATACHECK_WIDTH).map(i =>
-            code.decode(Cat(rxdat.bits.dataCheck(i) ^ rdata(8 * (i + 1) - 1, 8 * i))).error).reduce(_ | _)
+            code.decode(Cat(rxdat.bits.dataCheck.get(i) ^ rdata(8 * (i + 1) - 1, 8 * i))).error).reduce(_ | _)
         case _ => false.B
       }
     } else {
@@ -292,9 +292,13 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
       case _ => 0.U(DATACHECK_WIDTH.W)
     }
   } else {
-    0.U(DATACHECK_WIDTH.W)
+    DontCare
   }
-  txdat.bits.dataCheck := dataCheck
+  txdat.bits.dataCheck match {
+    case Some(x) =>
+      x := dataCheck
+    case None =>
+  }
 
   rxrsp.ready := (!w_comp || !w_dbidresp || !w_readreceipt.getOrElse(true.B)) && s_txreq
   rxdat.ready := !w_compdata && s_txreq
