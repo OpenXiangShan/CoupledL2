@@ -118,6 +118,7 @@ class tpmetaPortIO(hartIdLen: Int, fullAddressBits: Int, offsetBits: Int)(implic
 /* VIVT, Physical Data */
 class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val io = IO(new Bundle() {
+    val enable = Input(Bool())
     val train = Flipped(DecoupledIO(new PrefetchTrain))
     val req = DecoupledIO(new PrefetchReq)
     val resp = Flipped(DecoupledIO(new PrefetchResp))
@@ -154,7 +155,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   val hartid = cacheParams.hartId
   // 0 / 1: whether to enable temporal prefetcher
-  private val enableTP = Constantin.createRecord("tp_enable"+hartid.toString, initValue = 1)
+  private val cstEnable = Constantin.createRecord("tp_enable"+hartid.toString, initValue = 1)
   // 0 ~ N: throttle cycles for each prefetch request
   private val tpThrottleCycles = Constantin.createRecord("tp_throttleCycles"+hartid.toString, initValue = 4)
   // 0 / 1: whether request to set as trigger on meta hit
@@ -167,6 +168,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   private val trainOnVaddr = Constantin.createRecord("tp_trainOnVaddr"+hartid.toString, initValue = 0)
   // 0 / 1: whether to eliminate L1 prefetch request training
   private val trainOnL1PF = Constantin.createRecord("tp_trainOnL1PF"+hartid.toString, initValue = 0)
+  val enable = io.enable && cstEnable.orR
 
   if (vaddrBitsOpt.isEmpty) {
     assert(!trainOnVaddr)
@@ -355,7 +357,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     }
   }
 
-  io.req.valid := Mux(enableTP.orR, sending_valid, false.B)
+  io.req.valid := Mux(enable, sending_valid, false.B)
   io.req.bits.tag := sendingTag
   io.req.bits.set := sendingSet
   io.req.bits.vaddr.foreach(_ := 0.U)

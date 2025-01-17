@@ -314,6 +314,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
 
     val io = IO(new Bundle {
       val hartId = Input(UInt(hartIdLen.W))
+      val pfCtrlFromCore = Input(new PrefetchCtrlFromCore)
     //  val l2_hint = Valid(UInt(32.W))
       val l2_hint = ValidIO(new L2ToL1Hint())
       val l2_tlb_req = new L2ToL1TlbIO(nRespDups = 1)(l2TlbParams)
@@ -363,6 +364,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         fastArb(prefetchTrains.get, prefetcher.get.io.train, Some("prefetch_train"))
         prefetcher.get.io.req.ready := Cat(prefetchReqsReady).orR
         prefetcher.get.hartId := io.hartId
+        prefetcher.get.pfCtrlFromCore := io.pfCtrlFromCore
         fastArb(prefetchResps.get, prefetcher.get.io.resp, Some("prefetch_resp"))
         prefetcher.get.io.tlb_req <> io.l2_tlb_req
     }
@@ -371,12 +373,10 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         prefetcher.get.io.recv_addr.valid := x.in.head._1.addr_valid
         prefetcher.get.io.recv_addr.bits.addr := x.in.head._1.addr
         prefetcher.get.io.recv_addr.bits.pfSource := x.in.head._1.pf_source
-        prefetcher.get.io_l2_pf_en := x.in.head._1.l2_pf_en
       case None =>
         prefetcher.foreach{
           p =>
             p.io.recv_addr := 0.U.asTypeOf(p.io.recv_addr)
-            p.io_l2_pf_en := false.B
         }
     }
     tpmeta_source_node match {

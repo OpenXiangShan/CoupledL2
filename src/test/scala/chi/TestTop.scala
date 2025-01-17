@@ -166,6 +166,7 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(imp
       dontTouch(l2.module.io)
 
       l2.module.io.hartId := i.U
+      l2.module.io.pfCtrlFromCore := DontCare
       l2.module.io_nodeID := io(i).nodeId
       l2.module.io.debugTopDown := DontCare
       l2.module.io.l2_tlb_req <> DontCare
