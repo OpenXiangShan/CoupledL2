@@ -172,7 +172,11 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         x := dataCheck
       case None =>
     }
-    dat.poision := Fill(POISON_WIDTH, task.corrupt)
+    dat.poison match {
+      case Some(x) =>
+        x := Fill(POISON_WIDTH, task.corrupt)
+      case None =>
+    }
 
     dat
   }

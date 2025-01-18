@@ -51,7 +51,7 @@ class RXDAT(implicit p: Parameters) extends TL2CHIL2Module {
   } else {
     false.B
   }
-  val poison = io.out.bits.poision.orR
+  val poison = io.out.bits.poison.getOrElse(false.B).orR
 
   /* Write Refill Buffer*/
   io.refillBufWrite.valid := io.out.valid

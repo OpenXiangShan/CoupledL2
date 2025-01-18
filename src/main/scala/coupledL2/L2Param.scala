@@ -120,6 +120,7 @@ case class L2Param(
   enableDataECC: Boolean = false,
   // DataCheck
   dataCheck: Option[String] = None,
+  enablePoison: Boolean = false,
 
   // Network layer SAM
   sam: Seq[(AddressSet, Int)] = Seq(AddressSet.everything -> 0)
