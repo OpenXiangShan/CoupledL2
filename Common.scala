@@ -139,7 +139,11 @@ class TaskWithData(implicit p: Parameters) extends LLCBundle {
         x := VecInit((0 until DATACHECK_WIDTH).map(i => data.data(beatId).data(8 * (i + 1) - 1, 8 * i).xorR ^ true.B)).asUInt
       case None =>
     }
-    dat.poision := 0.U
+    dat.poison match {
+      case Some(x) =>
+        x := 0.U
+      case None =>
+    }
     dat
   }
 }
