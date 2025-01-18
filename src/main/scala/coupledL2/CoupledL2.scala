@@ -82,15 +82,6 @@ trait HasCoupledL2Parameters {
   def encDataBankBits = cacheParams.dataCode.width(blockBytes * 2)
   def eccDataBankBits = encDataBits - blockBytes * 2
 
-  // DataCheck
-  def dataCheckMethod : Int = cacheParams.dataCheck.getOrElse("none").toLowerCase match {
-    case "none" => 0
-    case "oddparity" => 1
-    case "secded" => 2
-    case _ => 0
-  }
-  def enableDataCheck = enableCHI && dataCheckMethod != 0
-
   // Prefetch
   def prefetchers = cacheParams.prefetch
   def prefetchOpt = if(prefetchers.nonEmpty) Some(true) else None
