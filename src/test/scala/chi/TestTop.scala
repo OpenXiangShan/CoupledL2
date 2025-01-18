@@ -200,6 +200,7 @@ object TestTopCHIHelper {
         // prefetch
         prefetch            = Seq(BOPParameters()),
         dataCheck           = Some("oddparity"),
+        enablePoison        = true,
 
         // using external RN-F SAM
         sam                 = Seq(AddressSet.everything -> 0)

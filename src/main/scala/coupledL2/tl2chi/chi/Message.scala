@@ -298,6 +298,7 @@ trait HasCHIMsgParameters {
     case _ => 0
   }
   def enableDataCheck = dataCheckMethod != 0
+  def enablePoison = l2CacheParams.enablePoison
 
   def NODEID_WIDTH = CONFIG("NODEID_WIDTH")
 
@@ -511,7 +512,9 @@ class CHIDAT(implicit p: Parameters) extends CHIBundle {
   val dataCheck = Option.when(enableDataCheck) {
     UInt(DATACHECK_WIDTH.W)
   }
-  val poision = UInt(POISON_WIDTH.W)
+  val poison = Option.when(enablePoison) {
+    UInt(POISON_WIDTH.W)
+  }
 
   /* MSB */
 }

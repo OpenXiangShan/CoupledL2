@@ -170,8 +170,9 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
     } else {
       false.B
     }
+    val poison = rxdat.bits.poison.getOrElse(false.B).orR
     denied := denied || nderr
-    corrupt := corrupt || derr || nderr || dataCheck
+    corrupt := corrupt || derr || nderr || dataCheck || poison
   }
   when (io.resp.fire) {
     s_resp := true.B
@@ -297,6 +298,11 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   txdat.bits.dataCheck match {
     case Some(x) =>
       x := dataCheck
+    case None =>
+  }
+  txdat.bits.poison match {
+    case Some(x) =>
+      x := Fill(POISON_WIDTH, req.corrupt)
     case None =>
   }
 
