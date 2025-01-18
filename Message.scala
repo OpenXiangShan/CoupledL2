@@ -22,7 +22,7 @@ import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import org.chipsalliance.cde.config.Field
 import scala.math.max
-import coupledL2.TaskBundle
+import coupledL2.{L2ParamKey, TaskBundle}
 import coupledL2.tl2chi.CHICohStates._
 import coupledL2.tl2chi.CHICohStateTrans._
 import coupledL2.tl2chi.CHICohStateFwdedTrans._
@@ -219,6 +219,7 @@ trait HasCHIMsgParameters {
   implicit val p: Parameters
 
   val issue = p(CHIIssue)
+  val l2CacheParams = p(L2ParamKey)
 
   val DEFAULT_CONFIG = Map(
     "QOS_WIDTH" -> 4,
@@ -289,6 +290,14 @@ trait HasCHIMsgParameters {
   // def D_FIELD[T <: Data](x: T): Option[T] = if (after(issue, Issue.D)) Some(x) else None
   // def Ea_FIELD[T <: Data](x: T): Option[T] = if (after(issue, Issue.Ea)) Some(x) else None
   def Eb_FIELD[T <: Data](x: T): Option[T] = if (after(issue, Issue.Eb)) Some(x) else None
+
+  def dataCheckMethod : Int = l2CacheParams.dataCheck.getOrElse("none").toLowerCase match {
+    case "none" => 0
+    case "oddparity" => 1
+    case "secded" => 2
+    case _ => 0
+  }
+  def enableDataCheck = dataCheckMethod != 0
 
   def NODEID_WIDTH = CONFIG("NODEID_WIDTH")
 
@@ -499,7 +508,9 @@ class CHIDAT(implicit p: Parameters) extends CHIBundle {
   val be = UInt(BE_WIDTH.W)
   val data = UInt(DATA_WIDTH.W)
 
-  val dataCheck = UInt(DATACHECK_WIDTH.W)
+  val dataCheck = Option.when(enableDataCheck) {
+    UInt(DATACHECK_WIDTH.W)
+  }
   val poision = UInt(POISON_WIDTH.W)
 
   /* MSB */
