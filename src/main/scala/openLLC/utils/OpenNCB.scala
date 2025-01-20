@@ -80,8 +80,8 @@ class OpenNCBImp(wrapper: OpenNCB)(implicit p: Parameters) extends LazyModuleImp
       reqRsvdcWidth    = REQ_RSVDC_WIDTH,
       datRsvdcWidth    = DAT_RSVDC_WIDTH,
       dataWidth        = DATA_WIDTH,
-      dataCheckPresent = false,
-      poisonPresent    = false,
+      dataCheckPresent = true,
+      poisonPresent    = true,
       mpamPresent      = true
     )
     case NCBParametersKey => ncbParams
