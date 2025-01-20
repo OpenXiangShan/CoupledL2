@@ -171,6 +171,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
       false.B
     }
     val poison = rxdat.bits.poison.getOrElse(false.B).orR
+    assert(!(dataCheck || poison), "UC should not have DataCheck/Poison error")
     denied := denied || nderr
     corrupt := corrupt || derr || nderr || dataCheck || poison
   }
