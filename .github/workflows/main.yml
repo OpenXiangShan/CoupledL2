@@ -68,24 +68,10 @@ jobs:
         run: make compile
       
       # Clean artifacts folder (./tl-test-new/run) after successful run
-      - name: Unit Test for TileLink version
-        run: |
-            git clone https://github.com/OpenXiangShan/tl-test-new
-            cd ./tl-test-new
-            sed -i 's/ari.target.*/ari.target = 240/g' ./configs/user.tltest.ini
-            rm -rf ./dut/CoupledL2 && ln -s ../.. ./dut/CoupledL2
-            make coupledL2-test-l2l3l2 run THREADS_BUILD=4 CXX_COMPILER=clang++-17
-            rm -rf run/*.vcd run/*.fst run/*.log run/*.db
-
-      - name: Tar up artifacts of Unit Test for TileLink version
-        if: always()
-        run: |
-            test -d ./tl-test-new/run || mkdir -p ./tl-test-new/run
-            tar -zcf ${{ env.RUN_ARCHIVE_TL }} ./tl-test-new/run
-
-      # Clean artifacts folder (./tl-test-new/run) after successful run
       - name: Unit test for CHI version
         run: |
+            rm -rf tl-test-new
+            git clone https://github.com/OpenXiangShan/tl-test-new
             cd ./tl-test-new
             sed -i 's/ari.target.*/ari.target = 240/g' ./configs/user.tltest.ini
             sed -i 's/cmo.enable .*=.*/cmo.enable = 1/g' ./configs/user.tltest.ini
@@ -105,6 +91,23 @@ jobs:
         run: |
             test -d ./tl-test-new/run || mkdir -p ./tl-test-new/run
             tar -zcf ${{ env.RUN_ARCHIVE_CHI }} ./tl-test-new/run
+      
+      # Clean artifacts folder (./tl-test-new/run) after successful run
+      - name: Unit Test for TileLink version
+        run: |
+            rm -rf tl-test-new
+            git clone https://github.com/OpenXiangShan/tl-test-new
+            cd ./tl-test-new
+            sed -i 's/ari.target.*/ari.target = 240/g' ./configs/user.tltest.ini
+            rm -rf ./dut/CoupledL2 && ln -s ../.. ./dut/CoupledL2
+            make coupledL2-test-l2l3l2 run THREADS_BUILD=4 CXX_COMPILER=clang++-17
+            rm -rf run/*.vcd run/*.fst run/*.log run/*.db
+
+      - name: Tar up artifacts of Unit Test for TileLink version
+        if: always()
+        run: |
+            test -d ./tl-test-new/run || mkdir -p ./tl-test-new/run
+            tar -zcf ${{ env.RUN_ARCHIVE_TL }} ./tl-test-new/run
 
       - name: Upload artifacts of Unit Test
         if: always()
