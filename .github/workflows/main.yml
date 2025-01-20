@@ -70,6 +70,8 @@ jobs:
       # Clean artifacts folder (./tl-test-new/run) after successful run
       - name: Unit test for CHI version
         run: |
+            rm -rf tl-test-new
+            git clone https://github.com/OpenXiangShan/tl-test-new
             cd ./tl-test-new
             sed -i 's/ari.target.*/ari.target = 240/g' ./configs/user.tltest.ini
             sed -i 's/cmo.enable .*=.*/cmo.enable = 1/g' ./configs/user.tltest.ini
@@ -93,6 +95,7 @@ jobs:
       # Clean artifacts folder (./tl-test-new/run) after successful run
       - name: Unit Test for TileLink version
         run: |
+            rm -rf tl-test-new
             git clone https://github.com/OpenXiangShan/tl-test-new
             cd ./tl-test-new
             sed -i 's/ari.target.*/ari.target = 240/g' ./configs/user.tltest.ini
