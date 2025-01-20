@@ -120,7 +120,9 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   hint_s1Queue.io.deq.ready := hintQueue.io.enq.ready && !enqValid_s3
   // WARNING:TODO: ensure queue will never overflow
   assert(hint_s1Queue.io.enq.ready, "hint_s1Queue should never be full")
-  assert(hintQueue.io.enq.ready, "hintQueue should never be full")
+  // *NOTICE: 'hintQueue' is now possible to be full and backpressing 'hint_s1Queue'.
+  //          Hence, this assertion here was currently unnecessary and overkilled.
+  //assert(hintQueue.io.enq.ready, "hintQueue should never be full")
 
   val deqLatency = RegNext(io.l1Hint.fire && io.l1Hint.bits.isGrantData)
   val hintEnqValid = enqValid_s3 || hint_s1Queue.io.deq.valid
