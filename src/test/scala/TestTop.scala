@@ -123,7 +123,8 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
       readCompDMT         = false,
       writeCancelable     = false,
       writeNoError        = true,
-      axiBurstAlwaysIncr  = true
+      axiBurstAlwaysIncr  = true,
+      chiDataCheck        = EnumCHIDataCheck.OddParity
     )
   })))
 
