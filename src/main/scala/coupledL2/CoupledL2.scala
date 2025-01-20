@@ -82,15 +82,6 @@ trait HasCoupledL2Parameters {
   def encDataBankBits = cacheParams.dataCode.width(blockBytes * 2)
   def eccDataBankBits = encDataBits - blockBytes * 2
 
-  // DataCheck
-  def dataCheckMethod : Int = cacheParams.dataCheck.getOrElse("none").toLowerCase match {
-    case "none" => 0
-    case "oddparity" => 1
-    case "secded" => 2
-    case _ => 0
-  }
-  def enableDataCheck = enableCHI && dataCheckMethod != 0
-
   // Prefetch
   def prefetchers = cacheParams.prefetch
   def prefetchOpt = if(prefetchers.nonEmpty) Some(true) else None
@@ -314,6 +305,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
 
     val io = IO(new Bundle {
       val hartId = Input(UInt(hartIdLen.W))
+      val pfCtrlFromCore = Input(new PrefetchCtrlFromCore)
     //  val l2_hint = Valid(UInt(32.W))
       val l2_hint = ValidIO(new L2ToL1Hint())
       val l2_tlb_req = new L2ToL1TlbIO(nRespDups = 1)(l2TlbParams)
@@ -365,6 +357,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         fastArb(prefetchTrains.get, prefetcher.get.io.train, Some("prefetch_train"))
         prefetcher.get.io.req.ready := Cat(prefetchReqsReady).orR
         prefetcher.get.hartId := io.hartId
+        prefetcher.get.pfCtrlFromCore := io.pfCtrlFromCore
         fastArb(prefetchResps.get, prefetcher.get.io.resp, Some("prefetch_resp"))
         prefetcher.get.io.tlb_req <> io.l2_tlb_req
     }
@@ -373,12 +366,10 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         prefetcher.get.io.recv_addr.valid := x.in.head._1.addr_valid
         prefetcher.get.io.recv_addr.bits.addr := x.in.head._1.addr
         prefetcher.get.io.recv_addr.bits.pfSource := x.in.head._1.pf_source
-        prefetcher.get.io_l2_pf_en := x.in.head._1.l2_pf_en
       case None =>
         prefetcher.foreach{
           p =>
             p.io.recv_addr := 0.U.asTypeOf(p.io.recv_addr)
-            p.io_l2_pf_en := false.B
         }
     }
     tpmeta_source_node match {
@@ -394,17 +385,12 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
 
     // ** WARNING:TODO: this depends on where the latch is
     // ** if Hint latched in slice, while D-Channel latched in XSTile
-    // ** we need only [hintCycleAhead - 1] later
-    val sliceAhead = hintCycleAhead - 1
+    // ** we need only [hintCycleAhead - 2] later
+    val sliceAhead = hintCycleAhead - 2
 
     val hintChosen = Wire(UInt(banks.W))
     val hintFire = Wire(Bool())
-
-    // if Hint indicates that this slice should fireD, yet no D resp comes out of this slice
-    // then we releaseSourceD, enabling io.d.ready for other slices
-    // TODO: if Hint for single slice is 100% accurate, may consider remove this
-    val releaseSourceD = Wire(Vec(banks, Bool()))
-    val allCanFire = (RegNextN(!hintFire, sliceAhead) && RegNextN(!hintFire, sliceAhead + 1)) || Cat(releaseSourceD).orR
+    val hintWithData = Wire(Bool())
 
     val slices = node.in.zip(node.out).zipWithIndex.map {
       case (((in, edgeIn), (out, edgeOut)), i) =>
@@ -434,12 +420,14 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
           // If slice X has no grant then, it means that the hint at cycle T is wrong,
           // so we relax the restriction on grant selection.
           val sliceCanFire = RegNextN(hintFire && i.U === hintChosen, sliceAhead) ||
-            RegNextN(hintFire && i.U === hintChosen, sliceAhead + 1)
+            RegNextN(hintFire && i.U === hintChosen && hintWithData, sliceAhead + 1)
 
-          releaseSourceD(i) := sliceCanFire && !slice.io.in.d.valid
+          when(sliceCanFire) {
+            assert(slice.io.in.d.valid)
+          }
 
-          in.d.valid := slice.io.in.d.valid && (sliceCanFire || allCanFire)
-          slice.io.in.d.ready := in.d.ready && (sliceCanFire || allCanFire)
+          in.d.valid := slice.io.in.d.valid && sliceCanFire
+          slice.io.in.d.ready := in.d.ready && sliceCanFire
         }
         in.b.bits.address := restoreAddress(slice.io.in.b.bits.address, i)
         slice.io.sliceId := i.U
@@ -527,11 +515,13 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       io.l2_hint.valid := l1HintArb.io.out.fire && sourceIsDcache
       io.l2_hint.bits.sourceId := l1HintArb.io.out.bits.sourceId - dcacheSourceIdStart
       io.l2_hint.bits.isKeyword := l1HintArb.io.out.bits.isKeyword
-      // continuous hints can only be sent every two cycle, since GrantData takes two cycles
-      l1HintArb.io.out.ready := !RegNext(io.l2_hint.valid, false.B)
+      io.l2_hint.bits.isGrantData := l1HintArb.io.out.bits.isGrantData
 
       hintChosen := l1HintArb.io.chosen // ! THIS IS NOT ONE-HOT !
-      hintFire := io.l2_hint.valid
+      hintFire := l1HintArb.io.out.fire
+      hintWithData := l1HintArb.io.out.bits.isGrantData
+      // continuous hints can only be sent every two cycle, since GrantData takes two cycles
+      l1HintArb.io.out.ready := !RegNext(hintFire && hintWithData, false.B)
     }
 
     // Outer interface connection

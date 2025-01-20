@@ -188,7 +188,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val mshr_writeBackFull_s3     = mshr_req_s3 && req_s3.toTXREQ && req_s3.chiOpcode.get === WriteBackFull
   val mshr_writeEvictFull_s3    = mshr_req_s3 && req_s3.toTXREQ && req_s3.chiOpcode.get === WriteEvictFull
   val mshr_writeEvictOrEvict_s3 = mshr_req_s3 && req_s3.toTXREQ &&
-    onIssueEbOrElse(req_s3.chiOpcode.get === WriteEvictOrEvict, false.B)
+    afterIssueEbOrElse(req_s3.chiOpcode.get === WriteEvictOrEvict, false.B)
   val mshr_evict_s3             = mshr_req_s3 && req_s3.toTXREQ && req_s3.chiOpcode.get === Evict
   
   val mshr_cbWrData_s3          = mshr_req_s3 && req_s3.toTXDAT && req_s3.chiOpcode.get === CopyBackWrData
@@ -761,6 +761,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   customL1Hint.io.s3.task.bits.opcode := Mux(sink_resp_s3.valid, sink_resp_s3.bits.opcode, task_s3.bits.opcode)
   // customL1Hint.io.s3.d         := d_s3.valid
   customL1Hint.io.s3.need_mshr := need_mshr_s3
+  customL1Hint.io.s3.retry := task_s3.valid && mshr_refill_s3 && retry
 
   // customL1Hint.io.s4.task                  := task_s4
   // customL1Hint.io.s4.d                     := d_s4.valid

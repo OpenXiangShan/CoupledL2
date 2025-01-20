@@ -157,8 +157,22 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
     rdata := rxdat.bits.data
     val nderr = rxdat.bits.respErr === RespErrEncodings.NDERR
     val derr = rxdat.bits.respErr === RespErrEncodings.DERR
+    val dataCheck = if (enableDataCheck) {
+      dataCheckMethod match {
+        case 1 => (0 until DATACHECK_WIDTH).map(i =>
+          rxdat.bits.dataCheck.get(i) ^ rdata(8 * (i + 1) - 1, 8 * i).xorR ^ true.B).reduce(_ | _)
+        case 2 =>
+          val code = new SECDEDCode
+          (0 until DATACHECK_WIDTH).map(i =>
+            code.decode(Cat(rxdat.bits.dataCheck.get(i) ^ rdata(8 * (i + 1) - 1, 8 * i))).error).reduce(_ | _)
+        case _ => false.B
+      }
+    } else {
+      false.B
+    }
+    val poison = rxdat.bits.poison.getOrElse(false.B).orR
     denied := denied || nderr
-    corrupt := corrupt || derr || nderr
+    corrupt := corrupt || derr || nderr || dataCheck || poison
   }
   when (io.resp.fire) {
     s_resp := true.B
@@ -169,7 +183,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
     }
     when (
       rxrsp.bits.opcode === CompDBIDResp || rxrsp.bits.opcode === DBIDResp ||
-      onIssueEbOrElse(rxrsp.bits.opcode === DBIDRespOrd, false.B)
+      afterIssueEbOrElse(rxrsp.bits.opcode === DBIDRespOrd, false.B)
     ) {
       w_dbidresp := true.B
       srcID := rxrsp.bits.srcID
@@ -268,6 +282,29 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   )
   txdat.bits.data := Fill(words, req.data) & FillInterleaved(8, txdat.bits.be)
   txdat.bits.traceTag := traceTag
+
+  val txdata = txdat.bits.data
+  val dataCheck = if (enableDataCheck) {
+    dataCheckMethod match {
+      case 1 => VecInit((0 until DATACHECK_WIDTH).map(i => txdata(8 * (i + 1) - 1, 8 * i).xorR ^ true.B)).asUInt
+      case 2 =>
+        val code = new SECDEDCode
+        VecInit((0 until DATACHECK_WIDTH).map(i => code.encode(txdata(8 * (i + 1) - 1, 8 * i)))).asUInt
+      case _ => 0.U(DATACHECK_WIDTH.W)
+    }
+  } else {
+    DontCare
+  }
+  txdat.bits.dataCheck match {
+    case Some(x) =>
+      x := dataCheck
+    case None =>
+  }
+  txdat.bits.poison match {
+    case Some(x) =>
+      x := Fill(POISON_WIDTH, req.corrupt)
+    case None =>
+  }
 
   rxrsp.ready := (!w_comp || !w_dbidresp || !w_readreceipt.getOrElse(true.B)) && s_txreq
   rxdat.ready := !w_compdata && s_txreq

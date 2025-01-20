@@ -129,18 +129,17 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     // width parameters and width check
     require(beat.getWidth == dat.data.getWidth)
     val beatOffsetWidth = log2Up(beatBytes)
-    val chunkOffsetWidth = log2Up(16) // DataID is assigned with the granularity of a 16-byte chunk
 
     val dataCheck = if (enableDataCheck) {
       dataCheckMethod match {
-        case 1 => Cat((0 until DATACHECK_WIDTH).map(i => beat(8 * (i + 1) - 1, 8 * i).xorR.asUInt))
+        case 1 => VecInit((0 until DATACHECK_WIDTH).map(i => beat(8 * (i + 1) - 1, 8 * i).xorR ^ true.B)).asUInt
         case 2 =>
           val code = new SECDEDCode
-          Cat((0 until DATACHECK_WIDTH).map(i => code.encode(beat(8 * (i + 1) - 1, 8 * i)).asUInt))
+          VecInit((0 until DATACHECK_WIDTH).map(i => code.encode(beat(8 * (i + 1) - 1, 8 * i)))).asUInt
         case _ => 0.U(DATACHECK_WIDTH.W)
       }
     } else {
-      0.U(DATACHECK_WIDTH.W)
+      DontCare
     }
 
     val deassertBE = task.chiOpcode.get === CopyBackWrData && task.resp.get === I ||
@@ -153,13 +152,14 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     dat.homeNID := task.homeNID.get
     dat.dbID := task.dbID.get
     dat.opcode := task.chiOpcode.get
-    dat.ccID := 0.U // TODO: consider critical chunk id
+    // The CCID field must match the value of Addr[5:4] of the original request.
+    dat.ccID := task.off >> ChunkOffsetWidth
     // The DataID field value must be set to Addr[5:4] because the DataID field represents Addr[5:4] of the lowest
     // addressed byte within the packet.
     // dat.dataID := ParallelPriorityMux(beatsOH.asBools.zipWithIndex.map(x => (x._1, (x._2 << beatOffsetWidth).U(5, 4))))
     dat.dataID := ParallelPriorityMux(
       beatsOH,
-      List.tabulate(beatSize)(i => (i << (beatOffsetWidth - chunkOffsetWidth)).U)
+      List.tabulate(beatSize)(i => (i << (beatOffsetWidth - ChunkOffsetWidth)).U)
     )
     dat.be := be
     dat.data := deassertData(beat, be)
@@ -167,8 +167,16 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     // dat.fwdState := task.fwdState.get
     dat.setFwdState(task.fwdState.get)
     dat.traceTag := task.traceTag.get
-    dat.dataCheck := dataCheck
-    dat.poision := Fill(POISON_WIDTH, task.corrupt)
+    dat.dataCheck match {
+      case Some(x) =>
+        x := dataCheck
+      case None =>
+    }
+    dat.poison match {
+      case Some(x) =>
+        x := Fill(POISON_WIDTH, task.corrupt)
+      case None =>
+    }
 
     dat
   }

@@ -41,17 +41,17 @@ class RXDAT(implicit p: Parameters) extends TL2CHIL2Module {
   val dataCheck = if (enableDataCheck) {
     dataCheckMethod match {
       case 1 => (0 until DATACHECK_WIDTH).map(i =>
-        io.out.bits.dataCheck(i) ^ io.out.bits.data(8 * (i + 1) - 1, 8 * i).xorR).reduce(_ | _)
+        io.out.bits.dataCheck.get(i) ^ io.out.bits.data(8 * (i + 1) - 1, 8 * i).xorR ^ true.B).reduce(_ | _)
       case 2 =>
         val code = new SECDEDCode
         (0 until DATACHECK_WIDTH).map(i =>
-          code.decode(Cat(io.out.bits.dataCheck(i) ^ io.out.bits.data(8 * (i + 1) - 1, 8 * i))).error).reduce(_ | _)
+          code.decode(Cat(io.out.bits.dataCheck.get(i) ^ io.out.bits.data(8 * (i + 1) - 1, 8 * i))).error).reduce(_ | _)
       case _ => false.B
     }
   } else {
     false.B
   }
-  val poison = io.out.bits.poision.orR
+  val poison = io.out.bits.poison.getOrElse(false.B).orR
 
   /* Write Refill Buffer*/
   io.refillBufWrite.valid := io.out.valid

@@ -220,7 +220,7 @@ class RequestArb(implicit p: Parameters) extends L2Module
     task_s2.bits.toTXREQ && (
       task_s2.bits.chiOpcode.get === WriteBackFull ||
       task_s2.bits.chiOpcode.get === WriteEvictFull ||
-      onIssueEbOrElse(task_s2.bits.chiOpcode.get === WriteEvictOrEvict, false.B) ||
+      afterIssueEbOrElse(task_s2.bits.chiOpcode.get === WriteEvictOrEvict, false.B) ||
       task_s2.bits.chiOpcode.get === Evict
     )
   } else {

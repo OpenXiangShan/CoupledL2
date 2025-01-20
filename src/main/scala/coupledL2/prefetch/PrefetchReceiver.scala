@@ -22,7 +22,7 @@ import chisel3._
 import chisel3.util._
 import freechips.rocketchip.tilelink._
 import coupledL2._
-import utility.{MemReqSource, Pipeline, Constantin}
+import utility.{Constantin, RegNextN}
 
 // TODO: PrefetchReceiver is temporarily used since L1&L2 do not support Hint.
 // TODO: Delete this after Hint is accomplished.
@@ -35,8 +35,11 @@ case class PrefetchReceiverParams(n: Int = 32) extends PrefetchParameters {
 
 class PrefetchReceiver()(implicit p: Parameters) extends PrefetchModule {
   val io = IO(new PrefetchIO())
+  val io_enable = IO(Input(Bool()))
+
   // 0 / 1: whether to enable
-  private val enable = Constantin.createRecord("pfRcv_enable"+cacheParams.hartId.toString, initValue = 1)
+  private val cstEnable = Constantin.createRecord("pfRcv_enable"+cacheParams.hartId.toString, initValue = 1)
+  val enable = io_enable && cstEnable.orR
 
   // just ignore train reqs
   io.train.ready := true.B
@@ -48,7 +51,7 @@ class PrefetchReceiver()(implicit p: Parameters) extends PrefetchModule {
   io.req.bits.needT := false.B
   io.req.bits.source := 0.U // TODO: ensure source 0 is dcache
   io.req.bits.pfSource := io.recv_addr.bits.pfSource
-  io.req.valid := enable.orR && io.recv_addr.valid
+  io.req.valid := enable && io.recv_addr.valid
 
   io.tlb_req.req.valid := false.B
   io.tlb_req.req.bits := DontCare
