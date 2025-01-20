@@ -52,7 +52,7 @@ class RXDAT(implicit p: Parameters) extends TL2CHIL2Module {
     false.B
   }
   val poison = io.out.bits.poison.getOrElse(false.B).orR
-  assert(!(dataCheck || poison), "RXDAT(cached) should not have DataCheck/Poison error")
+  assert(!((dataCheck || poison) && io.out.valid), "RXDAT(cached) should not have DataCheck/Poison error")
 
   /* Write Refill Buffer*/
   io.refillBufWrite.valid := io.out.valid
