@@ -35,14 +35,14 @@ class DSBeat(implicit p: Parameters) extends L2Bundle {
 }
 
 class DSBlock(implicit p: Parameters) extends L2Bundle {
-  val data = UInt((blockBytes * 8).W)
+  val data = UInt((eccDataBlockBits * 8).W)
 }
 
 class DSECCBlock(implicit p: Parameters) extends L2Bundle {
   val data = if (enableDataECC) {
     UInt(encDataPaddingBits.W)
   } else {
-    UInt((blockBytes * 8).W)
+    UInt((eccDataBlockBits * 8).W)
   }
 }
 
@@ -50,7 +50,7 @@ class DSECCBankBlock(implicit p: Parameters) extends L2Bundle {
   val data = if (enableDataECC) {
     UInt((encDataBankBits * 4).W)
   } else {
-    UInt((blockBytes * 8).W)
+    UInt((eccDataBlockBits * 8).W)
   }
 }
 
@@ -91,7 +91,8 @@ class DataStorage(implicit p: Parameters) extends L2Module {
   val arrayWrite = Wire(new DSECCBankBlock)
   val arrayWriteData = if (enableDataECC) {
     // cacheParams.dataCode.encode(io.wdata.data).pad(encDataPaddingBits)
-    Cat(VecInit(Seq.tabulate(4)(i => io.wdata.data((blockBytes * 2) * (i + 1) - 1, (blockBytes * 2) * i))).map(data => cacheParams.dataCode.encode(data)))
+    Cat(VecInit(Seq.tabulate(eccDataBankSplit)(i =>
+      io.wdata.data((eccDataBlockBits * 2) * (i + 1) - 1, (eccDataBlockBits * 2) * i))).map(data => cacheParams.dataCode.encode(data)))
   } else {
     io.wdata.data
   }
@@ -99,9 +100,9 @@ class DataStorage(implicit p: Parameters) extends L2Module {
 
   val arrayRead = array.io.r.resp.data(0)
   val dataRead = Wire(new DSBlock)
-  // dataRead.data := arrayRead.data(blockBytes * 8 - 1, 0)
+  // dataRead.data := arrayRead.data(eccDataBlockBits * 8 - 1, 0)
   val bankDataRead = if (enableDataECC) {
-    Cat(VecInit(Seq.tabulate(eccDataBankSplit)(i => arrayRead.data(encDataBankBits * (i + 1) - 1, encDataBankBits * i)(blockBytes * 2 - 1, 0))))
+    Cat(VecInit(Seq.tabulate(eccDataBankSplit)(i => arrayRead.data(encDataBankBits * (i + 1) - 1, encDataBankBits * i)(eccDataBlockBits * 2 - 1, 0))))
   } else {
     arrayRead.data
   }
