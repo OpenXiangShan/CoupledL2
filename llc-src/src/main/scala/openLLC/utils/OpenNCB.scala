@@ -23,6 +23,7 @@ import freechips.rocketchip.amba.axi4._
 import freechips.rocketchip.amba.axi4.AXI4Parameters._
 import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config._
+import coupledL2.L2ParamKey
 import coupledL2.tl2chi._
 import cc.xiangshan.openncb._
 import cc.xiangshan.openncb.axi._
@@ -80,8 +81,8 @@ class OpenNCBImp(wrapper: OpenNCB)(implicit p: Parameters) extends LazyModuleImp
       reqRsvdcWidth    = REQ_RSVDC_WIDTH,
       datRsvdcWidth    = DAT_RSVDC_WIDTH,
       dataWidth        = DATA_WIDTH,
-      dataCheckPresent = true,
-      poisonPresent    = true,
+      dataCheckPresent = DATACHECK_WIDTH != 0,
+      poisonPresent    = POISON_WIDTH != 0,
       mpamPresent      = true
     )
     case NCBParametersKey => ncbParams
