@@ -290,7 +290,7 @@ object TestTopSoCHelper {
 object TestTopSoC_SingleCore extends App {
   TestTopSoCHelper.gen(p => new TestTopSoC(
     numCores = 1,
-    numULAgents = 0,
+    numULAgents = 2,
     banks = 1
   )(p))(args)
 }
@@ -298,7 +298,7 @@ object TestTopSoC_SingleCore extends App {
 object TestTopSoC_DualCore extends App {
   TestTopSoCHelper.gen(p => new TestTopSoC(
     numCores = 2,
-    numULAgents = 0,
+    numULAgents = 2,
     banks = 1
   )(p))(args)
 }
