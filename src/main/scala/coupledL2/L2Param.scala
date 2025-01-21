@@ -119,8 +119,8 @@ case class L2Param(
   enableTagECC: Boolean = false,
   enableDataECC: Boolean = false,
   // DataCheck
-  dataCheck: Option[String] = None,
-  enablePoison: Boolean = false,
+  dataCheck: Option[String] = Some("oddparity"),
+  enablePoison: Boolean = true,
 
   // Network layer SAM
   sam: Seq[(AddressSet, Int)] = Seq(AddressSet.everything -> 0)

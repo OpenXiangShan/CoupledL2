@@ -160,17 +160,18 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
     val dataCheck = if (enableDataCheck) {
       dataCheckMethod match {
         case 1 => (0 until DATACHECK_WIDTH).map(i =>
-          rxdat.bits.dataCheck.get(i) ^ rdata(8 * (i + 1) - 1, 8 * i).xorR ^ true.B).reduce(_ | _)
+          rxdat.bits.dataCheck.get(i) ^ rxdat.bits.data(8 * (i + 1) - 1, 8 * i).xorR ^ true.B).reduce(_ | _)
         case 2 =>
           val code = new SECDEDCode
           (0 until DATACHECK_WIDTH).map(i =>
-            code.decode(Cat(rxdat.bits.dataCheck.get(i) ^ rdata(8 * (i + 1) - 1, 8 * i))).error).reduce(_ | _)
+            code.decode(Cat(rxdat.bits.dataCheck.get(i) ^ rxdat.bits.data(8 * (i + 1) - 1, 8 * i))).error).reduce(_ | _)
         case _ => false.B
       }
     } else {
       false.B
     }
     val poison = rxdat.bits.poison.getOrElse(false.B).orR
+    assert(!(dataCheck || poison), "UC should not have DataCheck/Poison error")
     denied := denied || nderr
     corrupt := corrupt || derr || nderr || dataCheck || poison
   }

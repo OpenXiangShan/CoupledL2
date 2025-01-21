@@ -1103,6 +1103,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   when (rxdat.valid) {
     val nderr = rxdat.bits.respErr.getOrElse(OK) === NDERR
     val derr = rxdat.bits.respErr.getOrElse(OK) === DERR
+    val rxdatCorrupt = rxdat.bits.corrupt
     ifAfterIssueC {
       when (rxdat.bits.chiOpcode.get === DataSepResp) {
         require(beatSize == 2) // TODO: This is ugly
@@ -1113,7 +1114,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         gotDirty := gotDirty || rxdatIsU_PD
         gotGrantData := true.B
         denied := denied || nderr
-        corrupt := corrupt || derr || nderr
+        corrupt := corrupt || derr || nderr || rxdatCorrupt
       }
     }
 
