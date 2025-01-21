@@ -425,6 +425,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
           }
 
           in.d.valid := slice.io.in.d.valid && sliceCanFire
+          assert(in.d.ready)
           slice.io.in.d.ready := in.d.ready && sliceCanFire
         }
         in.b.bits.address := restoreAddress(slice.io.in.b.bits.address, i)

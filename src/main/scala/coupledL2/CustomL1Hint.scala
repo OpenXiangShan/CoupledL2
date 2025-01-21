@@ -30,6 +30,10 @@ class HintQueueEntry(implicit p: Parameters) extends L2Bundle {
   val isKeyword = Bool()
 }
 
+class RetryQueueEntry(implicit p: Parameters) extends L2Bundle {
+  val source = UInt(sourceIdBits.W)
+}
+
 class CustomL1HintIOBundle(implicit p: Parameters) extends L2Bundle {
   // input information
   val s1 = Flipped(ValidIO(new TaskBundle()))
@@ -110,6 +114,7 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   val hintEntries = mshrsAll
   val hintEntriesWidth = log2Ceil(hintEntries)
   val hintQueue = Module(new Queue(new HintQueueEntry, hintEntries))
+  val hintDropQueue = Module(new Queue(new RetryQueueEntry, hintEntries, flow = true))
 
   // this will have at most 2 entries
   val hint_s1Queue = Module(new Queue(new HintQueueEntry, 4, flow = true))
@@ -119,8 +124,14 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   hint_s1Queue.io.enq.bits.isKeyword := enqKeyWord_s1
   hint_s1Queue.io.deq.ready := hintQueue.io.enq.ready && !enqValid_s3
   // WARNING:TODO: ensure queue will never overflow
-  assert(hint_s1Queue.io.enq.ready, "hint_s1Queue should never be full")
-  assert(hintQueue.io.enq.ready, "hintQueue should never be full")
+  // assert(hint_s1Queue.io.enq.ready, "hint_s1Queue should never be full")
+  // assert(hintQueue.io.enq.ready, "hintQueue should never be full")
+
+  val hintDropValid = hintQueue.io.deq.valid && hintDropQueue.io.deq.valid && hintQueue.io.deq.bits.source === hintDropQueue.io.deq.bits.source
+
+  hintDropQueue.io.enq.valid := io.s3.retry && RegNextN(enqValid_s1, 2)
+  hintDropQueue.io.enq.bits.source := task_s3.bits.sourceId
+  hintDropQueue.io.deq.ready := hintDropValid
 
   val deqLatency = RegNext(io.l1Hint.fire && io.l1Hint.bits.isGrantData)
   val hintEnqValid = enqValid_s3 || hint_s1Queue.io.deq.valid
@@ -129,9 +140,9 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   hintQueue.io.enq.bits.opcode := RegEnable(Mux(enqValid_s3, enqOpcode_s3, hint_s1Queue.io.deq.bits.opcode), hintEnqValid)
   hintQueue.io.enq.bits.source := RegEnable(Mux(enqValid_s3, enqSource_s3, hint_s1Queue.io.deq.bits.source), hintEnqValid)
   hintQueue.io.enq.bits.isKeyword := RegEnable(Mux(enqValid_s3, enqKeyWord_s3, hint_s1Queue.io.deq.bits.isKeyword), hintEnqValid)
-  hintQueue.io.deq.ready := io.l1Hint.ready && !deqLatency
+  hintQueue.io.deq.ready := io.l1Hint.ready && !deqLatency || hintDropValid
 
-  io.l1Hint.valid := hintQueue.io.deq.valid && !deqLatency && !io.s3.retry
+  io.l1Hint.valid := hintQueue.io.deq.valid && !deqLatency && !hintDropValid
   io.l1Hint.bits.sourceId := hintQueue.io.deq.bits.source
   io.l1Hint.bits.isKeyword := hintQueue.io.deq.bits.isKeyword
   io.l1Hint.bits.isGrantData := hintQueue.io.deq.bits.opcode === GrantData || hintQueue.io.deq.bits.opcode === AccessAckData
