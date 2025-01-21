@@ -757,7 +757,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   customL1Hint.io.s3.task.bits.opcode := Mux(sink_resp_s3.valid, sink_resp_s3.bits.opcode, task_s3.bits.opcode)
   // customL1Hint.io.s3.d         := d_s3.valid
   customL1Hint.io.s3.need_mshr := need_mshr_s3
-  customL1Hint.io.s3.retry := task_s3.valid && mshr_refill_s3 && retry
 
   // customL1Hint.io.s4.task                  := task_s4
   // customL1Hint.io.s4.d                     := d_s4.valid

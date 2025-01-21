@@ -353,7 +353,6 @@ class PrefetchRecv extends Bundle {
 class L2ToL1Hint(implicit p: Parameters) extends Bundle {
   val sourceId = UInt(32.W)    // tilelink sourceID
   val isKeyword = Bool()       // miss entry keyword
-  val isGrantData = Bool()
 }
 
 // custom l2 - l1 tlb
