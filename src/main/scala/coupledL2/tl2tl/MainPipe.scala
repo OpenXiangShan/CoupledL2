@@ -550,7 +550,6 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   // overwrite opcode: if sinkReq can respond, use sink_resp_s3.bits.opcode = Grant/GrantData
   customL1Hint.io.s3.task.bits.opcode := Mux(sink_resp_s3.valid, sink_resp_s3.bits.opcode, task_s3.bits.opcode)
   customL1Hint.io.s3.need_mshr := need_mshr_s3
-  customL1Hint.io.s3.retry := task_s3.valid && mshr_refill_s3 && retry
 
   customL1Hint.io.l1Hint <> io.l1Hint
 
