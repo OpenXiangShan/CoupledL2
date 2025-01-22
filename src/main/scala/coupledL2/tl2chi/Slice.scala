@@ -92,6 +92,8 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
 
   reqArb.io.ATag := reqBuf.io.ATag
   reqArb.io.ASet := reqBuf.io.ASet
+  //  reqArb.io.cmoAllBlock := sinkA.io.cmoAll.cmoAllBlock
+  reqArb.io.cmoAllBlock.foreach{_ := sinkA.io.cmoAll.map(_.cmoAllBlock).getOrElse(false.B)}
   reqArb.io.sinkA <> reqBuf.io.out
   reqArb.io.sinkB <> rxsnp.io.task
   reqArb.io.sinkC <> sinkC.io.task
@@ -208,6 +210,14 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   rxrsp.io.out <> io.out.rx.rsp
 
   io_pCrd <> mshrCtl.io.pCrd
+
+  /* Connect l2 flush All channel */ 
+  sinkA.io.cmoAll.foreach {cmoAll => cmoAll.cmoLineDone := mainPipe.io.cmoLineDone.getOrElse(false.B)}
+  sinkA.io.cmoAll.foreach {cmoAll => cmoAll.mshrValid := VecInit(mshrCtl.io.msInfo.map(m => m.valid)).reduce(_|_)}
+  sinkA.io.cmoAll.foreach {cmoAll => cmoAll.l2Flush := io.l2Flush.getOrElse(false.B)}
+  mainPipe.io.cmoAllBlock.foreach {_ := sinkA.io.cmoAll.map(_.cmoAllBlock).getOrElse(false.B)}
+
+  io.l2FlushDone.foreach {_ := RegNext(sinkA.io.cmoAll.map(_.l2FlushDone).getOrElse(false.B))}
 
   /* ===== Hardware Performance Monitor ===== */
   val perfEvents = Seq(mshrCtl, mainPipe).flatMap(_.getPerfEvents)
