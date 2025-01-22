@@ -1129,7 +1129,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       dbid := rxdat.bits.dbID.getOrElse(0.U)
       homenid := rxdat.bits.homeNID.getOrElse(0.U)
       denied := denied || nderr
-      corrupt := corrupt || derr || nderr
+      corrupt := corrupt || derr || nderr || rxdatCorrupt
       req.traceTag.get := req.traceTag.get || rxdat.bits.traceTag.getOrElse(false.B)
     }
   }
