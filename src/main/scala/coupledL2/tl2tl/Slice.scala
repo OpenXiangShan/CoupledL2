@@ -67,6 +67,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   reqArb.io.sinkA <> a_reqBuf.io.out
   reqArb.io.ATag := a_reqBuf.io.ATag
   reqArb.io.ASet := a_reqBuf.io.ASet
+  reqArb.io.cmoAllBlock.foreach{_ := false.B}
 
   reqArb.io.sinkB <> sinkB.io.task
   reqArb.io.sinkC <> sinkC.io.task
@@ -175,6 +176,8 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   sinkA.io.cmoAll.foreach {cmoAll => cmoAll.mshrValid := false.B}
   sinkA.io.cmoAll.foreach {cmoAll => cmoAll.cmoLineDone := false.B}
   sinkA.io.cmoAll.foreach {cmoAll => cmoAll.l2Flush := false.B}
+
+  io.l2FlushDone.foreach {_ := false.B}
 
   dontTouch(io.in)
   dontTouch(io.out)
