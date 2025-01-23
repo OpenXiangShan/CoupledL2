@@ -199,8 +199,16 @@ object TestTopCHIHelper {
 
         // prefetch
         prefetch            = Seq(BOPParameters()),
+
+        // data check
         dataCheck           = Some("oddparity"),
         enablePoison        = true,
+
+        // internal ECC
+        tagECC              = Some("secded"),
+        dataECC             = Some("secded"),
+        enableTagECC        = true,
+        enableDataECC       = true,
 
         // using external RN-F SAM
         sam                 = Seq(AddressSet.everything -> 0)
