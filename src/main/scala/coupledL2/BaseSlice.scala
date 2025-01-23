@@ -37,6 +37,8 @@ abstract class BaseSliceIO[T_OUT <: BaseOuterBundle](implicit p: Parameters) ext
   val latePF = topDownOpt.map(_ => Output(Bool()))
   val error = DecoupledIO(new L2CacheErrorInfo())
   val l2Miss = Output(Bool())
+  val l2Flush = Option.when(cacheParams.enableL2Flush) (Input(Bool()))
+  val l2FlushDone = Option.when(cacheParams.enableL2Flush) (Output(Bool()))
 }
 
 abstract class BaseSlice[T_OUT <: BaseOuterBundle](implicit p: Parameters) extends L2Module with HasPerfEvents {

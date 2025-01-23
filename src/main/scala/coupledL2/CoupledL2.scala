@@ -316,7 +316,10 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       }
       val l2Miss = Output(Bool())
       val error = Output(new L2CacheErrorInfo()(l2ECCParams))
+//      val l2Flush = Option.when(cacheParams.enableL2Flush) (Input(Bool()))
+//      val l2FlushDone = Option.when(cacheParams.enableL2Flush) (Output(Bool()))
     })
+
 
     // Display info
     val sizeBytes = cacheParams.toCacheParams.capacity.toDouble
@@ -435,6 +438,9 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
 
         slice.io.error.ready := enableECC.asBool // TODO: fix the datapath as optional
 
+//      slice.io.l2Flush.foreach(_ := io.l2Flush.getOrElse(false.B))
+        slice.io.l2Flush.foreach(_ := false.B)
+
         slice.io.prefetch.zip(prefetcher).foreach {
           case (s, p) =>
             s.req.valid := p.io.req.valid && bank_eq(p.io.req.bits.set, i, bankBits)
@@ -492,6 +498,9 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       io.error.valid := false.B
       io.error.address := 0.U.asTypeOf(io.error.address)
     }
+
+    //L2 Flush Done
+    //io.l2FlushDone.foreach(_ :=  VecInit(slices.zipWithIndex.map { case (s, i) => s.io.l2FlushDone.getOrElse(false.B)}).reduce(_&_) )
 
     // Refill hint
     if (enableHintGuidedGrant) {
