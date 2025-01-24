@@ -76,11 +76,14 @@ trait HasCoupledL2Parameters {
   def encTagBits = cacheParams.tagCode.width(tagBits)
   def eccTagBits = encTagBits - tagBits
   def enableDataECC = cacheParams.enableDataECC
-  def encDataBits = cacheParams.dataCode.width(blockBytes * 8)
-  def eccDataBits = encDataBits - blockBytes * 8
+  def eccWordBits = 64
+  def eccBankWord = 2
+  def eccBankBits = eccWordBits * eccBankWord
+  def encDataBits = cacheParams.dataCode.width(eccBankBits * 4)
+  def eccDataBits = encDataBits - eccBankBits * 4
   def encDataPaddingBits = ((encDataBits + 3) / eccDataBankSplit) * eccDataBankSplit
-  def encDataBankBits = cacheParams.dataCode.width(blockBytes * 2)
-  def eccDataBankBits = encDataBits - blockBytes * 2
+  def encDataBankBits = cacheParams.dataCode.width(eccBankBits)
+  def eccDataBankBits = encDataBits - eccBankBits
 
   // Prefetch
   def prefetchers = cacheParams.prefetch
