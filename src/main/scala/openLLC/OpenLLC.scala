@@ -82,8 +82,6 @@ class OpenLLC(implicit p: Parameters) extends LLCModule with HasClientInfo {
 
   io.sn <> snLinkMonitor.io.out
 
-  dontTouch(io)
-
   topDown match {
     case Some(t) =>
       t.io.msStatus.zip(slices).foreach {
