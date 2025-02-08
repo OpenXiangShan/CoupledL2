@@ -999,9 +999,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       state.s_reissue.get := true.B
       gotRetryAck := false.B
       gotPCrdGrant := false.B
-      when (release_valid2) {
-        state.s_cbwrdata.get := isEvict
-      }
     }
   }
   when (io.tasks.txrsp.fire) {
