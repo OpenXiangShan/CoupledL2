@@ -41,6 +41,7 @@ trait HasCoupledL2Parameters {
   def XLEN = 64
   def blocks = cacheParams.sets * cacheParams.ways
   def blockBytes = cacheParams.blockBytes
+  def blockBits = blockBytes * 8
   def beatBytes = cacheParams.channelBytes.d.get
   def beatSize = blockBytes / beatBytes
 
@@ -72,18 +73,14 @@ trait HasCoupledL2Parameters {
   // ECC
   def enableECC = cacheParams.enableTagECC || cacheParams.enableDataECC
   def enableTagECC = cacheParams.enableTagECC
-  def eccDataBankSplit = 4 // SRAM dataSplit = 4
+  def dataBankSplit = 4 // SRAM dataSplit = 4
   def encTagBits = cacheParams.tagCode.width(tagBits)
   def eccTagBits = encTagBits - tagBits
   def enableDataECC = cacheParams.enableDataECC
-  def eccWordBits = 64
-  def eccBankWord = 2
-  def eccBankBits = eccWordBits * eccBankWord
-  def encDataBits = cacheParams.dataCode.width(eccBankBits * 4)
-  def eccDataBits = encDataBits - eccBankBits * 4
-  def encDataPaddingBits = ((encDataBits + 3) / eccDataBankSplit) * eccDataBankSplit
-  def encDataBankBits = cacheParams.dataCode.width(eccBankBits)
-  def eccDataBankBits = encDataBits - eccBankBits
+  def wordBits = 64
+  def bankWords = blockBits / wordBits / dataBankSplit
+  def dataBankBits = wordBits * bankWords
+  def encBankBits = cacheParams.dataCode.width(dataBankBits)
 
   // Prefetch
   def prefetchers = cacheParams.prefetch
