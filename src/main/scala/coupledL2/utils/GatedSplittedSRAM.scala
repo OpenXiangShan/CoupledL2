@@ -3,7 +3,7 @@ package coupledL2.utils
 import chisel3._
 import chisel3.util._
 import utility.mbist.MbistClockGateCell
-import utility.sram.SramBroadcastBundle
+import utility.sram.{SramBroadcastBundle, SramHelper}
 
 // SplittedSRAM with clockGate to each of the small splitted srams
 // - this is a requirement from DFT, cause mbist needs to access each sram separately
@@ -17,8 +17,9 @@ class GatedSplittedSRAM[T <: Data]
   shouldReset: Boolean = false, holdRead: Boolean = false,
   singlePort: Boolean = true, bypassWrite: Boolean = false,
   clkDivBy2: Boolean = false, readMCP2: Boolean = true,
-  hasMbist:Boolean = false, extraHold: Boolean = false
-) extends SplittedSRAM[T](
+  hasMbist:Boolean = false, extraHold: Boolean = false,
+  suffix: Option[String] = None
+)(implicit valName: sourcecode.FullName) extends SplittedSRAM[T](
   gen = gen,
   set = set,
   way = way,
@@ -33,7 +34,8 @@ class GatedSplittedSRAM[T <: Data]
   readMCP2 = readMCP2,
   hasMbist = hasMbist,
   extraHold = extraHold,
-  extClockGate = true
+  extClockGate = true,
+  suffix = Some(suffix.getOrElse(SramHelper.getSramSuffix(valName.value)))
 ) {
   // en is the actual r/w valid (last for one cycle)
   // en is used to generate gated_clock for each SRAM

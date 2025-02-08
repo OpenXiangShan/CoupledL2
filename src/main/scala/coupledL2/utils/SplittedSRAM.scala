@@ -2,6 +2,7 @@ package coupledL2.utils
 
 import chisel3._
 import chisel3.util._
+import utility.sram.SramHelper
 
 // split SRAM by set/way/data
 // 1. use lower-bits of set to select bank
@@ -17,8 +18,9 @@ class SplittedSRAM[T <: Data]
   singlePort: Boolean = true, bypassWrite: Boolean = false,
   clkDivBy2: Boolean = false, readMCP2: Boolean = true,
   clockGated: Boolean = false, hasMbist:Boolean = false,
-  extraHold: Boolean = false, extClockGate:Boolean = false
-) extends Module {
+  extraHold: Boolean = false, extClockGate:Boolean = false,
+  suffix: Option[String] = None
+)(implicit valName: sourcecode.FullName) extends Module {
   val io = IO(new Bundle() {
     val r = Flipped(new SRAMReadBus(gen, set, way))
     val w = Flipped(new SRAMWriteBus(gen, set, way))
@@ -47,7 +49,8 @@ class SplittedSRAM[T <: Data]
       singlePort = singlePort, bypassWrite = bypassWrite,
       hasMbist = hasMbist, latency = if(readMCP2) 2 else 1,
       extraHold = extraHold, withClockGate = clockGated,
-      extClockGate = extClockGate
+      extClockGate = extClockGate,
+      suffix = Some(suffix.getOrElse(SramHelper.getSramSuffix(valName.value)))
     ))
   )))
 
