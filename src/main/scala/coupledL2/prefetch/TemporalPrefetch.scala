@@ -31,9 +31,9 @@ package coupledL2.prefetch
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
-import utility.{ChiselDB, Constantin, MemReqSource, SRAMTemplate}
+import utility.{ChiselDB, Constantin, MemReqSource}
 import coupledL2.HasCoupledL2Parameters
-import coupledL2.utils.ReplacementPolicy
+import coupledL2.utils.{ReplacementPolicy, SRAMTemplate}
 import huancun.{TPmetaReq, TPmetaResp}
 
 case class TPParameters(
@@ -138,7 +138,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     (x << offsetBits.U).asUInt
   }
 
-  val tpMetaTable = Module(
+  val cpl2TpMetaTable = Module(
     new SRAMTemplate(new tpMetaEntry(), set = tpTableNrSet, way = tpTableAssoc, shouldReset = false, singlePort = true)
   )
   val dataReadQueue = Module(new Queue(new TPmetaReq(hartIdLen, fullAddressBits, offsetBits), dataReadQueueDepth, pipe = false, flow = false))
@@ -174,7 +174,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     assert(!trainOnVaddr)
   }
 
-  /* Stage 0: query tpMetaTable */
+  /* Stage 0: query cpl2TpMetaTable */
 
   val s0_valid = io.train.fire && Mux(trainOnVaddr.orR, io.train.bits.vaddr.getOrElse(0.U) =/= 0.U, true.B) &&
     Mux(trainOnL1PF.orR, true.B, io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
@@ -182,7 +182,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val trainPaddr = io.train.bits.addr
   val (vtag_s0, vset_s0) = if (vaddrBitsOpt.nonEmpty) parseVaddr(trainVaddr) else (0.U, 0.U)
   val (ptag_s0, pset_s0) = parsePaddr(trainPaddr)
-  val metas = tpMetaTable.io.r(s0_valid, Mux(trainOnVaddr.orR, vset_s0, pset_s0)).resp.data
+  val metas = cpl2TpMetaTable.io.r(s0_valid, Mux(trainOnVaddr.orR, vset_s0, pset_s0)).resp.data
 
 
   /* Stage 1: parse tpMeta to judge hit or miss, choose the victim */
@@ -304,7 +304,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val tpTable_w_way = write_record_trigger.way
   val tpTable_w_wayOH = Mux(resetFinish, UIntToOH(write_record_trigger.way), Fill(tpTableAssoc, true.B))
 
-  tpMetaTable.io.w.apply(tpTable_w_valid || !resetFinish, tpMeta_w_bits, tpTable_w_set, tpTable_w_wayOH)
+  cpl2TpMetaTable.io.w.apply(tpTable_w_valid || !resetFinish, tpMeta_w_bits, tpTable_w_set, tpTable_w_wayOH)
 
   dataWriteQueue.io.enq.valid := tpTable_w_valid
   dataWriteQueue.io.enq.bits.wmode := true.B

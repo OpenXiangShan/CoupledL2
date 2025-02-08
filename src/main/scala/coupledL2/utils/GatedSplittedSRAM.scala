@@ -3,6 +3,7 @@ package coupledL2.utils
 import chisel3._
 import chisel3.util._
 import utility.ClockGate
+import freechips.rocketchip.diplomacy.ValName
 
 // SplittedSRAM with clockGate to each of the small splitted srams
 // - this is a requirement from DFT, cause mbist needs to access each sram separately
@@ -16,7 +17,7 @@ class GatedSplittedSRAM[T <: Data]
   shouldReset: Boolean = false, holdRead: Boolean = false,
   singlePort: Boolean = true, bypassWrite: Boolean = false,
   clkDivBy2: Boolean = false, readMCP2: Boolean = true
-) extends SplittedSRAM[T](
+)(implicit valName: ValName) extends SplittedSRAM[T](
   gen, set, way,
   setSplit, waySplit, dataSplit,
   shouldReset, holdRead, singlePort, bypassWrite, clkDivBy2, readMCP2

@@ -21,7 +21,7 @@ import chisel3._
 import chisel3.util._
 import freechips.rocketchip.util.SetAssocLRU
 import coupledL2.utils._
-import utility.{ParallelPriorityMux, RegNextN, XSPerfAccumulate, Code, SRAMTemplate}
+import utility.{ParallelPriorityMux, RegNextN, XSPerfAccumulate, Code}
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.prefetch.PfSource
 import freechips.rocketchip.tilelink.TLMessages._
@@ -140,8 +140,8 @@ class Directory(implicit p: Parameters) extends L2Module {
   val metaWen = io.metaWReq.valid
   val replacerWen = WireInit(false.B)
 
-  // val tagArray  = Module(new SRAMTemplate(UInt(tagBits.W), sets, ways, singlePort = true))
-  val tagArray = if (enableTagECC) {
+  // val cpl2TagArray  = Module(new SRAMTemplate(UInt(tagBits.W), sets, ways, singlePort = true))
+  val cpl2TagArray = if (enableTagECC) {
     Module(new SplittedSRAM(
       gen = UInt((tagBits + eccTagBits).W),
       set = sets,
@@ -161,7 +161,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     ))
   }
 
-  val metaArray = Module(new SRAMTemplate(new MetaEntry, sets, ways, singlePort = true))
+  val cpl2MetaArray = Module(new SRAMTemplate(new MetaEntry, sets, ways, singlePort = true))
 
   val tagRead = if (enableTagECC) {
     Wire(Vec(ways, UInt((tagBits + eccTagBits).W)))
@@ -176,7 +176,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   // Replacer
   val repl = ReplacementPolicy.fromString(cacheParams.replacement, ways)
   val random_repl = cacheParams.replacement == "random"
-  val replacer_sram_opt = if(random_repl) None else
+  val cpl2_replacer_sram_opt = if(random_repl) None else
     Some(Module(new SRAMTemplate(UInt(repl.nBits.W), sets, 1, singlePort = true, shouldReset = true)))
 
   /* ====== Generate response signals ====== */
@@ -199,8 +199,8 @@ class Directory(implicit p: Parameters) extends L2Module {
   } else {
     io.tagWReq.bits.wtag
   }
-  tagRead := tagArray.io.r(io.read.fire, io.read.bits.set).resp.data
-  tagArray.io.w(
+  tagRead := cpl2TagArray.io.r(io.read.fire, io.read.bits.set).resp.data
+  cpl2TagArray.io.w(
     tagWen,
     tagWrite,
     io.tagWReq.bits.set,
@@ -208,8 +208,8 @@ class Directory(implicit p: Parameters) extends L2Module {
   )
 
   // Meta R/W
-  metaRead := metaArray.io.r(io.read.fire, io.read.bits.set).resp.data
-  metaArray.io.w(
+  metaRead := cpl2MetaArray.io.r(io.read.fire, io.read.bits.set).resp.data
+  cpl2MetaArray.io.w(
     metaWen,
     io.metaWReq.bits.wmeta,
     io.metaWReq.bits.set,
@@ -280,8 +280,8 @@ class Directory(implicit p: Parameters) extends L2Module {
   io.resp.bits.replacerInfo := replacerInfo_s3
 
   dontTouch(io)
-  dontTouch(metaArray.io)
-  dontTouch(tagArray.io)
+  dontTouch(cpl2MetaArray.io)
+  dontTouch(cpl2TagArray.io)
 
   io.read.ready := !io.metaWReq.valid && !io.tagWReq.valid && !replacerWen
 
@@ -293,7 +293,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     }
     0.U
   } else {
-    val repl_sram_r = replacer_sram_opt.get.io.r(io.read.fire, io.read.bits.set).resp.data(0)
+    val repl_sram_r = cpl2_replacer_sram_opt.get.io.r(io.read.fire, io.read.bits.set).resp.data(0)
     val repl_state = RegEnable(repl_sram_r, 0.U(repl.nBits.W), reqValid_s2)
     repl_state
   }
@@ -325,12 +325,12 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   // hit-Promotion, miss-Insertion for RRIP
   // origin-bit marks whether the data_block is reused
-  val origin_bit_opt = if(random_repl) None else
+  val cpl2_origin_bit_opt = if(random_repl) None else
     Some(Module(new SRAMTemplate(Bool(), sets, ways, singlePort = true, shouldReset = true)))
-  val origin_bits_r = origin_bit_opt.get.io.r(io.read.fire, io.read.bits.set).resp.data
+  val origin_bits_r = cpl2_origin_bit_opt.get.io.r(io.read.fire, io.read.bits.set).resp.data
   val origin_bits_hold = Wire(Vec(ways, Bool()))
   origin_bits_hold := HoldUnless(origin_bits_r, RegNext(io.read.fire, false.B))
-  origin_bit_opt.get.io.w(
+  cpl2_origin_bit_opt.get.io.w(
       !resetFinish || replacerWen,
       Mux(resetFinish, hit_s3, false.B),
       Mux(resetFinish, req_s3.set, resetIdx),
@@ -351,7 +351,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3, hit_s3, inv, rrip_req_type)
     val repl_init = Wire(Vec(ways, UInt(2.W)))
     repl_init.foreach(_ := 2.U(2.W))
-    replacer_sram_opt.get.io.w(
+    cpl2_replacer_sram_opt.get.io.w(
       !resetFinish || replacerWen,
       Mux(resetFinish, next_state_s3, repl_init.asUInt),
       Mux(resetFinish, set_s3, resetIdx),
@@ -385,7 +385,7 @@ class Directory(implicit p: Parameters) extends L2Module {
 
     val repl_init = Wire(Vec(ways, UInt(2.W)))
     repl_init.foreach(_ := 2.U(2.W))
-    replacer_sram_opt.get.io.w(
+    cpl2_replacer_sram_opt.get.io.w(
       !resetFinish || replacerWen,
       Mux(resetFinish, next_state_s3, repl_init.asUInt),
       Mux(resetFinish, set_s3, resetIdx),
@@ -393,7 +393,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     )
   } else {
     val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3)
-    replacer_sram_opt.get.io.w(
+    cpl2_replacer_sram_opt.get.io.w(
       !resetFinish || replacerWen,
       Mux(resetFinish, next_state_s3, 0.U),
       Mux(resetFinish, set_s3, resetIdx),

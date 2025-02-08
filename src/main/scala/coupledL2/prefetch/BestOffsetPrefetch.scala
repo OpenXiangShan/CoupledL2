@@ -26,9 +26,9 @@
 
 package coupledL2.prefetch
 
-import utility.{ChiselDB, Constantin, MemReqSource, ParallelPriorityMux, RRArbiterInit, SRAMTemplate, XSPerfAccumulate}
+import utility.{ChiselDB, Constantin, MemReqSource, ParallelPriorityMux, RRArbiterInit, XSPerfAccumulate}
 import org.chipsalliance.cde.config.Parameters
-import chisel3.DontCare.:=
+import coupledL2.utils._
 import chisel3._
 import chisel3.util._
 import coupledL2.{HasCoupledL2Parameters, L2TlbReq, L2ToL1TlbIO, TlbCmd, Pbmt}
@@ -170,34 +170,34 @@ class RecentRequestTable(name: String)(implicit p: Parameters) extends BOPModule
     val tag = UInt(rrTagBits.W)
   }
 
-  val rrTable = Module(
+  val cpl2RrTable = Module(
     new SRAMTemplate(rrTableEntry(), set = rrTableEntries, way = 1, shouldReset = true, singlePort = true)
   )
 
   val wAddr = io.w.bits
-  rrTable.io.w.req.valid := io.w.valid && !io.r.req.valid
-  rrTable.io.w.req.bits.setIdx := idx(wAddr)
-  rrTable.io.w.req.bits.data(0).valid := true.B
-  rrTable.io.w.req.bits.data(0).tag := tag(wAddr)
+  cpl2RrTable.io.w.req.valid := io.w.valid && !io.r.req.valid
+  cpl2RrTable.io.w.req.bits.setIdx := idx(wAddr)
+  cpl2RrTable.io.w.req.bits.data(0).valid := true.B
+  cpl2RrTable.io.w.req.bits.data(0).tag := tag(wAddr)
 
   val rAddr = io.r.req.bits.addr - signedExtend((io.r.req.bits.testOffset << offsetBits), fullAddrBits)
   val rData = Wire(rrTableEntry())
-  rrTable.io.r.req.valid := io.r.req.fire
-  rrTable.io.r.req.bits.setIdx := idx(rAddr)
-  rData := rrTable.io.r.resp.data(0)
+  cpl2RrTable.io.r.req.valid := io.r.req.fire
+  cpl2RrTable.io.r.req.bits.setIdx := idx(rAddr)
+  rData := cpl2RrTable.io.r.resp.data(0)
 
   assert(!RegNext(io.w.fire && io.r.req.fire), "single port SRAM should not read and write at the same time")
 
   /** s0: req handshake */
-  val s0_valid = rrTable.io.r.req.fire
-  /** s1: rrTable read result */
+  val s0_valid = cpl2RrTable.io.r.req.fire
+  /** s1: cpl2RrTable read result */
   val s1_valid = RegNext(s0_valid, false.B)
   val s1_ptr = RegNext(io.r.req.bits.ptr)
   val s1_hit = rData.valid && rData.tag === RegNext(tag(rAddr))
   /** s2: return resp to ScoreTable */
   val s2_valid = RegNext(s1_valid, false.B)
 
-  io.w.ready := rrTable.io.w.req.ready && !io.r.req.valid
+  io.w.ready := cpl2RrTable.io.w.req.ready && !io.r.req.valid
   io.r.req.ready := true.B
   io.r.resp.valid := s2_valid
   io.r.resp.bits.ptr := RegEnable(s1_ptr, s1_valid)

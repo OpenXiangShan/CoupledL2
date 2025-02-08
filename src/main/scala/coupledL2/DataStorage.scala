@@ -19,8 +19,8 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import coupledL2.utils.{HoldUnless, GatedSplittedSRAM}
-import utility.{ClockGate, SRAMTemplate}
+import coupledL2.utils.GatedSplittedSRAM
+import utility.ClockGate
 import org.chipsalliance.cde.config.Parameters
 
 class DSRequest(implicit p: Parameters) extends L2Bundle {
@@ -74,7 +74,7 @@ class DataStorage(implicit p: Parameters) extends L2Module {
   })
 
   // read data is set MultiCycle Path 2
-  val array = Module(new GatedSplittedSRAM(
+  val cpl2_data_array = Module(new GatedSplittedSRAM(
     gen = new DSECCBankBlock,
     set = blocks,
     way = 1,
@@ -82,7 +82,7 @@ class DataStorage(implicit p: Parameters) extends L2Module {
     singlePort = true,
     readMCP2 = true
   ))
-  array.io_en := io.en
+  cpl2_data_array.io_en := io.en
 
   val arrayIdx = Cat(io.req.bits.way, io.req.bits.set)
   val wen = io.req.valid && io.req.bits.wen
@@ -97,7 +97,7 @@ class DataStorage(implicit p: Parameters) extends L2Module {
   }
   arrayWrite.data := arrayWriteData
 
-  val arrayRead = array.io.r.resp.data(0)
+  val arrayRead = cpl2_data_array.io.r.resp.data(0)
   val dataRead = Wire(new DSBlock)
   // dataRead.data := arrayRead.data(blockBytes * 8 - 1, 0)
   val bankDataRead = if (enableDataECC) {
@@ -109,8 +109,8 @@ class DataStorage(implicit p: Parameters) extends L2Module {
 
   // make sure SRAM input signals will not change during the two cycles
   // TODO: This check is done elsewhere
-  array.io.w.apply(wen, arrayWrite, arrayIdx, 1.U)
-  array.io.r.apply(ren, arrayIdx)
+  cpl2_data_array.io.w.apply(wen, arrayWrite, arrayIdx, 1.U)
+  cpl2_data_array.io.r.apply(ren, arrayIdx)
 
 
   //  val eccData = arrayRead.data(encDataBits - 1, 0)

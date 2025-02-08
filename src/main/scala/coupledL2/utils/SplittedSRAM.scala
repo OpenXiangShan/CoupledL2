@@ -2,6 +2,7 @@ package coupledL2.utils
 
 import chisel3._
 import chisel3.util._
+import freechips.rocketchip.diplomacy.ValName
 
 // split SRAM by set/way/data
 // 1. use lower-bits of set to select bank
@@ -16,7 +17,7 @@ class SplittedSRAM[T <: Data]
   shouldReset: Boolean = false, holdRead: Boolean = false,
   singlePort: Boolean = true, bypassWrite: Boolean = false,
   clkDivBy2: Boolean = false, readMCP2: Boolean = true
-) extends Module {
+)(implicit valName: ValName) extends Module {
   val io = IO(new Bundle() {
     val r = Flipped(new SRAMReadBus(gen, set, way))
     val w = Flipped(new SRAMWriteBus(gen, set, way))
