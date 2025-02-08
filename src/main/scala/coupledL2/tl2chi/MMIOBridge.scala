@@ -113,7 +113,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   val isBackTypeMM = req.user.lift(MemBackTypeMM).getOrElse(false.B)
   val isPageTypeNC = req.user.lift(MemPageTypeNC).getOrElse(false.B)
 
-  val wordBits = io.req.bits.data.getWidth // 64
+  require(io.req.bits.data.getWidth == wordBits)
   val wordBytes = wordBits / 8
   val words = DATA_WIDTH / wordBits
   val wordIdxBits = log2Ceil(words)
