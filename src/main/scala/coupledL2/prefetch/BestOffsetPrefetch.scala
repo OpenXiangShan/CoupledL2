@@ -19,7 +19,6 @@ package coupledL2.prefetch
 
 import utility.{ChiselDB, Constantin, MemReqSource, ParallelPriorityMux, RRArbiterInit, SRAMTemplate, XSPerfAccumulate}
 import org.chipsalliance.cde.config.Parameters
-import chisel3.DontCare.:=
 import chisel3._
 import chisel3.util._
 import coupledL2.{HasCoupledL2Parameters, L2TlbReq, L2ToL1TlbIO, TlbCmd, Pbmt}
@@ -162,27 +161,27 @@ class RecentRequestTable(implicit p: Parameters) extends BOPModule {
     val tag = UInt(rrTagBits.W)
   }
 
-  val rrTable = Module(
+  val cpl2RrTable = Module(
     new SRAMTemplate(rrTableEntry(), set = rrTableEntries, way = 1, shouldReset = true, singlePort = true)
   )
 
   val wAddr = io.w.bits
-  rrTable.io.w.req.valid := io.w.valid && !io.r.req.valid
-  rrTable.io.w.req.bits.setIdx := idx(wAddr)
-  rrTable.io.w.req.bits.data(0).valid := true.B
-  rrTable.io.w.req.bits.data(0).tag := tag(wAddr)
+  cpl2RrTable.io.w.req.valid := io.w.valid && !io.r.req.valid
+  cpl2RrTable.io.w.req.bits.setIdx := idx(wAddr)
+  cpl2RrTable.io.w.req.bits.data(0).valid := true.B
+  cpl2RrTable.io.w.req.bits.data(0).tag := tag(wAddr)
 
   val rAddr = io.r.req.bits.addr - signedExtend((io.r.req.bits.testOffset << offsetBits), fullAddrBits)
   val rData = Wire(rrTableEntry())
-  rrTable.io.r.req.valid := io.r.req.fire
-  rrTable.io.r.req.bits.setIdx := idx(rAddr)
-  rData := rrTable.io.r.resp.data(0)
+  cpl2RrTable.io.r.req.valid := io.r.req.fire
+  cpl2RrTable.io.r.req.bits.setIdx := idx(rAddr)
+  rData := cpl2RrTable.io.r.resp.data(0)
 
   assert(!RegNext(io.w.fire && io.r.req.fire), "single port SRAM should not read and write at the same time")
 
-  io.w.ready := rrTable.io.w.req.ready && !io.r.req.valid
+  io.w.ready := cpl2RrTable.io.w.req.ready && !io.r.req.valid
   io.r.req.ready := true.B
-  io.r.resp.valid := RegNext(rrTable.io.r.req.fire, false.B)
+  io.r.resp.valid := RegNext(cpl2RrTable.io.r.req.fire, false.B)
   io.r.resp.bits.ptr := RegNext(io.r.req.bits.ptr)
   io.r.resp.bits.hit := rData.valid && rData.tag === RegNext(tag(rAddr))
 

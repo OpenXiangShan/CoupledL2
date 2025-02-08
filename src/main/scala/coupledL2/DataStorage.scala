@@ -19,7 +19,7 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import coupledL2.utils.{HoldUnless, SRAMTemplate, SplittedSRAM}
+import coupledL2.utils.SplittedSRAM
 import utility.ClockGate
 import org.chipsalliance.cde.config.Parameters
 
@@ -54,7 +54,7 @@ class DataStorage(implicit p: Parameters) extends L2Module {
   })
 
   // read data is set MultiCycle Path 2
-  val array = Module(new SplittedSRAM(
+  val cpl2_data_array = Module(new SplittedSRAM(
     gen = new DSBlock,
     set = blocks,
     way = 1,
@@ -64,7 +64,7 @@ class DataStorage(implicit p: Parameters) extends L2Module {
   ))
 
   val masked_clock = ClockGate(false.B, io.en, clock)
-  array.clock := masked_clock
+  cpl2_data_array.clock := masked_clock
 
   val arrayIdx = Cat(io.req.bits.way, io.req.bits.set)
   val wen = io.req.valid && io.req.bits.wen
@@ -72,12 +72,12 @@ class DataStorage(implicit p: Parameters) extends L2Module {
 
   // make sure SRAM input signals will not change during the two cycles
   // TODO: This check is done elsewhere
-  array.io.w.apply(wen, io.wdata, arrayIdx, 1.U)
-  array.io.r.apply(ren, arrayIdx)
+  cpl2_data_array.io.w.apply(wen, io.wdata, arrayIdx, 1.U)
+  cpl2_data_array.io.r.apply(ren, arrayIdx)
 
   // for timing, we set this as multicycle path
   // s3 read, s4 pass and s5 to destination
-  io.rdata := array.io.r.resp.data(0)
+  io.rdata := cpl2_data_array.io.r.resp.data(0)
 
   assert(!io.en || !RegNext(io.en, false.B),
     "Continuous SRAM req prohibited under MCP2!")

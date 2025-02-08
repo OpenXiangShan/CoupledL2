@@ -2,12 +2,13 @@ package coupledL2.utils
 
 import chisel3._
 import chisel3.util._
+import freechips.rocketchip.diplomacy.ValName
 
 class SRAMWrapper[T <: Data]
 (
   gen: T, set: Int, n: Int = 1,
   clkDivBy2: Boolean = false
-) extends Module {
+)(implicit valName: ValName) extends Module {
 
   val io = IO(new Bundle() {
     val r = Flipped(new SRAMReadBus(gen, set, 1))
