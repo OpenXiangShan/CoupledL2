@@ -191,6 +191,12 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   /* Connect upwards channels */
   val inBuf = cacheParams.innerBuf
   // val outBuf = tl2tlParams.outerBuf
+  val sinkMX = Module(new SinkMX)
+  sinkMX.io.a <> inBuf.a(io.in.a)
+  sinkMX.io.c <> inBuf.c(io.in.c)
+  sinkA.io.a <> sinkMX.io.out_a
+  sinkC.io.c <> sinkMX.io.out_c
+
   sinkA.io.a <> inBuf.a(io.in.a)
   io.in.b <> inBuf.b(mshrCtl.io.toSourceB)
   sinkC.io.c <> inBuf.c(io.in.c)

@@ -16,8 +16,11 @@ import utility._
 import scala.collection.mutable.ArrayBuffer
 import coupledL2.TestTop_CHIL2.enableTLLog
 
+case object L2BanksKey extends Field[Int]
+case object L3BanksKey extends Field[Int]
+case object MNumKey extends Field[Int]
 object baseConfigAME {
-  def apply(maxHartIdBits: Int) = {
+  def apply(maxHartIdBits: Int,l2_banks:Int,l3_banks:Int,m_num:Int) = {
     new Config((_, _, _) => {
       case MaxHartIdBits => maxHartIdBits
       case L2ParamKey => L2Param(
@@ -26,6 +29,9 @@ object baseConfigAME {
         channelBytes        = TLChannelBeatBytes(64),
         blockBytes = 128
       )
+      case L2BanksKey => l2_banks
+      case L3BanksKey => l3_banks
+      case MNumKey => m_num
     })
   }
 }
@@ -61,9 +67,9 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
     ))
     masterNode
   }
-  val l2_banks=8
-  val l3_banks=8
-  val m_num=8
+  val l2_banks=p(L2BanksKey)
+  val l3_banks=p(L3BanksKey)
+  val m_num=p(MNumKey)
   val l1d = createClientNode(s"l1d", 32)
   val l1i = TLClientNode(Seq(
     TLMasterPortParameters.v1(
@@ -251,7 +257,7 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
    */
 
 object TestTop_L2L3_AME extends App {
-  val config = baseConfigAME(1).alterPartial({
+  val config = baseConfigAME(1,8,8,8).alterPartial({
     case L2ParamKey => L2Param(
       clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
       echoField = Seq(DirtyField())
@@ -259,6 +265,7 @@ object TestTop_L2L3_AME extends App {
     case HCCacheParamsKey => HCCacheParameters(
       echoField = Seq(DirtyField())
     )
+    case MNumKey => 1
   })
   ChiselDB.init(true)
   Constantin.init(false)

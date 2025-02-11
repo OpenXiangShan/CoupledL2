@@ -71,6 +71,7 @@ class Monitor(implicit p: Parameters) extends L2Module {
     !meta_s3.clients.orR)),
     "Invalid Client should not send Release")
   // !FIXME BUG Matrix
+  
   // assertion for set blocking
   // A channel task @s1 never have same-set task @s2/s3
   // to ensure that meta written can be read by chnTask
