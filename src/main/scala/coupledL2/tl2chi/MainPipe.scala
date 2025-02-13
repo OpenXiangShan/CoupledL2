@@ -326,12 +326,20 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       )
     }
     when (req_s3.chiOpcode.get === SnpCleanShared) {
-      respCacheState := Mux(meta_s3.state === BRANCH, SC, UC)
+      respCacheState := Mux(isT(meta_s3.state), UC, SC)
+    }
+
+    when (req_s3.snpHitReleaseToClean)
+    {
+      // On SnpOnce/SnpOnceFwd nesting WriteCleanFull, turn UD/UC to SC
+      when (isSnpOnceX(req_s3.chiOpcode.get)) {
+        respCacheState := SC
+      }
     }
   }
 
   when (req_s3.snpHitRelease) {
-    // *NOTICE: On Stash and Query, the cache state must maintain unchanged on nested WriteBack
+    // *NOTICE: On Stash and Query, the cache state must maintain unchanged on nested copy-back writes
     when (isSnpStashX(req_s3.chiOpcode.get) || isSnpQuery(req_s3.chiOpcode.get)) {
       respCacheState := Mux(
         req_s3.snpHitReleaseState === BRANCH,
@@ -388,8 +396,27 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       Cat(true.B, true.B)   -> SnpRespDataFwded
     )))
     sink_resp_s3.bits.resp.foreach(_ := Mux(
-      req_s3.snpHitRelease && !(isSnpStashX(req_s3.chiOpcode.get) || isSnpQuery(req_s3.chiOpcode.get)),
-      setPD(I, req_s3.snpHitReleaseWithData && req_s3.snpHitReleaseDirty && !isSnpMakeInvalidX(req_s3.chiOpcode.get)),
+      req_s3.snpHitReleaseToInval && !(isSnpStashX(req_s3.chiOpcode.get) || isSnpQuery(req_s3.chiOpcode.get)),
+      setPD(
+        // On directory hit under non-invalidating snoop nesting WriteCleanFull, 
+        // excluding SnpStashX and SnpQuery:
+        //  1. SnpCleanShared[1-sink_resp]  : UD -> UC_PD, UC -> UC, SC -> SC
+        //  2. SnpOnce*[2-sink_resp]        : UD -> SC_PD, UC -> SC, SC -> SC
+        //  3. snpToB                       : UD -> SC_PD, UC -> SC, SC -> SC
+        // 
+        // *NOTE[1-sink_resp]:
+        //    UD -> SC transitions were not used on WriteCleanFull without nesting snoop, and
+        //    only UD -> UC update could be observed on directory in this case
+        //    Therefore, it was unnecessary to observe cache state from nested WriteCleanFull MSHRs, while
+        //    extracting PassDirty from MSHRs
+        //
+        // *NOTE[2-sink_resp]:
+        //    UD -> UC transitions were not allowed on SnpOnce*, while permitting UD -> UD and UC -> UC
+        //    On SnpOnce*, UD/UC were turned into SC on nested WriteClean, on which directory must hit
+        //    Otherwise, the cache state was fast forwarded to I by default
+        //    Directory might be missing after multiple nesting snoops on WriteClean, indicating losing UD
+        Mux(req_s3.snpHitReleaseToClean && !isSnpToN(req_s3.chiOpcode.get), respCacheState, I),
+        req_s3.snpHitReleaseWithData && req_s3.snpHitReleaseDirty && !isSnpMakeInvalidX(req_s3.chiOpcode.get)),
       setPD(respCacheState, respPassDirty && (doRespData || doRespDataHitRelease))
     ))
     sink_resp_s3.bits.fwdState.foreach(_ := setPD(fwdCacheState, fwdPassDirty))
@@ -474,8 +501,11 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   /* ======== Write Directory ======== */
   val metaW_valid_s3_a = sinkA_req_s3 && !need_mshr_s3_a && !req_get_s3 && !req_prefetch_s3 && !cmo_cbo_s3 // get & prefetch that hit will not write meta
+  // Also write directory on:
+  //  1. SnpOnce/SnpOnceFwd nesting WriteCleanFull under UD/UC/SC
   val metaW_valid_s3_b = sinkB_req_s3 && !need_mshr_s3_b && dirResult_s3.hit &&
-    !isSnpOnceX(req_s3.chiOpcode.get) && !isSnpStashX(req_s3.chiOpcode.get) && !isSnpQuery(req_s3.chiOpcode.get) && (
+    (!isSnpOnceX(req_s3.chiOpcode.get) || req_s3.snpHitReleaseToClean) && 
+    !isSnpStashX(req_s3.chiOpcode.get) && !isSnpQuery(req_s3.chiOpcode.get) && (
       meta_s3.state === TIP || meta_s3.state === BRANCH && isSnpToN(req_s3.chiOpcode.get)
     )
   val metaW_valid_s3_c = sinkC_req_s3 && dirResult_s3.hit
@@ -622,11 +652,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     * 
     * *NOTICE: Never allow 'b_inv_dirty' on SnpStash*, SnpQuery and other future snoops that would
     *          leave cache line state untouched.
-    * 
-    * *TODO: A SnpOnce* nesting WriteCleanFull would result in SnpResp*_I_PD, which was simple to
-    *        implement but could be further optimized.
+    *          Never allow 'b_inv_dirty' on SnpOnce* nesting WriteCleanFull, which would end with SC.
     */
-  io.nestedwb.b_inv_dirty := task_s3.valid && task_s3.bits.fromB && source_req_s3.snpHitRelease &&
+  io.nestedwb.b_inv_dirty := task_s3.valid && task_s3.bits.fromB && source_req_s3.snpHitReleaseToInval &&
     !(isSnpStashX(req_s3.chiOpcode.get) || isSnpQuery(req_s3.chiOpcode.get))
   io.nestedwb.b_toB.foreach(_ :=
     task_s3.valid && task_s3.bits.fromB && source_req_s3.metaWen && source_req_s3.meta.state === BRANCH

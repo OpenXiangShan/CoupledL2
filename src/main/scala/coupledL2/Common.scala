@@ -120,7 +120,8 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
 
   // Used for get data from ReleaseBuf when snoop hit with same PA 
   val snpHitRelease = Bool()
-  val snpHitReleaseToB = Bool()
+  val snpHitReleaseToInval = Bool()
+  val snpHitReleaseToClean = Bool()
   val snpHitReleaseWithData = Bool()
   val snpHitReleaseIdx = UInt(mshrBits.W) 
   val snpHitReleaseState = UInt(2.W)
@@ -226,8 +227,8 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle with HasTLChannelBits {
 
   val replaceData = Bool() // If there is a replace, WriteBackFull or Evict
 
-  // exclude Release toB for nested snoop of releases
-  val releaseToB = Bool()
+  // release to T with data or UC (e.g. WriteCleanFull)
+  val releaseToClean = Bool()
 }
 
 class RespInfoBundle(implicit p: Parameters) extends L2Bundle
