@@ -586,7 +586,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_cbwrdata.homeNID.get := 0.U
     mp_cbwrdata.dbID.get := 0.U
     mp_cbwrdata.chiOpcode.get := CopyBackWrData
-    mp_cbwrdata.resp.get := Mux(isValid(meta.state), UD_PD, I)
+    mp_cbwrdata.resp.get := setPD(metaChi, meta.dirty)
     mp_cbwrdata.fwdState.get := 0.U
     mp_cbwrdata.pCrdType.get := 0.U // TODO
     mp_cbwrdata.retToSrc.get := req.retToSrc.get // DontCare
