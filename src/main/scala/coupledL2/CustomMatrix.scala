@@ -44,7 +44,7 @@ class SinkMX(implicit p: Parameters) extends L2Module {
 
   // Handle MatrixGet
   when(isMatrixGet(a) && io.a.valid) {
-    out_a.bits.opcode := AcquireBlock
+    out_a.bits.opcode := io.a.bits.opcode//AcquireBlock//
     out_a.bits.param := NtoT
   }
 

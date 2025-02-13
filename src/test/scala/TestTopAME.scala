@@ -27,7 +27,8 @@ object baseConfigAME {
         ways                = 8,
         sets                = 512,
         channelBytes        = TLChannelBeatBytes(64),
-        blockBytes = 128
+        // enablePerf          = false,
+        // blockBytes = 128
       )
       case L2BanksKey => l2_banks
       case L3BanksKey => l3_banks
@@ -86,7 +87,7 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
         TLMasterPortParameters.v1(
           clients = Seq(TLMasterParameters.v1(
             name = s"matrix${i}_${j}",
-            sourceId = IdRange(0, 32),
+            sourceId = IdRange(0, 64),
             // supportsProbe = TransferSizes(cacheParams.blockBytes)// 缓存一致性管理
             // supportsProbe = TransferSizes.none,
             // supportsProbe = TransferSizes(1,cacheParams.blockBytes),
@@ -113,14 +114,15 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
       blockBytes          = 64,
       clientCaches = Seq(L1Param(aliasBitsOpt = Some(2), vaddrBitsOpt = Some(16))),
       echoField = Seq(DirtyField()),
-      prefetch = Seq(BOPParameters(
-        rrTableEntries = 16,
-        rrTagBits = 6
-      )),
+      // prefetch = Seq(BOPParameters(
+      //   rrTableEntries = 16,
+      //   rrTagBits = 6
+      // )),
       // tagECC = Some("secded"),
       // dataECC = Some("secded"),
       enableTagECC = false, //XS use true
       enableDataECC = false, //XS use true
+      // enablePerf = false,
       // dataCheck = Some("oddparity"),
     )
     // case huancun.BankBitsKey => log2Ceil(8)
@@ -257,15 +259,15 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
    */
 
 object TestTop_L2L3_AME extends App {
-  val config = baseConfigAME(1,8,8,8).alterPartial({
+  val config = baseConfigAME(1,16,16,16).alterPartial({
     case L2ParamKey => L2Param(
       clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
-      echoField = Seq(DirtyField())
+      echoField = Seq(DirtyField()),
+      // enablePerf          = false,
     )
     case HCCacheParamsKey => HCCacheParameters(
       echoField = Seq(DirtyField())
     )
-    case MNumKey => 1
   })
   ChiselDB.init(true)
   Constantin.init(false)

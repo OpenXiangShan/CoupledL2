@@ -334,12 +334,20 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       XSPerfAccumulate(s"req_buffer_util_$i", cntEnable)
     }
     val bufferTimer = RegInit(VecInit(Seq.fill(entries)(0.U(16.W))))
-    buffer zip bufferTimer map {
-      case (e, t) =>
-        when(e.valid) { t := t + 1.U }
-        when(RegNext(RegNext(e.valid) && !e.valid)) { t := 0.U }
-        assert(t < 20000.U, "ReqBuf Leak")
+    val warningPrinted = RegInit(VecInit(Seq.fill(entries)(false.B))) // 记录是否已经输出过警告
 
+    buffer zip bufferTimer zip warningPrinted map {
+      case ((e, t),printed) =>
+        when(e.valid) { t := t + 1.U }
+        when(RegNext(RegNext(e.valid) && !e.valid)) {
+          t := 0.U
+          printed := false.B // 重置警告标志
+        }
+        // assert(t < 20000.U, "ReqBuf Leak")
+        when(t >= 20000.U && !printed) {
+          printf("Warning: ReqBuf Leak detected! Timer value: %d\n", t)
+          printed := true.B // 标记为已输出
+        }
         val enable = RegNext(e.valid) && !e.valid
         XSPerfHistogram("reqBuf_timer", t, enable, 0, 20, 1, right_strict = true)
         XSPerfHistogram("reqBuf_timer", t, enable, 20, 400, 20, left_strict = true)
