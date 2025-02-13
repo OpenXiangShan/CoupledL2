@@ -118,7 +118,7 @@ trait HasCoupledL2Parameters {
   def clientBits = edgeIn.client.clients.count(_.supports.probe)
   def sourceIdBits = edgeIn.bundle.sourceBits // ids of L1
   def msgSizeBits = edgeIn.bundle.sizeBits
-  def sourceIdAll = 1 << sourceIdBits
+  def sourceIdAll = 1 << sourceIdBits //FIXME Maybe Bug
 
   def hartIdLen: Int = p(MaxHartIdBits)
 
