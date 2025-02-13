@@ -396,7 +396,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       Cat(true.B, true.B)   -> SnpRespDataFwded
     )))
     sink_resp_s3.bits.resp.foreach(_ := Mux(
-      req_s3.snpHitReleaseToInval && !(isSnpStashX(req_s3.chiOpcode.get) || isSnpQuery(req_s3.chiOpcode.get)),
+      req_s3.snpHitRelease && !(isSnpStashX(req_s3.chiOpcode.get) || isSnpQuery(req_s3.chiOpcode.get)),
       setPD(
         // On directory hit under non-invalidating snoop nesting WriteCleanFull, 
         // excluding SnpStashX and SnpQuery:
