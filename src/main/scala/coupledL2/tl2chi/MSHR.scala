@@ -1337,12 +1337,14 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     when (io.nestedwb.b_toB.get && req.fromA) {
       meta.state := Mux(meta.state >= BRANCH, BRANCH, INVALID)
       meta.dirty := false.B
+      probeDirty := false.B
     }
     when (io.nestedwb.b_toN.get && req.fromA) {
       meta.state := INVALID
       dirResult.hit := false.B
       meta.dirty := false.B
       meta.clients := Fill(clientBits, false.B)
+      probeDirty := false.B
       state.w_replResp := cmo_cbo // never query replacer on CMO
       req.aliasTask.foreach(_ := false.B)
     }
