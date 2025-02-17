@@ -426,6 +426,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       false.B
     ) // TODO: parameterize this
     sink_resp_s3.bits.size := log2Ceil(blockBytes).U
+    sink_resp_s3.bits.meta := metaW_s3_b
+    sink_resp_s3.bits.metaWen := metaW_valid_s3_b
 
   }.otherwise { // req_s3.fromC
     sink_resp_s3.bits.opcode := ReleaseAck
