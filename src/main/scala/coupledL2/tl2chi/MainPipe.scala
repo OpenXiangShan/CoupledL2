@@ -369,7 +369,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     }
   }
 
-  val sink_resp_s3_b_meta = Wire(MetaEntry())
+  val sink_resp_s3_b_meta = MetaEntry()
   val sink_resp_s3_b_metaWen = Wire(Bool())
 
   sink_resp_s3.valid := task_s3.valid && !mshr_req_s3 && !need_mshr_s3
