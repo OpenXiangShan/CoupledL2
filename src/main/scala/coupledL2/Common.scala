@@ -287,6 +287,7 @@ class FSMState(implicit p: Parameters) extends L2Bundle {
 
   // CHI
   val s_compack = chiOpt.map(_ => Bool())
+  val s_compack_writeEvictOrEvict = chiOpt.map(_ => Bool())
   val s_cbwrdata = chiOpt.map(_ => Bool())
   val s_reissue = chiOpt.map(_ => Bool())
   val s_dct = chiOpt.map(_ => Bool())
