@@ -302,7 +302,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   }
 
   // resp and fwdState
-  val respCacheState = Mux(dirResult.hit, ParallelPriorityMux(Seq(
+  val respCacheState = ParallelPriorityMux(Seq(
     snpToN -> I,
     snpToB -> SC,
     isSnpOnceX(req_chiOpcode) ->
@@ -315,7 +315,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       Mux(probeDirty || meta.dirty, UD, metaChi),
     isSnpCleanShared(req_chiOpcode) -> 
       Mux(isT(meta.state), UC, metaChi)
-  )), I)
+  ))
   val respPassDirty = hitDirtyOrWriteDirty && (
     snpToB ||
     req_chiOpcode === SnpUnique ||
@@ -647,7 +647,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         isSnpOnceX(req_chiOpcode) && req.snpHitReleaseToClean
       ) || isSnpOnceX(req_chiOpcode) && probeDirty,
       // Directory would always be missing on nesting WriteBackFull/WriteEvict*/Evict
-      state = Mux(dirResult.hit, Mux(
+      state = Mux(
         snpToN,
         INVALID,
         Mux(
@@ -655,7 +655,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
           snpToB || isSnpOnceX(req_chiOpcode) && hitWriteClean,
           BRANCH,
           meta.state)
-      ), I),
+      ),
       clients = meta.clients & Fill(clientBits, !probeGotN && !snpToN),
       alias = meta.alias, //[Alias] Keep alias bits unchanged
       prefetch = !snpToN && meta_pft,
