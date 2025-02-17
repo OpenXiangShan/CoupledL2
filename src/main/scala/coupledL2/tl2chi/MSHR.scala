@@ -177,6 +177,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
 
   val cmo_cbo = req_cboClean || req_cboFlush || req_cboInval
 
+  // *NOTICE: WriteBack/WriteClean(s) with nested snoops that passed dirty were not considered as
+  //          a nested hit here, which would no longer pass latest data to lower tier memories.
   val hitDirty = dirResult.hit && meta.dirty || probeDirty
   val hitWriteBack = req.snpHitRelease && req.snpHitReleaseWithData && req.snpHitReleaseDirty && req.snpHitReleaseToInval
   val hitWriteClean = req.snpHitRelease && req.snpHitReleaseWithData && req.snpHitReleaseDirty && req.snpHitReleaseToClean
@@ -644,11 +646,16 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         isSnpCleanShared(req_chiOpcode) ||
         isSnpOnceX(req_chiOpcode) && req.snpHitReleaseToClean
       ) || isSnpOnceX(req_chiOpcode) && probeDirty,
-      state = Mux(
+      // Directory would always be missing on nesting WriteBackFull/WriteEvict*/Evict
+      state = Mux(dirResult.hit, Mux(
         snpToN,
         INVALID,
-        Mux(snpToB, BRANCH, meta.state)
-      ),
+        Mux(
+          // On SnpOnce/SnpOnceFwd nesting WriteCleanFull with UD, we went UD -> SC (T -> B here)
+          snpToB || isSnpOnceX(req_chiOpcode) && hitWriteClean,
+          BRANCH,
+          meta.state)
+      ), I),
       clients = meta.clients & Fill(clientBits, !probeGotN && !snpToN),
       alias = meta.alias, //[Alias] Keep alias bits unchanged
       prefetch = !snpToN && meta_pft,
