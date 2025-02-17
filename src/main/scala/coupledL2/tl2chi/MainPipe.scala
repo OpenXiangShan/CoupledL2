@@ -502,9 +502,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   /* ======== Write Directory ======== */
   val metaW_valid_s3_a = sinkA_req_s3 && !need_mshr_s3_a && !req_get_s3 && !req_prefetch_s3 && !cmo_cbo_s3 // get & prefetch that hit will not write meta
   // Also write directory on:
-  //  1. SnpOnce/SnpOnceFwd nesting WriteCleanFull under UD/UC/SC
+  //  1. SnpOnce nesting WriteCleanFull under UD (SnpOnceFwd always needs MSHR) for UD -> SC
   val metaW_valid_s3_b = sinkB_req_s3 && !need_mshr_s3_b && dirResult_s3.hit &&
-    (!isSnpOnceX(req_s3.chiOpcode.get) || req_s3.snpHitReleaseToClean) && 
+    (!isSnpOnce(req_s3.chiOpcode.get) || (req_s3.snpHitReleaseToClean && req_s3.snpHitReleaseDirty)) && 
     !isSnpStashX(req_s3.chiOpcode.get) && !isSnpQuery(req_s3.chiOpcode.get) && (
       meta_s3.state === TIP || meta_s3.state === BRANCH && isSnpToN(req_s3.chiOpcode.get)
     )
