@@ -1053,6 +1053,10 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
           req_writeEvictOrEvict := true.B
         }
       }
+      when (isEvict) {
+        meta.state := INVALID
+        meta.dirty := false.B
+      }
     }.elsewhen (mp_cbwrdata_valid) {
       state.s_cbwrdata.get := true.B
       meta.state := INVALID

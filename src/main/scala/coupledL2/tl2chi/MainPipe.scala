@@ -339,7 +339,10 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   }
 
   when (req_s3.snpHitRelease) {
-    // *NOTICE: On Stash and Query, the cache state must maintain unchanged on nested copy-back writes
+    /**
+      * NOTICE: On Stash and Query:
+      * the cache state must maintain unchanged on nested copy-back writes
+     */
     when (isSnpStashX(req_s3.chiOpcode.get) || isSnpQuery(req_s3.chiOpcode.get)) {
       respCacheState := Mux(
         req_s3.snpHitReleaseState === BRANCH,
