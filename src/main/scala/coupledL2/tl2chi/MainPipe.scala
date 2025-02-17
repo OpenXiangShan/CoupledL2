@@ -369,6 +369,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     }
   }
 
+  val sink_resp_s3_b_meta = Wire(MetaEntry())
+  val sink_resp_s3_b_metaWen = Wire(Bool())
+
   sink_resp_s3.valid := task_s3.valid && !mshr_req_s3 && !need_mshr_s3
   sink_resp_s3.bits := task_s3.bits
   sink_resp_s3.bits.mshrId := (1 << (mshrBits-1)).U + sink_resp_s3.bits.sourceId
@@ -429,8 +432,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       false.B
     ) // TODO: parameterize this
     sink_resp_s3.bits.size := log2Ceil(blockBytes).U
-    sink_resp_s3.bits.meta := metaW_s3_b
-    sink_resp_s3.bits.metaWen := metaW_valid_s3_b
+    sink_resp_s3.bits.meta := sink_resp_s3_b_meta
+    sink_resp_s3.bits.metaWen := sink_resp_s3_b_metaWen
 
   }.otherwise { // req_s3.fromC
     sink_resp_s3.bits.opcode := ReleaseAck
@@ -582,6 +585,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   io.tagWReq.bits.set := req_s3.set
   io.tagWReq.bits.way := Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.way, req_s3.way)
   io.tagWReq.bits.wtag := req_s3.tag
+
+  sink_resp_s3_b_metaWen := metaW_valid_s3_b
+  sink_resp_s3_b_meta := metaW_s3_b
 
   /* ======== Interact with Channels (SourceD/TXREQ/TXRSP/TXDAT) ======== */
   val chnl_fire_s3 = d_s3.fire || txreq_s3.fire || txrsp_s3.fire || txdat_s3.fire
