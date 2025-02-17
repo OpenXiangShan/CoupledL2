@@ -73,6 +73,7 @@ class OpenNCBImp(wrapper: OpenNCB)(implicit p: Parameters) extends LazyModuleImp
     case CHIParametersKey => new CHIParameters(
       issue = p(CHIIssue) match {
         case "B"    => EnumCHIIssue.B
+        case "C"    => EnumCHIIssue.C
         case "E.b"  => EnumCHIIssue.E
         case _      => throw new IllegalArgumentException(s"Unsupported CHI Issue: ${p(CHIIssue)}")
       },
