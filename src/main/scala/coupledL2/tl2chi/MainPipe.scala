@@ -972,7 +972,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val cmoLineDrop = task_s3.valid && sinkA_req_s3 && req_s3.opcode === CBOFlush && cmoHitInvalid
   val cmoLineDone = io.cmoAllBlock.getOrElse(false.B) && task_s3.valid && mshr_cmoresp_s3
   io.cmoLineDone.foreach { _ := RegNextN(cmoLineDone || cmoLineDrop, 2, Some(false.B)) }
-
   /* ===== Performance counters ===== */
   // num of mshr req
   XSPerfAccumulate("mshr_grant_req", task_s3.valid && mshr_grant_s3 && !retry)

@@ -107,8 +107,8 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val replTask = Bool()
 
   // for CMO
-  val cmoTask = Bool()
-  val cmoAll = Bool()
+  val cmoTask = Bool() // cmo with address
+  val cmoAll = Bool()  // cmo without address but to flush whole L2$ to memory 
 
   // for TopDown Monitor (# TopDown)
   val reqSource = UInt(MemReqSource.reqSourceBits.W)

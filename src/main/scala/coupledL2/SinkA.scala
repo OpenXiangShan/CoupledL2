@@ -39,16 +39,19 @@ class SinkA(implicit p: Parameters) extends L2Module {
     "no Put");
 
   // flush L2 all control defines
-  val numSets = 1 << setBits 
-  val numWays = 1 << wayBits
-  val set = RegInit(0.U(setBits.W))
-  val way = RegInit(0.U(wayBits.W)) 
+  val numSets = 1 << log2Ceil(cacheParams.sets) 
+  val numWays = 1 << log2Ceil(cacheParams.ways)
+  val set = Option.when(cacheParams.enableL2Flush)(RegInit(0.U(setBits.W))) 
+  val way = Option.when(cacheParams.enableL2Flush)(RegInit(0.U(wayBits.W))) 
   val sIDLE :: sCMOREQ :: sWAITLINE :: sWAITMSHR :: sDONE :: Nil = Enum(5)
-  val state = RegInit(sIDLE)
-  val cmoAllValid = (state === sCMOREQ)
-  val cmoAllBlock = (state === sCMOREQ) || (state === sWAITLINE)
-  io.cmoAll.foreach {cmoAll => cmoAll.l2FlushDone :=(state ===sDONE)}
-  io.cmoAll.foreach {cmoAll => cmoAll.cmoAllBlock := cmoAllBlock}
+  val state = Option.when(cacheParams.enableL2Flush)(RegInit(sIDLE))
+  val stateVal = state.getOrElse(sIDLE)
+  val setVal = set.getOrElse(0.U)
+  val wayVal = way.getOrElse(0.U)
+  val cmoAllValid = stateVal === sCMOREQ
+  val cmoAllBlock = stateVal === sCMOREQ || stateVal === sWAITLINE
+  io.cmoAll.foreach { cmoAll => cmoAll.l2FlushDone := stateVal ===sDONE }
+  io.cmoAll.foreach { cmoAll => cmoAll.cmoAllBlock := cmoAllBlock }
 
   def fromTLAtoTaskBundle(a: TLBundleA): TaskBundle = {
     val task = Wire(new TaskBundle)
@@ -56,10 +59,10 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.channel := "b001".U
     task.txChannel := 0.U
     task.tag := parseAddress(a.address)._1
-    task.set := Mux(cmoAllValid, set, parseAddress(a.address)._2)
+    task.set := Mux(cmoAllValid, setVal, parseAddress(a.address)._2)
     task.off := parseAddress(a.address)._3
     task.alias.foreach(_ := a.user.lift(AliasKey).getOrElse(0.U))
-    task.opcode := Mux(cmoAllValid, 13.U, a.opcode)
+    task.opcode := Mux(cmoAllValid, CBOFlush, a.opcode)
     task.param := a.param
     task.size := a.size
     task.sourceId := a.source
@@ -74,7 +77,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.fromL2pft.foreach(_ := false.B)
     task.needHint.foreach(_ := a.user.lift(PrefetchKey).getOrElse(false.B))
     task.dirty := false.B
-    task.way := Mux(cmoAllValid, way, 0.U(wayBits.W))
+    task.way := Mux(cmoAllValid, wayVal, 0.U(wayBits.W))
     task.meta := 0.U.asTypeOf(new MetaEntry)
     task.metaWen := false.B
     task.tagWen := false.B
@@ -161,31 +164,31 @@ class SinkA(implicit p: Parameters) extends L2Module {
   val mshrValid = io.cmoAll.map(_.mshrValid).getOrElse(false.B)
   val cmoLineDone = io.cmoAll.map(_.cmoLineDone).getOrElse(false.B)
 
-  when (state === sIDLE && l2Flush && !mshrValid) {
-    state := sCMOREQ
+  when (stateVal === sIDLE && l2Flush && !mshrValid) {
+    state.foreach { _ := sCMOREQ }
   }
-  when ((state === sCMOREQ) && io.task.fire) {
-    state := sWAITLINE
+  when (stateVal === sCMOREQ && io.task.fire) {
+    state.foreach { _ := sWAITLINE }
   }
-  when (state === sWAITLINE && cmoLineDone) {
-    when (set===(numSets-1).U && way===(numWays-1).U) { 
-      state := sDONE
+  when (stateVal === sWAITLINE && cmoLineDone) {
+    when (setVal === (numSets-1).U && wayVal === (numWays-1).U) { 
+      state.foreach { _ := sDONE }
     }.otherwise {
-      when(way ===(numWays -1).U) {
-        way:=0.U
-        set:=set+1.U
+      when (wayVal === (numWays-1).U) {
+        way.foreach { _ := 0.U }
+        set.foreach { _ := setVal + 1.U }
       }.otherwise {
-        way:=way+1.U
+        way.foreach { _ := wayVal + 1.U }
       }
       when (mshrValid) {
-        state := sCMOREQ
+        state.foreach { _ := sCMOREQ }
       }.otherwise {
-        state := sWAITMSHR
+        state.foreach { _ := sWAITMSHR }
       }
     }
   }
-  when ((state === sWAITMSHR) && !mshrValid) {
-    state := sCMOREQ
+  when (stateVal === sWAITMSHR && !mshrValid) {
+    state.foreach { _ := sCMOREQ }
   }
 
   // Performance counters

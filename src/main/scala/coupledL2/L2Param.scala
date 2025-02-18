@@ -100,7 +100,7 @@ case class L2Param(
   // Prefetch
   prefetch: Seq[PrefetchParameters] = Nil,
   // L2 Flush
-  enableL2Flush: Boolean = true,
+  enableL2Flush: Boolean = false,
   // Performance analysis
   enablePerf: Boolean = true,
   // RollingDB
