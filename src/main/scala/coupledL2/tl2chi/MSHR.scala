@@ -99,10 +99,12 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val retryTimes = RegInit(0.U(log2Up(backoffThreshold).W))
   val backoffTimer = RegInit(0.U(log2Up(backoffCycles).W))
 
-  //for CHI
-  val srcid = RegInit(0.U(NODEID_WIDTH.W))
-  val homenid = RegInit(0.U(NODEID_WIDTH.W))
-  val dbid = RegInit(0.U(DBID_WIDTH.W))
+  val tgtid_rcompack = Reg(UInt(NODEID_WIDTH.W)) // TgtID in CompAck of read / dataless transactions
+  val txnid_rcompack = Reg(UInt(TXNID_WIDTH.W)) // TxnID in CompAck of read / dataless transactions
+  val tgtid_wcompack = Reg(UInt(NODEID_WIDTH.W)) // TgtID in WriteData / CompAck of write transactions
+  val txnid_wcompack = Reg(UInt(TXNID_WIDTH.W)) // TxnID in WriteData / CompAck of write transactions
+  val srcid_retryack = Reg(UInt(NODEID_WIDTH.W)) // SrcID in RetryAck, only used for protocol retry
+  
   val pcrdtype = RegInit(0.U(PCRDTYPE_WIDTH.W))
   val gotRetryAck = RegInit(false.B)
   val gotPCrdGrant = RegInit(false.B)
@@ -122,7 +124,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
 
   io.pCrd.query.valid := gotRetryAck && !gotPCrdGrant
   io.pCrd.query.bits.pCrdType := pcrdtype
-  io.pCrd.query.bits.srcID := srcid
+  io.pCrd.query.bits.srcID := srcid_retryack
 
   /* Allocation */
   when (io.alloc.valid) {
@@ -140,8 +142,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
 
     gotRetryAck := false.B
     gotPCrdGrant := false.B
-    srcid := 0.U
-    dbid := 0.U
+
     pcrdtype := 0.U
     denied := false.B
     corrupt := false.B
@@ -260,10 +261,12 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   io.tasks.txreq.valid := !state.s_acquire && !(cmo_cbo && (!state.w_rprobeacklast || !state.w_releaseack || !state.s_cbwrdata.get)) || 
                           !state.s_reissue.getOrElse(false.B) && !state.w_grant && gotRetryAck && gotPCrdGrant ||
                           release_valid2
-  io.tasks.txrsp.valid := !state.s_compack.get && state.w_grant &&
+  val rcompack_valid = !state.s_rcompack.get && state.w_grant &&
     // For issue B, CompAck must not be sent until all transfers of read data have been received.
     // For issue C and afterwards, CompAck is allowed to be sent after at least one CompData packet is received.
     afterIssueCOrElse(state.w_grantfirst, state.w_grantlast)
+  val wcompack_valid = !state.s_wcompack.get && state.s_rcompack.get // wcompack can only be sent after rcompack
+  io.tasks.txrsp.valid := rcompack_valid || wcompack_valid
   io.tasks.source_b.valid := !state.s_pprobe || !state.s_rprobe
   val mp_release_valid = release_valid1
   val mp_cbwrdata_valid = !state.s_cbwrdata.getOrElse(true.B) && state.w_releaseack
@@ -323,18 +326,16 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val fwdPassDirty = isSnpToNFwd(req_chiOpcode) && hitDirtyOrWriteBack
 
   /*TXRSP for CompAck */
-    val txrsp_task = {
-      val orsp = io.tasks.txrsp.bits
-      orsp := 0.U.asTypeOf(io.tasks.txrsp.bits.cloneType)
-      orsp.tgtID := Mux(req_acquirePerm || req_writeEvictOrEvict, srcid, homenid)
-      orsp.srcID := 0.U
-      orsp.txnID := dbid
-      orsp.dbID := 0.U
-      orsp.opcode := CompAck
-      orsp.resp  := 0.U
-      orsp.fwdState := 0.U
-      orsp.traceTag := req.traceTag.get
-    }
+  val orsp = io.tasks.txrsp.bits
+  orsp := 0.U.asTypeOf(io.tasks.txrsp.bits.cloneType)
+  orsp.tgtID := Mux(wcompack_valid, tgtid_wcompack, tgtid_rcompack)
+  orsp.srcID := 0.U
+  orsp.txnID := Mux(wcompack_valid, txnid_wcompack, txnid_rcompack)
+  orsp.dbID := 0.U
+  orsp.opcode := CompAck
+  orsp.resp  := 0.U
+  orsp.fwdState := 0.U
+  orsp.traceTag := req.traceTag.get
 
   /*TXREQ for Transaction Request*/
   // *NOTICE: By the time of issuing Write Back (WriteBackFull or Evict), the directory
@@ -352,7 +353,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     val oa = io.tasks.txreq.bits
     oa := 0.U.asTypeOf(io.tasks.txreq.bits.cloneType)
     oa.qos := Fill(QOS_WIDTH, 1.U(1.W)) // TODO
-    oa.tgtID := Mux(!state.s_reissue.getOrElse(false.B), srcid, 0.U)
+    oa.tgtID := Mux(!state.s_reissue.getOrElse(false.B), srcid_retryack, 0.U)
     oa.srcID := 0.U
     oa.txnID := io.id
     oa.returnNID := 0.U
@@ -580,9 +581,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_cbwrdata.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
 
     // CHI
-    mp_cbwrdata.tgtID.get := srcid
+    mp_cbwrdata.tgtID.get := tgtid_wcompack
     mp_cbwrdata.srcID.get := 0.U
-    mp_cbwrdata.txnID.get := dbid
+    mp_cbwrdata.txnID.get := txnid_wcompack
     mp_cbwrdata.homeNID.get := 0.U
     mp_cbwrdata.dbID.get := 0.U
     mp_cbwrdata.chiOpcode.get := CopyBackWrData
@@ -690,7 +691,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   }.elsewhen (io.alloc.valid) {
     mergeA := false.B
   }
-  val mp_grant_task    = {
+  val mp_grant_task = {
     mp_grant.channel := req.channel
     mp_grant.tag := req.tag
     mp_grant.set := req.set
@@ -944,13 +945,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   )
   io.tasks.mainpipe.bits.reqSource := req.reqSource
   io.tasks.mainpipe.bits.isKeyword.foreach(_:= req.isKeyword.getOrElse(false.B))
-  // io.tasks.prefetchTrain.foreach {
-  //   train =>
-  //     train.bits.tag := req.tag
-  //     train.bits.set := req.set
-  //     train.bits.needT := req_needT
-  //     train.bits.source := req.source
-  // }
 
   val mp_valid = io.tasks.mainpipe.valid
   val mp = io.tasks.mainpipe.bits
@@ -1002,7 +996,13 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     }
   }
   when (io.tasks.txrsp.fire) {
-    state.s_compack.get := true.B
+    when (rcompack_valid) {
+      state.s_rcompack.get := true.B
+    }
+    when (wcompack_valid) {
+      state.s_wcompack.get := true.B
+    }
+    assert(!(rcompack_valid && wcompack_valid))
   }
   when (io.tasks.source_b.fire) {
     state.s_pprobe := true.B
@@ -1018,11 +1018,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     }.elsewhen (mp_release_valid) {
       req_released_chiOpcode := mp_release.chiOpcode.get
       state.s_release := true.B
-      // when (!state.s_reissue.get) {
-      //   state.s_reissue.get := true.B
-      //   gotRetryAck := false.B
-      //   gotPCrdGrant := false.B
-      // }
       state.s_cbwrdata.get := isEvict
       ifAfterIssueEb {
         when (mp_release.chiOpcode.get === WriteEvictOrEvict) {
@@ -1127,8 +1122,10 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       gotT := rxdatIsU || rxdatIsU_PD
       gotDirty := gotDirty || rxdatIsU_PD
       gotGrantData := true.B
-      dbid := rxdat.bits.dbID.getOrElse(0.U)
-      homenid := rxdat.bits.homeNID.getOrElse(0.U)
+      // The TxnID of CompAck is set to the same value as the DBID of the read data.
+      txnid_rcompack := rxdat.bits.dbID.getOrElse(0.U)
+      // The TgtID of CompAck is set to the same value as the HomeNID of the read data.
+      tgtid_rcompack := rxdat.bits.homeNID.getOrElse(0.U)
       denied := denied || nderr
       corrupt := corrupt || derr || nderr || rxdatCorrupt
       req.traceTag.get := req.traceTag.get || rxdat.bits.traceTag.getOrElse(false.B)
@@ -1141,9 +1138,10 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     ifAfterIssueC {
       when (rxrsp.bits.chiOpcode.get === RespSepData) {
         state.w_grant := true.B
-        srcid := rxrsp.bits.srcID.getOrElse(0.U)
-        homenid := rxrsp.bits.srcID.getOrElse(0.U)
-        dbid := rxrsp.bits.dbID.getOrElse(0.U)
+        // The TgtID of CompAck is set to the same value as the SrcID of the read response.
+        tgtid_rcompack := rxrsp.bits.srcID.getOrElse(0.U)
+        // The TxnID of CompAck is set to the unique DBID value generated by the Home.
+        txnid_rcompack := rxrsp.bits.dbID.getOrElse(0.U)
         denied := denied || nderr
         req.traceTag.get := rxrsp.bits.traceTag.get
       }
@@ -1160,6 +1158,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         gotDirty := false.B
         denied := denied || nderr
         req.traceTag.get := rxrsp.bits.traceTag.get
+        tgtid_rcompack := rxrsp.bits.srcID.getOrElse(0.U)
+        txnid_rcompack := rxrsp.bits.dbID.getOrElse(0.U)
       }
 
       // There is a pending Evict/WriteEvictOrEvict transaction waiting for the Comp resp
@@ -1172,23 +1172,20 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
           // For WriteEvictOrEvict, drop CopyBackWrData on Comp
           state.s_cbwrdata.get := true.B
           // Schedule CompAck on Comp
-          state.s_compack.get := false.B
+          state.s_wcompack.get := false.B
+          tgtid_wcompack := rxrsp.bits.srcID.getOrElse(0.U)
+          txnid_wcompack := rxrsp.bits.dbID.getOrElse(0.U)
         }
       }
-
-      // Comp for Dataless transaction that include CompAck
-      // Use DBID as a identifier for CompAck
-      dbid := rxrsp.bits.dbID.getOrElse(0.U)
-      srcid := rxrsp.bits.srcID.getOrElse(0.U)
     }
     when (rxrsp.bits.chiOpcode.get === CompDBIDResp) {
       state.w_releaseack := true.B
-      srcid := rxrsp.bits.srcID.getOrElse(0.U)
-      dbid := rxrsp.bits.dbID.getOrElse(0.U)
+      tgtid_wcompack := rxrsp.bits.srcID.getOrElse(0.U)
+      txnid_wcompack := rxrsp.bits.dbID.getOrElse(0.U)
       cbWrDataTraceTag := rxrsp.bits.traceTag.get
     }
     when (rxrsp.bits.chiOpcode.get === RetryAck) {
-      srcid := rxrsp.bits.srcID.getOrElse(0.U)
+      srcid_retryack := rxrsp.bits.srcID.getOrElse(0.U)
       pcrdtype := rxrsp.bits.pCrdType.getOrElse(0.U)
       gotRetryAck := true.B
     }
@@ -1242,7 +1239,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   }
 
   val no_schedule = state.s_refill && state.s_probeack && state.s_release &&
-    state.s_compack.getOrElse(true.B) &&
+    state.s_rcompack.getOrElse(true.B) &&
     state.s_cbwrdata.getOrElse(true.B) &&
     state.s_reissue.getOrElse(true.B) &&
     state.s_dct.getOrElse(true.B) &&
@@ -1358,7 +1355,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   io.nestedwbData := nestedwb_match && io.nestedwb.c_set_dirty
 
   dontTouch(state)
-
 
   // 
   // deadlock check

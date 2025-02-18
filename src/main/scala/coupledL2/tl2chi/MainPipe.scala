@@ -878,7 +878,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     // need Acquire downwards
     when (need_acquire_s3_a) {
       alloc_state.s_acquire := false.B
-      alloc_state.s_compack.get := !need_compack_s3_a
+      alloc_state.s_rcompack.get := !need_compack_s3_a
       alloc_state.w_grantfirst := false.B
       alloc_state.w_grantlast := false.B
       alloc_state.w_grant := false.B
