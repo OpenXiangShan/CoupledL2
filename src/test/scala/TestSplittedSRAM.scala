@@ -8,7 +8,6 @@ import chiseltest.RawTester.test
 import chisel3.experimental._
 import chisel3.testers._
 import org.chipsalliance.cde.config._
-import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
 import scala.collection.mutable.ArrayBuffer
 import chiseltest.WriteVcdAnnotation
 import scala.util.Random

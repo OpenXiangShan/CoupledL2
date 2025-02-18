@@ -167,7 +167,7 @@ object Queue_SRAM {
       enq.ready := deq.ready
       deq
     } else {
-      val q = Module(new Queue_SRAM(chiselTypeOf(enq.bits), entries, pipe, flow, useSyncReadMem, flush.isDefined))
+      val q = Module(new Queue_SRAM(chiselTypeOf(enq.bits), entries, pipe, flow, useSyncReadMem, flush.isDefined)())
       q.io.flush.zip(flush).foreach(f => f._1 := f._2)
       q.io.enq.valid := enq.valid // not using <> so that override is allowed
       q.io.enq.bits := enq.bits
