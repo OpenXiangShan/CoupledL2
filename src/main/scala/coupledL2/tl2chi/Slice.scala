@@ -92,8 +92,6 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
 
   reqArb.io.ATag := reqBuf.io.ATag
   reqArb.io.ASet := reqBuf.io.ASet
-  //  reqArb.io.cmoAllBlock := sinkA.io.cmoAll.cmoAllBlock
-  reqArb.io.cmoAllBlock.foreach{_ := sinkA.io.cmoAll.map(_.cmoAllBlock).getOrElse(false.B)}
   reqArb.io.sinkA <> reqBuf.io.out
   reqArb.io.sinkB <> rxsnp.io.task
   reqArb.io.sinkC <> sinkC.io.task

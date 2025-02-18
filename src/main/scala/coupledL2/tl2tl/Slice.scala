@@ -67,7 +67,6 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   reqArb.io.sinkA <> a_reqBuf.io.out
   reqArb.io.ATag := a_reqBuf.io.ATag
   reqArb.io.ASet := a_reqBuf.io.ASet
-  reqArb.io.cmoAllBlock.foreach{_ := false.B}
 
   reqArb.io.sinkB <> sinkB.io.task
   reqArb.io.sinkC <> sinkC.io.task
