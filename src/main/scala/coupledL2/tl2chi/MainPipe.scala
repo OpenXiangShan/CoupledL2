@@ -146,10 +146,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val meta_s3         = dirResult_s3.meta
   val req_s3          = task_s3.bits
 
-  val tagError_s3     = io.dirResp_s3.error || meta_s3.tagErr
-  val dataError_s3    = meta_s3.dataErr
-  val l2Error_s3      = io.dirResp_s3.error || req_s3.mshrTask && req_s3.dataCheckErr.getOrElse(false.B)
-
   val mshr_req_s3     = req_s3.mshrTask
   val sink_req_s3     = !mshr_req_s3
   val sinkA_req_s3    = !mshr_req_s3 && req_s3.fromA
@@ -197,6 +193,10 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   val cache_alias               = req_acquire_s3 && dirResult_s3.hit && meta_s3.clients(0) &&
                               meta_s3.alias.getOrElse(0.U) =/= req_s3.alias.getOrElse(0.U)
+
+  val tagError_s3               = io.dirResp_s3.error || meta_s3.tagErr
+  val dataError_s3              = meta_s3.dataErr
+  val l2Error_s3                = io.dirResp_s3.error || mshr_req_s3 && req_s3.dataCheckErr.getOrElse(false.B)
 
   val mshr_refill_s3 = mshr_accessackdata_s3 || mshr_hintack_s3 || mshr_grant_s3 // needs refill to L2 DS
   val replResp_valid_s3 = io.replResp.valid
