@@ -329,8 +329,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       respCacheState := Mux(isT(meta_s3.state), UC, SC)
     }
 
-    when (req_s3.snpHitReleaseToClean)
-    {
+    when (req_s3.snpHitReleaseToClean) {
       // On SnpOnce/SnpOnceFwd nesting WriteCleanFull, turn UD/UC to SC
       when (isSnpOnceX(req_s3.chiOpcode.get)) {
         respCacheState := SC
