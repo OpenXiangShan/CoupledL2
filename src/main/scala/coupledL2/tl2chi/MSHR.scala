@@ -302,15 +302,16 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   }
 
   // resp and fwdState
+  // *NOTICE: Snp*Fwd would enter MSHR on directory missing
   val respCacheState = ParallelPriorityMux(Seq(
     snpToN -> I,
-    snpToB -> SC,
+    snpToB -> Mux(!dirResult.hit, I, SC),
     isSnpOnceX(req_chiOpcode) ->
-      Mux(
+      Mux(!dirResult.hit, I, Mux(
         req.snpHitReleaseToClean,
         SC,
         Mux(probeDirty || meta.dirty, UD, metaChi)
-      ),
+      )),
     (isSnpStashX(req_chiOpcode) || isSnpQuery(req_chiOpcode)) ->
       Mux(probeDirty || meta.dirty, UD, metaChi),
     isSnpCleanShared(req_chiOpcode) -> 
