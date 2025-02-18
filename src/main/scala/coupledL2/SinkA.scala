@@ -39,8 +39,6 @@ class SinkA(implicit p: Parameters) extends L2Module {
     "no Put");
 
   // flush L2 all control defines
-  val numSets = 1 << log2Ceil(cacheParams.sets) 
-  val numWays = 1 << log2Ceil(cacheParams.ways)
   val set = Option.when(cacheParams.enableL2Flush)(RegInit(0.U(setBits.W))) 
   val way = Option.when(cacheParams.enableL2Flush)(RegInit(0.U(wayBits.W))) 
   val sIDLE :: sCMOREQ :: sWAITLINE :: sWAITMSHR :: sDONE :: Nil = Enum(5)
@@ -50,7 +48,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
   val wayVal = way.getOrElse(0.U)
   val cmoAllValid = stateVal === sCMOREQ
   val cmoAllBlock = stateVal === sCMOREQ || stateVal === sWAITLINE
-  io.cmoAll.foreach { cmoAll => cmoAll.l2FlushDone := stateVal ===sDONE }
+  io.cmoAll.foreach { cmoAll => cmoAll.l2FlushDone := stateVal === sDONE }
   io.cmoAll.foreach { cmoAll => cmoAll.cmoAllBlock := cmoAllBlock }
 
   def fromTLAtoTaskBundle(a: TLBundleA): TaskBundle = {
@@ -171,10 +169,10 @@ class SinkA(implicit p: Parameters) extends L2Module {
     state.foreach { _ := sWAITLINE }
   }
   when (stateVal === sWAITLINE && cmoLineDone) {
-    when (setVal === (numSets-1).U && wayVal === (numWays-1).U) { 
+    when (setVal === (cacheParams.sets-1).U && wayVal === (cacheParams.ways-1).U) { 
       state.foreach { _ := sDONE }
     }.otherwise {
-      when (wayVal === (numWays-1).U) {
+      when (wayVal === (cacheParams.ways-1).U) {
         way.foreach { _ := 0.U }
         set.foreach { _ := setVal + 1.U }
       }.otherwise {
