@@ -66,21 +66,22 @@ class RXDAT(implicit p: Parameters) extends TL2CHIL2Module {
   io.in.set := 0.U(setBits.W)
   io.in.tag := 0.U(tagBits.W)
 
-  io.in.respInfo.opcode        := DontCare
-  io.in.respInfo.param         := DontCare
-  io.in.respInfo.last          := last
-  io.in.respInfo.dirty         := DontCare
-  io.in.respInfo.isHit         := DontCare
-  io.in.respInfo.chiOpcode.get := io.out.bits.opcode
-  io.in.respInfo.txnID.get     := io.out.bits.txnID
-  io.in.respInfo.srcID.get     := io.out.bits.srcID
-  io.in.respInfo.homeNID.get   := io.out.bits.homeNID
-  io.in.respInfo.dbID.get      := io.out.bits.dbID
-  io.in.respInfo.resp.get      := io.out.bits.resp
-  io.in.respInfo.pCrdType.get  := DontCare // RXDAT Channel does not have a pCrdType field
-  io.in.respInfo.respErr.get   := io.out.bits.respErr
-  io.in.respInfo.traceTag.get  := io.out.bits.traceTag
-  io.in.respInfo.corrupt       := io.out.bits.respErr === RespErrEncodings.DERR || io.out.bits.respErr === RespErrEncodings.NDERR || dataCheck || poison
+  io.in.respInfo.opcode           := DontCare
+  io.in.respInfo.param            := DontCare
+  io.in.respInfo.last             := last
+  io.in.respInfo.dirty            := DontCare
+  io.in.respInfo.isHit            := DontCare
+  io.in.respInfo.chiOpcode.get    := io.out.bits.opcode
+  io.in.respInfo.txnID.get        := io.out.bits.txnID
+  io.in.respInfo.srcID.get        := io.out.bits.srcID
+  io.in.respInfo.homeNID.get      := io.out.bits.homeNID
+  io.in.respInfo.dbID.get         := io.out.bits.dbID
+  io.in.respInfo.resp.get         := io.out.bits.resp
+  io.in.respInfo.pCrdType.get     := DontCare // RXDAT Channel does not have a pCrdType field
+  io.in.respInfo.respErr.get      := io.out.bits.respErr
+  io.in.respInfo.traceTag.get     := io.out.bits.traceTag
+  io.in.respInfo.corrupt          := io.out.bits.respErr === RespErrEncodings.DERR || io.out.bits.respErr === RespErrEncodings.NDERR || dataCheck || poison
+  io.in.respInfo.dataCheckErr.get := dataCheck
 
   io.out.ready := true.B
 
