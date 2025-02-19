@@ -253,7 +253,9 @@ trait HasCHIMsgParameters {
 
   val C_CONFIG = B_CONFIG ++ Map(
     // new width def for existing fields
-    "DAT_OPCODE_WIDTH" -> 4
+    "NODEID_WIDTH" -> 9,
+    "DAT_OPCODE_WIDTH" -> 4,
+    "ADDR_WIDTH" -> 44
   )
 
   val Eb_CONFIG = C_CONFIG ++ Map(
@@ -270,7 +272,8 @@ trait HasCHIMsgParameters {
     "CBUSY_WIDTH" -> 3,
     "MPAM_WIDTH" -> 11,
     "SLCREPHINT_WIDTH" -> 7,
-    "TAGOP_WIDTH" -> 2
+    "TAGOP_WIDTH" -> 2,
+    "ADDR_WIDTH" -> 48
   )
 
   val params = Map(
