@@ -458,11 +458,12 @@ class L2CacheErrorInfo(implicit p: Parameters) extends L2Bundle {
   val valid = Bool()
   val address = UInt(addressBits.W)
 }
-class IOCMOAll(implicit p: Parameters) extends Bundle {
-  val l2Flush = Input(Bool())
-  val l2FlushDone = Output(Bool())
 
-  val cmoLineDone = Input(Bool())
-  val mshrValid = Input(Bool())
-  val cmoAllBlock = Output(Bool())
+class IOCMOAll(implicit p: Parameters) extends Bundle {
+  val l2Flush = Input(Bool())      // cmo flush l2$ all enable
+  val l2FlushDone = Output(Bool()) // cmo flush l2$ all done 
+
+  val cmoLineDone = Input(Bool())  // during process of cmo flush all, flush 1 CacheLine is done 
+  val mshrValid = Input(Bool())    // 1: mshr has entry valid  0: no mshr entry valid
+  val cmoAllBlock = Output(Bool()) // 1: in process of cmo flush all  0: not in process of cmo flush all
 }
