@@ -1240,6 +1240,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
 
   val no_schedule = state.s_refill && state.s_probeack && state.s_release &&
     state.s_rcompack.getOrElse(true.B) &&
+    state.s_wcompack.getOrElse(true.B) &&
     state.s_cbwrdata.getOrElse(true.B) &&
     state.s_reissue.getOrElse(true.B) &&
     state.s_dct.getOrElse(true.B) &&
