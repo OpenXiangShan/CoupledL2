@@ -272,7 +272,8 @@ trait HasCHIMsgParameters {
     "CBUSY_WIDTH" -> 3,
     "MPAM_WIDTH" -> 11,
     "SLCREPHINT_WIDTH" -> 7,
-    "TAGOP_WIDTH" -> 2
+    "TAGOP_WIDTH" -> 2,
+    "ADDR_WIDTH" -> 48
   )
 
   val params = Map(
