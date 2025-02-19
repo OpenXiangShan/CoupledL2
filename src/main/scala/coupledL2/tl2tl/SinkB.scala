@@ -50,7 +50,8 @@ class SinkB(implicit p: Parameters) extends L2Module {
     task.wayMask := Fill(cacheParams.ways, "b1".U)
     task.reqSource := MemReqSource.NoWhere.id.U // Ignore
     task.snpHitRelease := false.B
-    task.snpHitReleaseToB := false.B
+    task.snpHitReleaseToInval := false.B
+    task.snpHitReleaseToClean := false.B
     task.snpHitReleaseWithData := false.B
     task.snpHitReleaseIdx := 0.U
     task.snpHitReleaseState := 0.U
