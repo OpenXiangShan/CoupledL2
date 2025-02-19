@@ -195,6 +195,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   val cmo_cbo_retention_s3      = req_cbo_clean_s3 || req_cbo_flush_s3
   val cmo_cbo_s3                = req_cbo_clean_s3 || req_cbo_flush_s3 || req_cbo_inval_s3
+  val cmoHitInvalid             = io.cmoAllBlock.getOrElse(false.B) && (meta_s3.state === INVALID)
 
   val cache_alias               = req_acquire_s3 && dirResult_s3.hit && meta_s3.clients(0) &&
                               meta_s3.alias.getOrElse(0.U) =/= req_s3.alias.getOrElse(0.U)
@@ -377,7 +378,25 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       }
     }
     when (req_s3.chiOpcode.get === SnpCleanShared) {
+<<<<<<< HEAD
       respCacheState := Mux(isT(nestable_meta_s3.state), UC, SC)
+=======
+      respCacheState := Mux(meta_s3.state === BRANCH, SC, UC)
+    }
+  }
+
+  when (req_s3.snpHitRelease) {
+    /**
+      * NOTICE: On Stash and Query:
+      * the cache state must maintain unchanged on nested WriteBack
+     */
+    when (isSnpStashX(req_s3.chiOpcode.get) || isSnpQuery(req_s3.chiOpcode.get)) {
+      respCacheState := Mux(
+        req_s3.snpHitReleaseState === BRANCH,
+        SC,
+        Mux(req_s3.snpHitReleaseDirty, UD, UC)
+      )
+>>>>>>> a376cec (feat(TL2CIHCoupledL2): add flush L2 all operation to search all VALID cacheline to release to memory)
     }
   }
 
@@ -972,6 +991,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val cmoLineDrop = task_s3.valid && sinkA_req_s3 && req_s3.opcode === CBOFlush && cmoHitInvalid
   val cmoLineDone = io.cmoAllBlock.getOrElse(false.B) && task_s3.valid && mshr_cmoresp_s3
   io.cmoLineDone.foreach { _ := RegNextN(cmoLineDone || cmoLineDrop, 2, Some(false.B)) }
+
   /* ===== Performance counters ===== */
   // num of mshr req
   XSPerfAccumulate("mshr_grant_req", task_s3.valid && mshr_grant_s3 && !retry)
