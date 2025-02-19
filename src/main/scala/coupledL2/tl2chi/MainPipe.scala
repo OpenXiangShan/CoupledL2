@@ -156,6 +156,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val sinkA_req_s3    = !mshr_req_s3 && req_s3.fromA
   val sinkB_req_s3    = !mshr_req_s3 && req_s3.fromB
   val sinkC_req_s3    = !mshr_req_s3 && req_s3.fromC
+  val cmoHitInvalid   = io.cmoAllBlock.getOrElse(false.B) && (meta_s3.state === INVALID)
 
   val req_acquire_s3            = sinkA_req_s3 && (req_s3.opcode === AcquireBlock || req_s3.opcode === AcquirePerm)
   val req_acquireBlock_s3       = sinkA_req_s3 && req_s3.opcode === AcquireBlock
@@ -195,7 +196,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   val cmo_cbo_retention_s3      = req_cbo_clean_s3 || req_cbo_flush_s3
   val cmo_cbo_s3                = req_cbo_clean_s3 || req_cbo_flush_s3 || req_cbo_inval_s3
-  val cmoHitInvalid             = io.cmoAllBlock.getOrElse(false.B) && (meta_s3.state === INVALID)
 
   val cache_alias               = req_acquire_s3 && dirResult_s3.hit && meta_s3.clients(0) &&
                               meta_s3.alias.getOrElse(0.U) =/= req_s3.alias.getOrElse(0.U)
