@@ -1,9 +1,10 @@
 package coupledL2
 
 import chisel3._
+import circt.stage.ChiselStage
 import chisel3.util._
 import org.chipsalliance.cde.config._
-import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
+import chisel3.stage.ChiselGeneratorAnnotation
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tile.MaxHartIdBits
@@ -222,9 +223,9 @@ object TestTopCHIHelper {
 
     val top = DisableMonitors(p => LazyModule(fTop(p)))(config)
 
-    (new ChiselStage).execute(args, Seq(
-      ChiselGeneratorAnnotation(() => top.module)
-    ))
+    (new ChiselStage).execute(args,
+      ChiselGeneratorAnnotation(() => top.module) +: TestTopFirtoolOptions()
+    )
 
     ChiselDB.addToFileRegisters
     FileRegisters.write("./build")
@@ -253,7 +254,7 @@ Usage: TestTop_CHIL2 [<--option> <values>]
     System.exit(-1)
   }
 
-  var varArgs = ArrayBuffer(args:_*)
+  var varArgs = ArrayBuffer(args.toIndexedSeq:_*)
   var varArgsDropped = 0
 
   var numCores: Int = 2
@@ -280,7 +281,7 @@ Usage: TestTop_CHIL2 [<--option> <values>]
     varArgs.remove(i - varArgsDropped, 2)
     varArgsDropped = varArgsDropped + 2
   })
-  varArgs.trimToSize
+  varArgs.trimToSize()
 
   TestTopCHIHelper.gen(
     p => new TestTop_CHIL2(
