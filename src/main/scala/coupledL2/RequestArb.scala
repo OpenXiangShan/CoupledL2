@@ -190,7 +190,7 @@ class RequestArb(implicit p: Parameters) extends L2Module
   /* ========  Stage 2 ======== */
   val s1_AHint_fire = io.sinkA.fire && io.sinkA.bits.opcode === Hint
   // any req except AHint might access DS, and continuous DS accesses are prohibited
-  val ds_mcp2_stall = RegNext(s1_fire && !s1_AHint_fire)
+  val ds_mcp2_stall = if(enableMCP2) RegNext(s1_fire && !s1_AHint_fire) else false.B
 
   s2_ready  := !ds_mcp2_stall
 

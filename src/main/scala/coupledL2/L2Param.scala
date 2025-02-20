@@ -117,6 +117,8 @@ case class L2Param(
   enableCHILog: Boolean = true,
   // TopDown
   elaboratedTopDown: Boolean = true,
+  // MultiCycle-Path-2 for Data SRAM
+  enableMCP2: Boolean = true,
   // env
   FPGAPlatform: Boolean = false,
   // ECC

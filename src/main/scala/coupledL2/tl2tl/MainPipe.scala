@@ -311,9 +311,11 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   }.otherwise {
     task_s3_valid_hold2 := task_s3_valid_hold2 >> 1.U
   }
+  val ds_en    = task_s3.valid && (ren || wen)
+  val ds_valid = if(enableMCP2) task_s3_valid_hold2(0) && (ren || wen) else task_s3.valid && (ren || wen)
 
-  io.toDS.en_s3           := task_s3.valid && (ren || wen)
-  io.toDS.req_s3.valid    := task_s3_valid_hold2(0) && (ren || wen)
+  io.toDS.en_s3           := ds_en
+  io.toDS.req_s3.valid    := ds_valid
   io.toDS.req_s3.bits.way := Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.way,
     Mux(mshr_req_s3, req_s3.way, dirResult_s3.way))
   io.toDS.req_s3.bits.set := Mux(mshr_req_s3, req_s3.set, dirResult_s3.set)

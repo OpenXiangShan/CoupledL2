@@ -117,15 +117,18 @@ class DataStorage(implicit p: Parameters) extends L2Module {
 
   // for timing, we set this as multicycle path
   // s3 read, s4 pass and s5 to destination
-  io.rdata := dataRead
+  // (if not MCP2, then we need to latch at s4)
+  io.rdata := {if(enableMCP2) dataRead else RegNext(dataRead)}
   io.error := error
 
-  assert(!io.en || !RegNext(io.en, false.B),
-    "Continuous SRAM req prohibited under MCP2!")
+  if (enableMCP2) {
+    assert(!io.en || !RegNext(io.en, false.B),
+      "Continuous SRAM req prohibited under MCP2!")
 
-  assert(!(RegNext(io.en) && (io.req.asUInt =/= RegNext(io.req.asUInt))),
-    s"DataStorage req fails to hold for 2 cycles!")
+    assert(!(RegNext(io.en) && (io.req.asUInt =/= RegNext(io.req.asUInt))),
+      s"DataStorage req fails to hold for 2 cycles!")
 
-  assert(!(RegNext(io.en && io.req.bits.wen) && (io.wdata.asUInt =/= RegNext(io.wdata.asUInt))),
-    s"DataStorage wdata fails to hold for 2 cycles!")
+    assert(!(RegNext(io.en && io.req.bits.wen) && (io.wdata.asUInt =/= RegNext(io.wdata.asUInt))),
+      s"DataStorage wdata fails to hold for 2 cycles!")
+  }
 }
