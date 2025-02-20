@@ -104,9 +104,9 @@ trait HasOpenLLCParameters {
   }
 
   def sizeBytesToStr(sizeBytes: Double): String = sizeBytes match {
-    case _ if sizeBytes >= 1024 * 1024 => (sizeBytes / 1024 / 1024) + "MB"
-    case _ if sizeBytes >= 1024        => (sizeBytes / 1024) + "KB"
-    case _                             => sizeBytes + "B"
+    case _ if sizeBytes >= 1024 * 1024 => s"${sizeBytes / 1024 / 1024}MB"
+    case _ if sizeBytes >= 1024        => s"${sizeBytes / 1024}KB"
+    case _                             => s"${sizeBytes}B"
   }
 
 }
