@@ -255,7 +255,7 @@ trait HasCHIMsgParameters {
     // new width def for existing fields
     "NODEID_WIDTH" -> 9,
     "DAT_OPCODE_WIDTH" -> 4,
-    "ADDR_WIDTH" -> 44
+    // "ADDR_WIDTH" -> 44
   )
 
   val Eb_CONFIG = C_CONFIG ++ Map(
