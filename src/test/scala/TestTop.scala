@@ -1,8 +1,9 @@
 package openLLC
 
 import chisel3._
+import circt.stage.{ChiselStage, FirtoolOption}
 import chisel3.util._
-import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
+import chisel3.stage.ChiselGeneratorAnnotation
 import freechips.rocketchip.amba.axi4._
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
@@ -41,7 +42,8 @@ object TestTop_L3 extends App {
 
   val top = DisableMonitors(p => LazyModule(new TestTop_L3()(p)))(config)
   (new ChiselStage).execute(args, Seq(
-    ChiselGeneratorAnnotation(() => top.module)
+    ChiselGeneratorAnnotation(() => top.module),
+    FirtoolOption("--disable-annotation-unknown")
   ))
 }
 
@@ -112,6 +114,7 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
     case PerfCounterOptionsKey => PerfCounterOptions(
       here(L2ParamKey).enablePerf && !here(L2ParamKey).FPGAPlatform,
       here(L2ParamKey).enableRollingDB && !here(L2ParamKey).FPGAPlatform,
+      XSPerfLevel.withName("VERBOSE"),
       i
     )
   }))))
@@ -207,6 +210,7 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
       case PerfCounterOptionsKey => PerfCounterOptions(
         here(OpenLLCParamKey).enablePerf && !here(OpenLLCParamKey).FPGAPlatform,
         false,
+        XSPerfLevel.withName("VERBOSE"),
         0
       )
     })))
@@ -279,7 +283,8 @@ object TestTopSoCHelper {
     val top = DisableMonitors(p => LazyModule(fTop(p)))(config)
 
     (new ChiselStage).execute(args, Seq(
-      ChiselGeneratorAnnotation(() => top.module)
+      ChiselGeneratorAnnotation(() => top.module),
+      FirtoolOption("--disable-annotation-unknown")
     ))
 
     ChiselDB.addToFileRegisters
