@@ -358,7 +358,7 @@ class MMIOBridgeImp(outer: MMIOBridge) extends LazyModuleImp(outer)
     entry.io.id := i.U
   }
 
-  val txreqArb = Module(new RRArbiter(chiselTypeOf(io.tx.req.bits), mmioBridgeSize))
+  val txreqArb = Module(new RRArbiterInit(chiselTypeOf(io.tx.req.bits), mmioBridgeSize))
   for ((a, req) <- txreqArb.io.in.zip(entries.map(_.io.chi.tx.req))) {
     a <> req
     val isReadNoSnp = req.bits.opcode === ReadNoSnp
