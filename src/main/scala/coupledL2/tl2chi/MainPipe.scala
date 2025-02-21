@@ -286,11 +286,16 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   // whether L2 should respond data to HN or not
   val retToSrc = req_s3.retToSrc.getOrElse(false.B)
-  val neverRespData = isSnpMakeInvalidX(req_s3.chiOpcode.get) ||
+  val neverRespData_SC = dirResult_s3.hit && !retToSrc && meta_s3.state === BRANCH && (
+    isSnpToB(req_s3.chiOpcode.get) ||
+    req_s3.chiOpcode.get === SnpOnce ||
+    req_s3.chiOpcode.get === SnpUnique
+  )
+  val neverRespData = neverRespData_SC ||
+    isSnpMakeInvalidX(req_s3.chiOpcode.get) ||
     isSnpStashX(req_s3.chiOpcode.get) ||
     isSnpQuery(req_s3.chiOpcode.get) ||
     req_s3.chiOpcode.get === SnpOnceFwd ||
-    req_s3.chiOpcode.get === SnpUnique && meta_s3.state === BRANCH && !retToSrc ||
     req_s3.chiOpcode.get === SnpUniqueFwd
   val shouldRespData_dirty = dirResult_s3.hit && (meta_s3.state === TIP || meta_s3.state === TRUNK) && meta_s3.dirty
   // For forwarding snoops, if the RetToSrc value is 1, must return a copy is the cache line is Dirty or Clean.
