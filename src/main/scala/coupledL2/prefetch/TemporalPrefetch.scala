@@ -139,7 +139,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   }
 
   val tpMetaTable = Module(
-    new SRAMTemplate(new tpMetaEntry(), set = tpTableNrSet, way = tpTableAssoc, shouldReset = false, singlePort = true)
+    new SRAMTemplate(new tpMetaEntry(), set = tpTableNrSet, way = tpTableAssoc, shouldReset = false, singlePort = true, hasMbist = cacheParams.hasMbist)
   )
   val dataReadQueue = Module(new Queue(new TPmetaReq(hartIdLen, fullAddressBits, offsetBits), dataReadQueueDepth, pipe = false, flow = false))
   val dataWriteQueue = Module(new Queue(new TPmetaReq(hartIdLen, fullAddressBits, offsetBits), dataWriteQueueDepth, pipe = false, flow = false))
