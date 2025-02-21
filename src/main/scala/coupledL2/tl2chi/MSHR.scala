@@ -924,10 +924,14 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_cmometaw.fromL2pft.foreach(_ := false.B)
     mp_cmometaw.needHint.foreach(_ := false.B)
     mp_cmometaw.dirty := hitDirty
+    
+    // write meta for compensation of ProbeAck TtoB by cbo.clean
     mp_cmometaw.meta := meta
+    mp_cmometaw.meta.clients := meta.clients & Fill(clientBits, !probeGotN)
     mp_cmometaw.meta.dirty := false.B
-    mp_cmometaw.meta.state := TIP // write TIP for compensation of ProbeAck TtoB by cbo.clean
+    mp_cmometaw.meta.state := Mux(isT(meta.state), TIP, meta.state) 
     mp_cmometaw.metaWen := true.B
+
     mp_cmometaw.tagWen := false.B
     mp_cmometaw.dsWen := false.B
     mp_cmometaw.wayMask := 0.U(cacheParams.ways.W)
