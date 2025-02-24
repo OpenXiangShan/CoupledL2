@@ -296,6 +296,8 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   } else {
     DontCare
   }
+  txdat.bits.respErr := Mux(req.corrupt,
+    Mux(req.opcode === Release, RespErrEncodings.NDERR, RespErrEncodings.DERR), RespErrEncodings.OK)
   txdat.bits.dataCheck match {
     case Some(x) =>
       x := dataCheck
