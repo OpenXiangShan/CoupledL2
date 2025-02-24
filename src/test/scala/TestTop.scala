@@ -411,6 +411,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
       enableDataECC = true,
       dataCheck = Some("oddparity"),
       enablePoison = true,
+      enableMCP2 = false
     )
     case BankBitsKey => 0
     case LogUtilsOptionsKey => LogUtilsOptions(
