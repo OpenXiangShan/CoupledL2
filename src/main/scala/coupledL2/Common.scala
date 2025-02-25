@@ -222,6 +222,7 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle with HasTLChannelBits {
   val s_release = Bool()
   val s_refill = Bool()
   val s_cmoresp = Bool()
+  val s_cmometaw = Bool()
   val w_releaseack = Bool()
   val w_replResp = Bool()
   val w_rprobeacklast = Bool()

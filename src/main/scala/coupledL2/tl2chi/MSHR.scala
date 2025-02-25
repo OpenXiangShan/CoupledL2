@@ -925,11 +925,12 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_cmometaw.needHint.foreach(_ := false.B)
     mp_cmometaw.dirty := hitDirty
     
-    // write meta for compensation of ProbeAck TtoB by cbo.clean
+    // write meta for compensation of ProbeAck TtoB/TtoN by cbo.clean
+    // *NOTICE: There is no possible nest for 'cmometaw' task, snoops should be blocked by RXSNP.
     mp_cmometaw.meta := meta
     mp_cmometaw.meta.clients := meta.clients & Fill(clientBits, !probeGotN)
     mp_cmometaw.meta.dirty := false.B
-    mp_cmometaw.meta.state := Mux(isT(meta.state), TIP, meta.state) 
+    mp_cmometaw.meta.state := TIP
     mp_cmometaw.metaWen := true.B
 
     mp_cmometaw.tagWen := false.B
@@ -1329,6 +1330,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   io.msInfo.bits.s_release := state.s_release
   io.msInfo.bits.s_refill := state.s_refill
   io.msInfo.bits.s_cmoresp := state.s_cmoresp
+  io.msInfo.bits.s_cmometaw := state.s_cmometaw
   io.msInfo.bits.w_releaseack := state.w_releaseack
   io.msInfo.bits.w_replResp := state.w_replResp
   io.msInfo.bits.w_rprobeacklast := state.w_rprobeacklast
