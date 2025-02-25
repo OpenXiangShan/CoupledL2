@@ -566,8 +566,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.msInfo.bits.w_grantfirst := state.w_grantfirst
   io.msInfo.bits.s_refill := state.s_refill
   io.msInfo.bits.s_release := state.s_release
-  io.msInfo.bits.s_cmoresp := false.B
-  io.msInfo.bits.s_cmometaw := false.B
+  io.msInfo.bits.s_cmoresp := true.B
+  io.msInfo.bits.s_cmometaw := true.B
   io.msInfo.bits.w_releaseack := state.w_releaseack
   io.msInfo.bits.w_replResp := state.w_replResp
   io.msInfo.bits.w_rprobeacklast := state.w_rprobeacklast
