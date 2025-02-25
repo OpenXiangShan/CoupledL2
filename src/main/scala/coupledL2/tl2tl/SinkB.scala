@@ -54,8 +54,7 @@ class SinkB(implicit p: Parameters) extends L2Module {
     task.snpHitReleaseToClean := false.B
     task.snpHitReleaseWithData := false.B
     task.snpHitReleaseIdx := 0.U
-    task.snpHitReleaseState := 0.U
-    task.snpHitReleaseDirty := false.B
+    task.snpHitReleaseMeta := 0.U
     task
   }
   val task = fromTLBtoTaskBundle(io.b.bits)

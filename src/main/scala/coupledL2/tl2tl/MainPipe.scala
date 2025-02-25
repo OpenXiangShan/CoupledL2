@@ -244,8 +244,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   ms_task.snpHitReleaseToClean := false.B
   ms_task.snpHitReleaseWithData := false.B
   ms_task.snpHitReleaseIdx := 0.U
-  ms_task.snpHitReleaseState := 0.U
-  ms_task.snpHitReleaseDirty := false.B
+  ms_task.snpHitReleaseMeta := 0.U
   ms_task.denied           := false.B
   ms_task.corrupt          := false.B
 
