@@ -930,7 +930,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_cmometaw.meta := meta
     mp_cmometaw.meta.clients := meta.clients & Fill(clientBits, !probeGotN)
     mp_cmometaw.meta.dirty := false.B
-    mp_cmometaw.meta.state := TIP
+    mp_cmometaw.meta.state := TIP // write TIP for compensation of ProbeAck TtoB/TtoN by cbo.clean
     mp_cmometaw.metaWen := true.B
 
     mp_cmometaw.tagWen := false.B
