@@ -72,20 +72,23 @@ class RXSNP(
     *    be **blocked**.
     */
   val cmoBlockSnpMask = VecInit(io.msInfo.map(s => 
-    s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && s.bits.dirHit && isValid(s.bits.metaState) &&
+    s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && s.bits.dirHit && isValid(s.bits.meta.state) &&
     !s.bits.s_cmoresp && (!s.bits.s_release || !s.bits.w_rprobeacklast) &&
     !s.bits.willFree
   )).asUInt
   val cmoBlockSnp = cmoBlockSnpMask.orR
   val replaceBlockSnpMask = VecInit(io.msInfo.map(s =>
-    s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && !s.bits.dirHit && isValid(s.bits.metaState) &&
+    s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && !s.bits.dirHit && isValid(s.bits.meta.state) &&
     s.bits.s_cmoresp && s.bits.w_replResp && (!s.bits.w_rprobeacklast || s.bits.w_releaseack || !RegNext(s.bits.w_replResp)) &&
     !s.bits.willFree
   )).asUInt
   val replaceBlockSnp = replaceBlockSnpMask.orR
+
+  // '!s.bits.dirHit'     : Nesting a Cache Replacement subsequent release
+  // '!s.bits.s_cmoresp'  : Nesting a CMO subsequent release
   val replaceNestSnpMask = VecInit(io.msInfo.map(s =>
       s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && 
-      (!s.bits.dirHit || !s.bits.s_cmoresp) && s.bits.metaState =/= INVALID &&
+      (!s.bits.dirHit || !s.bits.s_cmoresp) && s.bits.meta.state =/= INVALID &&
       RegNext(s.bits.w_replResp) && s.bits.w_rprobeacklast && !s.bits.w_releaseack
     )).asUInt
   val releaseToInvalNestSnpMask = replaceNestSnpMask & VecInit(io.msInfo.map(s =>
@@ -96,11 +99,8 @@ class RXSNP(
     )).asUInt
   val replaceDataMask = VecInit(io.msInfo.map(_.bits.replaceData)).asUInt
 
-  val replaceNestSnpState = ParallelOR(io.msInfo.zip(replaceNestSnpMask.asBools).map { case (ms, hit) => {
-    Mux(hit, ms.bits.metaState, 0.U)
-  }})
-  val replaceNestSnpDirty = ParallelOR(io.msInfo.zip(replaceNestSnpMask.asBools).map { case (ms, hit) => {
-    Mux(hit, ms.bits.metaDirty || ms.bits.probeDirty, false.B)
+  val replaceNestSnpMeta = ParallelOR(io.msInfo.zip(replaceNestSnpMask.asBools).map { case (ms, hit) => {
+    Mux(hit, ms.bits.meta, MetaEntry())
   }})
 
   assert(PopCount(replaceNestSnpMask) <= 1.U, "multiple replace nest snoop")
@@ -165,9 +165,8 @@ class RXSNP(
     task.snpHitReleaseToInval := releaseToInvalNestSnpMask.orR
     task.snpHitReleaseToClean := releaseToCleanNestSnpMask.orR
     task.snpHitReleaseWithData := (replaceNestSnpMask & replaceDataMask).orR
-    task.snpHitReleaseState := replaceNestSnpState
-    task.snpHitReleaseDirty := replaceNestSnpDirty
     task.snpHitReleaseIdx := PriorityEncoder(replaceNestSnpMask)
+    task.snpHitReleaseMeta := replaceNestSnpMeta
     task.tgtID.foreach(_ := 0.U) // TODO
     task.srcID.foreach(_ := snp.srcID)
     task.txnID.foreach(_ := snp.txnID)

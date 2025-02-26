@@ -183,9 +183,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   // *NOTICE: WriteBack/WriteClean(s) with nested snoops that passed dirty were not considered as
   //          a nested hit here, which would no longer pass latest data to lower tier memories.
   val hitDirty = dirResult.hit && meta.dirty || probeDirty
-  val hitWriteBack = req.snpHitRelease && req.snpHitReleaseWithData && req.snpHitReleaseDirty && req.snpHitReleaseToInval
-  val hitWriteClean = req.snpHitRelease && req.snpHitReleaseWithData && req.snpHitReleaseDirty && req.snpHitReleaseToClean
-  val hitWriteEvict = req.snpHitRelease && req.snpHitReleaseWithData && !req.snpHitReleaseDirty
+  val hitWriteBack = req.snpHitRelease && req.snpHitReleaseWithData && req.snpHitReleaseMeta.dirty && req.snpHitReleaseToInval
+  val hitWriteClean = req.snpHitRelease && req.snpHitReleaseWithData && req.snpHitReleaseMeta.dirty && req.snpHitReleaseToClean
+  val hitWriteEvict = req.snpHitRelease && req.snpHitReleaseWithData && !req.snpHitReleaseMeta.dirty
 
   val hitWriteX = hitWriteBack || hitWriteClean || hitWriteEvict
   val hitWriteDirty = hitWriteBack || hitWriteClean
@@ -310,9 +310,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   // *NOTICE: Snp*Fwd would enter MSHR on directory missing
   val respCacheState = ParallelPriorityMux(Seq(
     snpToN -> I,
-    snpToB -> Mux(!dirResult.hit, I, SC),
+    snpToB -> Mux(req.snpHitReleaseToInval, I, SC),
     isSnpOnceX(req_chiOpcode) ->
-      Mux(!dirResult.hit, I, Mux(
+      Mux(req.snpHitReleaseToInval, I, Mux(
         req.snpHitReleaseToClean,
         SC,
         Mux(probeDirty || meta.dirty, UD, metaChi)
@@ -893,8 +893,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_dct.snpHitReleaseToClean := req.snpHitReleaseToClean
     mp_dct.snpHitReleaseWithData := req.snpHitReleaseWithData
     mp_dct.snpHitReleaseIdx := req.snpHitReleaseIdx
-    mp_dct.snpHitReleaseState := req.snpHitReleaseState
-    mp_dct.snpHitReleaseDirty := req.snpHitReleaseDirty
+    mp_dct.snpHitReleaseMeta := req.snpHitReleaseMeta
 
     mp_dct
   }
@@ -956,8 +955,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_cmometaw.snpHitReleaseToClean := req.snpHitReleaseToClean
     mp_cmometaw.snpHitReleaseWithData := req.snpHitReleaseWithData
     mp_cmometaw.snpHitReleaseIdx := req.snpHitReleaseIdx
-    mp_cmometaw.snpHitReleaseState := req.snpHitReleaseState
-    mp_cmometaw.snpHitReleaseDirty := req.snpHitReleaseDirty
+    mp_cmometaw.snpHitReleaseMeta := req.snpHitReleaseMeta
 
     mp_cmometaw
   }
@@ -1313,9 +1311,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   io.msInfo.bits.blockRefill := releaseNotSent || RegNext(releaseNotSent, false.B) || RegNext(RegNext(releaseNotSent, false.B), false.B)
   io.msInfo.bits.dirHit := dirResult.hit
   io.msInfo.bits.metaTag := dirResult.tag
-  io.msInfo.bits.metaState := meta.state
-  io.msInfo.bits.metaDirty := meta.dirty
-  io.msInfo.bits.probeDirty := probeDirty
+  io.msInfo.bits.meta := meta
+  io.msInfo.bits.meta.dirty := meta.dirty || probeDirty
   io.msInfo.bits.willFree := will_free
   io.msInfo.bits.isAcqOrPrefetch := req_acquire || req_prefetch
   io.msInfo.bits.isPrefetch := req_prefetch
