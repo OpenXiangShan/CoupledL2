@@ -378,25 +378,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       }
     }
     when (req_s3.chiOpcode.get === SnpCleanShared) {
-<<<<<<< HEAD
       respCacheState := Mux(isT(nestable_meta_s3.state), UC, SC)
-=======
-      respCacheState := Mux(meta_s3.state === BRANCH, SC, UC)
-    }
-  }
-
-  when (req_s3.snpHitRelease) {
-    /**
-      * NOTICE: On Stash and Query:
-      * the cache state must maintain unchanged on nested copy-back writes
-     */
-    when (isSnpStashX(req_s3.chiOpcode.get) || isSnpQuery(req_s3.chiOpcode.get)) {
-      respCacheState := Mux(
-        req_s3.snpHitReleaseState === BRANCH,
-        SC,
-        Mux(req_s3.snpHitReleaseDirty, UD, UC)
-      )
->>>>>>> a376cec (feat(TL2CIHCoupledL2): add flush L2 all operation to search all VALID cacheline to release to memory)
     }
   }
 
@@ -676,7 +658,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   /* ======== nested writeback ======== */
   io.nestedwb.set := req_s3.set
-  io.nestedwb.tag := req_s3.tag
+  io.netedwb.tag := req_s3.tag
   // This serves as VALID signal
   // c_set_dirty is true iff Release has Data
   io.nestedwb.c_set_dirty := task_s3.valid && task_s3.bits.fromC && task_s3.bits.opcode === ReleaseData && task_s3.bits.param === TtoN
