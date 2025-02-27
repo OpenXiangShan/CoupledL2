@@ -107,7 +107,8 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val replTask = Bool()
 
   // for CMO
-  val cmoTask = Bool()
+  val cmoTask = Bool() // cmo with address
+  val cmoAll = Bool()  // cmo without address but to flush whole L2$ to memory 
 
   // for TopDown Monitor (# TopDown)
   val reqSource = UInt(MemReqSource.reqSourceBits.W)
@@ -456,4 +457,13 @@ class PCrdGrantMatcher(val numPorts: Int) extends Module {
 class L2CacheErrorInfo(implicit p: Parameters) extends L2Bundle {
   val valid = Bool()
   val address = UInt(addressBits.W)
+}
+
+class IOCMOAll(implicit p: Parameters) extends Bundle {
+  val l2Flush = Input(Bool())      // cmo flush l2$ all enable
+  val l2FlushDone = Output(Bool()) // cmo flush l2$ all done 
+
+  val cmoLineDone = Input(Bool())  // during process of cmo flush all, flush 1 CacheLine is done 
+  val mshrValid = Input(Bool())    // 1: mshr has entry valid  0: no mshr entry valid
+  val cmoAllBlock = Output(Bool()) // 1: in process of cmo flush all  0: not in process of cmo flush all
 }

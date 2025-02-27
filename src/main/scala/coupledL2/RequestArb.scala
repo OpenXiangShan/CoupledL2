@@ -176,6 +176,8 @@ class RequestArb(implicit p: Parameters) extends L2Module
   io.dirRead_s1.bits.replacerInfo.refill_prefetch := s1_needs_replRead && (mshr_task_s1.bits.opcode === HintAck && mshr_task_s1.bits.dsWen)
   io.dirRead_s1.bits.refill := s1_needs_replRead
   io.dirRead_s1.bits.mshrId := task_s1.bits.mshrId
+  io.dirRead_s1.bits.cmoAll := task_s1.bits.cmoAll
+  io.dirRead_s1.bits.cmoWay := task_s1.bits.way
 
   // block same-set A req
   io.s1Entrance.valid := mshr_task_s1.valid && s2_ready && mshr_task_s1.bits.metaWen || io.sinkC.fire || io.sinkB.fire
