@@ -156,7 +156,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val sinkA_req_s3    = !mshr_req_s3 && req_s3.fromA
   val sinkB_req_s3    = !mshr_req_s3 && req_s3.fromB
   val sinkC_req_s3    = !mshr_req_s3 && req_s3.fromC
-  val cmoHitInvalid   = io.cmoAllBlock.getOrElse(false.B) && (meta_s3.state === INVALID)
 
   val req_acquire_s3            = sinkA_req_s3 && (req_s3.opcode === AcquireBlock || req_s3.opcode === AcquirePerm)
   val req_acquireBlock_s3       = sinkA_req_s3 && req_s3.opcode === AcquireBlock
@@ -658,7 +657,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   /* ======== nested writeback ======== */
   io.nestedwb.set := req_s3.set
-  io.netedwb.tag := req_s3.tag
+  io.nestedwb.tag := req_s3.tag
   // This serves as VALID signal
   // c_set_dirty is true iff Release has Data
   io.nestedwb.c_set_dirty := task_s3.valid && task_s3.bits.fromC && task_s3.bits.opcode === ReleaseData && task_s3.bits.param === TtoN
