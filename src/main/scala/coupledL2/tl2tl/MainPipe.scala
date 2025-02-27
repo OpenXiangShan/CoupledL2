@@ -663,7 +663,6 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
     alloc_state.s_pprobe := false.B
     alloc_state.w_pprobeackfirst := false.B
     alloc_state.w_pprobeacklast := false.B
-    alloc_state.w_pprobeack := false.B
     alloc_state.s_probeack := false.B
   }
 
