@@ -895,14 +895,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     status.bits.channel := task.bits.channel
     // To optimize timing, we restrict the blocking condition of TXRSP and TXDAT.
     // This may be inaccurate, but it works.
-    status.bits.txChannel := Cat(
-      // TXDAT
-      !neverRespData,
-      // TXRSP
-      !(doRespData && req_s3.snpHitRelease),
-      // TXREQ
-      task.bits.toTXREQ
-    )
+    status.bits.txChannel := task.bits.txChannel
     status.bits.mshrTask := task.bits.mshrTask
   }
 
