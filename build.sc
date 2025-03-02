@@ -1,10 +1,9 @@
 import mill._
 import scalalib._
-import $file.common
-import $file.`rocket-chip`.common
-import $file.`rocket-chip`.common
-import $file.`rocket-chip`.cde.common
-import $file.`rocket-chip`.hardfloat.build
+import $file.{common => commonModule}
+import $file.`rocket-chip`.{common => rocketChipCommon}
+import $file.`rocket-chip`.cde.{common => cdeCommon}
+import $file.`rocket-chip`.hardfloat.{common => hardfloatCommon}
 
 val defaultScalaVersion = "2.13.15"
 
@@ -34,21 +33,21 @@ trait HasChisel extends ScalaModule {
   override def scalacPluginIvyDeps = super.scalacPluginIvyDeps() ++ Agg(chiselPluginIvy.get)
 }
 
-object `rocket-chip` extends millbuild.`rocket-chip`.common.RocketChipModule with HasChisel {
+object `rocket-chip` extends rocketChipCommon.RocketChipModule with HasChisel {
 
   def mainargsIvy = ivy"com.lihaoyi::mainargs:0.7.0"
 
   def json4sJacksonIvy = ivy"org.json4s::json4s-jackson:4.0.7"
 
-  object macros extends millbuild.`rocket-chip`.common.MacrosModule with HasChisel {
+  object macros extends rocketChipCommon.MacrosModule with HasChisel {
     def scalaReflectIvy = ivy"org.scala-lang:scala-reflect:${scalaVersion}"
   }
 
-  object cde extends millbuild.`rocket-chip`.cde.common.CDEModule with HasChisel {
+  object cde extends cdeCommon.CDEModule with HasChisel {
     override def millSourcePath = super.millSourcePath / "cde"
   }
 
-  object hardfloat extends millbuild.`rocket-chip`.hardfloat.common.HardfloatModule with HasChisel {
+  object hardfloat extends hardfloatCommon.HardfloatModule with HasChisel {
     override def millSourcePath = super.millSourcePath / "hardfloat"
   }
 
@@ -77,7 +76,7 @@ object HuanCun extends SbtModule with HasChisel {
   override def moduleDeps = super.moduleDeps ++ Seq(`rocket-chip`, utility)
 }
 
-object CoupledL2 extends SbtModule with HasChisel with millbuild.common.CoupledL2Module {
+object CoupledL2 extends SbtModule with HasChisel with commonModule.CoupledL2Module {
 
   override def millSourcePath = super.millSourcePath / os.up
 
