@@ -203,7 +203,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     // Meta states from MSHRs were considered as directory result here.
     // Therefore, meta states were always inferred to be hit when nesting release, no matter the fact that directory
     // was always non-hit on cache replacement subsequent release.
-    nestable_dirResult_s3.hit   := true.B
+    nestable_dirResult_s3.hit   := req_s3.snpHitReleaseMeta.state =/= INVALID
     nestable_dirResult_s3.meta  := req_s3.snpHitReleaseMeta
   }
 
