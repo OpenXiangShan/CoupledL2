@@ -314,7 +314,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     isSnpOnceX(req_chiOpcode) ->
       Mux(req.snpHitReleaseToInval, I, Mux(
         req.snpHitReleaseToClean,
-        SC,
+        Mux(req.snpHitReleaseMeta.dirty, SC, UC),
         Mux(probeDirty || meta.dirty, UD, metaChi)
       )),
     (isSnpStashX(req_chiOpcode) || isSnpQuery(req_chiOpcode)) ->
@@ -327,9 +327,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     req_chiOpcode === SnpUnique ||
     req_chiOpcode === SnpUniqueStash ||
     req_chiOpcode === SnpCleanShared ||
-    req_chiOpcode === SnpCleanInvalid ||
-    isSnpOnceX(req_chiOpcode) && hitWriteDirty
-  )
+    req_chiOpcode === SnpCleanInvalid
+  ) || hitWriteDirty && isSnpOnceFwd(req_chiOpcode)
   val fwdCacheState = Mux(
     isSnpToBFwd(req_chiOpcode),
     SC,
@@ -655,8 +654,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         snpToN,
         INVALID,
         Mux(
-          // On SnpOnce/SnpOnceFwd nesting WriteCleanFull with UD, we went UD -> SC (T -> B here)
-          snpToB || isSnpOnceX(req_chiOpcode) && hitWriteClean,
+          // On SnpOnceFwd nesting WriteCleanFull with UD, we went UD -> SC (T -> B here)
+          snpToB || isSnpOnceFwd(req_chiOpcode) && hitWriteClean,
           BRANCH,
           meta.state)
       ),
