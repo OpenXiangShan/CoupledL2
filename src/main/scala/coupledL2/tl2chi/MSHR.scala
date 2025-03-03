@@ -1106,9 +1106,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     when (isToB(c_resp.bits.param)) {
       meta.state := Mux(isT(meta.state), TIP, meta.state)
     }
-    when (isToT(c_resp.bits.param)) {
-      assert(false.B, "ProbeAck/ProbeAckData TtoT not fully supported")
-    }
 
     // CMO update release on ProbeAck/ProbeAckData
     when (req_cboClean) {
