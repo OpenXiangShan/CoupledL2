@@ -668,6 +668,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     */
   io.nestedwb.b_inv_dirty := task_s3.valid && task_s3.bits.fromB && source_req_s3.snpHitReleaseToInval &&
     !(isSnpStashX(req_s3.chiOpcode.get) || isSnpQuery(req_s3.chiOpcode.get))
+  io.nestedwb.b_cln_dirty := task_s3.valid && task_s3.bits.fromB && source_req_s3.metaWen && !source_req_s3.meta.dirty
   io.nestedwb.b_toB.foreach(_ :=
     task_s3.valid && task_s3.bits.fromB && source_req_s3.metaWen && source_req_s3.meta.state === BRANCH
   )

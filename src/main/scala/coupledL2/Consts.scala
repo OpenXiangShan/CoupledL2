@@ -55,6 +55,9 @@ object MetaData {
   def isToB(param: UInt): Bool = {
     param === TLPermissions.TtoB || param === TLPermissions.BtoB
   }
+  def isToT(param: UInt): Bool = {
+    param === TLPermissions.TtoT
+  }
   def isT(state: UInt): Bool = state(1)
   def isParamFromT(param: UInt): Bool = {
     param === TLPermissions.TtoN || param === TLPermissions.TtoB || param === TLPermissions.TtoT

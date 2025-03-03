@@ -1106,6 +1106,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     when (isToB(c_resp.bits.param)) {
       meta.state := Mux(isT(meta.state), TIP, meta.state)
     }
+    when (isToT(c_resp.bits.param)) {
+      assert(false.B, "ProbeAck/ProbeAckData TtoT not fully supported")
+    }
 
     // CMO update release on ProbeAck/ProbeAckData
     when (req_cboClean) {
@@ -1366,24 +1369,24 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       meta.state := TIP
       meta.clients := Fill(clientBits, false.B)
     }
+  }
+  when (nestedwb_hit_match) {
     when (io.nestedwb.b_inv_dirty && req.fromA) {
       meta.dirty := false.B
       meta.state := INVALID
       probeDirty := false.B
     }
-  }
-  when (nestedwb_hit_match) {
-    when (io.nestedwb.b_toB.get && req.fromA) {
-      meta.state := Mux(meta.state >= BRANCH, BRANCH, INVALID)
+    when (io.nestedwb.b_cln_dirty && req.fromA) {
       meta.dirty := false.B
       probeDirty := false.B
+    }
+    when (io.nestedwb.b_toB.get && req.fromA) {
+      meta.state := Mux(meta.state >= BRANCH, BRANCH, INVALID)
     }
     when (io.nestedwb.b_toN.get && req.fromA) {
       meta.state := INVALID
       dirResult.hit := false.B
-      meta.dirty := false.B
       meta.clients := Fill(clientBits, false.B)
-      probeDirty := false.B
       state.w_replResp := cmo_cbo // never query replacer on CMO
       req.aliasTask.foreach(_ := false.B)
     }
