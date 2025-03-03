@@ -218,14 +218,12 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     (isSnpToBFwd(req_chiOpcode) /*|| isSnpToNFwd(req_chiOpcode)*/)
   val doRespData_retToSrc_nonFwd = req.retToSrc.get && (
     dirResult.hit && meta.state === BRANCH &&
-      (isSnpToBNonFwd(req_chiOpcode) || isSnpToNNonFwd(req_chiOpcode) || isSnpOnce(req_chiOpcode)) ||
-    hitWriteEvict &&
-       isSnpOnce(req_chiOpcode))
+      (isSnpToBNonFwd(req_chiOpcode) || isSnpToNNonFwd(req_chiOpcode) || isSnpOnce(req_chiOpcode)))
   // doRespData_once includes 
   //  1. SnpOnceFwd : UD -> I     (nesting WriteBack)
   //  2. SnpOnceFwd : UD -> SC    (nesting WriteClean)
   //  3. SnpOnce    : UC -> UC    (non-nesting)
-  //  4. SnpOnce    : UC -> I     (nesting WriteBack)
+  //  4. SnpOnce    : UC -> I     (nesting WriteEvict)
   val doRespData_once = (hitWriteBack || hitWriteClean) &&
       isSnpOnceFwd(req_chiOpcode) ||
     (dirResult.hit && !meta.dirty && meta.state =/= BRANCH || hitWriteEvict) &&
