@@ -331,11 +331,10 @@ class NestedWriteback(implicit p: Parameters) extends L2Bundle {
   val c_set_tip = Bool()
   // Nested Snoop invalidates block
   val b_inv_dirty = Bool()
-  // Nested Snoop cleans block
-  val b_cln_dirty = Bool()
 
   val b_toB = chiOpt.map(_ => Bool())
   val b_toN = chiOpt.map(_ => Bool())
+  val b_toClean = chiOpt.map(_ => Bool())
 }
 
 class PrefetchCtrlFromCore extends Bundle {

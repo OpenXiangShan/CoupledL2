@@ -1366,14 +1366,14 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       meta.state := TIP
       meta.clients := Fill(clientBits, false.B)
     }
-  }
-  when (nestedwb_hit_match) {
     when (io.nestedwb.b_inv_dirty && req.fromA) {
       meta.dirty := false.B
       meta.state := INVALID
       probeDirty := false.B
     }
-    when (io.nestedwb.b_cln_dirty && req.fromA) {
+  }
+  when (nestedwb_hit_match) {
+    when (io.nestedwb.b_toClean.get && req.fromA) {
       meta.dirty := false.B
       probeDirty := false.B
     }
