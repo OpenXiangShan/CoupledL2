@@ -650,7 +650,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         isSnpCleanShared(req_chiOpcode) ||
         isSnpOnceX(req_chiOpcode) && req.snpHitReleaseToClean
       ) || isSnpOnceX(req_chiOpcode) && probeDirty,
-      // Directory would always be missing on nesting WriteBackFull/WriteEvict*/Evict
       state = Mux(
         snpToN,
         INVALID,
