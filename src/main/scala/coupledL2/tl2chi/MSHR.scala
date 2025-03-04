@@ -69,6 +69,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val gotDirty = RegInit(false.B)
   val gotGrantData = RegInit(false.B)
   val probeDirty = RegInit(false.B)
+  val releaseDirty = RegInit(false.B)
   val timer = RegInit(0.U(64.W)) // for performance analysis
   val beatCnt = RegInit(0.U(log2Ceil(beatSize).W))
 
@@ -136,6 +137,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     gotDirty    := false.B
     gotGrantData := false.B
     probeDirty  := false.B
+    releaseDirty := false.B
     timer       := 1.U
     beatCnt     := 0.U
 
@@ -665,7 +667,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     )
     mp_probeack.metaWen := !req.snpHitReleaseToInval
     mp_probeack.tagWen := false.B
-    mp_probeack.dsWen := !snpToN && probeDirty && meta.clients.orR
+    mp_probeack.dsWen := !snpToN && probeDirty && !releaseDirty
     mp_probeack.wayMask := 0.U(cacheParams.ways.W)
     mp_probeack.reqSource := 0.U(MemReqSource.reqSourceBits.W)
     mp_probeack.replTask := false.B
@@ -1361,6 +1363,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       meta.dirty := true.B
       meta.state := TIP
       meta.clients := Fill(clientBits, false.B)
+      releaseDirty := true.B
     }
     when (io.nestedwb.c_set_tip) {
       meta.state := TIP
