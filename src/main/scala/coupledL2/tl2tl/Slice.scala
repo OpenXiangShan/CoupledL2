@@ -171,6 +171,13 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   refillUnit.io.sinkD <> outBuf.d(io.out.d)
   io.out.e <> outBuf.e(refillUnit.io.sourceE)
 
+  /* tie cmo All channels */
+  sinkA.io.cmoAll.foreach {cmoAll => cmoAll.mshrValid := false.B}
+  sinkA.io.cmoAll.foreach {cmoAll => cmoAll.cmoLineDone := false.B}
+  sinkA.io.cmoAll.foreach {cmoAll => cmoAll.l2Flush := false.B}
+
+  io.l2FlushDone.foreach {_ := false.B}
+
   dontTouch(io.in)
   dontTouch(io.out)
 
