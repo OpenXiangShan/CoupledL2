@@ -141,11 +141,6 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   // other flags
   val in      = io.in.bits
   val full    = Cat(buffer.map(_.valid)).andR
-  val isPut = latePut(in) && io.in.valid && !sameAddr(in, RegNext(in))
-  when (isPut) {
-    // printf(p"latePut: Detected a delayed Put request for address ${in.vaddr.map(_.toString).getOrElse("None")}\n\n\n")
-  }
-  //
   val mshrConflictMask = conflictMask(in)
   val mshrConflictMaskFromA = conflictMaskFromA(in)
   dontTouch(mshrConflictMask)
@@ -179,15 +174,6 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
   // flow not allowed when full, or entries might starve
   val canFlow =flow.B && !full && !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(in)
-  // 打印每个信号的状态
-  // printf(p"[Debug] flow.B: ${flow.B}\n")
-  // printf(p"[Debug] !full: ${!full}\n")
-  // printf(p"[Debug] !conflict(in): ${!conflict(in)}\n")
-  // printf(p"[Debug] !chosenQValid: ${!chosenQValid}\n")
-  // printf(p"[Debug] !Cat(io.mainPipeBlock).orR: ${!Cat(io.mainPipeBlock).orR}\n")
-  // printf(p"[Debug] !noFreeWay(in): ${!noFreeWay(in)}\n")
-  // // 打印最终的 canFlow 信号
-  // printf(p"[Debug] canFlow: ${canFlow}\n")
 
   val doFlow  = canFlow && io.out.ready
   io.hasLatePF := latePrefetch(in) && io.in.valid && !sameAddr(in, RegNext(in))
@@ -238,12 +224,8 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   issueArb.io.in zip buffer foreach {
     case(in, e) =>
       // when io.out.valid, we temporarily stall all entries of the same set
-      val pipeBlockOut = Mux(isPut, io.out.valid,
-      io.out.valid && sameSet(e.task, io.out.bits)
-      )
-      when(sameSet(e.task, io.out.bits)) {
-        // printf(p"[Debug] #####BlockOut!${e.task.set}....${e.task.sourceId}!=${io.out.bits.sourceId}####\n")
-      }
+      val pipeBlockOut = io.out.valid && sameSet(e.task, io.out.bits)
+
       in.valid := e.valid && e.rdy && !pipeBlockOut
       in.bits  := e
   }
@@ -334,20 +316,12 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       XSPerfAccumulate(s"req_buffer_util_$i", cntEnable)
     }
     val bufferTimer = RegInit(VecInit(Seq.fill(entries)(0.U(16.W))))
-    val warningPrinted = RegInit(VecInit(Seq.fill(entries)(false.B))) // 记录是否已经输出过警告
-
-    buffer zip bufferTimer zip warningPrinted map {
-      case ((e, t),printed) =>
+    buffer zip bufferTimer map {
+      case (e, t) =>
         when(e.valid) { t := t + 1.U }
-        when(RegNext(RegNext(e.valid) && !e.valid)) {
-          t := 0.U
-          printed := false.B // 重置警告标志
-        }
-        // assert(t < 20000.U, "ReqBuf Leak")
-        when(t >= 20000.U && !printed) {
-          printf("Warning: ReqBuf Leak detected! Timer value: %d\n", t)
-          printed := true.B // 标记为已输出
-        }
+        when(RegNext(RegNext(e.valid) && !e.valid)) { t := 0.U }
+        assert(t < 20000.U, "ReqBuf Leak")
+
         val enable = RegNext(e.valid) && !e.valid
         XSPerfHistogram("reqBuf_timer", t, enable, 0, 20, 1, right_strict = true)
         XSPerfHistogram("reqBuf_timer", t, enable, 20, 400, 20, left_strict = true)

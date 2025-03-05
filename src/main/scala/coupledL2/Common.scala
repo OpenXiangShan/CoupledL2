@@ -51,7 +51,10 @@ class MergeTaskBundle(implicit p: Parameters) extends L2Bundle {
   val sourceId = UInt(sourceIdBits.W) // tilelink sourceID
   val meta = new MetaEntry()
 }
-
+class MatrixDataBundle(implicit p: Parameters) extends L2Bundle {
+  val sourceId = UInt(5.W)     // tilelink sourceID(32)
+  val data = new DSBlock()
+}
 // We generate a Task for every TL request
 // this is the info that flows in Mainpipe
 class TaskBundle(implicit p: Parameters) extends L2Bundle
@@ -109,6 +112,9 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   // for CMO
   val cmoTask = Bool() // cmo with address
   val cmoAll = Bool()  // cmo without address but to flush whole L2$ to memory 
+
+  // for Matrix
+  val matrixTask = Bool()
 
   // for TopDown Monitor (# TopDown)
   val reqSource = UInt(MemReqSource.reqSourceBits.W)

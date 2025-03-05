@@ -49,6 +49,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   val sinkC = Module(new SinkC)
   val sourceC = Module(new SourceC)
   val grantBuf = Module(new GrantBuffer)
+  val matrixSourceD = Module(new MatrixSourceD)
   val refillBuf = Module(new MSHRBuffer(wPorts = 2))
   val releaseBuf = Module(new MSHRBuffer(wPorts = 3))
 
@@ -133,7 +134,10 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   mainPipe.io.l1Hint.ready := io.l1Hint.ready
   mshrCtl.io.grantStatus := grantBuf.io.grantStatus
 
-  grantBuf.io.d_task <> mainPipe.io.toSourceD
+  // grantBuf.io.d_task <> mainPipe.io.toSourceD
+  matrixSourceD.io.d_task <>mainPipe.io.toSourceD
+  grantBuf.io.d_task  <> matrixSourceD.io.toSourceD
+
   grantBuf.io.fromReqArb.status_s1 := reqArb.io.status_s1
   grantBuf.io.pipeStatusVec := reqArb.io.status_vec ++ mainPipe.io.status_vec_toD
   mshrCtl.io.pipeStatusVec(0) := (reqArb.io.status_vec)(1) // s2 status
@@ -186,6 +190,8 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
 
   dontTouch(io.in)
   dontTouch(io.out)
+  // io.matrixDataOut512 := grantBuf.io.d.bits.data //TODO
+  io.matrixDataOut <> matrixSourceD.io.toMatrixD
 
   topDownOpt.foreach (
     _ => {

@@ -322,7 +322,9 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       val hartId = Input(UInt(hartIdLen.W))
       val pfCtrlFromCore = Input(new PrefetchCtrlFromCore)
     //  val l2_hint = Valid(UInt(32.W))
-      val matrix_valid = Input(Valid(Bool()))
+      // DecoupledIO(new MatrixDataBundle())
+      val matrixDataOut512L2 = Vec(banks, DecoupledIO(new MatrixDataBundle()))
+      // val matrixDataOut512L2 = Output(Vec(banks, UInt(512.W)))// 生成banks的UInt(256.W)
       val l2_hint = ValidIO(new L2ToL1Hint())
       val l2_tlb_req = new L2ToL1TlbIO(nRespDups = 1)(l2TlbParams)
       val debugTopDown = new Bundle {
@@ -452,6 +454,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         }
         in.b.bits.address := restoreAddress(slice.io.in.b.bits.address, i)
         slice.io.sliceId := i.U
+        io.matrixDataOut512L2((i+6)%8) <> slice.io.matrixDataOut //(i+6%8)
 
         slice.io.error.ready := enableECC.asBool // TODO: fix the datapath as optional
 
