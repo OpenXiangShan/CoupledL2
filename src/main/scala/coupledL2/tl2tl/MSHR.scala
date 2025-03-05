@@ -561,8 +561,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.msInfo.bits.willFree := will_free
   io.msInfo.bits.isAcqOrPrefetch := req_acquire || req_prefetch
   io.msInfo.bits.isPrefetch := req_prefetch
-  io.msInfo.bits.isPut := req.opcode === PutFullData || 
-                          req.opcode === PutPartialData
   io.msInfo.bits.param := req.param
   io.msInfo.bits.mergeA := mergeA
   io.msInfo.bits.w_grantfirst := state.w_grantfirst
