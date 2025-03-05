@@ -123,6 +123,7 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
       // dataECC = Some("secded"),
       enableTagECC = false, //XS use true
       enableDataECC = false, //XS use true
+      enableMCP2 = false,
       // enablePerf = false,
       // dataCheck = Some("oddparity"),
     )
