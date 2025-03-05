@@ -20,8 +20,6 @@ class SinkMX(implicit p: Parameters) extends L2Module {
     val out_a = DecoupledIO(new TLBundleA(edgeIn.bundle))
     val out_c = DecoupledIO(new TLBundleC(edgeIn.bundle))
   })
-  assert(!(io.a.valid && (io.a.bits.opcode === PutPartialData)),
-    "no PutPartialData");
 
   def isMatrixPut(a: TLBundleA): Bool = {
     (a.opcode === PutFullData || a.opcode === PutPartialData) &&
@@ -30,9 +28,6 @@ class SinkMX(implicit p: Parameters) extends L2Module {
 
   def isMatrixGet(a: TLBundleA): Bool = {
     val en = a.opcode === Get && (a.user.lift(MatrixKey).getOrElse(0.U) === 1.U)
-    when(en) {
-      // printf("isMatrixGet\n")
-    }
     en
   }
 
@@ -44,7 +39,7 @@ class SinkMX(implicit p: Parameters) extends L2Module {
 
   // Handle MatrixGet
   when(isMatrixGet(a) && io.a.valid) {
-    out_a.bits.opcode := io.a.bits.opcode//AcquireBlock//
+    out_a.bits.opcode := io.a.bits.opcode//Get Or AcquireBlock
     out_a.bits.param := NtoT
   }
 

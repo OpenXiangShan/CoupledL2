@@ -38,12 +38,6 @@ object baseConfigAME {
 }
 
 class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
-  /* L1I    L1D
-   *   \    /
-   *     L2
-   *      |
-   *     L3
-   */
 
   override lazy val desiredName: String = "TestTop"
   val delayFactor = 0.2
@@ -80,7 +74,7 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
       ))
     )
   ))
-  // 使用 flatMap 生成扁平的 matrix_nodes 序列
+
   val matrix_nodes = (0 until 1).flatMap { i =>
     (0 until m_num).map { j =>
       TLClientNode(Seq(
@@ -101,8 +95,7 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
       ))
     }
   }
-  //amu.nodes
-  val master_nodes = Seq(l1d, l1i) ++ matrix_nodes
+
   val c_nodes = Seq(l1d)
   val l1i_nodes = Seq(l1i)
   val ul_nodes = l1i_nodes++matrix_nodes
@@ -178,27 +171,19 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
   val l3bankBinders = BankBinder(l3_banks, 64)
   val ram = LazyModule(new TLRAM(AddressSet(0, 0xff_ffffL), beatBytes = 32))
 
-  // 连接所有 master_nodes 到 xbar，通过 TLBuffer
-//   master_nodes.foreach { node =>
-//     l1xbar := TLBuffer() := node
-//   }
-//   c_nodes.foreach { node =>
-//     l1xbar := TLBuffer() := TLLogger(s"L2_L1D[0]", true) := node
-//   }
+
   c_nodes.zipWithIndex map{ case(c,i) =>
         l1xbar := TLBuffer() := TLLogger(s"L2_L1D[${i}]", true) := c
   }
-//   ul_nodes.foreach { node =>
-//     l1xbar := TLBuffer() := TLLogger(s"L2_Matrix[0]", true) := node
-//   }
+
   l1i_nodes.zipWithIndex map{ case(ul,i) =>
         l1xbar := TLBuffer() := TLLogger(s"L2_L1I[${i}]", true) := ul
   }
+
   matrix_nodes.zipWithIndex map{ case(ul,i) =>
         l1xbar := TLBuffer() := TLLogger(s"L2_Matrix[${i}]", true) := ul
   }
-  // TLLogger(s"L2_L1[${i}].C[${j}]", !cacheParams.FPGAPlatform && cacheParams.enableTLLog) :=
-  // l2bankBinders := TLBuffer() := l1xbar
+
   l2bankBinders :*= l2.node :*= TLBuffer() :*= l1xbar
   l3xbar :=TLBuffer() :*=l2xbar :=*l2bankBinders
   ram.node :=
@@ -223,10 +208,6 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
     dontTouch(clean)
     dontTouch(dump)
 
-    // master_nodes.zipWithIndex.foreach {
-    //   case (node, i) =>
-    //     node.makeIOs()(ValName(s"master_port_$i"))
-    // }
     c_nodes.zipWithIndex.foreach {
       case (node, i) =>
         node.makeIOs()(ValName(s"master_port_$i"))
@@ -243,19 +224,9 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
     l2.module.io.debugTopDown <> DontCare
     l2.module.io.l2_tlb_req <> DontCare
     l2.module.io.matrixDataOut512L2:= DontCare
-    // 连接到输出端口
-    // val matrix_data_out = Output(Vec(l2_banks, UInt(256.W))).suggestName(s"matrix_data_test")
-    // matrix_data_out := l2.module.io.matrixDataOut256L2
-    val matrix_data_out = IO(Vec(l2_banks, DecoupledIO(new MatrixDataBundle())))//Output(Vec(banks, DecoupledIO(new MatrixDataBundle())))
+    // For matrix get , l2 return data
+    val matrix_data_out = IO(Vec(l2_banks, DecoupledIO(new MatrixDataBundle())))
     matrix_data_out <> l2.module.io.matrixDataOut512L2
-
-    // matrix_data_out.zipWithIndex.foreach {
-    //   case (data, i) =>
-    //     data.bits.data.data.suggestName(s"master_m_port_0_${i}_0_d_bits_data1")
-    //     data.suggestName(s"matrix_data_test${i}") //master_m_port_0_${i}_0_d_bits_data1
-    // }
-
-
   }
 
 }

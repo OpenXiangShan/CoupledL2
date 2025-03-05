@@ -49,7 +49,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   val sinkC = Module(new SinkC)
   val sourceC = Module(new SourceC)
   val grantBuf = Module(new GrantBuffer)
-  val matrixSourceD = Module(new MatrixSourceD)
+  val matrixSourceD = Module(new SourceMD)
   val refillBuf = Module(new MSHRBuffer(wPorts = 2))
   val releaseBuf = Module(new MSHRBuffer(wPorts = 3))
 
@@ -173,7 +173,8 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   grantBuf.io.e <> inBuf.e(io.in.e)
   io.error.valid := mainPipe.io.error.valid
   io.error.bits := mainPipe.io.error.bits
-  
+  io.matrixDataOut <> matrixSourceD.io.toMatrixD
+
   /* connect downward channels */
   io.out.a <> outBuf.a(mshrCtl.io.sourceA)
   sinkB.io.b <> outBuf.b(io.out.b)
@@ -183,8 +184,6 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
 
   dontTouch(io.in)
   dontTouch(io.out)
-  // io.matrixDataOut512 := grantBuf.io.d.bits.data //TODO
-  io.matrixDataOut <> matrixSourceD.io.toMatrixD
 
   topDownOpt.foreach (
     _ => {
