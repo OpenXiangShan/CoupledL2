@@ -71,6 +71,7 @@ class SinkMX(implicit p: Parameters) extends L2Module {
   io.out_c <> out_c
 
   // Handle ready signals
-  io.a.ready := out_a.ready
+  // io.a.ready := out_a.ready
   io.c.ready := out_c.ready
+  io.a.ready := out_a.ready && out_c.ready
 }

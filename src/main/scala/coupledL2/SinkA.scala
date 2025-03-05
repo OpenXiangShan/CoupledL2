@@ -78,9 +78,9 @@ class SinkA(implicit p: Parameters) extends L2Module {
 
   def isMatrixGet(a: TLBundleA): Bool = {
     val en = a.opcode === Get  && (a.user.lift(MatrixKey).getOrElse(0.U) === 1.U)
-    when(en){
-      printf("isMatrixGet\n")
-    }
+    // when(en){
+    //   printf("isMatrixGet\n")
+    // }
     en
   }
 
@@ -110,6 +110,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.fromL2pft.foreach(_ := false.B)
     task.needHint.foreach(_ := a.user.lift(PrefetchKey).getOrElse(false.B))
     task.dirty := false.B
+    task.matrixTask := isMatrixGet(a)
     task.way := 0.U(wayBits.W)
     task.meta := 0.U.asTypeOf(new MetaEntry)
     task.metaWen := false.B
@@ -133,12 +134,12 @@ class SinkA(implicit p: Parameters) extends L2Module {
         //TODO Support Mask
         dataBuf(nextPtr)(beat) := io.a.bits.data
         beatValids(nextPtr)(beat) := true.B
-        printf(p"Put First message received: address=${Hexadecimal(io.a.bits.address)}, data=${Hexadecimal(io.a.bits.data)}\n")
+        // printf(p"Put First message received: address=${Hexadecimal(io.a.bits.address)}, data=${Hexadecimal(io.a.bits.data)}\n")
       }.otherwise {
         assert(last)
         dataBuf(nextPtrReg)(beat) := io.a.bits.data
         beatValids(nextPtrReg)(beat) := true.B
-        printf(p"Put Last message received: address=${Hexadecimal(io.a.bits.address)}, data=${Hexadecimal(io.a.bits.data)}\n")
+        // printf(p"Put Last message received: address=${Hexadecimal(io.a.bits.address)}, data=${Hexadecimal(io.a.bits.data)}\n")
       }
     }
   }

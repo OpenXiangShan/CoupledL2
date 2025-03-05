@@ -87,7 +87,7 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
         TLMasterPortParameters.v1(
           clients = Seq(TLMasterParameters.v1(
             name = s"matrix${i}_${j}",
-            sourceId = IdRange(0, 64),
+            sourceId = IdRange(0, 32),
             // supportsProbe = TransferSizes(cacheParams.blockBytes)// 缓存一致性管理
             // supportsProbe = TransferSizes.none,
             // supportsProbe = TransferSizes(1,cacheParams.blockBytes),
@@ -101,6 +101,7 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
       ))
     }
   }
+  //amu.nodes
   val master_nodes = Seq(l1d, l1i) ++ matrix_nodes
   val c_nodes = Seq(l1d)
   val l1i_nodes = Seq(l1i)
@@ -240,12 +241,19 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
     l2.module.io.hartId := DontCare
     l2.module.io.debugTopDown <> DontCare
     l2.module.io.l2_tlb_req <> DontCare
-    l2.module.io.matrix_valid.valid:= DontCare
-    l2.module.io.matrix_valid.bits:= DontCare
-    val matrix_valid = l2.module.io.matrix_valid
+    l2.module.io.matrixDataOut512L2:= DontCare
     // 连接到输出端口
-    val matrix_valid_out = IO(Valid(Bool())).suggestName(s"matrix_valid_test")
-    matrix_valid_out := matrix_valid
+    // val matrix_data_out = Output(Vec(l2_banks, UInt(256.W))).suggestName(s"matrix_data_test")
+    // matrix_data_out := l2.module.io.matrixDataOut256L2
+    val matrix_data_out = IO(Vec(l2_banks, DecoupledIO(new MatrixDataBundle())))//Output(Vec(banks, DecoupledIO(new MatrixDataBundle())))
+    matrix_data_out <> l2.module.io.matrixDataOut512L2
+
+    // matrix_data_out.zipWithIndex.foreach {
+    //   case (data, i) =>
+    //     data.bits.data.data.suggestName(s"master_m_port_0_${i}_0_d_bits_data1")
+    //     data.suggestName(s"matrix_data_test${i}") //master_m_port_0_${i}_0_d_bits_data1
+    // }
+
 
   }
 
@@ -259,7 +267,11 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
    */
 
 object TestTop_L2L3_AME extends App {
-  val config = baseConfigAME(1,16,16,16).alterPartial({
+  val l2_banks=8
+  val l3_banks=8
+  val m_num=l2_banks
+
+  val config = baseConfigAME(1,l2_banks,l3_banks,m_num).alterPartial({
     case L2ParamKey => L2Param(
       clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
       echoField = Seq(DirtyField()),
