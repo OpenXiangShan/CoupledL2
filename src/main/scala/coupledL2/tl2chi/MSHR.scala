@@ -785,7 +785,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       accessed = req_acquire || req_get
     )
     mp_grant.metaWen := !cmo_cbo
-    mp_grant.tagWen := !dirResult.hit
+    mp_grant.tagWen := !cmo_cbo && !dirResult.hit
     mp_grant.dsWen := gotGrantData || probeDirty && (req_get || req.aliasTask.getOrElse(false.B))
     mp_grant.fromL2pft.foreach(_ := req.fromL2pft.get)
     mp_grant.needHint.foreach(_ := false.B)
