@@ -943,7 +943,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       alloc_state.s_pprobe := false.B
       alloc_state.w_pprobeackfirst := false.B
       alloc_state.w_pprobeacklast := false.B
-      alloc_state.w_pprobeack := false.B
     }
     // need forwarding response
     when (need_dct_s3_b) {

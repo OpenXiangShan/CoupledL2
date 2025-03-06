@@ -280,7 +280,6 @@ class FSMState(implicit p: Parameters) extends L2Bundle {
   val w_rprobeacklast = Bool()
   val w_pprobeackfirst = Bool()
   val w_pprobeacklast = Bool()
-  val w_pprobeack = Bool()
   val w_grantfirst = Bool()
   val w_grantlast = Bool()
   val w_grant = Bool()

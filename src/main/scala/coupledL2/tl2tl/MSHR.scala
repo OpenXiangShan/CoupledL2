@@ -459,7 +459,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
       state.w_rprobeacklast := state.w_rprobeacklast || c_resp.bits.last
       state.w_pprobeackfirst := true.B
       state.w_pprobeacklast := state.w_pprobeacklast || c_resp.bits.last
-      state.w_pprobeack := state.w_pprobeack || req.off === 0.U || c_resp.bits.last
     }
     when (c_resp.bits.opcode === ProbeAckData) {
       probeDirty := true.B
@@ -541,7 +540,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.status.bits.metaTag := dirResult.tag
   io.status.bits.needsRepl := releaseNotSent
   // wait for resps, high as valid
-  io.status.bits.w_c_resp := !state.w_rprobeacklast || !state.w_pprobeacklast || !state.w_pprobeack
+  io.status.bits.w_c_resp := !state.w_rprobeacklast || !state.w_pprobeacklast
   io.status.bits.w_d_resp := !state.w_grantlast || !state.w_grant || !state.w_releaseack
   io.status.bits.will_free := will_free
   io.status.bits.is_miss := !dirResult.hit
