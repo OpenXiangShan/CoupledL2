@@ -209,6 +209,14 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
 
   io_pCrd <> mshrCtl.io.pCrd
 
+  /* Connect l2 flush All channel */ 
+  sinkA.io.cmoAll.foreach {cmoAll => cmoAll.cmoLineDone := mainPipe.io.cmoLineDone.getOrElse(false.B)}
+  sinkA.io.cmoAll.foreach {cmoAll => cmoAll.mshrValid := VecInit(mshrCtl.io.msInfo.map(m => m.valid)).reduce(_|_)}
+  sinkA.io.cmoAll.foreach {cmoAll => cmoAll.l2Flush := io.l2Flush.getOrElse(false.B)}
+  mainPipe.io.cmoAllBlock.foreach {_ := sinkA.io.cmoAll.map(_.cmoAllBlock).getOrElse(false.B)}
+
+  io.l2FlushDone.foreach {_ := RegNext(sinkA.io.cmoAll.map(_.l2FlushDone).getOrElse(false.B))}
+
   /* ===== Hardware Performance Monitor ===== */
   val perfEvents = Seq(mshrCtl, mainPipe).flatMap(_.getPerfEvents)
   generatePerfEvent()

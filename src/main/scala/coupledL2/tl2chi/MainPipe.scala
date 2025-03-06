@@ -112,6 +112,10 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
     /* ECC error*/
     val error = ValidIO(new L2CacheErrorInfo)
+
+    /* l2 flush (CMO All) */
+    val cmoAllBlock = Option.when(cacheParams.enableL2Flush) (Input(Bool()))
+    val cmoLineDone = Option.when(cacheParams.enableL2Flush) (Output(Bool()))
   })
 
   require(chiOpt.isDefined)
@@ -145,6 +149,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val dirResult_s3    = io.dirResp_s3
   val meta_s3         = dirResult_s3.meta
   val req_s3          = task_s3.bits
+  val cmoHitInvalid   = io.cmoAllBlock.getOrElse(false.B) && (meta_s3.state === INVALID)
 
   val mshr_req_s3     = req_s3.mshrTask
   val sink_req_s3     = !mshr_req_s3
@@ -157,7 +162,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val req_prefetch_s3           = sinkA_req_s3 && req_s3.opcode === Hint
   val req_get_s3                = sinkA_req_s3 && req_s3.opcode === Get
   val req_cbo_clean_s3          = sinkA_req_s3 && req_s3.opcode === CBOClean
-  val req_cbo_flush_s3          = sinkA_req_s3 && req_s3.opcode === CBOFlush
+  val req_cbo_flush_s3          = sinkA_req_s3 && req_s3.opcode === CBOFlush && !cmoHitInvalid
   val req_cbo_inval_s3          = sinkA_req_s3 && req_s3.opcode === CBOInval
 
   val mshr_grant_s3             = mshr_req_s3 && req_s3.fromA && (req_s3.opcode === Grant || req_s3.opcode === GrantData)
@@ -203,7 +208,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     // Meta states from MSHRs were considered as directory result here.
     // Therefore, meta states were always inferred to be hit when nesting release, no matter the fact that directory
     // was always non-hit on cache replacement subsequent release.
-    nestable_dirResult_s3.hit   := true.B
+    nestable_dirResult_s3.hit   := req_s3.snpHitReleaseMeta.state =/= INVALID
     nestable_dirResult_s3.meta  := req_s3.snpHitReleaseMeta
   }
 
@@ -607,12 +612,12 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val txdat_s3_latch = true
   val isD_s3 = Mux(
     mshr_req_s3,
-    mshr_cmoresp_s3 || mshr_refill_s3 && !retry,
-    req_s3.fromC || req_s3.fromA && !need_mshr_s3_a && !data_unready_s3_tl && req_s3.opcode =/= Hint
+    mshr_cmoresp_s3 && !io.cmoAllBlock.getOrElse(false.B) || mshr_refill_s3 && !retry,
+    req_s3.fromC || req_s3.fromA && !need_mshr_s3_a && !data_unready_s3_tl && req_s3.opcode =/= Hint && !io.cmoAllBlock.getOrElse(false.B)
   )
   val isD_s3_ready = Mux(
     mshr_req_s3,
-    mshr_cmoresp_s3 || mshr_refill_s3 && !retry,
+    mshr_cmoresp_s3 && !io.cmoAllBlock.getOrElse(false.B) || mshr_refill_s3 && !retry,
     req_s3.fromC || req_s3.fromA && !need_mshr_s3_a && !data_unready_s3_tl && req_s3.opcode =/= Hint && !d_s3_latch.B
   )
   val isTXRSP_s3 = Mux(
@@ -673,6 +678,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   )
   io.nestedwb.b_toN.foreach(_ :=
     task_s3.valid && task_s3.bits.fromB && source_req_s3.metaWen && source_req_s3.meta.state === INVALID
+  )
+  io.nestedwb.b_toClean.foreach(_ :=
+    task_s3.valid && task_s3.bits.fromB && source_req_s3.metaWen && !source_req_s3.meta.dirty
   )
 
   io.nestedwbData := c_releaseData_s3.asTypeOf(new DSBlock)
@@ -938,7 +946,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       alloc_state.s_pprobe := false.B
       alloc_state.w_pprobeackfirst := false.B
       alloc_state.w_pprobeacklast := false.B
-      alloc_state.w_pprobeack := false.B
     }
     // need forwarding response
     when (need_dct_s3_b) {
@@ -959,6 +966,14 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   io.error.valid := task_s5.valid
   io.error.bits.valid := l2Error_s5 // if not enableECC, should be false
   io.error.bits.address := Cat(task_s5.bits.tag, task_s5.bits.set, task_s5.bits.off)
+
+  /* CMO All Flush cacheline done if:
+   cacheline is INVALID -> drop @s3
+   cacheline is VALID send back resp when mshr complete CBOFlush flow with mshr_comresp_s3 @s3
+   */
+  val cmoLineDrop = task_s3.valid && sinkA_req_s3 && req_s3.opcode === CBOFlush && cmoHitInvalid
+  val cmoLineDone = io.cmoAllBlock.getOrElse(false.B) && task_s3.valid && mshr_cmoresp_s3
+  io.cmoLineDone.foreach { _ := RegNextN(cmoLineDone || cmoLineDrop, 2, Some(false.B)) }
 
   /* ===== Performance counters ===== */
   // num of mshr req

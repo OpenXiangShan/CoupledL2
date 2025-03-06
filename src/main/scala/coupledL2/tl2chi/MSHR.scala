@@ -69,7 +69,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val gotDirty = RegInit(false.B)
   val gotGrantData = RegInit(false.B)
   val probeDirty = RegInit(false.B)
-  val probeGotN = RegInit(false.B)
+  val releaseDirty = RegInit(false.B)
   val timer = RegInit(0.U(64.W)) // for performance analysis
   val beatCnt = RegInit(0.U(log2Ceil(beatSize).W))
 
@@ -137,7 +137,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     gotDirty    := false.B
     gotGrantData := false.B
     probeDirty  := false.B
-    probeGotN   := false.B
+    releaseDirty := false.B
     timer       := 1.U
     beatCnt     := 0.U
 
@@ -182,7 +182,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
 
   // *NOTICE: WriteBack/WriteClean(s) with nested snoops that passed dirty were not considered as
   //          a nested hit here, which would no longer pass latest data to lower tier memories.
-  val hitDirty = dirResult.hit && meta.dirty || probeDirty
+  val hitDirty = dirResult.hit && meta.dirty
   val hitWriteBack = req.snpHitRelease && req.snpHitReleaseWithData && req.snpHitReleaseMeta.dirty && req.snpHitReleaseToInval
   val hitWriteClean = req.snpHitRelease && req.snpHitReleaseWithData && req.snpHitReleaseMeta.dirty && req.snpHitReleaseToClean
   val hitWriteEvict = req.snpHitRelease && req.snpHitReleaseWithData && !req.snpHitReleaseMeta.dirty
@@ -315,10 +315,10 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       Mux(req.snpHitReleaseToInval, I, Mux(
         req.snpHitReleaseToClean,
         Mux(req.snpHitReleaseMeta.dirty, SC, metaChi),
-        Mux(probeDirty || meta.dirty, UD, metaChi)
+        Mux(meta.dirty, UD, metaChi)
       )),
     (isSnpStashX(req_chiOpcode) || isSnpQuery(req_chiOpcode)) ->
-      Mux(probeDirty || meta.dirty, UD, metaChi),
+      Mux(meta.dirty, UD, metaChi),
     isSnpCleanShared(req_chiOpcode) -> 
       Mux(isT(meta.state), UC, metaChi)
   ))
@@ -353,7 +353,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   //          was already updated by replacing, so we should never check directory hit
   //          on replacer-issued WriteBackFull condition.
   val isWriteCleanFull = req_cboClean
-  val isWriteBackFull = !req_cboClean && !req_cboInval && (isT(meta.state) && meta.dirty || probeDirty)
+  val isWriteBackFull = !req_cboClean && !req_cboInval && isT(meta.state) && meta.dirty
   val isWriteEvictFull = false.B
   val isWriteEvictOrEvict = afterIssueEbOrElse(
     !req_cboFlush && !req_cboInval && !isWriteCleanFull && !isWriteBackFull && !isWriteEvictFull,
@@ -598,7 +598,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_cbwrdata.homeNID.get := 0.U
     mp_cbwrdata.dbID.get := 0.U
     mp_cbwrdata.chiOpcode.get := CopyBackWrData
-    mp_cbwrdata.resp.get := setPD(metaChi, meta.dirty || probeDirty)
+    mp_cbwrdata.resp.get := setPD(metaChi, meta.dirty)
     mp_cbwrdata.fwdState.get := 0.U
     mp_cbwrdata.pCrdType.get := 0.U // TODO
     mp_cbwrdata.retToSrc.get := req.retToSrc.get // DontCare
@@ -649,7 +649,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         isSnpCleanShared(req_chiOpcode) ||
         isSnpOnceX(req_chiOpcode) && req.snpHitReleaseToClean
       ) || isSnpOnceX(req_chiOpcode) && probeDirty,
-      // Directory would always be missing on nesting WriteBackFull/WriteEvict*/Evict
       state = Mux(
         snpToN,
         INVALID,
@@ -659,14 +658,14 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
           BRANCH,
           meta.state)
       ),
-      clients = meta.clients & Fill(clientBits, !probeGotN && !snpToN),
+      clients = meta.clients & Fill(clientBits, !snpToN),
       alias = meta.alias, //[Alias] Keep alias bits unchanged
       prefetch = !snpToN && meta_pft,
       accessed = !snpToN && meta.accessed
     )
     mp_probeack.metaWen := !req.snpHitReleaseToInval
     mp_probeack.tagWen := false.B
-    mp_probeack.dsWen := !snpToN && probeDirty && meta.clients.orR
+    mp_probeack.dsWen := !snpToN && probeDirty && !releaseDirty
     mp_probeack.wayMask := 0.U(cacheParams.ways.W)
     mp_probeack.reqSource := 0.U(MemReqSource.reqSourceBits.W)
     mp_probeack.replTask := false.B
@@ -762,7 +761,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_grant.dirty := false.B
 
     mp_grant.meta := MetaEntry(
-      dirty = gotDirty || dirResult.hit && (meta.dirty || probeDirty),
+      dirty = gotDirty || dirResult.hit && meta.dirty,
       state = Mux(
         req_get,
         Mux( // Get
@@ -779,7 +778,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       clients = Mux(
         req_prefetch,
         Mux(dirResult.hit, meta.clients, Fill(clientBits, false.B)),
-        Fill(clientBits, !(req_get && (!dirResult.hit || meta_no_client || probeGotN)))
+        Fill(clientBits, !(req_get && (!dirResult.hit || meta_no_client)))
       ),
       alias = Some(aliasFinal),
       prefetch = req_prefetch || dirResult.hit && meta_pft,
@@ -819,7 +818,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     )
     mp_grant.aMergeTask.sourceId := merge_task.sourceId
     mp_grant.aMergeTask.meta := MetaEntry(
-      dirty = gotDirty || dirResult.hit && (meta.dirty || probeDirty),
+      dirty = gotDirty || dirResult.hit && meta.dirty,
       state = Mux( // Acquire
         req_promoteT || needT(merge_task.opcode, merge_task.param),
         TRUNK,
@@ -926,7 +925,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     // write meta for compensation of ProbeAck TtoB/TtoN by cbo.clean
     // *NOTICE: There is no possible nest for 'cmometaw' task, snoops should be blocked by RXSNP.
     mp_cmometaw.meta := meta
-    mp_cmometaw.meta.clients := meta.clients & Fill(clientBits, !probeGotN)
+    mp_cmometaw.meta.clients := meta.clients
     mp_cmometaw.meta.dirty := false.B
     mp_cmometaw.meta.state := TIP // write TIP for compensation of ProbeAck TtoB/TtoN by cbo.clean
     mp_cmometaw.metaWen := true.B
@@ -1094,13 +1093,17 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       state.w_rprobeacklast := state.w_rprobeacklast || c_resp.bits.last
       state.w_pprobeackfirst := true.B
       state.w_pprobeacklast := state.w_pprobeacklast || c_resp.bits.last
-      state.w_pprobeack := state.w_pprobeack || req.off === 0.U || c_resp.bits.last
     }
     when (c_resp.bits.opcode === ProbeAckData) {
       probeDirty := true.B
+      meta.dirty := true.B
     }
     when (isToN(c_resp.bits.param)) {
-      probeGotN := true.B
+      meta.state := Mux(isT(meta.state), TIP, meta.state)
+      meta.clients := Fill(clientBits, false.B)
+    }
+    when (isToB(c_resp.bits.param)) {
+      meta.state := Mux(isT(meta.state), TIP, meta.state)
     }
 
     // CMO update release on ProbeAck/ProbeAckData
@@ -1297,7 +1300,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   io.status.bits.metaTag := dirResult.tag
   io.status.bits.needsRepl := releaseNotSent
   // wait for resps, high as valid
-  io.status.bits.w_c_resp := !state.w_rprobeacklast || !state.w_pprobeacklast || !state.w_pprobeack
+  io.status.bits.w_c_resp := !state.w_rprobeacklast || !state.w_pprobeacklast
   io.status.bits.w_d_resp := !state.w_grantlast || !state.w_grant || !state.w_releaseack
   io.status.bits.will_free := will_free
   io.status.bits.is_miss := !dirResult.hit
@@ -1316,7 +1319,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   io.msInfo.bits.dirHit := dirResult.hit
   io.msInfo.bits.metaTag := dirResult.tag
   io.msInfo.bits.meta := meta
-  io.msInfo.bits.meta.dirty := meta.dirty || probeDirty
+  io.msInfo.bits.meta.dirty := meta.dirty
   io.msInfo.bits.willFree := will_free
   io.msInfo.bits.isAcqOrPrefetch := req_acquire || req_prefetch
   io.msInfo.bits.isPrefetch := req_prefetch
@@ -1330,7 +1333,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   io.msInfo.bits.w_releaseack := state.w_releaseack
   io.msInfo.bits.w_replResp := state.w_replResp
   io.msInfo.bits.w_rprobeacklast := state.w_rprobeacklast
-  io.msInfo.bits.replaceData := isT(meta.state) && meta.dirty || probeDirty || // including WriteCleanFull
+  io.msInfo.bits.replaceData := isT(meta.state) && meta.dirty || // including WriteCleanFull
                                 isWriteEvictFull || isWriteEvictOrEvict
   io.msInfo.bits.releaseToClean := releaseToClean
   io.msInfo.bits.channel := req.channel
@@ -1357,6 +1360,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       meta.dirty := true.B
       meta.state := TIP
       meta.clients := Fill(clientBits, false.B)
+      releaseDirty := true.B
     }
     when (io.nestedwb.c_set_tip) {
       meta.state := TIP
@@ -1369,17 +1373,17 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     }
   }
   when (nestedwb_hit_match) {
-    when (io.nestedwb.b_toB.get && req.fromA) {
-      meta.state := Mux(meta.state >= BRANCH, BRANCH, INVALID)
+    when (io.nestedwb.b_toClean.get && req.fromA) {
       meta.dirty := false.B
       probeDirty := false.B
+    }
+    when (io.nestedwb.b_toB.get && req.fromA) {
+      meta.state := Mux(meta.state >= BRANCH, BRANCH, INVALID)
     }
     when (io.nestedwb.b_toN.get && req.fromA) {
       meta.state := INVALID
       dirResult.hit := false.B
-      meta.dirty := false.B
       meta.clients := Fill(clientBits, false.B)
-      probeDirty := false.B
       state.w_replResp := cmo_cbo // never query replacer on CMO
       req.aliasTask.foreach(_ := false.B)
     }
