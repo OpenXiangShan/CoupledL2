@@ -334,6 +334,7 @@ class NestedWriteback(implicit p: Parameters) extends L2Bundle {
 
   val b_toB = chiOpt.map(_ => Bool())
   val b_toN = chiOpt.map(_ => Bool())
+  val b_toClean = chiOpt.map(_ => Bool())
 }
 
 class PrefetchCtrlFromCore extends Bundle {

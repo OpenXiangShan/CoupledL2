@@ -679,6 +679,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   io.nestedwb.b_toN.foreach(_ :=
     task_s3.valid && task_s3.bits.fromB && source_req_s3.metaWen && source_req_s3.meta.state === INVALID
   )
+  io.nestedwb.b_toClean.foreach(_ :=
+    task_s3.valid && task_s3.bits.fromB && source_req_s3.metaWen && !source_req_s3.meta.dirty
+  )
 
   io.nestedwbData := c_releaseData_s3.asTypeOf(new DSBlock)
   
