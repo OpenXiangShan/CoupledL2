@@ -446,9 +446,9 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
 
         slice.io.prefetch.zip(prefetcher).foreach {
           case (s, p) =>
-            s.req.valid := p.io.req.valid && bank_eq(p.io.req.bits.set, i, bankBits)
+            s.req.valid := p.io.req.valid && bank_eq(Cat(p.io.req.bits.tag, p.io.req.bits.set), i, bankBits)
             s.req.bits := p.io.req.bits
-            prefetchReqsReady(i) := s.req.ready && bank_eq(p.io.req.bits.set, i, bankBits)
+            prefetchReqsReady(i) := s.req.ready && bank_eq(Cat(p.io.req.bits.tag, p.io.req.bits.set), i, bankBits)
             val train = Pipeline(s.train)
             val resp = Pipeline(s.resp)
             prefetchTrains.get(i) <> train
