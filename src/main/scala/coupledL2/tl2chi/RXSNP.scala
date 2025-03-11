@@ -93,7 +93,7 @@ class RXSNP(
   // '!s.bits.dirHit'     : Nesting a Cache Replacement subsequent release
   // '!s.bits.s_cmoresp'  : Nesting a CMO subsequent release
   val replaceNestSnpMask = VecInit(io.msInfo.map(s =>
-      s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && 
+      s.valid && io.rxsnp.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && 
       (!s.bits.dirHit || !s.bits.s_cmoresp) && s.bits.meta.state =/= INVALID &&
       RegNext(s.bits.w_replResp) && s.bits.w_rprobeacklast && !s.bits.w_releaseack
     )).asUInt
