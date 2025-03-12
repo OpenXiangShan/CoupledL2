@@ -58,7 +58,7 @@ class RXSNP(
     *    while waitings for DS write were unnecessary since the silent transition would only happen on clean block.
     */
   val reqBlockSnpMask = VecInit(io.msInfo.map(s =>
-    s.valid && s.bits.set === task.set && s.bits.reqTag === task.tag && (
+      s.valid && s.bits.set === task.set && s.bits.reqTag === task.tag && (
       s.bits.w_grantfirst || // See [2], [3] above with 's.bits.blockRefill'
       s.bits.aliasTask.getOrElse(false.B) && !s.bits.w_rprobeacklast || // See [5] above
       !s.bits.s_cmoresp && (!s.bits.w_rprobeacklast || !s.bits.s_cmometaw) // See [6] above
@@ -93,7 +93,7 @@ class RXSNP(
   // '!s.bits.dirHit'     : Nesting a Cache Replacement subsequent release
   // '!s.bits.s_cmoresp'  : Nesting a CMO subsequent release
   val replaceNestSnpMask = VecInit(io.msInfo.map(s =>
-      s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && 
+      s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag &&
       (!s.bits.dirHit || !s.bits.s_cmoresp) && s.bits.meta.state =/= INVALID &&
       RegNext(s.bits.w_replResp) && s.bits.w_rprobeacklast && !s.bits.w_releaseack
     )).asUInt
@@ -109,7 +109,7 @@ class RXSNP(
     Mux(hit, ms.bits.meta, MetaEntry())
   }})
 
-  assert(PopCount(replaceNestSnpMask) <= 1.U, "multiple replace nest snoop")
+  assert(!rxsnp.valid || PopCount(replaceNestSnpMask) <= 1.U, "multiple replace nest snoop")
 
   task := fromSnpToTaskBundle(rxsnp.bits)
 
