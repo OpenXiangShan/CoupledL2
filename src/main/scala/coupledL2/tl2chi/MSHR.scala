@@ -267,7 +267,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val release_valid2 = !state.s_reissue.getOrElse(false.B) && !state.w_releaseack && gotRetryAck && gotPCrdGrant
   // Theoretically, data to be released is saved in ReleaseBuffer, so Acquire can be sent as soon as req enters mshr
   // For cmo_clean/flush, dirty data should be released downward first, then Clean req can be sent
-  io.tasks.txreq.valid := !state.s_acquire && !(cmo_cbo && (!state.w_rprobeacklast || !state.w_releaseack || !state.s_cbwrdata.get)) || 
+  io.tasks.txreq.valid := !state.s_acquire && !(cmo_cbo && (!state.w_rprobeacklast || !state.w_releaseack || !state.s_cmometaw || !state.s_cbwrdata.get)) || 
                           !state.s_reissue.getOrElse(false.B) && !state.w_grant && gotRetryAck && gotPCrdGrant ||
                           release_valid2
   val rcompack_valid = !state.s_rcompack.get && state.w_grant &&
