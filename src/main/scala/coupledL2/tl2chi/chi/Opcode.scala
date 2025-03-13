@@ -248,4 +248,9 @@ trait HasCHIOpcodes extends HasCHIMsgParameters {
   def isSnpRespDataX(opcode: UInt): Bool = {
     opcode === SnpRespData || opcode === SnpRespDataPtl || opcode === SnpRespDataFwded
   }
+
+  def isUnchangedNDERR(opcode: UInt): Bool = {
+    opcode === ReadClean || opcode === ReadNotSharedDirty || opcode === ReadShared || opcode === ReadUnique ||
+    opcode === CleanUnique || opcode === MakeUnique
+  }
 }
