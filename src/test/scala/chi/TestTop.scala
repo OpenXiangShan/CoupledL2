@@ -42,7 +42,7 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(imp
         channelBytes = TLChannelBeatBytes(cacheParams.blockBytes),
         minLatency = 1,
         echoFields = Nil,
-        requestFields = Seq(AliasField(2), VaddrField(36), PrefetchField()),
+        requestFields = Seq(AliasField(2), VaddrField(36), PrefetchField(), TraceTagField()),
         responseKeys = cacheParams.respKey
       )
     ))

@@ -101,6 +101,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
     task.replTask := false.B
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+    task.traceTag.foreach(_ := c.user.lift(TraceTagKey).getOrElse(false.B))
     task
   }
 
