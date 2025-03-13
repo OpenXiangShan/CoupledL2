@@ -161,6 +161,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
     req.memAttr := memAttr.getOrElse(MemAttr())
     req.snpAttr := true.B
     req.order := OrderEncodings.None
+    req.traceTag := traceTag.getOrElse(false.B)
     req
   }
 }
