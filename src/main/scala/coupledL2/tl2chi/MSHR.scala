@@ -146,7 +146,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     gotPCrdGrant := false.B
 
     pcrdtype := 0.U
-    denied := false.B
+    denied := meta.tagErr || dirResult.error
     corrupt := false.B
     dataCheckErr := false.B
     metaChiUnchange := Mux(enableCHI.asBool, isUnchangedNDERR(io.alloc.bits.task.chiOpcode.get), false.B)
@@ -201,6 +201,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     *    SnpOnceFwd, and SnpUniqueFwd.
     * 2. When the snoop opcode is SnpCleanFwd, SnpNotSharedDirtyFwd or SnpSharedFwd, always echo SnpRespDataFwded
     *    if RetToSrc = 1 as long as the snooped block is valid.
+    *    if tagErr(NDERR/denied), not forward data
     * 3. When the snoop opcode is non-forwarding non-stashing snoop, echo SnpRespData if RetToSrc = 1 as long as the
     *    cache line is Shared Clean and the snoopee retains a copy of the cache line.
     */
@@ -216,7 +217,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   //          'doRespData_retToSrc_fwd'. For now, 'isSnpToNFwd' only covers SnpUniqueFwd,
   //          which should never return data to Home Node except No Fwd to Requester.
   //          No Fwds on DCT are not implemented because Fwded responses are always perferred.
-  val doRespData_retToSrc_fwd = req.retToSrc.get && 
+  val doRespData_retToSrc_fwd = denied && req.retToSrc.get &&
     (isSnpToBFwd(req_chiOpcode) /*|| isSnpToNFwd(req_chiOpcode)*/)
   val doRespData_retToSrc_nonFwd = req.retToSrc.get && (
     dirResult.hit && meta.state === BRANCH &&
@@ -309,7 +310,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   // resp and fwdState
   // *NOTICE: Snp*Fwd would enter MSHR on directory missing
   val respCacheState = ParallelPriorityMux(Seq(
-    snpToN -> I,
+    (snpToN || denied) -> I,
     snpToB -> Mux(req.snpHitReleaseToInval, I, SC),
     isSnpOnceX(req_chiOpcode) ->
       Mux(req.snpHitReleaseToInval, I, Mux(
@@ -322,7 +323,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     isSnpCleanShared(req_chiOpcode) -> 
       Mux(isT(meta.state), UC, metaChi)
   ))
-  val respPassDirty = hitDirtyOrWriteDirty && (
+  val respPassDirty = hitDirtyOrWriteDirty && !denied && (
     snpToB ||
     req_chiOpcode === SnpUnique ||
     req_chiOpcode === SnpUniqueStash ||
@@ -330,11 +331,11 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     req_chiOpcode === SnpCleanInvalid
   ) || hitWriteDirty && isSnpOnceFwd(req_chiOpcode)
   val fwdCacheState = Mux(
-    isSnpToBFwd(req_chiOpcode),
+    isSnpToBFwd(req_chiOpcode) && !denied,
     SC,
-    Mux(isSnpToNFwd(req_chiOpcode), UC /*UC_UD*/, I)
+    Mux(isSnpToNFwd(req_chiOpcode) && !denied, UC /*UC_UD*/, I)
   )
-  val fwdPassDirty = isSnpToNFwd(req_chiOpcode) && hitDirtyOrWriteDirty
+  val fwdPassDirty = isSnpToNFwd(req_chiOpcode) && hitDirtyOrWriteDirty && !denied
 
   /*TXRSP for CompAck */
   val orsp = io.tasks.txrsp.bits
