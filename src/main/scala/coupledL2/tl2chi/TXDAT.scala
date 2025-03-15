@@ -99,8 +99,8 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
 
   io.out.valid := taskValid
   io.out.bits := toCHIDATBundle(taskR.task, beat, beatsOH)
-  io.out.bits.respErr := Mux(taskR.task.corrupt,
-    Mux(taskR.task.denied, RespErrEncodings.NDERR, RespErrEncodings.DERR), RespErrEncodings.OK)
+  // for TXDAT, WriteBack & SnpX will not allow CompData with NDERR
+  io.out.bits.respErr := Mux(taskR.task.corrupt, RespErrEncodings.DERR, RespErrEncodings.OK)
 
   when (io.out.fire) {
     beatValids := VecInit(next_beatsOH.asBools)

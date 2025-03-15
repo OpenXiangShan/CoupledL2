@@ -89,6 +89,7 @@ class TXRSP(implicit p: Parameters) extends TL2CHIL2Module {
     rsp.resp := task.resp.get
     rsp.fwdState := task.fwdState.get
     rsp.traceTag := task.traceTag.get
+    rsp.respErr := Mux(task.denied, RespErrEncodings.NDERR, RespErrEncodings.OK)
     // TODO: Finish this
     rsp
   }
