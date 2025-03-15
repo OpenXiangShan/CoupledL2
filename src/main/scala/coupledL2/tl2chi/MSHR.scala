@@ -494,6 +494,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_release.mergeA := false.B
     mp_release.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
 
+    mp_release.denied := denied
+    mp_release.corrupt := corrupt
+
     // CHI
     // *NOTICE: See 'isWriteBackFull' above.
     mp_release.tgtID.get := 0.U
@@ -1104,6 +1107,12 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     }
     when (isToB(c_resp.bits.param)) {
       meta.state := Mux(isT(meta.state), TIP, meta.state)
+    }
+    when (isParamFromT(c_resp.bits.param)) {
+      meta.tagErr := c_resp.bits.denied
+      meta.dataErr := c_resp.bits.corrupt
+      denied := denied || c_resp.bits.denied
+      corrupt := corrupt || c_resp.bits.corrupt
     }
 
     // CMO update release on ProbeAck/ProbeAckData
