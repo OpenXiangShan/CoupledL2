@@ -217,7 +217,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   //          'doRespData_retToSrc_fwd'. For now, 'isSnpToNFwd' only covers SnpUniqueFwd,
   //          which should never return data to Home Node except No Fwd to Requester.
   //          No Fwds on DCT are not implemented because Fwded responses are always perferred.
-  val doRespData_retToSrc_fwd = denied && req.retToSrc.get &&
+  val doRespData_retToSrc_fwd = req.retToSrc.get &&
     (isSnpToBFwd(req_chiOpcode) /*|| isSnpToNFwd(req_chiOpcode)*/)
   val doRespData_retToSrc_nonFwd = req.retToSrc.get && (
     dirResult.hit && meta.state === BRANCH &&
@@ -231,7 +231,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       isSnpOnceFwd(req_chiOpcode) ||
     (dirResult.hit && !meta.dirty && meta.state =/= BRANCH || hitWriteEvict) &&
       isSnpOnce(req_chiOpcode)
-  val doRespData = doRespData_dirty || doRespData_retToSrc_fwd || doRespData_retToSrc_nonFwd || doRespData_once
+  val doRespData = (doRespData_dirty || doRespData_retToSrc_fwd || doRespData_retToSrc_nonFwd || doRespData_once) && !denied
 
   dontTouch(doRespData_dirty)
   dontTouch(doRespData_retToSrc_fwd)
