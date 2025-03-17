@@ -70,6 +70,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
 
     val io_chi = IO(new PortIO)
     val io_nodeID = IO(Input(UInt()))
+    val io_cpu_halt = Option.when(cacheParams.enableL2Flush) (Input(Bool()))
 
     // Check port width
     require(io_chi.tx.rsp.getWidth == io_chi.rx.rsp.getWidth);
@@ -255,7 +256,9 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         rxdat <> linkMonitor.io.in.rx.dat
         io_chi <> linkMonitor.io.out
         linkMonitor.io.nodeID := io_nodeID
-        linkMonitor.io.exitco.foreach{_ := Cat(slices.zipWithIndex.map { case (s, i) => s.io.l2FlushDone.getOrElse(false.B)}).andR} //exit coherency
+        /* exit coherency when: l2 flush of all slices is done and core is in WFI state */
+        linkMonitor.io.exitco.foreach { _ :=
+          Cat(slices.zipWithIndex.map { case (s, i) => s.io.l2FlushDone.getOrElse(false.B)}).andR && io_cpu_halt.getOrElse(false.B) }
     }
   }
 
