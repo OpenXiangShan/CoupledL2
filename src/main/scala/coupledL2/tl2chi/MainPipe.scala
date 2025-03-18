@@ -210,6 +210,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     // was always non-hit on cache replacement subsequent release.
     nestable_dirResult_s3.hit   := req_s3.snpHitReleaseMeta.state =/= INVALID
     nestable_dirResult_s3.meta  := req_s3.snpHitReleaseMeta
+    nestable_dirResult_s3.set   := req_s3.set
+    nestable_dirResult_s3.tag   := req_s3.tag
   }
 
   val tagError_s3               = io.dirResp_s3.error || meta_s3.tagErr
