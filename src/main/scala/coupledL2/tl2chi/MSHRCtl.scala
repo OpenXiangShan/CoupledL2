@@ -193,8 +193,9 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
   )
 
   /* Performance counters */
-/*  XSPerfAccumulate("capacity_conflict_to_sinkA", a_mshrFull)
-  XSPerfAccumulate("capacity_conflict_to_sinkB", mshrFull)
+  XSPerfAccumulate("capacity_conflict_to_sinkA", a_mshrFull, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("capacity_conflict_to_sinkB", mshrFull, XSPerfLevel.CRITICAL)
+/*
   XSPerfHistogram("mshr_alloc", io.toMainPipe.mshr_alloc_ptr,
     enable = io.fromMainPipe.mshr_alloc_s3.valid,
     start = 0, stop = mshrsAll, step = 1)
