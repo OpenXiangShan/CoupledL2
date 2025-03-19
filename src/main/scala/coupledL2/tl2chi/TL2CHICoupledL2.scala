@@ -258,7 +258,13 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         linkMonitor.io.nodeID := io_nodeID
         /* exit coherency when: l2 flush of all slices is done and core is in WFI state */
         linkMonitor.io.exitco.foreach { _ :=
-          Cat(slices.zipWithIndex.map { case (s, i) => s.io.l2FlushDone.getOrElse(false.B)}).andR && io_cpu_halt.getOrElse(false.B) }
+          Cat(slices.zipWithIndex.map { case (s, i) => s.io.l2FlushDone.getOrElse(false.B)}).andR && io_cpu_halt.getOrElse(false.B)
+        }
+
+        /**
+          * performance counters
+          */
+        XSPerfAccumulate("pcrd_count", pCrdQueue.io.enq.fire)
     }
   }
 
