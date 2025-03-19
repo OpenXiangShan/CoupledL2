@@ -221,7 +221,7 @@ class Directory(implicit p: Parameters) extends L2Module {
         map(tag => cacheParams.dataCode.decode(tag).error).reduce(_ | _)
     )
   } else {
-    Vec(ways, false.B)
+    VecInit(Seq.fill(ways)(false.B))
   }
   errorRead := bankTagError
 
