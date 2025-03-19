@@ -131,11 +131,6 @@ class Directory(implicit p: Parameters) extends L2Module {
     (has_invalid_way, way)
   }
 
-  def get_tag_from_encTag(encTag: UInt) = {
-    require((encTag.getWidth == encTagBits))
-    encTag(tagBits - 1, 0)
-  }
-
   val sets = cacheParams.sets
   val ways = cacheParams.ways
 
@@ -147,10 +142,11 @@ class Directory(implicit p: Parameters) extends L2Module {
   private val mbist = p(L2ParamKey).hasMbist
   val tagArray = if (enableTagECC) {
     Module(new SplittedSRAM(
-      gen = UInt((tagBits + eccTagBits).W),
+      gen = UInt((tagBankSpilt * encTagBankBits).W),
       set = sets,
       way = ways,
       waySplit = 2,
+      dataSplit = 2,
       singlePort = true,
       readMCP2 = false,
       hasMbist = mbist
@@ -169,12 +165,9 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   val metaArray = Module(new SRAMTemplate(new MetaEntry, sets, ways, singlePort = true, hasMbist = mbist))
 
-  val tagRead = if (enableTagECC) {
-    Wire(Vec(ways, UInt((tagBits + eccTagBits).W)))
-  } else {
-    Wire(Vec(ways, UInt(tagBits.W)))
-  }
+  val tagRead_s3 = Wire(Vec(ways, UInt(tagBits.W)))
   val metaRead = Wire(Vec(ways, new MetaEntry()))
+  val errorRead = Wire(Vec(ways, Bool()))
 
   val resetFinish = RegInit(false.B)
   val resetIdx = RegInit((sets - 1).U)
@@ -201,17 +194,36 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   // Tag(ECC) R/W
   val tagWrite = if (enableTagECC) {
-    cacheParams.tagCode.encode(io.tagWReq.bits.wtag)
+    Cat(VecInit(Seq.tabulate(tagBankSpilt)(i =>
+      io.tagWReq.bits.wtag(tagBankBits * (i + 1) - 1, tagBankBits * i))).map(tag => cacheParams.dataCode.encode(tag)))
   } else {
     io.tagWReq.bits.wtag
   }
-  tagRead := tagArray.io.r(io.read.fire, io.read.bits.set).resp.data
+  val tagRead = tagArray.io.r(io.read.fire, io.read.bits.set).resp.data
+  val bankTagRead = if (enableTagECC) {
+    tagRead.map(x =>
+      Cat(VecInit(Seq.tabulate(tagBankSpilt)(i => x(encTagBankBits * (i + 1) - 1, encTagBankBits * i)(tagBankBits - 1, 0))))
+    )
+  } else {
+    tagRead
+  }
+  tagRead_s3 := bankTagRead
   tagArray.io.w(
     tagWen,
     tagWrite,
     io.tagWReq.bits.set,
     UIntToOH(io.tagWReq.bits.way)
   )
+
+  val bankTagError = if (enableTagECC) {
+    tagRead.map(x =>
+      VecInit(Seq.tabulate(tagBankSpilt)(i => x(encTagBankBits * (i + 1) - 1, encTagBankBits * i))).
+        map(tag => cacheParams.dataCode.decode(tag).error).reduce(_ | _)
+    )
+  } else {
+    Vec(ways, false.B)
+  }
+  errorRead := bankTagError
 
   // Meta R/W
   metaRead := metaArray.io.r(io.read.fire, io.read.bits.set).resp.data
@@ -223,7 +235,8 @@ class Directory(implicit p: Parameters) extends L2Module {
   )
 
   val metaAll_s3 = RegEnable(metaRead, 0.U.asTypeOf(metaRead), reqValid_s2)
-  val tagAll_s3 = RegEnable(tagRead, 0.U.asTypeOf(tagRead), reqValid_s2)
+  val tagAll_s3 = RegEnable(tagRead_s3, 0.U.asTypeOf(tagRead_s3), reqValid_s2)
+  val errorAll_s3 = RegEnable(errorRead, 0.U.asTypeOf(errorRead), reqValid_s2)
 
   val tagMatchVec = tagAll_s3.map(_ (tagBits - 1, 0) === req_s3.tag)
   val metaValidVec = metaAll_s3.map(_.state =/= MetaData.INVALID)
@@ -266,11 +279,11 @@ class Directory(implicit p: Parameters) extends L2Module {
   val hit_s3 = Cat(hitVec).orR || req_s3.cmoAll
   val way_s3 = Mux(req_s3.cmoAll, req_s3.cmoWay, Mux(hit_s3, hitWay, finalWay))
   val meta_s3 = metaAll_s3(way_s3)
-  val tag_s3 = tagAll_s3(way_s3)(tagBits - 1, 0)
+  val tag_s3 = tagAll_s3(way_s3)
   val set_s3 = req_s3.set
   val replacerInfo_s3 = req_s3.replacerInfo
   val error_s3 = if (enableTagECC) {
-    cacheParams.tagCode.decode(tagAll_s3(way_s3)).error && reqValid_s3 && !req_s3.cmoAll && meta_s3.state =/= MetaData.INVALID
+    errorAll_s3(way_s3) && reqValid_s3 && !req_s3.cmoAll && meta_s3.state =/= MetaData.INVALID
   } else {
     false.B
   }
@@ -306,7 +319,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   replaceWay := repl.get_replace_way(repl_state_s3)
 
   io.replResp.valid := refillReqValid_s3
-  io.replResp.bits.tag := tagAll_s3(finalWay)(tagBits - 1, 0)
+  io.replResp.bits.tag := tagAll_s3(finalWay)
   io.replResp.bits.set := req_s3.set
   io.replResp.bits.way := finalWay
   io.replResp.bits.meta := metaAll_s3(finalWay)
