@@ -19,7 +19,7 @@ package coupledL2.tl2chi
 
 import chisel3._
 import chisel3.util._
-import utility.{FastArbiter, Pipeline, ParallelPriorityMux, RegNextN, RRArbiterInit}
+import utility.{FastArbiter, Pipeline, ParallelPriorityMux, RegNextN, RRArbiterInit, XSPerfAccumulate}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
@@ -258,7 +258,13 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         linkMonitor.io.nodeID := io_nodeID
         /* exit coherency when: l2 flush of all slices is done and core is in WFI state */
         linkMonitor.io.exitco.foreach { _ :=
-          Cat(slices.zipWithIndex.map { case (s, i) => s.io.l2FlushDone.getOrElse(false.B)}).andR && io_cpu_halt.getOrElse(false.B) }
+          Cat(slices.zipWithIndex.map { case (s, i) => s.io.l2FlushDone.getOrElse(false.B)}).andR && io_cpu_halt.getOrElse(false.B)
+        }
+
+        /**
+          * performance counters
+          */
+        XSPerfAccumulate("pcrd_count", pCrdQueue.io.enq.fire)
     }
   }
 

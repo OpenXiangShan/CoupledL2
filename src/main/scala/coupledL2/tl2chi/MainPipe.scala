@@ -978,6 +978,15 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   io.cmoLineDone.foreach { _ := RegNextN(cmoLineDone || cmoLineDrop, 2, Some(false.B)) }
 
   /* ===== Performance counters ===== */
+  // SinkA requests
+  XSPerfAccumulate("acquireBlock", task_s3.valid && sinkA_req_s3 && req_s3.opcode === AcquireBlock)
+  XSPerfAccumulate("acquirePerm", task_s3.valid && sinkA_req_s3 && req_s3.opcode === AcquirePerm)
+  XSPerfAccumulate("prefetch", task_s3.valid && req_prefetch_s3)
+  XSPerfAccumulate("get", task_s3.valid && req_get_s3)
+  XSPerfAccumulate("cbo_clean", task_s3.valid && req_cbo_clean_s3)
+  XSPerfAccumulate("cbo_flush", task_s3.valid && req_cbo_flush_s3)
+  XSPerfAccumulate("cbo_inval", task_s3.valid && req_cbo_inval_s3)
+
   // num of mshr req
   XSPerfAccumulate("mshr_grant_req", task_s3.valid && mshr_grant_s3 && !retry)
   XSPerfAccumulate("mshr_grantdata_req", task_s3.valid && mshr_grantdata_s3 && !retry)
@@ -996,7 +1005,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   XSPerfAccumulate("mshr_writeEvictOrEvict", task_s3.valid && mshr_writeEvictOrEvict_s3)
   XSPerfAccumulate("mshr_evict_s3", task_s3.valid && mshr_evict_s3)
   
-
   // directory access result
   val hit_s3 = task_s3.valid && !mshr_req_s3 && dirResult_s3.hit
   val miss_s3 = task_s3.valid && !mshr_req_s3 && !dirResult_s3.hit
@@ -1011,6 +1019,16 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     (req_s3.opcode === AcquireBlock || req_s3.opcode === AcquirePerm))
   XSPerfAccumulate("get_miss", miss_s3 && req_s3.fromA && req_s3.opcode === Get)
 
+  XSPerfAccumulate("a_need_acquire_on_hit", task_s3.valid && req_s3.fromA && dirResult_s3.hit && acquire_on_hit_s3)
+  XSPerfAccumulate("a_need_acquire_on_miss", task_s3.valid && req_s3.fromA && !dirResult_s3.hit && acquire_on_miss_s3)
+  XSPerfAccumulate("get_need_probe", task_s3.valid && need_probe_s3_a && req_get_s3)
+  XSPerfAccumulate("acquire_need_probe_alias", task_s3.valid && cache_alias)
+
+  XSPerfAccumulate("b_need_probe_snpStable", task_s3.valid && need_pprobe_s3_b_snpStable)
+  XSPerfAccumulate("b_need_probe_snpToB", task_s3.valid && need_pprobe_s3_b_snpToB)
+  XSPerfAccumulate("b_need_probe_snpToN", task_s3.valid && need_pprobe_s3_b_snpToN)
+  XSPerfAccumulate("b_need_dct", task_s3.valid && need_dct_s3_b)
+
   XSPerfAccumulate("b_req_hit", hit_s3 && req_s3.fromB)
   XSPerfAccumulate("b_req_miss", miss_s3 && req_s3.fromB)
 
@@ -1020,6 +1038,16 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     enable = hit_s3 && req_s3.fromA, start = 0, stop = cacheParams.ways, step = 1)
   XSPerfHistogram("a_req_miss_way_choice", perfCnt = dirResult_s3.way,
     enable = miss_s3 && req_s3.fromA, start = 0, stop = cacheParams.ways, step = 1)
+  
+  XSPerfHistogram("a_req_access_set", perfCnt = task_s3.bits.set,
+    enable = task_s3.valid && !mshr_req_s3 && req_s3.fromA,
+    start = 0, stop = cacheParams.sets, step = cacheParams.sets / 64)
+  XSPerfHistogram("a_req_hit_set", perfCnt = task_s3.bits.set,
+    enable = hit_s3 && req_s3.fromA,
+    start = 0, stop = cacheParams.sets, step = cacheParams.sets / 64)
+  XSPerfHistogram("a_req_miss_set", perfCnt = task_s3.bits.set,
+    enable = miss_s3 && req_s3.fromA,
+    start = 0, stop = cacheParams.sets, step = cacheParams.sets / 64)
 
   // pipeline stages for TX and sourceD reqs
   val pipe_len = Seq(5.U, 4.U, 3.U)
