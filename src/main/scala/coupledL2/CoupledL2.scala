@@ -33,7 +33,7 @@ import scala.math.max
 import coupledL2.prefetch._
 import huancun.{BankBitsKey, TPmetaReq, TPmetaResp}
 import utility.mbist.{MbistInterface, MbistPipeline}
-import utility.sram.{SramBroadcastBundle, SramHelper}
+import utility.sram.{SramBroadcastBundle, SramMbistBundle, SramHelper}
 
 trait HasCoupledL2Parameters {
   val p: Parameters
@@ -606,11 +606,11 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     private val cg = Option.when(cacheParams.hasMbist)(utility.ClockGate.genTeSrc)
     sigFromSrams.foreach({ case sig => sig := DontCare })
     if (cacheParams.hasMbist) {
-      cg.get.cgen := io.sramTest.mbist.cgen
-      sigFromSrams.get.mbist := io.sramTest.mbist
+      cg.get.cgen := io.sramTest.mbist.get.cgen
+      sigFromSrams.get.mbist := io.sramTest.mbist.get
     }
     if (cacheParams.hasSramCtl) {
-      sigFromSrams.get.sramCtl := io.sramTest.sramCtl
+      sigFromSrams.get.sramCtl := io.sramTest.sramCtl.get
     }
 
     private val mbistPl = MbistPipeline.PlaceMbistPipeline(Int.MaxValue, "L2Cache", cacheParams.hasMbist)
