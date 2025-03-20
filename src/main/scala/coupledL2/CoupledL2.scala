@@ -322,9 +322,9 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       val l2Flush = Option.when(cacheParams.enableL2Flush) (Input(Bool()))
       val l2FlushDone = Option.when(cacheParams.enableL2Flush) (Output(Bool()))
       val sramTest = new Bundle() {
-        val mbist      = Option.when(hasMbist)(Input(new SramMbistBundle))
-        val mbistReset = Option.when(hasMbist)(Input(new DFTResetSignals()))
-        val sramCtl    = Option.when(hasSramCtl)(Input(UInt(64.W)))
+        val mbist      = Option.when(cacheParams.hasMbist)(Input(new SramMbistBundle))
+        val mbistReset = Option.when(cacheParams.hasMbist)(Input(new DFTResetSignals()))
+        val sramCtl    = Option.when(cacheParams.hasSramCtl)(Input(UInt(64.W)))
       }
     })
 
