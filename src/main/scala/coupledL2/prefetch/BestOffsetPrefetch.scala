@@ -171,7 +171,15 @@ class RecentRequestTable(name: String)(implicit p: Parameters) extends BOPModule
   }
 
   val rrTable = Module(
-    new SRAMTemplate(rrTableEntry(), set = rrTableEntries, way = 1, shouldReset = true, singlePort = true, hasMbist = cacheParams.hasMbist)
+    new SRAMTemplate(
+      rrTableEntry(),
+      set = rrTableEntries,
+      way = 1,
+      shouldReset = true,
+      singlePort = true,
+      hasMbist = cacheParams.hasMbist,
+      hasSramCtl = cacheParams.hasSramCtl
+    )
   )
 
   val wAddr = io.w.bits
@@ -232,7 +240,7 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
   val offList = WireInit(VecInit(offsetList.map(off => off.S(offsetWidth.W).asUInt)))
   val ptr = RegInit(0.U(scoreTableIdxBits.W))
   val round = RegInit(0.U(roundBits.W))
-  
+
   val bestOffset = RegInit(2.U(offsetWidth.W)) // the entry with the highest score while traversing
   val bestScore = RegInit(0.U)
   val testOffset = offList(ptr)
@@ -523,7 +531,7 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
     tlb_fired(i) := s3_tlb_fire_oh(i) && s3_tlb_resp_valid && !s3_tlb_resp.miss && !exp_drop(i)
     miss_drop(i) := miss && e.replayEn
     miss_first_replay(i) := miss && !e.replayEn
-    
+
     // old data: update replayCnt
     when(valids(i) && e.replayCnt.orR) {
       e.replayCnt := e.replayCnt - 1.U
@@ -577,7 +585,7 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
   XSPerfAccumulate("entry_excp", PopCount(exp_drop))
   XSPerfAccumulate("entry_merge", io.in_req.valid && s0_match)
   XSPerfAccumulate("entry_pf_fire", PopCount(pf_fired))
-  
+
   /*
   val enTalbe = WireInit(Constantin.createRecord(name+"_isWriteL2BopTable", 1.U))
   val l2BOPTable = ChiselDB. createTable("L2BOPTable", new BopReqBufferEntry, basicDB = false)
