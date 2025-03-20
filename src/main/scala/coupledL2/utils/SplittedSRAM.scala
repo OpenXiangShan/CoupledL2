@@ -18,8 +18,8 @@ class SplittedSRAM[T <: Data]
   singlePort: Boolean = true, bypassWrite: Boolean = false,
   clkDivBy2: Boolean = false, readMCP2: Boolean = true,
   clockGated: Boolean = false, hasMbist:Boolean = false,
-  extraHold: Boolean = false, extClockGate:Boolean = false,
-  suffix: Option[String] = None
+  hasSramCtl: Boolean = false, extraHold: Boolean = false,
+  extClockGate:Boolean = false, suffix: Option[String] = None
 )(implicit valName: sourcecode.FullName) extends Module {
   val io = IO(new Bundle() {
     val r = Flipped(new SRAMReadBus(gen, set, way))
@@ -47,9 +47,9 @@ class SplittedSRAM[T <: Data]
       UInt(innerWidth.W), innerSets, innerWays,
       shouldReset = shouldReset, holdRead = holdRead,
       singlePort = singlePort, bypassWrite = bypassWrite,
-      hasMbist = hasMbist, latency = if(readMCP2) 2 else 1,
-      extraHold = extraHold, withClockGate = clockGated,
-      extClockGate = extClockGate,
+      hasMbist = hasMbist, hasSramCtl = hasSramCtl,
+      latency = if(readMCP2) 2 else 1, extraHold = extraHold,
+      withClockGate = clockGated, extClockGate = extClockGate,
       suffix = Some(suffix.getOrElse(SramHelper.getSramSuffix(valName.value)))
     ))
   )))

@@ -74,6 +74,7 @@ class DataStorage(implicit p: Parameters) extends L2Module {
     singlePort = true,
     readMCP2 = true,
     hasMbist = p(L2ParamKey).hasMbist,
+    hasSramCtl = p(L2ParamKey).hasSramCtl,
     extraHold = true
   ))
   array.io_en := io.en
