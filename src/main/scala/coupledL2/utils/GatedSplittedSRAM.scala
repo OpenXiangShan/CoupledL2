@@ -17,8 +17,8 @@ class GatedSplittedSRAM[T <: Data]
   shouldReset: Boolean = false, holdRead: Boolean = false,
   singlePort: Boolean = true, bypassWrite: Boolean = false,
   clkDivBy2: Boolean = false, readMCP2: Boolean = true,
-  hasMbist:Boolean = false, extraHold: Boolean = false,
-  suffix: Option[String] = None
+  hasMbist:Boolean = false, hasSramCtl: Boolean = false,
+  extraHold: Boolean = false, suffix: Option[String] = None
 )(implicit valName: sourcecode.FullName) extends SplittedSRAM[T](
   gen = gen,
   set = set,
@@ -33,6 +33,7 @@ class GatedSplittedSRAM[T <: Data]
   clkDivBy2 = clkDivBy2,
   readMCP2 = readMCP2,
   hasMbist = hasMbist,
+  hasSramCtl = hasSramCtl,
   extraHold = extraHold,
   extClockGate = true,
   suffix = Some(suffix.getOrElse(SramHelper.getSramSuffix(valName.value)))
