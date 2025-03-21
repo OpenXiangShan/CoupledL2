@@ -314,6 +314,10 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     req_s3.chiOpcode.get === SnpUniqueFwd
   val shouldRespData_dirty = nestable_dirResult_s3.hit && 
     (nestable_meta_s3.state === TIP || nestable_meta_s3.state === TRUNK) && nestable_meta_s3.dirty
+  // For SnpOnce, always response data under UC when L1 was BRANCH
+  val shouldRespData_once =  nestable_dirResult_s3.hit && 
+    nestable_meta_s3.state === TIP && !nestable_meta_s3.dirty &&
+    req_s3.chiOpcode.get === SnpOnce
   // For forwarding snoops, if the RetToSrc value is 1, must return a copy is the cache line is Dirty or Clean.
   val shouldRespData_retToSrc_fwd = nestable_dirResult_s3.hit && retToSrc && isSnpXFwd(req_s3.chiOpcode.get)
   // For non-forwarding snoops, ig the RetToSrc value is 1, must return a copy if the cache line is Shared Clean and
@@ -323,7 +327,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     req_s3.chiOpcode.get === SnpUnique ||
     isSnpToBNonFwd(req_s3.chiOpcode.get)
   )
-  val shouldRespData = shouldRespData_dirty || shouldRespData_retToSrc_fwd || shouldRespData_retToSrc_nonFwd
+  val shouldRespData = shouldRespData_dirty || shouldRespData_once || shouldRespData_retToSrc_fwd || shouldRespData_retToSrc_nonFwd
   val doRespData = shouldRespData && !neverRespData
   dontTouch(doRespData)
   dontTouch(shouldRespData)
