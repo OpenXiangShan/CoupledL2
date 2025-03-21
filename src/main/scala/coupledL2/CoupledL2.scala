@@ -602,7 +602,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     private val sigFromSrams = if (cacheParams.hasMbist) Some(SramHelper.genBroadCastBundleTop()) else None
     private val cg = if (cacheParams.hasMbist) Some(utility.ClockGate.genTeSrc) else None
     if (cacheParams.hasMbist) {
-      cg.get.cgen := io.dft.get.cgen
+      cg.get.cgen := io.dft.get.mbist.cgen
       sigFromSrams.get := io.dft.get
     }
 

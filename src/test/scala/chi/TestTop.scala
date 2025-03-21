@@ -12,6 +12,7 @@ import huancun._
 import coupledL2.prefetch._
 import coupledL2.tl2chi._
 import utility._
+import utility.chi._
 import scala.collection.mutable.ArrayBuffer
 
 class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(implicit p: Parameters) extends LazyModule
@@ -69,7 +70,7 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(imp
       name                = s"L2_$i",
       hartId              = i,
     )
-    case CHIIssue => p(CHIIssue)
+    case CHIParamKey => p(CHIParamKey)
     case EnableCHI => p(EnableCHI)
     case BankBitsKey => log2Ceil(banks)
     case MaxHartIdBits => log2Up(numCores)
@@ -215,7 +216,20 @@ object TestTopCHIHelper {
         // using external RN-F SAM
         sam                 = Seq(AddressSet.everything -> 0)
       )
-      case CHIIssue => issue
+      // case CHIIssue => issue
+      case CHIParamKey => CHIParam(
+        issue = issue,
+        nodeIDWidth = issue match {
+          case Issue.B => 7
+          case Issue.C => 9
+          case Issue.Eb => 11
+        },
+        enableMPAM = issue match {
+          case Issue.B => None
+          case Issue.C => None
+          case Issue.Eb => Some(11)
+        }
+      )
       case EnableCHI => true
     })
 

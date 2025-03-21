@@ -21,6 +21,7 @@ import chisel3._
 import chisel3.util._
 import chisel3.util.random.LFSR
 import utility._
+import utility.chi._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._

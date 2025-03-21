@@ -19,6 +19,7 @@ package coupledL2.tl2chi
 
 import chisel3._
 import chisel3.util._
+import utility.chi._
 import utility.{FastArbiter, Pipeline, ParallelPriorityMux, RegNextN, RRArbiterInit}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
@@ -76,7 +77,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
     require(io_chi.tx.dat.getWidth == io_chi.rx.dat.getWidth);
 
     // Display info
-    println(s"CHI Issue Version: ${p(CHIIssue)}")
+    println(s"CHI Issue Version: ${issue}")
     println(s"CHI REQ Flit Width: ${io_chi.tx.req.flit.getWidth}")
     println(s"CHI RSP Flit Width: ${io_chi.tx.rsp.flit.getWidth}")
     println(s"CHI SNP Flit Width: ${io_chi.rx.snp.flit.getWidth}")
@@ -246,16 +247,27 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
           Cat(slices.zipWithIndex.map { case (s, i) => s.io.out.rx.dat.ready && rxdatSliceID === i.U}).orR
         )
 
-        val linkMonitor = Module(new LinkMonitor)
-        linkMonitor.io.in.tx.req <> txreq
-        linkMonitor.io.in.tx.rsp <> txrsp
-        linkMonitor.io.in.tx.dat <> txdat
+        val linkMonitor = Module(new TxnsLinkMonitor(maxLCreditNum = 4)) // TODO: assess maxLCreditNum
+        linkMonitor.io.in.tx.req <> setSrcID(txreq, io_nodeID)
+        linkMonitor.io.in.tx.rsp <> setSrcID(txrsp, io_nodeID)
+        linkMonitor.io.in.tx.dat <> setSrcID(txdat, io_nodeID)
         rxsnp <> linkMonitor.io.in.rx.snp
         rxrsp <> linkMonitor.io.in.rx.rsp
         rxdat <> linkMonitor.io.in.rx.dat
         io_chi <> linkMonitor.io.out
-        linkMonitor.io.nodeID := io_nodeID
-        linkMonitor.io.exitco.foreach{_ := Cat(slices.zipWithIndex.map { case (s, i) => s.io.l2FlushDone.getOrElse(false.B)}).andR} //exit coherency
+        linkMonitor.io.exitco := Cat(slices.map(_.io.l2FlushDone.getOrElse(false.B))).andR
+
+        linkMonitor.io.in.tx.req.bits.printFields()
+        linkMonitor.io.in.tx.rsp.bits.printFields()
+        linkMonitor.io.in.tx.dat.bits.printFields()
+        linkMonitor.io.in.rx.snp.bits.printFields()
+
+        def setSrcID[T <: Bundle](in: DecoupledIO[T], srcID: UInt = 0.U): DecoupledIO[T] = {
+          val out = Wire(in.cloneType)
+          out <> in
+          out.bits.elements.filter(_._1 == "srcID").head._2 := srcID
+          out
+        }
     }
   }
 

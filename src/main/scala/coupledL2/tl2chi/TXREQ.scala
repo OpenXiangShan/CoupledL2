@@ -20,6 +20,7 @@ package coupledL2.tl2chi
 import chisel3._
 import chisel3.util._
 import utility._
+import utility.chi.{CHIREQ, SAM}
 import org.chipsalliance.cde.config.Parameters
 
 class TXBlockBundle(implicit p: Parameters) extends TL2CHIL2Bundle {
