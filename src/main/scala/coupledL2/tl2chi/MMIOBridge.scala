@@ -317,6 +317,21 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   io.pCrd.query.bits.srcID := srcID
 
   io.waitOnReadReceipt.foreach(_ := !w_readreceipt.get && s_txreq)
+
+  /**
+    * performance counters
+    */
+  XSPerfAccumulate("mmio_get", io.req.fire && io.req.bits.opcode === Get)
+  XSPerfAccumulate("mmio_put", io.req.fire && (io.req.bits.opcode === PutFullData || io.req.bits.opcode === PutPartialData))
+  XSPerfAccumulate("mmio_wait_compdata", !w_compdata)
+  XSPerfAccumulate("mmio_wait_readreceipt", !w_readreceipt.getOrElse(true.B))
+  XSPerfAccumulate("mmio_wait_comp", !w_comp)
+  XSPerfAccumulate("mmio_wait_dbid", !w_dbidresp)
+  XSPerfAccumulate("mmio_txreq_nack", txreq.valid && !txreq.ready)
+  XSPerfAccumulate("mmio_read_retry", rxrsp.fire && rxrsp.bits.opcode === RetryAck && isRead)
+  XSPerfAccumulate("mmio_write_retry", rxrsp.fire && rxrsp.bits.opcode === RetryAck && !isRead)
+  XSPerfAccumulate("mmio_read_wait_pcrd", !w_pcrdgrant && isRead)
+  XSPerfAccumulate("mmio_write_wait_pcrd", !w_pcrdgrant && !isRead)  
 }
 
 class MMIOBridgeImp(outer: MMIOBridge) extends LazyModuleImp(outer)

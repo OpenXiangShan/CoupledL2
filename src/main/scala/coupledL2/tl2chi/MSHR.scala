@@ -1423,15 +1423,19 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
 
   /* ======== Performance counters ======== */
   // time stamp
-  // if (cacheParams.enablePerf) {
-    val acquire_ts = RegEnable(timer, false.B, io.tasks.txreq.fire)
-    val probe_ts = RegEnable(timer, false.B, io.tasks.source_b.fire)
-    val release_ts = RegEnable(timer, false.B, !mp_grant_valid && mp_release_valid && io.tasks.mainpipe.ready)
-    val acquire_period = IO(Output(UInt(64.W)))
-    val probe_period = IO(Output(UInt(64.W)))
-    val release_period = IO(Output(UInt(64.W)))
-    acquire_period := timer - acquire_ts
-    probe_period := timer - probe_ts
-    release_period := timer - release_ts
-  // }
+  if (cacheParams.enablePerf) {
+    val acquire_start = io.tasks.txreq.fire && !state.s_acquire
+    val release_start = io.tasks.mainpipe.fire && !state.s_release
+    val acquire_ts = RegEnable(timer, acquire_start)
+    val release_ts = RegEnable(timer, release_start)
+    val acquire_finish = w_grant && w_grantlast
+    val release_finish = w_releaseack
+
+    val acquire_period = IO(ValidIO(UInt(64.W)))
+    val release_period = IO(ValidIO(UInt(64.W)))
+    acquire_period.valid := acquire_finish && !RegNext(acquire_finish)
+    acquire_period.bits := timer - acquire_ts
+    release_period.valid := release_finish && !RegNext(release_finish)
+    release_period.bts := timer - release_ts
+  }
 }

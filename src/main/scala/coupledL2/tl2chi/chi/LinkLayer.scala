@@ -20,6 +20,7 @@ package coupledL2.tl2chi
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
+import utility._
 import coupledL2.L2Module
 
 class ChannelIO[+T <: Data](gen: T) extends Bundle {
@@ -193,6 +194,13 @@ class LCredit2Decoupled[T <: Bundle](
     }
   }
   io.reclaimLCredit := lcreditInflight === 0.U
+
+  /**
+    * performance counters
+    */
+  XSPerfHistogram("lcrd_inflight", lcreditInflight, true.B, 0, lcreditNum + 1)
+  XSPerfAccumulate("accept", accept)
+  QueuePerf(size = lcreditNum, utilization = queue.io.count, full = queue.io.count === lcreditNum.U)
 }
 
 object LCredit2Decoupled {
@@ -254,6 +262,11 @@ class Decoupled2LCredit[T <: Bundle](gen: T) extends Module {
   out.flitpend := RegNext(true.B, init = false.B) // TODO
   out.flitv := RegNext(flitv, init = false.B)
   out.flit := RegEnable(Mux(io.in.valid, Cat(io.in.bits.getElements.map(_.asUInt)), 0.U /* LCrdReturn */), flitv)
+
+  /**
+    * performance counters
+    */
+  XSPerfAccumulate("lcrd_received", acceptLCredit)
 }
 
 object Decoupled2LCredit {
