@@ -39,7 +39,7 @@ import huancun.{TPmetaReq, TPmetaResp}
 case class TPParameters(
     tpTableEntries: Int = 16384,
     tpTableAssoc: Int = 16,
-    vaddrBits: Int = 39,
+    vaddrBits: Int = 50, //sv48x4
     blockOffBits: Int = 6,
     dataReadQueueDepth: Int = 8,
     dataWriteQueueDepth: Int = 4,
@@ -62,7 +62,7 @@ trait HasTPParams extends HasCoupledL2Parameters {
   def tpTableAssoc = tpParams.tpTableAssoc
   def tpTableNrSet = tpParams.tpTableEntries / tpTableAssoc
   def tpTableSetBits = log2Ceil(tpTableNrSet)
-  def tpEntryMaxLen = log2Floor(512 / (fullAddressBits - offsetBits))
+  def tpEntryMaxLen = 512 / (fullAddressBits - offsetBits)
   def tpTableReplacementPolicy = tpParams.replacementPolicy
   def debug = tpParams.debug
   def vaddrBits = tpParams.vaddrBits
@@ -81,11 +81,11 @@ abstract class TPModule(implicit val p: Parameters) extends Module with HasTPPar
 
 class tpMetaEntry(implicit p:Parameters) extends TPBundle {
   val valid = Bool()
-  val triggerTag = UInt((vaddrBits-blockOffBits-tpTableSetBits).W)
+  val triggerTag = UInt((fullAddressBits - blockOffBits - tpTableSetBits).W)
 }
 
 class tpDataEntry(implicit p:Parameters) extends TPBundle {
-  val rawData = Vec(tpEntryMaxLen, UInt(fullAddressBits.W))
+  val rawData = Vec(tpEntryMaxLen, UInt((fullAddressBits - offsetBits).W))
   // val rawData_debug = Vec(tpEntryMaxLen, UInt(vaddrBits.W))
   // TODO: val compressedData = UInt(512.W)
 }
@@ -327,7 +327,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   val do_sending = RegInit(false.B)
   val sending_idx = RegInit(0.U(offsetBits.W))
-  val sending_data = Reg(Vec(tpEntryMaxLen, UInt(fullAddressBits.W)))
+  val sending_data = Reg(Vec(tpEntryMaxLen, UInt((fullAddressBits - offsetBits).W)))
   // val sending_data_debug = Reg(Vec(tpEntryMaxLen, UInt(vaddrBits.W)))
   val sending_throttle = RegInit(0.U(4.W))
   val tpDataQFull = tpDataQueue.io.count === tpDataQueueDepth.U
