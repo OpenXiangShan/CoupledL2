@@ -1423,15 +1423,19 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
 
   /* ======== Performance counters ======== */
   // time stamp
-  // if (cacheParams.enablePerf) {
-    val acquire_ts = RegEnable(timer, false.B, io.tasks.txreq.fire)
-    val probe_ts = RegEnable(timer, false.B, io.tasks.source_b.fire)
-    val release_ts = RegEnable(timer, false.B, !mp_grant_valid && mp_release_valid && io.tasks.mainpipe.ready)
-    val acquire_period = IO(Output(UInt(64.W)))
-    val probe_period = IO(Output(UInt(64.W)))
-    val release_period = IO(Output(UInt(64.W)))
-    acquire_period := timer - acquire_ts
-    probe_period := timer - probe_ts
-    release_period := timer - release_ts
-  // }
+  val acquire_period = Option.when(cacheParams.enablePerf)(IO(ValidIO(UInt(64.W))))
+  val release_period = Option.when(cacheParams.enablePerf)(IO(ValidIO(UInt(64.W))))
+  if (cacheParams.enablePerf) {
+    val acquire_start = io.tasks.txreq.fire && !state.s_acquire
+    val release_start = io.tasks.mainpipe.fire && !state.s_release
+    val acquire_ts = RegEnable(timer, acquire_start)
+    val release_ts = RegEnable(timer, release_start)
+    val acquire_finish = state.w_grant && state.w_grantlast
+    val release_finish = state.w_releaseack
+
+    acquire_period.get.valid := acquire_finish && !RegNext(acquire_finish)
+    acquire_period.get.bits := timer - acquire_ts
+    release_period.get.valid := release_finish && !RegNext(release_finish)
+    release_period.get.bits := timer - release_ts
+  }
 }

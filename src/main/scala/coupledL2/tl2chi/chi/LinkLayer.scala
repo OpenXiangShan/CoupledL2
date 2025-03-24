@@ -20,6 +20,7 @@ package coupledL2.tl2chi
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
+import utility._
 import coupledL2.L2Module
 
 class ChannelIO[+T <: Data](gen: T) extends Bundle {
@@ -131,7 +132,7 @@ object LinkState {
 class LCredit2Decoupled[T <: Bundle](
   gen: T,
   lcreditNum: Int = 4 // the number of L-Credits that a receiver can provide
-) extends Module {
+)(implicit p: Parameters) extends Module {
   val io = IO(new Bundle() {
     val in = Flipped(ChannelIO(gen.cloneType))
     val out = DecoupledIO(gen.cloneType)
@@ -193,6 +194,13 @@ class LCredit2Decoupled[T <: Bundle](
     }
   }
   io.reclaimLCredit := lcreditInflight === 0.U
+
+  /**
+    * performance counters
+    */
+  XSPerfHistogram("lcrd_inflight", lcreditInflight, true.B, 0, lcreditNum + 1)
+  XSPerfAccumulate("accept", accept)
+  QueuePerf(size = lcreditNum, utilization = queue.io.count, full = queue.io.count === lcreditNum.U)
 }
 
 object LCredit2Decoupled {
@@ -205,7 +213,7 @@ object LCredit2Decoupled {
     reclaimLCredit: Bool,
     suggestName: Option[String] = None,
     lcreditNum: Int = defaultLCreditNum
-  ): Unit = {
+  )(implicit p: Parameters): Unit = {
     val mod = Module(new LCredit2Decoupled(right.bits.cloneType, lcreditNum))
     suggestName.foreach(name => mod.suggestName(s"LCredit2Decoupled_${name}"))
 
@@ -216,7 +224,7 @@ object LCredit2Decoupled {
   }
 }
 
-class Decoupled2LCredit[T <: Bundle](gen: T) extends Module {
+class Decoupled2LCredit[T <: Bundle](gen: T)(implicit p: Parameters) extends Module {
   val io = IO(new Bundle() {
     val in = Flipped(DecoupledIO(gen.cloneType))
     val out = ChannelIO(gen.cloneType)
@@ -254,6 +262,11 @@ class Decoupled2LCredit[T <: Bundle](gen: T) extends Module {
   out.flitpend := RegNext(true.B, init = false.B) // TODO
   out.flitv := RegNext(flitv, init = false.B)
   out.flit := RegEnable(Mux(io.in.valid, Cat(io.in.bits.getElements.map(_.asUInt)), 0.U /* LCrdReturn */), flitv)
+
+  /**
+    * performance counters
+    */
+  XSPerfAccumulate("lcrd_received", acceptLCredit)
 }
 
 object Decoupled2LCredit {
@@ -262,7 +275,7 @@ object Decoupled2LCredit {
     right: ChannelIO[T],
     state: LinkState,
     suggestName: Option[String] = None
-  ): Unit = {
+  )(implicit p: Parameters): Unit = {
     val mod = Module(new Decoupled2LCredit(left.bits.cloneType))
     suggestName.foreach(name => mod.suggestName(s"Decoupled2LCredit_${name}"))
     

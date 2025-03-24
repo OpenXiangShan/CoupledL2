@@ -193,26 +193,30 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
   )
 
   /* Performance counters */
-/*  XSPerfAccumulate("capacity_conflict_to_sinkA", a_mshrFull)
+  XSPerfAccumulate("capacity_conflict_to_sinkA", a_mshrFull)
   XSPerfAccumulate("capacity_conflict_to_sinkB", mshrFull)
   XSPerfHistogram("mshr_alloc", io.toMainPipe.mshr_alloc_ptr,
     enable = io.fromMainPipe.mshr_alloc_s3.valid,
     start = 0, stop = mshrsAll, step = 1)
   if (cacheParams.enablePerf) {
-    val start = 0
-    val stop = 100
-    val step = 5
-    val acquire_period = ParallelMux(mshrs.map { case m => m.io.resps.sink_d.valid -> m.acquire_period }) 
-    val release_period = ParallelMux(mshrs.map { case m => m.io.resps.sink_d.valid -> m.release_period })
-    val probe_period = ParallelMux(mshrs.map { case m => m.io.resps.sink_c.valid -> m.probe_period })
-    val acquire_period_en = io.resps.rxdat.valid &&
-      (io.resps.rxdat.respInfo.opcode === Grant || io.resps.rxdat.respInfo.opcode === GrantData)
-    val release_period_en = io.resps.rxdat.valid && io.resps.rxdat.respInfo.opcode === ReleaseAck
-    val probe_period_en = io.resps.sinkC.valid &&
-      (io.resps.sinkC.respInfo.opcode === ProbeAck || io.resps.sinkC.respInfo.opcode === ProbeAckData)
-    XSPerfHistogram("acquire_period", acquire_period, acquire_period_en, start, stop, step)
-    XSPerfHistogram("release_period", release_period, release_period_en, start, stop, step)
-    XSPerfHistogram("probe_period", probe_period, probe_period_en, start, stop, step)
+    // val start = 0
+    // val stop = 100
+    // val step = 5
+    val acquire_period = ParallelMux(mshrs.map { case m => m.acquire_period.get.valid -> m.acquire_period.get.bits }) 
+    val release_period = ParallelMux(mshrs.map { case m => m.release_period.get.valid -> m.release_period.get.bits })
+    val acquire_period_en = mshrs.map(_.acquire_period.get.valid).reduce(_ || _)
+    val release_period_en = mshrs.map(_.release_period.get.valid).reduce(_ || _)
+    XSPerfHistogram("acquire_period", acquire_period, acquire_period_en, 0, 30, 1, true, true)
+    XSPerfHistogram("acquire_period", acquire_period, acquire_period_en, 30, 100, 5, true, true)
+    XSPerfHistogram("acquire_period", acquire_period, acquire_period_en, 100, 200, 10, true, true)
+    XSPerfHistogram("acquire_period", acquire_period, acquire_period_en, 200, 1000, 100, true, true)
+    XSPerfHistogram("acquire_period", acquire_period, acquire_period_en, 1000, 5000, 1000, true, false)
+    
+    XSPerfHistogram("release_period", release_period, release_period_en, 0, 30, 1, true, true)
+    XSPerfHistogram("release_period", release_period, release_period_en, 30, 100, 5, true, true)
+    XSPerfHistogram("release_period", release_period, release_period_en, 100, 200, 10, true, true)
+    XSPerfHistogram("release_period", release_period, release_period_en, 200, 1000, 100, true, true)
+    XSPerfHistogram("release_period", release_period, release_period_en, 1000, 5000, 1000, true, false)
  
     val timers = RegInit(VecInit(Seq.fill(mshrsAll)(0.U(64.W))))
     for (((timer, m), i) <- timers.zip(mshrs).zipWithIndex) {
@@ -226,7 +230,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
         timer, enable, 0, 300, 10)
       XSPerfMax("mshr_latency", timer, enable)
     }
-  }*/
+  }
 
   val hpm_timers = RegInit(VecInit(Seq.fill(mshrsAll)(0.U(10.W))))
   // TODO: Is the width(4.W) proper here?
