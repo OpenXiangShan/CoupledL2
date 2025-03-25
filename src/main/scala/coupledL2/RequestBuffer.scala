@@ -296,20 +296,20 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
   // add XSPerf to see how many cycles the req is held in Buffer
   if(cacheParams.enablePerf) {
-    XSPerfAccumulate("drop_prefetch", io.in.valid && dup)
+    XSPerfAccumulate("drop_prefetch", io.in.valid && dup, XSPerfLevel.CRITICAL)
     if(flow){
-      XSPerfAccumulate("req_buffer_flow", io.in.valid && doFlow)
+      XSPerfAccumulate("req_buffer_flow", io.in.valid && doFlow, XSPerfLevel.CRITICAL)
     }
-    XSPerfAccumulate("req_buffer_alloc", alloc)
-    XSPerfAccumulate("req_buffer_full", full)
-    XSPerfAccumulate("recv_prefetch", io.in.fire && isPrefetch)
-    XSPerfAccumulate("recv_normal", io.in.fire && !isPrefetch)
-    XSPerfAccumulate("chosenQ_cancel", chosenQValid && cancel)
-    XSPerfAccumulate("req_buffer_mergeA", io.hasMergeA)
+    XSPerfAccumulate("req_buffer_alloc", alloc, XSPerfLevel.CRITICAL)
+    XSPerfAccumulate("req_buffer_full", full, XSPerfLevel.CRITICAL)
+    XSPerfAccumulate("recv_prefetch", io.in.fire && isPrefetch, XSPerfLevel.CRITICAL)
+    XSPerfAccumulate("recv_normal", io.in.fire && !isPrefetch, XSPerfLevel.CRITICAL)
+    XSPerfAccumulate("chosenQ_cancel", chosenQValid && cancel, XSPerfLevel.CRITICAL)
+    XSPerfAccumulate("req_buffer_mergeA", io.hasMergeA, XSPerfLevel.CRITICAL)
     // TODO: count conflict
     for(i <- 0 until entries){
       val cntEnable = PopCount(buffer.map(_.valid)) === i.U
-      XSPerfAccumulate(s"req_buffer_util_$i", cntEnable)
+      XSPerfAccumulate(s"req_buffer_util_$i", cntEnable, XSPerfLevel.CRITICAL)
     }
     val bufferTimer = RegInit(VecInit(Seq.fill(entries)(0.U(16.W))))
     buffer zip bufferTimer map {
@@ -319,9 +319,9 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
         assert(t < 20000.U, "ReqBuf Leak")
 
         val enable = RegNext(e.valid) && !e.valid
-        XSPerfHistogram("reqBuf_timer", t, enable, 0, 20, 1, right_strict = true)
-        XSPerfHistogram("reqBuf_timer", t, enable, 20, 400, 20, left_strict = true)
-        XSPerfMax("max_reqBuf_timer", t, enable)
+        XSPerfHistogram("reqBuf_timer", t, enable, 0, 20, 1, right_strict = true, perfLevel = XSPerfLevel.CRITICAL)
+        XSPerfHistogram("reqBuf_timer", t, enable, 20, 400, 20, left_strict = true, perfLevel = XSPerfLevel.CRITICAL)
+        XSPerfMax("max_reqBuf_timer", t, enable, XSPerfLevel.CRITICAL)
 
         // assert !(all entries occupied for 100 cycles)
     }

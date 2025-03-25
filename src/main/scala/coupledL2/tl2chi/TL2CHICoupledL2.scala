@@ -19,7 +19,7 @@ package coupledL2.tl2chi
 
 import chisel3._
 import chisel3.util._
-import utility.{FastArbiter, Pipeline, ParallelPriorityMux, RegNextN, RRArbiterInit, XSPerfAccumulate}
+import utility._
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
@@ -264,7 +264,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         /**
           * performance counters
           */
-        XSPerfAccumulate("pcrd_count", pCrdQueue.io.enq.fire)
+        XSPerfAccumulate("pcrd_count", pCrdQueue.io.enq.fire, XSPerfLevel.CRITICAL)
     }
   }
 

@@ -215,10 +215,10 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   )
 
 
-  XSPerfAccumulate("toTLBundleD_valid", deqValid)
-  XSPerfAccumulate("toTLBundleD_valid_isKeyword", deqValid && deqTask.isKeyword.getOrElse(false.B))
-  XSPerfAccumulate("toTLBundleD_fire", deqValid && io.d.ready)
-  XSPerfAccumulate("toTLBundleD_fire_isKeyword", deqValid && io.d.ready && deqTask.isKeyword.getOrElse(false.B))
+  XSPerfAccumulate("toTLBundleD_valid", deqValid, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("toTLBundleD_valid_isKeyword", deqValid && deqTask.isKeyword.getOrElse(false.B), XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("toTLBundleD_fire", deqValid && io.d.ready, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("toTLBundleD_fire_isKeyword", deqValid && io.d.ready && deqTask.isKeyword.getOrElse(false.B), XSPerfLevel.CRITICAL)
  /* val d_isKeyword = Mux(
     grantBufValid,
     grantBuf.task.isKeyword,
@@ -333,11 +333,11 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
         assert(t < 10000.U, "Inflight Grant Leak")
 
         val enable = RegNext(e.valid) && !e.valid
-        XSPerfHistogram("grant_grantack_period", t, enable, 0, 12, 1)
-        XSPerfMax("max_grant_grantack_period", t, enable)
+        XSPerfHistogram("grant_grantack_period", t, enable, 0, 12, 1, perfLevel = XSPerfLevel.CRITICAL)
+        XSPerfMax("max_grant_grantack_period", t, enable, XSPerfLevel.CRITICAL)
     }
     // pftRespQueue is about to be full, and using back pressure to block All MainPipe Entrance
     // which can SERIOUSLY affect performance, should consider less drastic prefetch policy
-    XSPerfAccumulate("pftRespQueue_about_to_full", noSpaceForMSHRPft.getOrElse(false.B))
+    XSPerfAccumulate("pftRespQueue_about_to_full", noSpaceForMSHRPft.getOrElse(false.B), XSPerfLevel.CRITICAL)
   }
 }

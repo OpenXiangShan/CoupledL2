@@ -193,11 +193,11 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
   )
 
   /* Performance counters */
-  XSPerfAccumulate("capacity_conflict_to_sinkA", a_mshrFull)
-  XSPerfAccumulate("capacity_conflict_to_sinkB", mshrFull)
+  XSPerfAccumulate("capacity_conflict_to_sinkA", a_mshrFull, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("capacity_conflict_to_sinkB", mshrFull, XSPerfLevel.CRITICAL)
   XSPerfHistogram("mshr_alloc", io.toMainPipe.mshr_alloc_ptr,
     enable = io.fromMainPipe.mshr_alloc_s3.valid,
-    start = 0, stop = mshrsAll, step = 1)
+    start = 0, stop = mshrsAll, step = 1, perfLevel = XSPerfLevel.CRITICAL)
   if (cacheParams.enablePerf) {
     // val start = 0
     // val stop = 100
@@ -206,17 +206,17 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
     val release_period = ParallelMux(mshrs.map { case m => m.release_period.get.valid -> m.release_period.get.bits })
     val acquire_period_en = mshrs.map(_.acquire_period.get.valid).reduce(_ || _)
     val release_period_en = mshrs.map(_.release_period.get.valid).reduce(_ || _)
-    XSPerfHistogram("acquire_period", acquire_period, acquire_period_en, 0, 30, 1, true, true)
-    XSPerfHistogram("acquire_period", acquire_period, acquire_period_en, 30, 100, 5, true, true)
-    XSPerfHistogram("acquire_period", acquire_period, acquire_period_en, 100, 200, 10, true, true)
-    XSPerfHistogram("acquire_period", acquire_period, acquire_period_en, 200, 1000, 100, true, true)
-    XSPerfHistogram("acquire_period", acquire_period, acquire_period_en, 1000, 5000, 1000, true, false)
+    XSPerfHistogram("acquire_period", acquire_period, acquire_period_en, 0, 30, 1, true, true, XSPerfLevel.CRITICAL)
+    XSPerfHistogram("acquire_period", acquire_period, acquire_period_en, 30, 100, 5, true, true, XSPerfLevel.CRITICAL)
+    XSPerfHistogram("acquire_period", acquire_period, acquire_period_en, 100, 200, 10, true, true, XSPerfLevel.CRITICAL)
+    XSPerfHistogram("acquire_period", acquire_period, acquire_period_en, 200, 1000, 100, true, true, XSPerfLevel.CRITICAL)
+    XSPerfHistogram("acquire_period", acquire_period, acquire_period_en, 1000, 5000, 1000, true, false, XSPerfLevel.CRITICAL)
     
-    XSPerfHistogram("release_period", release_period, release_period_en, 0, 30, 1, true, true)
-    XSPerfHistogram("release_period", release_period, release_period_en, 30, 100, 5, true, true)
-    XSPerfHistogram("release_period", release_period, release_period_en, 100, 200, 10, true, true)
-    XSPerfHistogram("release_period", release_period, release_period_en, 200, 1000, 100, true, true)
-    XSPerfHistogram("release_period", release_period, release_period_en, 1000, 5000, 1000, true, false)
+    XSPerfHistogram("release_period", release_period, release_period_en, 0, 30, 1, true, true, XSPerfLevel.CRITICAL)
+    XSPerfHistogram("release_period", release_period, release_period_en, 30, 100, 5, true, true, XSPerfLevel.CRITICAL)
+    XSPerfHistogram("release_period", release_period, release_period_en, 100, 200, 10, true, true, XSPerfLevel.CRITICAL)
+    XSPerfHistogram("release_period", release_period, release_period_en, 200, 1000, 100, true, true, XSPerfLevel.CRITICAL)
+    XSPerfHistogram("release_period", release_period, release_period_en, 1000, 5000, 1000, true, false, XSPerfLevel.CRITICAL)
  
     val timers = RegInit(VecInit(Seq.fill(mshrsAll)(0.U(64.W))))
     for (((timer, m), i) <- timers.zip(mshrs).zipWithIndex) {
@@ -227,8 +227,8 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
       }
       val enable = m.io.status.valid && m.io.status.bits.will_free
       XSPerfHistogram("mshr_latency_" + Integer.toString(i, 10),
-        timer, enable, 0, 300, 10)
-      XSPerfMax("mshr_latency", timer, enable)
+        timer, enable, 0, 300, 10, perfLevel = XSPerfLevel.CRITICAL)
+      XSPerfMax("mshr_latency", timer, enable, XSPerfLevel.CRITICAL)
     }
   }
 

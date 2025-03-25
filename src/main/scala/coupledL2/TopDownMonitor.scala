@@ -55,7 +55,7 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   }
 
   io.debugTopDown.l2MissMatch := Cat(addrMatchVec.flatten).orR
-  XSPerfAccumulate(s"${cacheParams.name}MissMatch", io.debugTopDown.l2MissMatch)
+  XSPerfAccumulate(s"${cacheParams.name}MissMatch", io.debugTopDown.l2MissMatch, XSPerfLevel.CRITICAL)
 
   /* ====== PART TWO ======
    * Count the parallel misses, and divide them into CPU/Prefetch
@@ -74,9 +74,9 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   // val missVecAll = allMSHRMatchVec(s => s.fromA && s.is_miss)
 
   val totalMSHRs = banks * mshrsAll
-  XSPerfHistogram("parallel_misses_CPU" , PopCount(missVecCPU), true.B, 0, totalMSHRs, 1)
-  XSPerfHistogram("parallel_misses_Pref", PopCount(missVecPref), true.B, 0, totalMSHRs, 1)
-  XSPerfHistogram("parallel_misses_All" , PopCount(missVecCPU)+PopCount(missVecPref), true.B, 0, 32, 1)
+  XSPerfHistogram("parallel_misses_CPU" , PopCount(missVecCPU), true.B, 0, totalMSHRs, 1, perfLevel = XSPerfLevel.CRITICAL)
+  XSPerfHistogram("parallel_misses_Pref", PopCount(missVecPref), true.B, 0, totalMSHRs, 1, perfLevel = XSPerfLevel.CRITICAL)
+  XSPerfHistogram("parallel_misses_All" , PopCount(missVecCPU)+PopCount(missVecPref), true.B, 0, 32, 1, perfLevel = XSPerfLevel.CRITICAL)
 
   /* ====== PART THREE ======
    * Distinguish req sources and count num & miss
@@ -102,8 +102,8 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     val sourceMatchVecMiss = dirResultMatchVec(r => r.replacerInfo.reqSource === i.U && !r.hit)
 
     val sourceName = MemReqSource.apply(i).toString
-    XSPerfAccumulate(s"E2_${cacheParams.name}AReqSource_${sourceName}_Total", PopCount(sourceMatchVec))
-    XSPerfAccumulate(s"E2_${cacheParams.name}AReqSource_${sourceName}_Miss", PopCount(sourceMatchVecMiss))
+    XSPerfAccumulate(s"E2_${cacheParams.name}AReqSource_${sourceName}_Total", PopCount(sourceMatchVec), XSPerfLevel.CRITICAL)
+    XSPerfAccumulate(s"E2_${cacheParams.name}AReqSource_${sourceName}_Miss", PopCount(sourceMatchVecMiss), XSPerfLevel.CRITICAL)
   }
 
   /* ====== MISC ======
@@ -266,18 +266,18 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     1000, io.debugTopDown.robTrueCommit, clock, reset
   )
 
-  XSPerfAccumulate("l2prefetchSent", PopCount(l2prefetchSent))
-  XSPerfAccumulate("l2prefetchSentBOP", PopCount(l2prefetchSentBOP))
-  XSPerfAccumulate("l2prefetchSentSMS", PopCount(l2prefetchSentSMS))
-  XSPerfAccumulate("l2prefetchSentStride", PopCount(l2prefetchSentStride))
-  XSPerfAccumulate("l2prefetchSentStream", PopCount(l2prefetchSentStream))
-  XSPerfAccumulate("l2prefetchSentTP", PopCount(l2prefetchSentTP))
-  XSPerfAccumulate("l2prefetchUseful", PopCount(l2prefetchUseful))
-  XSPerfAccumulate("l2prefetchUsefulBOP", PopCount(l2prefetchUsefulBOP))
-  XSPerfAccumulate("l2prefetchUsefulSMS", PopCount(l2prefetchUsefulSMS))
-  XSPerfAccumulate("l2prefetchUsefulStride", PopCount(l2prefetchUsefulStride))
-  XSPerfAccumulate("l2prefetchUsefulStream", PopCount(l2prefetchUsefulStream))
-  XSPerfAccumulate("l2prefetchUsefulTP", PopCount(l2prefetchUsefulTP))
-  XSPerfAccumulate("l2demandRequest", PopCount(l2demandRequest))
-  XSPerfAccumulate("l2prefetchLate", PopCount(l2prefetchLate))
+  XSPerfAccumulate("l2prefetchSent", PopCount(l2prefetchSent), XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("l2prefetchSentBOP", PopCount(l2prefetchSentBOP), XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("l2prefetchSentSMS", PopCount(l2prefetchSentSMS), XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("l2prefetchSentStride", PopCount(l2prefetchSentStride), XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("l2prefetchSentStream", PopCount(l2prefetchSentStream), XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("l2prefetchSentTP", PopCount(l2prefetchSentTP), XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("l2prefetchUseful", PopCount(l2prefetchUseful), XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("l2prefetchUsefulBOP", PopCount(l2prefetchUsefulBOP), XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("l2prefetchUsefulSMS", PopCount(l2prefetchUsefulSMS), XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("l2prefetchUsefulStride", PopCount(l2prefetchUsefulStride), XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("l2prefetchUsefulStream", PopCount(l2prefetchUsefulStream), XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("l2prefetchUsefulTP", PopCount(l2prefetchUsefulTP), XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("l2demandRequest", PopCount(l2demandRequest), XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("l2prefetchLate", PopCount(l2prefetchLate), XSPerfLevel.CRITICAL)
 }

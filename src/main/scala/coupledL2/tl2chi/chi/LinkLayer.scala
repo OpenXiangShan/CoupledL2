@@ -198,9 +198,14 @@ class LCredit2Decoupled[T <: Bundle](
   /**
     * performance counters
     */
-  XSPerfHistogram("lcrd_inflight", lcreditInflight, true.B, 0, lcreditNum + 1)
-  XSPerfAccumulate("accept", accept)
-  QueuePerf(size = lcreditNum, utilization = queue.io.count, full = queue.io.count === lcreditNum.U)
+  XSPerfHistogram("lcrd_inflight", lcreditInflight, true.B, 0, lcreditNum + 1, perfLevel = XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("accept", accept, XSPerfLevel.CRITICAL)
+  QueuePerf(
+    size = lcreditNum,
+    utilization = queue.io.count,
+    full = queue.io.count === lcreditNum.U,
+    perfLevel = XSPerfLevel.CRITICAL
+  )
 }
 
 object LCredit2Decoupled {
@@ -266,7 +271,7 @@ class Decoupled2LCredit[T <: Bundle](gen: T)(implicit p: Parameters) extends Mod
   /**
     * performance counters
     */
-  XSPerfAccumulate("lcrd_received", acceptLCredit)
+  XSPerfAccumulate("lcrd_received", acceptLCredit, XSPerfLevel.CRITICAL)
 }
 
 object Decoupled2LCredit {

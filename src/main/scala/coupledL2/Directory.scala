@@ -21,7 +21,7 @@ import chisel3._
 import chisel3.util._
 import utility.mbist.MbistPipeline
 import coupledL2.utils._
-import utility.{ParallelPriorityMux, RegNextN, XSPerfAccumulate, Code, SRAMTemplate}
+import utility.{ParallelPriorityMux, RegNextN, XSPerfAccumulate, XSPerfLevel, Code, SRAMTemplate}
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.prefetch.PfSource
 import freechips.rocketchip.tilelink.TLMessages._
@@ -414,6 +414,6 @@ class Directory(implicit p: Parameters) extends L2Module {
     resetIdx := resetIdx - 1.U
   }
 
-  XSPerfAccumulate("dirRead_cnt", io.read.fire)
-  XSPerfAccumulate("choose_busy_way", reqValid_s3 && !req_s3.wayMask(chosenWay))
+  XSPerfAccumulate("dirRead_cnt", io.read.fire, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("choose_busy_way", reqValid_s3 && !req_s3.wayMask(chosenWay), XSPerfLevel.CRITICAL)
 }

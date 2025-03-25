@@ -979,75 +979,81 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   /* ===== Performance counters ===== */
   // SinkA requests
-  XSPerfAccumulate("acquireBlock", task_s3.valid && sinkA_req_s3 && req_s3.opcode === AcquireBlock)
-  XSPerfAccumulate("acquirePerm", task_s3.valid && sinkA_req_s3 && req_s3.opcode === AcquirePerm)
-  XSPerfAccumulate("prefetch", task_s3.valid && req_prefetch_s3)
-  XSPerfAccumulate("get", task_s3.valid && req_get_s3)
-  XSPerfAccumulate("cbo_clean", task_s3.valid && req_cbo_clean_s3)
-  XSPerfAccumulate("cbo_flush", task_s3.valid && req_cbo_flush_s3)
-  XSPerfAccumulate("cbo_inval", task_s3.valid && req_cbo_inval_s3)
+  XSPerfAccumulate("acquireBlock", task_s3.valid && sinkA_req_s3 && req_s3.opcode === AcquireBlock, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("acquirePerm", task_s3.valid && sinkA_req_s3 && req_s3.opcode === AcquirePerm, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("prefetch", task_s3.valid && req_prefetch_s3, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("get", task_s3.valid && req_get_s3, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("cbo_clean", task_s3.valid && req_cbo_clean_s3, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("cbo_flush", task_s3.valid && req_cbo_flush_s3, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("cbo_inval", task_s3.valid && req_cbo_inval_s3, XSPerfLevel.CRITICAL)
 
   // num of mshr req
-  XSPerfAccumulate("mshr_grant_req", task_s3.valid && mshr_grant_s3 && !retry)
-  XSPerfAccumulate("mshr_grantdata_req", task_s3.valid && mshr_grantdata_s3 && !retry)
-  XSPerfAccumulate("mshr_accessackdata_req", task_s3.valid && mshr_accessackdata_s3 && !retry)
-  XSPerfAccumulate("mshr_hintack_req", task_s3.valid && mshr_hintack_s3 && !retry)
+  XSPerfAccumulate("mshr_grant_req", task_s3.valid && mshr_grant_s3 && !retry, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("mshr_grantdata_req", task_s3.valid && mshr_grantdata_s3 && !retry, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("mshr_accessackdata_req", task_s3.valid && mshr_accessackdata_s3 && !retry, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("mshr_hintack_req", task_s3.valid && mshr_hintack_s3 && !retry, XSPerfLevel.CRITICAL)
   // XSPerfAccumulate("mshr_probeack_req", task_s3.valid && mshr_probeack_s3)
   // XSPerfAccumulate("mshr_probeackdata_req", task_s3.valid && mshr_probeackdata_s3)
   // XSPerfAccumulate("mshr_release_req", task_s3.valid && mshr_release_s3)
-  XSPerfAccumulate("mshr_snpResp_req", task_s3.valid && mshr_snpResp_s3)
-  XSPerfAccumulate("mshr_snpRespFwded_req", task_s3.valid && mshr_snpRespFwded_s3)
-  XSPerfAccumulate("mshr_snpRespData_req", task_s3.valid && mshr_snpRespData_s3)
-  XSPerfAccumulate("mshr_snpRespDataPtl_req", task_s3.valid && mshr_snpRespDataPtl_s3)
-  XSPerfAccumulate("mshr_snpRespDataFwded_req", task_s3.valid && mshr_snpRespDataFwded_s3)
-  XSPerfAccumulate("mshr_writeBackFull", task_s3.valid && mshr_writeBackFull_s3)
-  XSPerfAccumulate("mshr_writeEvictFull", task_s3.valid && mshr_writeEvictFull_s3)
-  XSPerfAccumulate("mshr_writeEvictOrEvict", task_s3.valid && mshr_writeEvictOrEvict_s3)
-  XSPerfAccumulate("mshr_evict_s3", task_s3.valid && mshr_evict_s3)
+  XSPerfAccumulate("mshr_snpResp_req", task_s3.valid && mshr_snpResp_s3, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("mshr_snpRespFwded_req", task_s3.valid && mshr_snpRespFwded_s3, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("mshr_snpRespData_req", task_s3.valid && mshr_snpRespData_s3, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("mshr_snpRespDataPtl_req", task_s3.valid && mshr_snpRespDataPtl_s3, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("mshr_snpRespDataFwded_req", task_s3.valid && mshr_snpRespDataFwded_s3, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("mshr_writeBackFull", task_s3.valid && mshr_writeBackFull_s3, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("mshr_writeEvictFull", task_s3.valid && mshr_writeEvictFull_s3, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("mshr_writeEvictOrEvict", task_s3.valid && mshr_writeEvictOrEvict_s3, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("mshr_evict_s3", task_s3.valid && mshr_evict_s3, XSPerfLevel.CRITICAL)
   
   // directory access result
   val hit_s3 = task_s3.valid && !mshr_req_s3 && dirResult_s3.hit
   val miss_s3 = task_s3.valid && !mshr_req_s3 && !dirResult_s3.hit
-  XSPerfAccumulate("a_req_hit", hit_s3 && req_s3.fromA)
+  XSPerfAccumulate("a_req_hit", hit_s3 && req_s3.fromA, XSPerfLevel.CRITICAL)
   XSPerfAccumulate("acquire_hit", hit_s3 && req_s3.fromA &&
-    (req_s3.opcode === AcquireBlock || req_s3.opcode === AcquirePerm))
-  XSPerfAccumulate("get_hit", hit_s3 && req_s3.fromA && req_s3.opcode === Get)
-  XSPerfAccumulate("retry", mshr_refill_s3 && retry)
+    (req_s3.opcode === AcquireBlock || req_s3.opcode === AcquirePerm), XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("get_hit", hit_s3 && req_s3.fromA && req_s3.opcode === Get, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("retry", mshr_refill_s3 && retry, XSPerfLevel.CRITICAL)
 
-  XSPerfAccumulate("a_req_miss", miss_s3 && req_s3.fromA)
+  XSPerfAccumulate("a_req_miss", miss_s3 && req_s3.fromA, XSPerfLevel.CRITICAL)
   XSPerfAccumulate("acquire_miss", miss_s3 && req_s3.fromA &&
-    (req_s3.opcode === AcquireBlock || req_s3.opcode === AcquirePerm))
-  XSPerfAccumulate("get_miss", miss_s3 && req_s3.fromA && req_s3.opcode === Get)
+    (req_s3.opcode === AcquireBlock || req_s3.opcode === AcquirePerm), XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("get_miss", miss_s3 && req_s3.fromA && req_s3.opcode === Get, XSPerfLevel.CRITICAL)
 
-  XSPerfAccumulate("a_need_acquire_on_hit", task_s3.valid && req_s3.fromA && dirResult_s3.hit && acquire_on_hit_s3)
-  XSPerfAccumulate("a_need_acquire_on_miss", task_s3.valid && req_s3.fromA && !dirResult_s3.hit && acquire_on_miss_s3)
-  XSPerfAccumulate("get_need_probe", task_s3.valid && need_probe_s3_a && req_get_s3)
-  XSPerfAccumulate("acquire_need_probe_alias", task_s3.valid && cache_alias)
+  XSPerfAccumulate("a_need_acquire_on_hit", task_s3.valid && req_s3.fromA && dirResult_s3.hit && acquire_on_hit_s3, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("a_need_acquire_on_miss", task_s3.valid && req_s3.fromA && !dirResult_s3.hit && acquire_on_miss_s3, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("get_need_probe", task_s3.valid && need_probe_s3_a && req_get_s3, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("acquire_need_probe_alias", task_s3.valid && cache_alias, XSPerfLevel.CRITICAL)
 
-  XSPerfAccumulate("b_need_probe_snpStable", task_s3.valid && need_pprobe_s3_b_snpStable)
-  XSPerfAccumulate("b_need_probe_snpToB", task_s3.valid && need_pprobe_s3_b_snpToB)
-  XSPerfAccumulate("b_need_probe_snpToN", task_s3.valid && need_pprobe_s3_b_snpToN)
-  XSPerfAccumulate("b_need_dct", task_s3.valid && need_dct_s3_b)
+  XSPerfAccumulate("b_need_probe_snpStable", task_s3.valid && need_pprobe_s3_b_snpStable, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("b_need_probe_snpToB", task_s3.valid && need_pprobe_s3_b_snpToB, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("b_need_probe_snpToN", task_s3.valid && need_pprobe_s3_b_snpToN, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("b_need_dct", task_s3.valid && need_dct_s3_b, XSPerfLevel.CRITICAL)
 
-  XSPerfAccumulate("b_req_hit", hit_s3 && req_s3.fromB)
-  XSPerfAccumulate("b_req_miss", miss_s3 && req_s3.fromB)
+  XSPerfAccumulate("b_req_hit", hit_s3 && req_s3.fromB, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("b_req_miss", miss_s3 && req_s3.fromB, XSPerfLevel.CRITICAL)
 
   XSPerfHistogram("a_req_access_way", perfCnt = dirResult_s3.way,
-    enable = task_s3.valid && !mshr_req_s3 && req_s3.fromA, start = 0, stop = cacheParams.ways, step = 1)
+    enable = task_s3.valid && !mshr_req_s3 && req_s3.fromA, start = 0, stop = cacheParams.ways, step = 1,
+    perfLevel = XSPerfLevel.CRITICAL)
   XSPerfHistogram("a_req_hit_way", perfCnt = dirResult_s3.way,
-    enable = hit_s3 && req_s3.fromA, start = 0, stop = cacheParams.ways, step = 1)
+    enable = hit_s3 && req_s3.fromA, start = 0, stop = cacheParams.ways, step = 1,
+    perfLevel = XSPerfLevel.CRITICAL)
   XSPerfHistogram("a_req_miss_way_choice", perfCnt = dirResult_s3.way,
-    enable = miss_s3 && req_s3.fromA, start = 0, stop = cacheParams.ways, step = 1)
+    enable = miss_s3 && req_s3.fromA, start = 0, stop = cacheParams.ways, step = 1,
+    perfLevel = XSPerfLevel.CRITICAL)
   
   XSPerfHistogram("a_req_access_set", perfCnt = task_s3.bits.set,
     enable = task_s3.valid && !mshr_req_s3 && req_s3.fromA,
-    start = 0, stop = cacheParams.sets, step = cacheParams.sets / 64)
+    start = 0, stop = cacheParams.sets, step = cacheParams.sets / 64,
+    perfLevel = XSPerfLevel.CRITICAL)
   XSPerfHistogram("a_req_hit_set", perfCnt = task_s3.bits.set,
     enable = hit_s3 && req_s3.fromA,
-    start = 0, stop = cacheParams.sets, step = cacheParams.sets / 64)
+    start = 0, stop = cacheParams.sets, step = cacheParams.sets / 64,
+    perfLevel = XSPerfLevel.CRITICAL)
   XSPerfHistogram("a_req_miss_set", perfCnt = task_s3.bits.set,
     enable = miss_s3 && req_s3.fromA,
-    start = 0, stop = cacheParams.sets, step = cacheParams.sets / 64)
+    start = 0, stop = cacheParams.sets, step = cacheParams.sets / 64,
+    perfLevel = XSPerfLevel.CRITICAL)
 
   // pipeline stages for TX and sourceD reqs
   val pipe_len = Seq(5.U, 4.U, 3.U)
@@ -1056,30 +1062,30 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val txrsp_pipe_len = ParallelMux(txrsp.map(_.fire), pipe_len)
   val txdat_pipe_len = ParallelMux(txdat.map(_.fire), pipe_len)
   XSPerfHistogram("sourceD_pipeline_stages", sourceD_pipe_len,
-    enable = io.toSourceD.fire, start = 3, stop = 5+1, step = 1)
+    enable = io.toSourceD.fire, start = 3, stop = 5+1, step = 1, perfLevel = XSPerfLevel.CRITICAL)
   XSPerfHistogram("txreq_pipeline_stages", txreq_pipe_len,
-    enable = io.toTXREQ.fire, start = 3, stop = 5+1, step = 1)
+    enable = io.toTXREQ.fire, start = 3, stop = 5+1, step = 1, perfLevel = XSPerfLevel.CRITICAL)
   XSPerfHistogram("txrsp_pipeline_stages", txrsp_pipe_len,
-    enable = io.toTXRSP.fire, start = 3, stop = 5+1, step = 1)
+    enable = io.toTXRSP.fire, start = 3, stop = 5+1, step = 1, perfLevel = XSPerfLevel.CRITICAL)
   XSPerfHistogram("txdat_pipeline_stages", txdat_pipe_len,
-    enable = io.toTXDAT.fire, start = 3, stop = 5+1, step = 1)
+    enable = io.toTXDAT.fire, start = 3, stop = 5+1, step = 1, perfLevel = XSPerfLevel.CRITICAL)
 
   // XSPerfAccumulate("a_req_tigger_prefetch", io.prefetchTrain.)
   prefetchOpt.foreach {
     _ =>
-      XSPerfAccumulate("a_req_trigger_prefetch", io.prefetchTrain.get.fire)
-      XSPerfAccumulate("a_req_trigger_prefetch_not_ready", io.prefetchTrain.get.valid && !io.prefetchTrain.get.ready)
-      XSPerfAccumulate("acquire_trigger_prefetch_on_miss", io.prefetchTrain.get.fire && req_acquire_s3 && !dirResult_s3.hit)
-      XSPerfAccumulate("acquire_trigger_prefetch_on_hit_pft", io.prefetchTrain.get.fire && req_acquire_s3 && dirResult_s3.hit && meta_s3.prefetch.get)
+      XSPerfAccumulate("a_req_trigger_prefetch", io.prefetchTrain.get.fire, XSPerfLevel.CRITICAL)
+      XSPerfAccumulate("a_req_trigger_prefetch_not_ready", io.prefetchTrain.get.valid && !io.prefetchTrain.get.ready, XSPerfLevel.CRITICAL)
+      XSPerfAccumulate("acquire_trigger_prefetch_on_miss", io.prefetchTrain.get.fire && req_acquire_s3 && !dirResult_s3.hit, XSPerfLevel.CRITICAL)
+      XSPerfAccumulate("acquire_trigger_prefetch_on_hit_pft", io.prefetchTrain.get.fire && req_acquire_s3 && dirResult_s3.hit && meta_s3.prefetch.get, XSPerfLevel.CRITICAL)
       // TODO
       // XSPerfAccumulate("release_all", mshr_release_s3)
       // XSPerfAccumulate("release_prefetch_accessed", mshr_release_s3 && meta_s3.prefetch.get && meta_s3.accessed)
       // XSPerfAccumulate("release_prefetch_not_accessed", mshr_release_s3 && meta_s3.prefetch.get && !meta_s3.accessed)
-      XSPerfAccumulate("get_trigger_prefetch_on_miss", io.prefetchTrain.get.fire && req_get_s3 && !dirResult_s3.hit)
-      XSPerfAccumulate("get_trigger_prefetch_on_hit_pft", io.prefetchTrain.get.fire && req_get_s3 && dirResult_s3.hit && meta_s3.prefetch.get)
+      XSPerfAccumulate("get_trigger_prefetch_on_miss", io.prefetchTrain.get.fire && req_get_s3 && !dirResult_s3.hit, XSPerfLevel.CRITICAL)
+      XSPerfAccumulate("get_trigger_prefetch_on_hit_pft", io.prefetchTrain.get.fire && req_get_s3 && dirResult_s3.hit && meta_s3.prefetch.get, XSPerfLevel.CRITICAL)
   }
 
-  XSPerfAccumulate("early_prefetch", meta_s3.prefetch.getOrElse(false.B) && !meta_s3.accessed && !dirResult_s3.hit && task_s3.valid)
+  XSPerfAccumulate("early_prefetch", meta_s3.prefetch.getOrElse(false.B) && !meta_s3.accessed && !dirResult_s3.hit && task_s3.valid, XSPerfLevel.CRITICAL)
 
   /* ===== Hardware Performance Monitor ===== */
   val perfEvents = Seq(

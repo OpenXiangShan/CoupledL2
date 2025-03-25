@@ -21,7 +21,7 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import utility.{DFTResetSignals, FastArbiter, HasPerfEvents, ParallelMax, ParallelPriorityMux, Pipeline, PipelineConnect, RegNextN, XSPerfAccumulate}
+import utility._
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tile.MaxHartIdBits
 import freechips.rocketchip.tilelink._
@@ -575,7 +575,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       val (first, _, _, _) = node.in.head._2.count(slice.io.in.d)
       slice.io.in.d.fire && first && slice.io.in.d.bits.opcode === GrantData
     }
-    XSPerfAccumulate("grant_data_fire", PopCount(VecInit(grant_data_fire)))
+    XSPerfAccumulate("grant_data_fire", PopCount(VecInit(grant_data_fire)), XSPerfLevel.CRITICAL)
 
     val hint_source = io.l2_hint.bits.sourceId
 
@@ -594,10 +594,10 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     hintPipe1.io.out.ready := true.B
 
     val accurateHint = grant_data_fire.orR && hintPipe2.io.out.valid && hintPipe2.io.out.bits === grant_data_source
-    XSPerfAccumulate("accurate3Hints", accurateHint)
+    XSPerfAccumulate("accurate3Hints", accurateHint, XSPerfLevel.CRITICAL)
 
     val okHint = grant_data_fire.orR && hintPipe1.io.out.valid && hintPipe1.io.out.bits === grant_data_source
-    XSPerfAccumulate("ok2Hints", okHint)
+    XSPerfAccumulate("ok2Hints", okHint, XSPerfLevel.CRITICAL)
 
     private val sigFromSrams = if (cacheParams.hasMbist) Some(SramHelper.genBroadCastBundleTop()) else None
     private val cg = if (cacheParams.hasMbist) Some(utility.ClockGate.genTeSrc) else None

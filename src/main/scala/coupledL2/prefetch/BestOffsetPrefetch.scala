@@ -26,7 +26,7 @@
 
 package coupledL2.prefetch
 
-import utility.{ChiselDB, Constantin, MemReqSource, ParallelPriorityMux, RRArbiterInit, SRAMTemplate, XSPerfAccumulate}
+import utility._
 import org.chipsalliance.cde.config.Parameters
 import chisel3.DontCare.:=
 import chisel3._
@@ -303,17 +303,17 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
   io.test.req.bits.testOffset := testOffset
   io.test.req.bits.ptr := ptr
 
-  XSPerfAccumulate("total_learn_phase", state === s_idle)
-  XSPerfAccumulate("total_bop_disable", state === s_idle && isBad)
-  XSPerfAccumulate("total_bop_high_confidence", state === s_idle && bestScore === scoreMax.U)
+  XSPerfAccumulate("total_learn_phase", state === s_idle, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("total_bop_disable", state === s_idle && isBad, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("total_bop_high_confidence", state === s_idle && bestScore === scoreMax.U, XSPerfLevel.CRITICAL)
 
   for (off <- offsetList) {
     if (off < 0) {
       XSPerfAccumulate("best_offset_neg_" + (-off).toString + "_learning_phases",
-        Mux(state === s_idle, (bestOffset === off.S(offsetWidth.W).asUInt).asUInt, 0.U))
+        Mux(state === s_idle, (bestOffset === off.S(offsetWidth.W).asUInt).asUInt, 0.U), XSPerfLevel.CRITICAL)
     } else {
       XSPerfAccumulate("best_offset_pos_" + off.toString + "_learning_phases",
-        Mux(state === s_idle, (bestOffset === off.U).asUInt, 0.U))
+        Mux(state === s_idle, (bestOffset === off.U).asUInt, 0.U), XSPerfLevel.CRITICAL)
     }
   }
 
@@ -483,10 +483,10 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
   //when(s0_req_valid){
   //  replacement.access(s0_access_way)
   //}
-  XSPerfAccumulate("recv_req", io.in_req.valid)
-  XSPerfAccumulate("recv_req_drop_conflict", io.in_req.valid && s0_conflict_prev)
-  XSPerfAccumulate("recv_req_drop_match", io.in_req.valid && !s0_conflict_prev && s0_match)
-  XSPerfAccumulate("recv_req_drop_full", io.in_req.valid && !s0_conflict_prev && !s0_match && !s0_has_invalid_way)
+  XSPerfAccumulate("recv_req", io.in_req.valid, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("recv_req_drop_conflict", io.in_req.valid && s0_conflict_prev, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("recv_req_drop_match", io.in_req.valid && !s0_conflict_prev && s0_match, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("recv_req_drop_full", io.in_req.valid && !s0_conflict_prev && !s0_match && !s0_has_invalid_way, XSPerfLevel.CRITICAL)
 
 
   /* s1 update and replace */
@@ -563,20 +563,20 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
     pf_req_arb.io.in(i).bits := e.toPrefetchReq()
   }
 
-  XSPerfAccumulate("tlb_req", io.tlb_req.req.valid)
-  XSPerfAccumulate("tlb_miss", io.tlb_req.resp.valid && io.tlb_req.resp.bits.miss)
+  XSPerfAccumulate("tlb_req", io.tlb_req.req.valid, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("tlb_miss", io.tlb_req.resp.valid && io.tlb_req.resp.bits.miss, XSPerfLevel.CRITICAL)
   XSPerfAccumulate("tlb_excp", s3_tlb_resp_valid && !s3_tlb_resp.miss && (
     s3_tlb_resp.excp.head.pf.ld || s3_tlb_resp.excp.head.gpf.ld || s3_tlb_resp.excp.head.af.ld ||
     io.tlb_req.pmp_resp.ld || io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt)
-  ))
-  XSPerfAccumulate("tlb_excp_pmp_af", s3_tlb_resp_valid && !s3_tlb_resp.miss && io.tlb_req.pmp_resp.ld)
-  XSPerfAccumulate("tlb_excp_uncache", s3_tlb_resp_valid && !s3_tlb_resp.miss && (io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt)))
-  XSPerfAccumulate("entry_alloc", PopCount(alloc))
-  XSPerfAccumulate("entry_miss_first_replay", PopCount(miss_first_replay))
-  XSPerfAccumulate("entry_miss_drop", PopCount(miss_drop))
-  XSPerfAccumulate("entry_excp", PopCount(exp_drop))
-  XSPerfAccumulate("entry_merge", io.in_req.valid && s0_match)
-  XSPerfAccumulate("entry_pf_fire", PopCount(pf_fired))
+  ), XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("tlb_excp_pmp_af", s3_tlb_resp_valid && !s3_tlb_resp.miss && io.tlb_req.pmp_resp.ld, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("tlb_excp_uncache", s3_tlb_resp_valid && !s3_tlb_resp.miss && (io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt)), XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("entry_alloc", PopCount(alloc), XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("entry_miss_first_replay", PopCount(miss_first_replay), XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("entry_miss_drop", PopCount(miss_drop), XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("entry_excp", PopCount(exp_drop), XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("entry_merge", io.in_req.valid && s0_match, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("entry_pf_fire", PopCount(pf_fired), XSPerfLevel.CRITICAL)
   
   /*
   val enTalbe = WireInit(Constantin.createRecord(name+"_isWriteL2BopTable", 1.U))
@@ -650,11 +650,11 @@ class DelayQueue(name: String = "")(implicit p: Parameters) extends  BOPModule{
   }
 
   /* Perf */
-  XSPerfAccumulate("full", full)
-  XSPerfAccumulate("empty", empty)
-  XSPerfAccumulate("entryNumber", PopCount(valids.asUInt))
-  XSPerfAccumulate("inNumber", io.in.valid)
-  XSPerfAccumulate("outNumber", io.out.valid)
+  XSPerfAccumulate("full", full, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("empty", empty, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("entryNumber", PopCount(valids.asUInt), XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("inNumber", io.in.valid, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("outNumber", io.out.valid, XSPerfLevel.CRITICAL)
 
 }
 
@@ -768,22 +768,22 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
 
   for (off <- offsetList) {
     if (off < 0) {
-      XSPerfAccumulate("best_offset_neg_" + (-off).toString, prefetchOffset === off.S(offsetWidth.W).asUInt)
+      XSPerfAccumulate("best_offset_neg_" + (-off).toString, prefetchOffset === off.S(offsetWidth.W).asUInt, XSPerfLevel.CRITICAL)
     } else {
-      XSPerfAccumulate("best_offset_pos_" + off.toString, prefetchOffset === off.U)
+      XSPerfAccumulate("best_offset_pos_" + off.toString, prefetchOffset === off.U, XSPerfLevel.CRITICAL)
     }
   }
-  XSPerfAccumulate("bop_req", io.req.fire)
-  XSPerfAccumulate("bop_train", io.train.fire)
-  XSPerfAccumulate("bop_resp", io.resp.fire)
-  XSPerfAccumulate("bop_train_stall_for_st_not_ready", io.train.valid && !scoreTable.io.req.ready)
+  XSPerfAccumulate("bop_req", io.req.fire, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("bop_train", io.train.fire, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("bop_resp", io.resp.fire, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("bop_train_stall_for_st_not_ready", io.train.valid && !scoreTable.io.req.ready, XSPerfLevel.CRITICAL)
   if(virtualTrain){
-    XSPerfAccumulate("bop_train_stall_for_tlb_not_ready", io.train.valid && !io.tlb_req.req.ready)
+    XSPerfAccumulate("bop_train_stall_for_tlb_not_ready", io.train.valid && !io.tlb_req.req.ready, XSPerfLevel.CRITICAL)
     // XSPerfAccumulate("bop_req_drop", out_drop_req)
   }else{
-    XSPerfAccumulate("bop_cross_page", scoreTable.io.req.fire && s0_crossPage)
+    XSPerfAccumulate("bop_cross_page", scoreTable.io.req.fire && s0_crossPage, XSPerfLevel.CRITICAL)
   }
-  XSPerfAccumulate("bop_drop_for_disable", scoreTable.io.req.fire && prefetchDisable)
+  XSPerfAccumulate("bop_drop_for_disable", scoreTable.io.req.fire && prefetchDisable, XSPerfLevel.CRITICAL)
 }
 
 class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
@@ -839,15 +839,15 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
 
   for (off <- offsetList) {
     if (off < 0) {
-      XSPerfAccumulate("best_offset_neg_" + (-off).toString, prefetchOffset === off.S(offsetWidth.W).asUInt)
+      XSPerfAccumulate("best_offset_neg_" + (-off).toString, prefetchOffset === off.S(offsetWidth.W).asUInt, XSPerfLevel.CRITICAL)
     } else {
-      XSPerfAccumulate("best_offset_pos_" + off.toString, prefetchOffset === off.U)
+      XSPerfAccumulate("best_offset_pos_" + off.toString, prefetchOffset === off.U, XSPerfLevel.CRITICAL)
     }
   }
-  XSPerfAccumulate("bop_req", io.req.fire)
-  XSPerfAccumulate("bop_train", io.train.fire)
-  XSPerfAccumulate("bop_resp", io.resp.fire)
-  XSPerfAccumulate("bop_train_stall_for_st_not_ready", io.train.valid && !scoreTable.io.req.ready)
-  XSPerfAccumulate("bop_drop_for_cross_page", scoreTable.io.req.fire && crossPage)
-  XSPerfAccumulate("bop_drop_for_disable", scoreTable.io.req.fire && prefetchDisable)
+  XSPerfAccumulate("bop_req", io.req.fire, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("bop_train", io.train.fire, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("bop_resp", io.resp.fire, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("bop_train_stall_for_st_not_ready", io.train.valid && !scoreTable.io.req.ready, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("bop_drop_for_cross_page", scoreTable.io.req.fire && crossPage, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("bop_drop_for_disable", scoreTable.io.req.fire && prefetchDisable, XSPerfLevel.CRITICAL)
 }

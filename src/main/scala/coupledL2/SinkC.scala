@@ -22,7 +22,7 @@ import chisel3.util._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import org.chipsalliance.cde.config.Parameters
-import utility.{MemReqSource, XSPerfAccumulate, RRArbiterInit}
+import utility.{MemReqSource, XSPerfAccumulate, XSPerfLevel, RRArbiterInit}
 
 class PipeBufferResp(implicit p: Parameters) extends L2Bundle {
   val data = Vec(beatSize, UInt((beatBytes * 8).W))
@@ -191,12 +191,12 @@ class SinkC(implicit p: Parameters) extends L2Module {
 
   // Performance counters
   val stall = io.c.valid && isRelease && !io.c.ready
-  XSPerfAccumulate("sinkC_c_stall", stall)
-  XSPerfAccumulate("sinkC_c_stall_for_noSpace", stall && hasData && first && full)
-  XSPerfAccumulate("sinkC_toReqArb_stall", io.task.valid && !io.task.ready)
-  XSPerfAccumulate("sinkC_buf_full", full)
+  XSPerfAccumulate("sinkC_c_stall", stall, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("sinkC_c_stall_for_noSpace", stall && hasData && first && full, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("sinkC_toReqArb_stall", io.task.valid && !io.task.ready, XSPerfLevel.CRITICAL)
+  XSPerfAccumulate("sinkC_buf_full", full, XSPerfLevel.CRITICAL)
 
-  XSPerfAccumulate("NewDataNestC", io.refillBufWrite.valid)
+  XSPerfAccumulate("NewDataNestC", io.refillBufWrite.valid, XSPerfLevel.CRITICAL)
   //!!WARNING: TODO: if this is zero, that means fucntion [Release-new-data written into refillBuf]
   // is never tested, and may have flaws
 }
