@@ -373,8 +373,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       )
     }
     when (isSnpOnceX(req_s3.chiOpcode.get)) {
-      // On SnpOnce/SnpOnceFwd nesting WriteCleanFull, turn UD/UC to SC
-      when (req_s3.snpHitReleaseToClean) {
+      // On SnpOnce/SnpOnceFwd nesting WriteCleanFull, turn UD to SC
+      when (req_s3.snpHitReleaseToClean && nestable_meta_s3.dirty) {
         respCacheState := SC
       }
       // On SnpOnce/SnpOnceFwd nesting WriteBack*/WriteEvict*, turn UD to I
