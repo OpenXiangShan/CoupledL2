@@ -277,10 +277,10 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val need_pprobe_s3_b_snpToN = req_s3.fromB && (
     isSnpUniqueX(req_s3.chiOpcode.get) ||
     req_s3.chiOpcode.get === SnpCleanInvalid ||
-    isSnpMakeInvalidX(req_s3.chiOpcode.get) ||
-    tagError_s3
+    isSnpMakeInvalidX(req_s3.chiOpcode.get)
   ) && dirResult_s3.hit && meta_has_clients_s3
-  val need_pprobe_s3_b = need_pprobe_s3_b_snpStable || need_pprobe_s3_b_snpToB || need_pprobe_s3_b_snpToN
+  val need_pprobe_s3_b_snpNDERR = req_s3.fromB && tagError_s3 && dirResult_s3.hit
+  val need_pprobe_s3_b = need_pprobe_s3_b_snpStable || need_pprobe_s3_b_snpToB || need_pprobe_s3_b_snpToN || need_pprobe_s3_b_snpNDERR
   val need_dct_s3_b = doFwd // DCT
   val need_mshr_s3_b = need_pprobe_s3_b || need_dct_s3_b
 
