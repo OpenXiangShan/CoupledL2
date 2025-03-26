@@ -39,7 +39,7 @@ import huancun.{TPmetaReq, TPmetaResp}
 case class TPParameters(
     tpTableEntries: Int = 16384,
     tpTableAssoc: Int = 16,
-    vaddrBits: Int = 50, //sv48x4
+    // vaddrBits: Int = 50, sv48x4, no longer used(use fullVaddrBits)
     blockOffBits: Int = 6,
     dataReadQueueDepth: Int = 8,
     dataWriteQueueDepth: Int = 4,
@@ -65,7 +65,7 @@ trait HasTPParams extends HasCoupledL2Parameters {
   def tpEntryMaxLen = 512 / (fullAddressBits - offsetBits)
   def tpTableReplacementPolicy = tpParams.replacementPolicy
   def debug = tpParams.debug
-  def vaddrBits = tpParams.vaddrBits
+  def vaddrBits = fullVAddrBits
   def blockOffBits = tpParams.blockOffBits
   def dataReadQueueDepth = tpParams.dataReadQueueDepth
   def dataWriteQueueDepth = tpParams.dataWriteQueueDepth
