@@ -96,7 +96,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
     })
     io.out.valid := ParallelOR(io.idle)
     io.out.bits := ParallelPriorityMux(io.idle.zipWithIndex.map {
-      case (b, i) => (b, (1 << i).U)
+      case (b, i) => (b, (1.U(mshrsAll.W) << i))
     })
   }
 
