@@ -412,7 +412,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     )
     oa.memAttr := MemAttr(
       cacheable = true.B,
-      allocate = !(release_valid2 && isEvict),
+      allocate = !release_valid2 || !isEvict && !cmo_cbo,
       device = false.B,
       ewa = true.B
     )
