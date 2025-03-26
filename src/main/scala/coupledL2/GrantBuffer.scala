@@ -136,6 +136,8 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   mergeAtask.size := io.d_task.bits.task.size
   mergeAtask.bufIdx := io.d_task.bits.task.bufIdx
   mergeAtask.needProbeAckData := io.d_task.bits.task.needProbeAckData
+  mergeAtask.denied := io.d_task.bits.task.denied
+  mergeAtask.corrupt := io.d_task.bits.task.corrupt
   mergeAtask.mshrTask := io.d_task.bits.task.mshrTask
   mergeAtask.mshrId := io.d_task.bits.task.mshrId
   mergeAtask.aliasTask.foreach(_ := io.d_task.bits.task.aliasTask.getOrElse(0.U))
