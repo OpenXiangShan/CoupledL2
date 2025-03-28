@@ -262,7 +262,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     * 3. For SnpUnique/SnpUniqueFwd/SnpUniqueStash, SnpCleanInvalid, SnpMakeInvalid/SnpMakeInvalidStash, the snooped
     *    cacheline should be degraded into INVALID state. Therefore L2 should only send pProbe toN to degrade upper
     *    clients when the state in L2 is TRUNK or BRANCH with clients.orR = 1
-    * 
+    * 4. When tagErr(NDERR), never forward data, and the snoopee should invalidate cache state
+    *
     */
   // whether L2 should do forwarding or not
   val expectFwd = isSnpXFwd(req_s3.chiOpcode.get)
@@ -280,7 +281,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     req_s3.chiOpcode.get === SnpCleanInvalid ||
     isSnpMakeInvalidX(req_s3.chiOpcode.get)
   ) && dirResult_s3.hit && meta_has_clients_s3
-  val need_pprobe_s3_b = need_pprobe_s3_b_snpStable || need_pprobe_s3_b_snpToB || need_pprobe_s3_b_snpToN
+  val need_pprobe_s3_b_snpNDERR = req_s3.fromB && tagError_s3 && dirResult_s3.hit
+  val need_pprobe_s3_b = need_pprobe_s3_b_snpStable || need_pprobe_s3_b_snpToB || need_pprobe_s3_b_snpToN || need_pprobe_s3_b_snpNDERR
   val need_dct_s3_b = doFwd // DCT
   val need_mshr_s3_b = need_pprobe_s3_b || need_dct_s3_b
 
@@ -351,13 +353,16 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   //    Otherwise, the cache state was fast forwarded to I by default
   //    Directory might be missing after multiple nesting snoops on WriteClean, indicating losing UD
   //
+  // *NOTE[tagErr/NDERR]:
+  //    ALL -> I, snoopee invalidates local copy
+  //
   // Resp[2: 0] = {PassDirty, CacheState[1: 0]}
   val respCacheState = WireInit(I)
   val respPassDirty = doRespData && nestable_dirResult_s3.hit && isT(nestable_meta_s3.state) && nestable_meta_s3.dirty &&
     (req_s3.chiOpcode.get =/= SnpOnce || req_s3.snpHitRelease) &&
     !(isSnpStashX(req_s3.chiOpcode.get) || isSnpQuery(req_s3.chiOpcode.get))
 
-  when (nestable_dirResult_s3.hit) {
+  when (nestable_dirResult_s3.hit && !tagError_s3) {
     when (isSnpToB(req_s3.chiOpcode.get)) {
       respCacheState := Mux(req_s3.snpHitReleaseToInval, I, SC)
     }
@@ -840,6 +845,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   d_s5.bits.data.data := out_data_s5
   txreq_s5.bits := task_s5.bits.toCHIREQBundle()
   txrsp_s5.bits := task_s5.bits
+  txrsp_s5.bits.denied := tagError_s5
   txdat_s5.bits.task := task_s5.bits
   txdat_s5.bits.task.denied := tagError_s5
   txdat_s5.bits.task.corrupt := task_s5.bits.corrupt || dataError_s5

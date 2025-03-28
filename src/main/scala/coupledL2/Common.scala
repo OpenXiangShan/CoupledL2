@@ -239,6 +239,7 @@ class RespInfoBundle(implicit p: Parameters) extends L2Bundle
   val last = Bool() // last beat
   val dirty = Bool() // only used for sinkD resps
   val isHit = Bool() // only used for sinkD resps
+  val denied = Bool()
   val corrupt = Bool()
  //CHI
   val chiOpcode = chiOpt.map(_ => UInt(OPCODE_WIDTH.W))
