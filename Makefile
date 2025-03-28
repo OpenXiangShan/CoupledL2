@@ -50,6 +50,9 @@ test-top-l2l3l2:
 test-top-fullsys:
 	$(MAKE) gen-test-top SYSTEM=fullSys
 
+test-top-matrix:
+	$(MAKE) gen-test-top SYSTEM=L2L3_AME
+
 test-top-chi:
 	$(MAKE) gen-test-top-chi SYSTEM=CHIL2 $(CHI_PASS_ARGS)
 
