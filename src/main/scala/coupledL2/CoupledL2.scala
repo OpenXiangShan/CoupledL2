@@ -609,8 +609,13 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       cg.get.cgen := io.sramTest.mbist.get.cgen
       sigFromSrams.get.mbist := io.sramTest.mbist.get
     }
-    if (cacheParams.hasSramCtl) {
-      sigFromSrams.get.sramCtl := io.sramTest.sramCtl.get
+    sigFromSrams.zip(io.sramTest.sramCtl).foreach {
+      case (sig, ctl) =>
+        sig.sramCtl := DontCare
+        sig.sramCtl.MCR := ctl(5, 4) // CFG[5 : 4]
+        sig.sramCtl.MCW := ctl(7, 6) // CFG[7 : 6]
+        sig.sramCtl.RTSEL := ctl(13, 12) // CFG[13 : 12]
+        sig.sramCtl.WTSEL := ctl(25, 24) // CFG[25 : 24]
     }
 
     private val mbistPl = MbistPipeline.PlaceMbistPipeline(Int.MaxValue, "L2Cache", cacheParams.hasMbist)
