@@ -39,7 +39,7 @@ import huancun.{TPmetaReq, TPmetaResp}
 case class TPParameters(
     tpTableEntries: Int = 16384,
     tpTableAssoc: Int = 16,
-    vaddrBits: Int = 39,
+    // vaddrBits: Int = 50, sv48x4, no longer used(use fullVaddrBits)
     blockOffBits: Int = 6,
     dataReadQueueDepth: Int = 8,
     dataWriteQueueDepth: Int = 4,
@@ -62,10 +62,10 @@ trait HasTPParams extends HasCoupledL2Parameters {
   def tpTableAssoc = tpParams.tpTableAssoc
   def tpTableNrSet = tpParams.tpTableEntries / tpTableAssoc
   def tpTableSetBits = log2Ceil(tpTableNrSet)
-  def tpEntryMaxLen = log2Floor(512 / (fullAddressBits - offsetBits))
+  def tpEntryMaxLen = 512 / (fullAddressBits - offsetBits)
   def tpTableReplacementPolicy = tpParams.replacementPolicy
   def debug = tpParams.debug
-  def vaddrBits = tpParams.vaddrBits
+  def vaddrBits = fullVAddrBits
   def blockOffBits = tpParams.blockOffBits
   def dataReadQueueDepth = tpParams.dataReadQueueDepth
   def dataWriteQueueDepth = tpParams.dataWriteQueueDepth
@@ -81,11 +81,11 @@ abstract class TPModule(implicit val p: Parameters) extends Module with HasTPPar
 
 class tpMetaEntry(implicit p:Parameters) extends TPBundle {
   val valid = Bool()
-  val triggerTag = UInt((vaddrBits-blockOffBits-tpTableSetBits).W)
+  val triggerTag = UInt((fullAddressBits - blockOffBits - tpTableSetBits).W)
 }
 
 class tpDataEntry(implicit p:Parameters) extends TPBundle {
-  val rawData = Vec(tpEntryMaxLen, UInt(fullAddressBits.W))
+  val rawData = Vec(tpEntryMaxLen, UInt((fullAddressBits - offsetBits).W))
   // val rawData_debug = Vec(tpEntryMaxLen, UInt(vaddrBits.W))
   // TODO: val compressedData = UInt(512.W)
 }
@@ -182,12 +182,22 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     assert(!trainOnVaddr)
   }
 
+  val pending_valid = Wire(Bool())
+  val tpTable_w_valid = Wire(Bool())
+  val train_pending = RegEnable(io.train.bits, pending_valid)
+  val pending_valid_s0 = RegNext(pending_valid, false.B)
+  pending_valid := io.train.fire && Mux(trainOnVaddr.orR, io.train.bits.vaddr.getOrElse(0.U) =/= 0.U, true.B) &&
+    Mux(trainOnL1PF.orR, true.B, io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U) &&
+    (tpTable_w_valid || pending_valid_s0)
+
   /* Stage 0: query tpMetaTable */
 
-  val s0_valid = io.train.fire && Mux(trainOnVaddr.orR, io.train.bits.vaddr.getOrElse(0.U) =/= 0.U, true.B) &&
-    Mux(trainOnL1PF.orR, true.B, io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
-  val trainVaddr = io.train.bits.vaddr.getOrElse(0.U)
-  val trainPaddr = io.train.bits.addr
+  val s0_valid = (io.train.fire && Mux(trainOnVaddr.orR, io.train.bits.vaddr.getOrElse(0.U) =/= 0.U, true.B) &&
+    Mux(trainOnL1PF.orR, true.B, io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U) && !tpTable_w_valid) ||
+    pending_valid_s0
+  val train_s0 = Mux(pending_valid_s0, train_pending, io.train.bits)
+  val trainVaddr = train_s0.vaddr.getOrElse(0.U)
+  val trainPaddr = train_s0.addr
   val (vtag_s0, vset_s0) = if (vaddrBitsOpt.nonEmpty) parseVaddr(trainVaddr) else (0.U, 0.U)
   val (ptag_s0, pset_s0) = parsePaddr(trainPaddr)
   val metas = tpMetaTable.io.r(s0_valid, Mux(trainOnVaddr.orR, vset_s0, pset_s0)).resp.data
@@ -196,7 +206,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   /* Stage 1: parse tpMeta to judge hit or miss, choose the victim */
 
   val s1_valid = RegNext(s0_valid, false.B)
-  val train_s1 = RegEnable(io.train.bits, s0_valid)
+  val train_s1 = RegEnable(train_s0, s0_valid)
   val trainVaddr_s1 = train_s1.vaddr.getOrElse(0.U)
   val trainPaddr_s1 = train_s1.addr
   val (vtag_s1, vset_s1) = if (vaddrBitsOpt.nonEmpty) parseVaddr(trainVaddr_s1) else (0.U, 0.U)
@@ -294,7 +304,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     write_record := false.B
   }
 
-  val tpTable_w_valid = write_record
+  tpTable_w_valid := write_record
   assert(RegNext(s2_valid, false.B) || !tpTable_w_valid, "tpTable_w_valid can only be true in s3")
 
   val (write_record_vtag, write_record_vset) = parseVaddr(write_record_trigger.vaddr)
@@ -335,7 +345,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   val do_sending = RegInit(false.B)
   val sending_idx = RegInit(0.U(offsetBits.W))
-  val sending_data = Reg(Vec(tpEntryMaxLen, UInt(fullAddressBits.W)))
+  val sending_data = Reg(Vec(tpEntryMaxLen, UInt((fullAddressBits - offsetBits).W)))
   // val sending_data_debug = Reg(Vec(tpEntryMaxLen, UInt(vaddrBits.W)))
   val sending_throttle = RegInit(0.U(4.W))
   val tpDataQFull = tpDataQueue.io.count === tpDataQueueDepth.U
