@@ -28,6 +28,7 @@ import org.chipsalliance.cde.config.{Parameters, Field}
 import scala.math.max
 import coupledL2._
 import coupledL2.prefetch._
+import coupledL2.utils._
 
 abstract class TL2CHIL2Bundle(implicit val p: Parameters) extends Bundle
   with HasCoupledL2Parameters
@@ -160,44 +161,80 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         // PCredit queue
         class EmptyBundle extends Bundle
 
+        class PCrdGranted extends Bundle {
+          val pCrdType = UInt(PCRDTYPE_WIDTH.W)
+          val srcID = UInt(SRCID_WIDTH.W)
+        }
+
         val (mmioQuerys, mmioGrants) = mmio.io_pCrd.map { case x => (x.query, x.grant) }.unzip
         val (slicesQuerys, slicesGrants) = slices.map { case s =>
           (s.io_pCrd.map(_.query), s.io_pCrd.map(_.grant))
         }.unzip
-        val mshrPCrdQuerys = mmioQuerys ++ slicesQuerys.flatten
-        val mshrPCrdGrants = mmioGrants ++ slicesGrants.flatten
+        val mshrPCrdQuerySets = Seq(mmioQuerys) ++ slicesQuerys
+        val mshrPCrdGrantSets = Seq(mmioGrants) ++ slicesGrants
+        
+        val mshrEntryCount = (mmioQuerys ++ slicesQuerys.flatten).length
 
-        val mshrEntryCount = mshrPCrdQuerys.length
+        val pCrdQueue = Module(new Queue(new PCrdGranted, entries = mshrEntryCount - 2))
+        val pCrdBuffer = SpillRegister(new PCrdGranted)
 
-        val pCrdQueue = Module(new Queue(new Bundle {
-          val pCrdType = UInt(PCRDTYPE_WIDTH.W)
-          val srcID = UInt(SRCID_WIDTH.W)
-        }, entries = mshrEntryCount))
+        pCrdBuffer.io.in <> pCrdQueue.io.deq
 
         // PCredit hit by MSHRs
-        val mshrPCrdHits = mshrPCrdQuerys.map((_, pCrdQueue.io.deq)).map { case (q, h) => {
-          q.valid && h.valid && q.bits.pCrdType === h.bits.pCrdType && q.bits.srcID === h.bits.srcID
+        val mshrPCrdHitMask = RegInit(false.B)
+        mshrPCrdHitMask := ~mshrPCrdHitMask
+
+        var mshrPCrdHitIndex = 0
+        val mshrPCrdHitSets_s0 = mshrPCrdQuerySets.map(_.map((_, pCrdBuffer.io.out)).map { case (q, h) => {
+          mshrPCrdHitIndex = mshrPCrdHitIndex + 1
+          q.valid && h.valid && q.bits.pCrdType === h.bits.pCrdType && q.bits.srcID === h.bits.srcID && 
+            (mshrPCrdHitMask ^ (mshrPCrdHitIndex & 0x01).B)
+        }})
+
+        // PCredit dispatch arbitration per-set
+        val mshrPCrdArbGrantSets_s0 = mshrPCrdHitSets_s0.map { case set => {
+          Seq.fill(set.length)(Wire(Bool()))
+        }}
+        val mshrPCrdArbInSets_s0 = mshrPCrdHitSets_s0.zip(mshrPCrdArbGrantSets_s0).map { case (hits, grants) => {
+          hits.zip(grants).map { case (hit, grant) => {
+            val arbPort = Wire(Decoupled(new EmptyBundle))
+            arbPort.valid := hit
+            grant := arbPort.ready
+            arbPort
+          }}
+        }}
+        val mshrPCrdArbOutSets_s0 = mshrPCrdHitSets_s0.map { case set => {
+          Wire(Decoupled(new EmptyBundle))
         }}
 
-        // PCredit dispatch arbitration
-        val mshrPCrdArbGrants = Wire(Vec(mshrEntryCount, Bool()))
-        val mshrPCrdArbIn = mshrPCrdHits.zip(mshrPCrdArbGrants).map { case (hit, grant) => {
+        mshrPCrdArbInSets_s0.zip(mshrPCrdArbOutSets_s0).zipWithIndex.foreach { case ((in, out), i) => {
+          fastArb(in, out, Some(s"pcrdgrant_level0_set${i}"))
+        }}
+
+        // PCredit dispatch arbitration for all slices
+        val mshrPCrdArbIn_s0 = mshrPCrdArbOutSets_s0.map { case setArbOut => {
           val arbPort = Wire(Decoupled(new EmptyBundle))
-          arbPort.valid := hit
-          grant := arbPort.ready
+          arbPort.valid := setArbOut.valid
+          setArbOut.ready := arbPort.ready
           arbPort
         }}
-
-        val mshrPCrdArbOut = {
+        val mshrPCrdArbOut_s0 = {
           val arbPort = Wire(Decoupled(new EmptyBundle))
           arbPort.ready := true.B
-          pCrdQueue.io.deq.ready := arbPort.valid
+          pCrdBuffer.io.out.ready := arbPort.valid
           arbPort
         }
 
-        fastArb(mshrPCrdArbIn, mshrPCrdArbOut, Some("pcrdgrant"))
+        fastArb(mshrPCrdArbIn_s0, mshrPCrdArbOut_s0, Some(s"pcrdgrant_level1"))
 
-        mshrPCrdGrants.zip(mshrPCrdArbGrants).foreach { case (grant, arb) => grant := arb }
+        // PCredit grant to slices
+        val mshrPCrdArbGrantSets_s1 = mshrPCrdArbGrantSets_s0.map { case set => {
+          set.map { case grant => RegNext(grant, false.B) }
+        }}
+
+        mshrPCrdGrantSets.zip(mshrPCrdArbGrantSets_s1).map { case (grants, arbOuts) => {
+          grants.zip(arbOuts).map { case (grant, arbOut) => grant := arbOut}
+        }}
 
         // PCredit receive
         val pCrdGrantValid_s1 = RegNext(isPCrdGrant)
