@@ -70,7 +70,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
 
     val io_chi = IO(new PortIO)
     val io_nodeID = IO(Input(UInt()))
-    val io_cpu_halt = Option.when(cacheParams.enableL2Flush) (Input(Bool()))
+    val io_cpu_halt = Option.when(cacheParams.enableL2Flush) (IO(Input(Bool())))
 
     // Check port width
     require(io_chi.tx.rsp.getWidth == io_chi.rx.rsp.getWidth);
