@@ -325,7 +325,8 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     assert(!pfRcv.get.io.req.valid ||
       pfRcv.get.io.req.bits.pfSource === MemReqSource.Prefetch2L2SMS.id.U ||
       pfRcv.get.io.req.bits.pfSource === MemReqSource.Prefetch2L2Stream.id.U ||
-      pfRcv.get.io.req.bits.pfSource === MemReqSource.Prefetch2L2Stride.id.U
+      pfRcv.get.io.req.bits.pfSource === MemReqSource.Prefetch2L2Stride.id.U ||
+      pfRcv.get.io.req.bits.pfSource === MemReqSource.Prefetch2L2Berti.id.U
     )
   }
   if (hasTPPrefetcher) {
