@@ -29,6 +29,8 @@ import coupledL2.tl2chi.CHICohStateFwdedTrans._
 
 case object CHIIssue extends Field[String](Issue.B)
 
+case object NonSecureKey extends Field[Boolean](false)
+
 object CHICohStates {
   val width = 3
 
@@ -366,6 +368,8 @@ trait HasCHIMsgParameters {
   def DAT_RSVDC_WIDTH = CONFIG("DAT_RSVDC_WIDTH") // Permitted RSVDC bus widths Y = 0, 4, 12, 16, 24, 32
   def CBUSY_WIDTH = CONFIG("CBUSY_WIDTH") // E.b field. The width is tied to 3. Custom completer state indicator.
   def MPAM_WIDTH = CONFIG("MPAM_WIDTH") // E.b field. Optional, width 0 or 11. Memory Performance and Monitoring.
+
+  def enableNS = p(NonSecureKey)
 }
 
 class MemAttr extends Bundle {

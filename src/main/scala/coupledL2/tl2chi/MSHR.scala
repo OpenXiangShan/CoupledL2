@@ -390,7 +390,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     ))
     oa.size := log2Ceil(blockBytes).U
     oa.addr := Cat(Mux(release_valid2, dirResult.tag, req.tag), req.set, 0.U(offsetBits.W))
-    oa.ns := false.B
+    oa.ns := enableNS.B
     // set 'LikelyShared' to 1 here when:
     //  - WriteEvictOrEvict (on retry) with SC state
     oa.likelyshared := Mux(

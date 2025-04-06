@@ -154,6 +154,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
     req.txnID := txnID.getOrElse(0.U)
     req.opcode := chiOpcode.getOrElse(0.U)
     req.addr := Cat(tag, set, 0.U(offsetBits.W))
+    req.ns := enableNS.B
     req.allowRetry := allowRetry.getOrElse(true.B)  //TODO: consider retry
     req.pCrdType := pCrdType.getOrElse(0.U)
     req.expCompAck := expCompAck.getOrElse(false.B)
