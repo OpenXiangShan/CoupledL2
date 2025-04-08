@@ -142,7 +142,7 @@ case class L2Param(
   def tagCode: Code = Code.fromString(tagECC)
   def dataCode: Code = Code.fromString(dataECC)
 
-  def hasSramTest: Boolean = hasMbist || hasSramCtl
+  def hasDFT: Boolean = hasMbist || hasSramCtl
 }
 
 case object L2ParamKey extends Field[L2Param](L2Param())
