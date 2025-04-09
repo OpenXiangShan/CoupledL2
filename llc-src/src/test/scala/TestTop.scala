@@ -15,6 +15,7 @@ import coupledL2.tl2chi._
 import cc.xiangshan.openncb._
 import cc.xiangshan.openncb.chi._
 import utility._
+import utility.chiron._
 
 class TestTop_L3()(implicit p: Parameters) extends LazyModule with HasCHIMsgParameters {
   override lazy val desiredName: String = "TestTop_L3"
@@ -61,6 +62,9 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
   val delayFactor = 0.5
   val l2Params = p(L2ParamKey)
   val l3Params = p(OpenLLCParamKey)
+
+  val clogIdUpstream = "l3top"
+  val clogIdDownstream = "l3top"
 
   def createClientNode(name: String, sources: Int) = {
     val masterNode = TLClientNode(Seq(
@@ -216,11 +220,22 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
     })))
 
     l2_nodes.zipWithIndex.foreach { case (l2, i) =>
-      /*
-      val chilogger = CHILogger(s"L3_L2[${i}]", true)
-      chilogger.io.up <> l2.module.io_chi
-      l3.io.rn(i) <> chilogger.io.down
-      */
+
+      if (!l3Params.FPGAPlatform && l3Params.enableCHILog) {
+        CLogB.logFlitsRNOfRNF(
+          id    = clogIdUpstream,
+          clock = l2.module.clock,
+          reset = l2.module.reset,
+          rnId  = l2.module.io_nodeID,
+          txreqflit = l2.module.io_chi.tx.req.flit, txreqflitv = l2.module.io_chi.tx.req.flitv,
+          rxrspflit = l2.module.io_chi.rx.rsp.flit, rxrspflitv = l2.module.io_chi.rx.rsp.flitv,
+          rxdatflit = l2.module.io_chi.rx.dat.flit, rxdatflitv = l2.module.io_chi.rx.dat.flitv,
+          rxsnpflit = l2.module.io_chi.rx.snp.flit, rxsnpflitv = l2.module.io_chi.rx.snp.flitv,
+          txrspflit = l2.module.io_chi.tx.rsp.flit, txrspflitv = l2.module.io_chi.tx.rsp.flitv,
+          txdatflit = l2.module.io_chi.tx.dat.flit, txdatflitv = l2.module.io_chi.tx.dat.flitv
+        )
+      }
+
       l2.module.io_chi <> l3.io.rn(i)
       dontTouch(l2.module.io)
 
@@ -231,14 +246,45 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
       l2.module.io.l2_tlb_req <> DontCare
     }
 
-    /*
-    val chilogger = CHILogger(s"MEM_L3", true)
-    l3.io.sn.connect(chilogger.io.up)
-    l3Bridge.module.io.chi.connect(chilogger.io.down)
-    */
+    if (!l3Params.FPGAPlatform && l3Params.enableCHILog) {
+      CLogB.logFlitsSNOfHNF(
+        id    = clogIdDownstream,
+        clock = l3.clock,
+        reset = l3.reset,
+        hnId  = l3.io.nodeID,
+        txreqflit = l3.io.sn.tx.req.flit, txreqflitv = l3.io.sn.tx.req.flitv,
+        rxrspflit = l3.io.sn.rx.rsp.flit, rxrspflitv = l3.io.sn.rx.rsp.flitv,
+        rxdatflit = l3.io.sn.rx.dat.flit, rxdatflitv = l3.io.sn.rx.dat.flitv,
+        txdatflit = l3.io.sn.tx.dat.flit, txdatflitv = l3.io.sn.tx.dat.flitv
+      )
+    }
+
     l3.io.sn <> l3Bridge.module.io.chi
     l3.io.nodeID := numCores.U(NODEID_WIDTH.W)
     l3.io.debugTopDown := DontCare
+
+    if (!l3Params.FPGAPlatform && l3Params.enableCHILog) {
+      Seq(clogIdUpstream, clogIdDownstream).distinct.foreach {
+        CLogB.logParameters(_, this.clock, this.reset, true.B, new utility.chiron.CHIParameters(
+          issue = p(CHIIssue) match {
+            case Issue.B  => CLog.IssueB
+            case Issue.Eb => CLog.IssueE
+            case _ => {
+              require(false, s"unknown or unsupported CHI Issue: ${p(CHIIssue)}")
+              0
+            }
+          },
+          nodeIdWidth = NODEID_WIDTH,
+          reqAddrWidth = ADDR_WIDTH,
+          reqRsvdcWidth = REQ_RSVDC_WIDTH,
+          datRsvdcWidth = DAT_RSVDC_WIDTH,
+          dataWidth = DATA_WIDTH,
+          dataCheckPresent = enableDataCheck,
+          poisonPresent = enablePoison,
+          mpamPresent = MPAM_WIDTH != 0
+        ))
+      }
+    }
   }
 }
 
@@ -246,6 +292,7 @@ object TestTopSoCHelper {
   def gen(fTop: Parameters => TestTopSoC)(args: Array[String]) = {
     val FPGAPlatform    = false
     val enableChiselDB  = !FPGAPlatform && true
+    val enableCHILog    = true
     
     val config = new Config((_, _, _) => {
       case L2ParamKey => L2Param(
@@ -257,6 +304,7 @@ object TestTopSoCHelper {
         enableRollingDB     = enableChiselDB && true,
         enableMonitor       = enableChiselDB && true,
         enableTLLog         = enableChiselDB && true,
+        enableCHILog        = enableCHILog,
         elaboratedTopDown   = false,
         FPGAPlatform        = FPGAPlatform,
 
@@ -273,11 +321,13 @@ object TestTopSoCHelper {
         clientCaches        = Seq(L2Param()),
         enablePerf          = false,
         enableRollingDB     = false,
+        enableCHILog        = enableCHILog,
         elaboratedTopDown   = false,
         FPGAPlatform        = FPGAPlatform
       )
     })
 
+    CLogB.init(enableCHILog)
     ChiselDB.init(enableChiselDB)
 
     val top = DisableMonitors(p => LazyModule(fTop(p)))(config)

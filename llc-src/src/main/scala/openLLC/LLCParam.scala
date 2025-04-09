@@ -43,6 +43,7 @@ case class OpenLLCParam
   // Performance analysis
   enablePerf: Boolean = true,
   enableRollingDB: Boolean = true,
+  enableCHILog: Boolean = true,
   elaboratedTopDown: Boolean = true,
   hartIds: Seq[Int] = Seq[Int](),
 
