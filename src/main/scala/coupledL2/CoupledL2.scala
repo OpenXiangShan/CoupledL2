@@ -76,7 +76,7 @@ trait HasCoupledL2Parameters {
   // ECC
   def enableECC = cacheParams.enableTagECC || cacheParams.enableDataECC
   def enableTagECC = cacheParams.enableTagECC
-  def tagBankSpilt = 2
+  def tagBankSpilt = 1
   def dataBankSplit = 4 // SRAM dataSplit = 4
   def tagBankBits = tagBits / tagBankSpilt
   def encTagBankBits = cacheParams.tagCode.width(tagBankBits)
