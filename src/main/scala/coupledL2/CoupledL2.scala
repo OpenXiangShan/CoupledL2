@@ -33,7 +33,7 @@ import scala.math.max
 import coupledL2.prefetch._
 import huancun.{BankBitsKey, TPmetaReq, TPmetaResp}
 import utility.mbist.{MbistInterface, MbistPipeline}
-import utility.sram.{SramBroadcastBundle, SramMbistBundle, SramHelper}
+import utility.sram.{SramBroadcastBundle, SramHelper}
 
 trait HasCoupledL2Parameters {
   val p: Parameters
@@ -323,11 +323,8 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       val error = Output(new L2CacheErrorInfo()(l2ECCParams))
       val l2Flush = Option.when(cacheParams.enableL2Flush) (Input(Bool()))
       val l2FlushDone = Option.when(cacheParams.enableL2Flush) (Output(Bool()))
-      val sramTest = new Bundle() {
-        val mbist      = Option.when(cacheParams.hasMbist)(Input(new SramMbistBundle))
-        val mbistReset = Option.when(cacheParams.hasMbist)(Input(new DFTResetSignals()))
-        val sramCtl    = Option.when(cacheParams.hasSramCtl)(Input(UInt(64.W)))
-      }
+      val dft = Option.when(cacheParams.hasDFT)(Input(new SramBroadcastBundle))
+      val dft_reset = Option.when(cacheParams.hasMbist)(Input(new DFTResetSignals()))
     })
 
     // Display info
@@ -604,20 +601,25 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     val okHint = grant_data_fire.orR && hintPipe1.io.out.valid && hintPipe1.io.out.bits === grant_data_source
     XSPerfAccumulate("ok2Hints", okHint)
 
-    private val sigFromSrams = Option.when(cacheParams.hasSramTest)(SramHelper.genBroadCastBundleTop())
+    private val sigFromSrams = Option.when(cacheParams.hasDFT)(SramHelper.genBroadCastBundleTop())
     private val cg = Option.when(cacheParams.hasMbist)(utility.ClockGate.genTeSrc)
-    sigFromSrams.foreach({ case sig => sig := DontCare })
     if (cacheParams.hasMbist) {
-      cg.get.cgen := io.sramTest.mbist.get.cgen
-      sigFromSrams.get.mbist := io.sramTest.mbist.get
+      cg.get.cgen := io.dft.get.cgen
     }
-    sigFromSrams.zip(io.sramTest.sramCtl).foreach {
-      case (sig, ctl) =>
-        sig.sramCtl := DontCare
-        sig.sramCtl.MCR := ctl(5, 4) // CFG[5 : 4]
-        sig.sramCtl.MCW := ctl(7, 6) // CFG[7 : 6]
-        sig.sramCtl.RTSEL := ctl(13, 12) // CFG[13 : 12]
-        sig.sramCtl.WTSEL := ctl(25, 24) // CFG[25 : 24]
+    sigFromSrams.foreach { sig => sig := DontCare }
+    sigFromSrams.zip(io.dft).foreach {
+      case (sig, dft) =>
+        if (cacheParams.hasMbist) {
+          sig.ram_hold := dft.ram_hold
+          sig.ram_bypass := dft.ram_bypass
+          sig.ram_bp_clken := dft.ram_bp_clken
+          sig.ram_aux_clk := dft.ram_aux_clk
+          sig.ram_aux_ckbp := dft.ram_aux_ckbp
+          sig.ram_mcp_hold := dft.ram_mcp_hold
+        }
+        if (cacheParams.hasSramCtl) {
+          sig.ram_ctl := dft.ram_ctl
+        }
     }
 
     private val mbistPl = MbistPipeline.PlaceMbistPipeline(Int.MaxValue, "L2Cache", cacheParams.hasMbist)
