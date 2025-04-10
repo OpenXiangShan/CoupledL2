@@ -110,8 +110,8 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
 }
 
 class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
-  /* L1I    L1D
-   *   \    /
+  /*     L1D
+   *      |
    *     L2
    *      |
    *     L3
@@ -142,15 +142,7 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
   }
 
   val l1d = createClientNode(s"l1d", 32)
-  val l1i = TLClientNode(Seq(
-    TLMasterPortParameters.v1(
-      clients = Seq(TLMasterParameters.v1(
-        name = s"l1i",
-        sourceId = IdRange(0, 32)
-      ))
-    )
-  ))
-  val master_nodes = Seq(l1d, l1i)
+  val master_nodes = Seq(l1d)
 
   val l2 = LazyModule(new TL2TLCoupledL2()(baseConfig(1).alter((site, here, up) => {
     case L2ParamKey => L2Param(
@@ -215,7 +207,6 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
     )
   })))
 
-  val xbar = TLXbar()
   val mem = new AXI4SlaveNode(Seq(new AXI4SlavePortParameters(
     slaves = Seq(new AXI4SlaveParameters(
       address = Seq(new AddressSet(0, 0x7ff_ffffL)),
@@ -227,9 +218,6 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
     beatBytes = 32
   )))
 
-  xbar := TLBuffer() := l1i
-  xbar := TLBuffer() := l1d
-
   mem :=
     AXI4Deinterleaver(4096) :=
     AXI4UserYanker() :=
@@ -239,7 +227,8 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
     TLDelayer(delayFactor) :=*
     l3.node :=*
     TLBuffer() :=
-    l2.node :=* xbar
+    l2.node :=
+    l1d
 
   lazy val module = new LazyModuleImp(this) {
     val timer = WireDefault(0.U(64.W))
