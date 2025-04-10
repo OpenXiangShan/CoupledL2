@@ -135,7 +135,14 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
     )
   })))
 
-  val ram = LazyModule(new AXI4RAM(AddressSet(0, 0xff_ffffL), beatBytes = 32))
+  val mem = new AXI4SlaveNode(Seq(new AXI4SlavePortParameters(
+    slaves = Seq(new AXI4SlaveParameters(
+      address = Seq(new AddressSet(0, 0xffff_ffffL)),
+      supportsWrite = new TransferSizes(1, 64),
+      supportsRead = new TransferSizes(1, 64)
+    )),
+    beatBytes = 32
+  )))
 
   val bankBinders = (0 until numCores).map(_ => BankBinder(banks, 64))
 
@@ -171,9 +178,8 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
     l2.mmioBridge.mmioNode := mmioClientNode
   }
 
-  ram.node := 
+  mem := 
     AXI4Xbar() :=
-    AXI4Fragmenter() :=
     l3Bridge.axi4node
 
   lazy val module = new LazyModuleImp(this) {
@@ -262,6 +268,8 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
     l3.io.sn <> l3Bridge.module.io.chi
     l3.io.nodeID := numCores.U(NODEID_WIDTH.W)
     l3.io.debugTopDown := DontCare
+
+    mem.makeIOs()(ValName("mem_axi"))
 
     if (!l3Params.FPGAPlatform && l3Params.enableCHILog) {
       Seq(clogIdUpstream, clogIdDownstream).distinct.foreach {
