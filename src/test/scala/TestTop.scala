@@ -231,8 +231,8 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
   xbar := TLBuffer() := l1d
 
   mem :=
-    AXI4UserYanker() :=
     AXI4Deinterleaver(4096) :=
+    AXI4UserYanker() :=
     TLToAXI4() :=*
     TLXbar() :=*
     TLCacheCork() :=*
@@ -499,8 +499,8 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
   }
 
   mem :=
-    AXI4UserYanker() :=
     AXI4Deinterleaver(4096) :=
+    AXI4UserYanker() :=
       TLToAXI4() :=*
       TLXbar() :=*
       TLCacheCork() :=*
