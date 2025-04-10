@@ -8,12 +8,11 @@ import chisel3.stage.ChiselGeneratorAnnotation
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tile.MaxHartIdBits
 import freechips.rocketchip.tilelink._
+import freechips.rocketchip.amba.axi4._
 import huancun._
 import coupledL2.prefetch._
 import coupledL2.tl2tl._
 import utility._
-
-
 import scala.collection.mutable.ArrayBuffer
 
 object baseConfig {
@@ -217,14 +216,25 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
   })))
 
   val xbar = TLXbar()
-  val ram = LazyModule(new TLRAM(AddressSet(0, 0xff_ffffL), beatBytes = 32))
+  val mem = new AXI4SlaveNode(Seq(new AXI4SlavePortParameters(
+    slaves = Seq(new AXI4SlaveParameters(
+      address = Seq(new AddressSet(0, 0x7ff_ffffL)),
+      supportsWrite = new TransferSizes(1, 64),
+      supportsRead = new TransferSizes(1, 64),
+      regionType = RegionType.UNCACHED,
+      executable = true
+    )),
+    beatBytes = 32
+  )))
 
   xbar := TLBuffer() := l1i
   xbar := TLBuffer() := l1d
 
-  ram.node :=
+  mem :=
+    AXI4UserYanker() :=
+    AXI4Deinterleaver(4096) :=
+    TLToAXI4() :=*
     TLXbar() :=*
-    TLFragmenter(32, 64) :=*
     TLCacheCork() :=*
     TLDelayer(delayFactor) :=*
     l3.node :=*
@@ -246,6 +256,8 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
       case (node, i) =>
         node.makeIOs()(ValName(s"master_port_$i"))
     }
+
+    mem.makeIOs()(ValName("mem_axi"))
 
     l2.module.io.hartId := DontCare
     l2.module.io.pfCtrlFromCore := DontCare
@@ -463,7 +475,16 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
   })))
 
   val xbar = TLXbar()
-  val ram = LazyModule(new TLRAM(AddressSet(0, 0xff_ffffL), beatBytes = 32))
+  val mem = new AXI4SlaveNode(Seq(new AXI4SlavePortParameters(
+    slaves = Seq(new AXI4SlaveParameters(
+      address = Seq(new AddressSet(0, 0x7ff_ffffL)),
+      supportsWrite = new TransferSizes(1, 64),
+      supportsRead = new TransferSizes(1, 64),
+      regionType = RegionType.UNCACHED,
+      executable = true
+    )),
+    beatBytes = 32
+  )))
 
   l1d_nodes.zip(l2_nodes).zipWithIndex map {
     case ((l1d, l2), i) => l2 := 
@@ -477,9 +498,11 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
       TLBuffer() := l2
   }
 
-  ram.node :=
-    TLXbar() :=*
-      TLFragmenter(32, 64) :=*
+  mem :=
+    AXI4UserYanker() :=
+    AXI4Deinterleaver(4096) :=
+      TLToAXI4() :=*
+      TLXbar() :=*
       TLCacheCork() :=*
       TLDelayer(delayFactor) :=*
       TLLogger(s"MEM_L3", !cacheParams.FPGAPlatform && cacheParams.enableTLLog) :=*
@@ -509,6 +532,8 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
       case (node, i) =>
         node.makeIOs()(ValName(s"master_port_$i"))
     }
+
+    mem.makeIOs()(ValName("mem_axi"))
   }
 }
 
