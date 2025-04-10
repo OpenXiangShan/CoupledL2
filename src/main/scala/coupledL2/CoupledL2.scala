@@ -455,7 +455,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         }
         in.b.bits.address := restoreAddress(slice.io.in.b.bits.address, i)
         slice.io.sliceId := i.U
-        io.matrixDataOut512L2((i+6)%8) <> slice.io.matrixDataOut //(i+6%8)
+        io.matrixDataOut512L2(i) <> slice.io.matrixDataOut
 
         slice.io.error.ready := enableECC.asBool // TODO: fix the datapath as optional
 
