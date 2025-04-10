@@ -216,6 +216,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   val tagError_s3               = io.dirResp_s3.error || meta_s3.tagErr
   val dataError_s3              = meta_s3.dataErr
+  val l2TagError_s3             = io.dirResp_s3.error
   val l2Error_s3                = io.dirResp_s3.error || mshr_req_s3 && req_s3.dataCheckErr.getOrElse(false.B)
 
   val mshr_refill_s3 = mshr_accessackdata_s3 || mshr_hintack_s3 || mshr_grant_s3 // needs refill to L2 DS
@@ -544,7 +545,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val metaW_s3_a = MetaEntry(
     dirty = meta_s3.dirty,
     state = Mux(req_needT_s3 || sink_resp_s3_a_promoteT, TRUNK, meta_s3.state),
-    clients = Fill(clientBits, true.B),
+    clients = Fill(clientBits, Mux(l2TagError_s3, false.B, true.B)),
     alias = Some(metaW_s3_a_alias),
     accessed = true.B,
     tagErr = meta_s3.tagErr,
