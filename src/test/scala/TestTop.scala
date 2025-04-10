@@ -219,6 +219,7 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
   )))
 
   mem :=
+    AXI4Buffer() :=
     AXI4Deinterleaver(4096) :=
     AXI4UserYanker() :=
     TLToAXI4() :=*
@@ -488,6 +489,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
   }
 
   mem :=
+    AXI4Buffer() :=
     AXI4Deinterleaver(4096) :=
     AXI4UserYanker() :=
       TLToAXI4() :=*
