@@ -77,13 +77,13 @@ jobs:
             sed -i 's/cmo.enable .*=.*/cmo.enable = 1/g' ./configs/user.tltest.ini
             sed -i 's/cmo.enable.cbo.clean.*=.*/cmo.enable.cbo.clean = 1/g' ./configs/user.tltest.ini
             sed -i 's/cmo.enable.cbo.flush.*=.*/cmo.enable.cbo.flush = 1/g' ./configs/user.tltest.ini
+            sed -i 's/cmo.enable.cbo.inval.*=.*/cmo.enable.cbo.inval = 1/g' ./configs/user.tltest.ini
             cd ./dut
             git clone https://github.com/OpenXiangShan/OpenLLC
             cd OpenLLC && make init
             rm -rf ./coupledL2 && ln -s ../../.. ./coupledL2
-            cd ..
-            rm -rf ./CoupledL2 && ln -s ./OpenLLC ./CoupledL2 && cd ..
-            make coupledL2-test-l2l3l2 run THREADS_BUILD=4 CXX_COMPILER=clang++-17
+            cd ../..
+            make openLLC-test-l2l3l2 run THREADS_BUILD=4 CXX_COMPILER=clang++-17
             rm -rf run/*.vcd run/*.fst run/*.log run/*.db
             
       - name: Tar up artifacts of Unit Test for CHI version
