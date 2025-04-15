@@ -616,6 +616,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
           sig.ram_aux_clk := dft.ram_aux_clk
           sig.ram_aux_ckbp := dft.ram_aux_ckbp
           sig.ram_mcp_hold := dft.ram_mcp_hold
+          sig.cgen := dft.cgen
         }
         if (cacheParams.hasSramCtl) {
           sig.ram_ctl := dft.ram_ctl
