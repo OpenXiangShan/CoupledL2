@@ -40,7 +40,7 @@ class DSBlock(implicit p: Parameters) extends L2Bundle {
 
 class DSECCBankBlock(implicit p: Parameters) extends L2Bundle {
   val data = if (enableDataECC) {
-    UInt((encBankBits * dataBankSplit).W)
+    UInt((encDataPadBits + encBankBits * dataBankSplit).W)
   } else {
     UInt((dataBankBits * dataBankSplit).W)
   }
@@ -70,7 +70,7 @@ class DataStorage(implicit p: Parameters) extends L2Module {
     gen = new DSECCBankBlock,
     set = blocks,
     way = 1,
-    dataSplit = 4,
+    dataSplit = dataSRAMSplit,
     singlePort = true,
     readMCP2 = true,
     hasMbist = p(L2ParamKey).hasMbist,
@@ -86,8 +86,8 @@ class DataStorage(implicit p: Parameters) extends L2Module {
 
   val arrayWrite = Wire(new DSECCBankBlock)
   val arrayWriteData = if (enableDataECC) {
-    Cat(VecInit(Seq.tabulate(dataBankSplit)(i =>
-      io.wdata.data(dataBankBits * (i + 1) - 1, dataBankBits * i))).map(data => cacheParams.dataCode.encode(data)))
+    Cat(0.U(encDataPadBits.W), Cat(VecInit(Seq.tabulate(dataBankSplit)(i =>
+      io.wdata.data(dataBankBits * (i + 1) - 1, dataBankBits * i))).map(data => cacheParams.dataCode.encode(data))))
   } else {
     io.wdata.data
   }

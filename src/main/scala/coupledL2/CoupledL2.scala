@@ -74,11 +74,18 @@ trait HasCoupledL2Parameters {
   def mmioBridgeSize = cacheParams.mmioBridgeSize
 
   // ECC
+  // tag(data)BankSplit refers to tag(data) splits before ECC encode
+  // tag(data)SRAMSplit refers to tag(data) splits of tag(data)Array SRAM
+  // *NOTICE*
+  // tag width = 31, requires padding when split
+  // encDataBank width = 137(bakSplit = 4), requires padding when extra SRAM split
   def enableECC = cacheParams.enableTagECC || cacheParams.enableDataECC
   def enableTagECC = cacheParams.enableTagECC
-  def tagBankSpilt = 1
-  def dataBankSplit = 4 // SRAM dataSplit = 4
-  def tagBankBits = tagBits / tagBankSpilt
+  def tagBankSplit = 1
+  def tagSRAMSplit = 2
+  def dataBankSplit = 4
+  def dataSRAMSplit = 8
+  def tagBankBits = tagBits / tagBankSplit
   def encTagBankBits = cacheParams.tagCode.width(tagBankBits)
   def eccTagBankBits = encTagBankBits - tagBankBits
   def enableDataECC = cacheParams.enableDataECC
@@ -86,6 +93,7 @@ trait HasCoupledL2Parameters {
   def bankWords = blockBits / wordBits / dataBankSplit
   def dataBankBits = wordBits * bankWords
   def encBankBits = cacheParams.dataCode.width(dataBankBits)
+  def encDataPadBits = 4
 
   // Prefetch
   def prefetchers = cacheParams.prefetch

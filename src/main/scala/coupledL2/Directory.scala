@@ -143,11 +143,11 @@ class Directory(implicit p: Parameters) extends L2Module {
   private val hasSramCtl = p(L2ParamKey).hasSramCtl
   val tagArray = if (enableTagECC) {
     Module(new SplittedSRAM(
-      gen = UInt((tagBankSpilt * encTagBankBits).W),
+      gen = UInt((tagBankSplit * encTagBankBits).W),
       set = sets,
       way = ways,
       waySplit = 2,
-      dataSplit = 2,
+      dataSplit = tagSRAMSplit,
       singlePort = true,
       readMCP2 = false,
       hasMbist = mbist,
@@ -197,7 +197,7 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   // Tag(ECC) R/W
   val tagWrite = if (enableTagECC) {
-    Cat(VecInit(Seq.tabulate(tagBankSpilt)(i =>
+    Cat(VecInit(Seq.tabulate(tagBankSplit)(i =>
       io.tagWReq.bits.wtag(tagBankBits * (i + 1) - 1, tagBankBits * i))).map(tag => cacheParams.dataCode.encode(tag)))
   } else {
     io.tagWReq.bits.wtag
@@ -205,7 +205,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   val tagRead = tagArray.io.r(io.read.fire, io.read.bits.set).resp.data
   val bankTagRead = if (enableTagECC) {
     tagRead.map(x =>
-      Cat(VecInit(Seq.tabulate(tagBankSpilt)(i => x(encTagBankBits * (i + 1) - 1, encTagBankBits * i)(tagBankBits - 1, 0))))
+      Cat(VecInit(Seq.tabulate(tagBankSplit)(i => x(encTagBankBits * (i + 1) - 1, encTagBankBits * i)(tagBankBits - 1, 0))))
     )
   } else {
     tagRead
@@ -220,7 +220,7 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   val bankTagError = if (enableTagECC) {
     tagRead.map(x =>
-      VecInit(Seq.tabulate(tagBankSpilt)(i => x(encTagBankBits * (i + 1) - 1, encTagBankBits * i))).
+      VecInit(Seq.tabulate(tagBankSplit)(i => x(encTagBankBits * (i + 1) - 1, encTagBankBits * i))).
         map(tag => cacheParams.dataCode.decode(tag).error).reduce(_ | _)
     )
   } else {
