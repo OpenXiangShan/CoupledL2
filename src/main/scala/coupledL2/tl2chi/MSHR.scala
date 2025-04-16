@@ -81,8 +81,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   initState.elements.foreach(_._2 := true.B)
   val state     = RegInit(new FSMState(), initState)
 
-  val req_writeEvictOrEvict = RegInit(false.B)
-
   val req_released_chiOpcode = RegInit(0.U.asTypeOf(UInt(OPCODE_WIDTH.W)))
 
   assert(!(req_valid && dirResult.hit && !isT(meta.state) && meta.dirty),
@@ -155,8 +153,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
 
     retryTimes := 0.U
     backoffTimer := 0.U
-
-    req_writeEvictOrEvict := false.B
   }
 
   /* ======== Enchantment ======== */
@@ -1055,12 +1051,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       req_released_chiOpcode := mp_release.chiOpcode.get
       state.s_release := true.B
       state.s_cbwrdata.get := isEvict
-      ifAfterIssueEb {
-        when (mp_release.chiOpcode.get === WriteEvictOrEvict) {
-          // Mark on WriteEvictOrEvict for TxnID selection of CompAck on Comp
-          req_writeEvictOrEvict := true.B
-        }
-      }
       when (isEvict) {
         meta.state := INVALID
         meta.dirty := false.B
