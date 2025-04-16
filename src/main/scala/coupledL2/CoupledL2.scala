@@ -77,23 +77,25 @@ trait HasCoupledL2Parameters {
   // tag(data)BankSplit refers to tag(data) splits before ECC encode
   // tag(data)SRAMSplit refers to tag(data) splits of tag(data)Array SRAM
   // *NOTICE*
-  // tag width = 31, requires padding when split
+  // tag width = 31(1 MB L2), requires padding when split
+  // currently, not split tag if SRAM's split requirement cannot meet(L2 size changes)
   // encDataBank width = 137(bakSplit = 4), requires padding when extra SRAM split
   def enableECC = cacheParams.enableTagECC || cacheParams.enableDataECC
   def enableTagECC = cacheParams.enableTagECC
   def tagBankSplit = 1
   def tagSRAMSplit = 2
-  def dataBankSplit = 4
-  def dataSRAMSplit = 8
   def tagBankBits = tagBits / tagBankSplit
   def encTagBankBits = cacheParams.tagCode.width(tagBankBits)
+  def enableTagSRAMSplit = encTagBankBits % (tagSRAMSplit / tagBankSplit) == 0
   def eccTagBankBits = encTagBankBits - tagBankBits
   def enableDataECC = cacheParams.enableDataECC
+  def dataBankSplit = 4
+  def dataSRAMSplit = 8
   def wordBits = 64
   def bankWords = blockBits / wordBits / dataBankSplit
   def dataBankBits = wordBits * bankWords
   def encBankBits = cacheParams.dataCode.width(dataBankBits)
-  def encDataPadBits = 4
+  def encDataPadBits = 4 // recaculate if any split changes
 
   // Prefetch
   def prefetchers = cacheParams.prefetch

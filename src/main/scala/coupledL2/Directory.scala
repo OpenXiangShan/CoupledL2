@@ -147,7 +147,11 @@ class Directory(implicit p: Parameters) extends L2Module {
       set = sets,
       way = ways,
       waySplit = 2,
-      dataSplit = tagSRAMSplit,
+      dataSplit = if (enableTagSRAMSplit) {
+        tagSRAMSplit
+      } else {
+        1
+      },
       singlePort = true,
       readMCP2 = false,
       hasMbist = mbist,
