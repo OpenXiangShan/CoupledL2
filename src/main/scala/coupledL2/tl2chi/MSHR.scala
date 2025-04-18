@@ -592,6 +592,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_cbwrdata.mergeA := false.B
     mp_cbwrdata.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
 
+    mp_cbwrdata.denied := denied
+    mp_cbwrdata.corrupt := corrupt
+
     // CHI
     mp_cbwrdata.tgtID.get := tgtid_wcompack
     mp_cbwrdata.srcID.get := 0.U
@@ -788,7 +791,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       accessed = req_acquire || req_get
     )
     mp_grant.metaWen := !cmo_cbo && !denied
-    mp_grant.tagWen := !cmo_cbo && !dirResult.hit
+    mp_grant.tagWen := !cmo_cbo && !dirResult.hit && !denied
     mp_grant.dsWen := (gotGrantData || probeDirty && (req_get || req.aliasTask.getOrElse(false.B))) && !denied
     mp_grant.fromL2pft.foreach(_ := req.fromL2pft.get)
     mp_grant.needHint.foreach(_ := false.B)
