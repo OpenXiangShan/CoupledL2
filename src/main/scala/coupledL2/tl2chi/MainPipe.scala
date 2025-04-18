@@ -268,7 +268,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     */
   // whether L2 should do forwarding or not
   val expectFwd = isSnpXFwd(req_s3.chiOpcode.get)
-  val canFwd = nestable_dirResult_s3.hit
+  val canFwd = nestable_dirResult_s3.hit && !(nestable_dirResult_s3.meta.tagErr || nestable_dirResult_s3.error)
   val doFwd = expectFwd && canFwd
   val need_pprobe_s3_b_snpStable = req_s3.fromB && (
     isSnpOnceX(req_s3.chiOpcode.get) || isSnpQuery(req_s3.chiOpcode.get) || isSnpStashX(req_s3.chiOpcode.get)
