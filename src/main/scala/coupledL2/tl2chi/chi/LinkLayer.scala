@@ -316,15 +316,16 @@ class LinkMonitor(implicit p: Parameters) extends L2Module with HasCHIOpcodes {
   LCredit2Decoupled(io.out.rx.rsp, io.in.rx.rsp, LinkState(rxState), rxrspDeact, Some("rxrsp"))
   LCredit2Decoupled(io.out.rx.dat, io.in.rx.dat, LinkState(rxState), rxdatDeact, Some("rxdat"))
 
-  io.out.txsactive := true.B
+  //exit coherecy + deactive tx/rx when l2 flush done
+  val exitco = io.exitco.getOrElse(false.B)
+  io.out.syscoreq := !exitco
+
+  io.out.txsactive := !exitco
   io.out.tx.linkactivereq := RegNext(true.B, init = false.B)
   io.out.rx.linkactiveack := RegNext(
     next = RegNext(io.out.rx.linkactivereq) || !rxDeact,
     init = false.B
   )
-  //exit coherecy + deactive tx/rx when l2 flush done
-  val exitco = io.exitco.getOrElse(false.B)
-  io.out.syscoreq := !exitco
 
   val retryAckCnt = RegInit(0.U(64.W))
   val pCrdGrantCnt = RegInit(0.U(64.W))
