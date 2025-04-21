@@ -320,7 +320,7 @@ class LinkMonitor(implicit p: Parameters) extends L2Module with HasCHIOpcodes {
   val exitco = io.exitco.getOrElse(false.B)
   io.out.syscoreq := !exitco
 
-  io.out.txsactive := !exitco
+  io.out.txsactive := !io.out.syscoreq & ~io.out.syscoack
   io.out.tx.linkactivereq := RegNext(true.B, init = false.B)
   io.out.rx.linkactiveack := RegNext(
     next = RegNext(io.out.rx.linkactivereq) || !rxDeact,
