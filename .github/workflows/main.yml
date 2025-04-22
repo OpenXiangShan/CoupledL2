@@ -47,7 +47,7 @@ jobs:
           sed -i 's/CXX=clang++/CXX=clang++-17/g' install-verilator.sh
           sed -i 's/LINK=clang++/LINK=clang++-17/g' install-verilator.sh
           sed -i 's/make -j8/make -j4/g' install-verilator.sh
-          bash install-verilator.sh
+          sudo bash install-verilator.sh
 
       - name: Setup Scala
         uses: olafurpg/setup-scala@v10
