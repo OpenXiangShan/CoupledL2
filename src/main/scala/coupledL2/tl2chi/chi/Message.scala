@@ -31,6 +31,8 @@ case object CHIIssue extends Field[String](Issue.B)
 
 case object NonSecureKey extends Field[Boolean](false)
 
+case object CHIAddrWidthKey extends Field[Int](48)
+
 object CHICohStates {
   val width = 3
 
@@ -233,7 +235,7 @@ trait HasCHIMsgParameters {
     "RSP_OPCODE_WIDTH" -> 4,
     "SNP_OPCODE_WIDTH" -> 5,
     "DAT_OPCODE_WIDTH" -> 3,
-    "ADDR_WIDTH" -> 48,
+    "ADDR_WIDTH" -> p(CHIAddrWidthKey),
     "SIZE_WIDTH" -> 3,
     "PCRDTYPE_WIDTH" -> 4,
     "MEMATTR_WIDTH" -> 4,
@@ -257,7 +259,6 @@ trait HasCHIMsgParameters {
     // new width def for existing fields
     "NODEID_WIDTH" -> 9,
     "DAT_OPCODE_WIDTH" -> 4,
-    // "ADDR_WIDTH" -> 44
   )
 
   val Eb_CONFIG = C_CONFIG ++ Map(
@@ -274,8 +275,7 @@ trait HasCHIMsgParameters {
     "CBUSY_WIDTH" -> 3,
     "MPAM_WIDTH" -> 11,
     "SLCREPHINT_WIDTH" -> 7,
-    "TAGOP_WIDTH" -> 2,
-    "ADDR_WIDTH" -> 48
+    "TAGOP_WIDTH" -> 2
   )
 
   val params = Map(
@@ -370,6 +370,8 @@ trait HasCHIMsgParameters {
   def MPAM_WIDTH = CONFIG("MPAM_WIDTH") // E.b field. Optional, width 0 or 11. Memory Performance and Monitoring.
 
   def enableNS = p(NonSecureKey)
+
+  require(ADDR_WIDTH >= 44 && ADDR_WIDTH <= 52)
 }
 
 class MemAttr extends Bundle {
