@@ -23,6 +23,7 @@ import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.{Field, Parameters}
 import coupledL2.L2Param
 import huancun.CacheParameters
+import utility.ZeroExt
 
 case class ResourceConfig(refill: Int, response: Int, snoop: Int, memory: Int)
 
@@ -100,7 +101,7 @@ trait HasOpenLLCParameters {
     val bank = offset >> offsetBits
     val set = bank >> bankBits
     val tag = set >> setBits
-    (tag(tagBits - 1, 0), set(setBits - 1, 0), if (bankBits == 0) 0.U(0.W) else bank(bankBits - 1, 0),
+    (ZeroExt(tag, tagBits), set(setBits - 1, 0), if (bankBits == 0) 0.U(0.W) else bank(bankBits - 1, 0),
       offset(offsetBits - 1, 0))
   }
 
