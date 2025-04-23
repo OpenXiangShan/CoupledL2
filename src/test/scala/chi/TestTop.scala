@@ -14,6 +14,7 @@ import coupledL2.tl2chi._
 import utility._
 import utility.chiron._
 import scala.collection.mutable.ArrayBuffer
+import utility.TLLogger.e
 
 class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, extTime: Boolean = false, vTime: Boolean = false)(implicit p: Parameters) extends LazyModule
   with HasCHIMsgParameters {
@@ -31,6 +32,10 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, ext
   val cacheParams = p(L2ParamKey)
 
   val clogId = "l2top"
+
+  println(s"CLog.b shared handle Id: ${clogId}")
+  println(s"eTime: ${extTime}")
+  println(s"vTime: ${vTime}")
 
   def createClientNode(name: String, sources: Int) = {
     val masterNode = TLClientNode(Seq(
@@ -203,9 +208,7 @@ object TestTopCHIHelper {
           onFPGAPlatform: Boolean,
           enableChiselDB: Boolean,
           enableTLLog: Boolean,
-          enableCHILog: Boolean,
-          eTime: Boolean,
-          vTime: Boolean)(args: Array[String]) = {
+          enableCHILog: Boolean)(args: Array[String]) = {
 
     val config = new Config((_, _, _) => {
       case L2ParamKey => L2Param(
@@ -241,6 +244,7 @@ object TestTopCHIHelper {
       case EnableCHI => true
     })
 
+    CLogB.init(true)
     ChiselDB.init(enableChiselDB)
     Constantin.init(false)
 
@@ -316,13 +320,13 @@ Usage: TestTop_CHIL2 [<--option> <values>]
     p => new TestTop_CHIL2(
       numCores,
       numULAgents,
-      numBanks)(p), 
+      numBanks,
+      eTime,
+      vTime)(p), 
     issue,
     onFPGAPlatform,
     enableChiselDB,
     enableTLLog,
-    enableCHILog,
-    eTime,
-    vTime
+    enableCHILog
   )(varArgs.toArray)
 }
