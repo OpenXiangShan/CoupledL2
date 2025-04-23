@@ -21,7 +21,7 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
-import utility.{DFTResetSignals, FastArbiter, HasPerfEvents, ParallelMax, ParallelPriorityMux, Pipeline, PipelineConnect, RegNextN, XSPerfAccumulate}
+import utility._
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tile.MaxHartIdBits
 import freechips.rocketchip.tilelink._
@@ -178,14 +178,14 @@ trait HasCoupledL2Parameters {
     val offset = x // TODO: check address mapping
     val set = offset >> offsetBits
     val tag = set >> setBits
-    (tag(fullTagBits - 1, 0), set(setBits - 1, 0), offset(offsetBits - 1, 0))
+    (ZeroExt(tag, fullTagBits), set(setBits - 1, 0), offset(offsetBits - 1, 0))
   }
 
   def parseAddress(x: UInt): (UInt, UInt, UInt) = {
     val offset = x
     val set = offset >> (offsetBits + bankBits)
     val tag = set >> setBits
-    (tag(tagBits - 1, 0), set(setBits - 1, 0), offset(offsetBits - 1, 0))
+    (ZeroExt(tag, tagBits), set(setBits - 1, 0), offset(offsetBits - 1, 0))
   }
 
   def restoreAddress(x: UInt, idx: Int) = {
