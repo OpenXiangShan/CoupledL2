@@ -14,7 +14,6 @@ import coupledL2.tl2chi._
 import utility._
 import utility.chiron._
 import scala.collection.mutable.ArrayBuffer
-import utility.TLLogger.e
 
 class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, extTime: Boolean = false, vTime: Boolean = false)(implicit p: Parameters) extends LazyModule
   with HasCHIMsgParameters {
