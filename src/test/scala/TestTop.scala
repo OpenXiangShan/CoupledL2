@@ -48,7 +48,7 @@ object TestTop_L3 extends App {
   ))
 }
 
-class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue: String = Issue.Eb)(implicit p: Parameters) extends LazyModule
+class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue: String = Issue.Eb, extTime: Boolean = true)(implicit p: Parameters) extends LazyModule
   with HasCHIMsgParameters {
   
   /*   L1D(L1I)* L1D(L1I)* ... L1D(L1I)*
@@ -183,6 +183,13 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
     l3Bridge.axi4node
 
   lazy val module = new LazyModuleImp(this) {
+
+    val time_sim = if (extTime) {
+      IO(Input(UInt(64.W)))
+    } else {
+      WireDefault(0.U(64.W))
+    }
+
     val timer = WireDefault(0.U(64.W))
     val logEnable = WireDefault(false.B)
     val clean = WireDefault(false.B)
@@ -230,6 +237,7 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
       if (!l3Params.FPGAPlatform && l3Params.enableCHILog) {
         CLogB.logFlitsRNOfRNF(
           id    = clogIdUpstream,
+          vTime = false,
           clock = l2.module.clock,
           reset = l2.module.reset,
           rnId  = l2.module.io_nodeID,
@@ -238,7 +246,8 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
           rxdatflit = l2.module.io_chi.rx.dat.flit, rxdatflitv = l2.module.io_chi.rx.dat.flitv,
           rxsnpflit = l2.module.io_chi.rx.snp.flit, rxsnpflitv = l2.module.io_chi.rx.snp.flitv,
           txrspflit = l2.module.io_chi.tx.rsp.flit, txrspflitv = l2.module.io_chi.tx.rsp.flitv,
-          txdatflit = l2.module.io_chi.tx.dat.flit, txdatflitv = l2.module.io_chi.tx.dat.flitv
+          txdatflit = l2.module.io_chi.tx.dat.flit, txdatflitv = l2.module.io_chi.tx.dat.flitv,
+          time = time_sim, timev = extTime.B
         )
       }
 
@@ -255,13 +264,15 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
     if (!l3Params.FPGAPlatform && l3Params.enableCHILog) {
       CLogB.logFlitsSNOfHNF(
         id    = clogIdDownstream,
+        vTime = false,
         clock = l3.clock,
         reset = l3.reset,
         hnId  = l3.io.nodeID,
         txreqflit = l3.io.sn.tx.req.flit, txreqflitv = l3.io.sn.tx.req.flitv,
         rxrspflit = l3.io.sn.rx.rsp.flit, rxrspflitv = l3.io.sn.rx.rsp.flitv,
         rxdatflit = l3.io.sn.rx.dat.flit, rxdatflitv = l3.io.sn.rx.dat.flitv,
-        txdatflit = l3.io.sn.tx.dat.flit, txdatflitv = l3.io.sn.tx.dat.flitv
+        txdatflit = l3.io.sn.tx.dat.flit, txdatflitv = l3.io.sn.tx.dat.flitv,
+        time = time_sim, timev = extTime.B
       )
     }
 
