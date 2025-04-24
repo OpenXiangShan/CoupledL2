@@ -92,7 +92,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     d.sink := grant_id
     d.denied := task.denied
     d.data := data
-    d.corrupt := task.corrupt
+    d.corrupt := task.corrupt || task.denied
     d.echo.lift(IsKeywordKey).foreach(_ := false.B)
     d
   }
@@ -137,7 +137,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   mergeAtask.bufIdx := io.d_task.bits.task.bufIdx
   mergeAtask.needProbeAckData := io.d_task.bits.task.needProbeAckData
   mergeAtask.denied := io.d_task.bits.task.denied
-  mergeAtask.corrupt := io.d_task.bits.task.corrupt
+  mergeAtask.corrupt := io.d_task.bits.task.corrupt || io.d_task.bits.task.denied
   mergeAtask.mshrTask := io.d_task.bits.task.mshrTask
   mergeAtask.mshrId := io.d_task.bits.task.mshrId
   mergeAtask.aliasTask.foreach(_ := io.d_task.bits.task.aliasTask.getOrElse(0.U))
