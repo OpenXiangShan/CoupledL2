@@ -192,7 +192,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
       traceTag := rxrsp.bits.traceTag
     }
     when (rxrsp.bits.opcode === CompDBIDResp || rxrsp.bits.opcode === Comp) {
-      denied := denied || rxrsp.bits.respErr === RespErrEncodings.NDERR
+      denied := denied || rxrsp.bits.respErr === RespErrEncodings.NDERR || rxrsp.bits.respErr === RespErrEncodings.DERR
       // TODO: d_corrupt is reserved and must be 0 in TileLink
     }
     when (rxrsp.bits.opcode === RetryAck) {
