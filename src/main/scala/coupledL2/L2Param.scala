@@ -46,6 +46,10 @@ case class L1Param
   val needResolveAlias = aliasBitsOpt.nonEmpty
 }
 
+// TraceTag from L1 Cache
+case object TraceTagKey extends ControlKey[Bool]("traceTag")
+case class TraceTagField() extends BundleField[Bool](TraceTagKey, Output(Bool()), _ := false.B)
+
 // Pass PMA and uncached memory attribute from PBMT to MMIOBridge
 case object MemBackTypeMM extends ControlKey[Bool]("memBackType_MM")
 case class MemBackTypeMMField() extends BundleField[Bool](MemBackTypeMM, Output(Bool()), _ := false.B)
@@ -84,7 +88,7 @@ case class L2Param(
   reqField: Seq[BundleFieldBase] = Nil,
   respKey: Seq[BundleKeyBase] = Seq(IsHitKey),
   // Manager
-  reqKey: Seq[BundleKeyBase] = Seq(AliasKey, VaddrKey, PrefetchKey, ReqSourceKey),
+  reqKey: Seq[BundleKeyBase] = Seq(AliasKey, VaddrKey, PrefetchKey, ReqSourceKey, TraceTagKey),
   respField: Seq[BundleFieldBase] = Nil,
 
   innerBuf: TLBufferParams = TLBufferParams(),
