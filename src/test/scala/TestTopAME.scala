@@ -23,13 +23,7 @@ object baseConfigAME {
   def apply(maxHartIdBits: Int,l2_banks:Int,l3_banks:Int,m_num:Int) = {
     new Config((_, _, _) => {
       case MaxHartIdBits => maxHartIdBits
-      case L2ParamKey => L2Param(
-        ways                = 8,
-        sets                = 512,
-        channelBytes        = TLChannelBeatBytes(64),
-        // enablePerf          = false,
-        // blockBytes = 128
-      )
+      case L2ParamKey => L2Param()
       case L2BanksKey => l2_banks
       case L3BanksKey => l3_banks
       case MNumKey => m_num
@@ -98,7 +92,8 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
 
   val c_nodes = Seq(l1d)
   val l1i_nodes = Seq(l1i)
-  val ul_nodes = l1i_nodes++matrix_nodes
+
+  // 2MB L2 Cache with 8 banks
   val l2 = LazyModule(new TL2TLCoupledL2()(baseConfig(1).alter((site, here, up) => {
     case L2ParamKey => L2Param(
       name = s"l2",
@@ -134,18 +129,19 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
     )
   })))
 
+  // 16MB L3 Cache with 2 banks
   val l3 = LazyModule(new HuanCun()(baseConfig(1).alter((site, here, up) => {
     case HCCacheParamsKey => HCCacheParameters(
       name = "l3",
       level = 3,
       ways = 16,
-      sets = 4096,
+      sets = 8192,
       inclusive = false,
       clientCaches = Seq(
         CacheParameters(
           name = s"l2",
-          sets = 4096,
-          ways = 16,
+          sets = 512 * 2, // l2 sets * 2, actually [l2 sets * 1] is enough for single core
+          ways = 8 + 2,   // l2 ways + 2
           blockGranularity = log2Ceil(128)
         ),
       ),
@@ -240,7 +236,7 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
 
 object TestTop_L2L3_AME extends App {
   val l2_banks=8
-  val l3_banks=8
+  val l3_banks=2
   val m_num=l2_banks
 
   val config = baseConfigAME(1,l2_banks,l3_banks,m_num).alterPartial({
