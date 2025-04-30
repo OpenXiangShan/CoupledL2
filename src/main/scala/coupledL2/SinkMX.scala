@@ -11,6 +11,14 @@ import freechips.rocketchip.tilelink.TLPermissions._
 
 // IN: a, c
 // OUT: a, c
+// -----------------------
+// | IN | OPCODE  | OUT |
+// =======================
+// | A  | Acquire | A   |
+// | A  | Get     | A   |
+// | A  | Put     | C   |
+// | C  | Release | C   |  higher priv
+// -----------------------
 class SinkMX(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     // in
@@ -68,5 +76,9 @@ class SinkMX(implicit p: Parameters) extends L2Module {
   // Handle ready signals
   // io.a.ready := out_a.ready
   io.c.ready := out_c.ready
-  io.a.ready := out_a.ready && out_c.ready
+
+  // TODO: it is not recommended to use input valid to drive input ready,
+  // might cause longer path, unfriendly to timing
+  io.a.ready := Mux(isMatrixPut(a), io.out_c.ready && !io.c.valid, io.out_a.ready)
+
 }
