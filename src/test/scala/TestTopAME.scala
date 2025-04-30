@@ -185,7 +185,7 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
   }
 
   l2bankBinders :*= l2.node :*= TLBuffer() :*= l1xbar
-  l3xbar :=TLBuffer() :*=l2xbar :=*l2bankBinders
+  l3xbar :*= TLBuffer() :*=l2xbar :=*l2bankBinders
   ram.node :=
     TLXbar() :=
     TLFragmenter(32, 64) :=
