@@ -215,6 +215,16 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
     matrix_nodes.zipWithIndex.foreach {
       case (node, i) =>
         node.makeIOs()(ValName(s"master_m_port_0_${i}"))
+
+        require(node.out.size == 1)
+        val logm = Module(new TLLoggerM(s"L2_Matrix[${i}]", true)(p.alterPartial {
+          case EdgeOutKey => node.out.head._2
+        }))
+        logm.io.a.valid := node.out.head._1.a.valid
+        logm.io.a.bits := node.out.head._1.a.bits
+        logm.io.mdata_out.valid := l2.module.io.matrixDataOut512L2(i).valid
+        logm.io.mdata_out.bits := l2.module.io.matrixDataOut512L2(i).bits
+        logm
     }
     l2.module.io.hartId := DontCare
     l2.module.io.debugTopDown <> DontCare
