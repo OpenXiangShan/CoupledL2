@@ -38,9 +38,10 @@ class MMIOBridge()(implicit p: Parameters) extends LazyModule
     * MMIO node
     */
   val beuRange = AddressSet(0x38010000, 4096 - 1)
+  val clintRange = AddressSet(0x38000000L, 0x7fff)
   val peripheralRange = AddressSet(
     0x0, 0xffffffffffffL
-  ).subtract(beuRange)
+  ).subtract(beuRange).flatMap(_.subtract(clintRange))
 
   val mmioNode = TLManagerNode(Seq(TLSlavePortParameters.v1(
     managers = Seq(TLSlaveParameters.v1(
@@ -62,7 +63,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
 
   val needRR = true
 
-  // *NOTICE: DO NOT set 'bufferableNC = true' when 'needRR = false', 
+  // *NOTICE: DO NOT set 'bufferableNC = true' when 'needRR = false',
   //          since the ordering between NC and IO described in SvPBMT was maintained by 'fence iorw, iorw'.
   //          And alias with NC and IO must not cause loss of coherency due to SvPBMT, which was NOT guaranteed
   //          by CHI specification in which case obtaining different EWA from different agents.
@@ -125,7 +126,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   val txdat = io.chi.tx.dat
   val rxdat = io.chi.rx.dat
   val rxrsp = io.chi.rx.rsp
-  
+
   /**
     * Entry allocation
     */
@@ -231,7 +232,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   txreq.bits.allowRetry := allowRetry
   txreq.bits.pCrdType := Mux(allowRetry, 0.U, pCrdType)
   txreq.bits.expCompAck := false.B
-  // *Ordering and MemAttr: 
+  // *Ordering and MemAttr:
   // ---------------------------------------------------------
   // [when 'bufferableNC' configured to false]
   //    PMA = MM   , PBMT = NC -> Non-cacheable Non-bufferable
@@ -245,9 +246,9 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   //    PMA = NC/IO, PBMT = NC -> Device nRE  (no reorder, early acknowlegment)
   //    PMA = NC/IO, PBMT = IO -> Device nRnE (no reorder, no early acknowlegment)
   txreq.bits.order := {
-    if (needRR) 
+    if (needRR)
       Mux(!isBackTypeMM, OrderEncodings.EndpointOrder, OrderEncodings.RequestOrder)
-    else 
+    else
       OrderEncodings.None
   }
   txreq.bits.memAttr := MemAttr(
@@ -330,7 +331,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   XSPerfAccumulate("mmio_read_retry", rxrsp.fire && rxrsp.bits.opcode === RetryAck && isRead)
   XSPerfAccumulate("mmio_write_retry", rxrsp.fire && rxrsp.bits.opcode === RetryAck && !isRead)
   XSPerfAccumulate("mmio_read_wait_pcrd", !w_pcrdgrant && isRead)
-  XSPerfAccumulate("mmio_write_wait_pcrd", !w_pcrdgrant && !isRead)  
+  XSPerfAccumulate("mmio_write_wait_pcrd", !w_pcrdgrant && !isRead)
 }
 
 class MMIOBridgeImp(outer: MMIOBridge) extends LazyModuleImp(outer)
