@@ -401,6 +401,26 @@ object MemAttr {
   def apply(): MemAttr = apply(false.B, false.B, false.B, false.B)
 }
 
+class MPAM extends Bundle {
+  // The resources are partitioned among users by Partition ID (PartID) and Performance Monitoring Group (PerfMonGroup)
+  val perfMonGroup = UInt(1.W)
+  val partID = UInt(9.W)
+  //  A Non-secure bit in the MPAM field, this is in addition to and different from the NS bit of the request.
+  //  The polarity of the MPAMNS bit encoding is the same as that of the NS bit.
+  val mpamNS = Bool()
+}
+
+object MPAM {
+  def apply(perfMonGroup: UInt, partID: UInt, mpamNS: Bool): MPAM = {
+    val mpam = Wire(new MPAM)
+    mpam.perfMonGroup := perfMonGroup
+    mpam.partID := partID
+    mpam.mpamNS := mpamNS
+    mpam
+  }
+  def apply(mpamNS: Bool): MPAM = apply(0.U, 0.U, mpamNS) // See Default values for MPAM subfields 
+}
+
 abstract class CHIBundle(implicit val p: Parameters) extends Bundle with HasCHIMsgParameters
 
 class CHIREQ(implicit p: Parameters) extends CHIBundle {
@@ -448,10 +468,12 @@ class CHIREQ(implicit p: Parameters) extends CHIBundle {
   val expCompAck = Bool()
   val tagOp = Eb_FIELD(UInt(TAGOP_WIDTH.W))
   val traceTag = Bool()
-  val mpam = Eb_FIELD(UInt(MPAM_WIDTH.W))
+  val mpam = Eb_FIELD(new MPAM())
   val rsvdc = UInt(REQ_RSVDC_WIDTH.W)
 
   /* MSB */
+
+  require(mpam.map(_.getWidth).orElse(Some(0)).get == MPAM_WIDTH, "configured MPAM width mismatch")
 }
 
 class CHISNP(implicit p: Parameters) extends CHIBundle {
@@ -477,9 +499,11 @@ class CHISNP(implicit p: Parameters) extends CHIBundle {
 
   val retToSrc = Bool()
   val traceTag = Bool()
-  val mpam = Eb_FIELD(UInt(MPAM_WIDTH.W))
+  val mpam = Eb_FIELD(new MPAM())
 
   /* MSB */
+
+  require(mpam.map(_.getWidth).orElse(Some(0)).get == MPAM_WIDTH, "configured MPAM width mismatch")
 }
 
 class CHIDAT(implicit p: Parameters) extends CHIBundle {
