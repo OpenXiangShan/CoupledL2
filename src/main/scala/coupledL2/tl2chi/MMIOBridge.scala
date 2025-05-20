@@ -228,6 +228,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   ))
   txreq.bits.size := req.size
   txreq.bits.addr := req.address
+  txreq.bits.ns := enableNS.B
   txreq.bits.allowRetry := allowRetry
   txreq.bits.pCrdType := Mux(allowRetry, 0.U, pCrdType)
   txreq.bits.expCompAck := false.B
