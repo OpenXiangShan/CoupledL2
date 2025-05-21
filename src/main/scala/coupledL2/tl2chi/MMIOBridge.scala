@@ -257,7 +257,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
     device = !isBackTypeMM,
     ewa = if (bufferableNC) (isPageTypeNC || isBackTypeMM) else false.B
   )
-  txreq.bits.mpam.foreach(_ := MPAM(enableNS.B))
+  txreq.bits.mpam.foreach(_ := MPAM(txreq.bits.ns))
 
   io.resp.valid := !s_resp && Mux(isRead, w_compdata, w_comp && w_dbidresp && s_ncbwrdata)
   io.resp.bits.opcode := Mux(isRead, AccessAckData, AccessAck)

@@ -22,7 +22,7 @@ import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink.TLPermissions._
 import utility.MemReqSource
-import tl2chi.{HasCHIMsgParameters, HasCHIChannelBits, CHIREQ, MemAttr, OrderEncodings}
+import tl2chi.{HasCHIMsgParameters, HasCHIChannelBits, CHIREQ, MemAttr, OrderEncodings, MPAM}
 
 abstract class L2Module(implicit val p: Parameters) extends Module with HasCoupledL2Parameters
 abstract class L2Bundle(implicit val p: Parameters) extends Bundle with HasCoupledL2Parameters
@@ -162,6 +162,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
     req.memAttr := memAttr.getOrElse(MemAttr())
     req.snpAttr := true.B
     req.order := OrderEncodings.None
+    req.mpam.foreach(_ := MPAM(req.ns))
     req
   }
 }
