@@ -421,6 +421,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     oa.excl := false.B
     oa.snoopMe := false.B
     oa.traceTag := false.B
+    oa.mpam.foreach(_ := MPAM(oa.ns))
     oa
   }
 
