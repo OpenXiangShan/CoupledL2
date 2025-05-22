@@ -45,8 +45,8 @@ case class BOPParameters(
   badScore:       Int = 2,
   tlbReplayCnt:   Int = 10,
   dQEntries: Int = 16,
-  dQLatency: Int = 175,
-  dQMaxLatency: Int = 256,
+  dQLatency: Int = 300,
+  dQMaxLatency: Int = 512,
   offsetList: Seq[Int] = Seq(
     -256, -250, -243, -240, -225, -216, -200,
     -192, -180, -162, -160, -150, -144, -135, -128,
