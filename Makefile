@@ -5,6 +5,8 @@ NUM_SLICE ?= 4
 WITH_CHISELDB ?= 1
 WITH_TLLOG ?= 1
 WITH_CHILOG ?= 1
+BY_ETIME ?= 1
+BY_VTIME ?= 0
 FPGA ?= 0
 
 init:
@@ -16,11 +18,13 @@ compile:
 
 CHI_PASS_ARGS = ISSUE=$(ISSUE) NUM_CORE=$(NUM_CORE) NUM_TL_UL=$(NUM_TL_UL) NUM_SLICE=$(NUM_SLICE) \
 			    WITH_CHISELDB=$(WITH_CHISELDB) WITH_TLLOG=$(WITH_TLLOG) WITH_CHILOG=$(WITH_CHILOG) \
+				BY_ETIME=$(BY_ETIME) BY_VTIME=$(BY_VTIME) \
 			    FPGA=$(FPGA)
 
 TOP = TestTop
 CHI_TOP_ARGS = --issue $(ISSUE) --core $(NUM_CORE) --tl-ul $(NUM_TL_UL) --bank $(NUM_SLICE) \
 		   	   --chiseldb $(WITH_CHISELDB) --tllog $(WITH_TLLOG) --chilog $(WITH_CHILOG) \
+			   --etime $(BY_ETIME) --vtime $(BY_VTIME) \
 		       --fpga $(FPGA)
 BUILD_DIR = ./build
 TOP_V = $(BUILD_DIR)/$(TOP).sv
