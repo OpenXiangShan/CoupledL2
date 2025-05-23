@@ -23,7 +23,6 @@ import utility._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
-import firrtl.Utils.False
 
 class SourceMD(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {

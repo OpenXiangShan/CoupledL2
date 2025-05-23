@@ -1,9 +1,10 @@
 package coupledL2
 
 import chisel3._
+import circt.stage.{ChiselStage, FirtoolOption}
 import chisel3.util._
 import org.chipsalliance.cde.config._
-import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
+import chisel3.stage.ChiselGeneratorAnnotation
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tile.MaxHartIdBits
 import freechips.rocketchip.tilelink._
@@ -29,6 +30,14 @@ object baseConfigAME {
       case MNumKey => m_num
     })
   }
+}
+private[coupledL2] object TestTopAMEFirtoolOptions {
+  def apply() = Seq(
+    FirtoolOption("--disable-annotation-unknown"),
+    FirtoolOption("--repl-seq-mem"),
+    FirtoolOption("--repl-seq-mem-file=TestTop.sv.conf"),
+    FirtoolOption("--lowering-options=explicitBitcast")
+  )
 }
 
 class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
@@ -125,6 +134,7 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
     case PerfCounterOptionsKey => PerfCounterOptions(
       here(L2ParamKey).enablePerf && !here(L2ParamKey).FPGAPlatform,
       here(L2ParamKey).enableRollingDB && !here(L2ParamKey).FPGAPlatform,
+      XSPerfLevel.withName("VERBOSE"),
       0
     )
   })))
@@ -156,6 +166,7 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
     case PerfCounterOptionsKey => PerfCounterOptions(
       here(HCCacheParamsKey).enablePerf && !here(HCCacheParamsKey).FPGAPlatform,
       false,
+      XSPerfLevel.withName("VERBOSE"),
       0
     )
   })))
@@ -227,9 +238,11 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
         logm
     }
     l2.module.io.hartId := DontCare
-    l2.module.io.debugTopDown <> DontCare
     l2.module.io.l2_tlb_req <> DontCare
-    l2.module.io.matrixDataOut512L2:= DontCare
+    l2.module.io.hartId := DontCare
+    l2.module.io.pfCtrlFromCore := DontCare
+    l2.module.io.debugTopDown <> DontCare
+    l2.module.io.matrixDataOut512L2 <> DontCare
     // For matrix get , l2 return data
     val matrix_data_out = IO(Vec(l2_banks, DecoupledIO(new MatrixDataBundle())))
     matrix_data_out <> l2.module.io.matrixDataOut512L2
@@ -263,9 +276,9 @@ object TestTop_L2L3_AME extends App {
   Constantin.init(false)
 
   val top = DisableMonitors(p => LazyModule(new TestTop_L2L3_AME()(p)) )(config)
-  (new ChiselStage).execute(args, Seq(
-    ChiselGeneratorAnnotation(() => top.module)
-  ))
+  (new ChiselStage).execute(args,
+    ChiselGeneratorAnnotation(() => top.module) +: TestTopAMEFirtoolOptions()
+  )
 
   ChiselDB.addToFileRegisters
   Constantin.addToFileRegisters
