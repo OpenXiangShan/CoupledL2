@@ -51,10 +51,9 @@ class SinkA(implicit p: Parameters) extends L2Module {
   io.cmoAll.foreach { cmoAll => cmoAll.l2FlushDone := stateVal === sDONE }
   io.cmoAll.foreach { cmoAll => cmoAll.cmoAllBlock := cmoAllBlock }
 
-  def isMatrixGet(a: TLBundleA): Bool = {
-    val en = a.opcode === Get  && (a.user.lift(MatrixKey).getOrElse(0.U) === 1.U)
-    en
-  }
+  def isMatrixGet(a: TLBundleA): Bool =
+    a.opcode === Get && (a.user.lift(MatrixKey).getOrElse(0.U) === 1.U)
+
   def fromTLAtoTaskBundle(a: TLBundleA): TaskBundle = {
     val task = Wire(new TaskBundle)
     task := 0.U.asTypeOf(new TaskBundle)
@@ -79,7 +78,6 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.fromL2pft.foreach(_ := false.B)
     task.needHint.foreach(_ := a.user.lift(PrefetchKey).getOrElse(false.B))
     task.dirty := false.B
-    task.matrixTask := isMatrixGet(a)
     task.way := Mux(cmoAllValid, wayVal, 0.U(wayBits.W))
     task.meta := 0.U.asTypeOf(new MetaEntry)
     task.metaWen := false.B
@@ -129,6 +127,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.wayMask := 0.U(cacheParams.ways.W)
     task.reqSource := req.pfSource
     task.replTask := false.B
+    task.matrixTask := false.B
     task.vaddr.foreach(_ := req.vaddr.getOrElse(0.U))
     task.isKeyword.foreach(_ := false.B)
     task.mergeA := false.B

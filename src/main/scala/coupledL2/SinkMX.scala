@@ -64,6 +64,7 @@ class SinkMX(implicit p: Parameters) extends L2Module {
       out_c.bits.corrupt := a.corrupt
     //   out_c.bits.user(VaddrKey) := a.address
       out_c.valid := true.B
+      out_c.bits.user.lift(MatrixKey).foreach(_ := true.B)
       out_a.valid := false.B
     //   io.a.ready := false.B // Hold the A channel until the C channel is processed
     }

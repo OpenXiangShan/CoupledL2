@@ -85,6 +85,9 @@ class Monitor(implicit p: Parameters) extends L2Module {
 
 //   TODO: whether mshrGrant also need such blocking, since it reads dir as well
 
+  assert(!(s3_valid && req_s3.fromC && req_s3.matrixTask && !dirResult_s3.hit),
+    "Matrix Put not hit, Tag %x Set %x Slice %x",
+    req_s3.tag, req_s3.set, p(SliceIdKey).asUInt)
 
   /* ======== ChiselDB ======== */
   if (cacheParams.enableMonitor && !cacheParams.FPGAPlatform) {
