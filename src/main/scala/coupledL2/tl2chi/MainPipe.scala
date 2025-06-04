@@ -1050,15 +1050,15 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   XSPerfHistogram("a_req_miss_way_choice", perfCnt = dirResult_s3.way,
     enable = miss_s3 && req_s3.fromA, start = 0, stop = cacheParams.ways, step = 1)
   
-  XSPerfHistogram("a_req_access_set", perfCnt = task_s3.bits.set,
-    enable = task_s3.valid && !mshr_req_s3 && req_s3.fromA,
-    start = 0, stop = cacheParams.sets, step = cacheParams.sets / 64)
-  XSPerfHistogram("a_req_hit_set", perfCnt = task_s3.bits.set,
-    enable = hit_s3 && req_s3.fromA,
-    start = 0, stop = cacheParams.sets, step = cacheParams.sets / 64)
-  XSPerfHistogram("a_req_miss_set", perfCnt = task_s3.bits.set,
-    enable = miss_s3 && req_s3.fromA,
-    start = 0, stop = cacheParams.sets, step = cacheParams.sets / 64)
+  // XSPerfHistogram("a_req_access_set", perfCnt = task_s3.bits.set,
+  //   enable = task_s3.valid && !mshr_req_s3 && req_s3.fromA,
+  //   start = 0, stop = cacheParams.sets, step = cacheParams.sets / 64)
+  // XSPerfHistogram("a_req_hit_set", perfCnt = task_s3.bits.set,
+  //   enable = hit_s3 && req_s3.fromA,
+  //   start = 0, stop = cacheParams.sets, step = cacheParams.sets / 64)
+  // XSPerfHistogram("a_req_miss_set", perfCnt = task_s3.bits.set,
+  //   enable = miss_s3 && req_s3.fromA,
+  //   start = 0, stop = cacheParams.sets, step = cacheParams.sets / 64)
 
   // pipeline stages for TX and sourceD reqs
   val pipe_len = Seq(5.U, 4.U, 3.U)
