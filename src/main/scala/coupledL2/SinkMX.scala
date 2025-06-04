@@ -29,14 +29,16 @@ class SinkMX(implicit p: Parameters) extends L2Module {
     val out_c = DecoupledIO(new TLBundleC(edgeIn.bundle))
   })
 
+  val matrix_key = io.a.bits.user.lift(MatrixKey).getOrElse(0.U)
+  val matrix_req = matrix_key(0)
+  val modify_flag = matrix_key(1)
+
   def isMatrixPut(a: TLBundleA): Bool = {
-    (a.opcode === PutFullData || a.opcode === PutPartialData) &&
-    (a.user.lift(MatrixKey).getOrElse(0.U) === 1.U)
+    (a.opcode === PutFullData || a.opcode === PutPartialData) && matrix_req
   }
 
   def isMatrixGet(a: TLBundleA): Bool = {
-    val en = a.opcode === Get && (a.user.lift(MatrixKey).getOrElse(0.U) === 1.U)
-    en
+    a.opcode === Get && matrix_req
   }
 
   val out_a = WireInit(io.a)
@@ -48,7 +50,9 @@ class SinkMX(implicit p: Parameters) extends L2Module {
   // Handle MatrixGet
   when(isMatrixGet(a) && io.a.valid) {
     out_a.bits.opcode := io.a.bits.opcode//Get Or AcquireBlock
-    out_a.bits.param := NtoT
+    // although TileLink requires Get's param fixed 0 (NtoB),
+    // here we specifically design Get with NtoT, which also triggers needT
+    out_a.bits.param := Mux(modify_flag, NtoT, NtoB)
   }
 
   // Handle MatrixPut
@@ -64,7 +68,7 @@ class SinkMX(implicit p: Parameters) extends L2Module {
       out_c.bits.corrupt := a.corrupt
     //   out_c.bits.user(VaddrKey) := a.address
       out_c.valid := true.B
-      out_c.bits.user.lift(MatrixKey).foreach(_ := true.B)
+      out_c.bits.user.lift(MatrixKey).foreach(_ := "b01".U)
       out_a.valid := false.B
     //   io.a.ready := false.B // Hold the A channel until the C channel is processed
     }

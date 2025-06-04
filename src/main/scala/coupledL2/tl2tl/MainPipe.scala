@@ -176,7 +176,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   val need_repl = io.replResp.bits.meta.state =/= INVALID && req_s3.replTask // Grant needs replacement
 
   /* ======== Interact with MSHR ======== */
-  val acquire_on_miss_s3  = req_acquire_s3 || req_prefetch_s3 || req_get_s3 // TODO: remove this cause always acquire on miss?
+  val acquire_on_miss_s3  = req_acquire_s3 || req_prefetch_s3 || req_get_s3
   val acquire_on_hit_s3   = meta_s3.state === BRANCH && req_needT_s3 && !req_prefetch_s3
   // For channel A reqs, alloc mshr when: acquire downwards is needed || alias
   val need_acquire_s3_a   = req_s3.fromA && Mux(
@@ -188,9 +188,11 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
   val need_mshr_s3_a = need_acquire_s3_a || need_probe_s3_a || cache_alias
   // For channel B reqs, alloc mshr when Probe hits in both self and client dir
+  // special case1: Probe toB with L1 Branch + L2 Tip/Branch, does not need to probe L1
+  // special case2: blocks with rmw should ProbeAck NtoN
   val need_mshr_s3_b = dirResult_s3.hit && req_s3.fromB &&
     !((meta_s3.state === BRANCH || meta_s3.state === TIP) && req_s3.param === toB) &&
-    meta_has_clients_s3
+    meta_has_clients_s3 && !meta_s3.rmw
 
   // For channel C reqs, Release will always hit on MainPipe, no need for MSHR
   val need_mshr_s3 = need_mshr_s3_a || need_mshr_s3_b
@@ -239,7 +241,8 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   ms_task.mergeA           := req_s3.mergeA
   ms_task.aMergeTask       := req_s3.aMergeTask
   ms_task.txChannel        := 0.U
-  ms_task.matrixTask := req_s3.matrixTask
+  ms_task.matrixTask       := req_s3.matrixTask
+  ms_task.modify           := req_s3.modify
   ms_task.snpHitRelease    := false.B
   ms_task.snpHitReleaseToInval := false.B
   ms_task.snpHitReleaseToClean := false.B
@@ -270,7 +273,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
       ProbeAckData,
       ProbeAck
     )
-    sink_resp_s3.bits.param  := Mux(!dirResult_s3.hit, NtoN,
+    sink_resp_s3.bits.param  := Mux(!dirResult_s3.hit || dirResult_s3.hit && meta_s3.rmw, NtoN,
       MuxLookup(Cat(req_s3.param, meta_s3.state), BtoB)(Seq(
         Cat(toN, BRANCH) -> BtoN,
         Cat(toN, TIP)    -> TtoN,
@@ -292,7 +295,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   val hasData_s3 = source_req_s3.opcode(0)
 
   val need_data_a  = dirResult_s3.hit && (req_get_s3 || req_acquireBlock_s3)
-  val need_data_b  = sinkB_req_s3 && dirResult_s3.hit &&
+  val need_data_b  = sinkB_req_s3 && dirResult_s3.hit && !meta_s3.rmw &&
                        (meta_s3.state === TRUNK || meta_s3.state === TIP && meta_s3.dirty || req_s3.needProbeAckData)
   val need_data_mshr_repl = mshr_refill_s3 && need_repl && !retry
   val ren                 = need_data_a || need_data_b || need_data_mshr_repl
@@ -345,9 +348,12 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
   /* ======== Write Directory ======== */
   val metaW_valid_s3_a    = sinkA_req_s3 && !need_mshr_s3_a && !req_get_s3 && !req_prefetch_s3 // get & prefetch that hit will not write meta
-  val metaW_valid_s3_b    = sinkB_req_s3 && !need_mshr_s3_b && dirResult_s3.hit && (meta_s3.state === TIP || meta_s3.state === BRANCH && req_s3.param === toN)
+  val metaW_valid_s3_b    = sinkB_req_s3 && !need_mshr_s3_b && dirResult_s3.hit && !meta_s3.rmw &&
+    (meta_s3.state === TIP || meta_s3.state === BRANCH && req_s3.param === toN)
   val metaW_valid_s3_c    = sinkC_req_s3 && dirResult_s3.hit
   val metaW_valid_s3_mshr = mshr_req_s3 && req_s3.metaWen && !(mshr_refill_s3 && retry)
+  val metaW_valid_s3_rmw  = req_get_s3 && req_s3.modify && !need_mshr_s3_a && !meta_s3.rmw // only when meta.rmw is not set, we need to update meta,rmw
+  val metaW_valid_s3_probed = sinkB_req_s3 && dirResult_s3.hit && meta_s3.rmw
   require(clientBits == 1)
 
   // Get and Prefetch should not change alias bit
@@ -363,7 +369,9 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
     alias = Some(metaW_s3_a_alias),
     accessed = true.B,
     tagErr = meta_s3.tagErr,
-    dataErr = meta_s3.dataErr
+    dataErr = meta_s3.dataErr,
+    rmw = false.B,
+    probed = meta_s3.probed
   )
   val metaW_s3_b = Mux(req_s3.param === toN, MetaEntry(),
     MetaEntry(
@@ -383,24 +391,36 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
     alias = meta_s3.alias,
     accessed = meta_s3.accessed,
     tagErr = Mux(wen_c, req_s3.denied, meta_s3.tagErr),
-    dataErr = Mux(wen_c, req_s3.corrupt, meta_s3.dataErr) // update error when write DS
+    dataErr = Mux(wen_c, req_s3.corrupt, meta_s3.dataErr), // update error when write DS
+    rmw = Mux(req_s3.matrixTask, false.B, meta_s3.rmw),
+    probed = meta_s3.probed
   )
   // use merge_meta if mergeA
   val metaW_s3_mshr = WireInit(Mux(req_s3.mergeA, req_s3.aMergeTask.meta, req_s3.meta))
   metaW_s3_mshr.tagErr := req_s3.denied
   metaW_s3_mshr.dataErr := req_s3.corrupt
 
+  val metaW_s3_rmw = MetaEntry(
+    meta_s3.dirty, TIP, Fill(clientBits,false.B), meta_s3.alias,
+    accessed = true.B, tagErr = meta_s3.tagErr, dataErr = meta_s3.dataErr,
+    rmw = true.B, probed = meta_s3.probed
+  )
+
+  val metaW_s3_probed = WireInit(meta_s3)
+  metaW_s3_probed.probed := true.B
+
   val metaW_way = Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.way, // grant always use replResp way
     Mux(mshr_req_s3, req_s3.way, dirResult_s3.way))
 
-  io.metaWReq.valid      := !resetFinish || task_s3.valid && (metaW_valid_s3_a || metaW_valid_s3_b || metaW_valid_s3_c || metaW_valid_s3_mshr)
+  val metaW_valid_s3 = Cat(metaW_valid_s3_a, metaW_valid_s3_b, metaW_valid_s3_c, metaW_valid_s3_mshr, metaW_valid_s3_rmw, metaW_valid_s3_probed).orR
+  io.metaWReq.valid      := !resetFinish || task_s3.valid && metaW_valid_s3
   io.metaWReq.bits.set   := Mux(resetFinish, req_s3.set, resetIdx)
   io.metaWReq.bits.wayOH := Mux(resetFinish, UIntToOH(metaW_way), Fill(cacheParams.ways, true.B))
   io.metaWReq.bits.wmeta := Mux(
     resetFinish,
     ParallelPriorityMux(
-      Seq(metaW_valid_s3_a, metaW_valid_s3_b, metaW_valid_s3_c, metaW_valid_s3_mshr),
-      Seq(metaW_s3_a, metaW_s3_b, metaW_s3_c, metaW_s3_mshr)
+      Seq(metaW_valid_s3_a, metaW_valid_s3_b, metaW_valid_s3_c, metaW_valid_s3_mshr, metaW_valid_s3_rmw, metaW_valid_s3_probed),
+      Seq(metaW_s3_a, metaW_s3_b, metaW_s3_c, metaW_s3_mshr, metaW_s3_rmw, metaW_s3_probed)
     ),
     MetaEntry()
   )
@@ -714,8 +734,8 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
     enable = task_s3.valid && !mshr_req_s3 && req_s3.fromA, start = 0, stop = cacheParams.ways, step = 1)
   XSPerfHistogram("a_req_hit_way", perfCnt = dirResult_s3.way,
     enable = hit_s3 && req_s3.fromA, start = 0, stop = cacheParams.ways, step = 1)
-  XSPerfHistogram("a_req_miss_way_choice", perfCnt = dirResult_s3.way,
-    enable = miss_s3 && req_s3.fromA, start = 0, stop = cacheParams.ways, step = 1)
+  XSPerfHistogram("a_req_miss_way_choice", perfCnt = io.replResp.bits.way,
+    enable = mshr_refill_s3 && req_s3.replTask && !retry, start = 0, stop = cacheParams.ways, step = 1)
 
   // pipeline stages for sourceC and sourceD reqs
   val sourceC_pipe_len = ParallelMux(Seq(

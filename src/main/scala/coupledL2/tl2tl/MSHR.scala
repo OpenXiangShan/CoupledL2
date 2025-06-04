@@ -212,6 +212,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_release.mergeA := false.B
     mp_release.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
     mp_release.txChannel := 0.U
+    mp_release.matrixTask := meta.probed
     mp_release
   }
 
@@ -341,7 +342,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
         Mux( // Get
           dirResult.hit,
           Mux(isT(meta.state), TIP, BRANCH),
-          Mux(req_promoteT, TIP, BRANCH)
+          Mux(req_promoteT || req_needT, TIP, BRANCH) // rmw Get of Matrix C needs T
         ),
         Mux( // Acquire
           req_promoteT || req_needT,
@@ -357,7 +358,9 @@ class MSHR(implicit p: Parameters) extends L2Module {
       alias = Some(aliasFinal),
       prefetch = req_prefetch || dirResult.hit && meta_pft,
       pfsrc = PfSource.fromMemReqSource(req.reqSource),
-      accessed = req_acquire || req_get
+      accessed = req_acquire || req_get,
+      rmw = req.modify,
+      probed = false.B
     )
     mp_grant.metaWen := true.B
     mp_grant.tagWen := !dirResult.hit
@@ -470,7 +473,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   }
 
   when (d_resp.valid) {
-    when(d_resp.bits.opcode === Grant || d_resp.bits.opcode === GrantData || d_resp.bits.opcode === AccessAck) {
+    when(d_resp.bits.opcode === Grant || d_resp.bits.opcode === GrantData) {
       state.w_grantfirst := true.B
       state.w_grantlast := d_resp.bits.last
       state.w_grant := req.off === 0.U || d_resp.bits.last  // TODO? why offset?
@@ -483,7 +486,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
       gotGrantData := true.B
       corrupt := d_resp.bits.corrupt
     }
-    when(d_resp.bits.opcode === ReleaseAck) {
+    when(d_resp.bits.opcode === ReleaseAck || d_resp.bits.opcode === AccessAck) {
       state.w_releaseack := true.B
     }
   }

@@ -181,10 +181,10 @@ class SourceC(implicit p: Parameters) extends L2Module {
     taskR.data := Cat(queueData1.io.deq.bits.data, queueData0.io.deq.bits.data).asTypeOf(new DSBlock)
   }
 
-  def toTLBundleC(task: TaskBundle, data: UInt = 0.U) = {
+  def toTLBundleC(task: TaskBundle, isPut: Bool = false.B, data: UInt = 0.U) = {
     val c = Wire(new TLBundleC(edgeOut.bundle))
-    c.opcode := task.opcode
-    c.param := task.param
+    c.opcode := Mux(isPut, TLMessages.PutFullData, task.opcode)
+    c.param := Mux(isPut, 0.U, task.param) // param of Put is required 0 by TileLink spec
     c.size := offsetBits.U
     c.source := task.mshrId
     c.address := Cat(task.tag, task.set, task.off)
@@ -212,7 +212,7 @@ class SourceC(implicit p: Parameters) extends L2Module {
   val (beat, next_beatsOH) = getBeat(data, beatsOH)
 
   io.out.valid := taskValid
-  io.out.bits := toTLBundleC(taskR.task, beat)
+  io.out.bits := toTLBundleC(taskR.task, taskR.task.matrixTask, beat)
 
   val hasData = io.out.bits.opcode(0)
   when (io.out.fire) {
@@ -223,7 +223,7 @@ class SourceC(implicit p: Parameters) extends L2Module {
     }
   }
 
-  assert(io.in.ready, "SourceC should never be full") // WARNING
+  assert(io.in.ready, "SourceC should never be full") // this should be deprecated, since now we have back pressure logic
 
   // ========== Misc ============
   val (first, last, done, count) = edgeOut.count(io.out)

@@ -115,6 +115,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
 
   // for Matrix
   val matrixTask = Bool()
+  val modify = Bool() // read-modify-write flag, which needs to be kept in L2 until L1 Puts
 
   // for TopDown Monitor (# TopDown)
   val reqSource = UInt(MemReqSource.reqSourceBits.W)
