@@ -150,7 +150,7 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
       clientCaches = Seq(
         CacheParameters(
           name = s"l2",
-          sets = 512 * 2, // l2 sets * 2, actually [l2 sets * 1] is enough for single core
+          sets = 512 * 8, // since L2 has 8 slices
           ways = 8 + 2,   // l2 ways + 2
           blockGranularity = log2Ceil(128)
         ),
