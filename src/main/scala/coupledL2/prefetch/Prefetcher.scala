@@ -291,6 +291,8 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val tp = if (hasTPPrefetcher) Some(Module(new TemporalPrefetch())) else None
   // prefetch from upper level
   val pfRcv = if (hasReceiver) Some(Module(new PrefetchReceiver())) else None
+  val hasMyPrefetch = prefetchers.exists(_.isInstanceOf[MyPrefetchParameters])
+  val myPrefetch = if (hasMyPrefetch) Some(Module(new MyPrefetch())) else None
 
   // =================== Connection for each Prefetcher =====================
   // Rcv > VBOP > PBOP > TP
@@ -341,6 +343,10 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
 
     tp.get.io.tpmeta_port <> tpio.tpmeta_port.get
   }
+  if (hasMyPrefetch) {
+    myPrefetch.get.io <> DontCare
+    myPrefetch.get.io.train <> io.train
+  }
   private val mbistPl = MbistPipeline.PlaceMbistPipeline(2, "MbistPipeL2Prefetcher", cacheParams.hasMbist && (hasBOP || hasTPPrefetcher))
 
   // =================== Connection of all Prefetchers =====================
@@ -356,6 +362,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       case _: PrefetchReceiverParams => pfRcv.get.io.req
       case _: BOPParameters          => bopReq
       case _: TPParameters           => tp.get.io.req
+      case _: MyPrefetchParameters   => myPrefetch.get.io.req
     },
     out = pftQueue.io.enq,
     name = Some("pftQueue")
