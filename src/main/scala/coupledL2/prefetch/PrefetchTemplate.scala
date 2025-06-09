@@ -43,6 +43,11 @@ abstract class MyPrefetchModule(implicit val p: Parameters) extends Module with 
 class MyPrefetch(implicit p: Parameters) extends MyPrefetchModule {
   val io = IO(new L2PrefetchIO())
 
-  // TODO
+  val addr = io.train.bits.addr + (1 << offsetBits).U
+
   io <> DontCare
+  io.req.valid := io.train.valid
+  io.req.bits.tag := parseFullAddress(addr)._1
+  io.req.bits.set := parseFullAddress(addr)._2
+  io.train.ready := true.B
 }
