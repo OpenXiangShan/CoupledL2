@@ -414,7 +414,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       cacheable = true.B,
       allocate = !release_valid2 || !isEvict && !cmo_cbo,
       device = false.B,
-      ewa = true.B
+      ewa = !cmo_cbo
     )
     oa.snpAttr := true.B
     oa.lpIDWithPadding := 0.U
