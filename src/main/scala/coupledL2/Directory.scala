@@ -300,11 +300,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   )*/
   // for retry bug fixing: if the chosenway not in freewaymask, choose another way
   // TODO: req_s3.wayMask not take into consideration
-  val finalWay = Mux(
-    freeWayMask_s3(chosenWay),
-    chosenWay,
-    PriorityEncoder(freeWayMask_s3) // TODO: this may cause least-significant ways to be chosen more often!
-  )
+  val finalWay = chosenWay // now we integrate freeWayMask into RRIP replacement policy
   val hit_s3 = Cat(hitVec).orR || req_s3.cmoAll
   val way_s3 = Mux(req_s3.cmoAll, req_s3.cmoWay, Mux(hit_s3, hitWay, finalWay))
   val meta_s3 = metaAll_s3(way_s3)
@@ -345,7 +341,11 @@ class Directory(implicit p: Parameters) extends L2Module {
     repl_state
   }
 
-  replaceWay := repl.get_replace_way(repl_state_s3)
+  if(cacheParams.replacement == "drrip" || cacheParams.replacement == "srrip") {
+    replaceWay := repl.get_replace_way(repl_state_s3, freeWayMask_s3)
+  } else {
+    replaceWay := repl.get_replace_way(repl_state_s3)
+  }
 
   io.replResp.valid := refillReqValid_s3
   io.replResp.bits.tag := tagAll_s3(finalWay)
