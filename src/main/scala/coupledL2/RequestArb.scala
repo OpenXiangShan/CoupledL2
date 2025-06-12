@@ -96,8 +96,17 @@ class RequestArb(implicit p: Parameters) extends L2Module
     mshr_task_s1.bits.opcode === Grant ||
     mshr_task_s1.bits.opcode === GrantData ||
     mshr_task_s1.bits.opcode === AccessAckData ||
-    mshr_task_s1.bits.opcode === HintAck && mshr_task_s1.bits.dsWen
+    mshr_task_s1.bits.opcode === HintAck
   )
+
+  assert(!s1_needs_replRead || mshr_task_s1.bits.opcode =/= GrantData || mshr_task_s1.bits.dsWen, 
+    "replTask of GrantData with no DataStorage write was not expected")
+
+  assert(!s1_needs_replRead || mshr_task_s1.bits.opcode =/= AccessAckData || mshr_task_s1.bits.dsWen,
+    "replTask of AccessAckData with no DataStorage write was not expected")
+  
+  assert(!s1_needs_replRead || mshr_task_s1.bits.opcode =/= HintAck || mshr_task_s1.bits.dsWen,
+    "replTask of HintAck with no DataStorage write was not expected")
 
   /* ======== Stage 0 ======== */
   // if mshr_task_s1 is replRead, it might stall and wait for dirRead.ready, so we block new mshrTask from entering
