@@ -129,12 +129,14 @@ class MSHR(implicit p: Parameters) extends L2Module {
     oa.set := req.set
     oa.off := req.off
     oa.source := io.id
-    oa.opcode := Mux(
-      req_acquirePerm && dirResult.hit,
-      req.opcode,
-      // Get or AcquireBlock
-      AcquireBlock
-    )
+    oa.opcode := Mux(req.matrixTask && !req.modify,
+      Get,
+      Mux(
+        req_acquirePerm && dirResult.hit,
+        req.opcode,
+        // Get or AcquireBlock
+        AcquireBlock
+    ))
     oa.param := Mux(
       req_needT,
       Mux(dirResult.hit, BtoT, NtoT),
@@ -473,7 +475,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   }
 
   when (d_resp.valid) {
-    when(d_resp.bits.opcode === Grant || d_resp.bits.opcode === GrantData) {
+    when(d_resp.bits.opcode === Grant || d_resp.bits.opcode === GrantData || d_resp.bits.opcode === AccessAckData) {
       state.w_grantfirst := true.B
       state.w_grantlast := d_resp.bits.last
       state.w_grant := req.off === 0.U || d_resp.bits.last  // TODO? why offset?
@@ -482,7 +484,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
       gotT := d_resp.bits.param === toT
       gotDirty := gotDirty || d_resp.bits.dirty
     }
-    when(d_resp.bits.opcode === GrantData) {
+    when(d_resp.bits.opcode === GrantData || d_resp.bits.opcode === AccessAckData) {
       gotGrantData := true.B
       corrupt := d_resp.bits.corrupt
     }
