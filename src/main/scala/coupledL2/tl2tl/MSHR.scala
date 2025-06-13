@@ -507,12 +507,11 @@ class MSHR(implicit p: Parameters) extends L2Module {
     dirResult.way := replResp.way
     dirResult.meta := replResp.meta
 
-    // replacer choosing:
-    // 1. an invalid way, release no longer needed
-    // 2. the same way, just release as normal (only now we set s_release)
-    // 3. differet way, we need to update meta and release that way
+    // replacer choosing
+    // if it chooses an invalid way, release no longer needed
     // if meta has client, rprobe client
-    when (replResp.meta.state =/= INVALID) {
+    //TMP: TODO: silent evict for all BRANCH temporarily, to test Matrix Bandwidth performance
+    when (replResp.meta.state =/= INVALID && replResp.meta.state =/= BRANCH) {
       // set release flags
       state.s_release := false.B
       state.w_releaseack := false.B
