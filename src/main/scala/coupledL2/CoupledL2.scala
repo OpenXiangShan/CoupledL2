@@ -299,8 +299,8 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     managerFn = managerPortParams
   )
 
-  val tpmeta_source_node = if(hasTPPrefetcher) Some(BundleBridgeSource(() => DecoupledIO(new TPmetaReq(hartIdLen, node.in.head._2.bundle.addressBits, offsetBits)))) else None
-  val tpmeta_sink_node = if(hasTPPrefetcher) Some(BundleBridgeSink(Some(() => ValidIO(new TPmetaResp(hartIdLen, node.in.head._2.bundle.addressBits, offsetBits))))) else None
+//  val tpmeta_source_node = if(hasTPPrefetcher) Some(BundleBridgeSource(() => DecoupledIO(new TPmetaReq(hartIdLen, node.in.head._2.bundle.addressBits, offsetBits)))) else None
+//  val tpmeta_sink_node = if(hasTPPrefetcher) Some(BundleBridgeSink(Some(() => ValidIO(new TPmetaResp(hartIdLen, node.in.head._2.bundle.addressBits, offsetBits))))) else None
 
   abstract class BaseCoupledL2Imp(wrapper: LazyModule) extends LazyModuleImp(wrapper) with HasPerfEvents {
     val banks = node.in.size
@@ -389,16 +389,16 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
             p.io.recv_addr := 0.U.asTypeOf(p.io.recv_addr)
         }
     }
-    tpmeta_source_node match {
-      case Some(x) =>
-        x.out.head._1 <> prefetcher.get.tpio.tpmeta_port.get.req
-      case None =>
-    }
-    tpmeta_sink_node match {
-      case Some(x) =>
-        prefetcher.get.tpio.tpmeta_port.get.resp <> x.in.head._1
-      case None =>
-    }
+//    tpmeta_source_node match {
+//      case Some(x) =>
+//        x.out.head._1 <> prefetcher.get.tpio.tpmeta_port.get.req
+//      case None =>
+//    }
+//    tpmeta_sink_node match {
+//      case Some(x) =>
+//        prefetcher.get.tpio.tpmeta_port.get.resp <> x.in.head._1
+//      case None =>
+//    }
 
     // ** WARNING:TODO: this depends on where the latch is
     // ** if Hint latched in slice, while D-Channel latched in XSTile

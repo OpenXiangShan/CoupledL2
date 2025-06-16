@@ -469,3 +469,17 @@ class IOCMOAll(implicit p: Parameters) extends Bundle {
   val mshrValid = Input(Bool())    // 1: mshr has entry valid  0: no mshr entry valid
   val cmoAllBlock = Output(Bool()) // 1: in process of cmo flush all  0: not in process of cmo flush all
 }
+
+class TPmetaReq(implicit p: Parameters) extends L2Bundle {
+  // TODO: rawData's width is determined by L2; when L2's offsetBits change, rawData should change accordingly
+  val hartid = UInt(hartIdLen.W)
+  val set = UInt(10.W) // determined by TP
+  val way = UInt(4.W)
+  val wmode = Bool()
+  val rawData = Vec(512 / (fullAddressBits - offsetBits), UInt((fullAddressBits - offsetBits).W))
+}
+
+class TPmetaResp(implicit p: Parameters) extends L2Bundle {
+  val hartid = UInt(hartIdLen.W)
+  val rawData = Vec(512 / (fullAddressBits - offsetBits), UInt((fullAddressBits - offsetBits).W))
+}

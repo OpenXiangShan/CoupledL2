@@ -677,7 +677,8 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   })
   // 0 / 1: whether to enable
   private val cstEnable = Constantin.createRecord("vbop_enable"+cacheParams.hartId.toString, initValue = 1)
-  val enable = io.enable && cstEnable.orR
+  // val enable = io.enable && cstEnable.orR
+  val enable = false.B
 
   val delayQueue = Module(new DelayQueue("vbop"))
   val rrTable = Module(new RecentRequestTable("vbop"))
@@ -805,7 +806,8 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
 
   // 0 / 1: whether to enable
   private val cstEnable = Constantin.createRecord("pbop_enable"+cacheParams.hartId.toString, initValue = 1)
-  val enable = io.enable && cstEnable.orR
+  // val enable = io.enable && cstEnable.orR
+  val enable = false.B
 
   val delayQueue = Module(new DelayQueue("pbop"))
   val rrTable = Module(new RecentRequestTable("pbop"))
