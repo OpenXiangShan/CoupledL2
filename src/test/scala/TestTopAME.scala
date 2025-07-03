@@ -171,9 +171,12 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
     )
   })))
 
-  val l1xbar = TLXbar()
-  val l2xbar = TLXbar()
-  val l3xbar = TLXbar()
+  val l1xbar = LazyModule(new TLXbar()).suggestName(s"L1_xbar").node
+  val l2xbar = LazyModule(new TLXbar()).suggestName(s"L2_xbar").node
+  val l3xbar = LazyModule(new TLXbar()).suggestName(s"L3_xbar").node
+  val memxbar = LazyModule(new TLXbar()).suggestName(s"MEM_xbar").node
+  val ramxbar = LazyModule(new TLXbar()).suggestName(s"RAM_xbar").node
+
   val l2bankBinders = BankBinder(l2_banks, 64)
   val l3bankBinders = BankBinder(l3_banks, 64)
   val ram = LazyModule(new TLRAM(AddressSet(0, 0xff_ffffL), beatBytes = 32))
@@ -191,16 +194,16 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
         l1xbar := TLBuffer() := TLLogger(s"L2_Matrix[${i}]", true) := ul
   }
 
-  l2bankBinders :*= l2.node :*= TLBuffer() :*= l1xbar
+  l2bankBinders :*= TLLogger(s"L3_L2", true) :*= l2.node :*= l1xbar
   l3xbar :*= TLBuffer() :*=l2xbar :=*l2bankBinders
   ram.node :=
-    TLXbar() :=
+    ramxbar :=
     TLFragmenter(32, 64) :=
     TLCacheCork() :=
     TLClientsMerger() :=
     TLDelayer(delayFactor) :=
     TLLogger(s"MEM_L3", true) :=
-    TLXbar() :=*
+    memxbar :=*
     l3bankBinders :*=
     l3.node :*= l3xbar
 
