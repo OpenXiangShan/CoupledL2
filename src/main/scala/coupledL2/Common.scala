@@ -148,7 +148,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
 
   def toCHIREQBundle(): CHIREQ = {
     val req = WireInit(0.U.asTypeOf(new CHIREQ()))
-    req.qos := Fill(QOS_WIDTH, 1.U(1.W)) // TODO
+    req.qos := Fill(QOS_WIDTH, 1.U(1.W)) - 1.U // TODO
     req.tgtID := tgtID.getOrElse(0.U)
     req.srcID := srcID.getOrElse(0.U)
     req.txnID := txnID.getOrElse(0.U)
