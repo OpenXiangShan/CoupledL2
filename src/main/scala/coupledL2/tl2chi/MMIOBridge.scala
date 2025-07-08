@@ -38,7 +38,7 @@ class MMIOBridge()(implicit p: Parameters) extends LazyModule
     * MMIO node
     */
   val beuRange = AddressSet(0x38010000, 4096 - 1)
-  val clintRange = AddressSet(0x38000000L, 0x7fff)
+  val clintRange = AddressSet(0x38000000L, 0xBfff)
   val peripheralRange = AddressSet(
     0x0, 0xffffffffffffL
   ).subtract(beuRange).flatMap(_.subtract(clintRange))
