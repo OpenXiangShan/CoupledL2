@@ -130,6 +130,9 @@ case class L2Param(
   // Enable sram test support
   hasMbist: Boolean = false,
   hasSramCtl: Boolean = false,
+
+  // Enable new clint
+  EnableNewClint: Boolean = false
 ) {
   def toCacheParams: CacheParameters = CacheParameters(
     name = name,
