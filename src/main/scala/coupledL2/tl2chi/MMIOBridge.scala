@@ -219,6 +219,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   io.req.ready := no_schedule && no_wait
   txreq.valid := !s_txreq && w_pcrdgrant
   txreq.bits := 0.U.asTypeOf(txreq.bits.cloneType)
+  txreq.bits.qos := Fill(QOS_WIDTH, 1.U(1.W)) - 1.U
   txreq.bits.tgtID := SAM(sam).lookup(txreq.bits.addr)
   txreq.bits.txnID := io.id
   txreq.bits.opcode := ParallelLookUp(req.opcode, Seq(
