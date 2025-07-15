@@ -485,7 +485,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_release.metaWen := false.B
     mp_release.meta := MetaEntry()
     mp_release.tagWen := false.B
-    mp_release.dsWen := true.B // write refillData to DS on refill, write releaseData to DS on CMO
+    // write refillData to DS on refill, write releaseData to DS on CMO
+    // When refillBuf has no valid data, it should be avoided to write data of RefillBuf to DS which is MCP2
+    mp_release.dsWen := !req_acquirePerm
     mp_release.replTask := true.B
     mp_release.cmoTask := cmo_cbo
     mp_release.wayMask := 0.U(cacheParams.ways.W)
