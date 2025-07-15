@@ -3,6 +3,14 @@ package oceanus.l2
 import chisel3._
 import chisel3.util._
 
+class L2LocalDirectoryState extends Bundle {
+    val bits = UInt(L2LocalDirectoryState.WIDTH.W)
+
+    def isV: Bool = L2LocalDirectoryState.isV(bits)
+    def isU: Bool = L2LocalDirectoryState.isU(bits)
+    def isD: Bool = L2LocalDirectoryState.isD(bits)
+}
+
 object L2LocalDirectoryState {
     val WIDTH = 3
 
