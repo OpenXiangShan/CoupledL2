@@ -35,6 +35,13 @@ abstract class CHIOpcodeDecoder(val paramChannel                    : EnumCHICha
         throw new IllegalArgumentException(s"unknown or unsupported CHI Channel: ${paramChannel}")
     //
 
+    // check parameters
+    paramOpcodeAll.foreach(u =>
+        require(u.channel == paramChannel, s"wrong channel in 'paramOpcodeAll' (decoder: ${paramChannel}, opcode: ${u.channel})"))
+
+    paramOpcodeSupported.foreach(u =>
+        require(u.channel == paramChannel, s"wrong channel in 'paramOpcodeSupported' (decoder: ${paramChannel}, opcode: ${u.channel})"))
+
     // local parameters
     protected val paramOpcodeWidth  = paramChannel match {
         case EnumCHIChannel.REQ => paramCHI.reqOpcodeWidth

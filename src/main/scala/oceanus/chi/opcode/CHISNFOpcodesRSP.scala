@@ -13,25 +13,25 @@ import oceanus.chi.opcode.CHIOpcodeDecoder
 */
 trait CHISNFOpcodesRSP extends HasCHIParameters {
 
-    //  ================================================================================
-    val RespLCrdReturn          = CHIOpcode(RSP, 0x00, "RespLCrdReturn"                )
-    //  --------------------------------------------------------------------------------
-    val RetryAck                = CHIOpcode(RSP, 0x03, "RetryAck"                      )
-    val PCrdGrant               = CHIOpcode(RSP, 0x07, "PCrdGrant"                     )
-    val Comp                    = CHIOpcode(RSP, 0x04, "Comp"                          )
-    val CompDBIDResp            = CHIOpcode(RSP, 0x05, "CompDBIDResp"                  )
-    //  --------------------------------------------------------------------------------
-    val CompCMO                 = CHIOpcode(RSP, 0x14, "CompCMO"                   , E )
-    val ReadReceipt             = CHIOpcode(RSP, 0x08, "ReadReceipt"                   )
-    //  --------------------------------------------------------------------------------
-    val DBIDResp                = CHIOpcode(RSP, 0x06, "DBIDResp"                      )
-    //  --------------------------------------------------------------------------------
-    val TagMatch                = CHIOpcode(RSP, 0x0A, "TagMatch"                  , E )
-    //  --------------------------------------------------------------------------------
-    val Persist                 = CHIOpcode(RSP, 0x0C, "Persist"                   , E )
-    //  --------------------------------------------------------------------------------
-    val CompPersist             = CHIOpcode(RSP, 0x0D, "CompPersist"               , E )
-    //  ================================================================================
+    //  =====================================================================================
+    val RespLCrdReturn          = CHIOpcode(RSP, 0x00, "RespLCrdReturn"            , B, C, E)
+    //  -------------------------------------------------------------------------------------
+    val RetryAck                = CHIOpcode(RSP, 0x03, "RetryAck"                  , B, C, E)
+    val PCrdGrant               = CHIOpcode(RSP, 0x07, "PCrdGrant"                 , B, C, E)
+    val Comp                    = CHIOpcode(RSP, 0x04, "Comp"                      , B, C, E)
+    val CompDBIDResp            = CHIOpcode(RSP, 0x05, "CompDBIDResp"              , B, C, E)
+    //  -------------------------------------------------------------------------------------
+    val CompCMO                 = CHIOpcode(RSP, 0x14, "CompCMO"                         , E)
+    val ReadReceipt             = CHIOpcode(RSP, 0x08, "ReadReceipt"               , B, C, E)
+    //  -------------------------------------------------------------------------------------
+    val DBIDResp                = CHIOpcode(RSP, 0x06, "DBIDResp"                  , B, C, E)
+    //  -------------------------------------------------------------------------------------
+    val TagMatch                = CHIOpcode(RSP, 0x0A, "TagMatch"                        , E)
+    //  -------------------------------------------------------------------------------------
+    val Persist                 = CHIOpcode(RSP, 0x0C, "Persist"                         , E)
+    //  -------------------------------------------------------------------------------------
+    val CompPersist             = CHIOpcode(RSP, 0x0D, "CompPersist"                     , E)
+    //  =====================================================================================
 
 
     /*
