@@ -74,6 +74,16 @@ class CHIOpcode(val channel : EnumCHIChannel,
     def applicable: Boolean = if (issues.isEmpty) true else issues.contains(paramCHI.issue)
 
     /*
+    * Require this opcode to be applicable
+    *
+    * @return Opcode itself 
+    */
+    def require: CHIOpcode = {
+        Predef.require(applicable, s"in-applicable CHI opcode: ${name} (${opcode})")
+        this
+    }
+
+    /*
     * Software elaboration-time comparsion of opcode. 
     * 
     * @param opcode Integer value of opcode

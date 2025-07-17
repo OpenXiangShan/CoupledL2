@@ -18,5 +18,5 @@ object EnumCHIIssue {
     val C: EnumCHIIssue     = new EnumCHIIssue(1, "C", "Issue C")
 
     // Issue E (implied to E.b)
-    val E: EnumCHIIssue     = new EnumCHIIssue(2, "E", "Issue E.b")
+    val E: EnumCHIIssue     = new EnumCHIIssue(2, "E", "Issue E")
 }
