@@ -3,11 +3,20 @@ package oceanus.l2
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.{Parameters, Field}
-import coupledL2._
+
+
+class L2MSHRAlloc(implicit val p: Parameters) extends Bundle with HasL2Params {
+    // TODO
+}
+
+class L2MSHRBufferWrite(implicit val p: Parameters) extends Bundle with HasL2Params {
+    val dataId = UInt(paramCHI.datDataIDWidth.W)
+    val bypassed = Bool() // Whether the write has been bypassed to upper/lower TXDAT
+}
 
 class L2MSHRDirectoryResp(implicit val p: Parameters) extends Bundle with HasL2Params {
-    val state_l2 = UInt(L2LocalDirectoryState.WIDTH.W)
-    val state_l1d = UInt(L2ClientState.WIDTH.W)
+    val stateL2 = L2LocalDirectoryState()
+    val stateL1D = L2ClientState()
     val way = UInt() // TODO
     val set = UInt() // TODO
 }
@@ -19,13 +28,13 @@ class L2MSHRDataStorageResp(implicit val p: Parameters) extends Bundle with HasL
 class L2MSHRStates(implicit val p: Parameters) extends Bundle with HasL2Params {
     
     // Local persistent information
-    val m_addr = UInt(l2Params.physicalAddrWidth.W)
+    val m_addr = UInt(paramL2.physicalAddrWidth.W)
 
     val m_buf_active0 = Bool()
     val m_buf_active1 = Bool()
 
-    val m_state_me = UInt(L2LocalIntermediateState.WIDTH.W)
-    val m_state_l1d = UInt(L2ClientState.WIDTH.W)
+    val m_state_me = L2LocalIntermediateState()
+    val m_state_l1d = L2ClientState()
 
     val m_snp_doNotGoToSD = Bool()
     val m_snp_retToSrc = Bool()
@@ -57,5 +66,9 @@ class L2MSHRStates(implicit val p: Parameters) extends Bundle with HasL2Params {
 }
 class L2MSHR(implicit val p: Parameters) extends Module
     with HasL2Params {
+
+    val io = IO(new Bundle {
+        // TODO
+    })
 
 }
