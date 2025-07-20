@@ -8,25 +8,6 @@ case class CHIParameters (
 
     // CHI Essentials
     /*
-    * issue: Issue version of CHI. 
-    * 
-    * -------------------------------------------------------------------
-    * For NCB-200:
-    *   * Functionally fully-supported CHI Issue:
-    *       - Issue B
-    *       - Issue C
-    *       - Issue E (E.b) mostly (except WriteNoSnpZero, WriteNoSnp*Clean*, CleanSharedPersistSep)
-    * 
-    *   * Connectional (flit fields & interface) supported CHI Issue:
-    *       - Issue B
-    *       - Issue C
-    *       - Issue E (E.b)
-    * 
-    *   * Future version feature: Issue E.b functionality support:
-    *       1) Support for <b>WriteNoSnpZero</b>
-    *       2) Support for <b>WriteNoSnp*Clean*</b>
-    *       3) Recognizing <b>CleanSharedPersistSep</b>
-    * -------------------------------------------------------------------
     */
     issue               : EnumCHIIssue      = EnumCHIIssue.B,
     //
