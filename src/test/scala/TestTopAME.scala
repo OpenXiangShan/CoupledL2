@@ -200,7 +200,10 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
     TLFragmenter(32, 64) :=
     TLCacheCork() :=
     TLClientsMerger() :=
-    TLDelayer(delayFactor) :=
+    // remove tldelayer cause it fails to simulate the real senario
+    // it adds delay by blocking the bus with a probablility of delayFactor=0.2,
+    // which will generate bubbles and badly affect bandwidth.
+    // in real senario, only delay, not bubbles
     TLLogger(s"MEM_L3", true) :=
     l3xbar :=*
     l3bankBinders :*=
