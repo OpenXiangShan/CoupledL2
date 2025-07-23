@@ -49,7 +49,7 @@ trait CHIRNFOpcodesRSP extends HasCHIParameters {
     * 
     * @see {@code oceanus.chi.opcode.CHIOpcodeDecoder}
     */
-    class Decoder(paramOpcodeSupported          : Seq[CHIOpcode]    = Seq(),
+    class RSPOpcodeDecoder(paramOpcodeSupported          : Seq[CHIOpcode]    = Seq(),
                   paramEnableUnsupportedCheck   : Boolean           = false)
         (implicit p: Parameters)
         extends CHIOpcodeDecoder(REQ, paramOpcodeSupported, Seq(

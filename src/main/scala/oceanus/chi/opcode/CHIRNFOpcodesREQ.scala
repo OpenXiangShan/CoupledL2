@@ -121,7 +121,7 @@ trait CHIRNFOpcodesREQ extends HasCHIParameters {
     * 
     * @see {@code oceanus.chi.opcode.CHIOpcodeDecoder} 
     */
-    class Decoder(paramOpcodeSupported          : Seq[CHIOpcode]    = Seq(),
+    class REQOpcodeDecoder(paramOpcodeSupported          : Seq[CHIOpcode]    = Seq(),
                   paramEnableUnsupportedCheck   : Boolean           = false)
         (implicit p: Parameters)
         extends CHIOpcodeDecoder(REQ, paramOpcodeSupported, Seq(
