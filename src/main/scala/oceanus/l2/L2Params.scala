@@ -3,6 +3,7 @@ package oceanus.l2
 import org.chipsalliance.cde.config.Field
 import org.chipsalliance.cde.config.Parameters
 import oceanus.chi.HasCHIParameters
+import chisel3.util.log2Up
 
 case class L2Params(
     physicalAddrWidth: Int = 48,
@@ -16,6 +17,8 @@ trait HasL2Params extends HasCHIParameters {
     implicit val p: Parameters
 
     val paramL2 = p(L2ParamsKey)
+
+    def mshrIndexWidth = log2Up(paramL2.mshrSize) + 1
 
     require(paramCHI.dataWidth == 256, "L2 requires CHI data width to be 256 bits")
 }
