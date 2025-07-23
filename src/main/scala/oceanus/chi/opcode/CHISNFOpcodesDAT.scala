@@ -31,7 +31,7 @@ trait CHISNFOpcodesDAT extends HasCHIParameters {
     * 
     * @see {@code oceanus.chi.opcode.CHIOpcodeDecoder}
     */ 
-    class Decoder(paramOpcodeSupported          : Seq[CHIOpcode]    = Seq(),
+    class DATOpcodeDecoder(paramOpcodeSupported          : Seq[CHIOpcode]    = Seq(),
                   paramEnableUnsupportedCheck   : Boolean           = false)
         (implicit p: Parameters)
         extends CHIOpcodeDecoder(DAT, paramOpcodeSupported, Seq(
