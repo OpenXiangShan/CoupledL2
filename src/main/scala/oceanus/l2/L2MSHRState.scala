@@ -46,6 +46,11 @@ class L2MSHRState[T <: Data](initial: T, singleton: Boolean = false) extends Aff
         nextValues.last := value
     }
 
+    def nextInitialInWhen = {
+        nextValids.last := true.B
+        nextValues.last := initial
+    }
+
     def isNext(value: T) = next.asUInt === value.asUInt
     def isTransition(value: T) = isNext(value) && bits.asUInt =/= value.asUInt
     def isNextInitial = isNext(initial)
@@ -53,7 +58,7 @@ class L2MSHRState[T <: Data](initial: T, singleton: Boolean = false) extends Aff
 }
 
 object L2MSHRState {
-    def apply[T <: Data](initial: T, categoryLists: ArrayBuffer[L2MSHRState[_]]*) = {
+    def apply[T <: Data](initial: T, categoryLists: ArrayBuffer[_ >: L2MSHRState[T]]*) = {
         val inst = new L2MSHRState(initial)
         categoryLists.foreach(_.addOne(inst))
         inst
