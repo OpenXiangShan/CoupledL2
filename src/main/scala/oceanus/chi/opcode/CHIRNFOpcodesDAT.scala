@@ -11,25 +11,25 @@ import oceanus.chi.EnumCHIChannel._
 */
 trait CHIRNFOpcodesDAT extends HasCHIParameters {
 
-    //  ======================================================================================
-    val DataLCrdReturn          = CHIOpcode(DAT, 0x00, "DataLCrdReturn"             , B, C, E)
-    //  --------------------------------------------------------------------------------------
-    val CompData                = CHIOpcode(DAT, 0x04, "CompData"                   , B, C, E)
-    //  --------------------------------------------------------------------------------------
-    val DataSepResp             = CHIOpcode(DAT, 0x0B, "DataSepResp"                   , C, E)
-    //  --------------------------------------------------------------------------------------
-    val CopyBackWrData          = CHIOpcode(DAT, 0x02, "CopyBackWrData"             , B, C, E)
-    //  --------------------------------------------------------------------------------------
-    val WriteDataCancel         = CHIOpcode(DAT, 0x07, "WriteDataCancel"            , B, C, E)
-    //  --------------------------------------------------------------------------------------
-    val NonCopyBackWrData       = CHIOpcode(DAT, 0x03, "NonCopyBackWrData"          , B, C, E)
-    //  --------------------------------------------------------------------------------------
-    val NCBWrDataCompAck        = CHIOpcode(DAT, 0x0C, "NCBWrDataCompAck"              , C, E)
-    //  --------------------------------------------------------------------------------------
-    val SnpRespData             = CHIOpcode(DAT, 0x01, "SnpRespData"                , B, C, E)
-    val SnpRespDataFwded        = CHIOpcode(DAT, 0x06, "SnpRespDataFwded"           , B, C, E)
-    val SnpRespDataPtl          = CHIOpcode(DAT, 0x05, "SnpRespDataPtl"             , B, C, E)
-    //  ======================================================================================
+    //  ==========================================================================================
+    val CHI_DataLCrdReturn          = CHIOpcode(DAT, 0x00, "DataLCrdReturn"             , B, C, E)
+    //  ------------------------------------------------------------------------------------------
+    val CHI_CompData                = CHIOpcode(DAT, 0x04, "CompData"                   , B, C, E)
+    //  ------------------------------------------------------------------------------------------
+    val CHI_DataSepResp             = CHIOpcode(DAT, 0x0B, "DataSepResp"                   , C, E)
+    //  ------------------------------------------------------------------------------------------
+    val CHI_CopyBackWrData          = CHIOpcode(DAT, 0x02, "CopyBackWrData"             , B, C, E)
+    //  ------------------------------------------------------------------------------------------
+    val CHI_WriteDataCancel         = CHIOpcode(DAT, 0x07, "WriteDataCancel"            , B, C, E)
+    //  ------------------------------------------------------------------------------------------
+    val CHI_NonCopyBackWrData       = CHIOpcode(DAT, 0x03, "NonCopyBackWrData"          , B, C, E)
+    //  ------------------------------------------------------------------------------------------
+    val CHI_NCBWrDataCompAck        = CHIOpcode(DAT, 0x0C, "NCBWrDataCompAck"              , C, E)
+    //  ------------------------------------------------------------------------------------------
+    val CHI_SnpRespData             = CHIOpcode(DAT, 0x01, "SnpRespData"                , B, C, E)
+    val CHI_SnpRespDataFwded        = CHIOpcode(DAT, 0x06, "SnpRespDataFwded"           , B, C, E)
+    val CHI_SnpRespDataPtl          = CHIOpcode(DAT, 0x05, "SnpRespDataPtl"             , B, C, E)
+    //  ==========================================================================================
 
     
     /*
@@ -42,23 +42,23 @@ trait CHIRNFOpcodesDAT extends HasCHIParameters {
         (implicit p: Parameters)
         extends CHIOpcodeDecoder(DAT, paramOpcodeSupported, Seq(
         //  ========================
-            DataLCrdReturn,
+            CHI_DataLCrdReturn,
         //  ------------------------
-            CompData,
+            CHI_CompData,
         //  ------------------------
-            DataSepResp,
+            CHI_DataSepResp,
         //  ------------------------
-            CopyBackWrData,
+            CHI_CopyBackWrData,
         //  ------------------------
-            WriteDataCancel,
+            CHI_WriteDataCancel,
         //  ------------------------
-            NonCopyBackWrData,
+            CHI_NonCopyBackWrData,
         //  ------------------------
-            NCBWrDataCompAck,
+            CHI_NCBWrDataCompAck,
         //  ------------------------
-            SnpRespData,
-            SnpRespDataFwded,
-            SnpRespDataPtl
+            CHI_SnpRespData,
+            CHI_SnpRespDataFwded,
+            CHI_SnpRespDataPtl
         //  ========================   
         ), paramEnableUnsupportedCheck)
 }

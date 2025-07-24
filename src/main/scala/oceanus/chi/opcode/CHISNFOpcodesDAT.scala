@@ -13,17 +13,17 @@ import oceanus.chi.opcode.CHIOpcodeDecoder
 */
 trait CHISNFOpcodesDAT extends HasCHIParameters {
 
-    //  ======================================================================================
-    val DataLCrdReturn          = CHIOpcode(DAT, 0x00, "DataLCrdReturn"             , B, C, E)
-    //  --------------------------------------------------------------------------------------
-    val CompData                = CHIOpcode(DAT, 0x04, "CompData"                   , B, C, E)
-    //  --------------------------------------------------------------------------------------
-    val DataSepResp             = CHIOpcode(DAT, 0x0B, "DataSepResp"                , B, C, E)
-    //  --------------------------------------------------------------------------------------
-    val WriteDataCancel         = CHIOpcode(DAT, 0x07, "WriteDataCancel"            , B, C, E)
-    //  --------------------------------------------------------------------------------------
-    val NonCopyBackWrData       = CHIOpcode(DAT, 0x03, "NonCopyBackWrData"          , B, C, E)
-    //  ======================================================================================
+    //  ==========================================================================================
+    val CHI_DataLCrdReturn          = CHIOpcode(DAT, 0x00, "DataLCrdReturn"             , B, C, E)
+    //  ------------------------------------------------------------------------------------------
+    val CHI_CompData                = CHIOpcode(DAT, 0x04, "CompData"                   , B, C, E)
+    //  ------------------------------------------------------------------------------------------
+    val CHI_DataSepResp             = CHIOpcode(DAT, 0x0B, "DataSepResp"                , B, C, E)
+    //  ------------------------------------------------------------------------------------------
+    val CHI_WriteDataCancel         = CHIOpcode(DAT, 0x07, "WriteDataCancel"            , B, C, E)
+    //  ------------------------------------------------------------------------------------------
+    val CHI_NonCopyBackWrData       = CHIOpcode(DAT, 0x03, "NonCopyBackWrData"          , B, C, E)
+    //  ==========================================================================================
 
 
     /* 
@@ -36,15 +36,15 @@ trait CHISNFOpcodesDAT extends HasCHIParameters {
         (implicit p: Parameters)
         extends CHIOpcodeDecoder(DAT, paramOpcodeSupported, Seq(
         //  ========================
-            DataLCrdReturn,
+            CHI_DataLCrdReturn,
         //  ------------------------
-            CompData,
+            CHI_CompData,
         //  ------------------------
-            DataSepResp,
+            CHI_DataSepResp,
         //  ------------------------
-            WriteDataCancel,
+            CHI_WriteDataCancel,
         //  ------------------------
-            NonCopyBackWrData
+            CHI_NonCopyBackWrData
         //  ========================
         ), paramEnableUnsupportedCheck)
 }
