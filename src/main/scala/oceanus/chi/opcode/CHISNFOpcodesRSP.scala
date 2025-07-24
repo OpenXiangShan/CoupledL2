@@ -13,25 +13,25 @@ import oceanus.chi.opcode.CHIOpcodeDecoder
 */
 trait CHISNFOpcodesRSP extends HasCHIParameters {
 
-    //  =====================================================================================
-    val RespLCrdReturn          = CHIOpcode(RSP, 0x00, "RespLCrdReturn"            , B, C, E)
+    //  =========================================================================================
+    val CHI_RespLCrdReturn          = CHIOpcode(RSP, 0x00, "RespLCrdReturn"            , B, C, E)
     //  -------------------------------------------------------------------------------------
-    val RetryAck                = CHIOpcode(RSP, 0x03, "RetryAck"                  , B, C, E)
-    val PCrdGrant               = CHIOpcode(RSP, 0x07, "PCrdGrant"                 , B, C, E)
-    val Comp                    = CHIOpcode(RSP, 0x04, "Comp"                      , B, C, E)
-    val CompDBIDResp            = CHIOpcode(RSP, 0x05, "CompDBIDResp"              , B, C, E)
-    //  -------------------------------------------------------------------------------------
-    val CompCMO                 = CHIOpcode(RSP, 0x14, "CompCMO"                         , E)
-    val ReadReceipt             = CHIOpcode(RSP, 0x08, "ReadReceipt"               , B, C, E)
-    //  -------------------------------------------------------------------------------------
-    val DBIDResp                = CHIOpcode(RSP, 0x06, "DBIDResp"                  , B, C, E)
-    //  -------------------------------------------------------------------------------------
-    val TagMatch                = CHIOpcode(RSP, 0x0A, "TagMatch"                        , E)
-    //  -------------------------------------------------------------------------------------
-    val Persist                 = CHIOpcode(RSP, 0x0C, "Persist"                         , E)
-    //  -------------------------------------------------------------------------------------
-    val CompPersist             = CHIOpcode(RSP, 0x0D, "CompPersist"                     , E)
-    //  =====================================================================================
+    val CHI_RetryAck                = CHIOpcode(RSP, 0x03, "RetryAck"                  , B, C, E)
+    val CHI_PCrdGrant               = CHIOpcode(RSP, 0x07, "PCrdGrant"                 , B, C, E)
+    val CHI_Comp                    = CHIOpcode(RSP, 0x04, "Comp"                      , B, C, E)
+    val CHI_CompDBIDResp            = CHIOpcode(RSP, 0x05, "CompDBIDResp"              , B, C, E)
+    //  -----------------------------------------------------------------------------------------
+    val CHI_CompCMO                 = CHIOpcode(RSP, 0x14, "CompCMO"                         , E)
+    val CHI_ReadReceipt             = CHIOpcode(RSP, 0x08, "ReadReceipt"               , B, C, E)
+    //  -----------------------------------------------------------------------------------------
+    val CHI_DBIDResp                = CHIOpcode(RSP, 0x06, "DBIDResp"                  , B, C, E)
+    //  -----------------------------------------------------------------------------------------
+    val CHI_TagMatch                = CHIOpcode(RSP, 0x0A, "TagMatch"                        , E)
+    //  -----------------------------------------------------------------------------------------
+    val CHI_Persist                 = CHIOpcode(RSP, 0x0C, "Persist"                         , E)
+    //  -----------------------------------------------------------------------------------------
+    val CHI_CompPersist             = CHIOpcode(RSP, 0x0D, "CompPersist"                     , E)
+    //  =========================================================================================
 
 
     /*
@@ -44,23 +44,23 @@ trait CHISNFOpcodesRSP extends HasCHIParameters {
         (implicit p: Parameters)
         extends CHIOpcodeDecoder(RSP, paramOpcodeSupported, Seq(
         //  ========================
-            RespLCrdReturn,
+            CHI_RespLCrdReturn,
         //  ------------------------
-            RetryAck,
-            PCrdGrant,
-            Comp,
-            CompDBIDResp,
+            CHI_RetryAck,
+            CHI_PCrdGrant,
+            CHI_Comp,
+            CHI_CompDBIDResp,
         //  ------------------------
-            CompCMO,
-            ReadReceipt,
+            CHI_CompCMO,
+            CHI_ReadReceipt,
         //  ------------------------
-            DBIDResp,
+            CHI_DBIDResp,
         //  ------------------------
-            TagMatch,
+            CHI_TagMatch,
         //  ------------------------
-            Persist,
+            CHI_Persist,
         //  ------------------------
-            CompPersist
+            CHI_CompPersist
         //  ========================
         ), paramEnableUnsupportedCheck)
 }

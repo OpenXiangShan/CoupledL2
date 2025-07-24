@@ -11,37 +11,37 @@ import oceanus.chi.EnumCHIChannel._
 */
 trait CHIRNFOpcodesRSP extends HasCHIParameters {
 
-    //  ======================================================================================
-    val RespLCrdReturn          = CHIOpcode(RSP, 0x00, "RespLCrdReturn"             , B, C, E)
-    //  --------------------------------------------------------------------------------------
-    val RetryAck                = CHIOpcode(RSP, 0x03, "RetryAck"                   , B, C, E)
-    val DBIDResp                = CHIOpcode(RSP, 0x06, "DBIDResp"                   , B, C, E)
-    val PCrdGrant               = CHIOpcode(RSP, 0x07, "PCrdGrant"                  , B, C, E)
-    val Comp                    = CHIOpcode(RSP, 0x04, "Comp"                       , B, C, E)
-    //  --------------------------------------------------------------------------------------
-    val CompDBIDResp            = CHIOpcode(RSP, 0x05, "CompDBIDResp"               , B, C, E)
-    val CompCMO                 = CHIOpcode(RSP, 0x14, "CompCMO"                          , E)
-    val ReadReceipt             = CHIOpcode(RSP, 0x08, "ReadReceipt"                , B, C, E)
-    //  --------------------------------------------------------------------------------------
-    val RespSepData             = CHIOpcode(RSP, 0x0B, "RespSepData"                   , C, E)
-    //  --------------------------------------------------------------------------------------
-    val DBIDRespOrd             = CHIOpcode(RSP, 0x0E, "DBIDRespOrd"                      , E)
-    //  --------------------------------------------------------------------------------------
-    val StashDone               = CHIOpcode(RSP, 0x10, "StashDone"                        , E)
-    val CompStashDone           = CHIOpcode(RSP, 0x11, "CompStashDone"                    , E)
-    //  --------------------------------------------------------------------------------------
-    val TagMatch                = CHIOpcode(RSP, 0x0A, "TagMatch"                         , E)
-    //  --------------------------------------------------------------------------------------
-    val Persist                 = CHIOpcode(RSP, 0x0C, "Persist"                          , E)
-    //  --------------------------------------------------------------------------------------
-    val CompPersist             = CHIOpcode(RSP, 0x0D, "CompPersist"                      , E)
-    //  --------------------------------------------------------------------------------------
-    val CompAck                 = CHIOpcode(RSP, 0x02, "CompAck"                    , B, C, E)
-    //  --------------------------------------------------------------------------------------
-    val SnpResp                 = CHIOpcode(RSP, 0x01, "SnpResp"                    , B, C, E)
-    //  --------------------------------------------------------------------------------------
-    val SnpRespFwded            = CHIOpcode(RSP, 0x09, "SnpRespFwded"               , B, C, E)
-    //  ======================================================================================
+    //  ==========================================================================================
+    val CHI_RespLCrdReturn          = CHIOpcode(RSP, 0x00, "RespLCrdReturn"             , B, C, E)
+    //  ------------------------------------------------------------------------------------------
+    val CHI_RetryAck                = CHIOpcode(RSP, 0x03, "RetryAck"                   , B, C, E)
+    val CHI_DBIDResp                = CHIOpcode(RSP, 0x06, "DBIDResp"                   , B, C, E)
+    val CHI_PCrdGrant               = CHIOpcode(RSP, 0x07, "PCrdGrant"                  , B, C, E)
+    val CHI_Comp                    = CHIOpcode(RSP, 0x04, "Comp"                       , B, C, E)
+    //  ------------------------------------------------------------------------------------------
+    val CHI_CompDBIDResp            = CHIOpcode(RSP, 0x05, "CompDBIDResp"               , B, C, E)
+    val CHI_CompCMO                 = CHIOpcode(RSP, 0x14, "CompCMO"                          , E)
+    val CHI_ReadReceipt             = CHIOpcode(RSP, 0x08, "ReadReceipt"                , B, C, E)
+    //  ------------------------------------------------------------------------------------------
+    val CHI_RespSepData             = CHIOpcode(RSP, 0x0B, "RespSepData"                   , C, E)
+    //  ------------------------------------------------------------------------------------------
+    val CHI_DBIDRespOrd             = CHIOpcode(RSP, 0x0E, "DBIDRespOrd"                      , E)
+    //  ------------------------------------------------------------------------------------------
+    val CHI_StashDone               = CHIOpcode(RSP, 0x10, "StashDone"                        , E)
+    val CHI_CompStashDone           = CHIOpcode(RSP, 0x11, "CompStashDone"                    , E)
+    //  ------------------------------------------------------------------------------------------
+    val CHI_TagMatch                = CHIOpcode(RSP, 0x0A, "TagMatch"                         , E)
+    //  ------------------------------------------------------------------------------------------
+    val CHI_Persist                 = CHIOpcode(RSP, 0x0C, "Persist"                          , E)
+    //  ------------------------------------------------------------------------------------------
+    val CHI_CompPersist             = CHIOpcode(RSP, 0x0D, "CompPersist"                      , E)
+    //  ------------------------------------------------------------------------------------------
+    val CHI_CompAck                 = CHIOpcode(RSP, 0x02, "CompAck"                    , B, C, E)
+    //  ------------------------------------------------------------------------------------------
+    val CHI_SnpResp                 = CHIOpcode(RSP, 0x01, "SnpResp"                    , B, C, E)
+    //  ------------------------------------------------------------------------------------------
+    val CHI_SnpRespFwded            = CHIOpcode(RSP, 0x09, "SnpRespFwded"               , B, C, E)
+    //  ==========================================================================================
 
 
     /*
@@ -54,35 +54,35 @@ trait CHIRNFOpcodesRSP extends HasCHIParameters {
         (implicit p: Parameters)
         extends CHIOpcodeDecoder(REQ, paramOpcodeSupported, Seq(
         //  ========================
-            RespLCrdReturn,
+            CHI_RespLCrdReturn,
         //  ------------------------
-            RetryAck,
-            DBIDResp,
-            PCrdGrant,
-            Comp,
+            CHI_RetryAck,
+            CHI_DBIDResp,
+            CHI_PCrdGrant,
+            CHI_Comp,
         //  ------------------------
-            CompDBIDResp,
-            CompCMO,
-            ReadReceipt,
+            CHI_CompDBIDResp,
+            CHI_CompCMO,
+            CHI_ReadReceipt,
         //  ------------------------
-            RespSepData,
+            CHI_RespSepData,
         //  ------------------------
-            DBIDRespOrd,
+            CHI_DBIDRespOrd,
         //  ------------------------
-            StashDone,
-            CompStashDone,
+            CHI_StashDone,
+            CHI_CompStashDone,
         //  ------------------------
-            TagMatch,
+            CHI_TagMatch,
         //  ------------------------
-            Persist,
+            CHI_Persist,
         //  ------------------------
-            CompPersist,
+            CHI_CompPersist,
         //  ------------------------
-            CompAck,
+            CHI_CompAck,
         //  ------------------------
-            SnpResp,
+            CHI_SnpResp,
         //  ------------------------
-            SnpRespFwded
+            CHI_SnpRespFwded
         //  ========================
         ), paramEnableUnsupportedCheck)
 }
