@@ -511,7 +511,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     // if it chooses an invalid way, release no longer needed
     // if meta has client, rprobe client
     //TMP: TODO: silent evict for all BRANCH temporarily, to test Matrix Bandwidth performance
-    when (replResp.meta.state =/= INVALID && replResp.meta.state =/= BRANCH) {
+    when (doEvict(replResp.meta.state)) {
       // set release flags
       state.s_release := false.B
       state.w_releaseack := false.B

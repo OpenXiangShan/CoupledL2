@@ -228,6 +228,11 @@ trait HasCoupledL2Parameters {
     opToA
   }
 
+  def doEvict(state: UInt): Bool = {
+    // TODO: now for all branches, we silent evict
+    state =/= MetaData.INVALID && state =/= MetaData.BRANCH
+  }
+
   def sizeBytesToStr(sizeBytes: Double): String = sizeBytes match {
     case _ if sizeBytes >= 1024 * 1024 => s"${sizeBytes / 1024 / 1024}MB"
     case _ if sizeBytes >= 1024        => s"${sizeBytes / 1024}KB"
