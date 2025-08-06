@@ -300,7 +300,11 @@ class Directory(implicit p: Parameters) extends L2Module {
   )*/
   // for retry bug fixing: if the chosenway not in freewaymask, choose another way
   // TODO: req_s3.wayMask not take into consideration
-  val finalWay = chosenWay // now we integrate freeWayMask into RRIP replacement policy
+  val finalWay = Mux(
+    freeWayMask_s3(chosenWay),
+    chosenWay,
+    PriorityEncoder(freeWayMask_s3)
+  ) // we still need to avoid those ways that an MSHR-hit occupies
   val hit_s3 = Cat(hitVec).orR || req_s3.cmoAll
   val way_s3 = Mux(req_s3.cmoAll, req_s3.cmoWay, Mux(hit_s3, hitWay, finalWay))
   val meta_s3 = metaAll_s3(way_s3)
