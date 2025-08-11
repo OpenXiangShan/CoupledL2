@@ -228,9 +228,9 @@ trait HasCoupledL2Parameters {
     opToA
   }
 
-  def doEvict(state: UInt): Bool = {
-    // TODO: now for all branches, we silent evict
-    state =/= MetaData.INVALID && state =/= MetaData.BRANCH
+  def doEvict(meta: MetaEntry): Bool = {
+    // TODO: now for all branches without client
+    !(meta.state === MetaData.INVALID || (meta.state === MetaData.BRANCH && !meta.clients.orR))
   }
 
   def sizeBytesToStr(sizeBytes: Double): String = sizeBytes match {
