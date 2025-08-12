@@ -22,7 +22,7 @@ import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink.TLBundle
 import utility._
-import coupledL2.prefetch.PrefetchIO
+import coupledL2.prefetch._
 
 trait BaseOuterBundle
 
@@ -34,7 +34,7 @@ abstract class BaseSliceIO[T_OUT <: BaseOuterBundle](implicit p: Parameters) ext
   val prefetch = prefetchOpt.map(_ => Flipped(new PrefetchIO))
   // val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
   val dirResult = topDownOpt.map(_ => ValidIO(new DirResult))
-  val latePF = topDownOpt.map(_ => Output(Bool()))
+  val latePF = topDownOpt.map(_ => ValidIO(UInt(PfSource.pfSourceBits.W)))
   val error = DecoupledIO(new L2CacheErrorInfo())
   val l2Miss = Output(Bool())
   val l2Flush = Option.when(cacheParams.enableL2Flush) (Input(Bool()))

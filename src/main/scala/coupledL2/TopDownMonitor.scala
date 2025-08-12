@@ -30,7 +30,7 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val dirResult = Vec(banks, Flipped(ValidIO(new DirResult)))
     val msStatus  = Vec(banks, Vec(mshrsAll, Flipped(ValidIO(new MSHRStatus))))
-    val latePF    = Vec(banks, Input(Bool()))
+    val latePF    = Vec(banks, Flipped(ValidIO(UInt(PfSource.pfSourceBits.W))))
     val debugTopDown = new Bundle {
       val robTrueCommit = Input(UInt(64.W))
       val robHeadPaddr = Flipped(Valid(UInt(36.W)))
@@ -173,7 +173,8 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   
   // TODO: get difference prefetchSrc for detailed analysis
   // FIXME lyq: it's abnormal l2prefetchLate / l2prefetchUseful is more than 1
-  val l2prefetchLate = io.latePF
+  val l2prefetchLate = io.latePF.map(_.valid)
+  val l2prefetchLateSrc = io.latePF.map(_.bits)
 
   // PF Accuracy
   XSPerfRolling(
@@ -280,4 +281,9 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   XSPerfAccumulate("l2prefetchUsefulTP", PopCount(l2prefetchUsefulTP))
   XSPerfAccumulate("l2demandRequest", PopCount(l2demandRequest))
   XSPerfAccumulate("l2prefetchLate", PopCount(l2prefetchLate))
+
+  for(i <- 0 until PfSource.PfSourceCount.id) {
+    val lateMatchVec = io.latePF.map(x => x.valid && x.bits === i.U)
+    XSPerfAccumulate(s"l2prefetchLateSrc_${PfSource.apply(i).toString}", PopCount(lateMatchVec))
+  }
 }
