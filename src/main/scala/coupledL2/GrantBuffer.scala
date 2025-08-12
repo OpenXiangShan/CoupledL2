@@ -51,11 +51,11 @@ class GrantQueueData(implicit p: Parameters) extends L2Bundle {
 }
 
 // 1. Communicate with L1
-//   1.1 Send Grant/GrantData/ReleaseAck/AccessAckData from d and
+//   1.1 Send Grant/GrantData/ReleaseAck/AccessAckData from d
 //   1.2 Receive GrantAck through e
+//   1.3 Send Matrix-AccessAck/AccessAckData to Matrix Unit
 // 2. Send response to Prefetcher
 // 3. Block MainPipe enterance when there is not enough space
-// 4. Generate Hint signal for L1 early wake-up
 class GrantBuffer(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     // receive task from MainPipe
@@ -64,6 +64,9 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     // interact with channels to L1
     val d = DecoupledIO(new TLBundleD(edgeIn.bundle))
     val e = Flipped(DecoupledIO(new TLBundleE(edgeIn.bundle)))
+
+    // response to Matrix Unit
+    val matrixDataOut = DecoupledIO(new MatrixDataBundle())
 
     // for MainPipe entrance blocking
     val fromReqArb = Input(new Bundle() {
@@ -155,6 +158,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   mergeAtask.reqSource := io.d_task.bits.task.reqSource
   mergeAtask.mergeA := false.B
   mergeAtask.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+  mergeAtask.matrixTask := io.d_task.bits.task.matrixTask
   val inflight_insertIdx = PriorityEncoder(inflightGrant.map(!_.valid))
   val grantQueue_enq_isKeyword = Mux(io.d_task.bits.task.mergeA, mergeAtask.isKeyword.getOrElse(false.B), io.d_task.bits.task.isKeyword.getOrElse(false.B))
   // The following is organized in the order of data flow
@@ -179,65 +183,52 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   require(beatSize == 2)
   val deqValid = grantQueue.io.deq.valid
   val deqTask = grantQueue.io.deq.bits.task
- // val deqTask.isKeyword.foreach(_ := grantQueue.io.deq.bits.task.isKeyword)
   val deqId   = grantQueue.io.deq.bits.grantid
   val deqData = VecInit(Seq(grantQueueData0.io.deq.bits.data, grantQueueData1.io.deq.bits.data))
 
-  // grantBuf: to keep the remaining unsent beat of GrantData
-  val grantBufValid = RegInit(false.B)
-  val grantBuf =  RegInit(0.U.asTypeOf(new Bundle() {
-    val task = new TaskBundle()
-    val data = new DSBeat()
-    val grantid = UInt(mshrBits.W)
-  }))
+  val toMatrix = deqTask.matrixTask && deqTask.opcode === AccessAckData
 
-  grantQueue.io.deq.ready := io.d.ready && !grantBufValid
-  grantQueueData0.io.deq.ready := grantQueue.io.deq.ready
-  grantQueueData1.io.deq.ready := grantQueue.io.deq.ready
+  // TODO: deq.ready depend on deq.bits, ok for timing?
+  when (toMatrix) {
+    grantQueue.io.deq.ready := io.matrixDataOut.ready
+    grantQueueData0.io.deq.ready := io.matrixDataOut.ready
+    grantQueueData1.io.deq.ready := io.matrixDataOut.ready
 
-  // if deqTask has data, send the first beat directly and save the remaining beat in grantBuf
-  when(deqValid && io.d.ready && !grantBufValid && deqTask.opcode(0)) {
-    grantBufValid := true.B
-    grantBuf.task := deqTask
-    grantBuf.task.isKeyword.foreach(_ := deqTask.isKeyword.getOrElse(false.B))
-   // grantBuf.data := deqData(1)
-   grantBuf.data := Mux(deqTask.isKeyword.getOrElse(false.B),deqData(0),deqData(1))
-    grantBuf.grantid := deqId
+    io.d.valid := false.B
+    io.d.bits := DontCare // not used
+    io.matrixDataOut.valid := deqValid
+    io.matrixDataOut.bits.sourceId := deqTask.sourceId
+    io.matrixDataOut.bits.data := deqData.asTypeOf(new DSBlock) // TODO:check
+  }.otherwise {
+    val singleBeat = !deqTask.opcode(0) // AccessAck or Grant
+    val sendingNextBeat = RegInit(false.B)
+    val isKeyWord = deqTask.isKeyword.getOrElse(false.B)
+    when (io.d.fire && !singleBeat) {sendingNextBeat := !sendingNextBeat}
+
+    val dequeReady = (singleBeat || sendingNextBeat) && io.d.ready
+    grantQueue.io.deq.ready := dequeReady
+    grantQueueData0.io.deq.ready := dequeReady
+    grantQueueData1.io.deq.ready := dequeReady
+
+    io.d.valid := deqValid
+    io.d.bits := toTLBundleD(
+      deqTask,
+      Mux(isKeyWord ^ sendingNextBeat, deqData(1).data, deqData(0).data),
+      deqId
+    )
+    //TODO: check if isKeyWord works right
+    io.matrixDataOut.valid := false.B
+    io.matrixDataOut.bits := DontCare // not used
   }
-  when(grantBufValid && io.d.ready) {
-    grantBufValid := false.B
-  }
 
-  io.d.valid := grantBufValid || deqValid
-  io.d.bits := Mux(
-    grantBufValid,
-    toTLBundleD(grantBuf.task, grantBuf.data.data, grantBuf.grantid),
-   // toTLBundleD(deqTask, deqData(0).data, deqId)
-    toTLBundleD(deqTask, Mux(deqTask.isKeyword.getOrElse(false.B),deqData(1).data,deqData(0).data), deqId)
-  )
   when(io.d.valid&&io.d.bits.opcode ===AccessAck){
     // printf(s"TODO: Put AccessAck GrantBuffer\n")
   }
-  // io.d.bits := Mux(
-  //   grantBufValid,
-  //   toTLBundleD(grantBuf.task, grantBuf.data.data, grantBuf.grantid),
-  //  // toTLBundleD(deqTask, deqData(0).data, deqId)
-  //   toTLBundleD(deqTask, Mux(deqTask.isKeyword.getOrElse(false.B),deqData(1).data,deqData(0).data), deqId)
-  // )
 
   XSPerfAccumulate("toTLBundleD_valid", deqValid)
   XSPerfAccumulate("toTLBundleD_valid_isKeyword", deqValid && deqTask.isKeyword.getOrElse(false.B))
   XSPerfAccumulate("toTLBundleD_fire", deqValid && io.d.ready)
   XSPerfAccumulate("toTLBundleD_fire_isKeyword", deqValid && io.d.ready && deqTask.isKeyword.getOrElse(false.B))
- /* val d_isKeyword = Mux(
-    grantBufValid,
-    grantBuf.task.isKeyword,
-    deqTask.isKeyword
-  )*/
-  io.d.bits.echo.lift(IsKeywordKey).foreach(_ := Mux(
-    grantBufValid, 
-    grantBuf.task.isKeyword.getOrElse(false.B), 
-    deqTask.isKeyword.getOrElse(false.B)))
 
   // =========== send response to prefetcher ===========
   val pftRespEntry = new Bundle() {
@@ -271,6 +262,9 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   // assert(prefetchOpt.nonEmpty.B || !io.d_task.valid || dtaskOpcode =/= HintAck)
 
   // =========== record unreceived GrantAck ===========
+  assert(!(io.d_task.valid && io.d_task.bits.task.mergeA && io.d_task.bits.task.matrixTask),
+    "mergeA of MatrixTask, unhandled for now. This needs to be removed after further check!")
+
   // Addrs with Grant sent and GrantAck not received
   when (io.d_task.fire && (dtaskOpcode === Grant || dtaskOpcode === GrantData || io.d_task.bits.task.mergeA)) {
     // choose an empty entry
