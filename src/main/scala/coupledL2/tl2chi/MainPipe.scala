@@ -914,8 +914,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 //  io.toReqBuf(0) := task_s2.valid && s23Block('a', task_s2.bits) || task_s3.valid && s23Block('a', task_s3.bits)
 //  io.toReqBuf(1) := task_s4.valid && s23Block('a', task_s4.bits) || taskWDir_s4.valid && s23Block('a', taskWDir_s4.bits)
 
-  io.toReqArb.blockC_s1 := task_s2.valid && s23Block('c', task_s2.bits)
-//  io.toReqArb.blockC_s1 := task_s2.valid && s23Block('c', task_s2.bits) || task_s3.valid && s23Block('c', task_s3.bits)
+//  io.toReqArb.blockC_s1 := task_s2.valid && s23Block('c', task_s2.bits)
+  io.toReqArb.blockC_s1 := task_s2.valid && s23Block('c', task_s2.bits) || task_s3.valid && s23Block('c', task_s3.bits) && metaWReq_s3.valid
 
   io.toReqArb.blockB_s1 :=
     task_s2.valid && bBlock(task_s2.bits) ||
@@ -926,8 +926,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   
   io.toReqArb.blockA_s1 := false.B
 
-  io.toReqArb.blockG_s1 := task_s2.valid && s23Block('g', task_s2.bits)
-//  io.toReqArb.blockG_s1 := task_s2.valid && s23Block('g', task_s2.bits) || task_s3.valid && s23Block('g', task_s3.bits)
+//  io.toReqArb.blockG_s1 := task_s2.valid && s23Block('g', task_s2.bits)
+  io.toReqArb.blockG_s1 := task_s2.valid && s23Block('g', task_s2.bits) || task_s3.valid && s23Block('g', task_s3.bits) && metaWReq_s3.valid
 
   /* ======== Pipeline Status ======== */
   require(io.status_vec_toD.size == 3)
