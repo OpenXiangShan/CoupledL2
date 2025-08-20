@@ -240,5 +240,38 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
     io.resetFinish := resetFinish
   }
 
+  // val s_stop :: s_activate :: s_run :: s_deactivate :: Nil = Enum(4)
+
+  val txState = RegInit(LinkStates.STOP)
+  val rxState = RegInit(LinkStates.STOP)
+
+  //use deq.rx deq.tx active signals which output to DownStream CHI 
+  Seq(txState, rxState).zip(MixedVecInit(Seq(io.deq.tx, io.deq.rx))).foreach { case (state, link) =>
+    state := MuxLookup(Cat(link.linkactivereq, link.linkactiveack), LinkStates.STOP)(Seq(
+      Cat(true.B, false.B) -> LinkStates.ACTIVATE,
+      Cat(true.B, true.B) -> LinkStates.RUN,
+      Cat(false.B, true.B) -> LinkStates.DEACTIVATE,
+      Cat(false.B, false.B) -> LinkStates.STOP
+    ))
+  }
+
+  //rxrsp
+  val rxsnpDeact, rxrspDeact, rxdatDeact = Wire(Bool())
+  val in = WireInit(0.U asTypeOf(Flipped(new DecoupledPortIO())))
+  LCredit2Decoupled(io.deq.rx.rsp, in.rx.rsp, LinkState(rxState), rxrspDeact, Some("rxrsp"), 15, false)
+  LCredit2Decoupled(io.deq.rx.dat, in.rx.dat, LinkState(rxState), rxdatDeact, Some("rxdat"), 15, false)
+  LCredit2Decoupled(io.deq.rx.snp, in.rx.snp, LinkState(rxState), rxsnpDeact, Some("rxsnp"))
+  in.rx.rsp.ready := true.B
+  in.rx.dat.ready := true.B
+  in.rx.snp.ready := true.B
+
+  val rxrsplcrdv = io.deq.rx.rsp.lcrdv
+  val rxdatlcrdv = io.deq.rx.dat.lcrdv
+  val rxsnplcrdv = io.deq.rx.snp.lcrdv
+   
   dontTouch(io)
+  dontTouch(rxrsplcrdv)
+  dontTouch(rxdatlcrdv)
+  dontTouch(rxsnplcrdv)
+
 }
