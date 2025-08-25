@@ -583,6 +583,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     Mux(mshr_req_s3, req_s3.way, dirResult_s3.way)
   )
 
+  // dir write signals in s3
   val metaWReq_s3 = Wire(Valid(new MetaWrite()))
   val tagWReq_s3 = Wire(Valid(new TagWrite()))
   metaWReq_s3.valid := !resetFinish || task_s3.valid && (
@@ -602,25 +603,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   tagWReq_s3.bits.set := req_s3.set
   tagWReq_s3.bits.way := Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.way, req_s3.way)
   tagWReq_s3.bits.wtag := req_s3.tag
-
-//  io.metaWReq.valid := !resetFinish || task_s3.valid && (
-//    metaW_valid_s3_a || metaW_valid_s3_b || metaW_valid_s3_c || metaW_valid_s3_mshr || metaW_valid_s3_cmo
-//  )
-//  io.metaWReq.bits.set := Mux(resetFinish, req_s3.set, resetIdx)
-//  io.metaWReq.bits.wayOH := Mux(resetFinish, UIntToOH(metaW_way), Fill(cacheParams.ways, true.B))
-//  io.metaWReq.bits.wmeta := Mux(
-//    resetFinish,
-//    ParallelPriorityMux(
-//      Seq(metaW_valid_s3_a, metaW_valid_s3_b, metaW_valid_s3_c, metaW_valid_s3_mshr, metaW_valid_s3_cmo),
-//      Seq(metaW_s3_a, metaW_s3_b, metaW_s3_c, metaW_s3_mshr, metaW_s3_cmo)
-//    ),
-//    MetaEntry()
-//  )
-//
-//  io.tagWReq.valid := task_s3.valid && req_s3.tagWen && mshr_refill_s3 && !retry
-//  io.tagWReq.bits.set := req_s3.set
-//  io.tagWReq.bits.way := Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.way, req_s3.way)
-//  io.tagWReq.bits.wtag := req_s3.tag
 
   sink_resp_s3_b_metaWen := metaW_valid_s3_b
   sink_resp_s3_b_meta := metaW_s3_b
@@ -783,7 +765,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   taskWDir_s4.valid := task_s3.valid && (metaWReq_s3.valid || tagWReq_s3.valid)
   when (task_s3.valid || !resetFinish) {
-    //TODO: fix req_drop
     taskWDir_s4.bits := source_req_s3
     metaWReq_s4 := metaWReq_s3
     tagWReq_s4 := tagWReq_s3
@@ -911,11 +892,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   io.toReqBuf(0) := task_s2.valid && s23Block('a', task_s2.bits)
   io.toReqBuf(1) := task_s3.valid && s23Block('a', task_s3.bits)
-//  io.toReqBuf(0) := task_s2.valid && s23Block('a', task_s2.bits) || task_s3.valid && s23Block('a', task_s3.bits)
-//  io.toReqBuf(1) := task_s4.valid && s23Block('a', task_s4.bits) || taskWDir_s4.valid && s23Block('a', taskWDir_s4.bits)
 
-//  io.toReqArb.blockC_s1 := task_s2.valid && s23Block('c', task_s2.bits)
-  io.toReqArb.blockC_s1 := task_s2.valid && s23Block('c', task_s2.bits) || task_s3.valid && s23Block('c', task_s3.bits) && metaWReq_s3.valid
+  io.toReqArb.blockC_s1 := task_s2.valid && s23Block('c', task_s2.bits) ||
+    task_s3.valid && s23Block('c', task_s3.bits) && metaWReq_s3.valid
 
   io.toReqArb.blockB_s1 :=
     task_s2.valid && bBlock(task_s2.bits) ||
@@ -926,8 +905,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   
   io.toReqArb.blockA_s1 := false.B
 
-//  io.toReqArb.blockG_s1 := task_s2.valid && s23Block('g', task_s2.bits)
-  io.toReqArb.blockG_s1 := task_s2.valid && s23Block('g', task_s2.bits) || task_s3.valid && s23Block('g', task_s3.bits) && metaWReq_s3.valid
+  io.toReqArb.blockG_s1 := task_s2.valid && s23Block('g', task_s2.bits) ||
+    task_s3.valid && s23Block('g', task_s3.bits) && metaWReq_s3.valid
 
   /* ======== Pipeline Status ======== */
   require(io.status_vec_toD.size == 3)

@@ -364,12 +364,6 @@ class Directory(implicit p: Parameters) extends L2Module {
   val origin_bits_r = origin_bit_opt.get.io.r(io.read.fire, io.read.bits.set).resp.data
   val origin_bits_hold = Wire(Vec(ways, Bool()))
   origin_bits_hold := HoldUnless(origin_bits_r, RegNext(io.read.fire, false.B))
-//  origin_bit_opt.get.io.w(
-//      !resetFinish || replacerWen,
-//      Mux(resetFinish, hit_s3, false.B),
-//      Mux(resetFinish, req_s3.set, resetIdx),
-//      UIntToOH(way_s3)
-//  )
   origin_bit_opt.get.io.w(
     !resetFinish || replacerWen_s4,
     Mux(resetFinish, hit_s4, false.B),
@@ -392,12 +386,6 @@ class Directory(implicit p: Parameters) extends L2Module {
     val next_state_s4 = RegNext(next_state_s3)
     val repl_init = Wire(Vec(ways, UInt(2.W)))
     repl_init.foreach(_ := 2.U(2.W))
-//    replacer_sram_opt.get.io.w(
-//      !resetFinish || replacerWen,
-//      Mux(resetFinish, next_state_s3, repl_init.asUInt),
-//      Mux(resetFinish, set_s3, resetIdx),
-//      1.U
-//    )
     replacer_sram_opt.get.io.w(
       !resetFinish || replacerWen_s4,
       Mux(resetFinish, next_state_s4, repl_init.asUInt),
@@ -433,12 +421,6 @@ class Directory(implicit p: Parameters) extends L2Module {
 
     val repl_init = Wire(Vec(ways, UInt(2.W)))
     repl_init.foreach(_ := 2.U(2.W))
-//    replacer_sram_opt.get.io.w(
-//      !resetFinish || replacerWen,
-//      Mux(resetFinish, next_state_s3, repl_init.asUInt),
-//      Mux(resetFinish, set_s3, resetIdx),
-//      1.U
-//    )
     replacer_sram_opt.get.io.w(
       !resetFinish || replacerWen_s4,
       Mux(resetFinish, next_state_s4, repl_init.asUInt),
@@ -448,12 +430,6 @@ class Directory(implicit p: Parameters) extends L2Module {
   } else {
     val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3)
     val next_state_s4 = RegNext(next_state_s3)
-//    replacer_sram_opt.get.io.w(
-//      !resetFinish || replacerWen,
-//      Mux(resetFinish, next_state_s3, 0.U),
-//      Mux(resetFinish, set_s3, resetIdx),
-//      1.U
-//    )
     replacer_sram_opt.get.io.w(
       !resetFinish || replacerWen_s4,
       Mux(resetFinish, next_state_s4, 0.U),
