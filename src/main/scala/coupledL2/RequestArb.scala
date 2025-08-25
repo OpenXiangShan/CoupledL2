@@ -358,34 +358,4 @@ class RequestArb(implicit p: Parameters) extends L2Module
   XSPerfAccumulate("sinkA_stall_by_sinkC", io.sinkA.valid && sink_ready_basic && !block_A && sinkValids(0))
   XSPerfAccumulate("sinkB_stall_by_sinkC", io.sinkB.valid && sink_ready_basic && !block_B && sinkValids(0))
 
-  val stall_by_dir = !io.dirRead_s1.ready
-  val stall_by_mshrTask = io.dirRead_s1.ready && mshr_task_s1.valid
-  val stall_by_mcp2 = io.dirRead_s1.ready && !mshr_task_s1.valid && ds_mcp2_stall
-
-  val sinkA_stall = io.sinkA.valid && !block_A && (stall_by_dir || stall_by_mshrTask || stall_by_mcp2 || sink_ready_basic && (sinkValids(1) || sinkValids(0)))
-  val sinkB_stall = io.sinkB.valid && !block_B && (stall_by_dir || stall_by_mshrTask || stall_by_mcp2 || sink_ready_basic && sinkValids(0))
-  val sinkC_stall = io.sinkC.valid && !block_C && (stall_by_dir || stall_by_mshrTask || stall_by_mcp2)
-  val sinkA_stall_last =  RegNext(sinkA_stall)
-  val sinkB_stall_last =  RegNext(sinkB_stall)
-  val sinkC_stall_last =  RegNext(sinkC_stall)
-
-  val sinkA_stall_by_mcp2 = io.sinkA.valid && !block_A && stall_by_mcp2
-  val sinkB_stall_by_mcp2 = io.sinkB.valid && !block_B && stall_by_mcp2
-  val sinkC_stall_by_mcp2 = io.sinkC.valid && !block_C && stall_by_mcp2
-  val sinkA_stall_by_mcp2_last = RegNext(sinkA_stall_by_mcp2)
-  val sinkB_stall_by_mcp2_last = RegNext(sinkB_stall_by_mcp2)
-  val sinkC_stall_by_mcp2_last = RegNext(sinkC_stall_by_mcp2)
-
-  val sinkA_stall_by_dir = io.sinkA.valid && !block_A && stall_by_dir
-  val sinkC_stall_by_dir = io.sinkC.valid && !block_C && stall_by_dir
-  val sinkA_stall_by_dir_last = RegNext(sinkA_stall_by_dir)
-  val sinkC_stall_by_dir_last = RegNext(sinkC_stall_by_dir)
-
-  XSPerfAccumulate("sinkA_stall_by_mcp2_consecutively", sinkA_stall && sinkA_stall_by_mcp2_last || sinkA_stall_last && sinkA_stall_by_mcp2)
-  XSPerfAccumulate("sinkB_stall_by_mcp2_consecutively", sinkB_stall && sinkB_stall_by_mcp2_last || sinkB_stall_last && sinkB_stall_by_mcp2)
-  XSPerfAccumulate("sinkC_stall_by_mcp2_consecutively", sinkC_stall && sinkC_stall_by_mcp2_last || sinkC_stall_last && sinkC_stall_by_mcp2)
-
-  XSPerfAccumulate("sinkA_stall_by_mcp2_dir", sinkA_stall_by_dir && sinkA_stall_by_mcp2_last || sinkA_stall_by_dir_last && sinkA_stall_by_mcp2)
-  XSPerfAccumulate("sinkC_stall_by_mcp2_dir", sinkC_stall_by_dir && sinkC_stall_by_mcp2_last || sinkC_stall_by_dir_last && sinkA_stall_by_mcp2)
-
 }
