@@ -9,7 +9,13 @@ import oceanus.chi.opcode._
 import utility._
 
 
-class L2MSHRAlloc(implicit val p: Parameters) extends Bundle with HasL2Params {
+class L2MSHRAllocREQ(implicit val p: Parameters) extends Bundle with HasL2Params {
+    val opcode = UInt(paramCHI.reqOpcodeWidth.W)
+    // TODO
+}
+
+class L2MSHRAllocSNP(implicit val p: Parameters) extends Bundle with HasL2Params {
+    val opcode = UInt(paramCHI.snpOpcodeWidth.W)
     // TODO
 }
 
@@ -20,7 +26,7 @@ class L2MSHRBufferWrite(implicit val p: Parameters) extends Bundle with HasL2Par
     val bypassed = Bool() // whether the write has been bypassed to upper/lower TXDAT
 }
 
-class L2MSHRDirectoryResp(implicit val p: Parameters) extends Bundle with HasL2Params {
+class L2MSHRDirectoryReadResp(implicit val p: Parameters) extends Bundle with HasL2Params {
     val stateL2 = L2LocalDirectoryState()
     val stateL1D = L2ClientState()
     val way = UInt() // TODO
@@ -39,7 +45,7 @@ class L2MSHRStates(implicit val p: Parameters) extends AffectsChiselPrefix
 
     var listEntryActive = new ArrayBuffer[L2MSHRState[Bool]]
     var listReqActive = new ArrayBuffer[L2MSHRState[Bool]]
-    val listSnpActive = new ArrayBuffer[L2MSHRState[Bool]]
+    var listSnpActive = new ArrayBuffer[L2MSHRState[Bool]]
 
     //
     def resetOnAlloc(enable: Bool) = listAllocReset.foreach(_.nextInitial(enable))
@@ -53,11 +59,9 @@ class L2MSHRStates(implicit val p: Parameters) extends AffectsChiselPrefix
     
     val m_addr = Reg(UInt(paramL2.physicalAddrWidth.W))
 
-    val m_req_active = RegInit(false.B)
     val m_req_opcode = Reg(UInt(paramCHI.reqOpcodeWidth.W))
     val m_req_txnId = Reg(UInt(paramCHI.reqTxnIDWidth.W)) // TODO: should be width of upstream TxnID
 
-    val m_snp_active = RegInit(false.B)
     val m_snp_opcode = Reg(UInt(paramCHI.snpOpcodeWidth.W))
     val m_snp_txnId = Reg(UInt(paramCHI.snpTxnIDWidth.W))
 
@@ -69,6 +73,10 @@ class L2MSHRStates(implicit val p: Parameters) extends AffectsChiselPrefix
 
     val m_buf_active0 = L2MSHRState(false.B, listAllocReset)
     val m_buf_active1 = L2MSHRState(false.B, listAllocReset)
+
+    // Auxiliary indicators
+    val m_req_active = RegInit(false.B)
+    val m_snp_active = RegInit(false.B)
 
     // Local states
     val w_me_dir_read = L2MSHRState(false.B, listEntryActive)
@@ -106,7 +114,10 @@ class L2MSHR(implicit val p: Parameters) extends Module
 
     // I/O
     val io = IO(new Bundle {
-        val alloc = Input(ValidIO(new L2MSHRAlloc))
+        val allocReq = Input(ValidIO(new L2MSHRAllocREQ))
+        val allocSnp = Input(ValidIO(new L2MSHRAllocSNP))
+        // TODO
+        val dirReadResp = Input(ValidIO(new L2MSHRDirectoryReadResp))
         // TODO
     })
 
@@ -114,17 +125,41 @@ class L2MSHR(implicit val p: Parameters) extends Module
     val states = new L2MSHRStates
 
     // MSHR allocation
-    val alloc_first = io.alloc.fire && !states.m_valid
-    val alloc_nest = io.alloc.fire && states.m_valid
+    val mshr_alloc_req = io.allocReq.fire
+    val mshr_alloc_snp = io.allocSnp.fire
+    val mshr_alloc = mshr_alloc_req || mshr_alloc_snp
+    val mshr_alloc_first = mshr_alloc && !states.m_valid
+    val mshr_alloc_nest = mshr_alloc && states.m_valid
 
-    states.resetOnAlloc(alloc_first)
+    states.resetOnAlloc(mshr_alloc_first)
 
-    when (alloc_first) {
+    when (mshr_alloc_first) {
         states.m_valid := true.B
     }
 
-    when (io.alloc.fire) {
+    when (mshr_alloc) {
         // TODO
+    }
+
+    assert(!(mshr_alloc_req && mshr_alloc_snp), "L2 MSHR cannot be allocated for both request and snoop at the same cycle")
+
+    // MSHR deallocation
+    val mshr_curr_busy = ParallelOR(states.listEntryActive.map(_.bits).toSeq)
+    val mshr_next_idle = ParallelAND(states.listEntryActive.map(!_.next).toSeq)
+
+    val mshr_next_dealloc = mshr_curr_busy && mshr_next_idle
+
+    when (mshr_next_dealloc) {
+        states.m_valid := false.B
+    }
+
+    // TODO
+
+    // Directory read response
+    states.w_me_dir_read.nextHold
+
+    when (io.dirReadResp.fire) {
+        states.w_me_dir_read.nextInWhen(false.B)
     }
 
     // TODO
