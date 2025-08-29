@@ -86,7 +86,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   })
 
   // =========== functions ===========
-  def toTLBundleD(task: TaskBundle, data: UInt = 0.U, grant_id: UInt = 0.U) = {
+  def toTLBundleD(task: TaskBundle, data: UInt = 0.U, grant_id: UInt = 0.U, isKeyWord: Bool = false.B) = {
     val d = Wire(new TLBundleD(edgeIn.bundle))
     d.opcode := task.opcode
     d.param := task.param
@@ -96,7 +96,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     d.denied := task.denied
     d.data := data
     d.corrupt := task.corrupt || task.denied
-    d.echo.lift(IsKeywordKey).foreach(_ := false.B)
+    d.echo.lift(IsKeywordKey).foreach(_ := isKeyWord)
     d
   }
 
@@ -214,7 +214,8 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     io.d.bits := toTLBundleD(
       deqTask,
       Mux(isKeyWord ^ sendingNextBeat, deqData(1).data, deqData(0).data),
-      deqId
+      deqId,
+      isKeyWord
     )
     //TODO: check if isKeyWord works right
     io.matrixDataOut.valid := false.B
