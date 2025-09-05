@@ -41,13 +41,13 @@ class L2TSHRAlloc(implicit val p: Parameters) extends Module with HasL2Params {
     s1_nextFree.zipWithIndex.foreach{ case (f, i) => f := io.in.bits.nextFree.valid && (io.in.bits.nextFree.bits === i.U) }
 
     //
-    val s1_PA_hit = io.fromTSHR.map(t => t.V && t.PA === io.in.bits.PA)
+    val s1_PA_hit = io.fromTSHR.map(t => io.in.fire && t.V && t.PA === io.in.bits.PA)
 
     //
-    val s1_PA_hit_any = io.in.fire && ParallelOR(s1_PA_hit)
+    val s1_PA_hit_any = ParallelOR(s1_PA_hit)
 
-    val s1_PA_hit_head = io.fromTSHR.zip(s1_PA_hit).map { case (t, hit) => io.in.fire && t.head && hit }
-    val s1_PA_hit_tail = io.fromTSHR.zip(s1_PA_hit).map { case (t, hit) => io.in.fire && t.tail && hit }
+    val s1_PA_hit_head = io.fromTSHR.zip(s1_PA_hit).map { case (t, hit) => t.head && hit }
+    val s1_PA_hit_tail = io.fromTSHR.zip(s1_PA_hit).map { case (t, hit) => t.tail && hit }
 
     // Set 'V' of new TSHR
     val s1_set_V = io.in.fire
