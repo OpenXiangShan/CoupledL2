@@ -40,6 +40,7 @@ trait HasCoupledL2Parameters {
   // val tl2tlParams: HasTLL2Parameters = p(L2ParamKey)
   def enableCHI = p(EnableCHI)
   def cacheParams = p(L2ParamKey)
+  def EnablePrivateClint = cacheParams.EnablePrivateClint
 
   def XLEN = 64
   def blocks = cacheParams.sets * cacheParams.ways
