@@ -342,7 +342,8 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     val sizeBytes = cacheParams.toCacheParams.capacity.toDouble
     val sizeStr = sizeBytesToStr(sizeBytes)
     println(s"====== Inclusive TL-${if (enableCHI) "CHI" else "TL"} ${cacheParams.name} ($sizeStr * $banks-bank)  ======")
-    println(s"prefetch: ${cacheParams.prefetch}")
+    println(s"prefetch (sort by priority): ")
+    prefetchers.zipWithIndex.foreach { case (pft, i) => println(s"${i+1}. $pft") }
     println(s"bankBits: ${bankBits}")
     println(s"replacement: ${cacheParams.replacement}")
     println(s"replace policy: ${cacheParams.releaseData}")

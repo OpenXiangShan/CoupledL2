@@ -31,6 +31,7 @@ case class PrefetchReceiverParams(n: Int = 32) extends PrefetchParameters {
   override val hasPrefetchBit:  Boolean = true
   override val hasPrefetchSrc:  Boolean = true
   override val inflightEntries: Int = n
+  override def toString: String = s"Receiver for prefetches from L1"
 }
 
 class PrefetchReceiver()(implicit p: Parameters) extends PrefetchModule {
