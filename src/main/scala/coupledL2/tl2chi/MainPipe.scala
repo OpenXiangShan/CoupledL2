@@ -25,9 +25,10 @@ import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2._
-import coupledL2.prefetch.{PrefetchTrain, PfSource}
+import coupledL2.prefetch.{PfSource, PrefetchTrain}
 import coupledL2.tl2chi.CHICohStates._
 import coupledL2.MetaData._
+import coupledL2.wpu.{WPUResult, WPUUpdate}
 
 class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes with HasPerfEvents {
   val io = IO(new Bundle() {
@@ -75,9 +76,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     val toDS = new Bundle() {
       val en_s3 = Output(Bool())
       val req_s3 = ValidIO(new DSRequest)
-      val rdata_s5 = Input(new DSBlock)
+      val rdata = Input(new DSBlock)
       val wdata_s3 = Output(new DSBlock)
-      val error_s5 = Input(Bool())
+      val error = Input(Bool())
     }
 
     /* send Grant via SourceD channel */
@@ -116,6 +117,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     /* l2 flush (CMO All) */
     val cmoAllBlock = Option.when(cacheParams.enableL2Flush) (Input(Bool()))
     val cmoLineDone = Option.when(cacheParams.enableL2Flush) (Output(Bool()))
+
+    val toWPUUpd = ValidIO(new WPUUpdate)
+    val WPUResFromArb_s2 = Flipped(ValidIO(new WPUResult))
   })
 
   require(chiOpt.isDefined)
@@ -143,6 +147,18 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   task_s3.valid := task_s2.valid
   when (task_s2.valid) {
     task_s3.bits := task_s2.bits
+  }
+
+  val WPURes_s3 = RegInit(0.U.asTypeOf(io.WPUResFromArb_s2))
+  val WPUResValid_hold = RegInit(0.U(2.W))
+  WPURes_s3.valid := io.WPUResFromArb_s2.valid
+  when (io.WPUResFromArb_s2.valid) {
+    WPURes_s3.bits := io.WPUResFromArb_s2.bits
+  }
+  when (io.WPUResFromArb_s2.valid) {
+    WPUResValid_hold := "b11".U
+  }.otherwise {
+    WPUResValid_hold := WPUResValid_hold >> 1.U
   }
 
   /* ======== Enchantment ======== */
@@ -458,14 +474,63 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   source_req_s3 := Mux(sink_resp_s3.valid, sink_resp_s3.bits, req_s3)
   source_req_s3.isKeyword.foreach(_ := req_s3.isKeyword.getOrElse(false.B))
 
+  /* ======== Update Way Predictor ======== */
+  val wpuReplUpd, wpuEvictUpd, wpuLookupUpd= WireInit(0.U.asTypeOf(Valid(new WPUUpdate())))
+  assert(wpuReplUpd.valid === io.tagWReq.valid)
+  wpuReplUpd.valid := task_s3.valid & io.replResp.valid & !io.replResp.bits.retry & io.tagWReq.valid & req_s3.replTask
+  wpuReplUpd.bits.isReplace := true.B
+  wpuReplUpd.bits.actualWay := io.replResp.bits.way
+  wpuReplUpd.bits.set := io.replResp.bits.set
+  wpuReplUpd.bits.tag := req_s3.tag
+
+  wpuEvictUpd.valid := task_s3.valid & io.metaWReq.valid & io.metaWReq.bits.wmeta.state === INVALID
+  wpuEvictUpd.bits.isEvict := true.B
+  wpuEvictUpd.bits.actualWay := OHToUInt(io.metaWReq.bits.wayOH)
+  wpuEvictUpd.bits.set := io.metaWReq.bits.set
+
+  wpuLookupUpd.valid := WPURes_s3.valid
+  wpuLookupUpd.bits.predWay := WPURes_s3.bits.predWay
+  wpuLookupUpd.bits.predHit := WPURes_s3.bits.predHit
+  wpuLookupUpd.bits.actualWay := io.dirResp_s3.way
+  wpuLookupUpd.bits.actualHit := io.dirResp_s3.hit
+  wpuLookupUpd.bits.set := req_s3.set
+  wpuLookupUpd.bits.tag := req_s3.tag
+
+  io.toWPUUpd.valid := wpuReplUpd.valid | wpuEvictUpd.valid | wpuLookupUpd.valid
+  io.toWPUUpd.bits := MuxCase(0.U.asTypeOf(new WPUUpdate), Seq(
+    wpuReplUpd.valid -> wpuReplUpd.bits,
+    wpuEvictUpd.valid -> wpuEvictUpd.bits,
+    wpuLookupUpd.valid -> wpuLookupUpd.bits
+  ))
+  assert(!wpuReplUpd.valid && !wpuEvictUpd.valid && wpuLookupUpd.valid ||
+    !wpuReplUpd.valid && wpuEvictUpd.valid && !wpuLookupUpd.valid ||
+    wpuReplUpd.valid && !wpuEvictUpd.valid && !wpuLookupUpd.valid ||
+    !wpuReplUpd.valid && !wpuEvictUpd.valid && !wpuLookupUpd.valid
+  )
+
+  val predHitSucc = WPURes_s3.bits.predHit && io.dirResp_s3.hit && WPURes_s3.bits.predWay === io.dirResp_s3.way
+  val predMissSucc = !WPURes_s3.bits.predHit && !io.dirResp_s3.hit
+  val predSucc = predHitSucc || predMissSucc
+  val predUnmatch = WPURes_s3.bits.predHit && io.dirResp_s3.hit && WPURes_s3.bits.predWay =/= io.dirResp_s3.way
+  val predHitButMiss = WPURes_s3.bits.predHit && !io.dirResp_s3.hit
+  val predMissButHit = !WPURes_s3.bits.predHit && io.dirResp_s3.hit
+  val readDSAgain = WPUResValid_hold(0) && (predUnmatch || predMissButHit) || !WPUResValid_hold(0) && io.dirResp_s3.hit
+  val useRDataByWPU_s3 = WPURes_s3.valid && predHitSucc
+
   /* ======== Interact with DS ======== */
-  val data_s3 = Mux(io.releaseBufResp_s3.valid, io.releaseBufResp_s3.bits.data, io.refillBufResp_s3.bits.data)
+//  val data_s3 = Mux(io.releaseBufResp_s3.valid, io.releaseBufResp_s3.bits.data, io.refillBufResp_s3.bits.data)
+  val data_s3 = MuxCase(io.refillBufResp_s3.bits.data, Seq(
+    useRDataByWPU_s3 -> io.toDS.rdata.data,
+    io.releaseBufResp_s3.valid -> io.releaseBufResp_s3.bits.data
+  ))
+  val dataErr_s3 = io.toDS.error
   val c_releaseData_s3 = io.bufResp.data.asUInt
   val hasData_s3_tl = source_req_s3.opcode(0) // whether to respond data to TileLink-side
   val hasData_s3_chi = source_req_s3.toTXDAT // whether to respond data to CHI-side
   val hasData_s3 = hasData_s3_tl || hasData_s3_chi
 
-  val need_data_a = dirResult_s3.hit && (req_get_s3 || req_acquireBlock_s3)
+//  val need_data_a = dirResult_s3.hit && (req_get_s3 || req_acquireBlock_s3)
+  val need_data_a = readDSAgain
   val need_data_b = sinkB_req_s3 && (doRespData || doFwd || nestable_dirResult_s3.hit && nestable_meta_s3.state === TRUNK)
   val need_data_mshr_repl = mshr_refill_s3 && need_repl && !retry
   val need_data_cmo = cmo_cbo_s3 && nestable_dirResult_s3.hit && nestable_meta_s3.dirty
@@ -612,7 +677,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   ) || mshr_refill_s3 && retry
 
   val data_unready_s3 = hasData_s3 && !mshr_req_s3
-  val data_unready_s3_tl = hasData_s3_tl && !mshr_req_s3
+  val data_unready_s3_tl = hasData_s3_tl && !mshr_req_s3 && !useRDataByWPU_s3
   /**
     * The combinational logic path of
     *     Directory metaAll
@@ -630,7 +695,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val isD_s3_ready = Mux(
     mshr_req_s3,
     mshr_cmoresp_s3 && !io.cmoAllBlock.getOrElse(false.B) || mshr_refill_s3 && !retry,
-    req_s3.fromC || req_s3.fromA && !need_mshr_s3_a && !data_unready_s3_tl && req_s3.opcode =/= Hint && !d_s3_latch.B
+    req_s3.fromC || req_s3.fromA && !need_mshr_s3_a && !data_unready_s3_tl && req_s3.opcode =/= Hint && (!d_s3_latch.B || useRDataByWPU_s3)
   )
   val isTXRSP_s3 = Mux(
     mshr_req_s3,
@@ -725,6 +790,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val task_s4 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
   val data_unready_s4 = RegInit(false.B)
   val data_s4 = Reg(UInt((blockBytes * 8).W))
+  val dataErr_s4 = RegInit(false.B)
   val ren_s4 = RegInit(false.B)
   val need_write_releaseBuf_s4 = RegInit(false.B)
   val isD_s4, isTXREQ_s4, isTXRSP_s4, isTXDAT_s4 = RegInit(false.B)
@@ -800,9 +866,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     dataMetaError_s5 := dataError_s4
     l2TagError_s5 := l2Error_s4
   }
-  val rdata_s5 = io.toDS.rdata_s5.data
-  val dataError_s5 = io.toDS.error_s5 || dataMetaError_s5
-  val l2Error_s5 = l2TagError_s5 || io.toDS.error_s5
+  val rdata_s5 = Mux(RegNextN(useRDataByWPU_s3, 2), data_s5, io.toDS.rdata.data)
+  val dataError_s5 = io.toDS.error || dataMetaError_s5
+  val l2Error_s5 = l2TagError_s5 || io.toDS.error
   val out_data_s5 = Mux(task_s5.bits.mshrTask || task_s5.bits.snpHitReleaseWithData, data_s5, rdata_s5)
   val chnl_fire_s5 = d_s5.fire || txreq_s5.fire || txrsp_s5.fire || txdat_s5.fire
 

@@ -130,6 +130,9 @@ case class L2Param(
   // Enable sram test support
   hasMbist: Boolean = false,
   hasSramCtl: Boolean = false,
+
+  // when mainpipe read ds on s3 in 2nd cycle or wpu is in update, cancel way predict
+  cancelWPUOnBlock: Boolean = true,
 ) {
   def toCacheParams: CacheParameters = CacheParameters(
     name = name,

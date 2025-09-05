@@ -25,6 +25,7 @@ import freechips.rocketchip.tilelink.TLMessages._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2tl._
 import coupledL2.tl2chi._
+import coupledL2.wpu.{WPURead, WPUResult}
 
 class RequestArb(implicit p: Parameters) extends L2Module
   with HasCHIOpcodes {
@@ -73,6 +74,13 @@ class RequestArb(implicit p: Parameters) extends L2Module
 
     /* MSHR Status */
     val msInfo = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo())))
+
+    val toWPURead = DecoupledIO(new WPURead)
+    val WPURes = Flipped(ValidIO(new WPUResult))
+    val toDSReq_s1 = DecoupledIO(new DSRequest)
+    val toDSen_s1 = Bool()
+    val DSStage = Input(UInt(2.W))
+    val WPUResToMP = ValidIO(new WPUResult)
   })
 
   /* ======== Reset ======== */
@@ -133,7 +141,8 @@ class RequestArb(implicit p: Parameters) extends L2Module
   val A_task = io.sinkA.bits
   val B_task = io.sinkB.bits
   val C_task = io.sinkC.bits
-  val block_A = io.fromMSHRCtl.blockA_s1 || io.fromMainPipe.blockA_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockA_s1
+  val block_A = io.fromMSHRCtl.blockA_s1 || io.fromMainPipe.blockA_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockA_s1 ||
+    io.sinkA.bits.hasData && (if (cacheParams.cancelWPUOnBlock) false.B else !io.toWPURead.ready || !io.toDSReq_s1.ready && io.DSStage === "b01".U)
   val block_B = io.fromMSHRCtl.blockB_s1 || io.fromMainPipe.blockB_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockB_s1 ||
     (if (io.fromSourceC.isDefined) io.fromSourceC.get.blockSinkBReqEntrance else false.B) ||
     (if (io.fromTXDAT.isDefined) io.fromTXDAT.get.blockSinkBReqEntrance else false.B) ||
@@ -147,6 +156,7 @@ class RequestArb(implicit p: Parameters) extends L2Module
     io.sinkB.valid && !block_B,
     io.sinkA.valid && !block_A
   )).asUInt
+  dontTouch(sinkValids)
 
   // TODO: A Hint is allowed to enter if !s2_ready for mcp2_stall
 
@@ -199,9 +209,10 @@ class RequestArb(implicit p: Parameters) extends L2Module
   /* ========  Stage 2 ======== */
   val s1_AHint_fire = io.sinkA.fire && io.sinkA.bits.opcode === Hint
   // any req except AHint might access DS, and continuous DS accesses are prohibited
-  val ds_mcp2_stall = RegNext(s1_fire && !s1_AHint_fire)
+  // even though acquire miss in wpu, we still block to get rid of req hit in directory
+  val mps3_ds_mcp2_stall = RegNext(s1_fire && !s1_AHint_fire)
 
-  s2_ready  := !ds_mcp2_stall
+  s2_ready  := !mps3_ds_mcp2_stall
 
   val task_s2 = RegInit(0.U.asTypeOf(task_s1))
   task_s2.valid := s1_fire
@@ -298,6 +309,29 @@ class RequestArb(implicit p: Parameters) extends L2Module
     }
   }
 
+  val cancelWPU = if (cacheParams.cancelWPUOnBlock) {
+    !io.toWPURead.ready || !io.toDSReq_s1.ready
+  } else {
+    !io.toDSReq_s1.ready && io.DSStage === "b00".U
+  }
+  val dsReqValid = io.WPURes.fire && io.WPURes.bits.predHit
+  io.toWPURead.bits.set := task_s1.bits.set
+  io.toWPURead.bits.tag := task_s1.bits.tag
+  io.toWPURead.valid := chnl_task_s1.valid && chnl_task_s1.bits.fromA &&
+    (chnl_task_s1.bits.opcode === Get || chnl_task_s1.bits.opcode === AcquireBlock) && s2_ready && !mshr_task_s1.valid && !cancelWPU
+  io.toDSen_s1 := dsReqValid
+  io.toDSReq_s1.valid := dsReqValid || RegNext(dsReqValid)
+  io.toDSReq_s1.bits.set := Mux(dsReqValid, A_task.set, RegNext(A_task.set))
+  io.toDSReq_s1.bits.way := Mux(dsReqValid, io.WPURes.bits.predWay, RegNext(io.WPURes.bits.predWay))
+  io.toDSReq_s1.bits.wen := false.B
+
+  val WPURes_s2 = RegInit(0.U.asTypeOf(Valid(new WPUResult)))
+  WPURes_s2.valid := s1_fire && io.WPURes.valid
+  when (s1_fire&& io.WPURes.valid) {
+    WPURes_s2.bits := io.WPURes.bits
+  }
+  io.WPUResToMP := WPURes_s2
+
   dontTouch(io)
 
   // Performance counters
@@ -350,12 +384,30 @@ class RequestArb(implicit p: Parameters) extends L2Module
   XSPerfAccumulate("sinkB_stall_by_mshrTask", io.sinkB.valid && !block_B && io.dirRead_s1.ready && mshr_task_s1.valid)
   XSPerfAccumulate("sinkC_stall_by_mshrTask", io.sinkC.valid && !block_C && io.dirRead_s1.ready && mshr_task_s1.valid)
 
-  XSPerfAccumulate("sinkA_stall_by_mcp2", io.sinkA.valid && !block_A && io.dirRead_s1.ready && !mshr_task_s1.valid && ds_mcp2_stall)
-  XSPerfAccumulate("sinkB_stall_by_mcp2", io.sinkB.valid && !block_B && io.dirRead_s1.ready && !mshr_task_s1.valid && ds_mcp2_stall)
-  XSPerfAccumulate("sinkC_stall_by_mcp2", io.sinkC.valid && !block_C && io.dirRead_s1.ready && !mshr_task_s1.valid && ds_mcp2_stall)
+  XSPerfAccumulate("sinkA_stall_by_mcp2", io.sinkA.valid && !block_A && io.dirRead_s1.ready && !mshr_task_s1.valid && mps3_ds_mcp2_stall)
+  XSPerfAccumulate("sinkB_stall_by_mcp2", io.sinkB.valid && !block_B && io.dirRead_s1.ready && !mshr_task_s1.valid && mps3_ds_mcp2_stall)
+  XSPerfAccumulate("sinkC_stall_by_mcp2", io.sinkC.valid && !block_C && io.dirRead_s1.ready && !mshr_task_s1.valid && mps3_ds_mcp2_stall)
 
   XSPerfAccumulate("sinkA_stall_by_sinkB", io.sinkA.valid && sink_ready_basic && !block_A && sinkValids(1) && !sinkValids(0))
   XSPerfAccumulate("sinkA_stall_by_sinkC", io.sinkA.valid && sink_ready_basic && !block_A && sinkValids(0))
   XSPerfAccumulate("sinkB_stall_by_sinkC", io.sinkB.valid && sink_ready_basic && !block_B && sinkValids(0))
 
+  val debug_need_wpu = task_s1.valid && task_s1.bits.fromA && !task_s1.bits.mshrTask
+    (task_s1.bits.opcode === Get || task_s1.bits.opcode === AcquireBlock) && s2_ready
+  val wpuupd = !io.toWPURead.ready
+  val dsstg1 = io.DSStage === "b11".U && !io.toDSReq_s1.valid
+  val dsstg2 = io.DSStage === "b01".U && !io.toDSReq_s1.valid
+  XSPerfAccumulate("upd_stg1_nostg2", debug_need_wpu && wpuupd && dsstg1 && !dsstg2)
+  XSPerfAccumulate("upd_nostg1_stg2", debug_need_wpu && wpuupd && !dsstg1 && dsstg2)
+  XSPerfAccumulate("noupd_nostg1_stg2", debug_need_wpu && !wpuupd && !dsstg1 && dsstg2)
+  XSPerfAccumulate("noupd_stg1_nostg2", debug_need_wpu && !wpuupd && dsstg1 && !dsstg2)
+  XSPerfAccumulate("upd_nostg1_nostg2", debug_need_wpu && wpuupd && !dsstg1 && !dsstg2)
+  XSPerfAccumulate("upd_nostg2", debug_need_wpu && wpuupd && !dsstg2)
+  XSPerfAccumulate("stg1_nostg2", debug_need_wpu && dsstg1 && !dsstg2)
+  XSPerfAccumulate("upd_nostg2", debug_need_wpu && wpuupd && !dsstg2)
+  XSPerfAccumulate("upd_nostg1", debug_need_wpu && wpuupd && !dsstg1)
+  XSPerfAccumulate("nostg1_stg2", debug_need_wpu && !dsstg1 && dsstg2)
+  XSPerfAccumulate("upd", debug_need_wpu && wpuupd)
+  XSPerfAccumulate("stg1", debug_need_wpu && dsstg1)
+  XSPerfAccumulate("stg2", debug_need_wpu && dsstg2)
 }

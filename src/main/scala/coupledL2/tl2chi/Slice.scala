@@ -23,6 +23,7 @@ import utility.mbist.MbistPipeline
 import org.chipsalliance.cde.config.Parameters
 import coupledL2._
 import coupledL2.prefetch.PrefetchIO
+import coupledL2.wpu.{WPUParameters, WPUWrapper}
 
 class OuterBundle(implicit p: Parameters) extends DecoupledPortIO with BaseOuterBundle
 
@@ -51,7 +52,8 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
 
   /* Data path and control path */
   val directory = Module(new Directory())
-  val dataStorage = Module(new DataStorage())
+  val dataStorage1 = Module(new DataStorage())
+  val dsArb = Module(new DataStorageArb())
   val refillBuf = Module(new MSHRBuffer(wPorts = 2))
   val releaseBuf = Module(new MSHRBuffer(wPorts = 3))
 
@@ -59,6 +61,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   val mainPipe = Module(new MainPipe())
   val reqBuf = Module(new RequestBuffer())
   val mshrCtl = Module(new MSHRCtl())
+  val wpu = Module(new WPUWrapper(WPUParameters("utag2"), 1))
   private val mbistPl = MbistPipeline.PlaceMbistPipeline(2, "L2Slice", p(L2ParamKey).hasMbist)
   sinkC.io.msInfo := mshrCtl.io.msInfo
 
@@ -86,9 +89,15 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   directory.io.tagWReq := mainPipe.io.tagWReq
   directory.io.msInfo := mshrCtl.io.msInfo
 
-  dataStorage.io.en := mainPipe.io.toDS.en_s3
-  dataStorage.io.req := mainPipe.io.toDS.req_s3
-  dataStorage.io.wdata := mainPipe.io.toDS.wdata_s3
+//  dataStorage.io.en := mainPipe.io.toDS.en_s3
+//  dataStorage.io.req := mainPipe.io.toDS.req_s3
+//  dataStorage.io.wdata := mainPipe.io.toDS.wdata_s3
+  dataStorage1.io <> dsArb.toDS
+  dsArb.in.enFromReqArb := reqArb.io.toDSen_s1
+  dsArb.in.reqFromReqArb <> reqArb.io.toDSReq_s1
+  dsArb.in.enFromMPS3 := mainPipe.io.toDS.en_s3
+  dsArb.in.reqFromMPS3 := mainPipe.io.toDS.req_s3
+  dsArb.in.wdataFromMPS3 := mainPipe.io.toDS.wdata_s3
 
   reqArb.io.ATag := reqBuf.io.ATag
   reqArb.io.ASet := reqBuf.io.ASet
@@ -103,6 +112,11 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   reqArb.io.fromTXRSP.foreach(_ := txrsp.io.toReqArb)
   reqArb.io.fromTXREQ.foreach(_ := txreq.io.toReqArb)
   reqArb.io.msInfo := mshrCtl.io.msInfo
+  reqArb.io.WPURes := wpu.out.res
+  reqArb.io.DSStage := dsArb.out.stage
+
+  wpu.in.read <> reqArb.io.toWPURead
+  wpu.in.update := mainPipe.io.toWPUUpd
 
   reqBuf.io.in <> sinkA.io.task
   reqBuf.io.mshrInfo := mshrCtl.io.msInfo
@@ -122,8 +136,9 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   mainPipe.io.refillBufResp_s3.bits := refillBuf.io.resp.data
   mainPipe.io.releaseBufResp_s3.valid := RegNext(releaseBuf.io.r.valid, false.B)
   mainPipe.io.releaseBufResp_s3.bits := releaseBuf.io.resp.data
-  mainPipe.io.toDS.rdata_s5 := dataStorage.io.rdata
-  mainPipe.io.toDS.error_s5 := dataStorage.io.error
+  mainPipe.io.toDS.rdata := dsArb.out.rdata
+  mainPipe.io.toDS.error := dsArb.out.error
+  mainPipe.io.WPUResFromArb_s2 := reqArb.io.WPUResToMP
   // mainPipe.io.grantBufferHint := grantBuf.io.l1Hint
   // mainPipe.io.globalCounter := grantBuf.io.globalCounter
 

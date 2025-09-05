@@ -21,6 +21,7 @@ import chisel3._
 import chisel3.util._
 import coupledL2.utils.GatedSplittedSRAM
 import org.chipsalliance.cde.config.Parameters
+import utility.RegNextN
 import utility.mbist.MbistPipeline
 
 class DSRequest(implicit p: Parameters) extends L2Bundle {
@@ -46,24 +47,25 @@ class DSECCBankBlock(implicit p: Parameters) extends L2Bundle {
   }
 }
 
+class DSIO(implicit p: Parameters) extends L2Bundle {
+  // en is the actual r/w valid from mainpipe (last for one cycle)
+  // en is used to generate gated_clock for SRAM
+  val en = Input(Bool())
+
+  // ECC error
+  val error = Output(Bool())
+
+  // 1. there is only 1 read or write request in the same cycle,
+  // so only 1 req port is necessary
+  // 2. according to the requirement of MCP2, [req.valid, req.bits, wdata]
+  // must hold for 2 cycles (unchanged at en and RegNext(en))
+  val req = Flipped(ValidIO(new DSRequest))
+  val rdata = Output(new DSBlock)
+  val wdata = Input(new DSBlock)
+}
 
 class DataStorage(implicit p: Parameters) extends L2Module {
-  val io = IO(new Bundle() {
-    // en is the actual r/w valid from mainpipe (last for one cycle)
-    // en is used to generate gated_clock for SRAM
-    val en = Input(Bool())
-
-    // ECC error
-    val error = Output(Bool())
-
-    // 1. there is only 1 read or write request in the same cycle,
-    // so only 1 req port is necessary
-    // 2. according to the requirement of MCP2, [req.valid, req.bits, wdata]
-    // must hold for 2 cycles (unchanged at en and RegNext(en))
-    val req = Flipped(ValidIO(new DSRequest))
-    val rdata = Output(new DSBlock)
-    val wdata = Input(new DSBlock)
-  })
+  val io = IO(new DSIO)
 
   // read data is set MultiCycle Path 2
   val array = Module(new GatedSplittedSRAM(
@@ -128,4 +130,45 @@ class DataStorage(implicit p: Parameters) extends L2Module {
 
   assert(!(RegNext(io.en && io.req.bits.wen) && (io.wdata.asUInt =/= RegNext(io.wdata.asUInt))),
     s"DataStorage wdata fails to hold for 2 cycles!")
+}
+
+class DataStorageArb(implicit p: Parameters) extends L2Module {
+  val in = IO(Flipped(new Bundle() {
+    val enFromReqArb = Bool()
+    // TODO: 可以不用ready信号而是直接让MainPipe通知WPU
+    val reqFromReqArb = DecoupledIO(new DSRequest)
+
+    val enFromMPS3 = Bool()
+    val reqFromMPS3 = ValidIO(new DSRequest)
+    val wdataFromMPS3 = new DSBlock
+  }))
+
+  val out = IO(new Bundle() {
+    val error = Bool()
+    val rdata = new DSBlock
+    val stage = UInt(2.W)
+    val toMPS5 = Bool()
+  })
+
+  val toDS = IO(Flipped(new DSIO))
+
+  val stage = RegInit(0.U(2.W))
+  when(toDS.en) {
+    stage := "b11".U
+  }.otherwise {
+    stage := stage >> 1.U
+  }
+
+  assert(in.reqFromReqArb.bits.wen === false.B, "WPU will only read DS")
+
+  toDS.en := in.enFromReqArb && in.reqFromReqArb.ready || in.enFromMPS3
+  toDS.req.valid := in.reqFromMPS3.valid | in.reqFromReqArb.valid
+  toDS.req.bits := Mux(in.reqFromMPS3.valid, in.reqFromMPS3.bits, in.reqFromReqArb.bits)
+  toDS.wdata := in.wdataFromMPS3
+  in.reqFromReqArb.ready := !in.reqFromMPS3.valid
+
+  out.rdata := toDS.rdata
+  out.error := toDS.error
+  out.stage := stage
+  out.toMPS5 := RegNextN(in.enFromMPS3 && !in.reqFromMPS3.bits.wen, 2)
 }
