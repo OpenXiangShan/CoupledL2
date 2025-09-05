@@ -71,12 +71,12 @@ class L2TSHRAlloc(implicit val p: Parameters) extends Module with HasL2Params {
 
     // Set 'SCR' of previous tail TSHR on PA hit
     val s1_set_SCR = s1_PA_hit_tail
-    io.toTSHR.map(_.SCR.valid).zip(s1_PA_hit_tail).map { case (en, hit) => en := hit }
+    io.toTSHR.map(_.SCR.valid).zip(s1_set_SCR).map { case (en, set) => en := set }
     io.toTSHR.foreach(_.SCR.bits := io.in.bits.nextFree.bits)
 
     // Clear 'tail' of previous tail TSHR on PA hit
     val s1_clear_tail = s1_PA_hit_tail
-    io.toTSHR.map(_.tail.valid).zip(s1_PA_hit_tail).map { case (en, hit) => en := hit }
+    io.toTSHR.map(_.tail.valid).zip(s1_clear_tail).map { case (en, clr) => en := clr }
     io.toTSHR.foreach(_.tail.bits := false.B)
 
     //
