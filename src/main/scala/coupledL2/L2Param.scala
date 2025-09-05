@@ -132,7 +132,7 @@ case class L2Param(
   hasSramCtl: Boolean = false,
 
   // Enable new clint
-  EnableNewClint: Boolean = false
+  EnablePrivateClint: Boolean = false
 ) {
   def toCacheParams: CacheParameters = CacheParameters(
     name = name,
