@@ -6,7 +6,8 @@ import chisel3.util._
 class SRAMWrapper[T <: Data]
 (
   gen: T, set: Int, n: Int = 1,
-  clkDivBy2: Boolean = false
+  clkDivBy2: Boolean = false,
+  dummy: Boolean = false
 ) extends Module {
 
   val io = IO(new Bundle() {
@@ -26,7 +27,7 @@ class SRAMWrapper[T <: Data]
     val ren = if(n == 1) true.B else i.U === r_sel
     val wen = if(n == 1) true.B else i.U === w_sel
     val sram = Module(new SRAMTemplate[T](
-      gen, innerSet, 1, singlePort = true, clkDivBy2 = clkDivBy2
+      gen, innerSet, 1, singlePort = true, clkDivBy2 = clkDivBy2, dummy = dummy
     ))
     sram.io.r.req.valid := io.r.req.valid && ren
     sram.io.r.req.bits.apply(r_setIdx)

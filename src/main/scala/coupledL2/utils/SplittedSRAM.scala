@@ -15,7 +15,8 @@ class SplittedSRAM[T <: Data]
   setSplit: Int = 1, waySplit: Int = 1, dataSplit: Int = 1,
   shouldReset: Boolean = false, holdRead: Boolean = false,
   singlePort: Boolean = true, bypassWrite: Boolean = false,
-  clkDivBy2: Boolean = false, readMCP2: Boolean = true
+  clkDivBy2: Boolean = false, readMCP2: Boolean = true,
+  dummy: Boolean = false
 ) extends Module {
   val io = IO(new Bundle() {
     val r = Flipped(new SRAMReadBus(gen, set, way))
@@ -43,7 +44,7 @@ class SplittedSRAM[T <: Data]
       UInt(innerWidth.W), innerSets, innerWays,
       shouldReset = shouldReset, holdRead = holdRead,
       singlePort = singlePort, bypassWrite = bypassWrite,
-      clkDivBy2 = clkDivBy2, readMCP2 = readMCP2
+      clkDivBy2 = clkDivBy2, readMCP2 = readMCP2, dummy = dummy
     ))
   )))
 

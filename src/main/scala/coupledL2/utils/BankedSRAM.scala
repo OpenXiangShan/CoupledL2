@@ -28,7 +28,8 @@ class BankedSRAM[T <: Data]
   gen: T, sets: Int, ways: Int, n: Int = 1,
   shouldReset: Boolean = false, holdRead: Boolean = false,
   singlePort: Boolean = false, bypassWrite: Boolean = false,
-  clkDivBy2: Boolean = false, readMCP2: Boolean = false
+  clkDivBy2: Boolean = false, readMCP2: Boolean = false,
+  dummySRAM: Boolean = false
 ) extends Module {
   val io = IO(new Bundle() {
     val r = Flipped(new SRAMReadBus(gen, sets, ways))
@@ -50,7 +51,8 @@ class BankedSRAM[T <: Data]
       gen, innerSet, ways,
       shouldReset = shouldReset, holdRead = holdRead,
       singlePort = true, bypassWrite = bypassWrite,
-      clkDivBy2 = clkDivBy2, readMCP2 = readMCP2
+      clkDivBy2 = clkDivBy2, readMCP2 = readMCP2,
+      dummy = dummySRAM
     ))
     sram.io.r.req.valid := io.r.req.valid && ren
     sram.io.r.req.bits.apply(r_setIdx)

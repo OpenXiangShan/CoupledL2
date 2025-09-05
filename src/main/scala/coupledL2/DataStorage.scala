@@ -60,7 +60,9 @@ class DataStorage(implicit p: Parameters) extends L2Module {
     way = 1,
     dataSplit = 4,
     singlePort = true,
-    readMCP2 = true
+    readMCP2 = true,
+    dummy = false,
+    // dummy = env.TraceRTLMode
   ))
 
   val masked_clock = ClockGate(false.B, io.en, clock)
