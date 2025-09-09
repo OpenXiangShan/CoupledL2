@@ -134,7 +134,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   mshrCtl.io.resps.sinkC := sinkC.io.resp
   mshrCtl.io.resps.rxrsp := rxrsp.io.in
   mshrCtl.io.resps.rxdat := rxdat.io.in
-  mshrCtl.io.nestedwb := mainPipe.io.nestedwb
+  mshrCtl.io.nestedwb <> mainPipe.io.nestedwb
   mshrCtl.io.replResp := directory.io.replResp
   mshrCtl.io.aMergeTask := reqBuf.io.aMergeTask
   // TODO: This is ugly
