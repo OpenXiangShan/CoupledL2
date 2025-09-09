@@ -46,6 +46,10 @@ case class L1Param
   val needResolveAlias = aliasBitsOpt.nonEmpty
 }
 
+// Pass way in [ L2 -> D -> L1 ] and [ L1 -> C -> L2 ]
+case object WayKey extends ControlKey[UInt]("way")
+case class WayField() extends BundleField[UInt](WayKey, Output(UInt(4.W)), _ := 0.U(4.W))
+
 // Pass PMA and uncached memory attribute from PBMT to MMIOBridge
 case object MemBackTypeMM extends ControlKey[Bool]("memBackType_MM")
 case class MemBackTypeMMField() extends BundleField[Bool](MemBackTypeMM, Output(Bool()), _ := false.B)
@@ -82,10 +86,10 @@ case class L2Param(
   // Client
   echoField: Seq[BundleFieldBase] = Nil,
   reqField: Seq[BundleFieldBase] = Nil,
-  respKey: Seq[BundleKeyBase] = Seq(IsHitKey),
+  respKey: Seq[BundleKeyBase] = Seq(IsHitKey, WayKey),
   // Manager
-  reqKey: Seq[BundleKeyBase] = Seq(AliasKey, VaddrKey, PrefetchKey, ReqSourceKey),
-  respField: Seq[BundleFieldBase] = Nil,
+  reqKey: Seq[BundleKeyBase] = Seq(AliasKey, VaddrKey, PrefetchKey, ReqSourceKey, WayKey),
+  respField: Seq[BundleFieldBase] = Seq(WayField()),
 
   innerBuf: TLBufferParams = TLBufferParams(),
   outerBuf: TLBufferParams = TLBufferParams(
@@ -134,6 +138,8 @@ case class L2Param(
   // Enable new clint
   EnablePrivateClint: Boolean = false
 ) {
+  require(ways <= 16, "L1 way record for L2: only support up to 16 ways")
+
   def toCacheParams: CacheParameters = CacheParameters(
     name = name,
     sets = sets,

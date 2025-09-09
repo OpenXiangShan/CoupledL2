@@ -582,7 +582,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val metaW_way = Mux(
     mshr_refill_s3 && req_s3.replTask,
     io.replResp.bits.way, // grant always use replResp way
-    Mux(mshr_req_s3, req_s3.way, dirResult_s3.way)
+    Mux(mshr_req_s3 || sinkC_req_s3, req_s3.way, dirResult_s3.way) // use way info from SinkC on Release/ReleaseData
   )
 
   io.metaWReq.valid := !resetFinish || task_s3.valid && (
