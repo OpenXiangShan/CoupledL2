@@ -96,7 +96,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     val releaseBufWrite = ValidIO(new MSHRBufWrite())
 
     /* nested writeback */
-    val nestedwb = Output(new NestedWriteback())
+    val nestedwb = Flipped(new NestedWriteback())
     val nestedwbData = Output(new DSBlock())
 
     /* l2 refill hint */
@@ -198,6 +198,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   val cache_alias               = req_acquire_s3 && dirResult_s3.hit && meta_s3.clients(0) &&
                               meta_s3.alias.getOrElse(0.U) =/= req_s3.alias.getOrElse(0.U)
+
+  val replaceNestedRelease_s3 = task_s3.valid && task_s3.bits.fromC && io.nestedwb.replaceMatch
 
   // *NOTICE: 'nestable_*' must not be used in A Channel related logics.
   val nestable_dirResult_s3     = Wire(chiselTypeOf(dirResult_s3))
