@@ -514,7 +514,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val predUnmatch = WPURes_s3.bits.predHit && io.dirResp_s3.hit && WPURes_s3.bits.predWay =/= io.dirResp_s3.way
   val predHitButMiss = WPURes_s3.bits.predHit && !io.dirResp_s3.hit
   val predMissButHit = !WPURes_s3.bits.predHit && io.dirResp_s3.hit
-  val readDSAgain = WPUResValid_hold(0) && (predUnmatch || predMissButHit) || !WPUResValid_hold(0) && io.dirResp_s3.hit
+  val readDSAgain = Mux(WPUResValid_hold(0), (predUnmatch || predMissButHit),
+    io.dirResp_s3.hit && (req_s3.opcode === Get || req_s3.opcode === AcquireBlock) && sinkA_req_s3)
   val useRDataByWPU_s3 = WPURes_s3.valid && predHitSucc
 
   /* ======== Interact with DS ======== */
@@ -535,6 +536,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val need_data_mshr_repl = mshr_refill_s3 && need_repl && !retry
   val need_data_cmo = cmo_cbo_s3 && nestable_dirResult_s3.hit && nestable_meta_s3.dirty
   val ren = need_data_a || need_data_b || need_data_mshr_repl || need_data_cmo
+  dontTouch(ren)
+  dontTouch(need_data_a)
+  dontTouch(readDSAgain)
 
   val wen_c = sinkC_req_s3 && isParamFromT(req_s3.param) && req_s3.opcode(0) && dirResult_s3.hit
   val wen_mshr = req_s3.dsWen && (
@@ -544,6 +548,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     mshr_refill_s3 && !need_repl && !retry
   )
   val wen = wen_c || wen_mshr
+  dontTouch(wen)
 
   // This is to let io.toDS.req_s3.valid hold for 2 cycles (see DataStorage for details)
   val task_s3_valid_hold2 = RegInit(0.U(2.W))

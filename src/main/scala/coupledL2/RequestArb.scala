@@ -309,16 +309,16 @@ class RequestArb(implicit p: Parameters) extends L2Module
     }
   }
 
-  val cancelWPU = if (cacheParams.cancelWPUOnBlock) {
-    !io.toWPURead.ready || !io.toDSReq_s1.ready
-  } else {
-    !io.toDSReq_s1.ready && io.DSStage === "b00".U
-  }
-  val dsReqValid = io.WPURes.fire && io.WPURes.bits.predHit
+//  val cancelWPU = if (cacheParams.cancelWPUOnBlock) {
+//    !io.toWPURead.ready || !io.toDSReq_s1.ready
+//  } else {
+//    !io.toDSReq_s1.ready && io.DSStage === "b00".U
+//  }
+  val dsReqValid = io.WPURes.fire && io.WPURes.bits.predHit && io.DSStage === "b00".U
   io.toWPURead.bits.set := task_s1.bits.set
   io.toWPURead.bits.tag := task_s1.bits.tag
   io.toWPURead.valid := chnl_task_s1.valid && chnl_task_s1.bits.fromA &&
-    (chnl_task_s1.bits.opcode === Get || chnl_task_s1.bits.opcode === AcquireBlock) && s2_ready && !mshr_task_s1.valid && !cancelWPU
+    (chnl_task_s1.bits.opcode === Get || chnl_task_s1.bits.opcode === AcquireBlock) && s2_ready && !mshr_task_s1.valid
   io.toDSen_s1 := dsReqValid
   io.toDSReq_s1.valid := dsReqValid || RegNext(dsReqValid)
   io.toDSReq_s1.bits.set := Mux(dsReqValid, A_task.set, RegNext(A_task.set))
@@ -326,8 +326,8 @@ class RequestArb(implicit p: Parameters) extends L2Module
   io.toDSReq_s1.bits.wen := false.B
 
   val WPURes_s2 = RegInit(0.U.asTypeOf(Valid(new WPUResult)))
-  WPURes_s2.valid := s1_fire && io.WPURes.valid
-  when (s1_fire&& io.WPURes.valid) {
+  WPURes_s2.valid := io.toDSReq_s1.ready && io.toDSen_s1
+  when (io.toDSReq_s1.ready && io.toDSen_s1) {
     WPURes_s2.bits := io.WPURes.bits
   }
   io.WPUResToMP := WPURes_s2
@@ -395,8 +395,8 @@ class RequestArb(implicit p: Parameters) extends L2Module
   val debug_need_wpu = task_s1.valid && task_s1.bits.fromA && !task_s1.bits.mshrTask
     (task_s1.bits.opcode === Get || task_s1.bits.opcode === AcquireBlock) && s2_ready
   val wpuupd = !io.toWPURead.ready
-  val dsstg1 = io.DSStage === "b11".U && !io.toDSReq_s1.valid
-  val dsstg2 = io.DSStage === "b01".U && !io.toDSReq_s1.valid
+  val dsstg1 = io.DSStage === "b11".U
+  val dsstg2 = io.DSStage === "b01".U
   XSPerfAccumulate("upd_stg1_nostg2", debug_need_wpu && wpuupd && dsstg1 && !dsstg2)
   XSPerfAccumulate("upd_nostg1_stg2", debug_need_wpu && wpuupd && !dsstg1 && dsstg2)
   XSPerfAccumulate("noupd_nostg1_stg2", debug_need_wpu && !wpuupd && !dsstg1 && dsstg2)

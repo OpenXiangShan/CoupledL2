@@ -113,7 +113,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   reqArb.io.fromTXREQ.foreach(_ := txreq.io.toReqArb)
   reqArb.io.msInfo := mshrCtl.io.msInfo
   reqArb.io.WPURes := wpu.out.res
-  reqArb.io.DSStage := dsArb.out.stage
+  reqArb.io.DSStage := dsArb.out.mpstage
 
   wpu.in.read <> reqArb.io.toWPURead
   wpu.in.update := mainPipe.io.toWPUUpd

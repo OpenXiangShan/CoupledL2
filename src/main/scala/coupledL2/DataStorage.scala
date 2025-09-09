@@ -146,18 +146,11 @@ class DataStorageArb(implicit p: Parameters) extends L2Module {
   val out = IO(new Bundle() {
     val error = Bool()
     val rdata = new DSBlock
-    val stage = UInt(2.W)
+    val mpstage = UInt(2.W)
     val toMPS5 = Bool()
   })
 
   val toDS = IO(Flipped(new DSIO))
-
-  val stage = RegInit(0.U(2.W))
-  when(toDS.en) {
-    stage := "b11".U
-  }.otherwise {
-    stage := stage >> 1.U
-  }
 
   assert(in.reqFromReqArb.bits.wen === false.B, "WPU will only read DS")
 
@@ -169,6 +162,6 @@ class DataStorageArb(implicit p: Parameters) extends L2Module {
 
   out.rdata := toDS.rdata
   out.error := toDS.error
-  out.stage := stage
+  out.mpstage := Cat(in.enFromMPS3, in.reqFromMPS3.valid)
   out.toMPS5 := RegNextN(in.enFromMPS3 && !in.reqFromMPS3.bits.wen, 2)
 }
