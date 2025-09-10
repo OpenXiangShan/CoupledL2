@@ -570,8 +570,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     clients = Fill(clientBits, 0.U),
     alias = Some(0.U),
     accessed = false.B,
-    tagErr = false.B,
-    dataErr = false.B // update error when write DS
+    tagErr = req_s3.denied,
+    dataErr = req_s3.corrupt // update error when write DS
   )
   // use merge_meta if mergeA
   val metaW_s3_mshr = WireInit(Mux(req_s3.mergeA, req_s3.aMergeTask.meta, req_s3.meta))
@@ -602,6 +602,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   io.metaWReq.bits.release.bits.clients := isToN(req_s3.param)
   io.metaWReq.bits.release.bits.dirty := req_s3.opcode === ReleaseData
   io.metaWReq.bits.release.bits.state := isParamFromT(req_s3.param)
+  io.metaWReq.bits.release.bits.tagErr := wen_c
+  io.metaWReq.bits.release.bits.dataErr := wen_c
 
   io.tagWReq.valid := task_s3.valid && req_s3.tagWen && mshr_refill_s3 && !retry
   io.tagWReq.bits.set := req_s3.set

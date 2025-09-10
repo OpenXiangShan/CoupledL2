@@ -108,6 +108,8 @@ class MetaWrite(implicit p: Parameters) extends L2Bundle {
     val dirty = Bool()
     val clients = Bool()
     val state = Bool()
+    val tagErr = Bool()
+    val dataErr = Bool()
   }) 
 }
 
@@ -246,6 +248,8 @@ class Directory(implicit p: Parameters) extends L2Module {
   metaMaskRelease.dirty := Fill(metaMaskRelease.dirty.getWidth, io.metaWReq.bits.release.bits.dirty) // masking 'dirty'
   metaMaskRelease.clients := Fill(metaMaskRelease.clients.getWidth, io.metaWReq.bits.release.bits.clients) // masking 'clients'
   metaMaskRelease.state := Fill(metaMaskRelease.state.getWidth, io.metaWReq.bits.release.bits.state) // masking 'state'
+  metaMaskRelease.tagErr := Fill(metaMaskRelease.tagErr.getWidth, io.metaWReq.bits.release.bits.tagErr) // masking 'tagErr'
+  metaMaskRelease.dataErr := Fill(metaMaskRelease.dataErr.getWidth, io.metaWReq.bits.release.bits.dataErr) // masking 'dataErr'
 
   metaRead := metaArray.io.r(io.read.fire, io.read.bits.set).resp.data
   metaArray.io.w(
