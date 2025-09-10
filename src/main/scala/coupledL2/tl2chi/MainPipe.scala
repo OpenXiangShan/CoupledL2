@@ -473,7 +473,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val need_data_cmo = cmo_cbo_s3 && nestable_dirResult_s3.hit && nestable_meta_s3.dirty
   val ren = need_data_a || need_data_b || need_data_mshr_repl || need_data_cmo
 
-  val wen_c = sinkC_req_s3 && isParamFromT(req_s3.param) && req_s3.opcode(0) && dirResult_s3.hit
+  val wen_c = sinkC_req_s3 && !replaceNestedRelease_s3 && req_s3.opcode === ReleaseData && isParamFromT(req_s3.param)
   val wen_mshr = req_s3.dsWen && (
     mshr_snpRespX_s3 || mshr_snpRespDataX_s3 ||
     mshr_writeCleanFull_s3 || mshr_writeBackFull_s3 || 
@@ -495,9 +495,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   io.toDS.req_s3.bits.way := Mux(
     mshr_refill_s3 && req_s3.replTask,
     io.replResp.bits.way,
-    Mux(mshr_req_s3, req_s3.way, dirResult_s3.way)
+    Mux(mshr_req_s3 || sinkC_req_s3, req_s3.way, dirResult_s3.way)
   )
-  io.toDS.req_s3.bits.set := Mux(mshr_req_s3, req_s3.set, dirResult_s3.set)
+  io.toDS.req_s3.bits.set := Mux(mshr_req_s3 || sinkC_req_s3, req_s3.set, dirResult_s3.set)
   io.toDS.req_s3.bits.wen := wen
   io.toDS.wdata_s3.data := Mux(
     !mshr_req_s3,
