@@ -52,7 +52,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     val alloc = Flipped(ValidIO(new MSHRRequest))
     val tasks = new MSHRTasks()
     val resps = new MSHRResps()
-    val nestedwb = Input(new NestedWriteback)
+    val nestedwb = new NestedWriteback
     val nestedwbData = Output(Bool())
     val aMergeTask = Flipped(ValidIO(new TaskBundle))
     val replResp = Flipped(ValidIO(new ReplacerResult))
@@ -586,6 +586,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
     dirResult.set === io.nestedwb.set &&
     dirResult.tag === io.nestedwb.tag &&
     state.w_replResp
+
+  io.nestedwb.replaceMatch := nestedwb_match
 
   when (nestedwb_match) {
     when (io.nestedwb.c_set_dirty) {
