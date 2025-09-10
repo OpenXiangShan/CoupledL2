@@ -96,7 +96,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     val releaseBufWrite = ValidIO(new MSHRBufWrite())
 
     /* nested writeback */
-    val nestedwb = Output(new NestedWriteback())
+    val nestedwb = Flipped(new NestedWriteback())
     val nestedwbData = Output(new DSBlock())
 
     /* l2 refill hint */
@@ -198,6 +198,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   val cache_alias               = req_acquire_s3 && dirResult_s3.hit && meta_s3.clients(0) &&
                               meta_s3.alias.getOrElse(0.U) =/= req_s3.alias.getOrElse(0.U)
+
+  val replaceNestedRelease_s3 = task_s3.valid && task_s3.bits.fromC && io.nestedwb.replaceMatch
 
   // *NOTICE: 'nestable_*' must not be used in A Channel related logics.
   val nestable_dirResult_s3     = Wire(chiselTypeOf(dirResult_s3))
@@ -471,7 +473,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val need_data_cmo = cmo_cbo_s3 && nestable_dirResult_s3.hit && nestable_meta_s3.dirty
   val ren = need_data_a || need_data_b || need_data_mshr_repl || need_data_cmo
 
-  val wen_c = sinkC_req_s3 && isParamFromT(req_s3.param) && req_s3.opcode(0) && dirResult_s3.hit
+  val wen_c = sinkC_req_s3 && !replaceNestedRelease_s3 && req_s3.opcode === ReleaseData && isParamFromT(req_s3.param)
   val wen_mshr = req_s3.dsWen && (
     mshr_snpRespX_s3 || mshr_snpRespDataX_s3 ||
     mshr_writeCleanFull_s3 || mshr_writeBackFull_s3 || 
@@ -493,9 +495,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   io.toDS.req_s3.bits.way := Mux(
     mshr_refill_s3 && req_s3.replTask,
     io.replResp.bits.way,
-    Mux(mshr_req_s3, req_s3.way, dirResult_s3.way)
+    Mux(mshr_req_s3 || sinkC_req_s3, req_s3.way, dirResult_s3.way)
   )
-  io.toDS.req_s3.bits.set := Mux(mshr_req_s3, req_s3.set, dirResult_s3.set)
+  io.toDS.req_s3.bits.set := Mux(mshr_req_s3 || sinkC_req_s3, req_s3.set, dirResult_s3.set)
   io.toDS.req_s3.bits.wen := wen
   io.toDS.wdata_s3.data := Mux(
     !mshr_req_s3,
@@ -532,7 +534,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     !isSnpStashX(req_s3.chiOpcode.get) && !isSnpQuery(req_s3.chiOpcode.get) && (
       meta_s3.state === TIP || meta_s3.state === BRANCH && isSnpToN(req_s3.chiOpcode.get)
     )
-  val metaW_valid_s3_c = sinkC_req_s3 && dirResult_s3.hit
+  val metaW_valid_s3_c = sinkC_req_s3 && !replaceNestedRelease_s3
   val metaW_valid_s3_mshr = mshr_req_s3 && req_s3.metaWen && !(mshr_refill_s3 && retry)
   val metaW_valid_s3_cmo = req_cbo_inval_s3 && dirResult_s3.hit
   require(clientBits == 1)
@@ -563,13 +565,13 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     )
   )
   val metaW_s3_c = MetaEntry(
-    dirty = meta_s3.dirty || wen_c,
-    state = Mux(isParamFromT(req_s3.param), TIP, meta_s3.state),
-    clients = Fill(clientBits, !isToN(req_s3.param)),
-    alias = meta_s3.alias,
-    accessed = meta_s3.accessed,
-    tagErr = Mux(wen_c, req_s3.denied, meta_s3.tagErr),
-    dataErr = Mux(wen_c, req_s3.corrupt, meta_s3.dataErr) // update error when write DS
+    dirty = true.B,
+    state = TIP,
+    clients = Fill(clientBits, 0.U),
+    alias = Some(0.U),
+    accessed = false.B,
+    tagErr = req_s3.denied,
+    dataErr = req_s3.corrupt // update error when write DS
   )
   // use merge_meta if mergeA
   val metaW_s3_mshr = WireInit(Mux(req_s3.mergeA, req_s3.aMergeTask.meta, req_s3.meta))
@@ -580,7 +582,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val metaW_way = Mux(
     mshr_refill_s3 && req_s3.replTask,
     io.replResp.bits.way, // grant always use replResp way
-    Mux(mshr_req_s3, req_s3.way, dirResult_s3.way)
+    Mux(mshr_req_s3 || sinkC_req_s3, req_s3.way, dirResult_s3.way) // use way info from SinkC on Release/ReleaseData
   )
 
   io.metaWReq.valid := !resetFinish || task_s3.valid && (
@@ -596,6 +598,12 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     ),
     MetaEntry()
   )
+  io.metaWReq.bits.release.valid := metaW_valid_s3_c
+  io.metaWReq.bits.release.bits.clients := isToN(req_s3.param)
+  io.metaWReq.bits.release.bits.dirty := req_s3.opcode === ReleaseData
+  io.metaWReq.bits.release.bits.state := isParamFromT(req_s3.param)
+  io.metaWReq.bits.release.bits.tagErr := wen_c
+  io.metaWReq.bits.release.bits.dataErr := wen_c
 
   io.tagWReq.valid := task_s3.valid && req_s3.tagWen && mshr_refill_s3 && !retry
   io.tagWReq.bits.set := req_s3.set
@@ -661,6 +669,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   txdat_s3.bits.task := source_req_s3
   txdat_s3.bits.data.data := data_s3
   d_s3.bits.task := source_req_s3
+  d_s3.bits.task.way := Mux(source_req_s3.replTask, io.replResp.bits.way, source_req_s3.way)
   d_s3.bits.data.data := data_s3
 
   when (task_s3.valid) {
