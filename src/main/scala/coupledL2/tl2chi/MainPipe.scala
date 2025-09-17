@@ -460,6 +460,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val source_req_s3 = Wire(new TaskBundle)
   source_req_s3 := Mux(sink_resp_s3.valid, sink_resp_s3.bits, req_s3)
   source_req_s3.isKeyword.foreach(_ := req_s3.isKeyword.getOrElse(false.B))
+  source_req_s3.way := Mux(req_s3.replTask, io.replResp.bits.way, req_s3.way)
 
   /* ======== Interact with DS ======== */
   val data_s3 = Mux(io.releaseBufResp_s3.valid, io.releaseBufResp_s3.bits.data, io.refillBufResp_s3.bits.data)
@@ -670,7 +671,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   txdat_s3.bits.task := source_req_s3
   txdat_s3.bits.data.data := data_s3
   d_s3.bits.task := source_req_s3
-  d_s3.bits.task.way := Mux(source_req_s3.replTask, io.replResp.bits.way, source_req_s3.way)
   d_s3.bits.data.data := data_s3
 
   when (task_s3.valid) {
