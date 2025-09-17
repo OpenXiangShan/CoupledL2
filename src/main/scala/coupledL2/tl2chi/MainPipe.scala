@@ -418,6 +418,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   sink_resp_s3.valid := task_s3.valid && !mshr_req_s3 && !need_mshr_s3
   sink_resp_s3.bits := task_s3.bits
   sink_resp_s3.bits.mshrId := (1 << (mshrBits-1)).U + sink_resp_s3.bits.sourceId
+  sink_resp_s3.bits.way := io.dirResp_s3.way
   when (req_s3.fromA) {
     sink_resp_s3.bits.opcode := odOpGen(req_s3.opcode)
     sink_resp_s3.bits.param := Mux (
