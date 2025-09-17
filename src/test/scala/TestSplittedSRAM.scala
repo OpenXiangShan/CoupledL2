@@ -3,16 +3,16 @@ package coupledL2
 import coupledL2.utils._
 import chisel3._
 import chisel3.util._
-import chiseltest._
-import chiseltest.RawTester.test
 import chisel3.experimental._
-import chisel3.testers._
 import org.chipsalliance.cde.config._
 import scala.collection.mutable.ArrayBuffer
-import chiseltest.WriteVcdAnnotation
 import scala.util.Random
+import chisel3.simulator.ChiselSim
+import chisel3.simulator.HasSimulator
+import svsim.verilator.Backend.CompilationSettings.TraceStyle
+import svsim.verilator.Backend.CompilationSettings.TraceKind
 
-object TestSplittedSRAM extends App {
+object TestSplittedSRAM extends App with ChiselSim {
   val dataw = 24
   val nsets = 32
   val nways = 18
@@ -20,9 +20,21 @@ object TestSplittedSRAM extends App {
   val dumpVcd = false
 //  println(getVerilogString(new SplittedSRAM(UInt(dataw.W), sets = nsets, ways = nways,
 //    setSplit = 2, waySplit = 3, dataSplit = 4, shouldReset = false, singlePort = true)))
-  test(
+  implicit val sim: chisel3.simulator.HasSimulator = if (dumpVcd)
+    HasSimulator.simulators.verilator(
+      verilatorSettings = svsim.verilator.Backend.CompilationSettings(
+        traceStyle = Some(TraceStyle(TraceKind.Vcd)),
+        outputSplit = Some(30000),
+        outputSplitCFuncs = Some(30000),
+        disabledWarnings = Seq("STMTDLY", "WIDTH")
+      )
+    )
+  else
+    HasSimulator.default
+
+  simulate(
     new SplittedSRAM(UInt(dataw.W), set = nsets, way = nways, setSplit = 2, waySplit = 3, dataSplit = 4,
-      shouldReset = false, singlePort = true), if (dumpVcd) Seq(WriteVcdAnnotation) else Seq())
+      shouldReset = false, singlePort = true))
   { s =>
     val randomWaymask = new Random(12)
     val randomData = new Random(34)

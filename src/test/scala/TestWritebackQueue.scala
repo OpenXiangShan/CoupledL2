@@ -1,15 +1,14 @@
-package coupledL2
+// package coupledL2
 
-import chiseltest._
-import freechips.rocketchip.diplomacy.LazyModule
+// import freechips.rocketchip.diplomacy.LazyModule
 
 
-import chisel3._
-import chisel3.util._
-import org.chipsalliance.cde.config._
-import freechips.rocketchip.diplomacy._
-import freechips.rocketchip.tilelink._
-import scala.collection.mutable.ArrayBuffer
+// import chisel3._
+// import chisel3.util._
+// import org.chipsalliance.cde.config._
+// import freechips.rocketchip.diplomacy._
+// import freechips.rocketchip.tilelink._
+// import scala.collection.mutable.ArrayBuffer
 
 
 
