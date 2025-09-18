@@ -1,6 +1,5 @@
 package coupledL2
 
-import chiseltest._
 import freechips.rocketchip.diplomacy.LazyModule
 
 
@@ -26,7 +25,7 @@ object TestProbeQueue extends App {
   })
 
   val top_coupledl2 = DisableMonitors(p => LazyModule(new TestTop_L2()(p)) )(config)
-  ChiselStage.convert(top_coupledl2.module)
+  ChiselStage.elaborate(top_coupledl2.module)
 
   val arb_args = chisel3.aop.Select.collectDeep[ProbeQueue](top_coupledl2.module){
     case ds: ProbeQueue =>
