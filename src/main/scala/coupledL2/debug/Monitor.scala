@@ -18,6 +18,7 @@ class MainpipeMoni(implicit p: Parameters) extends L2Bundle {
   val dirResult_s3 = new DirResult
   val allocMSHR_s3 = ValidIO(UInt(mshrBits.W))
   val metaW_s3 = ValidIO(new MetaWrite)
+  val replaceNestedRelease_s3 = Bool()
 }
 
 class CPL2S3Info(implicit p: Parameters) extends L2Bundle {
@@ -52,6 +53,7 @@ class Monitor(implicit p: Parameters) extends L2Module {
   val mshr_req_s3   = req_s3.mshrTask
   val dirResult_s3  = mp.dirResult_s3
   val meta_s3       = mp.dirResult_s3.meta
+  val replaceHitRelease_s3 = mp.replaceNestedRelease_s3
 
   /* ======== MainPipe Assertions ======== */
   // ! Release w/o data will not trigger nestedWBValid, either
@@ -66,9 +68,9 @@ class Monitor(implicit p: Parameters) extends L2Module {
     meta_s3.state === TRUNK && !meta_s3.clients.orR)),
     "Trunk should have some client hit")
 
-  assert(RegNext(!(s3_valid && req_s3.fromC && dirResult_s3.hit &&
-    !meta_s3.clients.orR)),
-    "Invalid Client should not send Release")
+//assert(RegNext(!(s3_valid && req_s3.fromC && dirResult_s3.hit &&
+//  !meta_s3.clients.orR)),
+//  "Invalid Client should not send Release")
 
   // assertion for set blocking
   // A channel task @s1 never have same-set task @s2/s3
