@@ -114,6 +114,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   reqArb.io.msInfo := mshrCtl.io.msInfo
   reqArb.io.WPURes := wpu.out.res
   reqArb.io.DSStage := dsArb.out.mpstage
+  reqArb.io.needDataNum := sinkA.io.needDataNum
 
   wpu.in.read <> reqArb.io.toWPURead
   wpu.in.update := mainPipe.io.toWPUUpd

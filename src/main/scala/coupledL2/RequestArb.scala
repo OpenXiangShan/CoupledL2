@@ -26,6 +26,7 @@ import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2tl._
 import coupledL2.tl2chi._
 import coupledL2.wpu.{WPURead, WPUResult}
+import coupledL2.utils._
 
 class RequestArb(implicit p: Parameters) extends L2Module
   with HasCHIOpcodes {
@@ -81,6 +82,7 @@ class RequestArb(implicit p: Parameters) extends L2Module
     val toDSen_s1 = Bool()
     val DSStage = Input(UInt(2.W))
     val WPUResToMP = ValidIO(new WPUResult)
+    val needDataNum = Input(UInt(64.W))
   })
 
   /* ======== Reset ======== */
@@ -392,22 +394,44 @@ class RequestArb(implicit p: Parameters) extends L2Module
   XSPerfAccumulate("sinkA_stall_by_sinkC", io.sinkA.valid && sink_ready_basic && !block_A && sinkValids(0))
   XSPerfAccumulate("sinkB_stall_by_sinkC", io.sinkB.valid && sink_ready_basic && !block_B && sinkValids(0))
 
-  val debug_need_wpu = task_s1.valid && task_s1.bits.fromA && !task_s1.bits.mshrTask
-    (task_s1.bits.opcode === Get || task_s1.bits.opcode === AcquireBlock) && s2_ready
-  val wpuupd = !io.toWPURead.ready
-  val dsstg1 = io.DSStage === "b11".U
-  val dsstg2 = io.DSStage === "b01".U
-  XSPerfAccumulate("upd_stg1_nostg2", debug_need_wpu && wpuupd && dsstg1 && !dsstg2)
-  XSPerfAccumulate("upd_nostg1_stg2", debug_need_wpu && wpuupd && !dsstg1 && dsstg2)
-  XSPerfAccumulate("noupd_nostg1_stg2", debug_need_wpu && !wpuupd && !dsstg1 && dsstg2)
-  XSPerfAccumulate("noupd_stg1_nostg2", debug_need_wpu && !wpuupd && dsstg1 && !dsstg2)
-  XSPerfAccumulate("upd_nostg1_nostg2", debug_need_wpu && wpuupd && !dsstg1 && !dsstg2)
-  XSPerfAccumulate("upd_nostg2", debug_need_wpu && wpuupd && !dsstg2)
-  XSPerfAccumulate("stg1_nostg2", debug_need_wpu && dsstg1 && !dsstg2)
-  XSPerfAccumulate("upd_nostg2", debug_need_wpu && wpuupd && !dsstg2)
-  XSPerfAccumulate("upd_nostg1", debug_need_wpu && wpuupd && !dsstg1)
-  XSPerfAccumulate("nostg1_stg2", debug_need_wpu && !dsstg1 && dsstg2)
-  XSPerfAccumulate("upd", debug_need_wpu && wpuupd)
-  XSPerfAccumulate("stg1", debug_need_wpu && dsstg1)
-  XSPerfAccumulate("stg2", debug_need_wpu && dsstg2)
+//  val debug_need_wpu = task_s1.valid && task_s1.bits.fromA && !task_s1.bits.mshrTask
+//    (task_s1.bits.opcode === Get || task_s1.bits.opcode === AcquireBlock) && s2_ready
+
+//  MyPerf("upd_stg1_nostg2", debug_need_wpu && wpuupd && dsstg1 && !dsstg2)
+//  MyPerf("upd_nostg1_stg2", debug_need_wpu && wpuupd && !dsstg1 && dsstg2)
+//  val stg2cnt = MyPerf("noupd_nostg1_stg2", debug_need_wpu && !wpuupd && !dsstg1 && dsstg2)
+//  val stg1cnt = MyPerf("noupd_stg1_nostg2", debug_need_wpu && !wpuupd && dsstg1 && !dsstg2)
+//  MyPerf("upd_nostg1_nostg2", debug_need_wpu && wpuupd && !dsstg1 && !dsstg2)
+//  MyPerf("upd_nostg2", debug_need_wpu && wpuupd && !dsstg2)
+//  MyPerf("stg1_nostg2", debug_need_wpu && dsstg1 && !dsstg2)
+//  MyPerf("upd_nostg2", debug_need_wpu && wpuupd && !dsstg2)
+//  MyPerf("upd_nostg1", debug_need_wpu && wpuupd && !dsstg1)
+//  MyPerf("nostg1_stg2", debug_need_wpu && !dsstg1 && dsstg2)
+//  val updcnt = MyPerf("upd", debug_need_wpu && wpuupd)
+//  MyPerf("stg1", debug_need_wpu && dsstg1)
+//  MyPerf("stg2", debug_need_wpu && dsstg2)
+
+  if (cacheParams.cancelWPUOnBlock == true) {
+    val needWPU = task_s1.bits.fromA && !task_s1.bits.mshrTask
+      (task_s1.bits.opcode === Get || task_s1.bits.opcode === AcquireBlock)
+    val upd = needWPU && !io.toWPURead.ready && s1_fire
+    val stg1 = needWPU && io.DSStage === "b11".U && s1_fire
+    val stg2 = needWPU && io.DSStage === "b01".U && s1_fire
+    val onlyupd = needWPU && !io.toWPURead.ready && io.DSStage === "b00".U && s1_fire
+    val stg1_upd = needWPU && !io.toWPURead.ready && io.DSStage === "b11".U && s1_fire
+    val stg2_upd = needWPU && !io.toWPURead.ready && io.DSStage === "b01".U && s1_fire
+    val onlystg1 = needWPU && io.toWPURead.ready && io.DSStage === "b11".U && s1_fire
+    val onlystg2 = needWPU && io.toWPURead.ready && io.DSStage === "b01".U && s1_fire
+    val canceled = upd || onlystg1 || onlystg2
+    MyPerf("upd", upd)
+    MyPerf("stg1", stg1)
+    MyPerf("stg2", stg2)
+    MyPerf("stg1_upd", stg1_upd)
+    MyPerf("stg2_upd", stg2_upd)
+    MyPerf("onlyupd", onlyupd)
+    MyPerf("onlystg1", onlystg1)
+    MyPerf("onlystg2", onlystg2)
+    val canceledNum = MyPerf("canceled", canceled)
+    assert(io.needDataNum >= canceledNum)
+  }
 }

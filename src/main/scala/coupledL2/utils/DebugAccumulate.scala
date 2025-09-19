@@ -2,6 +2,8 @@ package coupledL2
 
 import chisel3._
 import chisel3.util._
+import utility.XSPerfAccumulate
+import org.chipsalliance.cde.config.{Field, Parameters}
 
 import scala.reflect.macros.blackbox
 import scala.language.experimental.macros
@@ -44,5 +46,12 @@ object DebugAccumulate {
     }
 
     counter
+  }
+}
+
+object MyPerf {
+  def apply(name: String, signal: Bool)(implicit p: Parameters) = {
+    XSPerfAccumulate(name, signal)
+    DebugAccumulate(signal, name)
   }
 }
