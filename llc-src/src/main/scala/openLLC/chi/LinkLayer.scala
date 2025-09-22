@@ -118,7 +118,8 @@ class RNLinkMonitor(implicit p: Parameters) extends LLCModule {
   def setSrcID[T <: Bundle](in: ChannelIO[T], gen: T, srcID: UInt): ChannelIO[T] = {
     val out = Wire(in.cloneType)
     out <> in
-    out.flit.asTypeOf(gen).elements.filter(_._1 == "srcID").head._2 := srcID
+    // FIXME: this line has no effect
+    // out.flit.asTypeOf(gen).elements.filter(_._1 == "srcID").head._2 := srcID
     out
   }
 
@@ -132,7 +133,8 @@ class RNLinkMonitor(implicit p: Parameters) extends LLCModule {
   def setTgtID[T <: Bundle](in: ChannelIO[T], gen: T, tgtID: UInt): ChannelIO[T] = {
     val out = Wire(in.cloneType)
     out <> in
-    out.flit.asTypeOf(gen).elements.filter(_._1 == "tgtID").head._2 := tgtID
+    // FIXME: this line has no effect
+    // out.flit.asTypeOf(gen).elements.filter(_._1 == "tgtID").head._2 := tgtID
     out
   }
 }
