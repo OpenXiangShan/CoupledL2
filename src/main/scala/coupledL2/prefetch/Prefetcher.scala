@@ -164,11 +164,14 @@ class PrefetchTrain(implicit p: Parameters) extends PrefetchBundle {
   def addr: UInt = Cat(tag, set, 0.U(offsetBits.W))
 }
 
-class PrefetchIO(implicit p: Parameters) extends PrefetchBundle {
+class L2PrefetchIO(implicit p: Parameters) extends PrefetchBundle {
   val train = Flipped(DecoupledIO(new PrefetchTrain))
   val tlb_req = new L2ToL1TlbIO(nRespDups= 1)
   val req = DecoupledIO(new PrefetchReq)
   val resp = Flipped(DecoupledIO(new PrefetchResp))
+}
+
+class PrefetchIO(implicit p: Parameters) extends L2PrefetchIO {
   val recv_addr = Flipped(ValidIO(new Bundle() {
     val addr = UInt(64.W)
     val pfSource = UInt(MemReqSource.reqSourceBits.W)
@@ -292,16 +295,15 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   // =================== Connection for each Prefetcher =====================
   // Rcv > VBOP > PBOP > TP
   if (hasBOP) {
-    vbop.get.io.enable := vbop_en
+    vbop.get.io_enable := vbop_en
     vbop.get.io.req.ready :=  (if(hasReceiver) !pfRcv.get.io.req.valid else true.B)
     vbop.get.io.train <> io.train
     vbop.get.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
     vbop.get.io.resp <> io.resp
     vbop.get.io.resp.valid := io.resp.valid && io.resp.bits.isBOP
     vbop.get.io.tlb_req <> io.tlb_req
-    vbop.get.io.pbopCrossPage := true.B // pbop.io.pbopCrossPage // let vbop have noting to do with pbop
 
-    pbop.get.io.enable := pbop_en
+    pbop.get.io_enable := pbop_en
     pbop.get.io.req.ready :=
       (if(hasReceiver) !pfRcv.get.io.req.valid else true.B) &&
       (if(hasBOP) !vbop.get.io.req.valid else true.B)
@@ -309,6 +311,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     pbop.get.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
     pbop.get.io.resp <> io.resp
     pbop.get.io.resp.valid := io.resp.valid && io.resp.bits.isPBOP
+    pbop.get.io.tlb_req <> DontCare
   }
   if (hasReceiver) {
     pfRcv.get.io_enable := pfRcv_en
@@ -346,16 +349,17 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val pftQueue = Module(new PrefetchQueue)
   val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
 
-  pftQueue.io.enq.valid :=
-    (if (hasReceiver)     pfRcv.get.io.req.valid                         else false.B) ||
-    (if (hasBOP)          vbop.get.io.req.valid || pbop.get.io.req.valid else false.B) ||
-    (if (hasTPPrefetcher) tp.get.io.req.valid                            else false.B)
-  pftQueue.io.enq.bits := ParallelPriorityMux(Seq(
-    if (hasReceiver)     pfRcv.get.io.req.valid -> pfRcv.get.io.req.bits else false.B -> 0.U.asTypeOf(io.req.bits),
-    if (hasBOP)          vbop.get.io.req.valid -> vbop.get.io.req.bits   else false.B -> 0.U.asTypeOf(io.req.bits),
-    if (hasBOP)          pbop.get.io.req.valid -> pbop.get.io.req.bits   else false.B -> 0.U.asTypeOf(io.req.bits),
-    if (hasTPPrefetcher) tp.get.io.req.valid -> tp.get.io.req.bits       else false.B -> 0.U.asTypeOf(io.req.bits)
-  ))
+  val bopReq = Wire(DecoupledIO(new PrefetchReq()))
+  if (hasBOP) { arb(Seq(vbop.get.io.req, pbop.get.io.req), bopReq) }
+  arb(
+    in = prefetchers.map {
+      case _: PrefetchReceiverParams => pfRcv.get.io.req
+      case _: BOPParameters          => bopReq
+      case _: TPParameters           => tp.get.io.req
+    },
+    out = pftQueue.io.enq,
+    name = Some("pftQueue")
+  )
 
   pipe.io.in <> pftQueue.io.deq
   io.req <> pipe.io.out
