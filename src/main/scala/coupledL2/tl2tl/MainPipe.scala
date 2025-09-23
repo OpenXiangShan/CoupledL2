@@ -390,10 +390,13 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   val metaW_way = Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.way, // grant always use replResp way
     Mux(mshr_req_s3, req_s3.way, dirResult_s3.way))
 
-  io.metaWReq.valid      := !resetFinish || task_s3.valid && (metaW_valid_s3_a || metaW_valid_s3_b || metaW_valid_s3_c || metaW_valid_s3_mshr)
-  io.metaWReq.bits.set   := Mux(resetFinish, req_s3.set, resetIdx)
-  io.metaWReq.bits.wayOH := Mux(resetFinish, UIntToOH(metaW_way), Fill(cacheParams.ways, true.B))
-  io.metaWReq.bits.wmeta := Mux(
+  // dir write signals in s3
+  val metaWReq_s3 = Wire(Valid(new MetaWrite()))
+  val tagWReq_s3 = Wire(Valid(new TagWrite()))
+  metaWReq_s3.valid := !resetFinish || task_s3.valid && (metaW_valid_s3_a || metaW_valid_s3_b || metaW_valid_s3_c || metaW_valid_s3_mshr)
+  metaWReq_s3.bits.set := Mux(resetFinish, req_s3.set, resetIdx)
+  metaWReq_s3.bits.wayOH := Mux(resetFinish, UIntToOH(metaW_way), Fill(cacheParams.ways, true.B))
+  metaWReq_s3.bits.wmeta := Mux(
     resetFinish,
     ParallelPriorityMux(
       Seq(metaW_valid_s3_a, metaW_valid_s3_b, metaW_valid_s3_c, metaW_valid_s3_mshr),
@@ -401,11 +404,10 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
     ),
     MetaEntry()
   )
-
-  io.tagWReq.valid     := task_s3.valid && req_s3.tagWen && mshr_refill_s3 && !retry
-  io.tagWReq.bits.set  := req_s3.set
-  io.tagWReq.bits.way  := Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.way, req_s3.way)
-  io.tagWReq.bits.wtag := req_s3.tag
+  tagWReq_s3.valid := task_s3.valid && req_s3.tagWen && mshr_refill_s3 && !retry
+  tagWReq_s3.bits.set := req_s3.set
+  tagWReq_s3.bits.way := Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.way, req_s3.way)
+  tagWReq_s3.bits.wtag := req_s3.tag
 
   /* ======== Interact with Channels (C & D) ======== */
   // do not need s4 & s5
@@ -462,6 +464,9 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
   /* ======== Stage 4 ======== */
   val task_s4 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
+  val taskWDir_s4 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
+  val metaWReq_s4 = RegInit(0.U.asTypeOf(Valid(new MetaWrite())))
+  val tagWReq_s4 = RegInit(0.U.asTypeOf(Valid(new TagWrite())))
   val data_unready_s4 = RegInit(false.B)
   val data_s4 = Reg(UInt((blockBytes * 8).W))
   val ren_s4 = RegInit(false.B)
@@ -485,6 +490,18 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
     dataError_s4 := dataError_s3
     l2Error_s4 := l2Error_s3
   }
+
+  taskWDir_s4.valid := task_s3.valid && (metaWReq_s3.valid || tagWReq_s3.valid)
+  when (task_s3.valid || !resetFinish) {
+    taskWDir_s4.bits := source_req_s3
+    metaWReq_s4 := metaWReq_s3
+    tagWReq_s4 := tagWReq_s3
+  }
+
+  io.metaWReq.valid := metaWReq_s4.valid && (taskWDir_s4.valid || RegNext(!resetFinish))
+  io.metaWReq.bits := metaWReq_s4.bits
+  io.tagWReq.valid := tagWReq_s4.valid && (taskWDir_s4.valid || RegNext(!resetFinish))
+  io.tagWReq.bits := tagWReq_s4.bits
 
   // A-alias-Acquire should send neither C nor D
 //  val isC_s4 = task_s4.bits.opcode(2, 1) === Release(2, 1) && task_s4.bits.fromA && !RegNext(cache_alias, false.B) ||
@@ -594,17 +611,20 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   io.toReqBuf(0) := task_s2.valid && s23Block('a', task_s2.bits)
   io.toReqBuf(1) := task_s3.valid && s23Block('a', task_s3.bits)
 
-  io.toReqArb.blockC_s1 := task_s2.valid && s23Block('c', task_s2.bits)
+  io.toReqArb.blockC_s1 := task_s2.valid && s23Block('c', task_s2.bits) ||
+    task_s3.valid && s23Block('c', task_s3.bits) && metaWReq_s3.valid
 
   io.toReqArb.blockB_s1 :=
     task_s2.valid && bBlock(task_s2.bits) ||
     task_s3.valid && bBlock(task_s3.bits) ||
     task_s4.valid && bBlock(task_s4.bits, tag = true) ||
+    taskWDir_s4.valid && bBlock(taskWDir_s4.bits, tag = true) ||
     task_s5.valid && bBlock(task_s5.bits, tag = true)
 
   io.toReqArb.blockA_s1 := false.B
 
-  io.toReqArb.blockG_s1 := task_s2.valid && s23Block('g', task_s2.bits)
+  io.toReqArb.blockG_s1 := task_s2.valid && s23Block('g', task_s2.bits) ||
+    task_s3.valid && s23Block('g', task_s3.bits) && metaWReq_s3.valid
   /* ======== Pipeline Status ======== */
   require(io.status_vec_toD.size == 3)
   io.status_vec_toD(0).valid := task_s3.valid && Mux(
