@@ -150,11 +150,12 @@ class RequestArb(implicit p: Parameters) extends L2Module
 
   // TODO: A Hint is allowed to enter if !s2_ready for mcp2_stall
 
-  val sink_ready_basic = io.dirRead_s1.ready && resetFinish && !mshr_task_s1.valid && s2_ready
+  val sink_ready_nodir = resetFinish && !mshr_task_s1.valid && s2_ready
+  val sink_ready_basic = io.dirRead_s1.ready && sink_ready_nodir
 
   io.sinkA.ready := sink_ready_basic && !block_A && !sinkValids(1) && !sinkValids(0) // SinkC prior to SinkA & SinkB
   io.sinkB.ready := sink_ready_basic && !block_B && !sinkValids(0) // SinkB prior to SinkA
-  io.sinkC.ready := sink_ready_basic && !block_C
+  io.sinkC.ready := sink_ready_nodir && !block_C
 
   val chnl_task_s1 = Wire(Valid(new TaskBundle()))
   chnl_task_s1.valid := io.dirRead_s1.ready && sinkValids.orR && resetFinish
@@ -172,8 +173,10 @@ class RequestArb(implicit p: Parameters) extends L2Module
   io.taskInfo_s1.bits := task_s1.bits
 
   /* Meta read request */
-  // ^ only sinkA/B/C tasks need to read directory
-  io.dirRead_s1.valid := s2_ready && (chnl_task_s1.valid && !mshr_task_s1.valid || s1_needs_replRead && !io.fromMainPipe.blockG_s1)
+  // ^ only sinkA/B tasks need to read directory, and sinkC under full-TileLink
+  io.dirRead_s1.valid := s2_ready && 
+    (if (enableCHI) !io.sinkC.fire else true.B) && 
+    (chnl_task_s1.valid && !mshr_task_s1.valid || s1_needs_replRead && !io.fromMainPipe.blockG_s1)
   io.dirRead_s1.bits.set := task_s1.bits.set
   io.dirRead_s1.bits.tag := task_s1.bits.tag
   // invalid way which causes mshr_retry
@@ -198,10 +201,17 @@ class RequestArb(implicit p: Parameters) extends L2Module
 
   /* ========  Stage 2 ======== */
   val s1_AHint_fire = io.sinkA.fire && io.sinkA.bits.opcode === Hint
-  // any req except AHint might access DS, and continuous DS accesses are prohibited
-  val ds_mcp2_stall = RegNext(s1_fire && !s1_AHint_fire)
+  val s1_CRelease_fire = io.sinkC.fire && io.sinkC.bits.opcode === Release
+  // any req except:
+  //  1. (A) Hint
+  //  2. (C) Release
+  // might access DS, and continuous DS accesses are prohibited
+  val ds_mcp2_stall = RegNext(s1_fire && !s1_AHint_fire && !s1_CRelease_fire)
 
-  s2_ready  := !ds_mcp2_stall
+  // let Release go through even if MCP2 stall active
+  val s1_CRelease_letgo = !mshr_task_s1.valid && io.sinkC.valid && io.sinkC.bits.opcode === Release
+
+  s2_ready  := !ds_mcp2_stall || s1_CRelease_letgo
 
   val task_s2 = RegInit(0.U.asTypeOf(task_s1))
   task_s2.valid := s1_fire
