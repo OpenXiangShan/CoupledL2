@@ -44,6 +44,7 @@ object PfSource extends Enumeration {
   val Stream  = Value("Stream")
   val Stride  = Value("Stride")
   val TP      = Value("TP")
+  val Berti   = Value("Berti")
 
   val PfSourceCount = Value("PfSourceCount")
   val pfSourceBits = log2Ceil(PfSourceCount.id)
@@ -57,6 +58,7 @@ object PfSource extends Enumeration {
       is (MemReqSource.Prefetch2L2TP.id.U)  { pfsrc := TP.id.U  }
       is (MemReqSource.Prefetch2L2Stream.id.U) { pfsrc := Stream.id.U }
       is (MemReqSource.Prefetch2L2Stride.id.U) { pfsrc := Stride.id.U }
+      is (MemReqSource.Prefetch2L2Berti.id.U) { pfsrc := Berti.id.U }
     }
     pfsrc
   }
