@@ -150,11 +150,12 @@ class RequestArb(implicit p: Parameters) extends L2Module
 
   // TODO: A Hint is allowed to enter if !s2_ready for mcp2_stall
 
-  val sink_ready_basic = io.dirRead_s1.ready && resetFinish && !mshr_task_s1.valid && s2_ready
+  val sink_ready_nodir = resetFinish && !mshr_task_s1.valid && s2_ready
+  val sink_ready_basic = io.dirRead_s1.ready && sink_ready_nodir
 
   io.sinkA.ready := sink_ready_basic && !block_A && !sinkValids(1) && !sinkValids(0) // SinkC prior to SinkA & SinkB
   io.sinkB.ready := sink_ready_basic && !block_B && !sinkValids(0) // SinkB prior to SinkA
-  io.sinkC.ready := sink_ready_basic && !block_C
+  io.sinkC.ready := sink_ready_nodir && !block_C
 
   val chnl_task_s1 = Wire(Valid(new TaskBundle()))
   chnl_task_s1.valid := io.dirRead_s1.ready && sinkValids.orR && resetFinish
@@ -207,7 +208,10 @@ class RequestArb(implicit p: Parameters) extends L2Module
   // might access DS, and continuous DS accesses are prohibited
   val ds_mcp2_stall = RegNext(s1_fire && !s1_AHint_fire && !s1_CRelease_fire)
 
-  s2_ready  := !ds_mcp2_stall
+  // let Release go through even if MCP2 stall active
+  val s1_CRelease_letgo = !mshr_task_s1.valid && io.sinkC.valid && io.sinkC.bits.opcode === Release
+
+  s2_ready  := !ds_mcp2_stall || s1_CRelease_letgo
 
   val task_s2 = RegInit(0.U.asTypeOf(task_s1))
   task_s2.valid := s1_fire
