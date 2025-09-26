@@ -10,7 +10,7 @@ import coupledL2._
 class WPUWrapper(wpuParam: WPUParameters, updLatency: Int)(implicit p:Parameters) extends L2Module {
   val wpu = AlgoWPUMap(wpuParam)
   val in = IO(Flipped(new Bundle {
-    val read = DecoupledIO(new WPURead())
+    val read = ValidIO(new WPURead())
     val update = ValidIO(new WPUUpdate())
   }))
   val out = IO(new Bundle {
@@ -19,11 +19,20 @@ class WPUWrapper(wpuParam: WPUParameters, updLatency: Int)(implicit p:Parameters
 
   wpu.in.read.valid := in.read.valid
   wpu.in.read.bits := in.read.bits
-  in.read.ready := !wpu.in.upd.valid
-  wpu.in.upd := RegNextN(in.update, updLatency)
   out.res.bits := wpu.out.res.bits
   out.res.valid := in.read.fire
 
+  val upd, upd_tmp = Reg(Valid(new WPUUpdate))
+  upd := in.update
+  val upd_ready = !in.read.valid
+
+  when (!upd_ready || upd_ready && upd_tmp.valid) {
+    upd_tmp := upd
+  }
+
+  wpu.in.upd.valid := upd.valid || upd_tmp.valid
+  wpu.in.upd.bits := Mux(upd_tmp.valid, upd_tmp.bits, upd.bits)
+  assert(!(upd.valid && upd_tmp.valid && !upd_ready))
   // Perf
   val algo_name = wpuParam.algoName
 

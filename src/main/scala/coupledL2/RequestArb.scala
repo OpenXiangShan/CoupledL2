@@ -76,7 +76,7 @@ class RequestArb(implicit p: Parameters) extends L2Module
     /* MSHR Status */
     val msInfo = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo())))
 
-    val toWPURead = DecoupledIO(new WPURead)
+    val toWPURead = ValidIO(new WPURead)
     val WPURes = Flipped(ValidIO(new WPUResult))
     val toDSReq_s1 = DecoupledIO(new DSRequest)
     val toDSen_s1 = Bool()
@@ -144,7 +144,8 @@ class RequestArb(implicit p: Parameters) extends L2Module
   val B_task = io.sinkB.bits
   val C_task = io.sinkC.bits
   val block_A = io.fromMSHRCtl.blockA_s1 || io.fromMainPipe.blockA_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockA_s1 ||
-    io.sinkA.bits.hasData && (if (cacheParams.cancelWPUOnBlock) false.B else !io.toWPURead.ready || !io.toDSReq_s1.ready && io.DSStage === "b01".U)
+    (io.sinkA.bits.opcode === Get || io.sinkA.bits.opcode === AcquireBlock) &&
+      (if (cacheParams.cancelWPUOnBlock) false.B else (!io.toDSReq_s1.ready && io.DSStage === "b01".U))
   val block_B = io.fromMSHRCtl.blockB_s1 || io.fromMainPipe.blockB_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockB_s1 ||
     (if (io.fromSourceC.isDefined) io.fromSourceC.get.blockSinkBReqEntrance else false.B) ||
     (if (io.fromTXDAT.isDefined) io.fromTXDAT.get.blockSinkBReqEntrance else false.B) ||
@@ -411,27 +412,42 @@ class RequestArb(implicit p: Parameters) extends L2Module
 //  MyPerf("stg1", debug_need_wpu && dsstg1)
 //  MyPerf("stg2", debug_need_wpu && dsstg2)
 
+  val needWPU = task_s1.bits.fromA && !task_s1.bits.mshrTask &&
+    (task_s1.bits.opcode === Get || task_s1.bits.opcode === AcquireBlock)
+  val readDSNum = MyPerf("succ_read", io.toDSen_s1)
+  val fired_acuqireBlock_get = MyPerf("fired_acquireblock_get", s1_fire && needWPU)
+  dontTouch(readDSNum)
   if (cacheParams.cancelWPUOnBlock == true) {
-    val needWPU = task_s1.bits.fromA && !task_s1.bits.mshrTask
-      (task_s1.bits.opcode === Get || task_s1.bits.opcode === AcquireBlock)
-    val upd = needWPU && !io.toWPURead.ready && s1_fire
     val stg1 = needWPU && io.DSStage === "b11".U && s1_fire
     val stg2 = needWPU && io.DSStage === "b01".U && s1_fire
-    val onlyupd = needWPU && !io.toWPURead.ready && io.DSStage === "b00".U && s1_fire
-    val stg1_upd = needWPU && !io.toWPURead.ready && io.DSStage === "b11".U && s1_fire
-    val stg2_upd = needWPU && !io.toWPURead.ready && io.DSStage === "b01".U && s1_fire
-    val onlystg1 = needWPU && io.toWPURead.ready && io.DSStage === "b11".U && s1_fire
-    val onlystg2 = needWPU && io.toWPURead.ready && io.DSStage === "b01".U && s1_fire
-    val canceled = upd || onlystg1 || onlystg2
-    MyPerf("upd", upd)
+    val miss = needWPU && !io.WPURes.bits.predHit && s1_fire
+    val stg1_miss = needWPU && io.DSStage === "b11".U && !io.WPURes.bits.predHit && s1_fire
+    val stg2_miss = needWPU && io.DSStage === "b01".U && !io.WPURes.bits.predHit && s1_fire
+    val only_miss = needWPU && io.DSStage === "b00".U && !io.WPURes.bits.predHit && s1_fire
+    val stg1_hit = needWPU && io.DSStage === "b11".U && io.WPURes.bits.predHit && s1_fire
+    val stg2_hit = needWPU && io.DSStage === "b01".U && io.WPURes.bits.predHit && s1_fire
+    val canceled = stg1 || stg2 || miss
     MyPerf("stg1", stg1)
     MyPerf("stg2", stg2)
-    MyPerf("stg1_upd", stg1_upd)
-    MyPerf("stg2_upd", stg2_upd)
-    MyPerf("onlyupd", onlyupd)
-    MyPerf("onlystg1", onlystg1)
-    MyPerf("onlystg2", onlystg2)
+    MyPerf("miss", miss)
+    MyPerf("stg1_miss", stg1_miss)
+    MyPerf("stg2_miss", stg2_miss)
+    MyPerf("only_miss", only_miss)
+    MyPerf("stg1_hit", stg1_hit)
+    MyPerf("stg2_hit", stg2_hit)
     val canceledNum = MyPerf("canceled", canceled)
-    assert(io.needDataNum >= canceledNum)
+    val total = canceledNum + readDSNum
+    dontTouch(total)
+    dontTouch(canceledNum)
+    assert(fired_acuqireBlock_get === total)
+  } else {
+    val stg1 = needWPU && io.DSStage === "b11".U && s1_fire
+    val stg2 = needWPU && io.DSStage === "b01".U && task_s1.valid
+    val canceledNum = MyPerf("stg1", stg1)
+    MyPerf("stg2", stg2)
+    val total = canceledNum + readDSNum
+    dontTouch(total)
+    dontTouch(canceledNum)
+    assert(io.needDataNum >= total)
   }
 }

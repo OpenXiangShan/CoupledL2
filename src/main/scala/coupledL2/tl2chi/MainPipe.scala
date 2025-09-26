@@ -1046,11 +1046,11 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   arb(txreq, io.toTXREQ, Some("toTXREQ"))
   arb(txrsp, io.toTXRSP, Some("toTXRSP"))
   arb(txdat, io.toTXDAT, Some("toTXDAT"))
-  val returnData_s3 = d_s3.fire && d_s3.bits.task.opcode === GrantData && !d_s3.bits.task.mshrTask
+  val returnData_s3 = d_s3.fire && (d_s3.bits.task.opcode === GrantData || d_s3.bits.task.opcode === AccessAckData) && !d_s3.bits.task.mshrTask
   MyPerf("retrun_data_in_s3", returnData_s3)
-  val returnData_s4 = d_s4.fire && d_s4.bits.task.opcode === GrantData && !d_s3.bits.task.mshrTask
+  val returnData_s4 = d_s4.fire && (d_s4.bits.task.opcode === GrantData || d_s3.bits.task.opcode === AccessAckData) && !d_s3.bits.task.mshrTask
   MyPerf("return_data_in_s4", returnData_s4)
-  val returnData_s5 = d_s5.fire && d_s5.bits.task.opcode === GrantData && !d_s3.bits.task.mshrTask
+  val returnData_s5 = d_s5.fire && (d_s5.bits.task.opcode === GrantData || d_s3.bits.task.opcode === AccessAckData) && !d_s3.bits.task.mshrTask
   MyPerf("return_data_in_s5", returnData_s5)
   val latchTo_s5 = returnData_s5 && RegNextN(useRDataByWPU_s3, 2)
   MyPerf("return_data_latch_to_s5", latchTo_s5)
