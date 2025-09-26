@@ -95,7 +95,7 @@ trait HasCoupledL2Parameters {
   def bankWords = blockBits / wordBits / dataBankSplit
   def dataBankBits = wordBits * bankWords
   def encBankBits = cacheParams.dataCode.width(dataBankBits)
-  def encDataPadBits = 4 // recaculate if any split changes
+  def encDataPadBits = 0 // recaculate if any split changes
 
   // Prefetch
   def prefetchers = cacheParams.prefetch
