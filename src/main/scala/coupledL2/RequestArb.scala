@@ -158,7 +158,7 @@ class RequestArb(implicit p: Parameters) extends L2Module
   io.sinkC.ready := sink_ready_nodir && !block_C
 
   val chnl_task_s1 = Wire(Valid(new TaskBundle()))
-  chnl_task_s1.valid := io.dirRead_s1.ready && sinkValids.orR && resetFinish
+  chnl_task_s1.valid := (io.sinkC.valid && !io.mshrTask.valid || io.dirRead_s1.ready) && sinkValids.orR && resetFinish
   chnl_task_s1.bits := ParallelPriorityMux(sinkValids, Seq(C_task, B_task, A_task))
 
   // mshr_task_s1 is s1_[reg]
@@ -208,10 +208,10 @@ class RequestArb(implicit p: Parameters) extends L2Module
   // might access DS, and continuous DS accesses are prohibited
   val ds_mcp2_stall = RegNext(s1_fire && !s1_AHint_fire && !s1_CRelease_fire)
 
-  // let Release go through even if MCP2 stall active
+  // let Release go through even if MCP2 stall active (not supported by MainPipe)
   val s1_CRelease_letgo = !mshr_task_s1.valid && io.sinkC.valid && io.sinkC.bits.opcode === Release
 
-  s2_ready  := !ds_mcp2_stall || s1_CRelease_letgo
+  s2_ready  := !ds_mcp2_stall /*|| s1_CRelease_letgo*/
 
   val task_s2 = RegInit(0.U.asTypeOf(task_s1))
   task_s2.valid := s1_fire
