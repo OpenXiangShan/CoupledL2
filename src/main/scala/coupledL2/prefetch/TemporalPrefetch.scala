@@ -53,6 +53,12 @@ case class TPParameters(
   override val hasPrefetchBit: Boolean = true
   override val hasPrefetchSrc: Boolean = true
   override val inflightEntries: Int = 16 // changed in sv48
+  override def toString: String = {
+    val fields = productIterator.zip(productElementNames).map {
+      case (value, name) => s"$name = $value"
+    }.mkString("\n\t")
+    s"Temporal prefetch\n\t$fields"
+  }
 }
 
 trait HasTPParams extends HasCoupledL2Parameters {

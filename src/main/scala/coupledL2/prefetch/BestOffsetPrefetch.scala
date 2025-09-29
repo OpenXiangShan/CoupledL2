@@ -69,6 +69,13 @@ case class BOPParameters(
   override val hasPrefetchBit:  Boolean = true
   override val hasPrefetchSrc:  Boolean = true
   override val inflightEntries: Int = 16
+  override def toString: String = {
+    // val fields = productIterator.zip(productElementNames).map {
+    //   case (value, name) => s"$name = $value"
+    // }.mkString("\n\t")
+    // s"Best-offset prefetch (hybrid vbop and pbop)\n\t$fields"
+    s"Best-offset prefetch (hybrid vbop and pbop)"
+  }
 }
 
 trait HasBOPParams extends HasPrefetcherHelper {
@@ -668,23 +675,17 @@ class DelayQueue(name: String = "")(implicit p: Parameters) extends  BOPModule{
 }
 
 class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
-  val io = IO(new Bundle() {
-    val enable = Input(Bool())
-    val train = Flipped(DecoupledIO(new PrefetchTrain))
-    val pbopCrossPage = Input(Bool())
-    val tlb_req = new L2ToL1TlbIO(nRespDups= 1)
-    val req = DecoupledIO(new PrefetchReq)
-    val resp = Flipped(DecoupledIO(new PrefetchResp))
-  })
+  val io_enable = IO(Input(Bool()))
+  val io = IO(new L2PrefetchIO())
   // 0 / 1: whether to enable
   private val cstEnable = Constantin.createRecord("vbop_enable"+cacheParams.hartId.toString, initValue = 1)
-  val enable = io.enable && cstEnable.orR
+  val enable = io_enable && cstEnable.orR
 
   val delayQueue = Module(new DelayQueue("vbop"))
   val rrTable = Module(new RecentRequestTable("vbop"))
   val scoreTable = Module(new OffsetScoreTable("vbop"))
 
-  val s0_fire = scoreTable.io.req.fire && io.pbopCrossPage
+  val s0_fire = scoreTable.io.req.fire
   val s1_fire = WireInit(false.B)
   val s0_ready, s1_ready = WireInit(false.B)
 
@@ -796,17 +797,12 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
 }
 
 class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
-  val io = IO(new Bundle() {
-    val enable = Input(Bool())
-    val train = Flipped(DecoupledIO(new PrefetchTrain))
-    val pbopCrossPage = Output(Bool())
-    val req = DecoupledIO(new PrefetchReq)
-    val resp = Flipped(DecoupledIO(new PrefetchResp))
-  })
+  val io_enable = IO(Input(Bool()))
+  val io = IO(new L2PrefetchIO())
 
   // 0 / 1: whether to enable
   private val cstEnable = Constantin.createRecord("pbop_enable"+cacheParams.hartId.toString, initValue = 1)
-  val enable = io.enable && cstEnable.orR
+  val enable = io_enable && cstEnable.orR
 
   val delayQueue = Module(new DelayQueue("pbop"))
   val rrTable = Module(new RecentRequestTable("pbop"))
@@ -839,12 +835,12 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     req_valid := !crossPage && !prefetchDisable // stop prefetch when prefetch req crosses pages
   }
 
-  io.pbopCrossPage := crossPage
   io.req.valid := enable && req_valid
   io.req.bits := req
   io.req.bits.pfSource := MemReqSource.Prefetch2L2PBOP.id.U
   io.train.ready := delayQueue.io.in.ready && scoreTable.io.req.ready && (!req_valid || io.req.ready)
   io.resp.ready := rrTable.io.w.ready
+  io.tlb_req <> DontCare
 
   for (off <- offsetList) {
     if (off < 0) {
