@@ -138,6 +138,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   val tagWen  = io.tagWReq.valid
   val metaWen = io.metaWReq.valid
   val replacerWen = WireInit(false.B)
+  val replacerWen_s4 = RegNext(replacerWen)
 
   // val tagArray  = Module(new SRAMTemplate(UInt(tagBits.W), sets, ways, singlePort = true))
   private val mbist = p(L2ParamKey).hasMbist
@@ -309,7 +310,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   dontTouch(metaArray.io)
   dontTouch(tagArray.io)
 
-  io.read.ready := !io.metaWReq.valid && !io.tagWReq.valid && !replacerWen
+  io.read.ready := !io.metaWReq.valid && !io.tagWReq.valid && !replacerWen_s4
 
   /* ======!! Replacement logic !!====== */
   /* ====== Read, choose replaceWay ====== */
@@ -348,6 +349,14 @@ class Directory(implicit p: Parameters) extends L2Module {
   val updateRefill = refillReqValid_s3 && !refillRetry
   // update replacer when A/C hit or refill
   replacerWen := updateHit || updateRefill
+  val hit_s4 = RegInit(false.B)
+  val set_s4 = RegInit(0.U(setBits.W))
+  val way_s4 = RegInit(0.U(wayBits.W))
+  when(replacerWen) {
+    hit_s4 := hit_s3
+    set_s4 := set_s3
+    way_s4 := way_s3
+  }
 
   // hit-Promotion, miss-Insertion for RRIP
   // origin-bit marks whether the data_block is reused
@@ -357,10 +366,10 @@ class Directory(implicit p: Parameters) extends L2Module {
   val origin_bits_hold = Wire(Vec(ways, Bool()))
   origin_bits_hold := HoldUnless(origin_bits_r, RegNext(io.read.fire, false.B))
   origin_bit_opt.get.io.w(
-      !resetFinish || replacerWen,
-      Mux(resetFinish, hit_s3, false.B),
-      Mux(resetFinish, req_s3.set, resetIdx),
-      UIntToOH(way_s3)
+    !resetFinish || replacerWen_s4,
+    Mux(resetFinish, hit_s4, false.B),
+    Mux(resetFinish, set_s4, resetIdx),
+    UIntToOH(way_s4)
   )
   val rrip_req_type = WireInit(0.U(4.W))
   // [3]: 0-firstuse, 1-reuse;
@@ -375,12 +384,13 @@ class Directory(implicit p: Parameters) extends L2Module {
   private val mbistPl = MbistPipeline.PlaceMbistPipeline(1, "L2Directory", mbist)
   if(cacheParams.replacement == "srrip"){
     val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3, hit_s3, inv, rrip_req_type)
+    val next_state_s4 = RegNext(next_state_s3)
     val repl_init = Wire(Vec(ways, UInt(2.W)))
     repl_init.foreach(_ := 2.U(2.W))
     replacer_sram_opt.get.io.w(
-      !resetFinish || replacerWen,
-      Mux(resetFinish, next_state_s3, repl_init.asUInt),
-      Mux(resetFinish, set_s3, resetIdx),
+      !resetFinish || replacerWen_s4,
+      Mux(resetFinish, next_state_s4, repl_init.asUInt),
+      Mux(resetFinish, set_s4, resetIdx),
       1.U
     )
 
@@ -408,21 +418,23 @@ class Directory(implicit p: Parameters) extends L2Module {
                       Mux(PSEL(9)===0.U, false.B, true.B)))    // false.B - srrip, true.B - brrip
 
     val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3, hit_s3, inv, repl_type, rrip_req_type)
+    val next_state_s4 = RegNext(next_state_s3)
 
     val repl_init = Wire(Vec(ways, UInt(2.W)))
     repl_init.foreach(_ := 2.U(2.W))
     replacer_sram_opt.get.io.w(
-      !resetFinish || replacerWen,
-      Mux(resetFinish, next_state_s3, repl_init.asUInt),
-      Mux(resetFinish, set_s3, resetIdx),
+      !resetFinish || replacerWen_s4,
+      Mux(resetFinish, next_state_s4, repl_init.asUInt),
+      Mux(resetFinish, set_s4, resetIdx),
       1.U
     )
   } else {
     val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3)
+    val next_state_s4 = RegNext(next_state_s3)
     replacer_sram_opt.get.io.w(
-      !resetFinish || replacerWen,
-      Mux(resetFinish, next_state_s3, 0.U),
-      Mux(resetFinish, set_s3, resetIdx),
+      !resetFinish || replacerWen_s4,
+      Mux(resetFinish, next_state_s4, 0.U),
+      Mux(resetFinish, set_s4, resetIdx),
       1.U
     )
   }
