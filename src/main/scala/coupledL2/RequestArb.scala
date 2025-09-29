@@ -158,15 +158,15 @@ class RequestArb(implicit p: Parameters) extends L2Module
   io.sinkC.ready := sink_ready_nodir && !block_C
 
   val chnl_task_s1 = Wire(Valid(new TaskBundle()))
-  chnl_task_s1.valid := (io.sinkC.valid && !io.mshrTask.valid || io.dirRead_s1.ready) && sinkValids.orR && resetFinish
+  chnl_task_s1.valid := (io.sinkC.valid && !mshr_task_s1.valid || io.dirRead_s1.ready) && sinkValids.orR && resetFinish
   chnl_task_s1.bits := ParallelPriorityMux(sinkValids, Seq(C_task, B_task, A_task))
 
   // mshr_task_s1 is s1_[reg]
   // task_s1 is [wire] to s2_reg
   val task_s1 = Mux(mshr_task_s1.valid, mshr_task_s1, chnl_task_s1)
-  val s1_to_s2_valid = task_s1.valid && !mshr_replRead_stall
+  val s1_to_s2_valid = task_s1.valid && (!mshr_replRead_stall || task_s1.bits.fromC)
 
-  s1_cango  := task_s1.valid && !mshr_replRead_stall
+  s1_cango  := s1_to_s2_valid
   s1_fire   := s1_cango && s2_ready
 
   io.taskInfo_s1.valid := s1_fire
