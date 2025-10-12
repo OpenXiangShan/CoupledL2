@@ -133,6 +133,9 @@ case class L2Param(
 
   // when mainpipe read ds on s3 in 2nd cycle or wpu is in update, cancel way predict
   cancelWPUOnBlock: Boolean = true,
+
+  // Enable new clint
+  EnablePrivateClint: Boolean = false
 ) {
   def toCacheParams: CacheParameters = CacheParameters(
     name = name,
