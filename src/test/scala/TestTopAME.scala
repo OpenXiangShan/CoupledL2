@@ -211,15 +211,17 @@ class TestTop_L2L3_AME()(implicit p: Parameters) extends LazyModule {
     l2xbar
 
   lazy val module = new LazyModuleImp(this) {
-    val timer = WireDefault(0.U(64.W))
-    val logEnable = WireDefault(false.B)
-    val clean = WireDefault(false.B)
-    val dump = WireDefault(false.B)
+    val timer = IO(Input(UInt(64.W)))
+    val logEnable = IO(Input(Bool()))
+    val clean = IO(Input(Bool()))
+    val dump = IO(Input(Bool()))
 
     dontTouch(timer)
     dontTouch(logEnable)
     dontTouch(clean)
     dontTouch(dump)
+
+    XSLog.collect(timer, logEnable, clean, dump)
 
     c_nodes.zipWithIndex.foreach {
       case (node, i) =>
