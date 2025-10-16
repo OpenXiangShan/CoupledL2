@@ -346,6 +346,7 @@ class PrefetchCtrlFromCore extends Bundle {
   val l2_pbop_en = Bool()
   val l2_vbop_en = Bool()
   val l2_tp_en = Bool()
+  val l2_pf_delay_latency = UInt(10.W)
 }
 
 class PrefetchRecv extends Bundle {

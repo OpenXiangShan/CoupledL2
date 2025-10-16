@@ -242,6 +242,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val pbop_en = pfCtrlFromCore.l2_pf_master_en && pfCtrlFromCore.l2_pbop_en
   val vbop_en = pfCtrlFromCore.l2_pf_master_en && pfCtrlFromCore.l2_vbop_en
   val tp_en = pfCtrlFromCore.l2_pf_master_en && pfCtrlFromCore.l2_tp_en
+  val delay_latency = pfCtrlFromCore.l2_pf_delay_latency
 
   // =================== Prefetchers =====================
   // TODO: consider separate VBOP and PBOP in prefetch param
@@ -293,6 +294,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   // Rcv > VBOP > PBOP > TP
   if (hasBOP) {
     vbop.get.io.enable := vbop_en
+    vbop.get.io.pfCtrlOfDelayLatency := delay_latency
     vbop.get.io.req.ready :=  (if(hasReceiver) !pfRcv.get.io.req.valid else true.B)
     vbop.get.io.train <> io.train
     vbop.get.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
@@ -302,6 +304,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     vbop.get.io.pbopCrossPage := true.B // pbop.io.pbopCrossPage // let vbop have noting to do with pbop
 
     pbop.get.io.enable := pbop_en
+    pbop.get.io.pfCtrlOfDelayLatency := delay_latency
     pbop.get.io.req.ready :=
       (if(hasReceiver) !pfRcv.get.io.req.valid else true.B) &&
       (if(hasBOP) !vbop.get.io.req.valid else true.B)
