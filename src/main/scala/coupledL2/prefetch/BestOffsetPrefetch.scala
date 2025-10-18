@@ -26,7 +26,8 @@
 
 package coupledL2.prefetch
 
-import utility.{ChiselDB, Constantin, MemReqSource, ParallelPriorityMux, RRArbiterInit, SRAMTemplate, XSPerfAccumulate}
+import utility.{ChiselDB, Constantin, MemReqSource, ParallelPriorityMux, RRArbiterInit, XSPerfAccumulate}
+import utility.sram.SRAMTemplate
 import org.chipsalliance.cde.config.Parameters
 import chisel3.DontCare.:=
 import chisel3._
@@ -46,7 +47,7 @@ case class BOPParameters(
   tlbReplayCnt:   Int = 10,
   dQEntries: Int = 16,
   dQLatency: Int = 300,
-  dQMaxLatency: Int = 512,
+  dQMaxLatency: Int = 1024,
   offsetList: Seq[Int] = Seq(
     -256, -250, -243, -240, -225, -216, -200,
     -192, -180, -162, -160, -150, -144, -135, -128,
@@ -605,6 +606,7 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
 
 class DelayQueue(name: String = "")(implicit p: Parameters) extends  BOPModule{
   val io = IO(new Bundle(){
+    val pfCtrlOfDelayLatency = Input(UInt(10.W))
     val in = Flipped(DecoupledIO(UInt(noOffsetAddrBits.W)))
     val out = DecoupledIO(UInt(fullAddrBits.W))
     // only record `fullAddrBits - offsetBits` bits
@@ -627,7 +629,13 @@ class DelayQueue(name: String = "")(implicit p: Parameters) extends  BOPModule{
   val outValid = !empty && !queue(head).cnt.orR && valids(head)
 
   /* In & Out */
-  var setDqLatency = Constantin.createRecord(name+"_delayQueueLatency", dQLatency)
+  var cstDqLatency = Constantin.createRecord(name+"_delayQueueLatency", dQLatency)
+  val setDqLatency = Wire(UInt(10.W))
+  when(io.pfCtrlOfDelayLatency =/= 0.U) {
+    setDqLatency := io.pfCtrlOfDelayLatency
+  }.otherwise{
+    setDqLatency := cstDqLatency
+  }
   when(io.in.valid && !full) {
     // if queue is full, we drop the new request
     queue(tail).addrNoOffset := io.in.bits
@@ -669,6 +677,7 @@ class DelayQueue(name: String = "")(implicit p: Parameters) extends  BOPModule{
 class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   val io = IO(new Bundle() {
     val enable = Input(Bool())
+    val pfCtrlOfDelayLatency = Input(UInt(10.W))
     val train = Flipped(DecoupledIO(new PrefetchTrain))
     val pbopCrossPage = Input(Bool())
     val tlb_req = new L2ToL1TlbIO(nRespDups= 1)
@@ -701,6 +710,7 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
 
   rrTable.io.r <> scoreTable.io.test
   rrTable.io.w <> delayQueue.io.out
+  delayQueue.io.pfCtrlOfDelayLatency := io.pfCtrlOfDelayLatency
   delayQueue.io.in.valid := io.train.valid
   delayQueue.io.in.bits := s0_oldFullAddrNoOff
   scoreTable.io.req.valid := io.train.valid
@@ -797,6 +807,7 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
 class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   val io = IO(new Bundle() {
     val enable = Input(Bool())
+    val pfCtrlOfDelayLatency = Input(UInt(10.W))
     val train = Flipped(DecoupledIO(new PrefetchTrain))
     val pbopCrossPage = Output(Bool())
     val req = DecoupledIO(new PrefetchReq)
@@ -819,6 +830,7 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
 
   rrTable.io.r <> scoreTable.io.test
   rrTable.io.w <> delayQueue.io.out
+  delayQueue.io.pfCtrlOfDelayLatency := io.pfCtrlOfDelayLatency
   delayQueue.io.in.valid := io.train.valid
   delayQueue.io.in.bits := oldAddrNoOff
   scoreTable.io.req.valid := io.train.valid

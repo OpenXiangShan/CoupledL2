@@ -40,6 +40,7 @@ trait HasCoupledL2Parameters {
   // val tl2tlParams: HasTLL2Parameters = p(L2ParamKey)
   def enableCHI = p(EnableCHI)
   def cacheParams = p(L2ParamKey)
+  def EnablePrivateClint = cacheParams.EnablePrivateClint
 
   def XLEN = 64
   def blocks = cacheParams.sets * cacheParams.ways
@@ -90,12 +91,12 @@ trait HasCoupledL2Parameters {
   def eccTagBankBits = encTagBankBits - tagBankBits
   def enableDataECC = cacheParams.enableDataECC
   def dataBankSplit = 4
-  def dataSRAMSplit = 8
+  def dataSRAMSplit = 4
   def wordBits = 64
   def bankWords = blockBits / wordBits / dataBankSplit
   def dataBankBits = wordBits * bankWords
   def encBankBits = cacheParams.dataCode.width(dataBankBits)
-  def encDataPadBits = 4 // recaculate if any split changes
+  def encDataPadBits = 0 // recaculate if any split changes
 
   // Prefetch
   def prefetchers = cacheParams.prefetch

@@ -38,9 +38,16 @@ class MMIOBridge()(implicit p: Parameters) extends LazyModule
     * MMIO node
     */
   val beuRange = AddressSet(0x38010000, 4096 - 1)
-  val peripheralRange = AddressSet(
-    0x0, 0xffffffffffffL
-  ).subtract(beuRange)
+  val clintRange = AddressSet(0x38000000L, 0xFFFF)
+  val peripheralRange = if (!EnablePrivateClint) { // clint is interated with periph bus
+    AddressSet(
+      0x0, 0xffffffffffffL
+    ).subtract(beuRange)
+  } else {
+    AddressSet(
+      0x0, 0xffffffffffffL
+    ).subtract(beuRange).flatMap(_.subtract(clintRange))
+  }
 
   val mmioNode = TLManagerNode(Seq(TLSlavePortParameters.v1(
     managers = Seq(TLSlaveParameters.v1(
@@ -219,6 +226,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   io.req.ready := no_schedule && no_wait
   txreq.valid := !s_txreq && w_pcrdgrant
   txreq.bits := 0.U.asTypeOf(txreq.bits.cloneType)
+  txreq.bits.qos := Fill(QOS_WIDTH, 1.U(1.W)) - 1.U
   txreq.bits.tgtID := SAM(sam).lookup(txreq.bits.addr)
   txreq.bits.txnID := io.id
   txreq.bits.opcode := ParallelLookUp(req.opcode, Seq(

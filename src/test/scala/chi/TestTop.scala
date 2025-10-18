@@ -12,9 +12,10 @@ import huancun._
 import coupledL2.prefetch._
 import coupledL2.tl2chi._
 import utility._
+import utility.chiron._
 import scala.collection.mutable.ArrayBuffer
 
-class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(implicit p: Parameters) extends LazyModule
+class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, extTime: Boolean = false, vTime: Boolean = false)(implicit p: Parameters) extends LazyModule
   with HasCHIMsgParameters {
 
   /*   L1D(L1I)* L1D(L1I)* ... L1D(L1I)*
@@ -22,12 +23,18 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(imp
    *       L2        L2   ...  L2
    *         \       |        /
    *          \      |       /
-   *             CMN or VIP
+   *             NoC or VIP
    */
 
   override lazy val desiredName: String = "TestTop"
   val delayFactor = 0.5
   val cacheParams = p(L2ParamKey)
+
+  val clogId = "l2top"
+
+  println(s"CLog.b shared handle Id: ${clogId}")
+  println(s"eTime: ${extTime}")
+  println(s"vTime: ${vTime}")
 
   def createClientNode(name: String, sources: Int) = {
     val masterNode = TLClientNode(Seq(
@@ -122,6 +129,13 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(imp
   }
 
   lazy val module = new LazyModuleImp(this){
+
+    val time_sim = if (extTime) {
+      IO(Input(UInt(64.W)))
+    } else {
+      WireDefault(0.U(64.W))
+    }
+
     val timer = WireDefault(0.U(64.W))
     val logEnable = WireDefault(false.B)
     val clean = WireDefault(false.B)
@@ -157,13 +171,23 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1)(imp
     l2_nodes.zipWithIndex.foreach { case (l2, i) =>
 
       if (!cacheParams.FPGAPlatform && cacheParams.enableCHILog) {
-        val chilogger = CHILogger(s"L3_L2[${i}]", true)
-        chilogger.io.up <> l2.module.io_chi
-        chilogger.io.down <> io(i).chi
+        CLogB.logFlitsRNOfRNF(
+          id    = clogId,
+          vTime = vTime,
+          clock = l2.module.clock,
+          reset = l2.module.reset,
+          rnId  = l2.module.io_nodeID,
+          txreqflit = l2.module.io_chi.tx.req.flit, txreqflitv = l2.module.io_chi.tx.req.flitv,
+          rxrspflit = l2.module.io_chi.rx.rsp.flit, rxrspflitv = l2.module.io_chi.rx.rsp.flitv,
+          rxdatflit = l2.module.io_chi.rx.dat.flit, rxdatflitv = l2.module.io_chi.rx.dat.flitv,
+          rxsnpflit = l2.module.io_chi.rx.snp.flit, rxsnpflitv = l2.module.io_chi.rx.snp.flitv,
+          txrspflit = l2.module.io_chi.tx.rsp.flit, txrspflitv = l2.module.io_chi.tx.rsp.flitv,
+          txdatflit = l2.module.io_chi.tx.dat.flit, txdatflitv = l2.module.io_chi.tx.dat.flitv,
+          time = time_sim, timev = extTime.B
+        )
       }
-      else {
-        l2.module.io_chi <> io(i).chi
-      }
+      
+      l2.module.io_chi <> io(i).chi
 
       dontTouch(l2.module.io)
 
@@ -195,7 +219,7 @@ object TestTopCHIHelper {
         enableRollingDB     = !onFPGAPlatform && enableChiselDB,
         enableMonitor       = !onFPGAPlatform && enableChiselDB,
         enableTLLog         = !onFPGAPlatform && enableChiselDB && enableTLLog,
-        enableCHILog        = !onFPGAPlatform && enableChiselDB && enableCHILog,
+        enableCHILog        = !onFPGAPlatform && enableCHILog,
         elaboratedTopDown   = false,
         FPGAPlatform        = onFPGAPlatform,
 
@@ -219,6 +243,7 @@ object TestTopCHIHelper {
       case EnableCHI => true
     })
 
+    CLogB.init(true)
     ChiselDB.init(enableChiselDB)
     Constantin.init(false)
 
@@ -247,6 +272,8 @@ Usage: TestTop_CHIL2 [<--option> <values>]
       --chiseldb <1>            enable ChisleDB
       --tllog <1>               enable TLLogger under ChiselDB
       --chilog <1>              enable CHILogger under ChiselDB
+      --etime <1>               enable external world time for CHI logging
+      --vtime <1>               enable verilog world time for CHI logging
   """
 
   if (args.contains("--help"))
@@ -266,6 +293,8 @@ Usage: TestTop_CHIL2 [<--option> <values>]
   var enableChiselDB: Boolean = false
   var enableTLLog: Boolean = false
   var enableCHILog: Boolean = false
+  var eTime: Boolean = false
+  var vTime: Boolean = false
 
   val varArgsToDrop = args.sliding(2, 1).zipWithIndex.collect {
     case (Array("--issue", value), i) => (issue = value, i)
@@ -276,6 +305,8 @@ Usage: TestTop_CHIL2 [<--option> <values>]
     case (Array("--chiseldb", value), i) => (enableChiselDB = value.toInt != 0, i)
     case (Array("--tllog", value), i) => (enableTLLog = value.toInt != 0, i)
     case (Array("--chilog", value), i) => (enableCHILog = value.toInt != 0, i)
+    case (Array("--etime", value), i) => (eTime = value.toInt != 0, i)
+    case (Array("--vtime", value), i) => (vTime = value.toInt != 0, i)
   }
 
   varArgsToDrop.map(_._2).foreach(i => {
@@ -288,7 +319,9 @@ Usage: TestTop_CHIL2 [<--option> <values>]
     p => new TestTop_CHIL2(
       numCores,
       numULAgents,
-      numBanks)(p), 
+      numBanks,
+      eTime,
+      vTime)(p), 
     issue,
     onFPGAPlatform,
     enableChiselDB,
