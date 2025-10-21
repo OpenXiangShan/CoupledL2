@@ -130,9 +130,15 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   }
 
   // to summary
-  val l2prefetchSent = l2prefetchSentVec.map {case x => x.reduce(_ || _)}
-  val l2prefetchUseful = l2prefetchUsefulVec.map {case x => x.reduce(_ || _)}
-  val l2demandRequest = dirResultMatchVec(r => reqFromCPU(r))
+  val l2prefetchSent = dirResultMatchVec(
+    r => MemReqSource.isL2Prefetch(r.replacerInfo.reqSource)
+  )
+  val l2prefetchUseful = dirResultMatchVec(
+    r => reqFromCPU(r) && r.hit && r.meta.prefetch.getOrElse(false.B)
+  )
+  val l2demandMiss = dirResultMatchVec(
+    r => reqFromCPU(r) && !r.hit
+  )
   val l2prefetchLate = io.latePF.map(_.valid)
   // TODO: get difference prefetchSrc for detailed analysis
   // FIXME lyq: it's abnormal l2prefetchLate / l2prefetchUseful is more than 1
@@ -140,17 +146,17 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   // PF Accuracy/Coverage/Late Accumulate/Rolling
   XSPerfAccumulate("l2prefetchSent", PopCount(l2prefetchSent))
   XSPerfAccumulate("l2prefetchUseful", PopCount(l2prefetchUseful))
-  XSPerfAccumulate("l2demandRequest", PopCount(l2demandRequest))
+  XSPerfAccumulate("l2demandMiss", PopCount(l2demandMiss))
   XSPerfAccumulate("l2prefetchLate", PopCount(l2prefetchLate))
   XSPerfRolling("L2PrefetchAccuracy", PopCount(l2prefetchUseful), PopCount(l2prefetchSent), 1000, io.debugTopDown.robTrueCommit, clock, reset)
-  XSPerfRolling("L2PrefetchCoverage", PopCount(l2prefetchUseful), PopCount(l2demandRequest), 1000, io.debugTopDown.robTrueCommit, clock, reset)
+  XSPerfRolling("L2PrefetchCoverage", PopCount(l2prefetchUseful), PopCount(l2prefetchUseful) + PopCount(l2demandMiss), 1000, io.debugTopDown.robTrueCommit, clock, reset)
   XSPerfRolling("L2PrefetchLate", PopCount(l2prefetchLate), PopCount(l2prefetchUseful), 1000, io.debugTopDown.robTrueCommit, clock, reset)
   for ((name, _, _, sent, useful, late) <- pfTypes zip l2prefetchSentVec zip l2prefetchUsefulVec zip l2prefetchLateVec map { case (((a, b), c), d) => (a._1, a._2, a._3, b, c, d) }) {
     XSPerfAccumulate(s"l2prefetchSent$name", PopCount(sent))
     XSPerfAccumulate(s"l2prefetchUseful$name", PopCount(useful))
     XSPerfAccumulate(s"l2prefetchLate$name", PopCount(late))
     XSPerfRolling(s"L2PrefetchAccuracy$name", PopCount(useful), PopCount(sent), 1000, io.debugTopDown.robTrueCommit, clock, reset)
-    XSPerfRolling(s"L2PrefetchCoverage$name", PopCount(useful), PopCount(l2demandRequest), 1000, io.debugTopDown.robTrueCommit, clock, reset)
+    XSPerfRolling(s"L2PrefetchCoverage$name", PopCount(useful), PopCount(useful) + PopCount(l2demandMiss), 1000, io.debugTopDown.robTrueCommit, clock, reset)
   }
 
 }
