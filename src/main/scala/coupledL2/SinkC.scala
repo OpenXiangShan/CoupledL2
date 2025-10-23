@@ -65,6 +65,8 @@ class SinkC(implicit p: Parameters) extends L2Module {
   val nextPtrReg = RegEnable(nextPtr, 0.U.asTypeOf(nextPtr), io.c.fire && isRelease && first && hasData)
 
   def toTaskBundle(c: TLBundleC): TaskBundle = {
+    require(!c.user.lift(WayKey).isEmpty, "Way field is not present in L2 TLBundleC" 
+      + " (L1 is required to accept and store way info from L2)")
     val task = Wire(new TaskBundle)
     task := 0.U.asTypeOf(new TaskBundle)
     task.channel := "b100".U
@@ -91,7 +93,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
     task.fromL2pft.foreach(_ := false.B)
     task.needHint.foreach(_ := false.B)
     task.dirty := false.B
-    task.way := 0.U(wayBits.W)
+    task.way := c.user.lift(WayKey).getOrElse(0.U)
     task.meta := 0.U.asTypeOf(new MetaEntry)
     task.metaWen := false.B
     task.tagWen := false.B
