@@ -53,15 +53,11 @@ class RXSNP(
     * 4. After MSHR sends out WriteBackFull/Evict and write refilled data into DS, snoop should be **nested**, still
     *    because snoop has higher priority than request.
     * 5. Before MSHR completes Probe to L1 for alias replacing, snoop should be **blocked*.
-    * 6. Before MSHR sends out WriteCleanFull/WriteBackFull/Evict or sends 'cmometaw' task onto MainPipe, snoop should 
-    *    be **blocked**, because the snooped block might be performing silent transition of TRUNK to TIP (UC -> UC),
-    *    while waitings for DS write were unnecessary since the silent transition would only happen on clean block.
     */
   val reqBlockSnpMask = VecInit(io.msInfo.map(s =>
       s.valid && s.bits.set === task.set && s.bits.reqTag === task.tag && (
       s.bits.w_grantfirst || // See [2], [3] above with 's.bits.blockRefill'
-      s.bits.aliasTask.getOrElse(false.B) && !s.bits.w_rprobeacklast || // See [5] above
-      !s.bits.s_cmoresp && (!s.bits.w_rprobeacklast || !s.bits.s_cmometaw) // See [6] above
+      s.bits.aliasTask.getOrElse(false.B) && !s.bits.w_rprobeacklast // See [5] above
     ) && (s.bits.blockRefill || s.bits.w_releaseack) && !s.bits.willFree
   )).asUInt
   val reqBlockSnp = reqBlockSnpMask.orR
@@ -78,8 +74,8 @@ class RXSNP(
     *    be **blocked**.
     */
   val cmoBlockSnpMask = VecInit(io.msInfo.map(s => 
-    s.valid && s.bits.set === task.set && s.bits.metaTag === task.tag && s.bits.dirHit && isValid(s.bits.meta.state) &&
-    !s.bits.s_cmoresp && (!s.bits.s_release || !s.bits.w_rprobeacklast) &&
+    s.valid && s.bits.dirHit && isValid(s.bits.meta.state) &&
+    !s.bits.s_cmoresp && (!s.bits.s_release || !s.bits.w_rprobeacklast || !s.bits.s_cmometaw) &&
     !s.bits.willFree
   )).asUInt
   val cmoBlockSnp = cmoBlockSnpMask.orR
