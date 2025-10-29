@@ -145,7 +145,7 @@ trait HasCoupledL2Parameters {
   def sam = cacheParams.sam
 
   // Hardware Performance Monitor
-  def numPCntHc: Int = 12
+  def numPCntHc: Int = 17
 
   def getClientBitOH(sourceId: UInt): UInt = {
     if (clientBits == 0) {

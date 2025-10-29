@@ -1094,13 +1094,19 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   /* ===== Hardware Performance Monitor ===== */
   val perfEvents = Seq(
+    ("l2_cache_hit", hit_s3 && req_s3.fromA),
+    ("l2_cache_miss", miss_s3 && req_s3.fromA),
     ("l2_cache_access", task_s3.valid && (sinkA_req_s3 && !req_prefetch_s3 || sinkC_req_s3)),
     ("l2_cache_l2wb", task_s3.valid && (mshr_cbWrData_s3 || mshr_snpRespDataX_s3)),
     ("l2_cache_l1wb", task_s3.valid && sinkC_req_s3 && (req_s3.opcode === ReleaseData)),
     ("l2_cache_wb_victim", task_s3.valid && mshr_cbWrData_s3),
     ("l2_cache_wb_cleaning_coh", task_s3.valid && mshr_snpRespDataX_s3),
+    ("l2_cache_prefetch_access", task_s3.valid && sinkA_req_s3 && req_prefetch_s3),
+    ("l2_cache_prefetch_miss", task_s3.valid && sinkA_req_s3 && req_prefetch_s3 && miss_s3),
     ("l2_cache_access_rd", task_s3.valid && sinkA_req_s3 && !req_prefetch_s3),
     ("l2_cache_access_wr", task_s3.valid && sinkC_req_s3),
+    ("l2_cache_miss_rd", task_s3.valid && sinkA_req_s3 && !req_prefetch_s3 && miss_s3),
+    //    ("l2_cache_miss_wr", Inclusive L2 always hit),
     ("l2_cache_inv", task_s3.valid && sinkB_req_s3 && (req_s3.param === toN))
   )
   generatePerfEvent()
