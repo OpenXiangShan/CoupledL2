@@ -329,7 +329,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val shouldRespData_retToSrc_nonFwd = nestable_dirResult_s3.hit && retToSrc && nestable_meta_s3.state === BRANCH && (
     req_s3.chiOpcode.get === SnpOnce ||
     req_s3.chiOpcode.get === SnpUnique ||
-    req_s3.chiOpcode.get === SnpPreferUnique
+    req_s3.chiOpcode.get === SnpPreferUnique ||
     isSnpToBNonFwd(req_s3.chiOpcode.get)
   )
   val shouldRespData = shouldRespData_dirty || shouldRespData_once || shouldRespData_retToSrc_fwd || shouldRespData_retToSrc_nonFwd
