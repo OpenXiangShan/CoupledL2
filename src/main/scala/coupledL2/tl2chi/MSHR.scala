@@ -208,7 +208,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     req_chiOpcode === SnpUnique ||
     req_chiOpcode === SnpUniqueStash ||
     req_chiOpcode === SnpCleanShared ||
-    req_chiOpcode === SnpCleanInvalid
+    req_chiOpcode === SnpCleanInvalid ||
+    req_chiOpcode === SnpPreferUnique
   )
   // *NOTICE: Careful on future implementation of adding 'isSnpToNFwd' into condition
   //          'doRespData_retToSrc_fwd'. For now, 'isSnpToNFwd' only covers SnpUniqueFwd,
@@ -325,7 +326,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     req_chiOpcode === SnpUnique ||
     req_chiOpcode === SnpUniqueStash ||
     req_chiOpcode === SnpCleanShared ||
-    req_chiOpcode === SnpCleanInvalid
+    req_chiOpcode === SnpCleanInvalid ||
+    req_chiOpcode === SnpPreferUnique
   ) || hitWriteDirty && isSnpOnceFwd(req_chiOpcode)
   val fwdCacheState = Mux(tagErr, I, Mux(
     isSnpToBFwd(req_chiOpcode),

@@ -314,7 +314,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     isSnpStashX(req_s3.chiOpcode.get) ||
     isSnpQuery(req_s3.chiOpcode.get) ||
     req_s3.chiOpcode.get === SnpOnceFwd ||
-    req_s3.chiOpcode.get === SnpUniqueFwd
+    req_s3.chiOpcode.get === SnpUniqueFwd ||
+    req_s3.chiOpcode.get === SnpPreferUniqueFwd
   val shouldRespData_dirty = nestable_dirResult_s3.hit && 
     (nestable_meta_s3.state === TIP || nestable_meta_s3.state === TRUNK) && nestable_meta_s3.dirty
   // For SnpOnce, always response data under UC when L1 was BRANCH
@@ -328,6 +329,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val shouldRespData_retToSrc_nonFwd = nestable_dirResult_s3.hit && retToSrc && nestable_meta_s3.state === BRANCH && (
     req_s3.chiOpcode.get === SnpOnce ||
     req_s3.chiOpcode.get === SnpUnique ||
+    req_s3.chiOpcode.get === SnpPreferUnique
     isSnpToBNonFwd(req_s3.chiOpcode.get)
   )
   val shouldRespData = shouldRespData_dirty || shouldRespData_once || shouldRespData_retToSrc_fwd || shouldRespData_retToSrc_nonFwd
@@ -400,7 +402,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     when (isSnpToBFwd(req_s3.chiOpcode.get)) {
       fwdCacheState := Mux(req_s3.snpHitReleaseToInval, I, SC)
     }
-    when (req_s3.chiOpcode.get === SnpUniqueFwd) {
+    when (req_s3.chiOpcode.get === SnpUniqueFwd || req_s3.chiOpcode.get === SnpPreferUniqueFwd) {
       when (nestable_meta_s3.state === TIP && nestable_meta_s3.dirty) {
         fwdCacheState := UD
         fwdPassDirty := true.B
