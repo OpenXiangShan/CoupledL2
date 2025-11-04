@@ -165,7 +165,7 @@ class RequestArb(implicit p: Parameters) extends L2Module
   chnl_task_s1.bits := ParallelPriorityMux(sinkValids, Seq(C_task, B_task, A_task))
 
   if (enableCHI)
-    chnl_task_s1.valid := (io.sinkC.valid && !mshr_task_s1.valid || io.dirRead_s1.ready) && sinkValids.orR && resetFinish
+    chnl_task_s1.valid := (io.sinkC.fire || io.dirRead_s1.ready) && sinkValids.orR && resetFinish
   else
     chnl_task_s1.valid := io.dirRead_s1.ready && sinkValids.orR && resetFinish
 
@@ -175,7 +175,7 @@ class RequestArb(implicit p: Parameters) extends L2Module
   val s1_to_s2_valid = Wire(Bool()) 
   
   if (enableCHI)
-    s1_to_s2_valid := task_s1.valid && (!mshr_replRead_stall || task_s1.bits.fromC)
+    s1_to_s2_valid := task_s1.valid && (!mshr_replRead_stall || io.sinkC.fire)
   else
     s1_to_s2_valid := task_s1.valid && !mshr_replRead_stall
 
