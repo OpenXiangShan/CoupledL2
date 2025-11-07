@@ -144,7 +144,8 @@ trait HasCHIOpcodes extends HasCHIMsgParameters {
   def SnpCleanFwd           = 0x12.U(SNP_OPCODE_WIDTH.W)
   def SnpOnceFwd            = 0x13.U(SNP_OPCODE_WIDTH.W)
   def SnpNotSharedDirtyFwd  = 0x14.U(SNP_OPCODE_WIDTH.W)
-
+  def SnpPreferUnique       = 0x15.U(SNP_OPCODE_WIDTH.W)
+  def SnpPreferUniqueFwd    = 0x16.U(SNP_OPCODE_WIDTH.W)
   def SnpUniqueFwd          = 0x17.U(SNP_OPCODE_WIDTH.W)
 
   def isSnpXStash(opcode: UInt): Bool = {
@@ -216,15 +217,21 @@ trait HasCHIOpcodes extends HasCHIMsgParameters {
   }
 
   def isSnpToNNonFwd(opcode: UInt): Bool = { 
-    opcode === SnpUnique || opcode === SnpUniqueStash
+    opcode === SnpUnique || opcode === SnpUniqueStash ||
+    opcode === SnpPreferUnique
+    // Exclusive currently not implemented, always downgrade SnpPreferUnique to SnpUnique
   }
 
   def isSnpToNFwd(opcode: UInt): Bool = { 
-    opcode === SnpUniqueFwd 
+    opcode === SnpUniqueFwd ||
+    opcode === SnpPreferUniqueFwd
+    // Exclusive currently not implemented, always downgrade SnpPreferUniqueFwd to SnpUniqueFwd
   }
 
   def isSnpUniqueX(opcode: UInt): Bool = {
-    opcode === SnpUnique || opcode === SnpUniqueFwd || opcode === SnpUniqueStash
+    opcode === SnpUnique || opcode === SnpUniqueFwd || opcode === SnpUniqueStash ||
+    opcode === SnpPreferUnique || opcode === SnpPreferUniqueFwd
+    // Exclusive currently not implemented, always downgrade SnpPreferUnique* to SnpUnique*
   }
 
   def isSnpMakeInvalidX(opcode: UInt): Bool = {
