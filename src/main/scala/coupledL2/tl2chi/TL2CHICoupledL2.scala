@@ -248,12 +248,14 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         )
 
         val linkMonitor = Module(new LinkMonitor)
+        val rxdatPipe = Pipeline(linkMonitor.io.in.rx.dat)
+        val rxrspPipe = Pipeline(linkMonitor.io.in.rx.rsp)
         linkMonitor.io.in.tx.req <> txreq
         linkMonitor.io.in.tx.rsp <> txrsp
         linkMonitor.io.in.tx.dat <> txdat
         rxsnp <> linkMonitor.io.in.rx.snp
-        rxrsp <> linkMonitor.io.in.rx.rsp
-        rxdat <> linkMonitor.io.in.rx.dat
+        rxrsp <> rxrspPipe
+        rxdat <> rxdatPipe
         io_chi <> linkMonitor.io.out
         linkMonitor.io.nodeID := io_nodeID
         /* exit coherency when: l2 flush of all slices is done and core is in WFI state */
