@@ -35,7 +35,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     /* receive task from arbiter at stage 2 */
     val taskFromArb_s2 = Flipped(ValidIO(new TaskBundle()))
     /* status from arbiter at stage1  */
-    val taskInfo_s1 = Flipped(ValidIO(new TaskBundle()))
+    val taskInfo_s1 = Flipped(ValidIO(new TaskBundle() {
+      val pred = Bool()
+    }))
 
     /* handle set conflict in req arb */
     val fromReqArb = Input(new Bundle() {

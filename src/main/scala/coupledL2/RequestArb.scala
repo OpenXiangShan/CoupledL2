@@ -27,6 +27,7 @@ import coupledL2.tl2tl._
 import coupledL2.tl2chi._
 import coupledL2.wpu.{WPURead, WPUResult}
 import coupledL2.utils._
+import chisel3.experimental.dataview._
 
 class RequestArb(implicit p: Parameters) extends L2Module
   with HasCHIOpcodes {
@@ -50,7 +51,9 @@ class RequestArb(implicit p: Parameters) extends L2Module
     /* send task to mainpipe */
     val taskToPipe_s2 = ValidIO(new TaskBundle())
     /* send s1 task info to mainpipe to help hint */
-    val taskInfo_s1 = ValidIO(new TaskBundle())
+    val taskInfo_s1 = ValidIO(new TaskBundle() {
+      val pred = Bool()
+    })
 
     /* send mshrBuf read request */
     val refillBufRead_s2 = ValidIO(new MSHRBufRead)
@@ -182,7 +185,8 @@ class RequestArb(implicit p: Parameters) extends L2Module
   s1_fire   := s1_cango && s2_ready
 
   io.taskInfo_s1.valid := s1_fire
-  io.taskInfo_s1.bits := task_s1.bits
+  io.taskInfo_s1.bits.viewAsSupertype(new TaskBundle) := task_s1.bits
+  io.taskInfo_s1.bits.pred := io.toDSReq_s1.ready && io.toDSen_s1
 
   /* Meta read request */
   // ^ only sinkA/B/C tasks need to read directory

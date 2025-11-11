@@ -32,7 +32,9 @@ class HintQueueEntry(implicit p: Parameters) extends L2Bundle {
 
 class CustomL1HintIOBundle(implicit p: Parameters) extends L2Bundle {
   // input information
-  val s1 = Flipped(ValidIO(new TaskBundle()))
+  val s1 = Flipped(ValidIO(new TaskBundle() {
+    val pred = Bool()
+  }))
   val s3 = new L2Bundle {
       val task      = Flipped(ValidIO(new TaskBundle()))
       val need_mshr = Input(Bool())
@@ -66,8 +68,9 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   val mshr_GrantData_s1 = task_s1.valid &&  mshrReq_s1 && (isGrantData(task_s1.bits) || isMergeGrantData(task_s1.bits))
   val mshr_Grant_s1     = task_s1.valid &&  mshrReq_s1 && (isGrant(task_s1.bits) || isMergeGrant(task_s1.bits))
   val chn_Release_s1    = task_s1.valid && !mshrReq_s1 && isRelease(task_s1.bits)
+  val chn_a_pred_s1     = task_s1.valid && task_s1.bits.pred
 
-  val enqValid_s1 = mshr_GrantData_s1 || mshr_Grant_s1 || chn_Release_s1
+  val enqValid_s1 = mshr_GrantData_s1 || mshr_Grant_s1 || chn_Release_s1 || chn_a_pred_s1
   val enqSource_s1 = Mux(task_s1.bits.mergeA, task_s1.bits.aMergeTask.sourceId, task_s1.bits.sourceId)
   val enqKeyWord_s1 = Mux(task_s1.bits.mergeA,
     task_s1.bits.aMergeTask.isKeyword.getOrElse(false.B),
@@ -77,7 +80,8 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
     Seq(
       mshr_Grant_s1 -> Grant,
       mshr_GrantData_s1 -> GrantData,
-      chn_Release_s1 -> ReleaseAck
+      chn_Release_s1 -> ReleaseAck,
+      chn_a_pred_s1 -> Mux(task_s1.bits.opcode === Get, AccessAck, GrantData)
     )
   )
 
