@@ -465,7 +465,7 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
 
   /* s0: entries look up */
   val prev_in_valid = RegNext(io.in_req.valid, false.B)
-  val prev_in_req = RegEnable(io.in_req.bits, io.in_req.valid)
+  val prev_in_req = RegNext(io.in_req.bits)
   val prev_in_flag = get_flag(prev_in_req.full_vaddr)
   // s1 entry update
   val alloc = Wire(Vec(REQ_FILTER_SIZE, Bool()))
@@ -500,8 +500,8 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
 
   /* s1 update and replace */
   val s1_valid = RegNext(s0_req_valid, false.B)
-  val s1_in_req = RegEnable(s0_in_req, s0_req_valid)
-  val s1_invalid_oh = RegEnable(s0_invalid_oh, 0.U, s0_req_valid)
+  val s1_in_req = RegNext(s0_in_req)
+  val s1_invalid_oh = RegNext(s0_invalid_oh)
   val s1_pf_fire_oh = RegNext(s0_pf_fire_oh, 0.U)
   val s1_tlb_fire_oh = RegNext(s0_tlb_fire_oh, 0.U)
   val s1_alloc_entry = Wire(new BopReqBufferEntry)
