@@ -110,7 +110,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val tagErr = RegInit(false.B) // L2 Tag Error
   val denied = RegInit(false.B)
   val corrupt = RegInit(false.B)
-  val dataCheckErr = RegInit(false.B)
   val cbWrDataTraceTag = RegInit(false.B)
   val metaChi = ParallelLookUp(
     Cat(meta.dirty, meta.state),
@@ -148,7 +147,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     tagErr := io.alloc.bits.dirResult.hit && (io.alloc.bits.dirResult.meta.tagErr || io.alloc.bits.dirResult.error)
     denied := false.B
     corrupt := false.B
-    dataCheckErr := false.B
     cbWrDataTraceTag := false.B
 
     retryTimes := 0.U
@@ -840,9 +838,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       accessed = true.B
     )
 
-    // CHI
-    mp_grant.dataCheckErr.get := dataCheckErr
-
     mp_grant
   }
 
@@ -1156,7 +1151,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         gotGrantData := true.B
         denied := denied || nderr
         corrupt := corrupt || derr || nderr || rxdatCorrupt
-        dataCheckErr := dataCheckErr || rxdat.bits.dataCheckErr.getOrElse(false.B)
       }
     }
 
@@ -1175,7 +1169,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       tgtid_rcompack := rxdat.bits.homeNID.getOrElse(0.U)
       denied := denied || nderr
       corrupt := corrupt || derr || nderr || rxdatCorrupt
-      dataCheckErr := dataCheckErr || rxdat.bits.dataCheckErr.getOrElse(false.B)
       req.traceTag.get := req.traceTag.get || rxdat.bits.traceTag.getOrElse(false.B)
     }
   }

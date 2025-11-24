@@ -82,7 +82,6 @@ class RXDAT(implicit p: Parameters) extends TL2CHIL2Module {
   io.in.respInfo.traceTag.get     := io.out.bits.traceTag
   io.in.respInfo.denied           := io.out.bits.respErr === RespErrEncodings.NDERR
   io.in.respInfo.corrupt          := io.out.bits.respErr === RespErrEncodings.DERR || io.out.bits.respErr === RespErrEncodings.NDERR || dataCheck || poison
-  io.in.respInfo.dataCheckErr.get := dataCheck
 
   io.out.ready := true.B
 
