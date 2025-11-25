@@ -201,8 +201,8 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
 
         // PCredit receive
         val pCrdGrantValid_s1 = RegNext(isPCrdGrant)
-        val pCrdGrantType_s1 = RegEnable(rxrsp.bits.pCrdType, isPCrdGrant)
-        val pCrdGrantSrcID_s1 = RegEnable(rxrsp.bits.srcID, isPCrdGrant)
+        val pCrdGrantType_s1 = RegNext(rxrsp.bits.pCrdType)
+        val pCrdGrantSrcID_s1 = RegNext(rxrsp.bits.srcID)
 
         pCrdQueue.io.enq.valid := pCrdGrantValid_s1
         pCrdQueue.io.enq.bits.pCrdType := pCrdGrantType_s1
