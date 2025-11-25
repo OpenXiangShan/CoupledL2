@@ -127,6 +127,9 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
 
     slices match {
       case slices: Seq[Slice] =>
+        // DVMOp Bridge
+        val dvmop = Module(new DVMOpBridge)
+
         // TXREQ
         val txreq_arb = Module(new RRArbiterInit(new CHIREQ, slices.size + 1)) // plus 1 for MMIO
         val txreq = Wire(DecoupledIO(new CHIREQ))
@@ -137,7 +140,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
 
         // TXRSP
         val txrsp = Wire(DecoupledIO(new CHIRSP))
-        fastArb(slices.map(_.io.out.tx.rsp), txrsp, Some("txrsp"))
+        fastArb(slices.map(_.io.out.tx.rsp) :+ dvmop.io.txrsp, txrsp, Some("txrsp"))
 
         // TXDAT
         val txdat = Wire(DecoupledIO(new CHIDAT))
@@ -145,12 +148,18 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
 
         // RXSNP
         val rxsnp = Wire(DecoupledIO(new CHISNP))
+        val rxsnpDVMOp = rxsnp.bits.opcode === SnpDVMOp
         val rxsnpSliceID = if (banks <= 1) 0.U else (rxsnp.bits.addr >> (offsetBits - 3))(bankBits - 1, 0)
         slices.zipWithIndex.foreach { case (s, i) =>
-          s.io.out.rx.snp.valid := rxsnp.valid && rxsnpSliceID === i.U
+          s.io.out.rx.snp.valid := rxsnp.valid && !rxsnpDVMOp && rxsnpSliceID === i.U
           s.io.out.rx.snp.bits := rxsnp.bits
         }
-        rxsnp.ready := Cat(slices.zipWithIndex.map { case (s, i) => s.io.out.rx.snp.ready && rxsnpSliceID === i.U }).orR
+        dvmop.io.rxsnp.valid := rxsnp.valid && rxsnpDVMOp
+        dvmop.io.rxsnp.bits := rxsnp.bits
+        rxsnp.ready := Cat(
+          slices.zipWithIndex.map { case (s, i) => s.io.out.rx.snp.ready && rxsnpSliceID === i.U } :+
+          (dvmop.io.rxsnp.ready && rxsnpDVMOp)
+        ).orR
 
         // RXRSP
         val rxrsp = Wire(DecoupledIO(new CHIRSP))
