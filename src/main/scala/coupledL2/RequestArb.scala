@@ -222,7 +222,7 @@ class RequestArb(implicit p: Parameters) extends L2Module
   val ds_mcp2_stall = RegNext(s1_fire && !s1_AHint_fire && !s1_CRelease_fire)
 
   // let Release go through even if MCP2 stall active (not supported by MainPipe)
-  val s1_CRelease_letgo = !mshr_task_s1.valid && io.sinkC.valid && io.sinkC.bits.opcode === Release
+  val s1_CRelease_letgo = s1_CRelease_fire
 
   s2_ready  := !ds_mcp2_stall /*|| s1_CRelease_letgo*/
 
