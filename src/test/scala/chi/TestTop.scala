@@ -166,6 +166,7 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, ext
     val io = IO(Vec(numCores, new Bundle() {
       val chi = new PortIO
       val nodeId = Input(UInt(NODEID_WIDTH.W))
+      val l2Hint = Valid(new L2ToL1Hint)
     }))
 
     l2_nodes.zipWithIndex.foreach { case (l2, i) =>
@@ -188,6 +189,8 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, ext
       }
       
       l2.module.io_chi <> io(i).chi
+
+      l2.module.io.l2_hint <> io(i).l2Hint
 
       dontTouch(l2.module.io)
 
