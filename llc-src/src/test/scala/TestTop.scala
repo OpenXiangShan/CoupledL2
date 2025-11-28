@@ -353,7 +353,8 @@ object TestTopSoCHelper {
 
     (new ChiselStage).execute(args, Seq(
       ChiselGeneratorAnnotation(() => top.module),
-      FirtoolOption("--disable-annotation-unknown")
+      FirtoolOption("--disable-annotation-unknown"),
+      FirtoolOption("--default-layer-specialization=enable")
     ))
 
     ChiselDB.addToFileRegisters
