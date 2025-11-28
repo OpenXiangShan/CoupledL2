@@ -190,6 +190,10 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
       WireDefault(0.U(64.W))
     }
 
+    val io_l1 = IO(Vec(numCores, new Bundle() {
+      val l2Hint = Valid(new L2ToL1Hint)
+    }))
+
     val timer = WireDefault(0.U(64.W))
     val logEnable = WireDefault(false.B)
     val clean = WireDefault(false.B)
@@ -253,6 +257,8 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
 
       l2.module.io_chi <> l3.io.rn(i)
       dontTouch(l2.module.io)
+
+      l2.module.io.l2_hint <> io_l1(i).l2Hint
 
       l2.module.io.hartId := i.U
       l2.module.io.pfCtrlFromCore := DontCare
