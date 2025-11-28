@@ -166,6 +166,9 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, ext
     val io = IO(Vec(numCores, new Bundle() {
       val chi = new PortIO
       val nodeId = Input(UInt(NODEID_WIDTH.W))
+    }))
+
+    val io_l1 = IO(Vec(numCores, new Bundle() {
       val l2Hint = Valid(new L2ToL1Hint)
     }))
 
@@ -190,7 +193,7 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, ext
       
       l2.module.io_chi <> io(i).chi
 
-      l2.module.io.l2_hint <> io(i).l2Hint
+      l2.module.io.l2_hint <> io_l1(i).l2Hint
 
       dontTouch(l2.module.io)
 
