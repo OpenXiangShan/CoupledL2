@@ -663,6 +663,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   txdat_s3.bits.task := source_req_s3
   txdat_s3.bits.data.data := data_s3
   d_s3.bits.task := source_req_s3
+  d_s3.bits.task.opcode := Mux(mshr_req_s3, req_s3.opcode, sink_resp_s3.bits.opcode)
   d_s3.bits.data.data := data_s3
 
   when (task_s3.valid) {
