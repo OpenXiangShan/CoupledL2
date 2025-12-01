@@ -81,16 +81,15 @@ object FromAsyncBundle {
   def channel(
     async: AsyncBundle[UInt],
     params: AsyncQueueParams = AsyncQueueParams(),
-    name: Option[String] = None,
-    lcrdvReady: Option[Bool]= None
+    name: Option[String] = None
   ) = {
     val gen = chiselTypeOf(async.mem.head)
     val out = Wire(new ChannelIO(gen))
     val sink = Module(new AsyncQueueSink(gen, params))
     if (name.isDefined) { sink.suggestName("asyncQSink_" + name.get) }
     sink.io.async <> async
-    sink.io.deq.ready := lcrdvReady.getOrElse(true.B)
-    out.flitv := sink.io.deq.valid & sink.io.deq.ready
+    sink.io.deq.ready := true.B
+    out.flitv := sink.io.deq.valid
     out.flit := sink.io.deq.bits
     // flitpend and lcrdv are assigned independently
     out.flitpend := DontCare
@@ -188,12 +187,9 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
     val resetFinish = Output(Bool())
   })
 
-  val txreq_lcrdvReady = Wire(Bool())
-  val txrsp_lcrdvReady = Wire(Bool())
-  val txdat_lcrdvReady = Wire(Bool())
-  io.deq.tx.req <> FromAsyncBundle.channel(io.async.tx.req.flit, params, Some("txreq_flit"), Some(txreq_lcrdvReady))
-  io.deq.tx.rsp <> FromAsyncBundle.channel(io.async.tx.rsp.flit, params, Some("txrsp_flit"), Some(txrsp_lcrdvReady))
-  io.deq.tx.dat <> FromAsyncBundle.channel(io.async.tx.dat.flit, params, Some("txdat_flit"), Some(txdat_lcrdvReady))
+  io.deq.tx.req <> FromAsyncBundle.channel(io.async.tx.req.flit, params, Some("txreq_flit"))
+  io.deq.tx.rsp <> FromAsyncBundle.channel(io.async.tx.rsp.flit, params, Some("txrsp_flit"))
+  io.deq.tx.dat <> FromAsyncBundle.channel(io.async.tx.dat.flit, params, Some("txdat_flit"))
 
   io.async.tx.req.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.req.lcrdv, params, Some("txreq_lcrdv"))
   io.async.tx.rsp.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.rsp.lcrdv, params, Some("txrsp_lcrdv"))
@@ -244,57 +240,5 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
     io.resetFinish := resetFinish
   }
 
-
-  /*
-   Duplicate Link Monitor tx/rx state FSM by using deq.rx deq.tx active signals which outuput to DownStream CHI
-   */
-  val txState = RegInit(LinkStates.STOP)
-  val rxState = RegInit(LinkStates.STOP)
-
-  Seq(txState, rxState).zip(MixedVecInit(Seq(io.deq.tx, io.deq.rx))).foreach { case (state, link) =>
-    state := MuxLookup(Cat(link.linkactivereq, link.linkactiveack), LinkStates.STOP)(Seq(
-      Cat(true.B, false.B) -> LinkStates.ACTIVATE,
-      Cat(true.B, true.B) -> LinkStates.RUN,
-      Cat(false.B, true.B) -> LinkStates.DEACTIVATE,
-      Cat(false.B, false.B) -> LinkStates.STOP
-    ))
-  }
-  /*
-   For rx channel, add l-credit manager module to generate lcrdv inside bridge
-   a. Try to use io.deq.rx as LCredit interface to output lcrdv right after rx flit received.
-   b. The maximum number of L-Credits that CoupledL2 can provide is 15.
-   */
-  val rxsnpDeact, rxrspDeact, rxdatDeact = Wire(Bool())
-  val rxin = WireInit(0.U asTypeOf(Flipped(new DecoupledPortIO()))) //fake Decoupled IO to provide ready
-  rxin.rx.rsp.ready := true.B
-  rxin.rx.dat.ready := true.B
-  rxin.rx.snp.ready := true.B
-  LCredit2Decoupled(io.deq.rx.rsp, rxin.rx.rsp, LinkState(rxState), rxrspDeact, Some("rxrsp"), 15, false)
-  LCredit2Decoupled(io.deq.rx.dat, rxin.rx.dat, LinkState(rxState), rxdatDeact, Some("rxdat"), 15, false)
-  LCredit2Decoupled(io.deq.rx.snp, rxin.rx.snp, LinkState(rxState), rxsnpDeact, Some("rxsnp"))
-  /*
-   For tx channel, add l-credit manager module to generate 'ready' to block tx flit to DownStream CHI
-   a. The maximum number of L-Credits in tx channel is 4 inside bridge
-   b. Use L-Credits number more than 4 in CoupledL2 to cover lcrdv sync delay from DownStream CHI to CoupledL2
-   */
-  val txin = WireInit(0.U asTypeOf(Flipped(new DecoupledPortIO()))) //fake Decoupled IO to provide flitv
-  val txout = WireInit(0.U asTypeOf(new PortIO))//fake LCredit IO to provide lcrdv 
-  txout.tx.req.lcrdv := io.deq.tx.req.lcrdv
-  txout.tx.rsp.lcrdv := io.deq.tx.rsp.lcrdv
-  txout.tx.dat.lcrdv := io.deq.tx.dat.lcrdv
-
-  txin.tx.req.valid := io.deq.tx.req.flitv
-  txin.tx.rsp.valid := io.deq.tx.rsp.flitv
-  txin.tx.dat.valid := io.deq.tx.dat.flitv
-
-  Decoupled2LCredit(txin.tx.req, txout.tx.req, LinkState(txState), Some("txreq"))
-  Decoupled2LCredit(txin.tx.rsp, txout.tx.rsp, LinkState(txState), Some("txrsp"))
-  Decoupled2LCredit(txin.tx.dat, txout.tx.dat, LinkState(txState), Some("txdat"))
-
-  txreq_lcrdvReady := txin.tx.req.ready
-  txrsp_lcrdvReady := txin.tx.rsp.ready
-  txdat_lcrdvReady := txin.tx.dat.ready
-
   dontTouch(io)
-
 }
