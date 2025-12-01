@@ -263,15 +263,14 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
    For rx channel, add l-credit manager module to generate lcrdv inside bridge
    a. Try to use io.deq.rx as LCredit interface to output lcrdv right after rx flit received.
    b. The maximum number of L-Credits that CoupledL2 can provide is 15.
+   c. rxsnp is not in this practice and still use lcrdv generated in CoupledL2 since snoop may be unpredictablely blocked   
    */
   val rxsnpDeact, rxrspDeact, rxdatDeact = Wire(Bool())
   val rxin = WireInit(0.U asTypeOf(Flipped(new DecoupledPortIO()))) //fake Decoupled IO to provide ready
   rxin.rx.rsp.ready := true.B
   rxin.rx.dat.ready := true.B
-  rxin.rx.snp.ready := true.B
   LCredit2Decoupled(io.deq.rx.rsp, rxin.rx.rsp, LinkState(rxState), rxrspDeact, Some("rxrsp"), 15, false)
   LCredit2Decoupled(io.deq.rx.dat, rxin.rx.dat, LinkState(rxState), rxdatDeact, Some("rxdat"), 15, false)
-  LCredit2Decoupled(io.deq.rx.snp, rxin.rx.snp, LinkState(rxState), rxsnpDeact, Some("rxsnp"))
   /*
    For tx channel, add l-credit manager module to generate 'ready' to block tx flit to DownStream CHI
    a. The maximum number of L-Credits in tx channel is 4 inside bridge

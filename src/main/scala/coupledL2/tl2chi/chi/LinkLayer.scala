@@ -283,7 +283,7 @@ class Decoupled2LCredit[T <: Bundle](
   when (acceptLCredit) {
     when (!flitv) {
       lcreditPool := lcreditPool + 1.U
-      assert(lcreditPool + 1.U =/= 0.U, "L-Credit pool overflow")
+      assert(lcreditPool =/= (lcreditsMax + overlcreditVal).U, "L-Credit pool overflow")
     }
   }.otherwise {
     when (flitv) {
