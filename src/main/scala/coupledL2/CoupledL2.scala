@@ -39,6 +39,7 @@ trait HasCoupledL2Parameters {
   val p: Parameters
   // val tl2tlParams: HasTLL2Parameters = p(L2ParamKey)
   def enableCHI = p(EnableCHI)
+  def enableClockGate = p(EnableL2ClockGate)
   def cacheParams = p(L2ParamKey)
   def EnablePrivateClint = cacheParams.EnablePrivateClint
 
