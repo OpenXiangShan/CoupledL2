@@ -190,14 +190,27 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
       WireDefault(0.U(64.W))
     }
 
+    val log = IO(new Bundle {
+      val dump = Input(Bool())
+      val clean = Input(Bool())
+    })
+
     val io_l1 = IO(Vec(numCores, new Bundle() {
       val l2Hint = Valid(new L2ToL1Hint)
     }))
+
+    val cycle = RegInit(0.U(64.W))
+    cycle := cycle + 1.U
 
     val timer = WireDefault(0.U(64.W))
     val logEnable = WireDefault(false.B)
     val clean = WireDefault(false.B)
     val dump = WireDefault(false.B)
+
+    timer := { if (extTime) time_sim else cycle }
+    logEnable := true.B
+    clean := log.clean
+    dump := log.dump
 
     dontTouch(timer)
     dontTouch(logEnable)
@@ -310,6 +323,10 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
         ))
       }
     }
+
+    if (!l2Params.FPGAPlatform && l2Params.enablePerf) {
+      XSLog.collect(timer, logEnable, clean, dump)
+    }
   }
 }
 
@@ -317,7 +334,8 @@ object TestTopSoCHelper {
   def gen(fTop: Parameters => TestTopSoC)(args: Array[String]) = {
     val FPGAPlatform    = false
     val enableChiselDB  = !FPGAPlatform && true
-    val enableCHILog    = true
+    val enableCHILog    = !FPGAPlatform && true
+    val enablePerf      = !FPGAPlatform && true
     
     val config = new Config((_, _, _) => {
       case L2ParamKey => L2Param(
@@ -325,12 +343,12 @@ object TestTopSoCHelper {
         sets                = 128,
         clientCaches        = Seq(L1Param(aliasBitsOpt = Some(2))),
         // echoField        = Seq(DirtyField),
-        enablePerf          = false,
-        enableRollingDB     = enableChiselDB && true,
-        enableMonitor       = enableChiselDB && true,
-        enableTLLog         = enableChiselDB && true,
+        enablePerf          = enablePerf,
+        enableRollingDB     = enableChiselDB,
+        enableMonitor       = enableChiselDB,
+        enableTLLog         = enableChiselDB,
         enableCHILog        = enableCHILog,
-        elaboratedTopDown   = false,
+        elaboratedTopDown   = enablePerf,
         FPGAPlatform        = FPGAPlatform,
 
         // OddParity Data Check
@@ -344,10 +362,10 @@ object TestTopSoCHelper {
         sets                = 2,
         banks               = 1,
         clientCaches        = Seq(L2Param()),
-        enablePerf          = false,
+        enablePerf          = enablePerf,
         enableRollingDB     = false,
         enableCHILog        = enableCHILog,
-        elaboratedTopDown   = false,
+        elaboratedTopDown   = enablePerf,
         FPGAPlatform        = FPGAPlatform
       )
     })
