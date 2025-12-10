@@ -402,6 +402,10 @@ class L2ToL1Hint(implicit p: Parameters) extends Bundle {
   val isKeyword = Bool()       // miss entry keyword
 }
 
+class L2ToL1HintInsideL2(implicit p: Parameters) extends L2ToL1Hint {
+  val hasData = Bool()
+}
+
 // custom l2 - l1 tlb
 // FIXME lyq: Tlbcmd and TlbExceptionBundle, how to use L1 corresponding bundles?
 object TlbCmd {

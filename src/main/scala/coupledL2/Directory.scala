@@ -123,6 +123,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     val replResp = ValidIO(new ReplacerResult)
     // used to count occWays for Grant to retry
     val msInfo = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo)))
+    val retryFastFwd = Bool()
   })
 
   def invalid_way_sel(metaVec: Seq[MetaEntry], repl: UInt) = {
@@ -263,6 +264,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     )
   )).reduceTree(_ | _)
 
+  io.retryFastFwd := occWayMask_s2.andR
   val freeWayMask_s3 = RegEnable(~occWayMask_s2, refillReqValid_s2)
   val refillRetry = !(freeWayMask_s3.orR)
 

@@ -96,7 +96,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
     val nestedwbData = Output(new DSBlock)
 
     /* send Hint to L1 */
-    val l1Hint = DecoupledIO(new L2ToL1Hint())
+    val l1Hint = DecoupledIO(new L2ToL1HintInsideL2())
     /* receive s1 info for Hint */
     val taskInfo_s1 = Flipped(ValidIO(new TaskBundle()))
 
