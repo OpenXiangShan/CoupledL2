@@ -54,6 +54,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     /* get dir result at stage 3 */
     val dirResp_s3 = Input(new DirResult())
     val replResp = Flipped(ValidIO(new ReplacerResult()))
+    val retryFastFwd_s2 = Input(Bool())
 
     /* send task to MSHRCtl at stage 3 */
     val toMSHRCtl = new Bundle() {
@@ -100,9 +101,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     val nestedwbData = Output(new DSBlock())
 
     /* l2 refill hint */
-    val l1Hint = DecoupledIO(new L2ToL1Hint())
-    // val grantBufferHint = Flipped(ValidIO(new L2ToL1Hint()))
-    // val globalCounter = Input(UInt((log2Ceil(mshrsAll) + 1).W))
+    val l1Hint = DecoupledIO(new L2ToL1HintInsideL2())
 
     /* send prefetchTrain to Prefetch to trigger a prefetch req */
     val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain))
@@ -734,9 +733,16 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val dataError_s4 = RegInit(false.B)
   val l2Error_s4 = RegInit(false.B)
   val pendingTXDAT_s4 = task_s4.bits.fromB && !task_s4.bits.mshrTask && task_s4.bits.toTXDAT
-  val pendingD_s4 = task_s4.bits.fromA && !task_s4.bits.mshrTask && (
-    task_s4.bits.opcode === GrantData || task_s4.bits.opcode === AccessAckData
-  )
+  val latch_grant_s4 = true
+  val pendingD_s4 = if (latch_grant_s4) {
+    task_s4.bits.fromA && !task_s4.bits.mshrTask && !need_write_releaseBuf_s4 && (
+      task_s4.bits.opcode === GrantData || task_s4.bits.opcode === AccessAckData || task_s4.bits.opcode === Grant
+    )
+  } else {
+    task_s4.bits.fromA && !task_s4.bits.mshrTask && (
+      task_s4.bits.opcode === GrantData || task_s4.bits.opcode === AccessAckData
+    )
+  }
 
   task_s4.valid := task_s3.valid && !req_drop_s3
 
@@ -766,7 +772,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val req_drop_s4 = !need_write_releaseBuf_s4 && chnl_fire_s4
 
   val chnl_valid_s4 = task_s4.valid && !RegNext(chnl_fire_s3, false.B)
-  d_s4.valid := chnl_valid_s4 && isD_s4
+  d_s4.valid := chnl_valid_s4 && isD_s4 &&
+    (if(latch_grant_s4) !(task_s4.bits.opcode === Grant && task_s4.bits.fromA &&
+      !task_s4.bits.mshrTask && !need_write_releaseBuf_s4) else true.B)
   txreq_s4.valid := chnl_valid_s4 && isTXREQ_s4
   txrsp_s4.valid := chnl_valid_s4 && isTXRSP_s4
   txdat_s4.valid := chnl_valid_s4 && isTXDAT_s4
@@ -812,7 +820,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val customL1Hint = Module(new CustomL1Hint)
 
   customL1Hint.io.s1 := io.taskInfo_s1
-  // customL1Hint.io.s2 := task_s2
+  customL1Hint.io.s2.task := task_s2
+  customL1Hint.io.s2.retry := io.retryFastFwd_s2
 
   customL1Hint.io.s3.task      := task_s3
   // overwrite opcode: if sinkReq can respond, use sink_resp_s3.bits.opcode = Grant/GrantData

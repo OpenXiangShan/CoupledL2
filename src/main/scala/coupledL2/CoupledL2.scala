@@ -34,6 +34,7 @@ import coupledL2.prefetch._
 import huancun.{BankBitsKey, TPmetaReq, TPmetaResp}
 import utility.mbist.{MbistInterface, MbistPipeline}
 import utility.sram.{SramBroadcastBundle, SramHelper}
+import freechips.rocketchip.tilelink.TLArbiter
 
 trait HasCoupledL2Parameters {
   val p: Parameters
@@ -406,14 +407,20 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     // ** we need only [hintCycleAhead - 1] later
     val sliceAhead = hintCycleAhead - 1
 
-    val hintChosen = Wire(UInt(banks.W))
-    val hintFire = Wire(Bool())
+    val master_num = node.in.head._2.client.clients.size
+    val hintChosenVec = Wire(Vec(master_num, Valid(new Bundle {
+      val sliceId = UInt(banks.W)
+      val hasData = Bool()
+    })))
 
     // if Hint indicates that this slice should fireD, yet no D resp comes out of this slice
     // then we releaseSourceD, enabling io.d.ready for other slices
     // TODO: if Hint for single slice is 100% accurate, may consider remove this
     val releaseSourceD = Wire(Vec(banks, Bool()))
-    val allCanFire = (RegNextN(!hintFire, sliceAhead) && RegNextN(!hintFire, sliceAhead + 1)) || Cat(releaseSourceD).orR
+    val allCanFire = (
+      RegNextN(!hintChosenVec.map(_.valid).reduce(_ || _), sliceAhead) &&
+      RegNextN(!hintChosenVec.map(h => h.valid && h.bits.hasData).reduce(_ || _), sliceAhead + 1)) ||
+      Cat(releaseSourceD).orR
 
     val slices = node.in.zip(node.out).zipWithIndex.map {
       case (((in, edgeIn), (out, edgeOut)), i) =>
@@ -442,8 +449,9 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
           // we will try our best to select the grant of slice X.
           // If slice X has no grant then, it means that the hint at cycle T is wrong,
           // so we relax the restriction on grant selection.
-          val sliceCanFire = RegNextN(hintFire && i.U === hintChosen, sliceAhead) ||
-            RegNextN(hintFire && i.U === hintChosen, sliceAhead + 1)
+          // val chosen = hintChosenVec.map(h => h.valid && h.bits.sliceId === i.U).reduce(_ || _)
+          val sliceCanFire = RegNextN(hintChosenVec.map(h => h.valid && h.bits.sliceId === i.U).reduce(_ || _), sliceAhead) ||
+            RegNextN(hintChosenVec.map(h => h.valid && h.bits.sliceId === i.U && h.bits.hasData).reduce(_ || _), sliceAhead + 1)
 
           releaseSourceD(i) := sliceCanFire && !slice.io.in.d.valid
 
@@ -522,26 +530,35 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     if (enableHintGuidedGrant) {
       // for timing consideration, hint should latch one cycle before sending to L1
       // instead of adding a Pipeline/Queue to latch here, we just set hintQueue in GrantBuf & CustomL1Hint "flow=false"
-      val l1HintArb = Module(new Arbiter(new L2ToL1Hint(), slices.size))
-      val slices_l1Hint = slices.zipWithIndex.map {
-        case (s, i) => s.io.l1Hint
+      val slices_l1Hint = VecInit(slices.map(_.io.l1Hint))
+      val l1HintValids = Cat(slices_l1Hint.map(_.valid).reverse)
+      val readysVec = Wire(Vec(node.in.head._2.client.clients.size, UInt(banks.W)))
+      (node.in.head._2.client.clients zip readysVec zip hintChosenVec).foreach {
+        case ((client, readysToSlice), hintChosen) =>
+          val master = Wire(Decoupled())
+          val contains = Cat(slices_l1Hint.map(hint => client.sourceId.contains(hint.bits.sourceId)).reverse)
+          val arbValids = l1HintValids & contains
+          val arbReadys = TLArbiter.roundRobin(arbValids.getWidth, arbValids, master.fire)
+          val fires = arbValids & arbReadys
+          master.valid := fires.orR
+          val selectedHint = Mux1H(fires, slices_l1Hint.map(_.bits))
+          if (client.supports.probe) {
+            io.l2_hint.valid := master.fire && selectedHint.hasData
+            io.l2_hint.bits.isKeyword := selectedHint.isKeyword
+            io.l2_hint.bits.sourceId := selectedHint.sourceId - client.sourceId.start.U
+          }
+          hintChosen.valid := master.fire
+          hintChosen.bits.sliceId := OHToUInt(fires) // ! THIS IS NOT ONE-HOT !
+          hintChosen.bits.hasData := selectedHint.hasData
+          readysToSlice := arbReadys & contains & Cat(Seq.fill(4)(master.ready))
+
+          master.ready := !RegNext(master.fire && selectedHint.hasData)
       }
-      // should only Hint for DCache
-      val (sourceIsDcache, dcacheSourceIdStart) = node.in.head._2.client.clients
-        .filter(_.supports.probe)
-        .map(c => {
-          (c.sourceId.contains(l1HintArb.io.out.bits.sourceId).asInstanceOf[Bool], c.sourceId.start.U)
-        }).head
-
-      l1HintArb.io.in <> VecInit(slices_l1Hint)
-      io.l2_hint.valid := l1HintArb.io.out.fire && sourceIsDcache
-      io.l2_hint.bits.sourceId := l1HintArb.io.out.bits.sourceId - dcacheSourceIdStart
-      io.l2_hint.bits.isKeyword := l1HintArb.io.out.bits.isKeyword
-      // continuous hints can only be sent every two cycle, since GrantData takes two cycles
-      l1HintArb.io.out.ready := !RegNext(io.l2_hint.valid, false.B)
-
-      hintChosen := l1HintArb.io.chosen // ! THIS IS NOT ONE-HOT !
-      hintFire := io.l2_hint.valid
+      slices_l1Hint.zipWithIndex.foreach {
+        case (hint, i) =>
+          val sliceHintFire = hint.valid && hint.ready
+          hint.ready := readysVec.map(_(i)).reduce(_||_)
+      }
     }
 
     // Outer interface connection

@@ -116,6 +116,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   mainPipe.io.bufResp := sinkC.io.bufResp
   mainPipe.io.dirResp_s3 := directory.io.resp.bits
   mainPipe.io.replResp := directory.io.replResp
+  mainPipe.io.retryFastFwd_s2 := directory.io.retryFastFwd
   mainPipe.io.fromMSHRCtl <> mshrCtl.io.toMainPipe
   mainPipe.io.bufResp := sinkC.io.bufResp
   mainPipe.io.refillBufResp_s3.valid := RegNext(refillBuf.io.r.valid, false.B)
