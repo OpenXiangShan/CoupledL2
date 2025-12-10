@@ -28,6 +28,7 @@ import coupledL2.prefetch._
 import utility.{MemReqSource, ReqSourceKey, Code}
 
 case object EnableCHI extends Field[Boolean](false)
+case object EnableL2ClockGate extends Field[Boolean](true)
 
 // L1 Cache Params, used for TestTop generation
 case class L1Param
