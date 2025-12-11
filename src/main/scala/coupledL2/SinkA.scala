@@ -33,7 +33,6 @@ class SinkA(implicit p: Parameters) extends L2Module {
     val prefetchReq = prefetchOpt.map(_ => Flipped(DecoupledIO(new PrefetchReq)))
     val task = DecoupledIO(new TaskBundle)
     val cmoAll = Option.when(cacheParams.enableL2Flush) (new IOCMOAll)
-    val needDataNum = UInt(64.W)
   })
   assert(!(io.a.valid && (io.a.bits.opcode === PutFullData ||
                           io.a.bits.opcode === PutPartialData)),
@@ -200,11 +199,6 @@ class SinkA(implicit p: Parameters) extends L2Module {
   val isAcBlock = io.a.fire && io.a.bits.opcode === AcquireBlock
   val isAcPerm = io.a.fire && io.a.bits.opcode === AcquirePerm
   val isGet = io.a.fire && io.a.bits.opcode === Get
-  MyPerf("AcquirePerm", isAcPerm)
-  MyPerf("AcquireBlock", isAcBlock)
-  MyPerf("Get", isGet)
-  MyPerf("allAcquire", isAcBlock || isAcPerm)
-  io.needDataNum := MyPerf("allNeedData", isAcBlock || isGet)
   prefetchOpt.foreach {
     _ =>
       XSPerfAccumulate("sinkA_prefetch_req", io.prefetchReq.get.fire)

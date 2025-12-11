@@ -25,6 +25,7 @@ import freechips.rocketchip.util._
 import org.chipsalliance.cde.config.Field
 import huancun.{AliasKey, CacheParameters, IsHitKey, PrefetchKey}
 import coupledL2.prefetch._
+import coupledL2.wpu.WPUParameters
 import utility.{MemReqSource, ReqSourceKey, Code}
 
 case object EnableCHI extends Field[Boolean](false)
@@ -131,8 +132,10 @@ case class L2Param(
   hasMbist: Boolean = false,
   hasSramCtl: Boolean = false,
 
-  // when mainpipe read ds on s3 in 2nd cycle or wpu is in update, cancel way predict
-  cancelWPUOnBlock: Boolean = true,
+  wpuParam: WPUParameters = WPUParameters(
+    algoName = "utag",
+    debug = true
+  ),
 
   // Enable new clint
   EnablePrivateClint: Boolean = false

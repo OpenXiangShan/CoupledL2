@@ -61,7 +61,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   val mainPipe = Module(new MainPipe())
   val reqBuf = Module(new RequestBuffer())
   val mshrCtl = Module(new MSHRCtl())
-  val wpu = Module(new WPUWrapper(WPUParameters("utag2"), 1))
+  val wpu = Module(new WPUWrapper(WPUParameters("utag")))
   private val mbistPl = MbistPipeline.PlaceMbistPipeline(2, "L2Slice", p(L2ParamKey).hasMbist)
   sinkC.io.msInfo := mshrCtl.io.msInfo
 
@@ -114,7 +114,6 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   reqArb.io.msInfo := mshrCtl.io.msInfo
   reqArb.io.WPURes := wpu.out.res
   reqArb.io.DSStage := dsArb.out.mpstage
-  reqArb.io.needDataNum := sinkA.io.needDataNum
 
   wpu.in.read <> reqArb.io.toWPURead
   wpu.in.update := mainPipe.io.toWPUUpd

@@ -85,7 +85,6 @@ class RequestArb(implicit p: Parameters) extends L2Module
     val toDSen_s1 = Bool()
     val DSStage = Input(UInt(2.W))
     val WPUResToMP = ValidIO(new WPUResult)
-    val needDataNum = Input(UInt(64.W))
   })
 
   /* ======== Reset ======== */
@@ -146,9 +145,7 @@ class RequestArb(implicit p: Parameters) extends L2Module
   val A_task = io.sinkA.bits
   val B_task = io.sinkB.bits
   val C_task = io.sinkC.bits
-  val block_A = io.fromMSHRCtl.blockA_s1 || io.fromMainPipe.blockA_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockA_s1 ||
-    (io.sinkA.bits.opcode === Get || io.sinkA.bits.opcode === AcquireBlock) &&
-      (if (cacheParams.cancelWPUOnBlock) false.B else (!io.toDSReq_s1.ready && io.DSStage === "b01".U))
+  val block_A = io.fromMSHRCtl.blockA_s1 || io.fromMainPipe.blockA_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockA_s1
   val block_B = io.fromMSHRCtl.blockB_s1 || io.fromMainPipe.blockB_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockB_s1 ||
     (if (io.fromSourceC.isDefined) io.fromSourceC.get.blockSinkBReqEntrance else false.B) ||
     (if (io.fromTXDAT.isDefined) io.fromTXDAT.get.blockSinkBReqEntrance else false.B) ||
@@ -316,11 +313,6 @@ class RequestArb(implicit p: Parameters) extends L2Module
     }
   }
 
-//  val cancelWPU = if (cacheParams.cancelWPUOnBlock) {
-//    !io.toWPURead.ready || !io.toDSReq_s1.ready
-//  } else {
-//    !io.toDSReq_s1.ready && io.DSStage === "b00".U
-//  }
   val dsReqValid = io.WPURes.fire && io.WPURes.bits.predHit && io.DSStage === "b00".U
   io.toWPURead.bits.set := task_s1.bits.set
   io.toWPURead.bits.tag := task_s1.bits.tag
@@ -398,60 +390,4 @@ class RequestArb(implicit p: Parameters) extends L2Module
   XSPerfAccumulate("sinkA_stall_by_sinkB", io.sinkA.valid && sink_ready_basic && !block_A && sinkValids(1) && !sinkValids(0))
   XSPerfAccumulate("sinkA_stall_by_sinkC", io.sinkA.valid && sink_ready_basic && !block_A && sinkValids(0))
   XSPerfAccumulate("sinkB_stall_by_sinkC", io.sinkB.valid && sink_ready_basic && !block_B && sinkValids(0))
-
-//  val debug_need_wpu = task_s1.valid && task_s1.bits.fromA && !task_s1.bits.mshrTask
-//    (task_s1.bits.opcode === Get || task_s1.bits.opcode === AcquireBlock) && s2_ready
-
-//  MyPerf("upd_stg1_nostg2", debug_need_wpu && wpuupd && dsstg1 && !dsstg2)
-//  MyPerf("upd_nostg1_stg2", debug_need_wpu && wpuupd && !dsstg1 && dsstg2)
-//  val stg2cnt = MyPerf("noupd_nostg1_stg2", debug_need_wpu && !wpuupd && !dsstg1 && dsstg2)
-//  val stg1cnt = MyPerf("noupd_stg1_nostg2", debug_need_wpu && !wpuupd && dsstg1 && !dsstg2)
-//  MyPerf("upd_nostg1_nostg2", debug_need_wpu && wpuupd && !dsstg1 && !dsstg2)
-//  MyPerf("upd_nostg2", debug_need_wpu && wpuupd && !dsstg2)
-//  MyPerf("stg1_nostg2", debug_need_wpu && dsstg1 && !dsstg2)
-//  MyPerf("upd_nostg2", debug_need_wpu && wpuupd && !dsstg2)
-//  MyPerf("upd_nostg1", debug_need_wpu && wpuupd && !dsstg1)
-//  MyPerf("nostg1_stg2", debug_need_wpu && !dsstg1 && dsstg2)
-//  val updcnt = MyPerf("upd", debug_need_wpu && wpuupd)
-//  MyPerf("stg1", debug_need_wpu && dsstg1)
-//  MyPerf("stg2", debug_need_wpu && dsstg2)
-
-  val needWPU = task_s1.bits.fromA && !task_s1.bits.mshrTask &&
-    (task_s1.bits.opcode === Get || task_s1.bits.opcode === AcquireBlock)
-  val readDSNum = MyPerf("succ_read", io.toDSen_s1)
-  val fired_acuqireBlock_get = MyPerf("fired_acquireblock_get", s1_fire && needWPU)
-  dontTouch(readDSNum)
-  if (cacheParams.cancelWPUOnBlock == true) {
-    val stg1 = needWPU && io.DSStage === "b11".U && s1_fire
-    val stg2 = needWPU && io.DSStage === "b01".U && s1_fire
-    val miss = needWPU && !io.WPURes.bits.predHit && s1_fire
-    val stg1_miss = needWPU && io.DSStage === "b11".U && !io.WPURes.bits.predHit && s1_fire
-    val stg2_miss = needWPU && io.DSStage === "b01".U && !io.WPURes.bits.predHit && s1_fire
-    val only_miss = needWPU && io.DSStage === "b00".U && !io.WPURes.bits.predHit && s1_fire
-    val stg1_hit = needWPU && io.DSStage === "b11".U && io.WPURes.bits.predHit && s1_fire
-    val stg2_hit = needWPU && io.DSStage === "b01".U && io.WPURes.bits.predHit && s1_fire
-    val canceled = stg1 || stg2 || miss
-    MyPerf("stg1", stg1)
-    MyPerf("stg2", stg2)
-    MyPerf("miss", miss)
-    MyPerf("stg1_miss", stg1_miss)
-    MyPerf("stg2_miss", stg2_miss)
-    MyPerf("only_miss", only_miss)
-    MyPerf("stg1_hit", stg1_hit)
-    MyPerf("stg2_hit", stg2_hit)
-    val canceledNum = MyPerf("canceled", canceled)
-    val total = canceledNum + readDSNum
-    dontTouch(total)
-    dontTouch(canceledNum)
-    assert(fired_acuqireBlock_get === total)
-  } else {
-    val stg1 = needWPU && io.DSStage === "b11".U && s1_fire
-    val stg2 = needWPU && io.DSStage === "b01".U && task_s1.valid
-    val canceledNum = MyPerf("stg1", stg1)
-    MyPerf("stg2", stg2)
-    val total = canceledNum + readDSNum
-    dontTouch(total)
-    dontTouch(canceledNum)
-    assert(io.needDataNum >= total)
-  }
 }
