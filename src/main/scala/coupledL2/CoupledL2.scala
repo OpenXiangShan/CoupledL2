@@ -565,11 +565,10 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     topDown match {
       case Some(t) =>
         t.io.msStatus.zip(slices).foreach {
-          case (in, s) =>
-            s match {
-              case slice: tl2tl.Slice => in := slice.io_msStatus.get
-              case slice: tl2chi.Slice => in := slice.io_msStatus.get
-            }
+          case (in, s) => in := s.io.msStatus.get
+        }
+        t.io.msAlloc.zip(slices).foreach {
+          case (in, s) => in := s.io.msAlloc.get
         }
         t.io.dirResult.zip(slices).foreach {
           case (res, s) => res := s.io.dirResult.get

@@ -21,7 +21,6 @@ import chisel3._
 import chisel3.util._
 import coupledL2.prefetch.PfSource
 import coupledL2.utils._
-import coupledL2.tl2tl.MSHRStatus
 import utility._
 
 // TODO: Accommodate CHI
@@ -30,6 +29,7 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val dirResult = Vec(banks, Flipped(ValidIO(new DirResult)))
     val msStatus  = Vec(banks, Vec(mshrsAll, Flipped(ValidIO(new MSHRStatus))))
+    val msAlloc   = Vec(banks, Vec(mshrsAll, Flipped(ValidIO(new MSHRAllocStatus))))
     val latePF    = Vec(banks, Flipped(ValidIO(UInt(PfSource.pfSourceBits.W))))
     val debugTopDown = new Bundle {
       val robTrueCommit = Input(UInt(64.W))
@@ -55,28 +55,34 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   }
 
   io.debugTopDown.l2MissMatch := Cat(addrMatchVec.flatten).orR
-  XSPerfAccumulate(s"${cacheParams.name}MissMatch", io.debugTopDown.l2MissMatch)
+  XSPerfAccumulate(s"RobBlockBy${cacheParams.name}Miss", io.debugTopDown.l2MissMatch)
 
   /* ====== PART TWO ======
    * Count the parallel misses, and divide them into CPU/Prefetch
    */
-  def allMSHRMatchVec(cond: MSHRStatus => Bool): IndexedSeq[Bool] = {
-    io.msStatus.zipWithIndex.flatMap {
-      case (slice, i) =>
+  def allValidMatchVec[T <: Data](vec: Vec[Vec[ValidIO[T]]])(cond: T => Bool): IndexedSeq[Bool] = {
+    vec.flatMap{
+      case slice =>
         slice.map {
           ms => ms.valid && cond(ms.bits)
         }
     }
   }
 
-  val missVecCPU  = allMSHRMatchVec(s => s.fromA && s.is_miss && !s.is_prefetch)
-  val missVecPref = allMSHRMatchVec(s => s.fromA && s.is_miss &&  s.is_prefetch)
-  // val missVecAll = allMSHRMatchVec(s => s.fromA && s.is_miss)
-
+  val missVecCPU  = allValidMatchVec(io.msStatus)(s => s.fromA && s.is_miss && !s.is_prefetch)
+  val missVecPref = allValidMatchVec(io.msStatus)(s => s.fromA && s.is_miss &&  s.is_prefetch)
+  // val missVecAll = allValidMatchVec(io.msStatus)(s => s.fromA && s.is_miss)
   val totalMSHRs = banks * mshrsAll
-  XSPerfHistogram("parallel_misses_CPU" , PopCount(missVecCPU), true.B, 0, totalMSHRs, 1)
-  XSPerfHistogram("parallel_misses_Pref", PopCount(missVecPref), true.B, 0, totalMSHRs, 1)
-  XSPerfHistogram("parallel_misses_All" , PopCount(missVecCPU)+PopCount(missVecPref), true.B, 0, 32, 1)
+  XSPerfHistogram("miss_cycles_CPU" , PopCount(missVecCPU), true.B, 0, totalMSHRs, 1)
+  XSPerfHistogram("miss_cycles_Prefetch", PopCount(missVecPref), true.B, 0, totalMSHRs, 1)
+  XSPerfHistogram("miss_cycles_All" , PopCount(missVecCPU)+PopCount(missVecPref), true.B, 0, totalMSHRs, 1)
+
+  // count the miss times
+  val missCountCPU = allValidMatchVec(io.msAlloc)(s => s.fromA && s.is_miss && !s.is_prefetch)
+  val missCountPref = allValidMatchVec(io.msAlloc)(s => s.fromA && s.is_miss && s.is_prefetch)
+  XSPerfAccumulate("miss_count_CPU", PopCount(missCountCPU))
+  XSPerfAccumulate("miss_count_Prefetch", PopCount(missCountPref))
+  XSPerfAccumulate("miss_count_All", PopCount(missCountCPU) + PopCount(missCountPref))
 
   /* ====== PART THREE ======
    * Distinguish req sources and count num & miss
