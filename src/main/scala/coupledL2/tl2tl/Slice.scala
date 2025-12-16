@@ -27,7 +27,7 @@ import coupledL2._
 import coupledL2.utils._
 import coupledL2.debug._
 import coupledL2.prefetch.PrefetchIO
-import utility.{RegNextN, XSPerfHistogram}
+import utility.{MemReqSource, RegNextN, XSPerfHistogram}
 
 class OuterBundle(params: TLBundleParameters) extends TLBundle(params) with BaseOuterBundle
 
@@ -188,8 +188,8 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
       io.dirResult.get.bits  := directory.io.resp.bits
       io.hitPfInMSHR.get     := a_reqBuf.io.hasHitPfInMSHR
       io.pfLateInMSHR.get    := a_reqBuf.io.hasPfLateInMSHR
-      io.pfSent.get.valid := io.prefetch.get.req.fire
-      io.pfSent.get.bits := io.prefetch.get.req.bits.pfSource
+      io.pfSent.get.valid := io.prefetch.fold(false.B)(_.req.fire)
+      io.pfSent.get.bits := io.prefetch.fold(MemReqSource.NoWhere.id.U)(p => p.req.bits.pfSource)
     }
   )
   io.l2Miss := mshrCtl.io.l2Miss
