@@ -87,7 +87,8 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       val set = UInt(setBits.W)
     }))
 
-    val hasLatePF = ValidIO(UInt(PfSource.pfSourceBits.W))
+    val hasHitPfInMSHR = ValidIO(UInt(PfSource.pfSourceBits.W))
+    val hasPfLateInMSHR = ValidIO(UInt(MemReqSource.reqSourceBits.W))
     val hasMergeA = Output(Bool())
   })
 
@@ -178,10 +179,6 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   // flow not allowed when full, or entries might starve
   val canFlow = flow.B && !full && !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(in)
   val doFlow  = canFlow && io.out.ready
-  val latePrefetchRes = latePrefetch(in)
-  io.hasLatePF.valid := latePrefetchRes._1 && io.in.valid && !sameAddr(in, RegNext(in))
-  io.hasLatePF.bits := latePrefetchRes._2
-  io.hasMergeA := mergeA && io.in.valid && !sameAddr(in, RegNext(in))
 
   //  val depMask    = buffer.map(e => e.valid && sameAddr(io.in.bits, e.task))
   // remove duplicate prefetch if same-addr A req in MSHR or ReqBuf
@@ -194,6 +191,14 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     )
   ).asUInt
   val dup        = isPrefetch && dupMask.orR
+
+  // statistics io
+  val latePrefetchRes = latePrefetch(in)
+  io.hasHitPfInMSHR.valid := latePrefetchRes._1 && io.in.valid && !sameAddr(in, RegNext(in))
+  io.hasHitPfInMSHR.bits := latePrefetchRes._2
+  io.hasPfLateInMSHR.valid := io.in.valid && dup
+  io.hasPfLateInMSHR.bits := io.in.bits.reqSource
+  io.hasMergeA := mergeA && io.in.valid && !sameAddr(in, RegNext(in))
 
   //!! TODO: we can also remove those that duplicate with mainPipe
 
