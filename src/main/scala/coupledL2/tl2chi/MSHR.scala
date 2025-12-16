@@ -52,6 +52,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val io = IO(new Bundle() {
     val id = Input(UInt(mshrBits.W))
     val status = ValidIO(new MSHRStatus)
+    val statAlloc = ValidIO(new MSHRAllocStatus)
     val msInfo = ValidIO(new MSHRInfo)
     val alloc = Flipped(ValidIO(new MSHRRequest))
     val tasks = new MSHRTasks()
@@ -1312,6 +1313,11 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   io.status.bits.is_miss := !dirResult.hit
   io.status.bits.is_prefetch := req_prefetch
   io.status.bits.reqSource := req.reqSource
+
+  io.statAlloc.valid := io.alloc.valid
+  io.statAlloc.bits.is_miss := !io.alloc.bits.dirResult.hit
+  io.statAlloc.bits.is_prefetch := io.alloc.bits.task.opcode === Hint
+  io.statAlloc.bits.channel := io.alloc.bits.task.channel
 
   io.msInfo.valid := req_valid
   io.msInfo.bits.set := req.set

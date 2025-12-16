@@ -21,7 +21,6 @@ import chisel3._
 import chisel3.util._
 import coupledL2.prefetch.PfSource
 import coupledL2.utils._
-import coupledL2.tl2tl.MSHRStatus
 import utility._
 
 // TODO: Accommodate CHI
@@ -29,8 +28,11 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   val banks = 1 << bankBits
   val io = IO(new Bundle() {
     val dirResult = Vec(banks, Flipped(ValidIO(new DirResult)))
-    val msStatus  = Vec(banks, Vec(mshrsAll, Flipped(ValidIO(new MSHRStatus))))
-    val latePF    = Vec(banks, Flipped(ValidIO(UInt(PfSource.pfSourceBits.W))))
+    val msStatus = Vec(banks, Vec(mshrsAll, Flipped(ValidIO(new MSHRStatus))))
+    val msAlloc = Vec(banks, Vec(mshrsAll, Flipped(ValidIO(new MSHRAllocStatus))))
+    val hitPfInMSHR = Vec(banks, Flipped(ValidIO(UInt(PfSource.pfSourceBits.W))))
+    val pfSent = Vec(banks, Flipped(ValidIO(UInt(MemReqSource.reqSourceBits.W))))
+    val pfLateInMSHR = Vec(banks, Flipped(ValidIO(UInt(MemReqSource.reqSourceBits.W))))
     val debugTopDown = new Bundle {
       val robTrueCommit = Input(UInt(64.W))
       val robHeadPaddr = Flipped(Valid(UInt(36.W)))
@@ -55,28 +57,34 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   }
 
   io.debugTopDown.l2MissMatch := Cat(addrMatchVec.flatten).orR
-  XSPerfAccumulate(s"${cacheParams.name}MissMatch", io.debugTopDown.l2MissMatch)
+  XSPerfAccumulate(s"RobBlockBy${cacheParams.name}Miss", io.debugTopDown.l2MissMatch)
 
   /* ====== PART TWO ======
    * Count the parallel misses, and divide them into CPU/Prefetch
    */
-  def allMSHRMatchVec(cond: MSHRStatus => Bool): IndexedSeq[Bool] = {
-    io.msStatus.zipWithIndex.flatMap {
-      case (slice, i) =>
+  def allValidMatchVec[T <: Data](vec: Vec[Vec[ValidIO[T]]])(cond: T => Bool): IndexedSeq[Bool] = {
+    vec.flatMap{
+      case slice =>
         slice.map {
           ms => ms.valid && cond(ms.bits)
         }
     }
   }
 
-  val missVecCPU  = allMSHRMatchVec(s => s.fromA && s.is_miss && !s.is_prefetch)
-  val missVecPref = allMSHRMatchVec(s => s.fromA && s.is_miss &&  s.is_prefetch)
-  // val missVecAll = allMSHRMatchVec(s => s.fromA && s.is_miss)
-
+  val missVecCPU  = allValidMatchVec(io.msStatus)(s => s.fromA && s.is_miss && !s.is_prefetch)
+  val missVecPref = allValidMatchVec(io.msStatus)(s => s.fromA && s.is_miss &&  s.is_prefetch)
+  // val missVecAll = allValidMatchVec(io.msStatus)(s => s.fromA && s.is_miss)
   val totalMSHRs = banks * mshrsAll
-  XSPerfHistogram("parallel_misses_CPU" , PopCount(missVecCPU), true.B, 0, totalMSHRs, 1)
-  XSPerfHistogram("parallel_misses_Pref", PopCount(missVecPref), true.B, 0, totalMSHRs, 1)
-  XSPerfHistogram("parallel_misses_All" , PopCount(missVecCPU)+PopCount(missVecPref), true.B, 0, 32, 1)
+  XSPerfHistogram("mshr_cycles_CPU" , PopCount(missVecCPU), true.B, 0, totalMSHRs, 1)
+  XSPerfHistogram("mshr_cycles_Prefetch", PopCount(missVecPref), true.B, 0, totalMSHRs, 1)
+  XSPerfHistogram("mshr_cycles_All" , PopCount(missVecCPU)+PopCount(missVecPref), true.B, 0, totalMSHRs, 1)
+
+  // count the miss times
+  val missCountCPU = allValidMatchVec(io.msAlloc)(s => s.fromA && s.is_miss && !s.is_prefetch)
+  val missCountPref = allValidMatchVec(io.msAlloc)(s => s.fromA && s.is_miss && s.is_prefetch)
+  XSPerfAccumulate("mshr_count_CPU", PopCount(missCountCPU))
+  XSPerfAccumulate("mshr_count_Prefetch", PopCount(missCountPref))
+  XSPerfAccumulate("mshr_count_All", PopCount(missCountCPU) + PopCount(missCountPref))
 
   /* ====== PART THREE ======
    * Distinguish req sources and count num & miss
@@ -90,11 +98,6 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     io.dirResult.map {
       r => r.valid && r.bits.replacerInfo.channel === 1.U && cond(r.bits)
     }
-  }
-
-  def reqFromCPU(r: DirResult): Bool = {
-    r.replacerInfo.reqSource === MemReqSource.CPULoadData.id.U ||
-    r.replacerInfo.reqSource === MemReqSource.CPUStoreData.id.U
   }
 
   for (i <- 0 until MemReqSource.ReqSourceCount.id) {
@@ -120,43 +123,62 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   )
 
   // sent/useful vector
-  val l2prefetchSentVec = pfTypes.map { case (_, reqSrc, _) => dirResultMatchVec(r => r.replacerInfo.reqSource === reqSrc) }
-  val l2prefetchUsefulVec = pfTypes.map { case (_, _, pfSrc) =>
-    dirResultMatchVec(r => reqFromCPU(r) && r.hit &&
+  val l2pfSentVec = pfTypes.map { case (_, reqSrc, _) => io.pfSent.map(r => r.valid && r.bits === reqSrc) }
+  val l2pfSentToPipeVec = pfTypes.map { case (_, reqSrc, _) => dirResultMatchVec(r => r.replacerInfo.reqSource === reqSrc) }
+  val l2hitPfInCacheVec = pfTypes.map { case (_, _, pfSrc) =>
+    dirResultMatchVec(r => MemReqSource.isCPUReq(r.replacerInfo.reqSource) && r.hit &&
       r.meta.prefetch.getOrElse(false.B) && r.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) === pfSrc)
   }
-  val l2prefetchLateVec = pfTypes.map { case (_, _, pfSrc) =>
-    io.latePF.map(r => r.valid && r.bits === pfSrc)
+  val l2hitPfInMSHRVec = pfTypes.map { case (_, _, pfSrc) =>
+    io.hitPfInMSHR.map(r => r.valid && r.bits === pfSrc)
   }
-
-  // to summary
-  val l2prefetchSent = dirResultMatchVec(
-    r => MemReqSource.isL2Prefetch(r.replacerInfo.reqSource)
-  )
-  val l2prefetchUseful = dirResultMatchVec(
-    r => reqFromCPU(r) && r.hit && r.meta.prefetch.getOrElse(false.B)
-  )
+  val l2pfLateInCache = pfTypes.map { case (_, reqSrc, _) =>
+    dirResultMatchVec(r => MemReqSource.isL2Prefetch(r.replacerInfo.reqSource) && r.hit &&
+      !r.meta.prefetch.getOrElse(false.B) && r.replacerInfo.reqSource === reqSrc)
+  }
+  val l2pfLateInMSHR = pfTypes.map { case (_, reqSrc, _) =>
+    io.pfLateInMSHR.map(r => r.valid && r.bits === reqSrc)
+  }
+  val l2hitPfVec = l2hitPfInCacheVec.zip(l2hitPfInMSHRVec).map { case (c, m) => PopCount(c) + PopCount(m) }
+  val l2pfLateVec = l2pfLateInCache.zip(l2pfLateInMSHR).map { case (c, m) => PopCount(c) + PopCount(m) }
   val l2demandMiss = dirResultMatchVec(
-    r => reqFromCPU(r) && !r.hit
+    r => MemReqSource.isCPUReq(r.replacerInfo.reqSource) && !r.hit
   )
-  val l2prefetchLate = io.latePF.map(_.valid)
-  // TODO: get difference prefetchSrc for detailed analysis
-  // FIXME lyq: it's abnormal l2prefetchLate / l2prefetchUseful is more than 1
+  val l2prefetchMiss = dirResultMatchVec(
+    r => MemReqSource.isL2Prefetch(r.replacerInfo.reqSource) && !r.hit
+  )
+  val l1prefetchMiss = dirResultMatchVec(
+    r => MemReqSource.isL1Prefetch(r.replacerInfo.reqSource) && !r.hit
+  )
 
   // PF Accuracy/Coverage/Late Accumulate/Rolling
-  XSPerfAccumulate("l2prefetchSent", PopCount(l2prefetchSent))
-  XSPerfAccumulate("l2prefetchUseful", PopCount(l2prefetchUseful))
   XSPerfAccumulate("l2demandMiss", PopCount(l2demandMiss))
-  XSPerfAccumulate("l2prefetchLate", PopCount(l2prefetchLate))
-  XSPerfRolling("L2PrefetchAccuracy", PopCount(l2prefetchUseful), PopCount(l2prefetchSent), 1000, io.debugTopDown.robTrueCommit, clock, reset)
-  XSPerfRolling("L2PrefetchCoverage", PopCount(l2prefetchUseful), PopCount(l2prefetchUseful) + PopCount(l2demandMiss), 1000, io.debugTopDown.robTrueCommit, clock, reset)
-  XSPerfRolling("L2PrefetchLate", PopCount(l2prefetchLate), PopCount(l2prefetchUseful), 1000, io.debugTopDown.robTrueCommit, clock, reset)
-  for ((name, _, _, sent, useful, late) <- pfTypes zip l2prefetchSentVec zip l2prefetchUsefulVec zip l2prefetchLateVec map { case (((a, b), c), d) => (a._1, a._2, a._3, b, c, d) }) {
-    XSPerfAccumulate(s"l2prefetchSent$name", PopCount(sent))
-    XSPerfAccumulate(s"l2prefetchUseful$name", PopCount(useful))
-    XSPerfAccumulate(s"l2prefetchLate$name", PopCount(late))
-    XSPerfRolling(s"L2PrefetchAccuracy$name", PopCount(useful), PopCount(sent), 1000, io.debugTopDown.robTrueCommit, clock, reset)
-    XSPerfRolling(s"L2PrefetchCoverage$name", PopCount(useful), PopCount(useful) + PopCount(l2demandMiss), 1000, io.debugTopDown.robTrueCommit, clock, reset)
+  XSPerfAccumulate("l1prefetchMiss", PopCount(l1prefetchMiss))
+  XSPerfAccumulate("l2prefetchMiss", PopCount(l2prefetchMiss))
+  XSPerfAccumulate("l2prefetchSent", PopCount(l2pfSentVec.flatten))
+  XSPerfAccumulate("l2prefetchSentToPipe", PopCount(l2pfSentToPipeVec.flatten))
+  XSPerfAccumulate("l2prefetchHit", l2hitPfVec.reduce(_ + _))
+  XSPerfAccumulate("l2prefetchHitInCache", PopCount(l2hitPfInCacheVec.flatten))
+  XSPerfAccumulate("l2prefetchHitInMSHR", PopCount(l2hitPfInMSHRVec.flatten))
+  XSPerfAccumulate("l2prefetchLate", l2pfLateVec.reduce(_ + _))
+  XSPerfAccumulate("l2prefetchLateInCache", PopCount(l2pfLateInCache.flatten))
+  XSPerfAccumulate("l2prefetchLateInMSHR", PopCount(l2pfLateInMSHR.flatten))
+  XSPerfRolling("L2PrefetchAccuracy", l2hitPfVec.reduce(_ + _), PopCount(l2pfSentVec.flatten), 1000, io.debugTopDown.robTrueCommit, clock, reset)
+  XSPerfRolling("L2PrefetchLate", l2pfLateVec.reduce(_ + _), PopCount(l2pfSentVec.flatten), 1000, io.debugTopDown.robTrueCommit, clock, reset)
+  XSPerfRolling("L2PrefetchCoverage", l2hitPfVec.reduce(_ + _), l2hitPfVec.reduce(_ + _) + PopCount(l2demandMiss), 1000, io.debugTopDown.robTrueCommit, clock, reset)
+  for ((x, i) <- pfTypes.zipWithIndex) {
+    val name = x._1
+    XSPerfAccumulate(s"l2prefetchSent$name", PopCount(l2pfSentVec(i)))
+    XSPerfAccumulate(s"l2prefetchSentToPipe$name", PopCount(l2pfSentToPipeVec(i)))
+    XSPerfAccumulate(s"l2prefetchHit$name", l2hitPfVec(i))
+    XSPerfAccumulate(s"l2prefetchHitInCache$name", PopCount(l2hitPfInCacheVec(i)))
+    XSPerfAccumulate(s"l2prefetchHitInMSHR$name", PopCount(l2hitPfInMSHRVec(i)))
+    XSPerfAccumulate(s"l2prefetchLate$name", l2pfLateVec(i))
+    XSPerfAccumulate(s"l2prefetchLateInCache$name", PopCount(l2pfLateInCache(i)))
+    XSPerfAccumulate(s"l2prefetchLateInMSHR$name", PopCount(l2pfLateInMSHR(i)))
+    XSPerfRolling(s"L2PrefetchAccuracy$name", l2hitPfVec(i), PopCount(l2pfSentVec(i)), 1000, io.debugTopDown.robTrueCommit, clock, reset)
+    XSPerfRolling(s"L2PrefetchLate$name", l2pfLateVec(i), PopCount(l2pfSentVec(i)), 1000, io.debugTopDown.robTrueCommit, clock, reset)
+    XSPerfRolling(s"L2PrefetchCoverage$name", l2hitPfVec(i), l2hitPfVec(i) + PopCount(l2demandMiss), 1000, io.debugTopDown.robTrueCommit, clock, reset)
   }
 
 }
