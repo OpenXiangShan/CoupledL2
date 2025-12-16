@@ -19,13 +19,13 @@ package coupledL2
 
 import chisel3._
 import chisel3.util.log2Ceil
-import freechips.rocketchip.diplomacy.{BufferParams, AddressSet}
+import freechips.rocketchip.diplomacy.{AddressSet, BufferParams}
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util._
 import org.chipsalliance.cde.config.Field
 import huancun.{AliasKey, CacheParameters, IsHitKey, PrefetchKey}
 import coupledL2.prefetch._
-import utility.{MemReqSource, ReqSourceKey, Code}
+import utility.{Code, MemReqSource, ReqSourceKey}
 
 case object EnableCHI extends Field[Boolean](false)
 
@@ -132,7 +132,8 @@ case class L2Param(
   hasSramCtl: Boolean = false,
 
   // Enable new clint
-  EnablePrivateClint: Boolean = false
+  EnablePrivateClint: Boolean = false,
+  PrivateClintRange: AddressSet = AddressSet(0x38000000L, 0xFFFF)
 ) {
   def toCacheParams: CacheParameters = CacheParameters(
     name = name,
