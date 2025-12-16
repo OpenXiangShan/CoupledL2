@@ -185,6 +185,48 @@ class PipeEntranceStatus(implicit p: Parameters) extends L2Bundle {
   def g_set = sets(3)
 }
 
+/* MSHR info */
+
+// MSHR exposes signals about allocation to Topdown
+class MSHRAllocStatus()(implicit p: Parameters) extends L2Bundle with HasTLChannelBits{
+  val is_miss = Bool()
+  val is_prefetch = Bool()
+}
+
+// MSHR exposes signals to MSHRCtl and Topdown
+class MSHRStatus(implicit p: Parameters) extends L2Bundle
+  with HasTLChannelBits
+  with HasCHIChannelBits
+{
+  val set         = UInt(setBits.W)
+  val reqTag      = UInt(tagBits.W)
+  val metaTag     = UInt(tagBits.W)
+  val needsRepl = Bool()
+  val w_c_resp = Bool()
+  val w_d_resp = Bool()
+  val will_free = Bool()
+
+  /*
+  val way = UInt(wayBits.W)
+  val off = UInt(offsetBits.W)
+  val opcode = UInt(3.W)
+  val param = UInt(3.W)
+  val size = UInt(msgSizeBits.W)
+  val source = UInt(sourceIdBits.W)
+  val alias = aliasBitsOpt.map(_ => UInt(aliasBitsOpt.get.W))
+  val aliasTask = aliasBitsOpt.map(_ => Bool())
+  val needProbeAckData = Bool() // only for B reqs
+  val fromL2pft = prefetchOpt.map(_ => Bool())
+  val needHint = prefetchOpt.map(_ => Bool())
+  */
+
+  // for TopDown usage
+  val reqSource = UInt(MemReqSource.reqSourceBits.W)
+  val is_miss = Bool()
+  val is_prefetch = Bool()
+
+}
+
 // MSHR Task that MainPipe sends to MSHRCtl
 class MSHRRequest(implicit p: Parameters) extends L2Bundle {
   val dirResult = new DirResult()

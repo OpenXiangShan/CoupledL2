@@ -562,23 +562,19 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       case EdgeOutKey => node.out.head._2
       case BankBitsKey => bankBits
     })))
-    topDown match {
-      case Some(t) =>
-        t.io.msStatus.zip(slices).foreach {
-          case (in, s) =>
-            s match {
-              case slice: tl2tl.Slice => in := slice.io_msStatus.get
-              case slice: tl2chi.Slice => in := slice.io_msStatus.get
-            }
-        }
-        t.io.dirResult.zip(slices).foreach {
-          case (res, s) => res := s.io.dirResult.get
-        }
-        t.io.latePF.zip(slices).foreach {
-          case (in, s) => in := s.io.latePF.get
-        }
-        t.io.debugTopDown <> io.debugTopDown
-      case None => io.debugTopDown.l2MissMatch := false.B
+    topDown.foreach { t =>
+      for ((s, i) <- slices.zipWithIndex) {
+        t.io.msStatus(i) := s.io.msStatus.get
+        t.io.msAlloc(i) := s.io.msAlloc.get
+        t.io.dirResult(i) := s.io.dirResult.get
+        t.io.hitPfInMSHR(i) := s.io.hitPfInMSHR.get
+        t.io.pfLateInMSHR(i) := s.io.pfLateInMSHR.get
+        t.io.pfSent(i) := s.io.pfSent.get
+      }
+      t.io.debugTopDown <> io.debugTopDown
+    }
+    when (topDown.isEmpty.B) {
+      io.debugTopDown.l2MissMatch := false.B
     }
 
     io.l2Miss := RegNext(slices.map(_.io.l2Miss).reduce(_ || _))
