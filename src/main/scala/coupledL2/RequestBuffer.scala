@@ -87,7 +87,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       val set = UInt(setBits.W)
     }))
 
-    val hasPfHitInMSHR = ValidIO(UInt(PfSource.pfSourceBits.W))
+    val hasHitPfInMSHR = ValidIO(UInt(PfSource.pfSourceBits.W))
     val hasPfLateInMSHR = ValidIO(UInt(MemReqSource.reqSourceBits.W))
     val hasMergeA = Output(Bool())
   })
@@ -194,8 +194,8 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
   // statistics io
   val latePrefetchRes = latePrefetch(in)
-  io.hasPfHitInMSHR.valid := latePrefetchRes._1 && io.in.valid && !sameAddr(in, RegNext(in))
-  io.hasPfHitInMSHR.bits := latePrefetchRes._2
+  io.hasHitPfInMSHR.valid := latePrefetchRes._1 && io.in.valid && !sameAddr(in, RegNext(in))
+  io.hasHitPfInMSHR.bits := latePrefetchRes._2
   io.hasPfLateInMSHR.valid := io.in.valid && dup
   io.hasPfLateInMSHR.bits := io.in.bits.reqSource
   io.hasMergeA := mergeA && io.in.valid && !sameAddr(in, RegNext(in))

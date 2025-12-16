@@ -30,8 +30,8 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     val dirResult = Vec(banks, Flipped(ValidIO(new DirResult)))
     val msStatus = Vec(banks, Vec(mshrsAll, Flipped(ValidIO(new MSHRStatus))))
     val msAlloc = Vec(banks, Vec(mshrsAll, Flipped(ValidIO(new MSHRAllocStatus))))
+    val hitPfInMSHR = Vec(banks, Flipped(ValidIO(UInt(PfSource.pfSourceBits.W))))
     val pfSent = Vec(banks, Flipped(ValidIO(UInt(MemReqSource.reqSourceBits.W))))
-    val pfHitInMSHR = Vec(banks, Flipped(ValidIO(UInt(PfSource.pfSourceBits.W))))
     val pfLateInMSHR = Vec(banks, Flipped(ValidIO(UInt(MemReqSource.reqSourceBits.W))))
     val debugTopDown = new Bundle {
       val robTrueCommit = Input(UInt(64.W))
@@ -125,12 +125,12 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   // sent/useful vector
   val l2pfSentVec = pfTypes.map { case (_, reqSrc, _) => io.pfSent.map(r => r.valid && r.bits === reqSrc) }
   val l2pfSentToPipeVec = pfTypes.map { case (_, reqSrc, _) => dirResultMatchVec(r => r.replacerInfo.reqSource === reqSrc) }
-  val l2pfHitInCacheVec = pfTypes.map { case (_, _, pfSrc) =>
+  val l2hitPfInCacheVec = pfTypes.map { case (_, _, pfSrc) =>
     dirResultMatchVec(r => MemReqSource.isCPUReq(r.replacerInfo.reqSource) && r.hit &&
       r.meta.prefetch.getOrElse(false.B) && r.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) === pfSrc)
   }
-  val l2pfHitInMSHRVec = pfTypes.map { case (_, _, pfSrc) =>
-    io.pfHitInMSHR.map(r => r.valid && r.bits === pfSrc)
+  val l2hitPfInMSHRVec = pfTypes.map { case (_, _, pfSrc) =>
+    io.hitPfInMSHR.map(r => r.valid && r.bits === pfSrc)
   }
   val l2pfLateInCache = pfTypes.map { case (_, reqSrc, _) =>
     dirResultMatchVec(r => MemReqSource.isL2Prefetch(r.replacerInfo.reqSource) && r.hit &&
@@ -139,7 +139,7 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   val l2pfLateInMSHR = pfTypes.map { case (_, reqSrc, _) =>
     io.pfLateInMSHR.map(r => r.valid && r.bits === reqSrc)
   }
-  val l2pfHitVec = l2pfHitInCacheVec.zip(l2pfHitInMSHRVec).map { case (c, m) => PopCount(c) + PopCount(m) }
+  val l2hitPfVec = l2hitPfInCacheVec.zip(l2hitPfInMSHRVec).map { case (c, m) => PopCount(c) + PopCount(m) }
   val l2pfLateVec = l2pfLateInCache.zip(l2pfLateInMSHR).map { case (c, m) => PopCount(c) + PopCount(m) }
   val l2demandMiss = dirResultMatchVec(
     r => MemReqSource.isCPUReq(r.replacerInfo.reqSource) && !r.hit
@@ -157,28 +157,28 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   XSPerfAccumulate("l2prefetchMiss", PopCount(l2prefetchMiss))
   XSPerfAccumulate("l2prefetchSent", PopCount(l2pfSentVec.flatten))
   XSPerfAccumulate("l2prefetchSentToPipe", PopCount(l2pfSentToPipeVec.flatten))
-  XSPerfAccumulate("l2prefetchHit", l2pfHitVec.reduce(_ + _))
-  XSPerfAccumulate("l2prefetchHitInCache", PopCount(l2pfHitInCacheVec.flatten))
-  XSPerfAccumulate("l2prefetchHitInMSHR", PopCount(l2pfHitInMSHRVec.flatten))
+  XSPerfAccumulate("l2prefetchHit", l2hitPfVec.reduce(_ + _))
+  XSPerfAccumulate("l2prefetchHitInCache", PopCount(l2hitPfInCacheVec.flatten))
+  XSPerfAccumulate("l2prefetchHitInMSHR", PopCount(l2hitPfInMSHRVec.flatten))
   XSPerfAccumulate("l2prefetchLate", l2pfLateVec.reduce(_ + _))
   XSPerfAccumulate("l2prefetchLateInCache", PopCount(l2pfLateInCache.flatten))
   XSPerfAccumulate("l2prefetchLateInMSHR", PopCount(l2pfLateInMSHR.flatten))
-  XSPerfRolling("L2PrefetchAccuracy", l2pfHitVec.reduce(_ + _), PopCount(l2pfSentVec.flatten), 1000, io.debugTopDown.robTrueCommit, clock, reset)
+  XSPerfRolling("L2PrefetchAccuracy", l2hitPfVec.reduce(_ + _), PopCount(l2pfSentVec.flatten), 1000, io.debugTopDown.robTrueCommit, clock, reset)
   XSPerfRolling("L2PrefetchLate", l2pfLateVec.reduce(_ + _), PopCount(l2pfSentVec.flatten), 1000, io.debugTopDown.robTrueCommit, clock, reset)
-  XSPerfRolling("L2PrefetchCoverage", l2pfHitVec.reduce(_ + _), l2pfHitVec.reduce(_ + _) + PopCount(l2demandMiss), 1000, io.debugTopDown.robTrueCommit, clock, reset)
+  XSPerfRolling("L2PrefetchCoverage", l2hitPfVec.reduce(_ + _), l2hitPfVec.reduce(_ + _) + PopCount(l2demandMiss), 1000, io.debugTopDown.robTrueCommit, clock, reset)
   for ((x, i) <- pfTypes.zipWithIndex) {
     val name = x._1
     XSPerfAccumulate(s"l2prefetchSent$name", PopCount(l2pfSentVec(i)))
     XSPerfAccumulate(s"l2prefetchSentToPipe$name", PopCount(l2pfSentToPipeVec(i)))
-    XSPerfAccumulate(s"l2prefetchHit$name", l2pfHitVec(i))
-    XSPerfAccumulate(s"l2prefetchHitInCache$name", PopCount(l2pfHitInCacheVec(i)))
-    XSPerfAccumulate(s"l2prefetchHitInMSHR$name", PopCount(l2pfHitInMSHRVec(i)))
+    XSPerfAccumulate(s"l2prefetchHit$name", l2hitPfVec(i))
+    XSPerfAccumulate(s"l2prefetchHitInCache$name", PopCount(l2hitPfInCacheVec(i)))
+    XSPerfAccumulate(s"l2prefetchHitInMSHR$name", PopCount(l2hitPfInMSHRVec(i)))
     XSPerfAccumulate(s"l2prefetchLate$name", l2pfLateVec(i))
     XSPerfAccumulate(s"l2prefetchLateInCache$name", PopCount(l2pfLateInCache(i)))
     XSPerfAccumulate(s"l2prefetchLateInMSHR$name", PopCount(l2pfLateInMSHR(i)))
-    XSPerfRolling(s"L2PrefetchAccuracy$name", l2pfHitVec(i), PopCount(l2pfSentVec(i)), 1000, io.debugTopDown.robTrueCommit, clock, reset)
+    XSPerfRolling(s"L2PrefetchAccuracy$name", l2hitPfVec(i), PopCount(l2pfSentVec(i)), 1000, io.debugTopDown.robTrueCommit, clock, reset)
     XSPerfRolling(s"L2PrefetchLate$name", l2pfLateVec(i), PopCount(l2pfSentVec(i)), 1000, io.debugTopDown.robTrueCommit, clock, reset)
-    XSPerfRolling(s"L2PrefetchCoverage$name", l2pfHitVec(i), l2pfHitVec(i) + PopCount(l2demandMiss), 1000, io.debugTopDown.robTrueCommit, clock, reset)
+    XSPerfRolling(s"L2PrefetchCoverage$name", l2hitPfVec(i), l2hitPfVec(i) + PopCount(l2demandMiss), 1000, io.debugTopDown.robTrueCommit, clock, reset)
   }
 
 }

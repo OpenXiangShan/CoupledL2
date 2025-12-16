@@ -567,7 +567,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         t.io.msStatus(i) := s.io.msStatus.get
         t.io.msAlloc(i) := s.io.msAlloc.get
         t.io.dirResult(i) := s.io.dirResult.get
-        t.io.pfHitInMSHR(i) := s.io.pfHitInMSHR.get
+        t.io.hitPfInMSHR(i) := s.io.hitPfInMSHR.get
         t.io.pfLateInMSHR(i) := s.io.pfLateInMSHR.get
         t.io.pfSent(i) := s.io.pfSent.get
       }
