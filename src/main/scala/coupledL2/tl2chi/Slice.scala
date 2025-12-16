@@ -23,6 +23,7 @@ import utility.mbist.MbistPipeline
 import org.chipsalliance.cde.config.Parameters
 import coupledL2._
 import coupledL2.prefetch.PrefetchIO
+import utility.MemReqSource
 
 class OuterBundle(implicit p: Parameters) extends DecoupledPortIO with BaseOuterBundle
 
@@ -34,7 +35,6 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
     override val out: OuterBundle = new OuterBundle
   })
   val io_pCrd = IO(Vec(mshrsAll, new PCrdQueryBundle))
-  val io_msStatus = topDownOpt.map(_ => IO(Vec(mshrsAll, ValidIO(new MSHRStatus))))
 
   /* Upwards TileLink-related modules */
   val sinkA = Module(new SinkA)
@@ -180,10 +180,14 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   io.l1Hint <> mainPipe.io.l1Hint
   topDownOpt.foreach (
     _ => {
-      io_msStatus.get := mshrCtl.io.msStatus.get
+      io.msStatus.get := mshrCtl.io.msStatus.get
+      io.msAlloc.get := mshrCtl.io.msAlloc.get
       io.dirResult.get.valid := directory.io.resp.valid && !directory.io.replResp.valid // exclude MSHR-Grant read-dir
       io.dirResult.get.bits := directory.io.resp.bits
-      io.latePF.get := reqBuf.io.hasLatePF
+      io.hitPfInMSHR.get := reqBuf.io.hasHitPfInMSHR
+      io.pfLateInMSHR.get := reqBuf.io.hasPfLateInMSHR
+      io.pfSent.get.valid := io.prefetch.fold(false.B)(_.req.fire)
+      io.pfSent.get.bits := io.prefetch.fold(MemReqSource.NoWhere.id.U)(p => p.req.bits.pfSource)
     }
   )
   io.l2Miss := mshrCtl.io.l2Miss

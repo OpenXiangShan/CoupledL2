@@ -90,6 +90,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
     /* for TopDown Monitor */
     val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
+    val msAlloc = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRAllocStatus)))
 
     /* for TopDown */
     val l2Miss = Output(Bool())
@@ -176,11 +177,16 @@ class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
   dontTouch(io.sourceA)
 
-  topDownOpt.foreach (_ =>
-    io.msStatus.get.zip(mshrs).foreach {
-      case (in, s) => in := s.io.status
+  topDownOpt.foreach { _ =>
+    io.msStatus.get.zip(io.msAlloc.get).zip(mshrs).foreach {
+      case ((statusOut, allocOut), mshr) =>
+        // status
+        statusOut := mshr.io.status
+        // alloc
+        allocOut := mshr.io.statAlloc
     }
-  )
+  }
+
   // Performance counters
   XSPerfAccumulate("capacity_conflict_to_sinkA", a_mshrFull)
   XSPerfAccumulate("capacity_conflict_to_sinkB", mshrFull)
