@@ -78,7 +78,6 @@ jobs:
             git clone https://github.com/OpenXiangShan/OpenLLC
             cd OpenLLC && make init
             rm -rf ./coupledL2 && ln -s ../../.. ./coupledL2
-            cd ./utility && git pull origin master && cd ..
             cd ../..
             make openLLC-test-l2l3l2 run THREADS_BUILD=4 CXX_COMPILER=clang++-17
             rm -rf run/*.vcd run/*.fst run/*.log run/*.db
