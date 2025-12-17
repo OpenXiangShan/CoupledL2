@@ -130,21 +130,22 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     require(beat.getWidth == dat.data.getWidth)
     val beatOffsetWidth = log2Up(beatBytes)
 
+    val deassertBE = task.chiOpcode.get === CopyBackWrData && task.resp.get === I ||
+      task.chiOpcode.get === WriteDataCancel
+    val be = Fill(BE_WIDTH, !deassertBE)
+
+    val data = deassertData(beat, be)
     val dataCheck = if (enableDataCheck) {
       dataCheckMethod match {
-        case 1 => VecInit((0 until DATACHECK_WIDTH).map(i => beat(8 * (i + 1) - 1, 8 * i).xorR ^ true.B)).asUInt
+        case 1 => VecInit((0 until DATACHECK_WIDTH).map(i => data(8 * (i + 1) - 1, 8 * i).xorR ^ true.B)).asUInt
         case 2 =>
           val code = new SECDEDCode
-          VecInit((0 until DATACHECK_WIDTH).map(i => code.encode(beat(8 * (i + 1) - 1, 8 * i)))).asUInt
+          VecInit((0 until DATACHECK_WIDTH).map(i => code.encode(data(8 * (i + 1) - 1, 8 * i)))).asUInt
         case _ => 0.U(DATACHECK_WIDTH.W)
       }
     } else {
       DontCare
     }
-
-    val deassertBE = task.chiOpcode.get === CopyBackWrData && task.resp.get === I ||
-      task.chiOpcode.get === WriteDataCancel
-    val be = Fill(BE_WIDTH, !deassertBE)
 
     dat.tgtID := task.tgtID.get
     dat.srcID := task.srcID.get
@@ -162,7 +163,7 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       List.tabulate(beatSize)(i => (i << (beatOffsetWidth - ChunkOffsetWidth)).U)
     )
     dat.be := be
-    dat.data := deassertData(beat, be)
+    dat.data := data
     dat.resp := task.resp.get
     // dat.fwdState := task.fwdState.get
     dat.setFwdState(task.fwdState.get)
