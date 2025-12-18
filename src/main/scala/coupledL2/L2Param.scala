@@ -132,7 +132,6 @@ case class L2Param(
   hasSramCtl: Boolean = false,
 
   // both EnablePrivateClint and PrivateClintRange are from soc parameters.
-  EnablePrivateClint: Boolean = false,
   PrivateClintRange: Option[AddressSet] = None
 ) {
   def toCacheParams: CacheParameters = CacheParameters(
