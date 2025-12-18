@@ -38,16 +38,16 @@ class MMIOBridge()(implicit p: Parameters) extends LazyModule
     * MMIO node
     */
   val beuRange = AddressSet(0x38010000, 4096 - 1)
-  val clintRange = AddressSet(0x38000000L, 0xFFFF)
-  val peripheralRange = if (!EnablePrivateClint) { // clint is interated with periph bus
-    AddressSet(
-      0x0, 0xffffffffffffL
-    ).subtract(beuRange)
-  } else {
-    AddressSet(
-      0x0, 0xffffffffffffL
-    ).subtract(beuRange).flatMap(_.subtract(clintRange))
-  }
+  val clintRange = PrivateClintRange
+  // clint is interated with periph bus
+  val peripheralRange =
+    AddressSet(0x0, 0xffffffffffffL).subtract(beuRange).flatMap {
+      addrSet =>
+        clintRange match {
+          case Some(cRange) => addrSet.subtract(cRange)
+          case None => Seq(addrSet)
+        }
+    }
 
   val mmioNode = TLManagerNode(Seq(TLSlavePortParameters.v1(
     managers = Seq(TLSlaveParameters.v1(
