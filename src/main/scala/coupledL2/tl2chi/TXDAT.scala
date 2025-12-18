@@ -33,10 +33,12 @@ class TXDATBlockBundle(implicit p: Parameters) extends TXBlockBundle {
 class TXDAT(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val io = IO(new Bundle() {
     val in = Flipped(DecoupledIO(new TaskWithData()))
-    val out = DecoupledIO(new CHIDAT())
+    val out = DecoupledIO(new CHIDAT_withAddr)
 
     val pipeStatusVec = Flipped(Vec(5, ValidIO(new PipeStatusWithCHI)))
     val toReqArb = Output(new TXDATBlockBundle)
+
+    val sliceId = Input(UInt(bankBits.W))
   })
 
   assert(!io.in.valid || io.in.bits.task.toTXDAT, "txChannel is wrong for TXDAT")
@@ -98,7 +100,8 @@ class TXDAT(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val (beat, next_beatsOH) = getBeat(data, beatsOH)
 
   io.out.valid := taskValid
-  io.out.bits := toCHIDATBundle(taskR.task, beat, beatsOH)
+  io.out.bits := CHIDAT_withAddr(toCHIDATBundle(taskR.task, beat, beatsOH), 
+                                  restoreAddressUInt(taskR.task.toCHIREQBundle().addr, io.sliceId))
   // for TXDAT, WriteBack & SnpX will not allow CompData with NDERR
   io.out.bits.respErr := Mux(taskR.task.corrupt, RespErrEncodings.DERR, RespErrEncodings.OK)
 

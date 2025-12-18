@@ -71,6 +71,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
     val io_chi = IO(new PortIO)
     val io_nodeID = IO(Input(UInt()))
     val io_cpu_halt = Option.when(cacheParams.enableL2Flush) (IO(Input(Bool())))
+    val io_l2_release = IO(Vec(2, ValidIO(UInt(ADDR_WIDTH.W))))
 
     // Check port width
     require(io_chi.tx.rsp.getWidth == io_chi.rx.rsp.getWidth);
@@ -137,11 +138,22 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
 
         // TXRSP
         val txrsp = Wire(DecoupledIO(new CHIRSP))
-        fastArb(slices.map(_.io.out.tx.rsp), txrsp, Some("txrsp"))
+        val txrsp_withAddr = Wire(DecoupledIO(new CHIRSP_withAddr))
+        fastArb(slices.map(_.io.out.tx.rsp), txrsp_withAddr, Some("txrsp"))
+        txrsp.bits := CHIRSP_withAddr.toCHIRSP(txrsp_withAddr.bits)
+        txrsp.valid := txrsp_withAddr.valid
+        txrsp_withAddr.ready := txrsp.ready
 
         // TXDAT
+        val mmio_io_tx_dat_withAddr, txdat_withAddr = Wire(DecoupledIO(new CHIDAT_withAddr))
+        mmio_io_tx_dat_withAddr.valid := mmio.io.tx.dat.valid
+        mmio_io_tx_dat_withAddr.bits := CHIDAT_withAddr(mmio.io.tx.dat.bits, 0.U)
+        mmio.io.tx.dat.ready := mmio_io_tx_dat_withAddr.ready
+        fastArb(slices.map(_.io.out.tx.dat) :+ mmio_io_tx_dat_withAddr, txdat_withAddr, Some("txdat"))
         val txdat = Wire(DecoupledIO(new CHIDAT))
-        fastArb(slices.map(_.io.out.tx.dat) :+ mmio.io.tx.dat, txdat, Some("txdat"))
+        txdat.bits := CHIDAT_withAddr.toCHIDAT(txdat_withAddr.bits)
+        txdat.valid := txdat_withAddr.valid
+        txdat_withAddr.ready := txdat.ready
 
         // RXSNP
         val rxsnp = Wire(DecoupledIO(new CHISNP))
@@ -262,6 +274,24 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         linkMonitor.io.exitco.foreach { _ :=
           Cat(slices.zipWithIndex.map { case (s, i) => s.io.l2FlushDone.getOrElse(false.B)}).andR && io_cpu_halt.getOrElse(false.B)
         }
+
+        // Release signals to loadQueueRAR
+        // TXREQ
+        val release_txreq_valid = txreq.fire && (txreq.bits.opcode === Evict ||
+                                  txreq.bits.opcode === CleanInvalid || txreq.bits.opcode === MakeInvalid ||
+                                  txreq.bits.opcode === WriteBackFull || txreq.bits.opcode === WriteEvictOrEvict)
+        io_l2_release(0).valid := RegNext(release_txreq_valid)
+        require(txreq.bits.addr.getWidth == io_l2_release(0).bits.getWidth)
+        io_l2_release(0).bits := RegEnable(txreq.bits.addr, release_txreq_valid)
+        // TXRSP
+        val release_txrsp_valid = txrsp.fire && isSnpToN(txrsp.bits.opcode)
+        val release_txrsp_addr = txrsp_withAddr.bits.addr
+        // TXDAT
+        val release_txdat_valid = txdat.fire && isSnpToN(txdat.bits.opcode)
+        val release_txdat_addr = txdat_withAddr.bits.addr
+        io_l2_release(1).valid := RegNext(release_txrsp_valid || release_txdat_valid)
+        io_l2_release(1).bits := RegEnable(Mux(release_txrsp_valid, release_txrsp_addr, release_txdat_addr), release_txrsp_valid || release_txdat_valid)
+        assert(!(release_txrsp_valid && release_txdat_valid), "L2 release_txrsp_valid and release_txdat_valid should not be true at the same time")
 
         /**
           * performance counters

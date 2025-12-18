@@ -34,10 +34,12 @@ class TXRSP(implicit p: Parameters) extends TL2CHIL2Module {
     // val in = Flipped(DecoupledIO(new TaskBundle()))
     val pipeRsp = Flipped(DecoupledIO(new TaskBundle))
     val mshrRsp = Flipped(DecoupledIO(new CHIRSP()))
-    val out = DecoupledIO(new CHIRSP())
+    val out = DecoupledIO(new CHIRSP_withAddr)
 
     val pipeStatusVec = Flipped(Vec(5, ValidIO(new PipeStatusWithCHI)))
     val toReqArb = Output(new TXRSPBlockBundle)
+
+    val sliceId = Input(UInt(bankBits.W))
   })
 
   assert(!io.pipeRsp.valid || io.pipeRsp.bits.toTXRSP, "txChannel is wrong for TXRSP")
@@ -45,7 +47,7 @@ class TXRSP(implicit p: Parameters) extends TL2CHIL2Module {
   require(chiOpt.isDefined)
 
   // TODO: an mshrsAll-entry queue is too much, evaluate for a proper size later
-  val queue = Module(new Queue(new CHIRSP, entries = mshrsAll, flow = false))
+  val queue = Module(new Queue(new CHIRSP_withAddr, entries = mshrsAll, flow = false))
 
   // Back pressure logic from TXRSP
   val queueCnt = queue.io.count
@@ -73,7 +75,10 @@ class TXRSP(implicit p: Parameters) extends TL2CHIL2Module {
   queue.io.deq.ready := io.out.ready
 
   queue.io.enq.valid := io.pipeRsp.valid || io.mshrRsp.valid && !noSpaceForSinkBReq && !noSpaceForMSHRReq
-  queue.io.enq.bits := Mux(io.pipeRsp.valid, toCHIRSPBundle(io.pipeRsp.bits), io.mshrRsp.bits)
+  queue.io.enq.bits := Mux(io.pipeRsp.valid,
+                           CHIRSP_withAddr(toCHIRSPBundle(io.pipeRsp.bits), 
+                                           restoreAddressUInt(io.pipeRsp.bits.toCHIREQBundle().addr, io.sliceId)),
+                           CHIRSP_withAddr(io.mshrRsp.bits, 0.U)) // from mshrRsp is only compAck? set addr to 0.U (don't care)
 
   io.pipeRsp.ready := true.B
   io.mshrRsp.ready := !io.pipeRsp.valid && !noSpaceForSinkBReq && !noSpaceForMSHRReq
