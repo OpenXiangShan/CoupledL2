@@ -46,7 +46,7 @@ class MMIOBridge()(implicit p: Parameters) extends LazyModule
   } else {
     AddressSet(
       0x0, 0xffffffffffffL
-    ).subtract(beuRange).flatMap(_.subtract(clintRange))
+    ).subtract(beuRange).flatMap(_.subtract(clintRange.get))
   }
 
   val mmioNode = TLManagerNode(Seq(TLSlavePortParameters.v1(
