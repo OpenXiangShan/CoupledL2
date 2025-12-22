@@ -32,7 +32,7 @@ class HintQueueEntry(implicit p: Parameters) extends L2Bundle {
 
 class CustomL1HintIOBundle(implicit p: Parameters) extends L2Bundle {
   // input information
-  val s1 = Flipped(ValidIO(new TaskBundle() {
+  val s1_2 = Flipped(ValidIO(new TaskBundle() {
     val pred = Bool()
   }))
   val s3 = new L2Bundle {
@@ -50,7 +50,7 @@ class CustomL1HintIOBundle(implicit p: Parameters) extends L2Bundle {
 class CustomL1Hint(implicit p: Parameters) extends L2Module {
   val io = IO(new CustomL1HintIOBundle)
 
-  val task_s1 = io.s1
+  val task_s1 = io.s1_2
   val task_s3 = io.s3.task
   val mshrReq_s1 = task_s1.bits.mshrTask
   val mshrReq_s3 = task_s3.bits.mshrTask

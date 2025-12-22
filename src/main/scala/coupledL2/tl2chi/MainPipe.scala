@@ -35,7 +35,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     /* receive task from arbiter at stage 2 */
     val taskFromArb_s2 = Flipped(ValidIO(new TaskBundle()))
     /* status from arbiter at stage1  */
-    val taskInfo_s1 = Flipped(ValidIO(new TaskBundle() {
+    val taskInfo_s1_2 = Flipped(ValidIO(new TaskBundle() {
       val pred = Bool()
     }))
 
@@ -152,15 +152,10 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   }
 
   val WPURes_s3 = RegInit(0.U.asTypeOf(io.WPUResFromArb_s2))
-  val WPUResValid_hold = RegInit(0.U(2.W))
+  val WPUResValid_hold2 = RegEnable(io.WPUResFromArb_s2.valid, !RegNext(io.WPUResFromArb_s2.valid), false.B)
   WPURes_s3.valid := io.WPUResFromArb_s2.valid
   when (io.WPUResFromArb_s2.valid) {
     WPURes_s3.bits := io.WPUResFromArb_s2.bits
-  }
-  when (io.WPUResFromArb_s2.valid) {
-    WPUResValid_hold := "b11".U
-  }.otherwise {
-    WPUResValid_hold := WPUResValid_hold >> 1.U
   }
 
   /* ======== Enchantment ======== */
@@ -516,7 +511,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val predUnmatch = WPURes_s3.bits.predHit && io.dirResp_s3.hit && WPURes_s3.bits.predWay =/= io.dirResp_s3.way
   val predHitButMiss = WPURes_s3.bits.predHit && !io.dirResp_s3.hit
   val predMissButHit = !WPURes_s3.bits.predHit && io.dirResp_s3.hit
-  val readDSAgain = Mux(WPUResValid_hold(0), (predUnmatch || predMissButHit),
+  val readDSAgain = Mux(WPUResValid_hold2, (predUnmatch || predMissButHit),
     io.dirResp_s3.hit && (req_s3.opcode === Get || req_s3.opcode === AcquireBlock) && sinkA_req_s3)
   val useRDataByWPU_s3 = WPURes_s3.valid && predHitSucc
 
@@ -882,7 +877,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   // TODO: check this
   val customL1Hint = Module(new CustomL1Hint)
 
-  customL1Hint.io.s1 := io.taskInfo_s1
+  customL1Hint.io.s1_2 := io.taskInfo_s1_2
   // customL1Hint.io.s2 := task_s2
 
   customL1Hint.io.s3.task      := task_s3
@@ -1049,14 +1044,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   arb(txreq, io.toTXREQ, Some("toTXREQ"))
   arb(txrsp, io.toTXRSP, Some("toTXRSP"))
   arb(txdat, io.toTXDAT, Some("toTXDAT"))
-  val returnData_s3 = d_s3.fire && (d_s3.bits.task.opcode === GrantData || d_s3.bits.task.opcode === AccessAckData) && !d_s3.bits.task.mshrTask
-  MyPerf("retrun_data_in_s3", returnData_s3)
-  val returnData_s4 = d_s4.fire && (d_s4.bits.task.opcode === GrantData || d_s3.bits.task.opcode === AccessAckData) && !d_s3.bits.task.mshrTask
-  MyPerf("return_data_in_s4", returnData_s4)
-  val returnData_s5 = d_s5.fire && (d_s5.bits.task.opcode === GrantData || d_s3.bits.task.opcode === AccessAckData) && !d_s3.bits.task.mshrTask
-  MyPerf("return_data_in_s5", returnData_s5)
-  val latchTo_s5 = returnData_s5 && RegNextN(useRDataByWPU_s3, 2)
-  MyPerf("return_data_latch_to_s5", latchTo_s5)
 
   io.error.valid := task_s5.valid
   io.error.bits.valid := l2Error_s5 // if not enableECC, should be false

@@ -29,6 +29,9 @@ import coupledL2.wpu.{WPURead, WPUResult}
 import coupledL2.utils._
 import chisel3.experimental.dataview._
 
+class RequestArbIO(implicit p: Parameters) extends L2Bundle {
+}
+
 class RequestArb(implicit p: Parameters) extends L2Module
   with HasCHIOpcodes {
 
@@ -51,9 +54,9 @@ class RequestArb(implicit p: Parameters) extends L2Module
     /* send task to mainpipe */
     val taskToPipe_s2 = ValidIO(new TaskBundle())
     /* send s1 task info to mainpipe to help hint */
-    val taskInfo_s1 = ValidIO(new TaskBundle() {
-      val pred = Bool()
-    })
+    // val taskInfo_s1 = ValidIO(new TaskBundle() {
+    //   val pred = Bool()
+    // })
 
     /* send mshrBuf read request */
     val refillBufRead_s2 = ValidIO(new MSHRBufRead)
@@ -61,8 +64,8 @@ class RequestArb(implicit p: Parameters) extends L2Module
 
     /* status of each pipeline stage */
     val status_s1 = Output(new PipeEntranceStatus) // set & tag of entrance status
-    val status_vec = Vec(2, ValidIO(new PipeStatus))
-    val status_vec_toTX = if (enableCHI) Some(Vec(2, ValidIO(new PipeStatusWithCHI))) else None
+    val status_vec = Vec(3, ValidIO(new PipeStatus))
+    val status_vec_toTX = if (enableCHI) Some(Vec(3, ValidIO(new PipeStatusWithCHI))) else None
 
     /* handle set conflict, capacity conflict */
     val fromMSHRCtl = Input(new BlockInfo())
@@ -85,7 +88,13 @@ class RequestArb(implicit p: Parameters) extends L2Module
     val toDSen_s1 = Bool()
     val DSStage = Input(UInt(2.W))
     val WPUResToMP = ValidIO(new WPUResult)
-    val needDataNum = Input(UInt(64.W))
+    val s1_2Entrance = ValidIO(new L2Bundle {
+      val set = UInt(setBits.W)
+    })
+    // help block and hint
+    val taskInfo_s1_2 =  ValidIO(new TaskBundle() {
+      val pred = Bool()
+    })
   })
 
   /* ======== Reset ======== */
@@ -102,7 +111,7 @@ class RequestArb(implicit p: Parameters) extends L2Module
   val s0_fire   = Wire(Bool())
   val s1_fire   = Wire(Bool())
   val s1_cango  = Wire(Bool())
-  val s2_ready  = Wire(Bool())
+  val s1_2_ready  = Wire(Bool())
   val mshr_task_s1 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
 
   val s1_needs_replRead = mshr_task_s1.valid && mshr_task_s1.bits.fromA && mshr_task_s1.bits.replTask && (
@@ -124,7 +133,7 @@ class RequestArb(implicit p: Parameters) extends L2Module
   /* ======== Stage 0 ======== */
   // if mshr_task_s1 is replRead, it might stall and wait for dirRead.ready, so we block new mshrTask from entering
   // TODO: will cause msTask path vacant for one-cycle after replRead, since not use Flow so as to avoid ready propagation
-  io.mshrTask.ready := !io.fromGrantBuffer.blockMSHRReqEntrance && !s1_needs_replRead && !(mshr_task_s1.valid && !s2_ready) &&
+  io.mshrTask.ready := !io.fromGrantBuffer.blockMSHRReqEntrance && !s1_needs_replRead && !(mshr_task_s1.valid && !s1_2_ready) &&
     (if (io.fromSourceC.isDefined) !io.fromSourceC.get.blockMSHRReqEntrance else true.B) &&
     (if (io.fromTXDAT.isDefined) !io.fromTXDAT.get.blockMSHRReqEntrance else true.B) &&
     (if (io.fromTXRSP.isDefined) !io.fromTXRSP.get.blockMSHRReqEntrance else true.B) &&
@@ -166,7 +175,7 @@ class RequestArb(implicit p: Parameters) extends L2Module
 
   // TODO: A Hint is allowed to enter if !s2_ready for mcp2_stall
 
-  val sink_ready_basic = io.dirRead_s1.ready && resetFinish && !mshr_task_s1.valid && s2_ready
+  val sink_ready_basic = io.dirRead_s1.ready && resetFinish && !mshr_task_s1.valid && s1_2_ready
 
   io.sinkA.ready := sink_ready_basic && !block_A && !sinkValids(1) && !sinkValids(0) // SinkC prior to SinkA & SinkB
   io.sinkB.ready := sink_ready_basic && !block_B && !sinkValids(0) // SinkB prior to SinkA
@@ -182,15 +191,15 @@ class RequestArb(implicit p: Parameters) extends L2Module
   val s1_to_s2_valid = task_s1.valid && !mshr_replRead_stall
 
   s1_cango  := task_s1.valid && !mshr_replRead_stall
-  s1_fire   := s1_cango && s2_ready
+  s1_fire   := s1_cango && s1_2_ready
 
-  io.taskInfo_s1.valid := s1_fire
-  io.taskInfo_s1.bits.viewAsSupertype(new TaskBundle) := task_s1.bits
-  io.taskInfo_s1.bits.pred := io.toDSReq_s1.ready && io.toDSen_s1
+  // io.taskInfo_s1.valid := s1_fire
+  // io.taskInfo_s1.bits.viewAsSupertype(new TaskBundle) := task_s1.bits
+  // io.taskInfo_s1.bits.pred := io.toDSReq_s1.ready && io.toDSen_s1
 
   /* Meta read request */
   // ^ only sinkA/B/C tasks need to read directory
-  io.dirRead_s1.valid := s2_ready && (chnl_task_s1.valid && !mshr_task_s1.valid || s1_needs_replRead && !io.fromMainPipe.blockG_s1)
+  io.dirRead_s1.valid := s1_2_ready && (chnl_task_s1.valid && !mshr_task_s1.valid || s1_needs_replRead && !io.fromMainPipe.blockG_s1)
   io.dirRead_s1.bits.set := task_s1.bits.set
   io.dirRead_s1.bits.tag := task_s1.bits.tag
   // invalid way which causes mshr_retry
@@ -206,12 +215,23 @@ class RequestArb(implicit p: Parameters) extends L2Module
   io.dirRead_s1.bits.cmoWay := task_s1.bits.way
 
   // block same-set A req
-  io.s1Entrance.valid := mshr_task_s1.valid && s2_ready && mshr_task_s1.bits.metaWen || io.sinkC.fire || io.sinkB.fire
+  io.s1Entrance.valid := mshr_task_s1.valid && s1_2_ready && mshr_task_s1.bits.metaWen || io.sinkC.fire || io.sinkB.fire
   io.s1Entrance.bits.set  := Mux(
     mshr_task_s1.valid && mshr_task_s1.bits.metaWen,
     mshr_task_s1.bits.set,
     Mux(io.sinkC.fire, C_task.set, B_task.set)
   )
+
+  /* ========  Stage 1-2 ======== */
+  val task_s1_2 = RegInit(0.U.asTypeOf(task_s1))
+  val validHold2 = RegEnable(s1_fire, !RegNext(s1_fire), false.B)
+  task_s1_2.valid := s1_fire
+  when (s1_fire) { task_s1_2.bits := task_s1.bits }
+  io.taskInfo_s1_2.valid := task_s1_2.valid
+  io.taskInfo_s1_2.bits.viewAsSupertype(new TaskBundle) := task_s1_2.bits
+  io.taskInfo_s1_2.bits.pred := io.toDSReq_s1.ready && io.toDSen_s1
+  io.s1_2Entrance.valid := task_s1_2.valid && !(task_s1_2.bits.mshrTask && !task_s1_2.bits.metaWen)
+  io.s1_2Entrance.bits.set := task_s1_2.bits.set
 
   /* ========  Stage 2 ======== */
   val s1_AHint_fire = io.sinkA.fire && io.sinkA.bits.opcode === Hint
@@ -219,11 +239,11 @@ class RequestArb(implicit p: Parameters) extends L2Module
   // even though acquire miss in wpu, we still block to get rid of req hit in directory
   val mps3_ds_mcp2_stall = RegNext(s1_fire && !s1_AHint_fire)
 
-  s2_ready  := !mps3_ds_mcp2_stall
+  s1_2_ready  := !mps3_ds_mcp2_stall
 
-  val task_s2 = RegInit(0.U.asTypeOf(task_s1))
-  task_s2.valid := s1_fire
-  when(s1_fire) { task_s2.bits := task_s1.bits }
+  val task_s2 = RegInit(0.U.asTypeOf(task_s1_2))
+  task_s2.valid := task_s1_2.valid
+  when(task_s1_2.valid) { task_s2.bits := task_s1_2.bits }
 
 /*  val sameSet_s2 = task_s2.valid && task_s2.bits.fromA && !task_s2.bits.mshrTask && task_s2.bits.set === A_task.set
   val sameSet_s3 = RegNext(task_s2.valid && task_s2.bits.fromA && !task_s2.bits.mshrTask) &&
@@ -298,16 +318,16 @@ class RequestArb(implicit p: Parameters) extends L2Module
   io.status_s1.tags := VecInit(Seq(C_task.tag, B_task.tag, io.ATag, mshr_task_s1.bits.tag))
  // io.status_s1.isKeyword := VecInit(Seq(C_task.isKeyword, B_task.isKeyword, io.isKeyword, mshr_task_s1.bits.isKeyword))
 
-  require(io.status_vec.size == 2)
-  io.status_vec.zip(Seq(task_s1, task_s2)).foreach {
+  require(io.status_vec.size == 3)
+  io.status_vec.zip(Seq(task_s1, task_s1_2, task_s2)).foreach {
     case (status, task) =>
       status.valid := task.valid
       status.bits.channel := task.bits.channel
   }
 
   if (enableCHI) {
-    require(io.status_vec_toTX.get.size == 2)
-    io.status_vec_toTX.get.zip(Seq(task_s1, task_s2)).foreach {
+    require(io.status_vec_toTX.get.size == 3)
+    io.status_vec_toTX.get.zip(Seq(task_s1, task_s1_2, task_s2)).foreach {
       case (status, task) =>
         status.valid := task.valid
         status.bits.channel := task.bits.channel
@@ -316,27 +336,24 @@ class RequestArb(implicit p: Parameters) extends L2Module
     }
   }
 
-//  val cancelWPU = if (cacheParams.cancelWPUOnBlock) {
-//    !io.toWPURead.ready || !io.toDSReq_s1.ready
-//  } else {
-//    !io.toDSReq_s1.ready && io.DSStage === "b00".U
-//  }
-  val dsReqValid = io.WPURes.fire && io.WPURes.bits.predHit && io.DSStage === "b00".U
   io.toWPURead.bits.set := task_s1.bits.set
   io.toWPURead.bits.tag := task_s1.bits.tag
   io.toWPURead.valid := chnl_task_s1.valid && chnl_task_s1.bits.fromA &&
-    (chnl_task_s1.bits.opcode === Get || chnl_task_s1.bits.opcode === AcquireBlock) && s2_ready && !mshr_task_s1.valid
-  io.toDSen_s1 := dsReqValid
-  io.toDSReq_s1.valid := dsReqValid || RegNext(dsReqValid)
-  io.toDSReq_s1.bits.set := Mux(dsReqValid, A_task.set, RegNext(A_task.set))
-  io.toDSReq_s1.bits.way := Mux(dsReqValid, io.WPURes.bits.predWay, RegNext(io.WPURes.bits.predWay))
+    (chnl_task_s1.bits.opcode === Get || chnl_task_s1.bits.opcode === AcquireBlock) && s1_2_ready && !mshr_task_s1.valid
+  val WPURes_s1_2 = RegInit(0.U.asTypeOf(io.WPURes))
+  WPURes_s1_2.valid := false.B
+  // WPURes_s1_2.valid := io.WPURes.valid
+  when (io.WPURes.valid) { WPURes_s1_2.bits := io.WPURes.bits }
+  
+  io.toDSen_s1 := WPURes_s1_2.valid && WPURes_s1_2.bits.predHit
+  io.toDSReq_s1.valid := validHold2 && WPURes_s1_2.bits.predHit
+  io.toDSReq_s1.bits.set := task_s1_2.bits.set
+  io.toDSReq_s1.bits.way := WPURes_s1_2.bits.predWay
   io.toDSReq_s1.bits.wen := false.B
 
-  val WPURes_s2 = RegInit(0.U.asTypeOf(Valid(new WPUResult)))
-  WPURes_s2.valid := io.toDSReq_s1.ready && io.toDSen_s1
-  when (io.toDSReq_s1.ready && io.toDSen_s1) {
-    WPURes_s2.bits := io.WPURes.bits
-  }
+  val WPURes_s2 = RegInit(0.U.asTypeOf(WPURes_s1_2))
+  WPURes_s2.valid := WPURes_s1_2.valid
+  when (WPURes_s1_2.valid) { WPURes_s2.bits := WPURes_s1_2.bits }
   io.WPUResToMP := WPURes_s2
 
   dontTouch(io)
@@ -398,60 +415,4 @@ class RequestArb(implicit p: Parameters) extends L2Module
   XSPerfAccumulate("sinkA_stall_by_sinkB", io.sinkA.valid && sink_ready_basic && !block_A && sinkValids(1) && !sinkValids(0))
   XSPerfAccumulate("sinkA_stall_by_sinkC", io.sinkA.valid && sink_ready_basic && !block_A && sinkValids(0))
   XSPerfAccumulate("sinkB_stall_by_sinkC", io.sinkB.valid && sink_ready_basic && !block_B && sinkValids(0))
-
-//  val debug_need_wpu = task_s1.valid && task_s1.bits.fromA && !task_s1.bits.mshrTask
-//    (task_s1.bits.opcode === Get || task_s1.bits.opcode === AcquireBlock) && s2_ready
-
-//  MyPerf("upd_stg1_nostg2", debug_need_wpu && wpuupd && dsstg1 && !dsstg2)
-//  MyPerf("upd_nostg1_stg2", debug_need_wpu && wpuupd && !dsstg1 && dsstg2)
-//  val stg2cnt = MyPerf("noupd_nostg1_stg2", debug_need_wpu && !wpuupd && !dsstg1 && dsstg2)
-//  val stg1cnt = MyPerf("noupd_stg1_nostg2", debug_need_wpu && !wpuupd && dsstg1 && !dsstg2)
-//  MyPerf("upd_nostg1_nostg2", debug_need_wpu && wpuupd && !dsstg1 && !dsstg2)
-//  MyPerf("upd_nostg2", debug_need_wpu && wpuupd && !dsstg2)
-//  MyPerf("stg1_nostg2", debug_need_wpu && dsstg1 && !dsstg2)
-//  MyPerf("upd_nostg2", debug_need_wpu && wpuupd && !dsstg2)
-//  MyPerf("upd_nostg1", debug_need_wpu && wpuupd && !dsstg1)
-//  MyPerf("nostg1_stg2", debug_need_wpu && !dsstg1 && dsstg2)
-//  val updcnt = MyPerf("upd", debug_need_wpu && wpuupd)
-//  MyPerf("stg1", debug_need_wpu && dsstg1)
-//  MyPerf("stg2", debug_need_wpu && dsstg2)
-
-  val needWPU = task_s1.bits.fromA && !task_s1.bits.mshrTask &&
-    (task_s1.bits.opcode === Get || task_s1.bits.opcode === AcquireBlock)
-  val readDSNum = MyPerf("succ_read", io.toDSen_s1)
-  val fired_acuqireBlock_get = MyPerf("fired_acquireblock_get", s1_fire && needWPU)
-  dontTouch(readDSNum)
-  if (cacheParams.cancelWPUOnBlock == true) {
-    val stg1 = needWPU && io.DSStage === "b11".U && s1_fire
-    val stg2 = needWPU && io.DSStage === "b01".U && s1_fire
-    val miss = needWPU && !io.WPURes.bits.predHit && s1_fire
-    val stg1_miss = needWPU && io.DSStage === "b11".U && !io.WPURes.bits.predHit && s1_fire
-    val stg2_miss = needWPU && io.DSStage === "b01".U && !io.WPURes.bits.predHit && s1_fire
-    val only_miss = needWPU && io.DSStage === "b00".U && !io.WPURes.bits.predHit && s1_fire
-    val stg1_hit = needWPU && io.DSStage === "b11".U && io.WPURes.bits.predHit && s1_fire
-    val stg2_hit = needWPU && io.DSStage === "b01".U && io.WPURes.bits.predHit && s1_fire
-    val canceled = stg1 || stg2 || miss
-    MyPerf("stg1", stg1)
-    MyPerf("stg2", stg2)
-    MyPerf("miss", miss)
-    MyPerf("stg1_miss", stg1_miss)
-    MyPerf("stg2_miss", stg2_miss)
-    MyPerf("only_miss", only_miss)
-    MyPerf("stg1_hit", stg1_hit)
-    MyPerf("stg2_hit", stg2_hit)
-    val canceledNum = MyPerf("canceled", canceled)
-    val total = canceledNum + readDSNum
-    dontTouch(total)
-    dontTouch(canceledNum)
-    assert(fired_acuqireBlock_get === total)
-  } else {
-    val stg1 = needWPU && io.DSStage === "b11".U && s1_fire
-    val stg2 = needWPU && io.DSStage === "b01".U && task_s1.valid
-    val canceledNum = MyPerf("stg1", stg1)
-    MyPerf("stg2", stg2)
-    val total = canceledNum + readDSNum
-    dontTouch(total)
-    dontTouch(canceledNum)
-    assert(io.needDataNum >= total)
-  }
 }

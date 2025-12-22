@@ -26,6 +26,8 @@ import org.chipsalliance.cde.config.Field
 import huancun.{AliasKey, CacheParameters, IsHitKey, PrefetchKey}
 import coupledL2.prefetch._
 import utility.{MemReqSource, ReqSourceKey, Code}
+import coupledL2.wpu.PredHitKey
+import coupledL2.wpu.PredWayKey
 
 case object EnableCHI extends Field[Boolean](false)
 
@@ -84,7 +86,7 @@ case class L2Param(
   reqField: Seq[BundleFieldBase] = Nil,
   respKey: Seq[BundleKeyBase] = Seq(IsHitKey),
   // Manager
-  reqKey: Seq[BundleKeyBase] = Seq(AliasKey, VaddrKey, PrefetchKey, ReqSourceKey),
+  reqKey: Seq[BundleKeyBase] = Seq(AliasKey, VaddrKey, PrefetchKey, ReqSourceKey, PredHitKey, PredWayKey),
   respField: Seq[BundleFieldBase] = Nil,
 
   innerBuf: TLBufferParams = TLBufferParams(),

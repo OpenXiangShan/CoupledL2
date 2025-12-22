@@ -35,7 +35,7 @@ class TXREQ(implicit p: Parameters) extends TL2CHIL2Module {
     val mshrReq = Flipped(DecoupledIO(new CHIREQ()))
     val out = DecoupledIO(new CHIREQ())
 
-    val pipeStatusVec = Flipped(Vec(5, ValidIO(new PipeStatusWithCHI)))
+    val pipeStatusVec = Flipped(Vec(6, ValidIO(new PipeStatusWithCHI)))
     val toReqArb = Output(new TXBlockBundle)
 
     val sliceId = Input(UInt(bankBits.W))
@@ -53,13 +53,16 @@ class TXREQ(implicit p: Parameters) extends TL2CHIL2Module {
   val pipeStatus_s1_s5 = io.pipeStatusVec
   val pipeStatus_s2_s5 = pipeStatus_s1_s5.tail
   val pipeStatus_s1 = pipeStatus_s1_s5.head
-  val pipeStatus_s2 = pipeStatus_s1_s5(1)
-  val s2ReturnCredit = pipeStatus_s2.valid && !(pipeStatus_s2.bits.mshrTask && pipeStatus_s2.bits.toTXREQ)
+  val pipeStatus_s1_2 = pipeStatus_s1_s5(1)
+  val pipeStatus_s2 = pipeStatus_s1_s5(2)
+  // val s1_2ReturnCredit = pipeStatus_s1_2.valid && !(pipeStatus_s1_2.bits.mshrTask && pipeStatus_s1_2.bits.toTXREQ)
+  // val s2ReturnCredit = pipeStatus_s2.valid && !(pipeStatus_s2.bits.mshrTask && pipeStatus_s2.bits.toTXREQ)
+  val returnCredit_s1_2_s2 = PopCount(pipeStatus_s1_s5.slice(1,3).map(x => x.valid && !(x.bits.mshrTask && x.bits.toTXREQ)))
   // inflightCnt equals the number of reqs on s2~s5 that may flow into TXREQ soon, plus queueCnt.
   // The calculation of inflightCnt might be imprecise and leads to false positive back pressue.
   val inflightCnt = PopCount(Cat(pipeStatus_s2_s5.map(s => s.valid && s.bits.mshrTask && s.bits.toTXREQ))) +
 //    pipeStatus_s1.valid.asUInt +
-    1.U - s2ReturnCredit.asUInt + //Fix Timing: always take credit and s2 return if not take 
+    1.U - returnCredit_s1_2_s2 + //Fix Timing: always take credit and s2 return if not take 
     queueCnt
 
   assert(inflightCnt <= mshrsAll.U, "in-flight overflow at TXREQ")

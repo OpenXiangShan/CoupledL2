@@ -24,6 +24,7 @@ import org.chipsalliance.cde.config.Parameters
 import coupledL2._
 import coupledL2.prefetch.PrefetchIO
 import coupledL2.wpu.{WPUParameters, WPUWrapper}
+import chisel3.experimental.dataview._
 
 class OuterBundle(implicit p: Parameters) extends DecoupledPortIO with BaseOuterBundle
 
@@ -114,7 +115,6 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   reqArb.io.msInfo := mshrCtl.io.msInfo
   reqArb.io.WPURes := wpu.out.res
   reqArb.io.DSStage := dsArb.out.mpstage
-  reqArb.io.needDataNum := sinkA.io.needDataNum
 
   wpu.in.read <> reqArb.io.toWPURead
   wpu.in.update := mainPipe.io.toWPUUpd
@@ -123,10 +123,12 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   reqBuf.io.mshrInfo := mshrCtl.io.msInfo
   reqBuf.io.mainPipeBlock := mainPipe.io.toReqBuf
   reqBuf.io.s1Entrance := reqArb.io.s1Entrance
-  reqBuf.io.taskFromArb_s2 := reqArb.io.taskToPipe_s2
+  reqBuf.io.s1_2Entrance := reqArb.io.s1_2Entrance
+  reqBuf.io.taskFromArb_s1_2.valid := reqArb.io.taskInfo_s1_2.valid
+  reqBuf.io.taskFromArb_s1_2.bits := reqArb.io.taskInfo_s1_2.bits.viewAsSupertype(new TaskBundle)
 
   mainPipe.io.taskFromArb_s2 := reqArb.io.taskToPipe_s2
-  mainPipe.io.taskInfo_s1 := reqArb.io.taskInfo_s1
+  mainPipe.io.taskInfo_s1_2 := reqArb.io.taskInfo_s1_2
   mainPipe.io.fromReqArb.status_s1 := reqArb.io.status_s1
   mainPipe.io.bufResp := sinkC.io.bufResp
   mainPipe.io.dirResp_s3 := directory.io.resp.bits
@@ -154,8 +156,10 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   mshrCtl.io.replResp := directory.io.replResp
   mshrCtl.io.aMergeTask := reqBuf.io.aMergeTask
   // TODO: This is ugly
-  mshrCtl.io.pipeStatusVec(0) := (reqArb.io.status_vec)(1) // s2 status
-  mshrCtl.io.pipeStatusVec(1) := mainPipe.io.status_vec_toD(0) // s3 status
+  // mshrCtl.io.pipeStatusVec(0) := (reqArb.io.status_vec)(1) // s1_2 status
+  // mshrCtl.io.pipeStatusVec(1) := (reqArb.io.status_vec)(2) // s2 status
+  // mshrCtl.io.pipeStatusVec(2) := mainPipe.io.status_vec_toD(0) // s3 status
+  mshrCtl.io.pipeStatusVec := VecInit(reqArb.io.status_vec.drop(1) ++ mainPipe.io.status_vec_toD.take(1))
 
   /* Read and write release buffer */
   releaseBuf.io.r := reqArb.io.releaseBufRead_s2
