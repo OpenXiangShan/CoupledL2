@@ -23,6 +23,16 @@ import coupledL2.prefetch.PfSource
 import coupledL2.utils._
 import utility._
 
+class PfStatInMSHRBundle()(implicit p: Parameters) extends L2Bundle {
+  // in mshr: now it is in the entry of Request Buffer
+  val pfLate = Bool()
+  val pfLateReqSrc = UInt(MemReqSource.reqSourceBits.W)
+  val pfLateHitReqSrc = UInt(MemReqSource.reqSourceBits.W)
+
+  val hitPf = Bool()
+  val hitPfReqSrc = UInt(MemReqSource.reqSourceBits.W)
+}
+
 // TODO: Accommodate CHI
 class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   val banks = 1 << bankBits
@@ -30,9 +40,8 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     val dirResult = Vec(banks, Flipped(ValidIO(new DirResult)))
     val msStatus = Vec(banks, Vec(mshrsAll, Flipped(ValidIO(new MSHRStatus))))
     val msAlloc = Vec(banks, Vec(mshrsAll, Flipped(ValidIO(new MSHRAllocStatus))))
-    val hitPfInMSHR = Vec(banks, Flipped(ValidIO(UInt(PfSource.pfSourceBits.W))))
     val pfSent = Vec(banks, Flipped(ValidIO(UInt(MemReqSource.reqSourceBits.W))))
-    val pfLateInMSHR = Vec(banks, Flipped(ValidIO(UInt(MemReqSource.reqSourceBits.W))))
+    val pfStatInMSHR = Vec(banks, Input(new PfStatInMSHRBundle()))
     val debugTopDown = new Bundle {
       val robTrueCommit = Input(UInt(64.W))
       val robHeadPaddr = Flipped(Valid(UInt(36.W)))
@@ -112,32 +121,47 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   /* ====== MISC ======
    * Some performance counters need to be aggregated among slices. For convenience, they are defined here
    */
-  val pfTypes = Seq(
-    ("BOP", MemReqSource.Prefetch2L2BOP.id.U, PfSource.BOP.id.U),
-    ("PBOP", MemReqSource.Prefetch2L2PBOP.id.U, PfSource.PBOP.id.U),
-    ("SMS", MemReqSource.Prefetch2L2SMS.id.U, PfSource.SMS.id.U),
-    ("Stride", MemReqSource.Prefetch2L2Stride.id.U, PfSource.Stride.id.U),
-    ("Stream", MemReqSource.Prefetch2L2Stream.id.U, PfSource.Stream.id.U),
-    ("TP", MemReqSource.Prefetch2L2TP.id.U, PfSource.TP.id.U),
-    ("Berti", MemReqSource.Prefetch2L2Berti.id.U, PfSource.Berti.id.U)
+  val pfTypes: Seq[(String, UInt => Bool, UInt => Bool)] = Seq(
+    ("BOP", (x: UInt) => x === MemReqSource.Prefetch2L2BOP.id.U, (y: UInt) => y === PfSource.BOP.id.U),
+    ("PBOP", (x: UInt) => x === MemReqSource.Prefetch2L2PBOP.id.U, (y: UInt) => y === PfSource.PBOP.id.U),
+    ("SMS", (x: UInt) => x === MemReqSource.Prefetch2L2SMS.id.U, (y: UInt) => y === PfSource.SMS.id.U),
+    ("Stride", (x: UInt) => x === MemReqSource.Prefetch2L2Stride.id.U, (y: UInt) => y === PfSource.Stride.id.U),
+    ("Stream", (x: UInt) => x === MemReqSource.Prefetch2L2Stream.id.U, (y: UInt) => y === PfSource.Stream.id.U),
+    ("TP", (x: UInt) => x === MemReqSource.Prefetch2L2TP.id.U, (y: UInt) => y === PfSource.TP.id.U),
+    ("Berti", (x: UInt) => x === MemReqSource.Prefetch2L2Berti.id.U, (y: UInt) => y === PfSource.Berti.id.U)
   )
+  val lateHitTypes: Seq[(String, UInt => Bool, UInt => Bool)] = Seq(
+    ("Demand", (x: UInt) => MemReqSource.isCPUReq(x), (y: UInt) => y === PfSource.NoWhere.id.U),
+    ("L1Prefetch", (x: UInt) => MemReqSource.isL1Prefetch(x), (y: UInt) => y === PfSource.NoWhere.id.U),
+  ) ++ pfTypes
 
   // sent/useful vector
-  val l2pfSentVec = pfTypes.map { case (_, reqSrc, _) => io.pfSent.map(r => r.valid && r.bits === reqSrc) }
-  val l2pfSentToPipeVec = pfTypes.map { case (_, reqSrc, _) => dirResultMatchVec(r => r.replacerInfo.reqSource === reqSrc) }
-  val l2hitPfInCacheVec = pfTypes.map { case (_, _, pfSrc) =>
+  val l2pfSentVec = pfTypes.map { case (_, reqSrcCheck, _) => io.pfSent.map(r => r.valid && reqSrcCheck(r.bits)) }
+  val l2pfSentToPipeVec = pfTypes.map { case (_, reqSrcCheck, _) => dirResultMatchVec(r => reqSrcCheck(r.replacerInfo.reqSource)) }
+  val l2hitPfInCacheVec = pfTypes.map { case (_, _, pfSrcCheck) =>
     dirResultMatchVec(r => MemReqSource.isCPUReq(r.replacerInfo.reqSource) && r.hit &&
-      r.meta.prefetch.getOrElse(false.B) && r.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) === pfSrc)
+      r.meta.prefetch.getOrElse(false.B) && pfSrcCheck(r.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U)))
   }
-  val l2hitPfInMSHRVec = pfTypes.map { case (_, _, pfSrc) =>
-    io.hitPfInMSHR.map(r => r.valid && r.bits === pfSrc)
+  val l2hitPfInMSHRVec = pfTypes.map { case (_, reqSrcCheck, _) =>
+    io.pfStatInMSHR.map(r => r.hitPf && reqSrcCheck(r.hitPfReqSrc))
   }
-  val l2pfLateInCache = pfTypes.map { case (_, reqSrc, _) =>
-    dirResultMatchVec(r => MemReqSource.isL2Prefetch(r.replacerInfo.reqSource) && r.hit &&
-      !r.meta.prefetch.getOrElse(false.B) && r.replacerInfo.reqSource === reqSrc)
+  val l2pfLateInCache = pfTypes.map { case (_, reqSrcCheck, _) =>
+    dirResultMatchVec(r => r.hit && reqSrcCheck(r.replacerInfo.reqSource))
   }
-  val l2pfLateInMSHR = pfTypes.map { case (_, reqSrc, _) =>
-    io.pfLateInMSHR.map(r => r.valid && r.bits === reqSrc)
+  val l2pfLateInCacheHitSrc = pfTypes.map { case (_, reqSrcCheck, _) =>
+    // NOTE: it will be statisitced twice due to NoWhere.id.U
+    lateHitTypes.map { case (_, _, hitPfSrcCheck) =>
+      dirResultMatchVec(r => r.hit && reqSrcCheck(r.replacerInfo.reqSource) &&
+        hitPfSrcCheck(r.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U)))
+    }
+  }
+  val l2pfLateInMSHR = pfTypes.map { case (_, reqSrcCheck, _) =>
+    io.pfStatInMSHR.map(r => r.pfLate && reqSrcCheck(r.pfLateReqSrc))
+  }
+  val l2pfLateInMSHRHitSrc = pfTypes.map { case (_, reqSrc, _) =>
+    lateHitTypes.map { case (_, hitReqSrcCheck, _) =>
+      io.pfStatInMSHR.map(r => r.pfLate && reqSrc(r.pfLateReqSrc) && hitReqSrcCheck(r.pfLateHitReqSrc))
+    }
   }
   val l2hitPfVec = l2hitPfInCacheVec.zip(l2hitPfInMSHRVec).map { case (c, m) => PopCount(c) + PopCount(m) }
   val l2pfLateVec = l2pfLateInCache.zip(l2pfLateInMSHR).map { case (c, m) => PopCount(c) + PopCount(m) }
@@ -179,6 +203,11 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     XSPerfRolling(s"L2PrefetchAccuracy$name", l2hitPfVec(i), PopCount(l2pfSentVec(i)), 1000, io.debugTopDown.robTrueCommit, clock, reset)
     XSPerfRolling(s"L2PrefetchLate$name", l2pfLateVec(i), PopCount(l2pfSentVec(i)), 1000, io.debugTopDown.robTrueCommit, clock, reset)
     XSPerfRolling(s"L2PrefetchCoverage$name", l2hitPfVec(i), l2hitPfVec(i) + PopCount(l2demandMiss), 1000, io.debugTopDown.robTrueCommit, clock, reset)
+    for((y, j) <- lateHitTypes.zipWithIndex) {
+      val nameY = y._1
+      XSPerfAccumulate(s"l2prefetchLateInCache${name}_Hit${nameY}", PopCount(l2pfLateInCacheHitSrc(i)(j)))
+      XSPerfAccumulate(s"l2prefetchLateInMSHR${name}_Hit${nameY}", PopCount(l2pfLateInMSHRHitSrc(i)(j)))
+    }
   }
 
 }

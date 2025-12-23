@@ -186,8 +186,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
       io.msAlloc.get         := mshrCtl.io.msAlloc.get
       io.dirResult.get.valid := directory.io.resp.valid && !directory.io.replResp.valid // exclude MSHR-Grant read-dir
       io.dirResult.get.bits  := directory.io.resp.bits
-      io.hitPfInMSHR.get     := a_reqBuf.io.hasHitPfInMSHR
-      io.pfLateInMSHR.get    := a_reqBuf.io.hasPfLateInMSHR
+      io.pfStatInMSHR.get    := a_reqBuf.io.pfStatInMSHR
       io.pfSent.get.valid := io.prefetch.fold(false.B)(_.req.fire)
       io.pfSent.get.bits := io.prefetch.fold(MemReqSource.NoWhere.id.U)(p => p.req.bits.pfSource)
     }

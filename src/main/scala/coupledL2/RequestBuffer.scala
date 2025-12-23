@@ -87,8 +87,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       val set = UInt(setBits.W)
     }))
 
-    val hasHitPfInMSHR = ValidIO(UInt(PfSource.pfSourceBits.W))
-    val hasPfLateInMSHR = ValidIO(UInt(MemReqSource.reqSourceBits.W))
+    val pfStatInMSHR = Output(new PfStatInMSHRBundle())
     val hasMergeA = Output(Bool())
   })
 
@@ -125,7 +124,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       a.fromA && (a.opcode === AcquireBlock || a.opcode === AcquirePerm)
     ))
     val matched = matchVec.asUInt.orR
-    val matchSrc = ParallelPriorityMux(matchVec, io.mshrInfo.map(_.bits.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U)))
+    val matchSrc = ParallelPriorityMux(matchVec, io.mshrInfo.map(_.bits.reqSource))
     (matched, matchSrc)
   }
 
@@ -189,15 +188,19 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     buffer.map(e =>
       e.valid && sameAddr(in, e.task)
     )
-  ).asUInt
-  val dup        = isPrefetch && dupMask.orR
+  )
+  val dup        = isPrefetch && dupMask.asUInt.orR
+  val dupHitSrc = ParallelPriorityMux(dupMask,
+    io.mshrInfo.map(_.bits.reqSource) ++ buffer.map(_.task.reqSource)
+  )
 
   // statistics io
-  val latePrefetchRes = latePrefetch(in)
-  io.hasHitPfInMSHR.valid := latePrefetchRes._1 && io.in.valid && !sameAddr(in, RegNext(in))
-  io.hasHitPfInMSHR.bits := latePrefetchRes._2
-  io.hasPfLateInMSHR.valid := io.in.valid && dup
-  io.hasPfLateInMSHR.bits := io.in.bits.reqSource
+  val latePrefetchRes = latePrefetch(in) // demand request hit entry of pf
+  io.pfStatInMSHR.hitPf := latePrefetchRes._1 && io.in.valid && !sameAddr(in, RegNext(in))
+  io.pfStatInMSHR.hitPfReqSrc := latePrefetchRes._2
+  io.pfStatInMSHR.pfLate := io.in.valid && dup
+  io.pfStatInMSHR.pfLateReqSrc := io.in.bits.reqSource
+  io.pfStatInMSHR.pfLateHitReqSrc := dupHitSrc
   io.hasMergeA := mergeA && io.in.valid && !sameAddr(in, RegNext(in))
 
   //!! TODO: we can also remove those that duplicate with mainPipe

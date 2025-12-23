@@ -239,6 +239,7 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle with HasTLChannelBits {
   val set = UInt(setBits.W)
   val way = UInt(wayBits.W)
   val reqTag = UInt(tagBits.W)
+  val reqSource = UInt(MemReqSource.reqSourceBits.W)
   val willFree = Bool()
   val aliasTask = aliasBitsOpt.map(_ => Bool())
 
