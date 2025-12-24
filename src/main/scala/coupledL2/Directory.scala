@@ -296,14 +296,17 @@ class Directory(implicit p: Parameters) extends L2Module {
     false.B
   }
 
-  io.resp.valid      := reqValid_s3
-  io.resp.bits.hit   := hit_s3
-  io.resp.bits.way   := way_s3
-  io.resp.bits.meta  := meta_s3
-  io.resp.bits.tag   := tag_s3
-  io.resp.bits.set   := set_s3
-  io.resp.bits.error := error_s3  // depends on ECC
-  io.resp.bits.replacerInfo := replacerInfo_s3
+  val resp_s3 = Wire(Valid(new DirResult))
+  resp_s3.valid      := reqValid_s3
+  resp_s3.bits.hit   := hit_s3
+  resp_s3.bits.way   := way_s3
+  resp_s3.bits.meta  := meta_s3
+  resp_s3.bits.tag   := tag_s3
+  resp_s3.bits.set   := set_s3
+  resp_s3.bits.error := error_s3  // depends on ECC
+  resp_s3.bits.replacerInfo := replacerInfo_s3
+  io.resp.valid := RegNext(resp_s3.valid, false.B)
+  io.resp.bits := RegEnable(resp_s3.bits, 0.U.asTypeOf(resp_s3.bits), resp_s3.valid)
 
   dontTouch(io)
   dontTouch(metaArray.io)
@@ -326,13 +329,16 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   replaceWay := repl.get_replace_way(repl_state_s3)
 
-  io.replResp.valid := refillReqValid_s3
-  io.replResp.bits.tag := tagAll_s3(finalWay)
-  io.replResp.bits.set := req_s3.set
-  io.replResp.bits.way := finalWay
-  io.replResp.bits.meta := metaAll_s3(finalWay)
-  io.replResp.bits.mshrId := req_s3.mshrId
-  io.replResp.bits.retry := refillRetry
+  val replResp_s3 = Wire(Valid(new ReplacerResult))
+  replResp_s3.valid := refillReqValid_s3
+  replResp_s3.bits.tag := tagAll_s3(finalWay)
+  replResp_s3.bits.set := req_s3.set
+  replResp_s3.bits.way := finalWay
+  replResp_s3.bits.meta := metaAll_s3(finalWay)
+  replResp_s3.bits.mshrId := req_s3.mshrId
+  replResp_s3.bits.retry := refillRetry
+  io.replResp.valid := RegNext(replResp_s3.valid, false.B)
+  io.replResp.bits := RegEnable(replResp_s3.bits, 0.U.asTypeOf(replResp_s3.bits), replResp_s3.valid)
 
   /* ====== Update ====== */
   // PLRU: update replacer only when A hit or refill, at stage 3

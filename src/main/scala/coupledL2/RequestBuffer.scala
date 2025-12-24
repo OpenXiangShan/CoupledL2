@@ -32,12 +32,13 @@ class ReqEntry(entries: Int = 4)(implicit p: Parameters) extends L2Bundle() {
   val task     = new TaskBundle()
 
   /* blocked by MainPipe
-  * [3] by stage1, a same-set entry just fired
+  * [4] by stage1, a same-set entry just fired
+  * [3] by stage1_2
   * [2] by stage2
   * [1] by stage3
   * [0] block release flag
   */
-  val waitMP  = UInt(4.W)
+  val waitMP  = UInt(5.W)
 
   /* which MSHR the entry is waiting for
   * We need to compare req.tag AND dirResult.tag (if replacement)
@@ -76,13 +77,16 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     val aMergeTask = ValidIO(new AMergeTask)
     val mainPipeBlock = Input(Vec(2, Bool()))
     /* Snoop task from arbiter at stage 2 */
-    val taskFromArb_s2 = Flipped(ValidIO(new TaskBundle()))
+    val taskFromArb_s1_2 = Flipped(ValidIO(new TaskBundle()))
 
     val ATag        = Output(UInt(tagBits.W))
     val ASet        = Output(UInt(setBits.W))
 
     // when Probe/Release/MSHR enters MainPipe, we need also to block A req
     val s1Entrance = Flipped(ValidIO(new L2Bundle {
+      val set = UInt(setBits.W)
+    }))
+    val s1_2Entrance = Flipped(ValidIO(new L2Bundle {
       val set = UInt(setBits.W)
     }))
 
@@ -158,12 +162,19 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
    noFreeWay check: s2 + s3 + mshrs >= ways(L2)
    */
   def noFreeWayForSet(set: UInt): Bool = {
-    val task_s2 = io.taskFromArb_s2
-    val sameSet_s2 = task_s2.valid && task_s2.bits.fromA && !task_s2.bits.mshrTask && task_s2.bits.set === set
-    val sameSet_s3 = RegNext(task_s2.valid && task_s2.bits.fromA && !task_s2.bits.mshrTask) &&
-      RegEnable(task_s2.bits.set, task_s2.valid) === set
-    val sameSetCnt = PopCount(VecInit(io.mshrInfo.map(s => s.valid && s.bits.set === set && s.bits.fromA) :+
-      sameSet_s2 :+ sameSet_s3).asUInt)
+    val tasks = Seq(Wire(Valid(UInt(setBits.W))))
+    tasks.head.valid := io.taskFromArb_s1_2.valid && io.taskFromArb_s1_2.bits.fromA && !io.taskFromArb_s1_2.bits.mshrTask
+    tasks.head.bits := io.taskFromArb_s1_2.bits.set
+    tasks.reduceLeft { (prev, curr) =>
+      curr.valid := RegNext(prev.valid)
+      curr.bits := RegEnable(prev.bits, prev.valid)
+      curr
+    }
+
+    val sameSet = tasks.map(x => x.valid && x.bits === set)
+    val pipeSameSetCnt = PopCount(sameSet)
+    val mshrSameSetCnt = PopCount(VecInit(io.mshrInfo.map(s => s.valid && s.bits.set === set && s.bits.fromA)))
+    val sameSetCnt = pipeSameSetCnt +& mshrSameSetCnt
     val noFreeWay = sameSetCnt >= cacheParams.ways.U
     noFreeWay
   }
@@ -200,6 +211,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     val pipeBlockOut = io.out.fire && sameSet(in, io.out.bits)
     val probeBlock   = io.s1Entrance.valid && io.s1Entrance.bits.set === in.set // wait for same-addr req to enter MSHR
     val s1Block      = pipeBlockOut || probeBlock
+    val s1_2Block      = io.s1_2Entrance.valid && io.s1_2Entrance.bits.set === in.set
 
     entry.valid   := true.B
     // when Addr-Conflict / Same-Addr-Dependent / MainPipe-Block / noFreeWay-in-Set, entry not ready
@@ -207,6 +219,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     entry.task    := io.in.bits
     entry.waitMP  := Cat(
       s1Block,
+      s1_2Block,
       io.mainPipeBlock(0),
       io.mainPipeBlock(1),
       0.U(1.W))
@@ -267,7 +280,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       val s1B_Block = io.s1Entrance.valid && io.s1Entrance.bits.set === e.task.set
       val s1_Block  = s1A_Block || s1B_Block
       when(s1_Block) {
-        e.waitMP := (e.waitMP >> 1) | "b0100".U // fired-req at s2 next cycle
+        e.waitMP := (e.waitMP >> 1) | "b01000".U // fired-req at s2 next cycle
       }
 
       // update info

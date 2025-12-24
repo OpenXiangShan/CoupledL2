@@ -5,6 +5,15 @@ import chisel3._
 import chisel3.util._
 import utility.{RegNextN, XSPerfAccumulate}
 import coupledL2._
+import freechips.rocketchip.util.{BundleField, BundleFieldBase, BundleKeyBase, ControlKey}
+
+case object PredWayKey extends ControlKey[UInt]("predway")
+
+case class PredWayField(width: Int) extends BundleField[UInt](PredWayKey, Output(UInt(width.W)), _ := 0.U(width.W))
+
+case object PredHitKey extends ControlKey[Bool]("predhit")
+
+case class PredHitField() extends BundleField[Bool](PredHitKey, Output(Bool()), _ := false.B)
 
 // TODO: remove the latency later
 class WPUWrapper(wpuParam: WPUParameters)(implicit p:Parameters) extends L2Module {
@@ -49,14 +58,4 @@ class WPUWrapper(wpuParam: WPUParameters)(implicit p:Parameters) extends L2Modul
   val pred_hit_but_miss = pred_valid & s3_upd.predHit & !s3_upd.actualHit
   val repl = s3_valid & s3_upd.isReplace
   val evict = s3_valid & s3_upd.isEvict
-
-  XSPerfAccumulate(s"WPU_pred_times", pred_valid)
-  XSPerfAccumulate(s"WPU_pred_succ", pred_succ)
-  XSPerfAccumulate(s"WPU_predhit_succ", predhit_succ)
-  XSPerfAccumulate(s"WPU_predmiss_succ", predmiss_succ)
-  XSPerfAccumulate(s"WPU_unmatch", pred_unmatch)
-  XSPerfAccumulate(s"WPU_pmiss_ahit", pred_miss_but_hit)
-  XSPerfAccumulate(s"WPU_phit_amiss", pred_hit_but_miss)
-  XSPerfAccumulate(s"WPU_repl", repl)
-  XSPerfAccumulate(s"WPU_evict", evict)
 }

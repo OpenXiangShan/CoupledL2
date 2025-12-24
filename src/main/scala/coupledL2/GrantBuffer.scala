@@ -69,7 +69,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     val fromReqArb = Input(new Bundle() {
       val status_s1 = new PipeEntranceStatus
     })
-    val pipeStatusVec = Flipped(Vec(5, ValidIO(new PipeStatus)))
+    val pipeStatusVec = Flipped(Vec(6, ValidIO(new PipeStatus)))
     val toReqArb = Output(new Bundle() {
       val blockSinkReqEntrance = new BlockInfo()
       val blockMSHRReqEntrance = Bool()

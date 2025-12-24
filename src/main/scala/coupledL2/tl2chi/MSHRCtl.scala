@@ -48,7 +48,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
     val mshrTask = DecoupledIO(new TaskBundle())
 
     /* status of s2 and s3 */
-    val pipeStatusVec = Flipped(Vec(2, ValidIO(new PipeStatus)))
+    val pipeStatusVec = Flipped(Vec(3, ValidIO(new PipeStatus)))
 
     /* send reqs */
     val toTXREQ = DecoupledIO(new CHIREQ())

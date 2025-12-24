@@ -544,7 +544,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
   val customL1Hint = Module(new CustomL1Hint)
 
-  customL1Hint.io.s1 := io.taskInfo_s1
+  customL1Hint.io.s1_2 := io.taskInfo_s1
   
   customL1Hint.io.s3.task      := task_s3
   // overwrite opcode: if sinkReq can respond, use sink_resp_s3.bits.opcode = Grant/GrantData
