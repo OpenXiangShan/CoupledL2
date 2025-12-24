@@ -145,6 +145,9 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val memAttr = chiOpt.map(_ => new MemAttr)
   val traceTag = chiOpt.map(_ => Bool())
   val dataCheckErr = chiOpt.map(_ => Bool())
+  // Way prediction
+  val predWay = wpuOpt.map(_ => UInt(wayBits.W))
+  val predHit = wpuOpt.map(_ => Bool())
 
   def toCHIREQBundle(): CHIREQ = {
     val req = WireInit(0.U.asTypeOf(new CHIREQ()))

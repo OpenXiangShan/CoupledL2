@@ -87,7 +87,7 @@ case class L2Param(
   reqField: Seq[BundleFieldBase] = Nil,
   respKey: Seq[BundleKeyBase] = Seq(IsHitKey),
   // Manager
-  reqKey: Seq[BundleKeyBase] = Seq(AliasKey, VaddrKey, PrefetchKey, ReqSourceKey, PredHitKey, PredWayKey),
+  reqKey: Seq[BundleKeyBase] = Seq(AliasKey, VaddrKey, PrefetchKey, ReqSourceKey),
   respField: Seq[BundleFieldBase] = Nil,
 
   innerBuf: TLBufferParams = TLBufferParams(),
@@ -134,10 +134,8 @@ case class L2Param(
   hasMbist: Boolean = false,
   hasSramCtl: Boolean = false,
 
-  wpuParam: WPUParameters = WPUParameters(
-    algoName = "utag",
-    debug = true
-  ),
+  // when mainpipe read ds on s3 in 2nd cycle or wpu is in update, cancel way predict
+  wpuParam: Option[WPUParameters] = Some(WPUParameters("utag")),
 
   // Enable new clint
   EnablePrivateClint: Boolean = false

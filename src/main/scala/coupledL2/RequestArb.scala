@@ -343,11 +343,11 @@ class RequestArb(implicit p: Parameters) extends L2Module
   WPURes_s1_2.valid := false.B
   // WPURes_s1_2.valid := io.WPURes.valid
   when (io.WPURes.valid) { WPURes_s1_2.bits := io.WPURes.bits }
-  
-  io.toDSen_s1 := WPURes_s1_2.valid && WPURes_s1_2.bits.predHit
-  io.toDSReq_s1.valid := validHold2 && WPURes_s1_2.bits.predHit
+
+  io.toDSen_s1 := task_s1_2.bits.predHit.getOrElse(false.B) && task_s1.valid
+  io.toDSReq_s1.valid := task_s1_2.bits.predHit.getOrElse(false.B) && validHold2
   io.toDSReq_s1.bits.set := task_s1_2.bits.set
-  io.toDSReq_s1.bits.way := WPURes_s1_2.bits.predWay
+  io.toDSReq_s1.bits.way := task_s1_2.bits.predWay.getOrElse(0.U)
   io.toDSReq_s1.bits.wen := false.B
 
   val WPURes_s2 = RegInit(0.U.asTypeOf(WPURes_s1_2))

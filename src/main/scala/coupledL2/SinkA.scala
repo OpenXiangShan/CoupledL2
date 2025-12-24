@@ -26,6 +26,7 @@ import freechips.rocketchip.tilelink.TLHints._
 import coupledL2.prefetch.PrefetchReq
 import huancun.{AliasKey, PrefetchKey}
 import utility.{MemReqSource, XSPerfAccumulate}
+import coupledL2.wpu.{PredWayKey, PredHitKey}
 
 class SinkA(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
@@ -89,6 +90,8 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
     task.cmoAll := cmoAllValid
+    task.predWay.zip(a.user.lift(PredWayKey)).foreach{ case (a, b) => a := b }
+    task.predHit.zip(a.user.lift(PredHitKey)).foreach{ case (a, b) => a := b }
     task
   }
   def fromPrefetchReqtoTaskBundle(req: PrefetchReq): TaskBundle = {
@@ -127,6 +130,8 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.isKeyword.foreach(_ := false.B)
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+    task.predWay.foreach(_ := 0.U)
+    task.predHit.foreach(_ := false.B)
     task
   }
   if (prefetchOpt.nonEmpty) {
