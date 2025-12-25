@@ -40,7 +40,7 @@ class MMIOBridge()(implicit p: Parameters) extends LazyModule
   val clintRange = PrivateClintRange
   // clint is interated with periph bus
   val peripheralRange =
-    AddressSet(0x0, 0xffffffffffffL).flatMap {
+    Seq(AddressSet(0x0, 0xffffffffffffL)).flatMap {
       addrSet =>
         clintRange match {
           case Some(cRange) => addrSet.subtract(cRange)
