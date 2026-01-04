@@ -51,6 +51,11 @@ class AsyncPortIO(
   val rx = Flipped(new AsyncUpwardsLinkIO(params))
 }
 
+class ChannelWithActive[T <: Data](gen: T) extends Bundle {
+  val channel = new ChannelIO(gen)
+  val active = Bool()
+}
+
 object ToAsyncBundle {
   def channel[T <: Data](
     chn: ChannelIO[T],
@@ -81,20 +86,34 @@ object FromAsyncBundle {
   def channel(
     async: AsyncBundle[UInt],
     params: AsyncQueueParams = AsyncQueueParams(),
-    name: Option[String] = None
-  ) = {
+    name: Option[String] = None,
+    withPowerAck: Boolean = false
+  ): Data = {
     val gen = chiselTypeOf(async.mem.head)
     val out = Wire(new ChannelIO(gen))
     val sink = Module(new AsyncQueueSink(gen, params))
     if (name.isDefined) { sink.suggestName("asyncQSink_" + name.get) }
     sink.io.async <> async
     sink.io.deq.ready := true.B
+    //Queue status
+    val queueEmpty = async.widx === async.ridx
+    val dataActive = sink.io.deq.valid
+    val active = !queueEmpty || dataActive
+
     out.flitv := sink.io.deq.valid
     out.flit := sink.io.deq.bits
     // flitpend and lcrdv are assigned independently
     out.flitpend := DontCare
     out.lcrdv := DontCare
-    out
+
+    if (withPowerAck) {
+      val result = Wire(new ChannelWithActive(gen))
+      result.channel <> out
+      result.active := active.asBool
+      result
+    } else {
+      out
+    }
   }
 
   def bitPulse[T <: Data](
@@ -129,9 +148,9 @@ class CHIAsyncBridgeSource(params: AsyncQueueParams = AsyncQueueParams())(implic
   io.enq.tx.rsp.lcrdv <> FromAsyncBundle.bitPulse(io.async.tx.rsp.lcrdv, params, Some("txrsp_lcrdv"))
   io.enq.tx.dat.lcrdv <> FromAsyncBundle.bitPulse(io.async.tx.dat.lcrdv, params, Some("txdat_lcrdv"))
 
-  io.enq.rx.rsp <> FromAsyncBundle.channel(io.async.rx.rsp.flit, params, Some("rxrsp_flit"))
-  io.enq.rx.dat <> FromAsyncBundle.channel(io.async.rx.dat.flit, params, Some("rxdat_flit"))
-  io.enq.rx.snp <> FromAsyncBundle.channel(io.async.rx.snp.flit, params, Some("rxsnp_flit"))
+  io.enq.rx.rsp <> FromAsyncBundle.channel(io.async.rx.rsp.flit, params, Some("rxrsp_flit"), false)
+  io.enq.rx.dat <> FromAsyncBundle.channel(io.async.rx.dat.flit, params, Some("rxdat_flit"), false)
+  io.enq.rx.snp <> FromAsyncBundle.channel(io.async.rx.snp.flit, params, Some("rxsnp_flit"), false)
 
   io.async.rx.rsp.lcrdv <> ToAsyncBundle.bitPulse(io.enq.rx.rsp.lcrdv, params, Some("rxrsp_lcrdv"))
   io.async.rx.dat.lcrdv <> ToAsyncBundle.bitPulse(io.enq.rx.dat.lcrdv, params, Some("rxdat_lcrdv"))
@@ -185,11 +204,25 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
     val async = Flipped(new AsyncPortIO(params))
     val deq = new PortIO
     val resetFinish = Output(Bool())
+    //power handshake
+    val powerAck = new Bundle {
+      val QACTIVE = Output(Bool())
+      val QACCEPTn = Output(Bool())
+      val QREQ = Input(Bool())
+    }
   })
 
-  io.deq.tx.req <> FromAsyncBundle.channel(io.async.tx.req.flit, params, Some("txreq_flit"))
-  io.deq.tx.rsp <> FromAsyncBundle.channel(io.async.tx.rsp.flit, params, Some("txrsp_flit"))
-  io.deq.tx.dat <> FromAsyncBundle.channel(io.async.tx.dat.flit, params, Some("txdat_flit"))
+  val txreq = FromAsyncBundle.channel(io.async.tx.req.flit, params, Some("txreq_flit"), true).asInstanceOf[ChannelWithActive[UInt]]
+  val txrsp = FromAsyncBundle.channel(io.async.tx.rsp.flit, params, Some("txrsp_flit"), true).asInstanceOf[ChannelWithActive[UInt]]
+  val txdat = FromAsyncBundle.channel(io.async.tx.dat.flit, params, Some("txdat_flit"), true).asInstanceOf[ChannelWithActive[UInt]]
+  io.deq.tx.req <> txreq.channel
+  io.deq.tx.rsp <> txrsp.channel
+  io.deq.tx.dat <> txdat.channel
+
+  // power handshake 
+  val txActive = txreq.active || txrsp.active || txdat.active
+  io.powerAck.QACTIVE := txActive
+  io.powerAck.QACCEPTn := !(io.powerAck.QREQ && !txActive)
 
   io.async.tx.req.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.req.lcrdv, params, Some("txreq_lcrdv"))
   io.async.tx.rsp.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.rsp.lcrdv, params, Some("txrsp_lcrdv"))
