@@ -119,6 +119,7 @@ class PrefetchReq(implicit p: Parameters) extends PrefetchBundle {
   val pfSource = UInt(MemReqSource.reqSourceBits.W)
 
   def addr: UInt = Cat(tag, set, 0.U(offsetBits.W))
+  def setaddr: UInt = Cat(tag, set)
   def isBOP:Bool = pfSource === MemReqSource.Prefetch2L2BOP.id.U
   def isPBOP:Bool = pfSource === MemReqSource.Prefetch2L2PBOP.id.U
   def isSMS:Bool = pfSource === MemReqSource.Prefetch2L2SMS.id.U
@@ -175,7 +176,18 @@ class PrefetchIO(implicit p: Parameters) extends PrefetchBundle {
   }))
 }
 
-class PrefetchQueue(implicit p: Parameters) extends PrefetchModule {
+class PrefetchTopIO(implicit p: Parameters) extends PrefetchBundle {
+  val train = Flipped(DecoupledIO(new PrefetchTrain))
+  val tlb_req = new L2ToL1TlbIO(nRespDups= 1)
+  val req = Vec(1 << bankBits, DecoupledIO(new PrefetchReq))
+  val resp = Flipped(DecoupledIO(new PrefetchResp))
+  val recv_addr = Flipped(ValidIO(new Bundle() {
+    val addr = UInt(64.W)
+    val pfSource = UInt(MemReqSource.reqSourceBits.W)
+  }))
+}
+
+class PrefetchQueue(id: Int)(implicit p: Parameters) extends PrefetchModule {
   val io = IO(new Bundle {
     val enq = Flipped(DecoupledIO(new PrefetchReq))
     val deq = DecoupledIO(new PrefetchReq)
@@ -211,26 +223,25 @@ class PrefetchQueue(implicit p: Parameters) extends PrefetchModule {
   io.deq.bits := Mux(empty, io.enq.bits, queue(head))
 
   // The reqs that are discarded = enq - deq
-  XSPerfAccumulate("prefetch_queue_enq",         io.enq.fire)
-  XSPerfAccumulate("prefetch_queue_enq_fromBOP", io.enq.fire && io.enq.bits.isBOP)
-  XSPerfAccumulate("prefetch_queue_enq_fromPBOP", io.enq.fire && io.enq.bits.isPBOP)
-  XSPerfAccumulate("prefetch_queue_enq_fromSMS", io.enq.fire && io.enq.bits.isSMS)
-  XSPerfAccumulate("prefetch_queue_enq_fromTP",  io.enq.fire && io.enq.bits.isTP)
+  XSPerfAccumulate(s"prefetch_queue_${id}_enq",         io.enq.fire)
+  XSPerfAccumulate(s"prefetch_queue_${id}_enq_fromBOP", io.enq.fire && io.enq.bits.isBOP)
+  XSPerfAccumulate(s"prefetch_queue_${id}_enq_fromPBOP", io.enq.fire && io.enq.bits.isPBOP)
+  XSPerfAccumulate(s"prefetch_queue_${id}_enq_fromSMS", io.enq.fire && io.enq.bits.isSMS)
+  XSPerfAccumulate(s"prefetch_queue_${id}_enq_fromTP",  io.enq.fire && io.enq.bits.isTP)
+  XSPerfAccumulate(s"prefetch_queue_${id}_deq",         io.deq.fire)
+  XSPerfAccumulate(s"prefetch_queue_${id}_deq_fromBOP", io.deq.fire && io.deq.bits.isBOP)
+  XSPerfAccumulate(s"prefetch_queue_${id}_deq_fromPBOP", io.deq.fire && io.deq.bits.isPBOP)
+  XSPerfAccumulate(s"prefetch_queue_${id}_deq_fromSMS", io.deq.fire && io.deq.bits.isSMS)
+  XSPerfAccumulate(s"prefetch_queue_${id}_deq_fromTP",  io.deq.fire && io.deq.bits.isTP)
 
-  XSPerfAccumulate("prefetch_queue_deq",         io.deq.fire)
-  XSPerfAccumulate("prefetch_queue_deq_fromBOP", io.deq.fire && io.deq.bits.isBOP)
-  XSPerfAccumulate("prefetch_queue_deq_fromPBOP", io.deq.fire && io.deq.bits.isPBOP)
-  XSPerfAccumulate("prefetch_queue_deq_fromSMS", io.deq.fire && io.deq.bits.isSMS)
-  XSPerfAccumulate("prefetch_queue_deq_fromTP",  io.deq.fire && io.deq.bits.isTP)
-
-  XSPerfHistogram("prefetch_queue_entry", PopCount(valids.asUInt),
+  XSPerfHistogram(s"prefetch_queue_${id}_entry", PopCount(valids.asUInt),
     true.B, 0, inflightEntries, 1)
-  XSPerfAccumulate("prefetch_queue_empty", empty)
-  XSPerfAccumulate("prefetch_queue_full", full)
+  XSPerfAccumulate(s"prefetch_queue_${id}_empty", empty)
+  XSPerfAccumulate(s"prefetch_queue_${id}_full", full)
 }
 
 class Prefetcher(implicit p: Parameters) extends PrefetchModule {
-  val io = IO(new PrefetchIO)
+  val io = IO(new PrefetchTopIO)
   val tpio = IO(new Bundle() {
     val tpmeta_port = if (hasTPPrefetcher) Some(new tpmetaPortIO(hartIdLen, fullAddressBits, offsetBits)) else None
   })
@@ -347,22 +358,34 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   // =================== Connection of all Prefetchers =====================
   /* prefetchers -> pftQueue -> pipe -> Slices.SinkA */
 
-  val pftQueue = Module(new PrefetchQueue)
-  val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
+  val reqs_valid = Seq(
+    if (hasReceiver)     pfRcv.get.io.req.valid else false.B,
+    if (hasBOP)          vbop.get.io.req.valid  else false.B,
+    if (hasBOP)          pbop.get.io.req.valid  else false.B,
+    if (hasTPPrefetcher) tp.get.io.req.valid    else false.B
+  )
+  val  reqs_bits = Seq(
+    if (hasReceiver)     pfRcv.get.io.req.bits  else 0.U.asTypeOf(new PrefetchReq),
+    if (hasBOP)          vbop.get.io.req.bits   else 0.U.asTypeOf(new PrefetchReq),
+    if (hasBOP)          pbop.get.io.req.bits   else 0.U.asTypeOf(new PrefetchReq),
+    if (hasTPPrefetcher) tp.get.io.req.bits     else 0.U.asTypeOf(new PrefetchReq)
+  )
+  val reqs_setaddr = reqs_bits.map(_.setaddr)
 
-  pftQueue.io.enq.valid :=
-    (if (hasReceiver)     pfRcv.get.io.req.valid                         else false.B) ||
-    (if (hasBOP)          vbop.get.io.req.valid || pbop.get.io.req.valid else false.B) ||
-    (if (hasTPPrefetcher) tp.get.io.req.valid                            else false.B)
-  pftQueue.io.enq.bits := ParallelPriorityMux(Seq(
-    if (hasReceiver)     pfRcv.get.io.req.valid -> pfRcv.get.io.req.bits else false.B -> 0.U.asTypeOf(io.req.bits),
-    if (hasBOP)          vbop.get.io.req.valid -> vbop.get.io.req.bits   else false.B -> 0.U.asTypeOf(io.req.bits),
-    if (hasBOP)          pbop.get.io.req.valid -> pbop.get.io.req.bits   else false.B -> 0.U.asTypeOf(io.req.bits),
-    if (hasTPPrefetcher) tp.get.io.req.valid -> tp.get.io.req.bits       else false.B -> 0.U.asTypeOf(io.req.bits)
-  ))
-
-  pipe.io.in <> pftQueue.io.deq
-  io.req <> pipe.io.out
+  val banks = 1 << bankBits
+  val pftQueue = Seq.tabulate(banks)({ i => Module(new PrefetchQueue(i))})
+  val pipe = Seq.tabulate(banks)({ i => Module(new Pipeline(new PrefetchReq, 1))})
+  for (i <- 0 until banks) {
+    val select = reqs_valid.zip(reqs_setaddr).map {
+      case (v, a) => (v && bank_eq(a, i, bankBits))
+    }
+    pftQueue(i).io.enq.valid := select.reduce(_ || _)
+    pftQueue(i).io.enq.bits := ParallelPriorityMux(select, reqs_bits)
+    pipe(i).io.in <> pftQueue(i).io.deq
+  }
+  for (i <- 0 until banks) {
+    io.req(i) <> pipe(i).io.out
+  }
 
   val hasReceiverReq = if (hasReceiver) pfRcv.get.io.req.valid else false.B
   val hasVBOPReq = if (hasBOP) vbop.get.io.req.valid else false.B
@@ -418,14 +441,16 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     val pfsource = UInt(MemReqSource.reqSourceBits.W)
   }
   val pfTT = ChiselDB.createTable("L2PrefetchPrefetchTable", new PrefetchEntry, basicDB = false)
-  val e2 = Wire(new PrefetchEntry)
-  e2.paddr := io.req.bits.addr
-  e2.needT := io.req.bits.needT
-  e2.pfsource := io.req.bits.pfSource
-  pfTT.log(
-    data = e2,
-    en = io.req.fire && io.req.bits.pfSource === MemReqSource.Prefetch2L2BOP.id.U,
-    site = "L2Prefetch_onlyBOP",
-    clock, reset
-  )
+  for (i <- 0 until banks) {
+    val e2 = Wire(new PrefetchEntry)
+    e2.paddr := io.req(i).bits.addr
+    e2.needT := io.req(i).bits.needT
+    e2.pfsource := io.req(i).bits.pfSource
+    pfTT.log(
+      data = e2,
+      en = io.req(i).fire && io.req(i).bits.pfSource === MemReqSource.Prefetch2L2BOP.id.U,
+      site = "L2Prefetch_onlyBOP",
+      clock, reset
+    )
+  }
 }

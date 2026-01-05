@@ -373,7 +373,9 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     prefetchOpt.foreach {
       _ =>
         fastArb(prefetchTrains.get, prefetcher.get.io.train, Some("prefetch_train"))
-        prefetcher.get.io.req.ready := Cat(prefetchReqsReady).orR
+        prefetcher.get.io.req.zip(prefetchReqsReady).foreach {
+          case (r, ready) => r.ready := ready
+        }
         prefetcher.get.hartId := io.hartId
         prefetcher.get.pfCtrlFromCore := io.pfCtrlFromCore
         fastArb(prefetchResps.get, prefetcher.get.io.resp, Some("prefetch_resp"))
@@ -459,9 +461,9 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
 
         slice.io.prefetch.zip(prefetcher).foreach {
           case (s, p) =>
-            s.req.valid := p.io.req.valid && bank_eq(Cat(p.io.req.bits.tag, p.io.req.bits.set), i, bankBits)
-            s.req.bits := p.io.req.bits
-            prefetchReqsReady(i) := s.req.ready && bank_eq(Cat(p.io.req.bits.tag, p.io.req.bits.set), i, bankBits)
+            s.req.valid := p.io.req(i).valid
+            s.req.bits := p.io.req(i).bits
+            prefetchReqsReady(i) := s.req.ready
             val train = Pipeline(s.train)
             val resp = Pipeline(s.resp)
             prefetchTrains.get(i) <> train
