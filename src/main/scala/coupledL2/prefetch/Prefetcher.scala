@@ -389,11 +389,11 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   XSPerfAccumulate("prefetch_req_fromBOP", hasVBOPReq || hasPBOPReq)
   XSPerfAccumulate("prefetch_req_fromTP",  hasTPReq)
 
-  XSPerfAccumulate("prefetch_req_selectL1", hasReceiverReq && pfRcv.get.io.req.ready)
-  XSPerfAccumulate("prefetch_req_selectVBOP", hasVBOPReq && vbop.get.io.req.ready)
-  XSPerfAccumulate("prefetch_req_selectPBOP", hasPBOPReq && pbop.get.io.req.ready)
-  XSPerfAccumulate("prefetch_req_selectBOP", (hasPBOPReq || hasVBOPReq) && (vbop.get.io.req.ready || pbop.get.io.req.ready))
-  XSPerfAccumulate("prefetch_req_selectTP", hasTPReq && tp.get.io.req.ready)
+  XSPerfAccumulate("prefetch_req_selectL1", hasReceiverReq && pfRcv.map(_.io.req.ready).getOrElse(false.B))
+  XSPerfAccumulate("prefetch_req_selectVBOP", hasVBOPReq && vbop.map(_.io.req.ready).getOrElse(false.B))
+  XSPerfAccumulate("prefetch_req_selectPBOP", hasPBOPReq && pbop.map(_.io.req.ready).getOrElse(false.B))
+  XSPerfAccumulate("prefetch_req_selectBOP", (hasPBOPReq || hasVBOPReq) && (vbop.map(_.io.req.ready).getOrElse(false.B) || pbop.map(_.io.req.ready).getOrElse(false.B)))
+  XSPerfAccumulate("prefetch_req_selectTP", hasTPReq && tp.map(_.io.req.ready).getOrElse(false.B))  
   // NOTE: set basicDB false when debug over
   // TODO: change the enable signal to not target the BOP
   class TrainEntry extends Bundle{
