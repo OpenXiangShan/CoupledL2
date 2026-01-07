@@ -363,10 +363,12 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val pftQueue = Seq.tabulate(banks)({ i => Module(new PrefetchQueue(i))})
   val pipe = Seq.tabulate(banks)({ i => Module(new Pipeline(new PrefetchReq, 1))})
   val select = Wire(Vec(banks, Vec(reqs.length, Bool())))
+  val selectOH = Wire(Vec(banks, Vec(reqs.length, Bool())))
   for (i <- 0 until banks) {
     select(i) := reqsValid.zip(reqsSetAddr).map {
       case (v, a) => (v && bank_eq(a, i, bankBits))
     }
+    selectOH(i) := PriorityEncoderOH(select(i))
     pftQueue(i).io.enq.valid := select(i).reduce(_ || _)
     pftQueue(i).io.enq.bits := ParallelPriorityMux(select(i), reqsBits)
     pipe(i).io.in <> pftQueue(i).io.deq
@@ -375,7 +377,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     io.req(i) <> pipe(i).io.out
   }
   for ((reqOpt, j) <- reqs.zipWithIndex) {
-    reqOpt.foreach(_.ready := (0 until banks).map(i => select(i)(j)).reduce(_ || _))
+    reqOpt.foreach(_.ready := (0 until banks).map(i => selectOH(i)(j)).reduce(_ || _))
   }
 
   val hasReceiverReq = if (hasReceiver) pfRcv.get.io.req.valid else false.B
