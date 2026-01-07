@@ -161,7 +161,8 @@ trait HasCHIOpcodes extends HasCHIMsgParameters {
     opcode === SnpCleanFwd || 
     opcode === SnpOnceFwd ||
     opcode === SnpNotSharedDirtyFwd ||
-    opcode === SnpUniqueFwd
+    opcode === SnpUniqueFwd ||
+    opcode === SnpPreferUniqueFwd
   }
 
   def isSnpQuery(opcode: UInt): Bool = {
