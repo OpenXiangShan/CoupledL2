@@ -305,8 +305,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   resp_s3.bits.set   := set_s3
   resp_s3.bits.error := error_s3  // depends on ECC
   resp_s3.bits.replacerInfo := replacerInfo_s3
-  io.resp.valid := RegNext(resp_s3.valid, false.B)
-  io.resp.bits := RegEnable(resp_s3.bits, 0.U.asTypeOf(resp_s3.bits), resp_s3.valid)
+  io.resp := Pipe(resp_s3)
 
   dontTouch(io)
   dontTouch(metaArray.io)
@@ -337,8 +336,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   replResp_s3.bits.meta := metaAll_s3(finalWay)
   replResp_s3.bits.mshrId := req_s3.mshrId
   replResp_s3.bits.retry := refillRetry
-  io.replResp.valid := RegNext(replResp_s3.valid, false.B)
-  io.replResp.bits := RegEnable(replResp_s3.bits, 0.U.asTypeOf(replResp_s3.bits), replResp_s3.valid)
+  io.replResp := Pipe(replResp_s3)
 
   /* ====== Update ====== */
   // PLRU: update replacer only when A hit or refill, at stage 3

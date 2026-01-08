@@ -38,7 +38,7 @@ class CustomL1HintIOBundle(implicit p: Parameters) extends L2Bundle {
   val s3 = new L2Bundle {
       val task      = Flipped(ValidIO(new TaskBundle()))
       val need_mshr = Input(Bool())
-      val hasPreded = Input(Bool())
+      val predHit = Input(Bool())
   }
 
   // output hint
@@ -87,8 +87,8 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   )
 
   // Hint for "chnTask Hit" will fire@s3
-  val chn_Grant_s3     = task_s3.valid && !mshrReq_s3 && !need_mshr_s3 && isGrant(task_s3.bits) && !io.s3.hasPreded
-  val chn_GrantData_s3 = task_s3.valid && !mshrReq_s3 && !need_mshr_s3 && isGrantData(task_s3.bits) && !io.s3.hasPreded
+  val chn_Grant_s3     = task_s3.valid && !mshrReq_s3 && !need_mshr_s3 && isGrant(task_s3.bits) && !io.s3.predHit
+  val chn_GrantData_s3 = task_s3.valid && !mshrReq_s3 && !need_mshr_s3 && isGrantData(task_s3.bits) && !io.s3.predHit
   val enqValid_s3 = chn_Grant_s3 || chn_GrantData_s3
   val enqSource_s3 = task_s3.bits.sourceId
   val enqKeyWord_s3 = task_s3.bits.isKeyword.getOrElse(false.B)

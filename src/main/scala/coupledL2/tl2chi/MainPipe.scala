@@ -120,8 +120,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     val cmoAllBlock = Option.when(cacheParams.enableL2Flush) (Input(Bool()))
     val cmoLineDone = Option.when(cacheParams.enableL2Flush) (Output(Bool()))
 
-    val toWPUUpd = ValidIO(new WPUUpdate)
-    val WPUResFromArb_s2 = Flipped(ValidIO(new WPUResult))
+    val toWPUUpd = Option.when(enWPU) (ValidIO(new WPUUpdate))
   })
 
   require(chiOpt.isDefined)
@@ -149,13 +148,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   task_s3.valid := task_s2.valid
   when (task_s2.valid) {
     task_s3.bits := task_s2.bits
-  }
-
-  val WPURes_s3 = RegInit(0.U.asTypeOf(io.WPUResFromArb_s2))
-  val WPUResValid_hold2 = RegEnable(io.WPUResFromArb_s2.valid, !RegNext(io.WPUResFromArb_s2.valid), false.B)
-  WPURes_s3.valid := io.WPUResFromArb_s2.valid
-  when (io.WPUResFromArb_s2.valid) {
-    WPURes_s3.bits := io.WPUResFromArb_s2.bits
   }
 
   /* ======== Enchantment ======== */
@@ -472,6 +464,15 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   source_req_s3.isKeyword.foreach(_ := req_s3.isKeyword.getOrElse(false.B))
 
   /* ======== Update Way Predictor ======== */
+  // This is to let io.toDS.req_s3.valid hold for 2 cycles (see DataStorage for details)
+  val task_s3_valid_hold2 = RegEnable(task_s2.valid, false.B, !RegNext(task_s2.valid, false.B))
+  val wpures = task_s3.bits.wpu.get
+  val predValid = task_s3.valid && wpures.valid && !wpures.bits.canceld
+  val predHit = wpures.bits.predHit
+  val predWay = wpures.bits.predWay
+  val actualWay = io.dirResp_s3.way
+  val actualHit = io.dirResp_s3.hit
+
   val wpuReplUpd, wpuEvictUpd, wpuLookupUpd= WireInit(0.U.asTypeOf(Valid(new WPUUpdate())))
   assert(wpuReplUpd.valid === io.tagWReq.valid)
   wpuReplUpd.valid := task_s3.valid & io.replResp.valid & !io.replResp.bits.retry & io.tagWReq.valid & req_s3.replTask
@@ -485,35 +486,44 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   wpuEvictUpd.bits.actualWay := OHToUInt(io.metaWReq.bits.wayOH)
   wpuEvictUpd.bits.set := io.metaWReq.bits.set
 
-  wpuLookupUpd.valid := WPURes_s3.valid
-  wpuLookupUpd.bits.predWay := WPURes_s3.bits.predWay
-  wpuLookupUpd.bits.predHit := WPURes_s3.bits.predHit
-  wpuLookupUpd.bits.actualWay := io.dirResp_s3.way
-  wpuLookupUpd.bits.actualHit := io.dirResp_s3.hit
-  wpuLookupUpd.bits.set := req_s3.set
-  wpuLookupUpd.bits.tag := req_s3.tag
+  if (enWPU && wpuParam.debug) {
+    wpuLookupUpd.valid := wpures.valid && task_s3.valid && !task_s3.bits.mshrTask
+    wpuLookupUpd.bits.set := req_s3.set
+    wpuLookupUpd.bits.tag := req_s3.tag
+    wpuLookupUpd.bits.predHit := wpures.bits.predHit
+    wpuLookupUpd.bits.predWay := wpures.bits.predWay
+    wpuLookupUpd.bits.actualHit := io.dirResp_s3.hit
+    wpuLookupUpd.bits.actualWay := io.dirResp_s3.way
+    wpuLookupUpd.bits.canceld.foreach(_ := wpures.bits.canceld)
+    wpuLookupUpd.bits.timeCnt.zip(wpures.bits.timeCnt).foreach(x => x._1 := x._2)
+  }
 
-  io.toWPUUpd.valid := wpuReplUpd.valid | wpuEvictUpd.valid | wpuLookupUpd.valid
-  io.toWPUUpd.bits := MuxCase(0.U.asTypeOf(new WPUUpdate), Seq(
-    wpuReplUpd.valid -> wpuReplUpd.bits,
-    wpuEvictUpd.valid -> wpuEvictUpd.bits,
-    wpuLookupUpd.valid -> wpuLookupUpd.bits
-  ))
+  assert(PopCount(Cat(wpuReplUpd.valid, wpuEvictUpd.valid, wpuLookupUpd.valid)) <= 1.U)
+  io.toWPUUpd.foreach { x => x.valid := wpuReplUpd.valid | wpuEvictUpd.valid | wpuLookupUpd.valid
+    x.bits := Mux1H(Seq(
+      wpuReplUpd.valid -> wpuReplUpd.bits,
+      wpuEvictUpd.valid -> wpuEvictUpd.bits,
+      wpuLookupUpd.valid -> wpuLookupUpd.bits
+    ))
+  }
   assert(!wpuReplUpd.valid && !wpuEvictUpd.valid && wpuLookupUpd.valid ||
     !wpuReplUpd.valid && wpuEvictUpd.valid && !wpuLookupUpd.valid ||
     wpuReplUpd.valid && !wpuEvictUpd.valid && !wpuLookupUpd.valid ||
     !wpuReplUpd.valid && !wpuEvictUpd.valid && !wpuLookupUpd.valid
   )
 
-  val predHitSucc = WPURes_s3.bits.predHit && io.dirResp_s3.hit && WPURes_s3.bits.predWay === io.dirResp_s3.way
-  val predMissSucc = !WPURes_s3.bits.predHit && !io.dirResp_s3.hit
-  val predSucc = predHitSucc || predMissSucc
-  val predUnmatch = WPURes_s3.bits.predHit && io.dirResp_s3.hit && WPURes_s3.bits.predWay =/= io.dirResp_s3.way
-  val predHitButMiss = WPURes_s3.bits.predHit && !io.dirResp_s3.hit
-  val predMissButHit = !WPURes_s3.bits.predHit && io.dirResp_s3.hit
-  val readDSAgain = Mux(WPUResValid_hold2, (predUnmatch || predMissButHit),
-    io.dirResp_s3.hit && (req_s3.opcode === Get || req_s3.opcode === AcquireBlock) && sinkA_req_s3)
-  val useRDataByWPU_s3 = WPURes_s3.valid && predHitSucc
+  val useRDataByWPU_s3 = WireInit(false.B)
+  val readDSAgain = WireInit(true.B)
+  if (enWPU) {
+    val predValidHold2 = task_s3_valid_hold2 && wpures.valid && !wpures.bits.canceld
+    val predHitSucc = (predHit && io.dirResp_s3.hit && predWay === io.dirResp_s3.way) && predValidHold2
+    val predMissSucc = (!predHit && !io.dirResp_s3.hit) && predValidHold2
+    val predUnmatch = (predHit && io.dirResp_s3.hit && predWay =/= io.dirResp_s3.way) && predValidHold2
+    val predMissButHit = !predHit && io.dirResp_s3.hit
+    readDSAgain := Mux(predValidHold2, (predUnmatch || predMissButHit),
+      io.dirResp_s3.hit && (req_get_s3 || req_acquireBlock_s3))
+    useRDataByWPU_s3 := task_s3.valid && predHitSucc
+  }
 
   /* ======== Interact with DS ======== */
 //  val data_s3 = Mux(io.releaseBufResp_s3.valid, io.releaseBufResp_s3.bits.data, io.refillBufResp_s3.bits.data)
@@ -547,13 +557,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val wen = wen_c || wen_mshr
   dontTouch(wen)
 
-  // This is to let io.toDS.req_s3.valid hold for 2 cycles (see DataStorage for details)
-  val task_s3_valid_hold2 = RegInit(0.U(2.W))
-  when(task_s2.valid) {
-    task_s3_valid_hold2 := "b11".U
-  }.otherwise {
-    task_s3_valid_hold2 := task_s3_valid_hold2 >> 1.U
-  }
 
   io.toDS.en_s3 := task_s3.valid && (ren || wen)
   io.toDS.req_s3.valid := task_s3_valid_hold2(0) && (ren || wen)
@@ -885,7 +888,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   customL1Hint.io.s3.task.bits.opcode := Mux(sink_resp_s3.valid, sink_resp_s3.bits.opcode, task_s3.bits.opcode)
   // customL1Hint.io.s3.d         := d_s3.valid
   customL1Hint.io.s3.need_mshr := need_mshr_s3
-  customL1Hint.io.s3.hasPreded := WPURes_s3.valid
+  customL1Hint.io.s3.predHit := task_s3.valid && task_s3.bits.wpu.get.valid &&
+    task_s3.bits.wpu.get.bits.predHit && !task_s3.bits.wpu.get.bits.canceld
 
   // customL1Hint.io.s4.task                  := task_s4
   // customL1Hint.io.s4.d                     := d_s4.valid

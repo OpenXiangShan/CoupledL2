@@ -82,12 +82,8 @@ class RequestArb(implicit p: Parameters) extends L2Module
     /* MSHR Status */
     val msInfo = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo())))
 
-    val toWPURead = ValidIO(new WPURead)
-    val WPURes = Flipped(ValidIO(new WPUResult))
-    val toDSReq_s1 = DecoupledIO(new DSRequest)
-    val toDSen_s1 = Bool()
-    val DSStage = Input(UInt(2.W))
-    val WPUResToMP = ValidIO(new WPUResult)
+    val toDSReq_s1_2 = DecoupledIO(new DSRequest)
+    val toDSen_s1_2 = Bool()
     val s1_2Entrance = ValidIO(new L2Bundle {
       val set = UInt(setBits.W)
     })
@@ -191,10 +187,6 @@ class RequestArb(implicit p: Parameters) extends L2Module
   s1_cango  := task_s1.valid && !mshr_replRead_stall
   s1_fire   := s1_cango && s1_2_ready
 
-  // io.taskInfo_s1.valid := s1_fire
-  // io.taskInfo_s1.bits.viewAsSupertype(new TaskBundle) := task_s1.bits
-  // io.taskInfo_s1.bits.pred := io.toDSReq_s1.ready && io.toDSen_s1
-
   /* Meta read request */
   // ^ only sinkA/B/C tasks need to read directory
   io.dirRead_s1.valid := s1_2_ready && (chnl_task_s1.valid && !mshr_task_s1.valid || s1_needs_replRead && !io.fromMainPipe.blockG_s1)
@@ -222,12 +214,12 @@ class RequestArb(implicit p: Parameters) extends L2Module
 
   /* ========  Stage 1-2 ======== */
   val task_s1_2 = RegInit(0.U.asTypeOf(task_s1))
-  val validHold2 = RegEnable(s1_fire, !RegNext(s1_fire), false.B)
+  val DSValidHold2 = RegEnable(s1_fire, false.B, !RegNext(s1_fire, false.B))
   task_s1_2.valid := s1_fire
   when (s1_fire) { task_s1_2.bits := task_s1.bits }
   io.taskInfo_s1_2.valid := task_s1_2.valid
   io.taskInfo_s1_2.bits.viewAsSupertype(new TaskBundle) := task_s1_2.bits
-  io.taskInfo_s1_2.bits.pred := io.toDSReq_s1.ready && io.toDSen_s1
+  io.taskInfo_s1_2.bits.pred := io.toDSReq_s1_2.ready && io.toDSen_s1_2
   io.s1_2Entrance.valid := task_s1_2.valid && !(task_s1_2.bits.mshrTask && !task_s1_2.bits.metaWen)
   io.s1_2Entrance.bits.set := task_s1_2.bits.set
 
@@ -334,26 +326,19 @@ class RequestArb(implicit p: Parameters) extends L2Module
     }
   }
 
-  val dsReqValid = io.WPURes.fire && io.WPURes.bits.predHit && io.DSStage === "b00".U
-  io.toWPURead.bits.set := task_s1.bits.set
-  io.toWPURead.bits.tag := task_s1.bits.tag
-  io.toWPURead.valid := chnl_task_s1.valid && chnl_task_s1.bits.fromA &&
-    (chnl_task_s1.bits.opcode === Get || chnl_task_s1.bits.opcode === AcquireBlock) && s1_2_ready && !mshr_task_s1.valid
-  val WPURes_s1_2 = RegInit(0.U.asTypeOf(io.WPURes))
-  WPURes_s1_2.valid := false.B
-  // WPURes_s1_2.valid := io.WPURes.valid
-  when (io.WPURes.valid) { WPURes_s1_2.bits := io.WPURes.bits }
-
-  io.toDSen_s1 := task_s1_2.bits.predHit.getOrElse(false.B) && task_s1.valid
-  io.toDSReq_s1.valid := task_s1_2.bits.predHit.getOrElse(false.B) && validHold2
-  io.toDSReq_s1.bits.set := task_s1_2.bits.set
-  io.toDSReq_s1.bits.way := task_s1_2.bits.predWay.getOrElse(0.U)
-  io.toDSReq_s1.bits.wen := false.B
-
-  val WPURes_s2 = RegInit(0.U.asTypeOf(WPURes_s1_2))
-  WPURes_s2.valid := WPURes_s1_2.valid
-  when (WPURes_s1_2.valid) { WPURes_s2.bits := WPURes_s1_2.bits }
-  io.WPUResToMP := WPURes_s2
+  if (enWPU){
+    val needReadDS = task_s1_2.bits.wpu.get.valid && task_s1_2.bits.wpu.get.bits.predHit &&
+      !task_s1_2.bits.wpu.get.bits.canceld
+    io.toDSen_s1_2 := needReadDS && task_s1_2.valid
+    io.toDSReq_s1_2.valid := needReadDS && DSValidHold2
+    io.toDSReq_s1_2.bits.set := task_s1_2.bits.set
+    io.toDSReq_s1_2.bits.way := task_s1_2.bits.wpu.get.bits.predWay
+    io.toDSReq_s1_2.bits.wen := false.B
+    task_s2.bits.wpu.get.bits.canceld := task_s1_2.bits.wpu.get.bits.canceld || !io.toDSReq_s1_2.ready
+    XSPerfAccumulate("wpu_canceld_by_write", task_s1_2.bits.wpu.get.bits.canceld && task_s1_2.bits.wpu.get.valid && task_s1_2.valid)
+    XSPerfAccumulate("wpu_canceld_by_ds", !task_s1_2.bits.wpu.get.bits.canceld && task_s1_2.bits.wpu.get.valid
+      && task_s1_2.valid && !io.toDSReq_s1_2.ready)
+  }
 
   dontTouch(io)
 

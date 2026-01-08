@@ -26,7 +26,8 @@ import freechips.rocketchip.tilelink.TLHints._
 import coupledL2.prefetch.PrefetchReq
 import huancun.{AliasKey, PrefetchKey}
 import utility.{MemReqSource, XSPerfAccumulate}
-import coupledL2.wpu.{PredWayKey, PredHitKey}
+import utility.Pipeline
+import coupledL2.wpu.WPUResult
 
 class SinkA(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
@@ -34,10 +35,13 @@ class SinkA(implicit p: Parameters) extends L2Module {
     val prefetchReq = prefetchOpt.map(_ => Flipped(DecoupledIO(new PrefetchReq)))
     val task = DecoupledIO(new TaskBundle)
     val cmoAll = Option.when(cacheParams.enableL2Flush) (new IOCMOAll)
+    val wpuRes = Option.when(enWPU) (Flipped(Valid(new WPUResult)))
   })
   assert(!(io.a.valid && (io.a.bits.opcode === PutFullData ||
                           io.a.bits.opcode === PutPartialData)),
     "no Put");
+
+  val wpuQueue = Option.when(enWPU) (Module(new Queue(new WPUResult, 8)))
 
   // flush L2 all control defines
   val set = Option.when(cacheParams.enableL2Flush)(RegInit(0.U(setBits.W))) 
@@ -90,8 +94,10 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
     task.cmoAll := cmoAllValid
-    task.predWay.zip(a.user.lift(PredWayKey)).foreach{ case (a, b) => a := b }
-    task.predHit.zip(a.user.lift(PredHitKey)).foreach{ case (a, b) => a := b }
+    task.wpu.zip(wpuQueue).foreach { case (task, queue) =>
+      task.valid := queue.io.deq.fire
+      task.bits := queue.io.deq.bits
+    }
     task
   }
   def fromPrefetchReqtoTaskBundle(req: PrefetchReq): TaskBundle = {
@@ -130,23 +136,34 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.isKeyword.foreach(_ := false.B)
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
-    task.predWay.foreach(_ := 0.U)
-    task.predHit.foreach(_ := false.B)
+    task.wpu.foreach(x => x := 0.U.asTypeOf(x))
     task
   }
+  val tlaTask = fromTLAtoTaskBundle(io.a.bits)
   if (prefetchOpt.nonEmpty) {
     io.task.valid := io.a.valid && !cmoAllBlock || io.prefetchReq.get.valid || cmoAllValid
     io.task.bits := Mux(
       io.a.valid || cmoAllValid,
-      fromTLAtoTaskBundle(io.a.bits),
+      tlaTask,
       fromPrefetchReqtoTaskBundle(io.prefetchReq.get.bits
     ))
     io.a.ready := io.task.ready && !cmoAllBlock
     io.prefetchReq.get.ready := io.task.ready && !io.a.valid
   } else {
     io.task.valid := io.a.valid && !cmoAllBlock || cmoAllValid
-    io.task.bits := fromTLAtoTaskBundle(io.a.bits) 
+    io.task.bits := tlaTask
     io.a.ready := io.task.ready && !cmoAllBlock
+  }
+  if (enWPU) {
+    wpuQueue.get.io.enq.valid := io.wpuRes.get.valid
+    wpuQueue.get.io.enq.bits := io.wpuRes.get.bits
+    wpuQueue.get.io.deq.ready := io.a.fire && tlaTask.opcode === AcquireBlock
+    if (wpuParam.debug) {
+      assert(Mux(wpuQueue.get.io.deq.fire, wpuQueue.get.io.deq.bits.set.get === tlaTask.set &&
+        wpuQueue.get.io.deq.bits.tag.get === tlaTask.tag, true.B))
+    }
+    assert(wpuQueue.get.io.enq.ready || !wpuQueue.get.io.enq.ready && !wpuQueue.get.io.enq.valid)
+    assert(!(!wpuQueue.get.io.deq.valid && wpuQueue.get.io.deq.ready))
   }
 
   /*

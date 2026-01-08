@@ -27,8 +27,6 @@ import huancun.{AliasKey, CacheParameters, IsHitKey, PrefetchKey}
 import coupledL2.prefetch._
 import coupledL2.wpu.WPUParameters
 import utility.{MemReqSource, ReqSourceKey, Code}
-import coupledL2.wpu.PredHitKey
-import coupledL2.wpu.PredWayKey
 
 case object EnableCHI extends Field[Boolean](false)
 
@@ -135,7 +133,8 @@ case class L2Param(
   hasSramCtl: Boolean = false,
 
   // when mainpipe read ds on s3 in 2nd cycle or wpu is in update, cancel way predict
-  wpuParam: Option[WPUParameters] = Some(WPUParameters("utag")),
+  enableWayPred: Boolean = true,
+  wpuParam: WPUParameters = WPUParameters("utag"),
 
   // Enable new clint
   EnablePrivateClint: Boolean = false

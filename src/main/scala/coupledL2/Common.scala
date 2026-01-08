@@ -23,6 +23,7 @@ import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink.TLPermissions._
 import utility.MemReqSource
 import tl2chi.{HasCHIMsgParameters, HasCHIChannelBits, CHIREQ, MemAttr, OrderEncodings, MPAM}
+import coupledL2.wpu.WPUResult
 
 abstract class L2Module(implicit val p: Parameters) extends Module with HasCoupledL2Parameters
 abstract class L2Bundle(implicit val p: Parameters) extends Bundle with HasCoupledL2Parameters
@@ -146,8 +147,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val traceTag = chiOpt.map(_ => Bool())
   val dataCheckErr = chiOpt.map(_ => Bool())
   // Way prediction
-  val predWay = wpuOpt.map(_ => UInt(wayBits.W))
-  val predHit = wpuOpt.map(_ => Bool())
+  val wpu = Option.when(enWPU) (Valid(new WPUResult))
 
   def toCHIREQBundle(): CHIREQ = {
     val req = WireInit(0.U.asTypeOf(new CHIREQ()))

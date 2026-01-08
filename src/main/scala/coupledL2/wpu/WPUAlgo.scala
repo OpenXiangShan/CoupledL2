@@ -10,7 +10,8 @@ import coupledL2._
 case class WPUParameters
 (
   algoName: String,
-  debug: Boolean = false
+  debug: Boolean = true,
+  updOnLookup: Boolean = false
 )
 
 object AlgoWPUMap {
@@ -31,19 +32,33 @@ class WPUUpdate(implicit P: Parameters) extends L2Bundle{
   val predHit = Bool()
   val actualWay = UInt(wayBits.W)
   val actualHit = Bool()
+  val canceld = Option.when(enWPU && wpuParam.debug) (Bool())
+  val timeCnt = Option.when(enWPU && wpuParam.debug) (UInt(64.W))
 }
 
 class WPURead(implicit P: Parameters) extends L2Bundle {
   val tag = UInt(tagBits.W)
   val set = UInt(setBits.W)
+
+  def parseAddr(x: UInt) = {
+    this.tag := (x >> (offsetBits + bankBits + setBits))(tagBits - 1, 0)
+    this.set := (x >> (offsetBits + bankBits))(setBits - 1, 0)
+  }
 }
 
-class WPUResult(implicit P: Parameters) extends L2Bundle {
+class WPUResultInsideWPU(implicit P: Parameters) extends L2Bundle {
   val predWay = UInt(wayBits.W)
   val predHit = Bool()
 }
 
-abstract class BaseWPU(wpuParam: WPUParameters)(implicit p:Parameters) extends L2Module {
+class WPUResult(implicit P: Parameters) extends WPUResultInsideWPU {
+  val canceld = Bool()
+  val set = Option.when(enWPU && wpuParam.debug) (UInt(setBits.W))
+  val tag = Option.when(enWPU && wpuParam.debug) (UInt(tagBits.W))
+  val timeCnt = Option.when(enWPU && wpuParam.debug) (UInt(64.W))
+}
+
+abstract class BaseWPU(implicit p:Parameters) extends L2Module {
   println(s"  WPU type: ${wpuParam.algoName}")
   suggestName(s" ${wpuParam.algoName}WPU")
   val sets = cacheParams.sets
@@ -51,24 +66,25 @@ abstract class BaseWPU(wpuParam: WPUParameters)(implicit p:Parameters) extends L
   val mbist = cacheParams.hasMbist
   val hasSramCtl = cacheParams.hasSramCtl
 
-  val in = IO(Input(new Bundle {
-    val read = Flipped(DecoupledIO(new WPURead()))
-    val upd = Flipped(ValidIO(new WPUUpdate()))
-  }))
+  val in = IO(new Bundle {
+    val read = Flipped(ValidIO(new WPURead()))
+    val upd = Flipped(DecoupledIO(new WPUUpdate()))
+  })
   val out = IO(Output(new Bundle {
-    val res = new WPUResult()
+    val res = new WPUResultInsideWPU()
   }))
 }
 
-class UtagWPU(wpuParam: WPUParameters)(implicit p:Parameters) extends BaseWPU(wpuParam){
-  def utag_hash(in: UInt) = {
-    val utag_bits = math.min(in.getWidth / 2, 8)
-    if (utag_bits < 8) {
-      in(2 * utag_bits - 1, utag_bits) ^ in(utag_bits - 1, 0)
-    } else {
-      in(15, 8) ^ Cat(Reverse(in(2, 0)), in(7, 3))
-    }
-  }
+class UtagWPU(wpuParam: WPUParameters)(implicit p:Parameters) extends BaseWPU {
+  // def utag_hash(in: UInt) = {
+  //   val utag_bits = math.min(in.getWidth / 2, 8)
+  //   if (utag_bits < 8) {
+  //     in(2 * utag_bits - 1, utag_bits) ^ in(utag_bits - 1, 0)
+  //   } else {
+  //     in(15, 8) ^ Cat(Reverse(in(2, 0)), in(7, 3))
+  //   }
+  // }
+  def utag_hash(in: UInt) = in
 
   val utagBits = utag_hash(0.U(tagBits.W)).getWidth
   println(s"utagBits: ${utagBits}")
@@ -90,29 +106,28 @@ class UtagWPU(wpuParam: WPUParameters)(implicit p:Parameters) extends BaseWPU(wp
   val updUtag = utag_hash(updInfo.tag)
   val updSet = in.upd.bits.set
   val updWay = in.upd.bits.actualWay
-  val updFlag = !updInfo.predHit & updInfo.actualHit |
-    updInfo.predHit & updInfo.actualHit & updInfo.predWay === updInfo.actualWay |
-    updInfo.isReplace
-  val invalidFlag = updInfo.isEvict | updInfo.predHit & !updInfo.actualHit
+  val updFlag = updInfo.isReplace
+  val invalidFlag = updInfo.isEvict
+  val dropLookup = !updFlag && !invalidFlag && in.upd.valid
   val updState = Wire(new Entry)
   updState.valid := !invalidFlag
   updState.utag := updUtag
 
   // perf logic
   stateRegs.io.w(
-    updFlag || invalidFlag,
+    (updFlag || invalidFlag) && in.upd.fire,
     updState.asUInt,
     updSet,
     UIntToOH(updWay)
   )
 
-  in.read.ready := stateRead.req.ready
   out.res.predHit := hit
   out.res.predWay := way
+  in.upd.ready := dropLookup || !in.read.valid
 
-  if (cacheParams.wpuParam.debug) {
+  if (wpuParam.debug) {
     val debug_stateRegs = RegInit(VecInit(Seq.fill(cacheParams.sets)(VecInit(Seq.fill(cacheParams.ways)(0.U.asTypeOf(new Entry))))))
-    when (in.upd.valid) {
+    when (in.upd.fire) {
       when (updFlag) {
         debug_stateRegs(updSet)(updWay).utag := updUtag
         debug_stateRegs(updSet)(updWay).valid := true.B
@@ -127,7 +142,7 @@ class UtagWPU(wpuParam: WPUParameters)(implicit p:Parameters) extends BaseWPU(wp
       debug_hashConflictTimes := debug_hashConflictTimes + 1.U
     }
     XSPerfAccumulate(s"${wpuParam.algoName}WPU_hash_conflict", debug_hashConflict)
-    val lookupUpd = in.upd.valid && !updInfo.isReplace && !updInfo.isEvict
+    val lookupUpd = in.upd.valid && !updInfo.isReplace && !updInfo.isEvict && !updInfo.canceld.getOrElse(false.B)
     val phit_ahit_unmatch = updInfo.predHit && updInfo.actualHit && updInfo.actualWay =/= updInfo.predWay
     val phit_amiss = !updInfo.predHit && updInfo.actualHit
     val pmiss_ahit = updInfo.predHit && !updInfo.actualHit

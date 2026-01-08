@@ -125,6 +125,13 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
       )
     }
 
+    if (enWPU) {
+      slices.zipWithIndex.foreach {
+        case (slice, i) =>
+          io.wpuUpd.get(i) := slice.io.wpuUpdate.get
+          slice.io.wpuResult.get := io.wpuRes.get(i)
+    }}
+
     slices match {
       case slices: Seq[Slice] =>
         // TXREQ

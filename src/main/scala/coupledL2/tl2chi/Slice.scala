@@ -25,6 +25,7 @@ import coupledL2._
 import coupledL2.prefetch.PrefetchIO
 import coupledL2.wpu.{WPUParameters, WPUWrapper}
 import chisel3.experimental.dataview._
+import coupledL2.wpu.WPUUpdate
 
 class OuterBundle(implicit p: Parameters) extends DecoupledPortIO with BaseOuterBundle
 
@@ -62,7 +63,6 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   val mainPipe = Module(new MainPipe())
   val reqBuf = Module(new RequestBuffer())
   val mshrCtl = Module(new MSHRCtl())
-  val wpu = Module(new WPUWrapper(WPUParameters("utag")))
   private val mbistPl = MbistPipeline.PlaceMbistPipeline(2, "L2Slice", p(L2ParamKey).hasMbist)
   sinkC.io.msInfo := mshrCtl.io.msInfo
 
@@ -94,8 +94,8 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
 //  dataStorage.io.req := mainPipe.io.toDS.req_s3
 //  dataStorage.io.wdata := mainPipe.io.toDS.wdata_s3
   dataStorage1.io <> dsArb.toDS
-  dsArb.in.enFromReqArb := reqArb.io.toDSen_s1
-  dsArb.in.reqFromReqArb <> reqArb.io.toDSReq_s1
+  dsArb.in.enFromReqArb := reqArb.io.toDSen_s1_2
+  dsArb.in.reqFromReqArb <> reqArb.io.toDSReq_s1_2
   dsArb.in.enFromMPS3 := mainPipe.io.toDS.en_s3
   dsArb.in.reqFromMPS3 := mainPipe.io.toDS.req_s3
   dsArb.in.wdataFromMPS3 := mainPipe.io.toDS.wdata_s3
@@ -113,11 +113,6 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   reqArb.io.fromTXRSP.foreach(_ := txrsp.io.toReqArb)
   reqArb.io.fromTXREQ.foreach(_ := txreq.io.toReqArb)
   reqArb.io.msInfo := mshrCtl.io.msInfo
-  reqArb.io.WPURes := wpu.out.res
-  reqArb.io.DSStage := dsArb.out.mpstage
-
-  wpu.in.read <> reqArb.io.toWPURead
-  wpu.in.update := mainPipe.io.toWPUUpd
 
   reqBuf.io.in <> sinkA.io.task
   reqBuf.io.mshrInfo := mshrCtl.io.msInfo
@@ -141,7 +136,6 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   mainPipe.io.releaseBufResp_s3.bits := releaseBuf.io.resp.data
   mainPipe.io.toDS.rdata := dsArb.out.rdata
   mainPipe.io.toDS.error := dsArb.out.error
-  mainPipe.io.WPUResFromArb_s2 := reqArb.io.WPUResToMP
   // mainPipe.io.grantBufferHint := grantBuf.io.l1Hint
   // mainPipe.io.globalCounter := grantBuf.io.globalCounter
 
@@ -236,6 +230,8 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   mainPipe.io.cmoAllBlock.foreach {_ := sinkA.io.cmoAll.map(_.cmoAllBlock).getOrElse(false.B)}
 
   io.l2FlushDone.foreach {_ := RegNext(sinkA.io.cmoAll.map(_.l2FlushDone).getOrElse(false.B))}
+  sinkA.io.wpuRes.zip(io.wpuResult).foreach(x => x._1 := x._2)
+  io.wpuUpdate.zip(mainPipe.io.toWPUUpd).foreach(x => x._1 := x._2)
 
   /* ===== Hardware Performance Monitor ===== */
   val perfEvents = Seq(mshrCtl, mainPipe).flatMap(_.getPerfEvents)

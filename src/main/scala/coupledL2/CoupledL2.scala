@@ -34,8 +34,8 @@ import coupledL2.prefetch._
 import huancun.{BankBitsKey, TPmetaReq, TPmetaResp}
 import utility.mbist.{MbistInterface, MbistPipeline}
 import utility.sram.{SramBroadcastBundle, SramHelper}
-import coupledL2.wpu.PredWayKey
-import coupledL2.wpu.PredHitKey
+import coupledL2.wpu.WPUUpdate
+import coupledL2.wpu.WPUResult
 
 trait HasCoupledL2Parameters {
   val p: Parameters
@@ -76,7 +76,8 @@ trait HasCoupledL2Parameters {
 
   def mmioBridgeSize = cacheParams.mmioBridgeSize
 
-  def wpuOpt = cacheParams.wpuParam
+  def enWPU = cacheParams.enableWayPred
+  def wpuParam = cacheParams.wpuParam
 
   // ECC
   // tag(data)BankSplit refers to tag(data) splits before ECC encode
@@ -193,6 +194,8 @@ trait HasCoupledL2Parameters {
     (ZeroExt(tag, tagBits), set(setBits - 1, 0), offset(offsetBits - 1, 0))
   }
 
+  def parseBank(x: UInt): UInt = (x >> (offsetBits))(bankBits - 1, 0)
+
   def restoreAddress(x: UInt, idx: Int) = {
     restoreAddressUInt(x, idx.U)
   }
@@ -278,7 +281,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     beatBytes = 32,
     minLatency = 2,
     responseFields = cacheParams.respField,
-    requestKeys = cacheParams.reqKey ++ wpuOpt.map(_ => Seq(PredWayKey, PredHitKey)).getOrElse(None),
+    requestKeys = cacheParams.reqKey,
     endSinkId = idsAll
   )
 
@@ -340,6 +343,8 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       val l2FlushDone = Option.when(cacheParams.enableL2Flush) (Output(Bool()))
       val dft = Option.when(cacheParams.hasDFT)(Input(new SramBroadcastBundle))
       val dft_reset = Option.when(cacheParams.hasMbist)(Input(new DFTResetSignals()))
+      val wpuUpd = Option.when(enWPU) (Vec(banks, Valid(new WPUUpdate()(l2ECCParams))))
+      val wpuRes = Option.when(enWPU) (Flipped(Vec(banks, Valid(new WPUResult()(l2ECCParams)))))
     })
 
     // Display info
