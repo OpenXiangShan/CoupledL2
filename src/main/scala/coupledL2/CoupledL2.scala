@@ -491,6 +491,27 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
 
         slice
     }
+    // prefetchTrains
+    val trainFlowCount = RegInit(0.U(64.W))
+    val newTrainSum = PopCount(prefetchTrains.get.map{pt => pt.valid})
+    when (newTrainSum =/= 0.U) {
+      trainFlowCount := trainFlowCount + newTrainSum - 1.U
+    }.elsewhen(trainFlowCount =/= 0.U) {
+      trainFlowCount := trainFlowCount - 1.U
+    }
+    XSPerfAccumulate("prefetch_trainreq_nack", PopCount(prefetchTrains.get.map{pt => pt.valid}) - 1.U)
+    XSPerfHistogram("prefetch_trainreq_queue", trainFlowCount, true.B, 0, 32, 1)
+
+    // prefetchResps
+    val respFlowCount = RegInit(0.U(64.W))
+    val newRespSum = PopCount(prefetchResps.get.map{pt => pt.valid})
+    when (newRespSum =/= 0.U) {
+      respFlowCount := respFlowCount + newRespSum - 1.U
+    }.elsewhen(respFlowCount =/= 0.U) {
+      respFlowCount := respFlowCount - 1.U
+    }
+    XSPerfAccumulate("prefetch_resp_nack", PopCount(prefetchResps.get.map{pt => pt.valid}) - 1.U)
+    XSPerfHistogram("prefetch_resp_queue", respFlowCount, true.B, 0, 32, 1)
 
     val perfEvents = Seq(("noEvent", 0.U)) ++ slices.zipWithIndex.map {
       case (slide, slide_idx) =>
