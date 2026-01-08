@@ -297,7 +297,6 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     vbop.get.io.pfCtrlOfDelayLatency := delay_latency
     vbop.get.io.req.ready :=  (if(hasReceiver) !pfRcv.get.io.req.valid else true.B)
     vbop.get.io.train <> io.train
-    vbop.get.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
     vbop.get.io.resp <> io.resp
     vbop.get.io.resp.valid := io.resp.valid && io.resp.bits.isBOP
     vbop.get.io.tlb_req <> io.tlb_req
@@ -309,7 +308,6 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       (if(hasReceiver) !pfRcv.get.io.req.valid else true.B) &&
       (if(hasBOP) !vbop.get.io.req.valid else true.B)
     pbop.get.io.train <> io.train
-    pbop.get.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
     pbop.get.io.resp <> io.resp
     pbop.get.io.resp.valid := io.resp.valid && io.resp.bits.isPBOP
   }
@@ -407,7 +405,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   e1.reqsource := io.train.bits.reqsource
   trainTT.log(
     data = e1,
-    en = io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U),
+    en = io.train.valid,
     site = "L2Train_onlyBOP",
     clock, reset
   )
