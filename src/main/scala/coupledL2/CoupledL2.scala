@@ -325,6 +325,10 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       val pfCtrlFromCore = Input(new PrefetchCtrlFromCore)
     //  val l2_hint = Valid(UInt(32.W))
       val l2_hint = ValidIO(new L2ToL1Hint())
+      val l2_hints = Vec(3, ValidIO(new L2ToL1HintInsideL2() {
+        val start = UInt(64.W)
+        val sourceSlice = UInt(4.W)
+      }))
       val l2_tlb_req = new L2ToL1TlbIO(nRespDups = 1)(l2TlbParams)
       val debugTopDown = new Bundle {
         val robTrueCommit = Input(UInt(64.W))
@@ -533,8 +537,8 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       val slices_l1Hint = VecInit(slices.map(_.io.l1Hint))
       val l1HintValids = Cat(slices_l1Hint.map(_.valid).reverse)
       val readysVec = Wire(Vec(node.in.head._2.client.clients.size, UInt(banks.W)))
-      (node.in.head._2.client.clients zip readysVec zip hintChosenVec).foreach {
-        case ((client, readysToSlice), hintChosen) =>
+      (node.in.head._2.client.clients zip readysVec zip hintChosenVec zip io.l2_hints).foreach {
+        case (((client, readysToSlice), hintChosen), io_hint) =>
           val master = Wire(Decoupled())
           val contains = Cat(slices_l1Hint.map(hint => client.sourceId.contains(hint.bits.sourceId)).reverse)
           val arbValids = l1HintValids & contains
@@ -542,6 +546,14 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
           val fires = arbValids & arbReadys
           master.valid := fires.orR
           val selectedHint = Mux1H(fires, slices_l1Hint.map(_.bits))
+          // if (client.supports.probe) {
+            io_hint.valid := master.fire
+            io_hint.bits.isKeyword := selectedHint.isKeyword
+            io_hint.bits.sourceId := selectedHint.sourceId - client.sourceId.start.U
+            io_hint.bits.start := client.sourceId.start.U
+            io_hint.bits.hasData := selectedHint.hasData
+            io_hint.bits.sourceSlice := OHToUInt(fires)
+          // }
           if (client.supports.probe) {
             io.l2_hint.valid := master.fire && selectedHint.hasData
             io.l2_hint.bits.isKeyword := selectedHint.isKeyword
@@ -607,27 +619,27 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     }
     XSPerfAccumulate("grant_data_fire", PopCount(VecInit(grant_data_fire)))
 
-    val hint_source = io.l2_hint.bits.sourceId
+    // val hint_source = io.l2_hint.bits.sourceId
 
-    val grant_data_source = ParallelPriorityMux(slices.map {
-      s => (s.io.in.d.fire, s.io.in.d.bits.source)
-    })
+    // val grant_data_source = ParallelPriorityMux(slices.map {
+    //   s => (s.io.in.d.fire, s.io.in.d.bits.source)
+    // })
 
-    val hintPipe2 = Module(new Pipeline(UInt(32.W), 2))
-    hintPipe2.io.in.valid := io.l2_hint.valid
-    hintPipe2.io.in.bits := hint_source
-    hintPipe2.io.out.ready := true.B
+    // val hintPipe2 = Module(new Pipeline(UInt(32.W), 2))
+    // hintPipe2.io.in.valid := io.l2_hint.valid
+    // hintPipe2.io.in.bits := hint_source
+    // hintPipe2.io.out.ready := true.B
 
-    val hintPipe1 = Module(new Pipeline(UInt(32.W), 1))
-    hintPipe1.io.in.valid := io.l2_hint.valid
-    hintPipe1.io.in.bits := hint_source
-    hintPipe1.io.out.ready := true.B
+    // val hintPipe1 = Module(new Pipeline(UInt(32.W), 1))
+    // hintPipe1.io.in.valid := io.l2_hint.valid
+    // hintPipe1.io.in.bits := hint_source
+    // hintPipe1.io.out.ready := true.B
 
-    val accurateHint = grant_data_fire.orR && hintPipe2.io.out.valid && hintPipe2.io.out.bits === grant_data_source
-    XSPerfAccumulate("accurate3Hints", accurateHint)
+    // val accurateHint = grant_data_fire.orR && hintPipe2.io.out.valid && hintPipe2.io.out.bits === grant_data_source
+    // XSPerfAccumulate("accurate3Hints", accurateHint)
 
-    val okHint = grant_data_fire.orR && hintPipe1.io.out.valid && hintPipe1.io.out.bits === grant_data_source
-    XSPerfAccumulate("ok2Hints", okHint)
+    // val okHint = grant_data_fire.orR && hintPipe1.io.out.valid && hintPipe1.io.out.bits === grant_data_source
+    // XSPerfAccumulate("ok2Hints", okHint)
 
     private val sigFromSrams = Option.when(cacheParams.hasDFT)(SramHelper.genBroadCastBundleTop())
     private val cg = Option.when(cacheParams.hasMbist)(utility.ClockGate.genTeSrc)

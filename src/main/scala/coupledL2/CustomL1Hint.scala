@@ -116,10 +116,12 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
 
 
   // Hint for "chnTask Hit" will fire@s3
+  val respWithDataFired = io.l1Hint.fire && io.l1Hint.bits.hasData
+  val grantCanFlow = Wire(Bool())
   val chn_Grant_s3     = task_s3.valid && !mshrReq_s3 && !need_mshr_s3 && isGrant(task_s3.bits)
   val chn_GrantData_s3 = task_s3.valid && !mshrReq_s3 && !need_mshr_s3 && isGrantData(task_s3.bits)
   val chn_AccessAckData_s3 = task_s3.valid && !mshrReq_s3 && !need_mshr_s3 && isAccessAckData(task_s3.bits)
-  val enqValid_s3 = chn_Grant_s3 || chn_GrantData_s3 || chn_AccessAckData_s3
+  val enqValid_s3 = (chn_Grant_s3 && (!grantCanFlow || RegNext(respWithDataFired, false.B) || !io.l1Hint.ready)) || chn_GrantData_s3 || chn_AccessAckData_s3
   val enqSource_s3 = task_s3.bits.sourceId
   val enqKeyWord_s3 = task_s3.bits.isKeyword.getOrElse(false.B)
   val enqOpcode_s3 = ParallelPriorityMux(
@@ -135,6 +137,7 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   val hintEntriesWidth = log2Ceil(hintEntries)
   val hintQueue = Module(new Queue(new HintQueueEntry, hintEntries))
   val hintNeedCancel = Wire(Bool())
+  grantCanFlow := !hintQueue.io.deq.valid
 
   // this will have at most 2 entries
   val hint_s1Queue = Module(new Queue(new HintQueueEntry, 4, flow = true))
@@ -158,7 +161,6 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
 
   // For AccessAckData that would never go to LSU, insert a dequing bubble for channel delay accuracy
 
-  val respWithDataFired = io.l1Hint.fire && io.l1Hint.bits.hasData
   hintQueue.io.enq.valid := enqValid_s3 || hint_s1Queue.io.deq.valid
   hintQueue.io.enq.bits.opcode := Mux(enqValid_s3, enqOpcode_s3, hint_s1Queue.io.deq.bits.opcode)
   hintQueue.io.enq.bits.source := Mux(enqValid_s3, enqSource_s3, hint_s1Queue.io.deq.bits.source)
@@ -167,8 +169,8 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
 
   hintNeedCancel := hintQueue.io.deq.valid && s2Deq.valid && hintQueue.io.deq.bits === s2Deq.bits
 
-  io.l1Hint.valid := hintQueue.io.deq.valid && !hintNeedCancel && !RegNext(respWithDataFired, false.B)
-  io.l1Hint.bits.sourceId := hintQueue.io.deq.bits.source
-  io.l1Hint.bits.isKeyword := hintQueue.io.deq.bits.isKeyword
-  io.l1Hint.bits.hasData := Seq(GrantData, AccessAckData).map(hintQueue.io.deq.bits.opcode === _).reduce(_||_)
+  io.l1Hint.valid := (hintQueue.io.deq.valid && !hintNeedCancel || grantCanFlow && chn_Grant_s3) && !RegNext(respWithDataFired, false.B)
+  io.l1Hint.bits.sourceId := Mux(grantCanFlow && chn_Grant_s3, task_s3.bits.sourceId, hintQueue.io.deq.bits.source)
+  io.l1Hint.bits.isKeyword := Mux(grantCanFlow && chn_Grant_s3, task_s3.bits.isKeyword.getOrElse(false.B), hintQueue.io.deq.bits.isKeyword)
+  io.l1Hint.bits.hasData := Mux(grantCanFlow && chn_Grant_s3, false.B, Seq(GrantData, AccessAckData).map(hintQueue.io.deq.bits.opcode === _).reduce(_||_))
 }

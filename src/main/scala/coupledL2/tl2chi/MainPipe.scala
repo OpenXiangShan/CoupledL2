@@ -733,7 +733,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val dataError_s4 = RegInit(false.B)
   val l2Error_s4 = RegInit(false.B)
   val pendingTXDAT_s4 = task_s4.bits.fromB && !task_s4.bits.mshrTask && task_s4.bits.toTXDAT
-  val latch_grant_s4 = true
+  val latch_grant_s4 = false
   val pendingD_s4 = if (latch_grant_s4) {
     task_s4.bits.fromA && !task_s4.bits.mshrTask && !need_write_releaseBuf_s4 && (
       task_s4.bits.opcode === GrantData || task_s4.bits.opcode === AccessAckData || task_s4.bits.opcode === Grant
@@ -827,7 +827,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   // overwrite opcode: if sinkReq can respond, use sink_resp_s3.bits.opcode = Grant/GrantData
   customL1Hint.io.s3.task.bits.opcode := Mux(sink_resp_s3.valid, sink_resp_s3.bits.opcode, task_s3.bits.opcode)
   // customL1Hint.io.s3.d         := d_s3.valid
-  customL1Hint.io.s3.need_mshr := need_mshr_s3
+  customL1Hint.io.s3.need_mshr := need_mshr_s3_a
 
   // customL1Hint.io.s4.task                  := task_s4
   // customL1Hint.io.s4.d                     := d_s4.valid
