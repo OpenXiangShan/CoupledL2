@@ -304,15 +304,10 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   val wen   = wen_c || wen_mshr
 
   // This is to let io.toDS.req_s3.valid hold for 2 cycles (see DataStorage for details)
-  val task_s3_valid_hold2 = RegInit(0.U(2.W))
-  when(task_s2.valid) {
-    task_s3_valid_hold2 := "b11".U
-  }.otherwise {
-    task_s3_valid_hold2 := task_s3_valid_hold2 >> 1.U
-  }
+  val task_s3_valid_hold2 = RegEnable(task_s2.valid, false.B, !RegNext(task_s2.valid))
 
-  io.toDS.en_s3           := task_s3.valid && (ren || wen)
-  io.toDS.req_s3.valid    := task_s3_valid_hold2(0) && (ren || wen)
+  io.toDS.en_s3 := task_s3.valid && (ren || wen)
+  io.toDS.req_s3.valid := task_s3_valid_hold2 && (ren || wen)
   io.toDS.req_s3.bits.way := Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.way,
     Mux(mshr_req_s3, req_s3.way, dirResult_s3.way))
   io.toDS.req_s3.bits.set := Mux(mshr_req_s3, req_s3.set, dirResult_s3.set)
