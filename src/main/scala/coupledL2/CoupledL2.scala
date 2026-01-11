@@ -62,6 +62,8 @@ trait HasCoupledL2Parameters {
                   else cacheParams.clientCaches.head.vaddrBitsOpt
   def fullVAddrBits = vaddrBitsOpt.getOrElse(0) + offsetBits
   // from L1 load miss cache require
+  def pcBitOpt  = if(cacheParams.clientCaches.isEmpty) None
+                  else cacheParams.clientCaches.head.pcBitOpt
   def isKeywordBitsOpt = if(cacheParams.clientCaches.isEmpty) None
                   else cacheParams.clientCaches.head.isKeywordBitsOpt
 
@@ -104,6 +106,7 @@ trait HasCoupledL2Parameters {
   def hasBOP = prefetchers.exists(_.isInstanceOf[BOPParameters])
   def hasReceiver = prefetchers.exists(_.isInstanceOf[PrefetchReceiverParams])
   def hasTPPrefetcher = prefetchers.exists(_.isInstanceOf[TPParameters])
+  def hasNLPrefetcher = prefetchers.exists(_.isInstanceOf[NLParameters])
   def hasPrefetchBit = prefetchers.exists(_.hasPrefetchBit) // !! TODO.test this
   def hasPrefetchSrc = prefetchers.exists(_.hasPrefetchSrc)
   def topDownOpt = if(cacheParams.elaboratedTopDown) Some(true) else None

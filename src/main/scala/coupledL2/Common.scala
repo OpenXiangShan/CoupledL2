@@ -50,6 +50,7 @@ class MergeTaskBundle(implicit p: Parameters) extends L2Bundle {
   val param = UInt(3.W)
   val sourceId = UInt(sourceIdBits.W) // tilelink sourceID
   val meta = new MetaEntry()
+  val pc = pcBitOpt.map(_ => UInt(pcBitOpt.get.W))    // 保证合并请求的时候pc也合并进来了
 }
 
 // We generate a Task for every TL request
@@ -63,6 +64,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val off = UInt(offsetBits.W)
   val alias = aliasBitsOpt.map(_ => UInt(aliasBitsOpt.get.W)) // color bits in cache-alias issue
   val vaddr = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W)) // vaddr passed by client cache
+  val pc = pcBitOpt.map(_ => UInt(pcBitOpt.get.W))    // PC (Program Counter) passed by client cache
   // from L1 load miss require 
   val isKeyword = isKeywordBitsOpt.map(_ => Bool())
   val opcode = UInt(4.W)                  // type of the task operation

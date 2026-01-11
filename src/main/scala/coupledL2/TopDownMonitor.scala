@@ -115,6 +115,7 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     ("SMS", MemReqSource.Prefetch2L2SMS.id.U, PfSource.SMS.id.U),
     ("Stride", MemReqSource.Prefetch2L2Stride.id.U, PfSource.Stride.id.U),
     ("Stream", MemReqSource.Prefetch2L2Stream.id.U, PfSource.Stream.id.U),
+    ("NextLine", MemReqSource.Prefetch2L2NL.id.U, PfSource.NL.id.U),
     ("TP", MemReqSource.Prefetch2L2TP.id.U, PfSource.TP.id.U),
     ("Berti", MemReqSource.Prefetch2L2Berti.id.U, PfSource.Berti.id.U)
   )

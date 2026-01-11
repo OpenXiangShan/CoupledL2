@@ -123,12 +123,15 @@ class PrefetchReq(implicit p: Parameters) extends PrefetchBundle {
   def isPBOP:Bool = pfSource === MemReqSource.Prefetch2L2PBOP.id.U
   def isSMS:Bool = pfSource === MemReqSource.Prefetch2L2SMS.id.U
   def isTP:Bool = pfSource === MemReqSource.Prefetch2L2TP.id.U
+  def isNL:Bool = pfSource === MemReqSource.Prefetch2L2NL.id.U
+  
   def needAck:Bool = pfSource === MemReqSource.Prefetch2L2BOP.id.U || pfSource === MemReqSource.Prefetch2L2PBOP.id.U
   def fromL2:Bool =
     pfSource === MemReqSource.Prefetch2L2BOP.id.U ||
       pfSource === MemReqSource.Prefetch2L2PBOP.id.U ||
       pfSource === MemReqSource.Prefetch2L2SMS.id.U ||
-      pfSource === MemReqSource.Prefetch2L2TP.id.U
+      pfSource === MemReqSource.Prefetch2L2TP.id.U  ||
+      pfSource === MemReqSource.Prefetch2L2NL.id.U 
 }
 
 class PrefetchResp(implicit p: Parameters) extends PrefetchBundle {
@@ -143,11 +146,13 @@ class PrefetchResp(implicit p: Parameters) extends PrefetchBundle {
   def isPBOP: Bool = pfSource === MemReqSource.Prefetch2L2PBOP.id.U
   def isSMS: Bool = pfSource === MemReqSource.Prefetch2L2SMS.id.U
   def isTP: Bool = pfSource === MemReqSource.Prefetch2L2TP.id.U
+  def isNL: Bool = pfSource === MemReqSource.Prefetch2L2NL.id.U //add L2 nextline 
   def fromL2: Bool =
     pfSource === MemReqSource.Prefetch2L2BOP.id.U ||
       pfSource === MemReqSource.Prefetch2L2PBOP.id.U ||
       pfSource === MemReqSource.Prefetch2L2SMS.id.U ||
-      pfSource === MemReqSource.Prefetch2L2TP.id.U
+      pfSource === MemReqSource.Prefetch2L2TP.id.U  ||
+      pfSource === MemReqSource.Prefetch2L2NL.id.U 
 }
 
 class PrefetchTrain(implicit p: Parameters) extends PrefetchBundle {
@@ -156,6 +161,7 @@ class PrefetchTrain(implicit p: Parameters) extends PrefetchBundle {
   val needT = Bool()
   val source = UInt(sourceIdBits.W)
   val vaddr = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W))
+  val pc    =  pcBitOpt.map(_ => UInt(pcBitOpt.get.W))
   val hit = Bool()
   val prefetched = Bool()
   val pfsource = UInt(PfSource.pfSourceBits.W)
@@ -287,6 +293,8 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   ) else None
 
   val tp = if (hasTPPrefetcher) Some(Module(new TemporalPrefetch())) else None
+  // define Next-Line Prefetcher
+  val nl = if (hasNLPrefetcher) Some(Module(new NextLinePrefetchIdeal())) else None
   // prefetch from upper level
   val pfRcv = if (hasReceiver) Some(Module(new PrefetchReceiver())) else None
 
@@ -342,6 +350,19 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
 
     tp.get.io.tpmeta_port <> tpio.tpmeta_port.get
   }
+  //zzq add next_line prefetcher into L2 prefetcher
+  if (hasNLPrefetcher) {
+    //is open NL prefetcher? 
+    nl.get.io.enable := true.B
+    nl.get.io.train <> io.train //input train data 
+    nl.get.io.resp <> io.resp  //return prefetch en and prefetch addr
+
+    //nl priority lowest,wait L1 prefetcher, BOP and TP prefetcher
+    nl.get.io.req.ready := (if(hasReceiver) !pfRcv.get.io.req.valid else true.B) &&
+      (if(hasBOP) !vbop.get.io.req.valid && !pbop.get.io.req.valid else true.B) &&
+      (if(hasTPPrefetcher) !tp.get.io.req.valid else true.B)
+  }
+  //zzq add end 
   private val mbistPl = MbistPipeline.PlaceMbistPipeline(2, "MbistPipeL2Prefetcher", cacheParams.hasMbist && (hasBOP || hasTPPrefetcher))
 
   // =================== Connection of all Prefetchers =====================
@@ -353,12 +374,14 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   pftQueue.io.enq.valid :=
     (if (hasReceiver)     pfRcv.get.io.req.valid                         else false.B) ||
     (if (hasBOP)          vbop.get.io.req.valid || pbop.get.io.req.valid else false.B) ||
-    (if (hasTPPrefetcher) tp.get.io.req.valid                            else false.B)
+    (if (hasTPPrefetcher) tp.get.io.req.valid                            else false.B) ||
+    (if (hasNLPrefetcher) nl.get.io.req.valid                            else false.B)
   pftQueue.io.enq.bits := ParallelPriorityMux(Seq(
     if (hasReceiver)     pfRcv.get.io.req.valid -> pfRcv.get.io.req.bits else false.B -> 0.U.asTypeOf(io.req.bits),
     if (hasBOP)          vbop.get.io.req.valid -> vbop.get.io.req.bits   else false.B -> 0.U.asTypeOf(io.req.bits),
     if (hasBOP)          pbop.get.io.req.valid -> pbop.get.io.req.bits   else false.B -> 0.U.asTypeOf(io.req.bits),
-    if (hasTPPrefetcher) tp.get.io.req.valid -> tp.get.io.req.bits       else false.B -> 0.U.asTypeOf(io.req.bits)
+    if (hasTPPrefetcher) tp.get.io.req.valid -> tp.get.io.req.bits       else false.B -> 0.U.asTypeOf(io.req.bits),
+    if (hasNLPrefetcher) nl.get.io.req.valid -> nl.get.io.req.bits       else false.B -> 0.U.asTypeOf(io.req.bits)
   ))
 
   pipe.io.in <> pftQueue.io.deq
