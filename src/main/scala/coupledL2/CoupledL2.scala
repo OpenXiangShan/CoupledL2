@@ -603,28 +603,6 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     }
     XSPerfAccumulate("grant_data_fire", PopCount(VecInit(grant_data_fire)))
 
-    val hint_source = io.l2_hint.bits.sourceId
-
-    val grant_data_source = ParallelPriorityMux(slices.map {
-      s => (s.io.in.d.fire, s.io.in.d.bits.source)
-    })
-
-    val hintPipe2 = Module(new Pipeline(UInt(32.W), 2))
-    hintPipe2.io.in.valid := io.l2_hint.valid
-    hintPipe2.io.in.bits := hint_source
-    hintPipe2.io.out.ready := true.B
-
-    val hintPipe1 = Module(new Pipeline(UInt(32.W), 1))
-    hintPipe1.io.in.valid := io.l2_hint.valid
-    hintPipe1.io.in.bits := hint_source
-    hintPipe1.io.out.ready := true.B
-
-    val accurateHint = grant_data_fire.orR && hintPipe2.io.out.valid && hintPipe2.io.out.bits === grant_data_source
-    XSPerfAccumulate("accurate3Hints", accurateHint)
-
-    val okHint = grant_data_fire.orR && hintPipe1.io.out.valid && hintPipe1.io.out.bits === grant_data_source
-    XSPerfAccumulate("ok2Hints", okHint)
-
     private val sigFromSrams = Option.when(cacheParams.hasDFT)(SramHelper.genBroadCastBundleTop())
     private val cg = Option.when(cacheParams.hasMbist)(utility.ClockGate.genTeSrc)
     if (cacheParams.hasMbist) {
