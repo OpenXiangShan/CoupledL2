@@ -142,6 +142,44 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   val l2prefetchLate = io.latePF.map(_.valid)
   // TODO: get difference prefetchSrc for detailed analysis
   // FIXME lyq: it's abnormal l2prefetchLate / l2prefetchUseful is more than 1
+  class TotalPrefetchEntry extends Bundle{
+    val paddr = UInt(fullAddressBits.W)
+    val isPrefetchReq = Bool()
+    val pf_source = UInt(pfTypes.length.W)
+    val isDemandReq = Bool()
+    val hit = Bool()
+    val hit_prefetch = Bool()
+    val hit_prefetch_source = UInt(pfTypes.length.W)
+  }
+  val pfTT = ChiselDB.createTable("L2TotalPrefetchTable", new TotalPrefetchEntry, basicDB = true)
+  io.dirResult.foreach{ r =>
+    val entry = Wire(new TotalPrefetchEntry)
+    val valid = r.valid && r.bits.replacerInfo.channel === 1.U
+    val isPrefetchReq = MemReqSource.isL2Prefetch(r.bits.replacerInfo.reqSource) && !reqFromCPU(r.bits)
+    val isDemandReq = reqFromCPU(r.bits) && !isPrefetchReq
+    
+    val pf_source_oh = OHToUInt(VecInit(pfTypes.map{case (_, pfSrc, _) => pfSrc === r.bits.replacerInfo.reqSource}))
+    val pf_source = Mux(pf_source_oh.orR, pf_source_oh, pfTypes.length.U)
+    
+    val hit = r.bits.hit
+    val hit_prefetch = Mux(hit, r.bits.meta.prefetch.getOrElse(false.B), false.B)
+    val hit_prefetch_oh = OHToUInt(VecInit(pfTypes.map{case (_, _, pfSrc) => pfSrc === r.bits.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U)}))
+    val hit_prefetch_source = Mux(hit_prefetch_oh.orR, hit_prefetch_oh, pfTypes.length.U)
+
+    entry.paddr := Cat(r.bits.tag, r.bits.set, 0.U(6.W))
+    entry.isPrefetchReq := isPrefetchReq
+    entry.pf_source := pf_source
+    entry.isDemandReq := isDemandReq
+    entry.hit := hit
+    entry.hit_prefetch := hit_prefetch
+    entry.hit_prefetch_source := hit_prefetch_source
+    pfTT.log(
+      data = entry,
+      en = valid,
+      site = "L2TotalPrefetchSite",
+      clock, reset
+    )
+  }
 
   // PF Accuracy/Coverage/Late Accumulate/Rolling
   XSPerfAccumulate("l2prefetchSent", PopCount(l2prefetchSent))
