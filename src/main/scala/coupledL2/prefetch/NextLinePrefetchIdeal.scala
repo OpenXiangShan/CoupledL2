@@ -16,14 +16,14 @@ import utility.XSPerfAccumulate
 //define Next-Line Prefetcher base parameters
 case class NLParameters(
     tablePcTagBits: Int = 15, //data field in block
-    timeSampleCounterBits:Int = 64, //采样计数器位宽
+    timeSampleCounterBits:Int = 14, //采样计数器位宽
     timeSampleRate : Int = 256, //采样率
     timeSampleMinDistance :Int = 4, //采样最小距离
 
     //zzq Sample Table config 
     //use 4 way，then there are 8 blocks in way 
     sampleTableWays: Int = 4, 
-    sampleTableSets: Int = 32,
+    // sampleTableSets: Int = 32,
 
     //zzq offset bits in a block
     //sample entry  tag bits ,it used to distinguish with other entry
@@ -70,7 +70,8 @@ trait HasNLParams extends HasCoupledL2Parameters {
   def timeSampleMinDistance = nlParams.timeSampleMinDistance
   def timeSampleMaxDistance = blocks * blockBytes / 2 //计算出L2cache是多少个字节，然后除2就是max的值了
   //
-  def sampleTableSetBits   = log2Ceil(nlParams.sampleTableSets)
+  def sampleTableSets      = timeSampleMaxDistance / nlParams.timeSampleRate
+  def sampleTableSetBits   = log2Ceil(sampleTableSets)
   def sampleTableWaysBits  = log2Ceil(nlParams.sampleTableWays)
   def sampleTableTagBits   = vaddrBits - sampleTableSetBits - offsetBits // offsetBits=6bit，setBits=5bit, tag=64-5-6=53
   def sampleTablePcTagBits = tablePcTagBits
@@ -252,6 +253,7 @@ val timeSampleCounter = RegInit(0.U(timeSampleCounterBits.W))
   XSPerfAccumulate("load_hit_prefetched_times",validTrain&  io.train.bits.prefetched)//nl接收到的req里面load在cache命中预取器的次数
   XSPerfAccumulate("transmit_prefetch_req_times",prefetcherPattern.io.resp.valid && prefetcherPattern.io.resp.bits.needPrefetch && 
                   io.enable)//nl发起的预取请求个数
+  XSPerfAccumulate("timeSampleCount_reset_times",(!timeSampleCounter.orR) & trainEn)
 
 }
 

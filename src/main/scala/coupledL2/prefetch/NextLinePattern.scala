@@ -116,9 +116,14 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
 
   s1_patternNewEntry := s1_trainResp.data
  
-  when(s1_trainValid) {
-    //判断是否进行更新
-    when(s1_trainResp.hit) { // 命中，更新饱和计数器
+  //更新与插入逻辑
+  when(s1_trainValid) {//是否是一个有效的训练数据
+    when(s1_trainResp.hit) { //训练数据命中，则是更新路线
+
+      s1_patternUpdateEn := true.B // 使能更新
+      s1_patternNewEntry.valid := true.B
+      s1_patternUpdateIdx := s1_trainResp.hitIdx
+
       val currentSat = s1_trainResp.data.sat
       when(s1_trainTouched) {
         // 预取命中，增加饱和计数器（如果未达到最大值）
@@ -127,22 +132,17 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
         // 预取未命中，减少饱和计数器（如果大于0）
         s1_patternNewEntry.sat := Mux(currentSat === 0.U, 0.U, currentSat - 1.U)
       }
-     
-      // 使能更新
-      s1_patternUpdateEn := true.B
-      s1_patternUpdateIdx := s1_trainResp.hitIdx
-      s1_patternNewEntry.valid := true.B
       
-    }.otherwise {// 未命中
       
-      //使能插入
-      s1_patternInsertEn := true.B
+    }.otherwise {// 训练数据未命中，则插入路线
+      s1_patternInsertEn := true.B //使能插入
      
       s1_patternNewEntry.valid := true.B
-      s1_patternNewEntry.sat := 1.U  // 初始置信度为1
       s1_patternInsertIdx := patternTableReplacer.get_replace_way(patternTableReplaceState)
+      s1_patternNewEntry.sat := 1.U  // 初始置信度为1
     }
   }
+
   // 预取逻辑: 判断是否需要预取
   val s1_needPrefetch = s1_reqValid && s1_prefetchResp.hit && 
                         s1_prefetchResp.data.valid &&
@@ -187,6 +187,7 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   patternTable.io.w(patternTableInsertPort).req.idx := s2_patternInsertIdx
   patternTable.io.w(patternTableInsertPort).req.data :=  s2_patternNewEntry
 
+  XSPerfAccumulate("NextLinePattern_train_data_touched_ture_time",s1_trainValid&s1_trainTouched)//发过来的训练数据的tuouched是true的次数
   XSPerfAccumulate("NextLinePattern_train_times",s1_trainValid) //patternTable收到的多少个训练请求
   XSPerfAccumulate("NextLinePattern_train_hit_times",s1_trainValid && s1_trainResp.hit)//训练数据在patternTable中命中的次数
   XSPerfAccumulate("NextLinePattern_train_not_hit_times",s1_trainValid && !s1_trainResp.hit)//训练数据在patternTable中未命中的次数（插入新表项的次数）

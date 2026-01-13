@@ -376,12 +376,15 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     (if (hasBOP)          vbop.get.io.req.valid || pbop.get.io.req.valid else false.B) ||
     (if (hasTPPrefetcher) tp.get.io.req.valid                            else false.B) ||
     (if (hasNLPrefetcher) nl.get.io.req.valid                            else false.B)
+
   pftQueue.io.enq.bits := ParallelPriorityMux(Seq(
     if (hasReceiver)     pfRcv.get.io.req.valid -> pfRcv.get.io.req.bits else false.B -> 0.U.asTypeOf(io.req.bits),
+    // if (hasNLPrefetcher) nl.get.io.req.valid -> nl.get.io.req.bits       else false.B -> 0.U.asTypeOf(io.req.bits),//提升这个NL的优先级
     if (hasBOP)          vbop.get.io.req.valid -> vbop.get.io.req.bits   else false.B -> 0.U.asTypeOf(io.req.bits),
     if (hasBOP)          pbop.get.io.req.valid -> pbop.get.io.req.bits   else false.B -> 0.U.asTypeOf(io.req.bits),
+    // if (hasTPPrefetcher) tp.get.io.req.valid -> tp.get.io.req.bits       else false.B -> 0.U.asTypeOf(io.req.bits)
     if (hasTPPrefetcher) tp.get.io.req.valid -> tp.get.io.req.bits       else false.B -> 0.U.asTypeOf(io.req.bits),
-    if (hasNLPrefetcher) nl.get.io.req.valid -> nl.get.io.req.bits       else false.B -> 0.U.asTypeOf(io.req.bits)
+    if (hasNLPrefetcher) nl.get.io.req.valid -> nl.get.io.req.bits       else false.B -> 0.U.asTypeOf(io.req.bits)//提升这个NL的优先级
   ))
 
   pipe.io.in <> pftQueue.io.deq
@@ -391,18 +394,21 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val hasVBOPReq = if (hasBOP) vbop.get.io.req.valid else false.B
   val hasPBOPReq = if (hasBOP) pbop.get.io.req.valid else false.B
   val hasTPReq = if (hasTPPrefetcher) tp.get.io.req.valid else false.B
+  val hasNLReq = if (hasNLPrefetcher) nl.get.io.req.valid else false.B
 
   XSPerfAccumulate("prefetch_req_fromL1", hasReceiverReq)
   XSPerfAccumulate("prefetch_req_fromVBOP", hasVBOPReq)
   XSPerfAccumulate("prefetch_req_fromPBOP", hasPBOPReq)
   XSPerfAccumulate("prefetch_req_fromBOP", hasVBOPReq || hasPBOPReq)
   XSPerfAccumulate("prefetch_req_fromTP",  hasTPReq)
+  XSPerfAccumulate("prefetch_req_fromNL",  hasNLReq)
 
   XSPerfAccumulate("prefetch_req_selectL1", hasReceiverReq)
   XSPerfAccumulate("prefetch_req_selectVBOP", hasVBOPReq && !hasReceiverReq)
   XSPerfAccumulate("prefetch_req_selectPBOP", hasPBOPReq && !hasReceiverReq && !hasVBOPReq)
   XSPerfAccumulate("prefetch_req_selectBOP", (hasPBOPReq || hasVBOPReq) && !hasReceiverReq)
   XSPerfAccumulate("prefetch_req_selectTP", hasTPReq && !hasReceiverReq && !hasVBOPReq && !hasPBOPReq)
+  XSPerfAccumulate("prefetch_req_selectNL", hasNLReq && !hasTPReq && !hasReceiverReq && !hasVBOPReq && !hasPBOPReq)
   XSPerfAccumulate("prefetch_req_SMS_other_overlapped",
     hasReceiverReq && (hasVBOPReq || hasPBOPReq || hasTPReq))
 
