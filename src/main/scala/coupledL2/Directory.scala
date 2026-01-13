@@ -21,7 +21,7 @@ import chisel3._
 import chisel3.util._
 import utility.mbist.MbistPipeline
 import coupledL2.utils._
-import utility.{ParallelPriorityMux, RegNextN, XSPerfAccumulate, Code}
+import utility.{ParallelPriorityMux, RegNextN, XSPerfAccumulate, XSPerfHistogram, Code}
 import utility.sram.SRAMTemplate
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.prefetch.PfSource
@@ -195,7 +195,8 @@ class Directory(implicit p: Parameters) extends L2Module {
   */
   val reqValid_s2 = RegNext(io.read.fire, false.B)
   val reqValid_s3 = RegNext(reqValid_s2, false.B)
-  val req_s2 = RegEnable(io.read.bits, 0.U.asTypeOf(io.read.bits), io.read.fire)
+  val req_s1 = io.read.bits
+  val req_s2 = RegEnable(req_s1, 0.U.asTypeOf(req_s1), io.read.fire)
   val req_s3 = RegEnable(req_s2, 0.U.asTypeOf(req_s2), reqValid_s2)
 
   val refillReqValid_s2 = RegNext(io.read.fire && io.read.bits.refill, false.B)
@@ -256,15 +257,28 @@ class Directory(implicit p: Parameters) extends L2Module {
   // or using by Alias-Acquire (hit), can not be used for replace.
   // choose free way to refill, if all ways are occupied, we cancel the Grant and LET IT RETRY
   // compare is done at Stage2 for better timing
-  val occWayMask_s2 = VecInit(io.msInfo.map(s =>
+  val occWayMask_s1 = VecInit(io.msInfo.map(s =>
     Mux(
-      s.valid && (s.bits.set === req_s2.set) && (s.bits.blockRefill || s.bits.dirHit),
+      s.valid && (s.bits.set === req_s1.set) && (s.bits.blockRefill || s.bits.dirHit),
       UIntToOH(s.bits.way, ways),
       0.U(ways.W)
     )
-  )).reduceTree(_ | _)
+  )).reduceTree(_ | _) |
+    Mux(refillReqValid_s3 || reqValid_s3 && io.resp.bits.hit, UIntToOH(io.resp.bits.way, ways), 0.U(ways.W))
 
-  io.retryFastFwd := occWayMask_s2.andR
+  // Don't remove this which can test retry
+  // val enable_force_retry = true
+  // val occWayMask_s2 = if(enable_force_retry) {
+  //   val forceRetry = Counter(refillReqValid_s2, 4)
+  //   Mux(forceRetry._1 === 0.U,
+  //     ~0.U(ways.W), RegEnable(occWayMask_s1, io.read.fire && io.read.bits.refill))
+  // } else {
+  //   RegEnable(occWayMask_s1, io.read.fire && io.read.bits.refill)
+  // }
+
+  val occWayMask_s2 = RegEnable(occWayMask_s1, io.read.fire && io.read.bits.refill)
+
+  io.retryFastFwd := occWayMask_s2.andR && refillReqValid_s2
   val freeWayMask_s3 = RegEnable(~occWayMask_s2, refillReqValid_s2)
   val refillRetry = !(freeWayMask_s3.orR)
 
