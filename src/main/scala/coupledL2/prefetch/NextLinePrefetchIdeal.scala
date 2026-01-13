@@ -189,11 +189,14 @@ class NextLinePrefetchIdeal(implicit p: Parameters) extends NLModule {
     val req = DecoupledIO(new PrefetchReq) //Next line prefetcher Request access L2
   })
 
+
+val validTrain  = io.enable && io.train.fire &&io.train.bits.reqsource === MemReqSource.CPULoadData.id.U  //只使用时load请求进行训练和预测
+val shouldTrain = validTrain && (!io.train.bits.hit || io.train.bits.prefetched)
+
 // 采样计数器(用于采样训练)
-val trainEn = io.train.fire
 val timeSampleCounter = RegInit(0.U(timeSampleCounterBits.W))
 //更新timeSampleCounter的值
-  when(trainEn) {
+  when(shouldTrain) {
     when(timeSampleCounter === ((1.U << timeSampleCounterBits) - 1.U)) {
       timeSampleCounter := 0.U  // 溢出时归零
     }.otherwise {
@@ -215,8 +218,7 @@ val timeSampleCounter = RegInit(0.U(timeSampleCounterBits.W))
   // 1. miss 时
   // 2. hit，且是hit预取的，
   
-  val validTrain = io.enable && io.train.valid &&io.train.bits.reqsource === MemReqSource.CPULoadData.id.U  //只使用时load请求进行训练和预测
-  val shouldTrain = validTrain && (!io.train.bits.hit || io.train.bits.prefetched)
+  
                   
   prefetcherSample.io.train.valid := shouldTrain
   prefetcherSample.io.train.bits.addr := io.train.bits.addr
@@ -233,21 +235,19 @@ val timeSampleCounter = RegInit(0.U(timeSampleCounterBits.W))
   prefetcherPattern.io.req.bits.addr := io.train.bits.addr
   prefetcherPattern.io.req.bits.pc := io.train.bits.pc.getOrElse(0.U)
 
-  // ========== 修复 5: Pattern 输出 -> 预取请求 ==========
-  io.req.valid := prefetcherPattern.io.resp.valid && 
-                  prefetcherPattern.io.resp.bits.needPrefetch && 
-                  io.enable
+  // ========== 发起 预取请求 ==========
+  
   prefetcherPattern.io.resp.ready := !io.enable //这个传入的resp信号我不使用，所以设置一直接收
-
-  // ========== 修复 6: 地址转换（假设 nextAddr 是物理地址）==========
-  val nextAddr = prefetcherPattern.io.resp.bits.nextAddr
-  // 注意: 如果 nextAddr 是虚拟地址，这里会有问题！需要确认 Pattern 模块的实现
+  val nextAddr = prefetcherPattern.io.resp.bits.nextAddr // 注意: 如果 nextAddr 是虚拟地址，会有问题！
+  
+  io.req.valid := io.enable && prefetcherPattern.io.resp.valid && 
+                  prefetcherPattern.io.resp.bits.needPrefetch 
   io.req.bits.tag := nextAddr(fullAddressBits - 1, setBits + offsetBits)
   io.req.bits.set := nextAddr(setBits + offsetBits - 1, offsetBits)
   io.req.bits.vaddr.foreach(_ := 0.U)  // NL 预取器不使用 vaddr
   io.req.bits.needT := false.B  // 预取默认不需要独占权限
   io.req.bits.source := 0.U  // 由 L2 分配
-  io.req.bits.pfSource := MemReqSource.Prefetch2L2NL.id.U  // ← 你需要定义这个常量
+  io.req.bits.pfSource := MemReqSource.Prefetch2L2NL.id.U  
 
   //训练数据分析
   XSPerfAccumulate("load_miss_times", validTrain & !io.train.bits.hit)//nl接收到req是load miss的次数
