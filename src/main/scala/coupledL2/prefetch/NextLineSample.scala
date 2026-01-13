@@ -244,8 +244,18 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   sampleTableReplaceStateRegs.io.w(sampleTableReplacePort).req.data := VecInit(Seq.fill(1)(s2_sampleTableReplaceStateReq.state))
 
   //
+  XSPerfAccumulate("sampleTable_train_times",s0_valid)//sampleTable的训练次数
   
-  XSPerfAccumulate("NextLineSample_insert_time", s0_sampleTableReplaceEn)//sampleTable采用到新数据
-  XSPerfAccumulate("sampleTable_update_timnes",s1_sampleTableUpdateEn) //sampleTable更新数据
+  //replace分析
+  XSPerfAccumulate("sampleTable_insert_times", s0_sampleTableReplaceEn)//sampleTable采用到新数据
+
+  //更新分析
+  XSPerfAccumulate("sampleTable_update_req_not_hit_times",s1_valid & !sampleTableUpdateHit)
+  XSPerfAccumulate("sampleTable_update_req_hit_over_board_times",s1_valid & sampleTableUpdateHit & !realate)
+  XSPerfAccumulate("sampleTable_update_times",s1_sampleTableUpdateEn) //sampleTable更新数据
+
+  //sampleTable给patternTable的训练数据和victim data
+  XSPerfAccumulate("sampleTable_victim_touched_true_times",s1_sampleTableReplaceEn & s1_sampleTableVictimEntry.touched)
+  XSPerfAccumulate("sampleTable_victim_touched_false_times",s1_sampleTableReplaceEn & !s1_sampleTableVictimEntry.touched))
 
 }

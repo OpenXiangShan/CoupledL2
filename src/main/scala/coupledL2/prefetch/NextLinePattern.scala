@@ -144,9 +144,9 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   }
 
   // 预取逻辑: 判断是否需要预取
-  val s1_needPrefetch = s1_reqValid && s1_prefetchResp.hit && 
-                        s1_prefetchResp.data.valid &&
-                        (s1_prefetchResp.data.sat === ((1.U << patternTableSatBits) - 1.U))
+  val s1_reqHitValidEntry = s1_reqValid && s1_prefetchResp.hit && 
+                           s1_prefetchResp.data.valid
+  val s1_needPrefetch = s1_reqHitValidEntry & (s1_prefetchResp.data.sat === ((1.U << patternTableSatBits) - 1.U))
   
   io.resp.valid             := RegNext(s1_needPrefetch, false.B) //设置初始值为false.B
   io.resp.bits.needPrefetch := RegNext(s1_needPrefetch, false.B)
@@ -187,10 +187,26 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   patternTable.io.w(patternTableInsertPort).req.idx := s2_patternInsertIdx
   patternTable.io.w(patternTableInsertPort).req.data :=  s2_patternNewEntry
 
-  XSPerfAccumulate("NextLinePattern_train_data_touched_ture_time",s1_trainValid&s1_trainTouched)//发过来的训练数据的tuouched是true的次数
+  //patternTable训练分析
   XSPerfAccumulate("NextLinePattern_train_times",s1_trainValid) //patternTable收到的多少个训练请求
-  XSPerfAccumulate("NextLinePattern_train_hit_times",s1_trainValid && s1_trainResp.hit)//训练数据在patternTable中命中的次数
-  XSPerfAccumulate("NextLinePattern_train_not_hit_times",s1_trainValid && !s1_trainResp.hit)//训练数据在patternTable中未命中的次数（插入新表项的次数）
+  //replace分析
+  XSPerfAccumulate("NextLinePattern_train_replace_times",s1_patternInsertEn)//训练数据在patternTable中未命中的次数（插入新表项的次数）
+
+
+  //update分析
+  XSPerfAccumulate("NextLinePattern_train_update_times",s1_trainValid && s1_trainResp.hit)//训练数据在patternTable中命中的次数
+  XSPerfAccumulate("NextLinePattern_train_data_touched_ture_times",s1_trainValid & s1_trainResp.hit & s1_trainTouched)//发过来的训练数据的tuouched是true的次数
+  XSPerfAccumulate("NextLinePattern_train_data_touched_false_times",s1_trainValid & s1_trainResp.hit & !s1_trainTouched)//发过来的训练数据的tuouched是true的次数
+
+ 
+
+  //pc预测分析
   XSPerfAccumulate("NextLinePattern_pc_hit_times",s1_prefetchResp.hit && s1_reqValid)//pc预取请求在patternTable中命中的次数
-  
+  XSPerfAccumulate("NextLinePattern_pc_hit_validEntry",s1_reqHitValidEntry)//命中有效块的次数
+
+  //命中有效块的时候Sat值的情况
+  XSPerfAccumulate("NextLinePattern_pc_hit_satEq3_times",s1_reqHitValidEntry&(s1_prefetchResp.data.sat===3.U) )
+  XSPerfAccumulate("NextLinePattern_pc_hit_satEq2_times",s1_reqHitValidEntry&(s1_prefetchResp.data.sat===2.U) )
+  XSPerfAccumulate("NextLinePattern_pc_hit_satEq1_times",s1_reqHitValidEntry&(s1_prefetchResp.data.sat===1.U) )
+  XSPerfAccumulate("NextLinePattern_pc_hit_satEq0_times",s1_reqHitValidEntry&(s1_prefetchResp.data.sat===0.U) )
 }
