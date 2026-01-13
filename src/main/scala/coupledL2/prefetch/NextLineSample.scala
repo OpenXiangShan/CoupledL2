@@ -69,7 +69,7 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   // Sample Table
   val sampleTable= Module(new MultiPortRegFile(
       gen  = new SampleTableEntryField(),
-      sets = nlParams.sampleTableSets,
+      sets = nlParams.sampleTableSets/nlParams.sampleTableWays,
       ways = nlParams.sampleTableWays,
       numReadPorts = 2,
       numWritePorts = 2,
@@ -80,7 +80,7 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   val sampleTableReplacer = ReplacementPolicy.fromString(sampleTableReplacementPolicy,nlParams.sampleTableWays)
   val sampleTableReplaceStateRegs = Module(new MultiPortRegFile(
       gen = UInt(sampleTableReplacer.nBits.W),
-      sets = nlParams.sampleTableSets,
+      sets = nlParams.sampleTableSets/nlParams.sampleTableWays,
       ways = 1,
       numReadPorts = 2,
       numWritePorts = 2,

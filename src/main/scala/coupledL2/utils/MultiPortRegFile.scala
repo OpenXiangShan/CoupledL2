@@ -100,7 +100,7 @@ class MultiPortRegFile[T <: Data](
   require(numWritePorts > 0, "numWritePorts must be positive")
 
   val io = IO(new Bundle {
-    val r = Vec(numReadPorts, new MultiPortRegFileReadPort(gen, sets, ways))
+    val r = Vec(numReadPorts,  new MultiPortRegFileReadPort(gen, sets, ways))
     val w = Vec(numWritePorts, new MultiPortRegFileWritePort(gen, sets, ways))
   })
 
