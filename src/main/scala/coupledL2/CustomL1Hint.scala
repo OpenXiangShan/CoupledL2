@@ -78,13 +78,14 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   val mshr_CBOAck_s1        = task_s1.valid &&  mshrReq_s1 && isCBOAck(task_s1.bits)
   val chn_Release_s1        = task_s1.valid && !mshrReq_s1 && isRelease(task_s1.bits)
 
-  val enqValid_s1 = mshr_GrantData_s1 || mshr_Grant_s1 || mshr_AccessAckData_s1 || mshr_CBOAck_s1 || chn_Release_s1
-  val enqSource_s1 = Mux(task_s1.bits.mergeA, task_s1.bits.aMergeTask.sourceId, task_s1.bits.sourceId)
-  val enqKeyWord_s1 = Mux(task_s1.bits.mergeA,
+  val enq_s1 = Wire(Decoupled(new HintQueueEntry))
+  enq_s1.valid := mshr_GrantData_s1 || mshr_Grant_s1 || mshr_AccessAckData_s1 || mshr_CBOAck_s1 || chn_Release_s1
+  enq_s1.bits.source := Mux(task_s1.bits.mergeA, task_s1.bits.aMergeTask.sourceId, task_s1.bits.sourceId)
+  enq_s1.bits.isKeyword := Mux(task_s1.bits.mergeA,
     task_s1.bits.aMergeTask.isKeyword.getOrElse(false.B),
     task_s1.bits.isKeyword.getOrElse(false.B)
   )
-  val enqOpcode_s1 = ParallelPriorityMux(
+  enq_s1.bits.opcode := ParallelPriorityMux(
     Seq(
       mshr_Grant_s1 -> Grant,
       mshr_GrantData_s1 -> GrantData,
@@ -100,13 +101,14 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
     (isGrant(task_s2.bits) || isMergeGrant(task_s2.bits)) && io.s2.retry && task_s2.bits.replTask
   val mshr_AccessRetry_s2 = task_s2.valid && mshrReq_s2 &&
     isAccessAckData(task_s2.bits) && io.s2.retry && task_s2.bits.replTask
-  val enqValid_s2 = mshr_GrantRetry_s2 || mshr_GrantDataRetry_s2 || mshr_AccessRetry_s2
-  val enqSource_s2 = Mux(task_s2.bits.mergeA, task_s2.bits.aMergeTask.sourceId, task_s2.bits.sourceId)
-  val enqKeyWord_s2 = Mux(task_s2.bits.mergeA,
+  val enq_s2 = Wire(Decoupled(new HintQueueEntry))
+  enq_s2.valid := mshr_GrantRetry_s2 || mshr_GrantDataRetry_s2 || mshr_AccessRetry_s2
+  enq_s2.bits.source := Mux(task_s2.bits.mergeA, task_s2.bits.aMergeTask.sourceId, task_s2.bits.sourceId)
+  enq_s2.bits.isKeyword := Mux(task_s2.bits.mergeA,
     task_s2.bits.aMergeTask.isKeyword.getOrElse(false.B),
     task_s2.bits.isKeyword.getOrElse(false.B)
   )
-  val enqOpcode_s2 = ParallelPriorityMux(
+  enq_s2.bits.opcode := ParallelPriorityMux(
     Seq(
       mshr_GrantDataRetry_s2 -> GrantData,
       mshr_GrantRetry_s2 -> Grant,
@@ -119,10 +121,11 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   val chn_Grant_s3     = task_s3.valid && !mshrReq_s3 && !need_mshr_s3 && isGrant(task_s3.bits)
   val chn_GrantData_s3 = task_s3.valid && !mshrReq_s3 && !need_mshr_s3 && isGrantData(task_s3.bits)
   val chn_AccessAckData_s3 = task_s3.valid && !mshrReq_s3 && !need_mshr_s3 && isAccessAckData(task_s3.bits)
-  val enqValid_s3 = chn_Grant_s3 || chn_GrantData_s3 || chn_AccessAckData_s3
-  val enqSource_s3 = task_s3.bits.sourceId
-  val enqKeyWord_s3 = task_s3.bits.isKeyword.getOrElse(false.B)
-  val enqOpcode_s3 = ParallelPriorityMux(
+  val enq_s3 = Wire(Decoupled(new HintQueueEntry))
+  enq_s3.valid := chn_Grant_s3 || chn_GrantData_s3 || chn_AccessAckData_s3
+  enq_s3.bits.source := task_s3.bits.sourceId
+  enq_s3.bits.isKeyword := task_s3.bits.isKeyword.getOrElse(false.B)
+  enq_s3.bits.opcode := ParallelPriorityMux(
     Seq(
       chn_Grant_s3 -> Grant,
       chn_GrantData_s3 -> GrantData,
@@ -138,31 +141,22 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
 
   // this will have at most 2 entries
   val hint_s1Queue = Module(new Queue(new HintQueueEntry, 4, flow = true))
-  hint_s1Queue.io.enq.valid := enqValid_s1
-  hint_s1Queue.io.enq.bits.opcode := enqOpcode_s1
-  hint_s1Queue.io.enq.bits.source := enqSource_s1
-  hint_s1Queue.io.enq.bits.isKeyword := enqKeyWord_s1
-  hint_s1Queue.io.deq.ready := hintQueue.io.enq.ready && !enqValid_s3
+  hint_s1Queue.io.enq <> enq_s1
+  hint_s1Queue.io.deq.ready := hintQueue.io.enq.ready && !enq_s3.valid
   // WARNING:TODO: ensure queue will never overflow
   assert(hint_s1Queue.io.enq.ready, "hint_s1Queue should never be full")
   assert(hintQueue.io.enq.ready || !hintQueue.io.enq.valid, "hintQueue should never be full")
 
   val hint_s2Queue = Module(new Queue(new HintQueueEntry, 4, flow = true))
   val s2Deq = hint_s2Queue.io.deq
-  hint_s2Queue.io.enq.valid := enqValid_s2
-  hint_s2Queue.io.enq.bits.opcode := enqOpcode_s2
-  hint_s2Queue.io.enq.bits.source := enqSource_s2
-  hint_s2Queue.io.enq.bits.isKeyword := enqKeyWord_s2
+  hint_s2Queue.io.enq <> enq_s2
   hint_s2Queue.io.deq.ready := hintQueue.io.deq.fire && hintQueue.io.deq.bits === s2Deq.bits
   assert(hint_s2Queue.io.enq.ready, "hint_s2Queue should never be full")
 
   // For AccessAckData that would never go to LSU, insert a dequing bubble for channel delay accuracy
 
   val respWithDataFired = io.l1Hint.fire && io.l1Hint.bits.hasData
-  hintQueue.io.enq.valid := enqValid_s3 || hint_s1Queue.io.deq.valid
-  hintQueue.io.enq.bits.opcode := Mux(enqValid_s3, enqOpcode_s3, hint_s1Queue.io.deq.bits.opcode)
-  hintQueue.io.enq.bits.source := Mux(enqValid_s3, enqSource_s3, hint_s1Queue.io.deq.bits.source)
-  hintQueue.io.enq.bits.isKeyword := Mux(enqValid_s3, enqKeyWord_s3, hint_s1Queue.io.deq.bits.isKeyword)
+  arb(Seq(enq_s3,  hint_s1Queue.io.deq), hintQueue.io.enq, Some("Hint"))
   hintQueue.io.deq.ready := io.l1Hint.ready && !RegNext(respWithDataFired, false.B) || hintNeedCancel
 
   hintNeedCancel := hintQueue.io.deq.valid && s2Deq.valid && hintQueue.io.deq.bits === s2Deq.bits
