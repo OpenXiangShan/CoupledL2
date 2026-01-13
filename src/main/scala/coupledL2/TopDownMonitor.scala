@@ -152,7 +152,7 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     val hit_prefetch_source = UInt(pfTypes.length.W)
   }
   val pfTT = ChiselDB.createTable("L2TotalPrefetchTable", new TotalPrefetchEntry, basicDB = true)
-  io.dirResult.foreach{ r =>
+  io.dirResult.zipWithIndex.foreach{ case (r, i) =>
     val entry = Wire(new TotalPrefetchEntry)
     val valid = r.valid && r.bits.replacerInfo.channel === 1.U
     val isPrefetchReq = MemReqSource.isL2Prefetch(r.bits.replacerInfo.reqSource) && !reqFromCPU(r.bits)
@@ -166,7 +166,7 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     val hit_prefetch_oh = OHToUInt(VecInit(pfTypes.map{case (_, _, pfSrc) => pfSrc === r.bits.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U)}))
     val hit_prefetch_source = Mux(hit_prefetch_oh.orR, hit_prefetch_oh, pfTypes.length.U)
 
-    entry.paddr := Cat(r.bits.tag, r.bits.set, 0.U(6.W))
+    entry.paddr := Cat(r.bits.tag, r.bits.set, i.U(bankBits.W), 0.U(offsetBits.W))
     entry.isPrefetchReq := isPrefetchReq
     entry.pf_source := pf_source
     entry.isDemandReq := isDemandReq
