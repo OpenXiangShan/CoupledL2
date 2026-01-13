@@ -821,8 +821,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val customL1Hint = Module(new CustomL1Hint)
 
   customL1Hint.io.s1 := io.taskInfo_s1
-  customL1Hint.io.s2.task := task_s2
-  customL1Hint.io.s2.retry := io.retryFastFwd_s2
+  customL1Hint.io.retry_s2 := io.retryFastFwd_s2 && task_s2.valid
 
   customL1Hint.io.s3.task      := task_s3
   // overwrite opcode: if sinkReq can respond, use sink_resp_s3.bits.opcode = Grant/GrantData
