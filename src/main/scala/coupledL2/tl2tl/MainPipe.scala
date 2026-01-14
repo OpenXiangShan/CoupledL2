@@ -53,6 +53,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
     /* get dir result at stage 3 */
     val dirResp_s3 = Input(new DirResult)
     val replResp = Flipped(ValidIO(new ReplacerResult))
+    val retryFastFwd_s2 = Input(Bool())
 
     /* send task to MSHRCtl at stage 3 */
     val toMSHRCtl = new Bundle() {
@@ -545,6 +546,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   val customL1Hint = Module(new CustomL1Hint)
 
   customL1Hint.io.s1 := io.taskInfo_s1
+  customL1Hint.io.retry_s2 := io.retryFastFwd_s2 && task_s2.valid
   
   customL1Hint.io.s3.task      := task_s3
   // overwrite opcode: if sinkReq can respond, use sink_resp_s3.bits.opcode = Grant/GrantData
