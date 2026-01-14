@@ -437,5 +437,4 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   XSPerfAccumulate("dirRead_cnt", io.read.fire)
   XSPerfAccumulate("choose_busy_way", refillReqValid_s3 && !freeWayMask_s3(chosenWay))
-  XSPerfHistogram("occupied_way_num", PopCount(~freeWayMask_s3), refillReqValid_s3, 0, 5, 1)
 }
