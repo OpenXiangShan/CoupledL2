@@ -325,10 +325,10 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       val pfCtrlFromCore = Input(new PrefetchCtrlFromCore)
     //  val l2_hint = Valid(UInt(32.W))
       val l2_hint = ValidIO(new L2ToL1Hint())
-      val l2_hints = Vec(3, ValidIO(new L2ToL1HintInsideL2() {
-        val start = UInt(64.W)
-        val sourceSlice = UInt(4.W)
-      }))
+      // val l2_hints = Vec(3, ValidIO(new L2ToL1HintInsideL2() {
+      //   val start = UInt(64.W)
+      //   val sourceSlice = UInt(4.W)
+      // }))
       val l2_tlb_req = new L2ToL1TlbIO(nRespDups = 1)(l2TlbParams)
       val debugTopDown = new Bundle {
         val robTrueCommit = Input(UInt(64.W))
@@ -537,8 +537,8 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       val slices_l1Hint = VecInit(slices.map(_.io.l1Hint))
       val l1HintValids = Cat(slices_l1Hint.map(_.valid).reverse)
       val readysVec = Wire(Vec(node.in.head._2.client.clients.size, UInt(banks.W)))
-      (node.in.head._2.client.clients zip readysVec zip hintChosenVec zip io.l2_hints).foreach {
-        case (((client, readysToSlice), hintChosen), io_hint) =>
+      (node.in.head._2.client.clients zip readysVec zip hintChosenVec).foreach {
+        case ((client, readysToSlice), hintChosen) =>
           val master = Wire(Decoupled())
           val contains = Cat(slices_l1Hint.map(hint => client.sourceId.contains(hint.bits.sourceId)).reverse)
           val arbValids = l1HintValids & contains
@@ -547,12 +547,12 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
           master.valid := fires.orR
           val selectedHint = Mux1H(fires, slices_l1Hint.map(_.bits))
           // if (client.supports.probe) {
-            io_hint.valid := master.fire
-            io_hint.bits.isKeyword := selectedHint.isKeyword
-            io_hint.bits.sourceId := selectedHint.sourceId - client.sourceId.start.U
-            io_hint.bits.start := client.sourceId.start.U
-            io_hint.bits.hasData := selectedHint.hasData
-            io_hint.bits.sourceSlice := OHToUInt(fires)
+            // io_hint.valid := master.fire
+            // io_hint.bits.isKeyword := selectedHint.isKeyword
+            // io_hint.bits.sourceId := selectedHint.sourceId - client.sourceId.start.U
+            // io_hint.bits.start := client.sourceId.start.U
+            // io_hint.bits.hasData := selectedHint.hasData
+            // io_hint.bits.sourceSlice := OHToUInt(fires)
           // }
           if (client.supports.probe) {
             io.l2_hint.valid := master.fire && selectedHint.hasData
