@@ -28,8 +28,6 @@ class HintQueueEntry(implicit p: Parameters) extends L2Bundle {
   val source = UInt(sourceIdBits.W)
   val opcode = UInt(4.W)
   val isKeyword = Bool()
-  // val cancelable = Bool()
-  // cancelIdx = UInt(2.W)
 }
 
 class CustomL1HintIOBundle(implicit p: Parameters) extends L2Bundle {
@@ -90,7 +88,6 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
       mshr_CBOAck_s1 -> CBOAck
     )
   )
-  // enqBits_s1.cancelable := mshr_GrantData_s1
 
   // Hint for "chnTask Hit" will fire@s3
   val chn_Grant_s3     = task_s3.valid && !mshrReq_s3 && !need_mshr_s3 && isGrant(task_s3.bits)
@@ -107,7 +104,6 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
       chn_AccessAckData_s3 -> AccessAckData
     )
   )
-  // enqBits_s3.cancelable := false.B
 
   // ==================== Hint Queue ====================
   val hintEntries = mshrsAll

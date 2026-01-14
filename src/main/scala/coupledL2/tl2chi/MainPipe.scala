@@ -734,16 +734,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val dataError_s4 = RegInit(false.B)
   val l2Error_s4 = RegInit(false.B)
   val pendingTXDAT_s4 = task_s4.bits.fromB && !task_s4.bits.mshrTask && task_s4.bits.toTXDAT
-  val latch_grant_s4 = true
-  val pendingD_s4 = if (latch_grant_s4) {
-    task_s4.bits.fromA && !task_s4.bits.mshrTask && !need_write_releaseBuf_s4 && (
-      task_s4.bits.opcode === GrantData || task_s4.bits.opcode === AccessAckData || task_s4.bits.opcode === Grant
-    )
-  } else {
-    task_s4.bits.fromA && !task_s4.bits.mshrTask && (
-      task_s4.bits.opcode === GrantData || task_s4.bits.opcode === AccessAckData
-    )
-  }
+  val pendingD_s4 = task_s4.bits.fromA && !task_s4.bits.mshrTask && !need_write_releaseBuf_s4 &&
+    Seq(GrantData, Grant, AccessAckData).map(_ === task_s4.bits.opcode).reduce(_ || _)
 
   task_s4.valid := task_s3.valid && !req_drop_s3
 
@@ -774,8 +766,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   val chnl_valid_s4 = task_s4.valid && !RegNext(chnl_fire_s3, false.B)
   d_s4.valid := chnl_valid_s4 && isD_s4 &&
-    (if(latch_grant_s4) !(task_s4.bits.opcode === Grant && task_s4.bits.fromA &&
-      !task_s4.bits.mshrTask && !need_write_releaseBuf_s4) else true.B)
+    !(task_s4.map(b => b.opcode === Grant && b.fromA && !b.mshrTask).bits && !need_write_releaseBuf_s4)
   txreq_s4.valid := chnl_valid_s4 && isTXREQ_s4
   txrsp_s4.valid := chnl_valid_s4 && isTXRSP_s4
   txdat_s4.valid := chnl_valid_s4 && isTXDAT_s4

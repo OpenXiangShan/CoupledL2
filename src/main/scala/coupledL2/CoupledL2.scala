@@ -419,9 +419,9 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     // TODO: if Hint for single slice is 100% accurate, may consider remove this
     val releaseSourceD = Wire(Vec(banks, Bool()))
     val allCanFire = (
-      RegNextN(!hintChosenVec.map(_.valid).reduce(_ || _), sliceAhead) &&
-      RegNextN(!hintChosenVec.map(h => h.valid && h.bits.hasData).reduce(_ || _), sliceAhead + 1)) ||
-      Cat(releaseSourceD).orR
+        RegNextN(!hintChosenVec.map(_.valid).reduce(_ || _), sliceAhead) &&
+        RegNextN(!hintChosenVec.map(h => h.valid && h.bits.hasData).reduce(_ || _), sliceAhead + 1)
+      ) || Cat(releaseSourceD).orR
 
     val slices = node.in.zip(node.out).zipWithIndex.map {
       case (((in, edgeIn), (out, edgeOut)), i) =>
@@ -450,7 +450,6 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
           // we will try our best to select the grant of slice X.
           // If slice X has no grant then, it means that the hint at cycle T is wrong,
           // so we relax the restriction on grant selection.
-          // val chosen = hintChosenVec.map(h => h.valid && h.bits.sliceId === i.U).reduce(_ || _)
           val sliceCanFire = RegNextN(hintChosenVec.map(h => h.valid && h.bits.sliceId === i.U).reduce(_ || _), sliceAhead) ||
             RegNextN(hintChosenVec.map(h => h.valid && h.bits.sliceId === i.U && h.bits.hasData).reduce(_ || _), sliceAhead + 1)
 

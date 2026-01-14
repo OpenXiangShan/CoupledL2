@@ -21,7 +21,7 @@ import chisel3._
 import chisel3.util._
 import utility.mbist.MbistPipeline
 import coupledL2.utils._
-import utility.{ParallelPriorityMux, RegNextN, XSPerfAccumulate, XSPerfHistogram, Code}
+import utility.{ParallelPriorityMux, RegNextN, XSPerfAccumulate, Code}
 import utility.sram.SRAMTemplate
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.prefetch.PfSource
@@ -196,7 +196,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   val reqValid_s2 = RegNext(io.read.fire, false.B)
   val reqValid_s3 = RegNext(reqValid_s2, false.B)
   val req_s1 = io.read.bits
-  val req_s2 = RegEnable(req_s1, 0.U.asTypeOf(req_s1), io.read.fire)
+  val req_s2 = RegEnable(req_s1, io.read.fire)
   val req_s3 = RegEnable(req_s2, 0.U.asTypeOf(req_s2), reqValid_s2)
 
   val refillReqValid_s2 = RegNext(io.read.fire && io.read.bits.refill, false.B)
@@ -265,16 +265,6 @@ class Directory(implicit p: Parameters) extends L2Module {
     )
   )).reduceTree(_ | _) |
     Mux(refillReqValid_s3 || reqValid_s3 && io.resp.bits.hit, UIntToOH(io.resp.bits.way, ways), 0.U(ways.W))
-
-  // Don't remove this which can test retry
-  // val enable_force_retry = true
-  // val occWayMask_s2 = if(enable_force_retry) {
-  //   val forceRetry = Counter(refillReqValid_s2, 4)
-  //   Mux(forceRetry._1 === 0.U,
-  //     ~0.U(ways.W), RegEnable(occWayMask_s1, io.read.fire && io.read.bits.refill))
-  // } else {
-  //   RegEnable(occWayMask_s1, io.read.fire && io.read.bits.refill)
-  // }
 
   val occWayMask_s2 = RegEnable(occWayMask_s1, io.read.fire && io.read.bits.refill)
 
