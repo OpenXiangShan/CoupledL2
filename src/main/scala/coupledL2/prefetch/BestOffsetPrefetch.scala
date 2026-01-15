@@ -267,6 +267,18 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
     prefetchDisable := isBad
     state := s_learn
   }
+  class BestOffsetEntry extends Bundle{
+    val offset = UInt(offsetWidth.W)
+  }
+  val trainTT = ChiselDB.createTable(s"L2${name}BestOffsetTable", new BestOffsetEntry, basicDB = true)
+  val e1 = Wire(new BestOffsetEntry)
+  e1.offset := bestOffset
+  trainTT.log(
+    data = e1,
+    en = state === s_idle,
+    site = s"L2${name}BestOffsetTable",
+    clock, reset
+  )
 
   // 2. During a learning phase
   // On every eligible L2 read access (miss or prefetched hit), we test an offset d_i from the list.
