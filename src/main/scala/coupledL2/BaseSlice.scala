@@ -23,7 +23,6 @@ import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink.TLBundle
 import utility._
 import coupledL2.prefetch.PrefetchIO
-import coupledL2.wpu.{WPUUpdate, WPUResult}
 
 trait BaseOuterBundle
 
@@ -40,8 +39,7 @@ abstract class BaseSliceIO[T_OUT <: BaseOuterBundle](implicit p: Parameters) ext
   val l2Miss = Output(Bool())
   val l2Flush = Option.when(cacheParams.enableL2Flush) (Input(Bool()))
   val l2FlushDone = Option.when(cacheParams.enableL2Flush) (Output(Bool()))
-  val wpuResult = Option.when(enWPU) (Input(Valid(new WPUResult)))
-  val wpuUpdate = Option.when(enWPU) (Output(Valid(new WPUUpdate)))
+  val wpuRead = Option.when(enWPU) (Input(Valid(UInt(fullAddressBits.W))))
 }
 
 abstract class BaseSlice[T_OUT <: BaseOuterBundle](implicit p: Parameters) extends L2Module with HasPerfEvents {

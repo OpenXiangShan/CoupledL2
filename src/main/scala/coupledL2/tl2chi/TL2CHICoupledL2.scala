@@ -128,8 +128,9 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
     if (enWPU) {
       slices.zipWithIndex.foreach {
         case (slice, i) =>
-          io.wpuUpd.get(i) := slice.io.wpuUpdate.get
-          slice.io.wpuResult.get := io.wpuRes.get(i)
+          val sliceMatch = parseBank(io.wpuRead.get.bits) === i.U
+          slice.io.wpuRead.get.valid := io.wpuRead.get.valid && sliceMatch
+          slice.io.wpuRead.get.bits := io.wpuRead.get.bits
     }}
 
     slices match {

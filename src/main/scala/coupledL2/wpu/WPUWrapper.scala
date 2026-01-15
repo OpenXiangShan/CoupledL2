@@ -13,7 +13,7 @@ import utility.GTimer
 class WPUWrapper(implicit p:Parameters) extends L2Module {
   val wpu = AlgoWPUMap(wpuParam)
   val in = IO(Flipped(new Bundle {
-    val read = ValidIO(new WPURead)
+    val read = ValidIO(UInt(fullAddressBits.W))
     val update = ValidIO(new WPUUpdate)
   }))
   val out = IO(new Bundle {
@@ -24,12 +24,12 @@ class WPUWrapper(implicit p:Parameters) extends L2Module {
   out.res.valid := RegNext(in.read.valid)
   out.res.bits.viewAsSupertype(new WPUResultInsideWPU) := wpu.out.res
   out.res.bits.canceld := RegEnable(cancelPred, in.read.valid)
-  out.res.bits.set.foreach(_ := RegNext(in.read.bits.set))
-  out.res.bits.tag.foreach(_ := RegNext(in.read.bits.tag))
+  out.res.bits.set.foreach(_ := RegNext(wpu.in.read.bits.set))
+  out.res.bits.tag.foreach(_ := RegNext(wpu.in.read.bits.tag))
   out.res.bits.timeCnt.foreach(_ := RegNext(GTimer()))
 
   wpu.in.read.valid := in.read.valid && !cancelPred
-  wpu.in.read.bits := in.read.bits
+  wpu.in.read.bits.parseAddr(in.read.bits)
 
   class UpdQueue[T <: Data](val gen: T, val entries: Int) extends Module {
     val io = IO(new Bundle {

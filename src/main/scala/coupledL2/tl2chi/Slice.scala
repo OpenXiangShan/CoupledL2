@@ -63,6 +63,9 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   val mainPipe = Module(new MainPipe())
   val reqBuf = Module(new RequestBuffer())
   val mshrCtl = Module(new MSHRCtl())
+
+  /* way prediction */
+  val wayPredictUnit = Option.when(enWPU) (Module(new WPUWrapper))
   private val mbistPl = MbistPipeline.PlaceMbistPipeline(2, "L2Slice", p(L2ParamKey).hasMbist)
   sinkC.io.msInfo := mshrCtl.io.msInfo
 
@@ -230,8 +233,12 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   mainPipe.io.cmoAllBlock.foreach {_ := sinkA.io.cmoAll.map(_.cmoAllBlock).getOrElse(false.B)}
 
   io.l2FlushDone.foreach {_ := RegNext(sinkA.io.cmoAll.map(_.l2FlushDone).getOrElse(false.B))}
-  sinkA.io.wpuRes.zip(io.wpuResult).foreach(x => x._1 := x._2)
-  io.wpuUpdate.zip(mainPipe.io.toWPUUpd).foreach(x => x._1 := x._2)
+  (wayPredictUnit zip io.wpuRead zip sinkA.io.wpuRes zip mainPipe.io.toWPUUpd).foreach {
+    case (((wpu, wpuRead), wpuRes), wpuUpd) =>
+      wpu.in.read := wpuRead
+      wpuRes := wpu.out.res
+      wpu.in.update := wpuUpd
+  }
 
   /* ===== Hardware Performance Monitor ===== */
   val perfEvents = Seq(mshrCtl, mainPipe).flatMap(_.getPerfEvents)

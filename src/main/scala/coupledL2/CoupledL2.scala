@@ -34,8 +34,6 @@ import coupledL2.prefetch._
 import huancun.{BankBitsKey, TPmetaReq, TPmetaResp}
 import utility.mbist.{MbistInterface, MbistPipeline}
 import utility.sram.{SramBroadcastBundle, SramHelper}
-import coupledL2.wpu.WPUUpdate
-import coupledL2.wpu.WPUResult
 
 trait HasCoupledL2Parameters {
   val p: Parameters
@@ -343,8 +341,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       val l2FlushDone = Option.when(cacheParams.enableL2Flush) (Output(Bool()))
       val dft = Option.when(cacheParams.hasDFT)(Input(new SramBroadcastBundle))
       val dft_reset = Option.when(cacheParams.hasMbist)(Input(new DFTResetSignals()))
-      val wpuUpd = Option.when(enWPU) (Vec(banks, Valid(new WPUUpdate()(l2ECCParams))))
-      val wpuRes = Option.when(enWPU) (Flipped(Vec(banks, Valid(new WPUResult()(l2ECCParams)))))
+      val wpuRead = Option.when(enWPU) (Input(Valid(UInt(l2ECCParams.lift(EdgeInKey).get.bundle.addressBits.W))))
     })
 
     // Display info
@@ -662,4 +659,6 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       None
     }
   }
+
+  def module: BaseCoupledL2Imp
 }

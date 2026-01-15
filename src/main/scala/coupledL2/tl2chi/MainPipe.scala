@@ -306,6 +306,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     task.mshrTask := false.B
     task.aliasTask.foreach(_ := cache_alias)
     task.wayMask := 0.U(cacheParams.ways.W)
+    task.wpu.foreach(_.valid := false.B)
     // TODO
   }
 
