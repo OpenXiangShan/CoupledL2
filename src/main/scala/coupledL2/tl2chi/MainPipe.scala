@@ -221,7 +221,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   val tagError_s3               = io.dirResp_s3.error || meta_s3.tagErr
   val dataError_s3              = meta_s3.dataErr
-  val l2Error_s3                = io.dirResp_s3.error
+  val l2TagError_s3                = io.dirResp_s3.error
 
   val mshr_refill_s3 = mshr_accessackdata_s3 || mshr_hintack_s3 || mshr_grant_s3 // needs refill to L2 DS
   val replResp_valid_s3 = io.replResp.valid
@@ -462,8 +462,10 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   }
 
   val source_req_s3 = Wire(new TaskBundle)
+  val useRDataByWPU_s3 = WireInit(false.B)
   source_req_s3 := Mux(sink_resp_s3.valid, sink_resp_s3.bits, req_s3)
   source_req_s3.isKeyword.foreach(_ := req_s3.isKeyword.getOrElse(false.B))
+  source_req_s3.corrupt := Mux(useRDataByWPU_s3, io.toDS.error, req_s3.corrupt)
 
   /* ======== Update Way Predictor ======== */
   // This is to let io.toDS.req_s3.valid hold for 2 cycles (see DataStorage for details)
@@ -514,7 +516,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     !wpuReplUpd.valid && !wpuEvictUpd.valid && !wpuLookupUpd.valid
   )
 
-  val useRDataByWPU_s3 = WireInit(false.B)
   val readDSAgain = WireInit(true.B)
   if (enWPU) {
     val predValidHold2 = task_s3_valid_hold2 && wpures.valid && !wpures.bits.canceld
@@ -533,7 +534,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     useRDataByWPU_s3 -> io.toDS.rdata.data,
     io.releaseBufResp_s3.valid -> io.releaseBufResp_s3.bits.data
   ))
-  val dataErr_s3 = io.toDS.error
   val c_releaseData_s3 = io.bufResp.data.asUInt
   val hasData_s3_tl = source_req_s3.opcode(0) // whether to respond data to TileLink-side
   val hasData_s3_chi = source_req_s3.toTXDAT // whether to respond data to CHI-side
@@ -617,7 +617,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val metaW_s3_a = MetaEntry(
     dirty = meta_s3.dirty,
     state = Mux(req_needT_s3 || sink_resp_s3_a_promoteT, TRUNK, meta_s3.state),
-    clients = Fill(clientBits, Mux(l2Error_s3, false.B, true.B)),
+    clients = Fill(clientBits, Mux(l2TagError_s3, false.B, true.B)),
     alias = Some(metaW_s3_a_alias),
     accessed = true.B,
     tagErr = meta_s3.tagErr,
@@ -804,7 +804,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val isD_s4, isTXREQ_s4, isTXRSP_s4, isTXDAT_s4 = RegInit(false.B)
   val tagError_s4 = RegInit(false.B)
   val dataError_s4 = RegInit(false.B)
-  val l2Error_s4 = RegInit(false.B)
+  val l2TagError_s4 = RegInit(false.B)
   val pendingTXDAT_s4 = task_s4.bits.fromB && !task_s4.bits.mshrTask && task_s4.bits.toTXDAT
   val pendingD_s4 = task_s4.bits.fromA && !task_s4.bits.mshrTask && (
     task_s4.bits.opcode === GrantData || task_s4.bits.opcode === AccessAckData
@@ -829,7 +829,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     isTXDAT_s4 := isTXDAT_s3
     tagError_s4 := tagError_s3
     dataError_s4 := dataError_s3
-    l2Error_s4 := l2Error_s3
+    l2TagError_s4 := l2TagError_s3
   }
 
   // for reqs that CANNOT give response in MainPipe, but needs to write releaseBuf/refillBuf
@@ -872,11 +872,12 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     isTXDAT_s5 := isTXDAT_s4 || pendingTXDAT_s4
     tagError_s5 := tagError_s4
     dataMetaError_s5 := dataError_s4
-    l2TagError_s5 := l2Error_s4
+    l2TagError_s5 := l2TagError_s4
   }
   val rdata_s5 = Mux(RegNextN(useRDataByWPU_s3, 2), data_s5, io.toDS.rdata.data)
   val dataError_s5 = io.toDS.error || dataMetaError_s5
-  val l2Error_s5 = l2TagError_s5 || io.toDS.error
+  val wpuDataError_s5 = RegNextN(task_s3.valid && useRDataByWPU_s3 && io.toDS.error, 2, Some(false.B))
+  val l2Error_s5 = l2TagError_s5 || io.toDS.error || wpuDataError_s5
   val out_data_s5 = Mux(task_s5.bits.mshrTask || task_s5.bits.snpHitReleaseWithData, data_s5, rdata_s5)
   val chnl_fire_s5 = d_s5.fire || txreq_s5.fire || txrsp_s5.fire || txdat_s5.fire
 
@@ -1054,7 +1055,10 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   io.error.valid := task_s5.valid
   io.error.bits.valid := l2Error_s5 // if not enableECC, should be false
-  io.error.bits.address := Cat(task_s5.bits.tag, task_s5.bits.set, task_s5.bits.off)
+  io.error.bits.address := Mux(wpuDataError_s5,
+    RegNextN(Cat(req_s3.tag, req_s3.set, req_s3.off), 2),
+    Cat(task_s5.bits.tag, task_s5.bits.set, task_s5.bits.off)
+  )
 
   /* CMO All Flush cacheline done if:
    cacheline is INVALID -> drop @s3
