@@ -221,8 +221,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   val tagError_s3               = io.dirResp_s3.error || meta_s3.tagErr
   val dataError_s3              = meta_s3.dataErr
-  val l2TagError_s3             = io.dirResp_s3.error
-  val l2Error_s3                = io.dirResp_s3.error || mshr_req_s3 && req_s3.dataCheckErr.getOrElse(false.B)
+  val l2Error_s3                = io.dirResp_s3.error
 
   val mshr_refill_s3 = mshr_accessackdata_s3 || mshr_hintack_s3 || mshr_grant_s3 // needs refill to L2 DS
   val replResp_valid_s3 = io.replResp.valid
@@ -320,7 +319,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     isSnpStashX(req_s3.chiOpcode.get) ||
     isSnpQuery(req_s3.chiOpcode.get) ||
     req_s3.chiOpcode.get === SnpOnceFwd ||
-    req_s3.chiOpcode.get === SnpUniqueFwd
+    req_s3.chiOpcode.get === SnpUniqueFwd ||
+    req_s3.chiOpcode.get === SnpPreferUniqueFwd
   val shouldRespData_dirty = nestable_dirResult_s3.hit && 
     (nestable_meta_s3.state === TIP || nestable_meta_s3.state === TRUNK) && nestable_meta_s3.dirty
   // For SnpOnce, always response data under UC when L1 was BRANCH
@@ -334,6 +334,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val shouldRespData_retToSrc_nonFwd = nestable_dirResult_s3.hit && retToSrc && nestable_meta_s3.state === BRANCH && (
     req_s3.chiOpcode.get === SnpOnce ||
     req_s3.chiOpcode.get === SnpUnique ||
+    req_s3.chiOpcode.get === SnpPreferUnique ||
     isSnpToBNonFwd(req_s3.chiOpcode.get)
   )
   val shouldRespData = shouldRespData_dirty || shouldRespData_once || shouldRespData_retToSrc_fwd || shouldRespData_retToSrc_nonFwd
@@ -406,7 +407,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     when (isSnpToBFwd(req_s3.chiOpcode.get)) {
       fwdCacheState := Mux(req_s3.snpHitReleaseToInval, I, SC)
     }
-    when (req_s3.chiOpcode.get === SnpUniqueFwd) {
+    when (req_s3.chiOpcode.get === SnpUniqueFwd || req_s3.chiOpcode.get === SnpPreferUniqueFwd) {
       when (nestable_meta_s3.state === TIP && nestable_meta_s3.dirty) {
         fwdCacheState := UD
         fwdPassDirty := true.B
@@ -616,7 +617,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val metaW_s3_a = MetaEntry(
     dirty = meta_s3.dirty,
     state = Mux(req_needT_s3 || sink_resp_s3_a_promoteT, TRUNK, meta_s3.state),
-    clients = Fill(clientBits, Mux(l2TagError_s3, false.B, true.B)),
+    clients = Fill(clientBits, Mux(l2Error_s3, false.B, true.B)),
     alias = Some(metaW_s3_a_alias),
     accessed = true.B,
     tagErr = meta_s3.tagErr,
@@ -732,6 +733,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   txdat_s3.bits.task := source_req_s3
   txdat_s3.bits.data.data := data_s3
   d_s3.bits.task := source_req_s3
+  d_s3.bits.task.opcode := Mux(mshr_req_s3, req_s3.opcode, sink_resp_s3.bits.opcode)
   d_s3.bits.data.data := data_s3
 
   when (task_s3.valid) {
@@ -1168,13 +1170,19 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   /* ===== Hardware Performance Monitor ===== */
   val perfEvents = Seq(
+    ("l2_cache_hit", hit_s3 && req_s3.fromA),
+    ("l2_cache_miss", miss_s3 && req_s3.fromA),
     ("l2_cache_access", task_s3.valid && (sinkA_req_s3 && !req_prefetch_s3 || sinkC_req_s3)),
     ("l2_cache_l2wb", task_s3.valid && (mshr_cbWrData_s3 || mshr_snpRespDataX_s3)),
     ("l2_cache_l1wb", task_s3.valid && sinkC_req_s3 && (req_s3.opcode === ReleaseData)),
     ("l2_cache_wb_victim", task_s3.valid && mshr_cbWrData_s3),
     ("l2_cache_wb_cleaning_coh", task_s3.valid && mshr_snpRespDataX_s3),
+    ("l2_cache_prefetch_access", task_s3.valid && sinkA_req_s3 && req_prefetch_s3),
+    ("l2_cache_prefetch_miss", task_s3.valid && sinkA_req_s3 && req_prefetch_s3 && miss_s3),
     ("l2_cache_access_rd", task_s3.valid && sinkA_req_s3 && !req_prefetch_s3),
     ("l2_cache_access_wr", task_s3.valid && sinkC_req_s3),
+    ("l2_cache_miss_rd", task_s3.valid && sinkA_req_s3 && !req_prefetch_s3 && miss_s3),
+    //    ("l2_cache_miss_wr", Inclusive L2 always hit),
     ("l2_cache_inv", task_s3.valid && sinkB_req_s3 && (req_s3.param === toN))
   )
   generatePerfEvent()

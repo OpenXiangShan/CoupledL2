@@ -22,7 +22,7 @@ import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink.TLBundle
 import utility._
-import coupledL2.prefetch.PrefetchIO
+import coupledL2.prefetch._
 
 trait BaseOuterBundle
 
@@ -32,14 +32,18 @@ abstract class BaseSliceIO[T_OUT <: BaseOuterBundle](implicit p: Parameters) ext
   val sliceId = Input(UInt(bankBits.W))
   val l1Hint = DecoupledIO(new L2ToL1Hint())
   val prefetch = prefetchOpt.map(_ => Flipped(new PrefetchIO))
-  // val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
   val dirResult = topDownOpt.map(_ => ValidIO(new DirResult))
-  val latePF = topDownOpt.map(_ => Output(Bool()))
+  val hitPfInMSHR = topDownOpt.map(_ => ValidIO(UInt(PfSource.pfSourceBits.W)))
+  val pfSent = topDownOpt.map(_ => ValidIO(UInt(MemReqSource.reqSourceBits.W)))
+  val pfLateInMSHR = topDownOpt.map(_ => ValidIO((UInt(MemReqSource.reqSourceBits.W))))
   val error = DecoupledIO(new L2CacheErrorInfo())
   val l2Miss = Output(Bool())
   val l2Flush = Option.when(cacheParams.enableL2Flush) (Input(Bool()))
   val l2FlushDone = Option.when(cacheParams.enableL2Flush) (Output(Bool()))
   val wpuRead = Option.when(enWPU) (Input(Valid(UInt(fullAddressBits.W))))
+  // statistics
+  val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
+  val msAlloc = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRAllocStatus)))
 }
 
 abstract class BaseSlice[T_OUT <: BaseOuterBundle](implicit p: Parameters) extends L2Module with HasPerfEvents {

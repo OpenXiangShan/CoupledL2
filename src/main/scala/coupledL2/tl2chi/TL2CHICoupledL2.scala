@@ -168,6 +168,11 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         // PCredit queue
         class EmptyBundle extends Bundle
 
+        class PCrdGranted extends Bundle {
+          val pCrdType = UInt(PCRDTYPE_WIDTH.W)
+          val srcID = UInt(SRCID_WIDTH.W)
+        }
+
         val (mmioQuerys, mmioGrants) = mmio.io_pCrd.map { case x => (x.query, x.grant) }.unzip
         val (slicesQuerys, slicesGrants) = slices.map { case s =>
           (s.io_pCrd.map(_.query), s.io_pCrd.map(_.grant))
@@ -177,13 +182,13 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
 
         val mshrEntryCount = mshrPCrdQuerys.length
 
-        val pCrdQueue = Module(new Queue(new Bundle {
-          val pCrdType = UInt(PCRDTYPE_WIDTH.W)
-          val srcID = UInt(SRCID_WIDTH.W)
-        }, entries = mshrEntryCount))
+        val pCrdQueue_s2 = Module(new Queue(new PCrdGranted, entries = mshrEntryCount - 2))
+        val pCrdQueue_s3 = Module(new Queue(new PCrdGranted, entries = 2))
+
+        pCrdQueue_s3.io.enq <> pCrdQueue_s2.io.deq
 
         // PCredit hit by MSHRs
-        val mshrPCrdHits = mshrPCrdQuerys.map((_, pCrdQueue.io.deq)).map { case (q, h) => {
+        val mshrPCrdHits = mshrPCrdQuerys.map((_, pCrdQueue_s3.io.deq)).map { case (q, h) => {
           q.valid && h.valid && q.bits.pCrdType === h.bits.pCrdType && q.bits.srcID === h.bits.srcID
         }}
 
@@ -199,7 +204,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         val mshrPCrdArbOut = {
           val arbPort = Wire(Decoupled(new EmptyBundle))
           arbPort.ready := true.B
-          pCrdQueue.io.deq.ready := arbPort.valid
+          pCrdQueue_s3.io.deq.ready := arbPort.valid
           arbPort
         }
 
@@ -209,15 +214,15 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
 
         // PCredit receive
         val pCrdGrantValid_s1 = RegNext(isPCrdGrant)
-        val pCrdGrantType_s1 = RegEnable(rxrsp.bits.pCrdType, isPCrdGrant)
-        val pCrdGrantSrcID_s1 = RegEnable(rxrsp.bits.srcID, isPCrdGrant)
+        val pCrdGrantType_s1 = RegNext(rxrsp.bits.pCrdType)
+        val pCrdGrantSrcID_s1 = RegNext(rxrsp.bits.srcID)
 
-        pCrdQueue.io.enq.valid := pCrdGrantValid_s1
-        pCrdQueue.io.enq.bits.pCrdType := pCrdGrantType_s1
-        pCrdQueue.io.enq.bits.srcID := pCrdGrantSrcID_s1
+        pCrdQueue_s2.io.enq.valid := pCrdGrantValid_s1
+        pCrdQueue_s2.io.enq.bits.pCrdType := pCrdGrantType_s1
+        pCrdQueue_s2.io.enq.bits.srcID := pCrdGrantSrcID_s1
 
         val grantCnt = RegInit(0.U(64.W))
-        when (pCrdQueue.io.deq.ready) {
+        when (pCrdQueue_s3.io.deq.ready) {
           grantCnt := grantCnt + 1.U
         }
         dontTouch(grantCnt)
@@ -256,12 +261,14 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         )
 
         val linkMonitor = Module(new LinkMonitor)
+        val rxdatPipe = Pipeline(linkMonitor.io.in.rx.dat)
+        val rxrspPipe = Pipeline(linkMonitor.io.in.rx.rsp)
         linkMonitor.io.in.tx.req <> txreq
         linkMonitor.io.in.tx.rsp <> txrsp
         linkMonitor.io.in.tx.dat <> txdat
         rxsnp <> linkMonitor.io.in.rx.snp
-        rxrsp <> linkMonitor.io.in.rx.rsp
-        rxdat <> linkMonitor.io.in.rx.dat
+        rxrsp <> rxrspPipe
+        rxdat <> rxdatPipe
         io_chi <> linkMonitor.io.out
         linkMonitor.io.nodeID := io_nodeID
         /* exit coherency when: l2 flush of all slices is done and core is in WFI state */
@@ -272,7 +279,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         /**
           * performance counters
           */
-        XSPerfAccumulate("pcrd_count", pCrdQueue.io.enq.fire)
+        XSPerfAccumulate("pcrd_count", pCrdQueue_s2.io.enq.fire)
     }
   }
 

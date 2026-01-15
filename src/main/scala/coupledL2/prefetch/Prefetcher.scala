@@ -242,6 +242,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val pbop_en = pfCtrlFromCore.l2_pf_master_en && pfCtrlFromCore.l2_pbop_en
   val vbop_en = pfCtrlFromCore.l2_pf_master_en && pfCtrlFromCore.l2_vbop_en
   val tp_en = pfCtrlFromCore.l2_pf_master_en && pfCtrlFromCore.l2_tp_en
+  val delay_latency = pfCtrlFromCore.l2_pf_delay_latency
 
   // =================== Prefetchers =====================
   // TODO: consider separate VBOP and PBOP in prefetch param
@@ -293,6 +294,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   // Rcv > VBOP > PBOP > TP
   if (hasBOP) {
     vbop.get.io.enable := vbop_en
+    vbop.get.io.pfCtrlOfDelayLatency := delay_latency
     vbop.get.io.req.ready :=  (if(hasReceiver) !pfRcv.get.io.req.valid else true.B)
     vbop.get.io.train <> io.train
     vbop.get.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
@@ -302,6 +304,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     vbop.get.io.pbopCrossPage := true.B // pbop.io.pbopCrossPage // let vbop have noting to do with pbop
 
     pbop.get.io.enable := pbop_en
+    pbop.get.io.pfCtrlOfDelayLatency := delay_latency
     pbop.get.io.req.ready :=
       (if(hasReceiver) !pfRcv.get.io.req.valid else true.B) &&
       (if(hasBOP) !vbop.get.io.req.valid else true.B)
@@ -325,7 +328,8 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     assert(!pfRcv.get.io.req.valid ||
       pfRcv.get.io.req.bits.pfSource === MemReqSource.Prefetch2L2SMS.id.U ||
       pfRcv.get.io.req.bits.pfSource === MemReqSource.Prefetch2L2Stream.id.U ||
-      pfRcv.get.io.req.bits.pfSource === MemReqSource.Prefetch2L2Stride.id.U
+      pfRcv.get.io.req.bits.pfSource === MemReqSource.Prefetch2L2Stride.id.U ||
+      pfRcv.get.io.req.bits.pfSource === MemReqSource.Prefetch2L2Berti.id.U
     )
   }
   if (hasTPPrefetcher) {
@@ -346,38 +350,49 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val pftQueue = Module(new PrefetchQueue)
   val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
 
-  pftQueue.io.enq.valid :=
-    (if (hasReceiver)     pfRcv.get.io.req.valid                         else false.B) ||
-    (if (hasBOP)          vbop.get.io.req.valid || pbop.get.io.req.valid else false.B) ||
-    (if (hasTPPrefetcher) tp.get.io.req.valid                            else false.B)
-  pftQueue.io.enq.bits := ParallelPriorityMux(Seq(
-    if (hasReceiver)     pfRcv.get.io.req.valid -> pfRcv.get.io.req.bits else false.B -> 0.U.asTypeOf(io.req.bits),
-    if (hasBOP)          vbop.get.io.req.valid -> vbop.get.io.req.bits   else false.B -> 0.U.asTypeOf(io.req.bits),
-    if (hasBOP)          pbop.get.io.req.valid -> pbop.get.io.req.bits   else false.B -> 0.U.asTypeOf(io.req.bits),
-    if (hasTPPrefetcher) tp.get.io.req.valid -> tp.get.io.req.bits       else false.B -> 0.U.asTypeOf(io.req.bits)
-  ))
+  private val SRC_NUM = 4
+  private val Seq(rcv_idx, vbop_idx, pbop_idx, tp_idx) = (0 until SRC_NUM).toSeq
+  val pftQueueEnqArb = Module(new Arbiter(new PrefetchReq, SRC_NUM))
+  pftQueueEnqArb.io.in.foreach{ x =>
+    x.valid := false.B
+    x.bits := 0.U.asTypeOf(new PrefetchReq)
+  }
+  if (hasReceiver) {
+    pftQueueEnqArb.io.in(rcv_idx).valid := pfRcv.get.io.req.valid
+    pftQueueEnqArb.io.in(rcv_idx).bits := pfRcv.get.io.req.bits
+  }
+  if (hasBOP) {
+    pftQueueEnqArb.io.in(vbop_idx).valid := vbop.get.io.req.valid
+    pftQueueEnqArb.io.in(vbop_idx).bits := vbop.get.io.req.bits
+    pftQueueEnqArb.io.in(pbop_idx).valid := pbop.get.io.req.valid
+    pftQueueEnqArb.io.in(pbop_idx).bits := pbop.get.io.req.bits
+  }
+  if (hasTPPrefetcher) {
+    pftQueueEnqArb.io.in(tp_idx).valid := tp.get.io.req.valid
+    pftQueueEnqArb.io.in(tp_idx).bits := tp.get.io.req.bits
+  }
+  pftQueue.io.enq <> pftQueueEnqArb.io.out
 
   pipe.io.in <> pftQueue.io.deq
   io.req <> pipe.io.out
 
-  val hasReceiverReq = if (hasReceiver) pfRcv.get.io.req.valid else false.B
-  val hasVBOPReq = if (hasBOP) vbop.get.io.req.valid else false.B
-  val hasPBOPReq = if (hasBOP) pbop.get.io.req.valid else false.B
-  val hasTPReq = if (hasTPPrefetcher) tp.get.io.req.valid else false.B
+  XSPerfAccumulate("prefetch_train_valid", io.train.valid)
+  XSPerfAccumulate("prefetch_req_fromL1", pftQueueEnqArb.io.in(rcv_idx).valid)
+  XSPerfAccumulate("prefetch_req_fromVBOP", pftQueueEnqArb.io.in(vbop_idx).valid)
+  XSPerfAccumulate("prefetch_req_fromPBOP", pftQueueEnqArb.io.in(pbop_idx).valid)
+  XSPerfAccumulate("prefetch_req_fromBOP", pftQueueEnqArb.io.in(vbop_idx).valid || pftQueueEnqArb.io.in(pbop_idx).valid)
+  XSPerfAccumulate("prefetch_req_fromTP",  pftQueueEnqArb.io.in(tp_idx).valid)
 
-  XSPerfAccumulate("prefetch_req_fromL1", hasReceiverReq)
-  XSPerfAccumulate("prefetch_req_fromVBOP", hasVBOPReq)
-  XSPerfAccumulate("prefetch_req_fromPBOP", hasPBOPReq)
-  XSPerfAccumulate("prefetch_req_fromBOP", hasVBOPReq || hasPBOPReq)
-  XSPerfAccumulate("prefetch_req_fromTP",  hasTPReq)
-
-  XSPerfAccumulate("prefetch_req_selectL1", hasReceiverReq)
-  XSPerfAccumulate("prefetch_req_selectVBOP", hasVBOPReq && !hasReceiverReq)
-  XSPerfAccumulate("prefetch_req_selectPBOP", hasPBOPReq && !hasReceiverReq && !hasVBOPReq)
-  XSPerfAccumulate("prefetch_req_selectBOP", (hasPBOPReq || hasVBOPReq) && !hasReceiverReq)
-  XSPerfAccumulate("prefetch_req_selectTP", hasTPReq && !hasReceiverReq && !hasVBOPReq && !hasPBOPReq)
+  XSPerfAccumulate("prefetch_req_selectL1", pftQueueEnqArb.io.in(rcv_idx).fire)
+  XSPerfAccumulate("prefetch_req_selectVBOP", pftQueueEnqArb.io.in(vbop_idx).fire)
+  XSPerfAccumulate("prefetch_req_selectPBOP", pftQueueEnqArb.io.in(pbop_idx).fire)
+  XSPerfAccumulate("prefetch_req_selectBOP", pftQueueEnqArb.io.in(vbop_idx).fire || pftQueueEnqArb.io.in(pbop_idx).fire)
+  XSPerfAccumulate("prefetch_req_selectTP",  pftQueueEnqArb.io.in(tp_idx).fire)
   XSPerfAccumulate("prefetch_req_SMS_other_overlapped",
-    hasReceiverReq && (hasVBOPReq || hasPBOPReq || hasTPReq))
+    pftQueueEnqArb.io.in(rcv_idx).valid && (
+      pftQueueEnqArb.io.in(vbop_idx).valid || pftQueueEnqArb.io.in(pbop_idx).valid || pftQueueEnqArb.io.in(tp_idx).valid
+    )
+  )
 
   // NOTE: set basicDB false when debug over
   // TODO: change the enable signal to not target the BOP

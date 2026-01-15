@@ -80,6 +80,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
 
     /* for TopDown Monitor */
     val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
+    val msAlloc = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRAllocStatus)))
 
     /* to Slice Top for pCrd info.*/
     val pCrd = Vec(mshrsAll, new PCrdQueryBundle)
@@ -186,11 +187,15 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
 
 
   /* Status for topDown monitor */
-  topDownOpt.foreach (_ =>
-    io.msStatus.get.zip(mshrs).foreach {
-      case (in, s) => in := s.io.status
+  topDownOpt.foreach { _ =>
+    io.msStatus.get.zip(io.msAlloc.get).zip(mshrs).foreach {
+      case ((statusOut, allocOut), mshr) =>
+        // status
+        statusOut := mshr.io.status
+        // alloc
+        allocOut := mshr.io.statAlloc
     }
-  )
+  }
 
   /* Performance counters */
   XSPerfAccumulate("capacity_conflict_to_sinkA", a_mshrFull)

@@ -77,7 +77,8 @@ class DataStorage(implicit p: Parameters) extends L2Module {
     readMCP2 = true,
     hasMbist = p(L2ParamKey).hasMbist,
     hasSramCtl = p(L2ParamKey).hasSramCtl,
-    extraHold = true
+    extraHold = enableClockGate,
+    withClockGate = enableClockGate
   ))
   array.io_en := io.en
   private val mbistPl = MbistPipeline.PlaceMbistPipeline(1, "L2DataStorage", p(L2ParamKey).hasMbist)

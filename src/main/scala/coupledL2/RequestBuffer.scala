@@ -23,6 +23,7 @@ import freechips.rocketchip.tilelink.TLPermissions._
 import chisel3._
 import chisel3.util._
 import coupledL2._
+import coupledL2.prefetch._
 import coupledL2.utils._
 import utility._
 
@@ -90,7 +91,8 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       val set = UInt(setBits.W)
     }))
 
-    val hasLatePF = Output(Bool())
+    val hasHitPfInMSHR = ValidIO(UInt(PfSource.pfSourceBits.W))
+    val hasPfLateInMSHR = ValidIO(UInt(MemReqSource.reqSourceBits.W))
     val hasMergeA = Output(Bool())
   })
 
@@ -121,10 +123,15 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   def conflictMaskFromA(a: TaskBundle): UInt =
     conflictMask(a) & VecInit(io.mshrInfo.map(_.bits.fromA)).asUInt
 
-  def latePrefetch(a: TaskBundle): Bool = VecInit(io.mshrInfo.map(s =>
+  def latePrefetch(a: TaskBundle): (Bool, UInt) = {
+    val matchVec = VecInit(io.mshrInfo.map(s =>
     s.valid && s.bits.isPrefetch && sameAddr(a, s.bits) && !s.bits.willFree &&
-    a.fromA && (a.opcode === AcquireBlock || a.opcode === AcquirePerm)
-  )).asUInt.orR
+      a.fromA && (a.opcode === AcquireBlock || a.opcode === AcquirePerm)
+    ))
+    val matched = matchVec.asUInt.orR
+    val matchSrc = ParallelPriorityMux(matchVec, io.mshrInfo.map(_.bits.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U)))
+    (matched, matchSrc)
+  }
 
   // count ways
 //  def countWaysOH(cond: (MSHRInfo => Bool)): UInt = {
@@ -183,8 +190,6 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   // flow not allowed when full, or entries might starve
   val canFlow = flow.B && !full && !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(in)
   val doFlow  = canFlow && io.out.ready
-  io.hasLatePF := latePrefetch(in) && io.in.valid && !sameAddr(in, RegNext(in))
-  io.hasMergeA := mergeA && io.in.valid && !sameAddr(in, RegNext(in))
 
   //  val depMask    = buffer.map(e => e.valid && sameAddr(io.in.bits, e.task))
   // remove duplicate prefetch if same-addr A req in MSHR or ReqBuf
@@ -197,6 +202,14 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     )
   ).asUInt
   val dup        = isPrefetch && dupMask.orR
+
+  // statistics io
+  val latePrefetchRes = latePrefetch(in)
+  io.hasHitPfInMSHR.valid := latePrefetchRes._1 && io.in.valid && !sameAddr(in, RegNext(in))
+  io.hasHitPfInMSHR.bits := latePrefetchRes._2
+  io.hasPfLateInMSHR.valid := io.in.valid && dup
+  io.hasPfLateInMSHR.bits := io.in.bits.reqSource
+  io.hasMergeA := mergeA && io.in.valid && !sameAddr(in, RegNext(in))
 
   //!! TODO: we can also remove those that duplicate with mainPipe
 

@@ -42,37 +42,6 @@ class PipeStatusWithCHI(implicit p: Parameters) extends PipeStatus
   val mshrTask = Bool()
 }
 
-class MSHRStatus(implicit p: Parameters) extends TL2CHIL2Bundle
-  with HasTLChannelBits 
-  with HasCHIChannelBits {
-  // TODO
-  val set         = UInt(setBits.W)
-  val reqTag      = UInt(tagBits.W)
-  val metaTag     = UInt(tagBits.W)
-  val needsRepl = Bool()
-  val w_c_resp = Bool()
-  val w_d_resp = Bool()
-  val will_free = Bool()
-
-//  val way = UInt(wayBits.W)
-//  val off = UInt(offsetBits.W)
-//  val opcode = UInt(3.W)
-//  val param = UInt(3.W)
-//  val size = UInt(msgSizeBits.W)
-//  val source = UInt(sourceIdBits.W)
-//  val alias = aliasBitsOpt.map(_ => UInt(aliasBitsOpt.get.W))
-//  val aliasTask = aliasBitsOpt.map(_ => Bool())
-//  val needProbeAckData = Bool() // only for B reqs
-//  val fromL2pft = prefetchOpt.map(_ => Bool())
-//  val needHint = prefetchOpt.map(_ => Bool())
-
-  // for TopDown usage
-  val reqSource = UInt(MemReqSource.reqSourceBits.W)
-  val is_miss = Bool()
-  val is_prefetch = Bool()
-
-}
-
 class PCrdQueryBundle(implicit p: Parameters) extends TL2CHIL2Bundle with HasCHIOpcodes {
   val query = Output(ValidIO(new Bundle() {
     val pCrdType = UInt(PCRDTYPE_WIDTH.W)

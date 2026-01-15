@@ -27,7 +27,7 @@ import coupledL2._
 import coupledL2.utils._
 import coupledL2.debug._
 import coupledL2.prefetch.PrefetchIO
-import utility.{RegNextN, XSPerfHistogram}
+import utility.{MemReqSource, RegNextN, XSPerfHistogram}
 
 class OuterBundle(params: TLBundleParameters) extends TLBundle(params) with BaseOuterBundle
 
@@ -35,7 +35,6 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   val io = IO(new BaseSliceIO[OuterBundle] {
     override val out: OuterBundle = new OuterBundle(edgeOut.bundle)
   })
-  val io_msStatus = topDownOpt.map(_ => IO(Vec(mshrsAll, ValidIO(new MSHRStatus))))
 
   val reqArb = Module(new RequestArb())
   val a_reqBuf = Module(new RequestBuffer)
@@ -183,10 +182,14 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
 
   topDownOpt.foreach (
     _ => {
-      io_msStatus.get        := mshrCtl.io.msStatus.get
+      io.msStatus.get        := mshrCtl.io.msStatus.get
+      io.msAlloc.get         := mshrCtl.io.msAlloc.get
       io.dirResult.get.valid := directory.io.resp.valid && !directory.io.replResp.valid // exclude MSHR-Grant read-dir
       io.dirResult.get.bits  := directory.io.resp.bits
-      io.latePF.get          := a_reqBuf.io.hasLatePF
+      io.hitPfInMSHR.get     := a_reqBuf.io.hasHitPfInMSHR
+      io.pfLateInMSHR.get    := a_reqBuf.io.hasPfLateInMSHR
+      io.pfSent.get.valid := io.prefetch.fold(false.B)(_.req.fire)
+      io.pfSent.get.bits := io.prefetch.fold(MemReqSource.NoWhere.id.U)(p => p.req.bits.pfSource)
     }
   )
   io.l2Miss := mshrCtl.io.l2Miss
