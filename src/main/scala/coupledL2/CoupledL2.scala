@@ -40,8 +40,9 @@ trait HasCoupledL2Parameters {
   val p: Parameters
   // val tl2tlParams: HasTLL2Parameters = p(L2ParamKey)
   def enableCHI = p(EnableCHI)
+  def enableClockGate = p(EnableL2ClockGate)
   def cacheParams = p(L2ParamKey)
-  def EnablePrivateClint = cacheParams.EnablePrivateClint
+  def PrivateClintRange = cacheParams.PrivateClintRange
 
   def XLEN = 64
   def blocks = cacheParams.sets * cacheParams.ways
@@ -593,18 +594,13 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     })))
     topDown match {
       case Some(t) =>
-        t.io.msStatus.zip(slices).foreach {
-          case (in, s) =>
-            s match {
-              case slice: tl2tl.Slice => in := slice.io_msStatus.get
-              case slice: tl2chi.Slice => in := slice.io_msStatus.get
-            }
-        }
-        t.io.dirResult.zip(slices).foreach {
-          case (res, s) => res := s.io.dirResult.get
-        }
-        t.io.latePF.zip(slices).foreach {
-          case (in, s) => in := s.io.latePF.get
+        for ((s, i) <- slices.zipWithIndex) {
+          t.io.msStatus(i) := s.io.msStatus.get
+          t.io.msAlloc(i) := s.io.msAlloc.get
+          t.io.dirResult(i) := s.io.dirResult.get
+          t.io.hitPfInMSHR(i) := s.io.hitPfInMSHR.get
+          t.io.pfLateInMSHR(i) := s.io.pfLateInMSHR.get
+          t.io.pfSent(i) := s.io.pfSent.get
         }
         t.io.debugTopDown <> io.debugTopDown
       case None => io.debugTopDown.l2MissMatch := false.B

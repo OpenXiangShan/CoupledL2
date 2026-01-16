@@ -15,6 +15,23 @@ on:
 
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
+  check-submodules:
+    runs-on: ubuntu-22.04
+    continue-on-error: false
+    timeout-minutes: 5
+    name: Check Submodules
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: 'true'
+          fetch-depth: '0'
+      - name: check rocket-chip
+        run: cd rocket-chip && git fetch --all && git merge-base --is-ancestor `git rev-parse HEAD` origin/master
+      - name: check HuanCun
+        run: cd HuanCun && git fetch --all && git merge-base --is-ancestor `git rev-parse HEAD` origin/master
+      - name: check utility
+        run: cd utility && git fetch --all && git merge-base --is-ancestor `git rev-parse HEAD` origin/master
+
   # This workflow contains a single job called "build"
   tl-test_L2:
     # The type of runner that the job will run on
@@ -78,6 +95,7 @@ jobs:
             git clone https://github.com/OpenXiangShan/OpenLLC
             cd OpenLLC && make init
             rm -rf ./coupledL2 && ln -s ../../.. ./coupledL2
+            rm -rf ./utility && ln -s ../../../utility ./utility
             cd ../..
             make openLLC-test-l2l3l2 run THREADS_BUILD=4 CXX_COMPILER=clang++-17
             rm -rf run/*.vcd run/*.fst run/*.log run/*.db
