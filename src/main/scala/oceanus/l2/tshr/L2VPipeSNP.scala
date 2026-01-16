@@ -2,7 +2,21 @@ package oceanus.l2.tshr
 
 import chisel3._
 import chisel3.util._
+import oceanus.l2._
+import oceanus.compactchi._
 
-class L2VPipeSNP extends Module {
+object L2VPipeSNP {
 
+  class PathTSHRPayloadRead(clients: Seq[CCHIComponent]) extends Bundle {
+    val p_paddr = UInt(48.W)
+    val p_meta_state = new L2CacheState(clients)
+  }
+}
+
+class L2VPipeSNP(clients: Seq[CCHIComponent]) extends Module {
+
+  val io = IO(new Bundle {
+    val flit = Flipped(Valid(new FlitSNP))
+    val payloadRead = Input(new L2VPipeSNP.PathTSHRPayloadRead(clients))
+  })
 }
