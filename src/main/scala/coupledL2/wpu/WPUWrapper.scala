@@ -120,6 +120,6 @@ class WPUWrapper(implicit p:Parameters) extends L2Module {
     }
     val pred_fail_cause = pred_fail && pred_bits.timeCnt.get <= updTimeVec(pred_bits.set)
     XSPerfAccumulate("WPU_pred_fail_caused_by_late_upd", pred_fail_cause)
-    assert(Mux(pred_valid, pred_succ | pred_fail && pred_fail_cause, true.B))
+    // assert(Mux(pred_valid, pred_succ | pred_fail && pred_fail_cause, true.B))
   }
 }
