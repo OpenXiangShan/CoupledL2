@@ -69,7 +69,7 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   // Sample Table
   val sampleTable= Module(new MultiPortRegFile(
       gen  = new SampleTableEntryField(),
-      sets = nlParams.sampleTableSets/nlParams.sampleTableWays,
+      sets = sampleTableSets,
       ways = nlParams.sampleTableWays,
       numReadPorts = 2,
       numWritePorts = 2,
@@ -80,7 +80,7 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   val sampleTableReplacer = ReplacementPolicy.fromString(sampleTableReplacementPolicy,nlParams.sampleTableWays)
   val sampleTableReplaceStateRegs = Module(new MultiPortRegFile(
       gen = UInt(sampleTableReplacer.nBits.W),
-      sets = nlParams.sampleTableSets/nlParams.sampleTableWays,
+      sets = sampleTableSets,
       ways = 1,
       numReadPorts = 2,
       numWritePorts = 2,
@@ -123,18 +123,18 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   val s1_addr                  = RegNext(s0_addr)
   val s1_pc                    = RegNext(s0_pc)
 
-  val s1_sampleTableReplaceEn     = RegNext(s0_sampleTableReplaceEn)
+  //update
   val s1_sampleTableUpdateEntries = RegNext(sampleTable.io.r(sampleTableUpdatePort).resp.data)  // Vec(ways, SampleTableEntryField)
-  // 显式创建寄存器并初始化,避免位宽推断问题
   val s1_sampleTableUpdataState = RegInit(0.U(sampleTableReplacer.nBits.W))
 
   //replace
+  val s1_sampleTableReplaceEn     = RegNext(s0_sampleTableReplaceEn)
   val s1_sampleTableReplaceEntries = RegNext(sampleTable.io.r(sampleTableReplacePort).resp.data)  // Vec(ways, SampleTableEntryField)
   val s1_sampleTableReplaceState = RegInit(0.U(sampleTableReplacer.nBits.W))
 
 
   // 重新解析 Stage 1 的地址
-  val (s1_sampleTableSet, s1_sampleTableTag, s1_patternTableSet, s1_patternTableTag) = 
+  val (s1_sampleTableSet, s1_sampleTableTag, s1_patternTableTag) = 
     parseTrainData(s1_addr, s1_pc)
   //update
   s1_sampleTableUpdataState     := sampleTableReplaceStateRegs.io.r(sampleTableUpdatePort).resp.data(0)
@@ -149,23 +149,26 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   s1_SampleTableUpdatedHitEntry     := s1_sampleTableUpdateEntries(s1_sampleTableUpdateHitWayIdx)
 
   //判断是否要更新
-  val s1_SampleTableUpdatedEntry     = Wire(new SampleTableEntryField)
   val s1_sampleTableUpdateEn         = Wire(Bool())
+  val s1_SampleTableUpdatedEntry     = Wire(new SampleTableEntryField)
+  
   val timeSampleDelta  = s1_timeSample -s1_SampleTableUpdatedHitEntry.sampleTime
   val realate = timeSampleDelta < timeSampleMaxDistance.U && timeSampleMinDistance.U < timeSampleDelta
   when(s1_valid & sampleTableUpdateHit & realate ) {//如果命中,并且满足更新条件则更新   
+    s1_sampleTableUpdateEn := true.B
     s1_SampleTableUpdatedEntry := s1_SampleTableUpdatedHitEntry
     s1_SampleTableUpdatedEntry.touched := true.B
-    s1_sampleTableUpdateEn := true.B
+    
   }.otherwise{//如果不满足则不更新
-      s1_SampleTableUpdatedEntry := 0.U.asTypeOf(new SampleTableEntryField)
-      s1_sampleTableUpdateEn := false.B
+    s1_sampleTableUpdateEn := false.B
+    s1_SampleTableUpdatedEntry := 0.U.asTypeOf(new SampleTableEntryField)
+      
   }
 
   //replace Data 处理 
   s1_sampleTableReplaceState := sampleTableReplaceStateRegs.io.r(sampleTableReplacePort).resp.data(0)
 
-  //计算Victim way id
+  //使用替换算法计算Victim way id
   val s1_sampleTableReplaceWayIdx = sampleTableReplacer.get_replace_way(s1_sampleTableReplaceState)
   val s1_sampleTableReplaceNextState = sampleTableReplacer.get_next_state(s1_sampleTableReplaceState,s1_sampleTableUpdateHitWayIdx)
   
@@ -175,11 +178,12 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
 
   //设置插入数据
   val s1_sampleTableReplaceEntry = Wire(new SampleTableEntryField)  
+  s1_sampleTableReplaceEntry.valid := true.B
   s1_sampleTableReplaceEntry.tag := s1_sampleTableTag
   s1_sampleTableReplaceEntry.sampleTime := s1_timeSample
   s1_sampleTableReplaceEntry.pcTag := getPatternTableTag(s1_pc)
   s1_sampleTableReplaceEntry.touched := false.B
-  s1_sampleTableReplaceEntry.valid := true.B
+  
 
   // 封装 Sample Table 的两个写请求
   val s1_sampleTableUpdateReq      = Wire(new SampleTableWriteReq())
@@ -208,7 +212,7 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   s1_sampleTableReplaceStateReq.state := s1_sampleTableReplaceNextState
 
   //发送给pattern table的数据
-  io.resp.valid        := s1_sampleTableReplaceEn //出现replace，则给pattern传入训练数据
+  io.resp.valid        := s1_sampleTableReplaceEn && s1_sampleTableVictimEntry.valid //出现replace，并且victim数据是valid则给pattern传入训练数据
   io.resp.bits.pcTag   := s1_sampleTableVictimEntry.pcTag //将踢出的表项的pcTag传入
   io.resp.bits.touched := s1_sampleTableVictimEntry.touched //将踢出表项的touched传入
 
@@ -256,6 +260,6 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
 
   //sampleTable给patternTable的训练数据和victim data
   XSPerfAccumulate("sampleTable_victim_touched_true_times",s1_sampleTableReplaceEn & s1_sampleTableVictimEntry.touched)
-  XSPerfAccumulate("sampleTable_victim_touched_false_times",s1_sampleTableReplaceEn & !s1_sampleTableVictimEntry.touched))
+  XSPerfAccumulate("sampleTable_victim_touched_false_times",s1_sampleTableReplaceEn & !s1_sampleTableVictimEntry.touched)
 
 }

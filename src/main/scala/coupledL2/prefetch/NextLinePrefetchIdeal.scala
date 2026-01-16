@@ -15,6 +15,7 @@ import utility.XSPerfAccumulate
 
 //define Next-Line Prefetcher base parameters
 case class NLParameters(
+    L2SliceNum:Int = 4, //L2 cache slice number
     tablePcTagBits: Int = 15, //data field in block
     timeSampleCounterBits:Int = 14, //采样计数器位宽
     timeSampleRate : Int = 256, //采样率
@@ -66,14 +67,18 @@ trait HasNLParams extends HasCoupledL2Parameters {
   def vaddrBits = fullVAddrBits
   def timeSampleCounterBits = nlParams.timeSampleCounterBits
   def timeSampleRateBits    = log2Ceil(nlParams.timeSampleRate)
-  def tablePcTagBits        = vaddrBits - log2Ceil(nlParams.patternTableSets) - offsetBits //sampleTable的PcTag字段和patternTable的tag字段是一样的
+  // def tablePcTagBits        = vaddrBits - log2Ceil(nlParams.patternTableSets) - offsetBits //sampleTable的PcTag字段和patternTable的tag字段是一样的50-6-6=38bit
+  def tablePcTagBits        = vaddrBits  //sampleTable的PcTag字段和patternTable的tag字段是一样的50bit
   def timeSampleMinDistance = nlParams.timeSampleMinDistance
-  def timeSampleMaxDistance = blocks * blockBytes / 2 //计算出L2cache是多少个字节，然后除2就是max的值了
+  //block = set=512*way=8=4096 bytes
+  //blockBytes = 64 bytes 64*4096/2=2^10*2^7
+  def timeSampleMaxDistance = blocks * nlParams.L2SliceNum / 2 //计算出L2cache是多少个字节，然后除2就是max的值了,这个数
   //
-  def sampleTableSets      = timeSampleMaxDistance / nlParams.timeSampleRate
+  def sampleTableBlocks     = timeSampleMaxDistance / nlParams.timeSampleRate //8192/256=32个采样点
+  def sampleTableSets      = sampleTableBlocks / nlParams.sampleTableWays //32/4=8个set
   def sampleTableSetBits   = log2Ceil(sampleTableSets)
   def sampleTableWaysBits  = log2Ceil(nlParams.sampleTableWays)
-  def sampleTableTagBits   = vaddrBits - sampleTableSetBits - offsetBits // offsetBits=6bit，setBits=5bit, tag=64-5-6=53
+  def sampleTableTagBits   = vaddrBits - sampleTableSetBits - offsetBits // offsetBits=6bit，setBits=3bit, tag=50-3-6=41
   def sampleTablePcTagBits = tablePcTagBits
   def sampleTableTimeSampleBits = nlParams.timeSampleCounterBits
 
@@ -107,16 +112,16 @@ abstract class NLModule(implicit val p: Parameters) extends Module with HasNLPar
   // ==================== 辅助函数: 地址解析 ====================
   
   /** 获取块地址 (去除块内偏移)
-    * @param addr 完整地址
-    * @return 块地址 (右移 offsetBits)
+    * @param addr 完整地址|tag|set|Cacheoffset|
+    * @return 块地址 (右移 offsetBits)|tag+set|
     */
   def getBlockAddr(addr: UInt): UInt = {
     addr >> offsetBits //这个offsetBit是L2cache的块大小决定的
   }
   
   /** 从地址中提取 Sample Table 的 set 索引
-    * @param addr 完整地址
-    * @return Sample Table 的 set 索引
+    * @param addr 完整地址|tag|set|
+    * @return Sample Table 的 set 索引|set|
     */
   def getSampleTableSet(addr: UInt): UInt = {
     val blockAddr = getBlockAddr(addr)
@@ -124,8 +129,8 @@ abstract class NLModule(implicit val p: Parameters) extends Module with HasNLPar
   }
   
   /** 从地址中提取 Sample Table 的 tag
-    * @param addr 完整地址
-    * @return Sample Table 的 tag
+    * @param addr 完整地址|tag|SampleSet|Cacheoffset|
+    * @return Sample Table 的 tag |tag|
     * blockAddr 位宽 = vaddrBits - offsetBits
     * tag = blockAddr 的高位部分（去除 set 位）
     */
@@ -136,14 +141,6 @@ abstract class NLModule(implicit val p: Parameters) extends Module with HasNLPar
     blockAddr(vaddrBits - offsetBits - 1, sampleTableSetBits)
   }
   
-  /** 从地址中提取 Pattern Table 的 set 索引
-    * @param addr 完整地址
-    * @return Pattern Table 的 set 索引,64=6bit
-    */
-  def getPatternTableSet(addr: UInt): UInt = {
-    val blockAddr = getBlockAddr(addr)
-    blockAddr(patternTableSetBits - 1, 0)
-  }
   
   /** 从 PC 中提取 Pattern Table 的 tag
     * @param pc 程序计数器地址
@@ -152,10 +149,12 @@ abstract class NLModule(implicit val p: Parameters) extends Module with HasNLPar
     * tag = blockAddr 的高位部分（去除 set 位）
     */
   def getPatternTableTag(addr: UInt): UInt = {
-    val blockAddr = getBlockAddr(addr)
-    // blockAddr 的位宽是 (vaddrBits - offsetBits)
-    // tag 从 blockAddr 的最高位开始，去掉低 patternTableSetBits 位
-    blockAddr(vaddrBits - offsetBits - 1, patternTableSetBits)
+    // val blockAddr = getBlockAddr(addr)
+    // // blockAddr 的位宽是 (vaddrBits - offsetBits)
+    // // tag 从 blockAddr 的最高位开始，去掉低 patternTableSetBits 位
+    // blockAddr(vaddrBits - offsetBits - 1, patternTableSetBits)
+
+    addr
   }
   
   /** 综合解析: 从地址和 PC 中提取所有需要的字段
@@ -163,12 +162,11 @@ abstract class NLModule(implicit val p: Parameters) extends Module with HasNLPar
     * @param pc 程序计数器
     * @return (sampleSet, sampleTag, patternSet, patternTag)
     */
-  def parseTrainData(addr: UInt, pc: UInt): (UInt, UInt, UInt, UInt) = {
+  def parseTrainData(addr: UInt, pc: UInt): (UInt, UInt, UInt) = {
     val sampleSet = getSampleTableSet(addr)
     val sampleTag = getSampleTableTag(addr)
-    val patternSet = getPatternTableSet(addr)
     val patternTag = getPatternTableTag(pc)
-    (sampleSet, sampleTag, patternSet, patternTag)
+    (sampleSet, sampleTag, patternTag)
   }
 }
 
@@ -242,10 +240,18 @@ val timeSampleCounter = RegInit(0.U(timeSampleCounterBits.W))
   
   io.req.valid := io.enable && prefetcherPattern.io.resp.valid && 
                   prefetcherPattern.io.resp.bits.needPrefetch 
-  io.req.bits.tag := nextAddr(fullAddressBits - 1, setBits + offsetBits)
-  io.req.bits.set := nextAddr(setBits + offsetBits - 1, offsetBits)
+  
+  //这里使用fullTagBits=[cacheTagBits,bankBits]
+  //set=512，即一个slice里面有512行，offsetBits=6bit, bankBits=2bit
+  val (sendingTag, sendingSet, _) = parseFullAddress(nextAddr)
+  // print the compile-time parameter during elaboration (Scala side)
+  println(s"[elab] fullAddressBits = $fullAddressBits")
+
+  //cache地址是[cacheTag,cacheSet,cacheBank,cacheOffset]
+  io.req.bits.tag := sendingTag //sendingTag=[cacheTag,cacheset[cacheBit-1:cacheBit-2]]
+  io.req.bits.set := sendingSet //sendingSet=[cacheSet[cacheBit-3:0],cacheBank] ,经过SinkA会将这些重组成正确的
   io.req.bits.vaddr.foreach(_ := 0.U)  // NL 预取器不使用 vaddr
-  io.req.bits.needT := false.B  // 预取默认不需要独占权限
+  io.req.bits.needT := true.B  // 预取默认不需要独占权限
   io.req.bits.source := 0.U  // 由 L2 分配
   io.req.bits.pfSource := MemReqSource.Prefetch2L2NL.id.U  
 
@@ -257,7 +263,7 @@ val timeSampleCounter = RegInit(0.U(timeSampleCounterBits.W))
   XSPerfAccumulate("transmit_prefetch_req_times",prefetcherPattern.io.resp.valid && prefetcherPattern.io.resp.bits.needPrefetch && 
                   io.enable)//nl发起的预取请求个数
   //其他分析
-  XSPerfAccumulate("timeSampleCount_reset_times",(!timeSampleCounter.orR) & trainEn)
+  XSPerfAccumulate("timeSampleCount_reset_times",(!timeSampleCounter.orR) & shouldTrain)
 
 }
 
