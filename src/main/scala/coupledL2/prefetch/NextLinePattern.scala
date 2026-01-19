@@ -135,9 +135,9 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
       
       
     }.otherwise {// 训练数据未命中，则插入路线
-      s1_patternInsertEn := true.B //使能插入
+      s1_patternInsertEn := s1_trainTouched //插入使能
      
-      s1_patternNewEntry.valid := true.B
+      s1_patternNewEntry.valid := s1_trainTouched
       s1_patternInsertIdx := patternTableReplacer.get_replace_way(patternTableReplaceState)
       s1_patternNewEntry.sat := 1.U  // 初始置信度为1
     }
