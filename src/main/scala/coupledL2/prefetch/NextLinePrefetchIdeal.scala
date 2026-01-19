@@ -257,6 +257,8 @@ val timeSampleCounter = RegInit(0.U(timeSampleCounterBits.W))
 
   //训练数据分析
   XSPerfAccumulate("total_train_times", io.enable && io.train.fire)//nl接收到req的总次数
+  XSPerfAccumulate("store_train_times", io.enable && io.train.fire && io.train.bits.reqsource === MemReqSource.CPUStoreData.id.U)//nl接收到store req的总次数  
+  XSPerfAccumulate("atomi_train_times", io.enable && io.train.fire && io.train.bits.reqsource === MemReqSource.CPUAtomicData.id.U)//nl接收到atomic req的总次数 
   XSPerfAccumulate("load_miss_times", validTrain & !io.train.bits.hit)//nl接收到req是load miss的次数
   XSPerfAccumulate("load_hit_prefetched_times",validTrain&  io.train.bits.prefetched)//nl接收到的req里面load在cache命中预取器的次数
   
