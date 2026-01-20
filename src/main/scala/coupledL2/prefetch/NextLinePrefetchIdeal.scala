@@ -17,7 +17,7 @@ import utility.XSPerfAccumulate
 case class NLParameters(
     L2SliceNum:Int = 4, //L2 cache slice number
     tablePcTagBits: Int = 15, //data field in block
-    timeSampleCounterBits:Int = 14, //采样计数器位宽
+    timeSampleCounterBits:Int = 64, //采样计数器位宽
     timeSampleRate : Int = 256, //采样率
     timeSampleMinDistance :Int = 4, //采样最小距离
 
@@ -30,7 +30,6 @@ case class NLParameters(
     //sample entry  tag bits ,it used to distinguish with other entry
   
     sampleTableTouchedBits: Int = 1,
-    sampleTableSampleTimeBits: Int =14,
     sampleTableReplacementPolicy: String = "plru",
     
     //zzq Pattern Table config 
@@ -261,7 +260,8 @@ val timeSampleCounter = RegInit(0.U(timeSampleCounterBits.W))
   XSPerfAccumulate("atomi_train_times", io.enable && io.train.fire && io.train.bits.reqsource === MemReqSource.CPUAtomicData.id.U)//nl接收到atomic req的总次数 
   XSPerfAccumulate("load_miss_times", validTrain & !io.train.bits.hit)//nl接收到req是load miss的次数
   XSPerfAccumulate("load_hit_prefetched_times",validTrain&  io.train.bits.prefetched)//nl接收到的req里面load在cache命中预取器的次数
-  
+  XSPerfAccumulate("load_miss_and_hit_prefetched_times",validTrain& !io.train.bits.hit&  io.train.bits.prefetched)
+
   //预取分析
   XSPerfAccumulate("transmit_prefetch_req_times",prefetcherPattern.io.resp.valid && prefetcherPattern.io.resp.bits.needPrefetch && 
                   io.enable)//nl发起的预取请求个数
