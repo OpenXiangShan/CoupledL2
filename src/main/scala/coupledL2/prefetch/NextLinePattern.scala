@@ -148,9 +148,7 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
                            s1_prefetchResp.data.valid
   val s1_needPrefetch = s1_reqHitValidEntry & (s1_prefetchResp.data.sat === ((1.U << patternTableSatBits) - 1.U))
   
-  io.resp.valid             := RegNext(s1_needPrefetch, false.B) //设置初始值为false.B
-  io.resp.bits.needPrefetch := RegNext(s1_needPrefetch, false.B)
-  io.resp.bits.nextAddr     := RegNext(s1_reqAddr + blockBytes.U, 0.U)
+ 
 
   //更新组相连的plru状态信息
   val readUpdateState  = Mux(s1_reqValid, patternTableReplacer.get_next_state(patternTableReplaceState, s1_prefetchReadIdx), patternTableReplaceState)
@@ -169,8 +167,8 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   val s2_patternInsertEn  = RegNext(s1_patternInsertEn, false.B)
   val s2_patternInsertIdx = RegNext(s1_patternInsertIdx)
   
-  val s2_patternNewKey = RegNext(s1_trainPcTag)
-  val s2_patternNewEntry = RegNext(s1_patternNewEntry)
+  val s2_patternNewKey    = RegNext(s1_trainPcTag)
+  val s2_patternNewEntry  = RegNext(s1_patternNewEntry)
 
   // 更新现有表项
   patternTable.io.w(patternTableUpdatePort).en := s2_patternUpdateEn
@@ -186,6 +184,11 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   patternTable.io.w(patternTableInsertPort).req.key := s2_patternNewKey
   patternTable.io.w(patternTableInsertPort).req.idx := s2_patternInsertIdx
   patternTable.io.w(patternTableInsertPort).req.data :=  s2_patternNewEntry
+
+  //发起预取请求
+  io.resp.valid             := RegNext(s1_needPrefetch, false.B) //设置初始值为false.B
+  io.resp.bits.needPrefetch := RegNext(s1_needPrefetch, false.B)
+  io.resp.bits.nextAddr     := RegNext(s1_reqAddr + blockBytes.U, 0.U)
 
   //patternTable训练分析
   XSPerfAccumulate("NextLinePattern_train_times",s1_trainValid) //patternTable收到的多少个训练请求
@@ -209,4 +212,6 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   XSPerfAccumulate("NextLinePattern_pc_hit_satEq2_times",s1_reqHitValidEntry&(s1_prefetchResp.data.sat===2.U) )
   XSPerfAccumulate("NextLinePattern_pc_hit_satEq1_times",s1_reqHitValidEntry&(s1_prefetchResp.data.sat===1.U) )
   XSPerfAccumulate("NextLinePattern_pc_hit_satEq0_times",s1_reqHitValidEntry&(s1_prefetchResp.data.sat===0.U) )
+
+
 }
