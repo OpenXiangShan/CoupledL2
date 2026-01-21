@@ -76,7 +76,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     val out         = DecoupledIO(new TaskBundle)
     val mshrInfo  = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo)))
     val aMergeTask = ValidIO(new AMergeTask)
-    val mainPipeBlock = Input(Vec(2, Bool()))
+    val mainPipeBlock = Input(Vec(3, Bool()))
     /* Snoop task from arbiter at stage 2 */
     val taskFromArb_s1_2 = Flipped(ValidIO(new TaskBundle()))
 
@@ -224,7 +224,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     val pipeBlockOut = io.out.fire && sameSet(in, io.out.bits)
     val probeBlock   = io.s1Entrance.valid && io.s1Entrance.bits.set === in.set // wait for same-addr req to enter MSHR
     val s1Block      = pipeBlockOut || probeBlock
-    val s1_2Block      = io.s1_2Entrance.valid && io.s1_2Entrance.bits.set === in.set
+    // val s1_2Block      = io.s1_2Entrance.valid && io.s1_2Entrance.bits.set === in.set
 
     entry.valid   := true.B
     // when Addr-Conflict / Same-Addr-Dependent / MainPipe-Block / noFreeWay-in-Set, entry not ready
@@ -232,9 +232,9 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     entry.task    := io.in.bits
     entry.waitMP  := Cat(
       s1Block,
-      s1_2Block,
       io.mainPipeBlock(0),
       io.mainPipeBlock(1),
+      io.mainPipeBlock(2),
       0.U(1.W))
     entry.waitMS  := conflictMask(in)
 

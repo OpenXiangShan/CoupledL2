@@ -47,7 +47,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     val toReqArb = Output(new BlockInfo())
 
     /* block A at Entrance */
-    val toReqBuf = Output(Vec(2, Bool()))
+    val toReqBuf = Output(Vec(3, Bool()))
 
     /* handle capacity conflict of GrantBuffer */
     val status_vec_toD = Vec(3, ValidIO(new PipeStatus))
@@ -510,11 +510,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       wpuLookupUpd.valid -> wpuLookupUpd.bits
     ))
   }
-  assert(!wpuReplUpd.valid && !wpuEvictUpd.valid && wpuLookupUpd.valid ||
-    !wpuReplUpd.valid && wpuEvictUpd.valid && !wpuLookupUpd.valid ||
-    wpuReplUpd.valid && !wpuEvictUpd.valid && !wpuLookupUpd.valid ||
-    !wpuReplUpd.valid && !wpuEvictUpd.valid && !wpuLookupUpd.valid
-  )
 
   val readDSAgain = WireInit(true.B)
   if (enWPU) {
@@ -950,8 +945,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     s.set === s1.b_set && (if(tag) s.tag === s1.b_tag else true.B)
   }
 
-  io.toReqBuf(0) := task_s2.valid && s23Block('a', task_s2.bits)
-  io.toReqBuf(1) := task_s3.valid && s23Block('a', task_s3.bits)
+  io.toReqBuf(0) := io.taskInfo_s1_2.valid && s23Block('a', io.taskInfo_s1_2.bits)
+  io.toReqBuf(1) := task_s2.valid && s23Block('a', task_s2.bits)
+  io.toReqBuf(2) := task_s3.valid && s23Block('a', task_s3.bits)
 
   io.toReqArb.blockC_s1 := task_s2.valid && s23Block('c', task_s2.bits)
 

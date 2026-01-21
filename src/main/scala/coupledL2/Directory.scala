@@ -270,6 +270,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   val replaceWay = WireInit(UInt(wayBits.W), 0.U)
   val (inv, invalidWay) = invalid_way_sel(metaAll_s3, replaceWay)
   val chosenWay = Mux(inv, invalidWay, replaceWay)
+  assert(PopCount(hitVec) <= 1.U)
   // if chosenWay not in wayMask, then choose a way in wayMask
   // for retry bug fixing: if the chosenway cause retry last time, choose another way
   /*val finalWay = Mux(
