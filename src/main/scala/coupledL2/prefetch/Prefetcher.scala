@@ -379,12 +379,10 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
 
   pftQueue.io.enq.bits := ParallelPriorityMux(Seq(
     if (hasReceiver)     pfRcv.get.io.req.valid -> pfRcv.get.io.req.bits else false.B -> 0.U.asTypeOf(io.req.bits),
-    // if (hasNLPrefetcher) nl.get.io.req.valid -> nl.get.io.req.bits       else false.B -> 0.U.asTypeOf(io.req.bits),//提升这个NL的优先级
     if (hasBOP)          vbop.get.io.req.valid -> vbop.get.io.req.bits   else false.B -> 0.U.asTypeOf(io.req.bits),
     if (hasBOP)          pbop.get.io.req.valid -> pbop.get.io.req.bits   else false.B -> 0.U.asTypeOf(io.req.bits),
-    // if (hasTPPrefetcher) tp.get.io.req.valid -> tp.get.io.req.bits       else false.B -> 0.U.asTypeOf(io.req.bits)
     if (hasTPPrefetcher) tp.get.io.req.valid -> tp.get.io.req.bits       else false.B -> 0.U.asTypeOf(io.req.bits),
-    if (hasNLPrefetcher) nl.get.io.req.valid -> nl.get.io.req.bits       else false.B -> 0.U.asTypeOf(io.req.bits)//提升这个NL的优先级
+    if (hasNLPrefetcher) nl.get.io.req.valid -> nl.get.io.req.bits       else false.B -> 0.U.asTypeOf(io.req.bits)
   ))
 
   pipe.io.in <> pftQueue.io.deq

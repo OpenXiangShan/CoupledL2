@@ -38,7 +38,7 @@ case class L1Param
   blockBytes: Int = 64,
   aliasBitsOpt: Option[Int] = None,
   vaddrBitsOpt: Option[Int] = None,
-  pcBitOpt: Option[Int] = None,//新增可配置字段
+  pcBitOpt: Option[Int] = None,
   isKeywordBitsOpt : Option[Boolean] = None
 ) {
   val capacity = sets * ways * blockBytes
@@ -62,9 +62,8 @@ case class VaddrField(width: Int) extends BundleField[UInt](VaddrKey, Output(UIn
 case object IsKeywordKey extends ControlKey[Bool]("isKeyword")
 case class IsKeywordField() extends BundleField[Bool](IsKeywordKey, Output(Bool()), _ := false.B)
 
-// 新增load_miss往下传入pc值，这是对这个pc的总控开关，定义了则所有改新增的地方都会新增这个pc端口 
+//memblock pass pc of load_miss to l2
 case object PCKey extends ControlKey[UInt]("pc")
-//定义了一个键值对，PCKEY是键，Output(UInt(width.W))是值,_ := 0.U(width.W)表示默认值是width宽的0
 case class PCField(width: Int) extends BundleField[UInt](PCKey, Output(UInt(width.W)), _ := 0.U(width.W))
 
 case class L2Param(
@@ -89,7 +88,6 @@ case class L2Param(
   echoField: Seq[BundleFieldBase] = Nil,
   reqField: Seq[BundleFieldBase] = Nil,
   respKey: Seq[BundleKeyBase] = Seq(IsHitKey),
-  // Manager 在里面新增我自己定义key
   reqKey: Seq[BundleKeyBase] = Seq(AliasKey, VaddrKey, PrefetchKey, ReqSourceKey, PCKey),
   respField: Seq[BundleFieldBase] = Nil,
 

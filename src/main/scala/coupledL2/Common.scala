@@ -50,7 +50,7 @@ class MergeTaskBundle(implicit p: Parameters) extends L2Bundle {
   val param = UInt(3.W)
   val sourceId = UInt(sourceIdBits.W) // tilelink sourceID
   val meta = new MetaEntry()
-  val pc = pcBitOpt.map(_ => UInt(pcBitOpt.get.W))    // 保证合并请求的时候pc也合并进来了
+  val pc = pcBitOpt.map(_ => UInt(pcBitOpt.get.W))    // pc of demand req 
 }
 
 // We generate a Task for every TL request
