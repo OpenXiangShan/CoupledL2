@@ -440,18 +440,18 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   sampleTableReplaceStateRegs.io.w(sampleTableReplacePort).req.data    := VecInit(Seq.fill(1)(s2_sampleTableReplaceStateReq.state))
 
 
-  XSPerfAccumulate("sampleTable_train_times",s0_valid)
+  XSPerfAccumulate("NextLine_sampleTable_train_times",s0_valid)
   
-  XSPerfAccumulate("sampleTable_insert_times", s0_sampleTableReplaceEn)
+  XSPerfAccumulate("NextLine_sampleTable_insert_times", s0_sampleTableReplaceEn)
 
   //update analysis
-  XSPerfAccumulate("sampleTable_update_req_not_hit_times",s1_valid & !sampleTableUpdateHit)
-  XSPerfAccumulate("sampleTable_update_req_hit_over_board_times",s1_valid & sampleTableUpdateHit & !realate)
-  XSPerfAccumulate("sampleTable_update_times",s1_sampleTableUpdateEn) 
+  XSPerfAccumulate("NextLine_sampleTable_update_req_not_hit_times",s1_valid & !sampleTableUpdateHit)
+  XSPerfAccumulate("NextLine_sampleTable_update_req_hit_over_board_times",s1_valid & sampleTableUpdateHit & !realate)
+  XSPerfAccumulate("NextLine_sampleTable_update_times",s1_sampleTableUpdateEn) 
 
   //victim data analysis
-  XSPerfAccumulate("sampleTable_victim_touched_true_times",s1_sampleTableReplaceEn & s1_sampleTableVictimEntry.touched)
-  XSPerfAccumulate("sampleTable_victim_touched_false_times",s1_sampleTableReplaceEn & !s1_sampleTableVictimEntry.touched)
+  XSPerfAccumulate("NextLine_sampleTable_victim_touched_true_times",s1_sampleTableReplaceEn & s1_sampleTableVictimEntry.touched)
+  XSPerfAccumulate("NextLine_sampleTable_victim_touched_false_times",s1_sampleTableReplaceEn & !s1_sampleTableVictimEntry.touched)
 
 }
 
@@ -702,18 +702,18 @@ class NextLinePrefetchIdeal(implicit p: Parameters) extends NLModule {
   val monitor = Module(new NextLineMonitor())
   monitor.io.patternDb := prefetcherPattern.io.db 
   monitor.io.sampleDb  := prefetcherSample.io.db 
-  XSPerfAccumulate("total_train_times", io.enable && io.train.fire)//nl accept req times
-  XSPerfAccumulate("store_train_times", io.enable && io.train.fire && io.train.bits.reqsource === MemReqSource.CPUStoreData.id.U)
-  XSPerfAccumulate("atomi_train_times", io.enable && io.train.fire && io.train.bits.reqsource === MemReqSource.CPUAtomicData.id.U)
-  XSPerfAccumulate("load_miss_times", validTrain & !io.train.bits.hit)
-  XSPerfAccumulate("load_hit_prefetched_times",validTrain&  io.train.bits.prefetched)
-  XSPerfAccumulate("load_miss_and_hit_prefetched_times",validTrain& !io.train.bits.hit&  io.train.bits.prefetched)
+  XSPerfAccumulate("NextLine_total_train_times", io.enable && io.train.fire)//nl accept req times
+  XSPerfAccumulate("NextLine_store_train_times", io.enable && io.train.fire && io.train.bits.reqsource === MemReqSource.CPUStoreData.id.U)
+  XSPerfAccumulate("NextLine_atomi_train_times", io.enable && io.train.fire && io.train.bits.reqsource === MemReqSource.CPUAtomicData.id.U)
+  XSPerfAccumulate("NextLine_load_miss_times", validTrain & !io.train.bits.hit)
+  XSPerfAccumulate("NextLine_load_hit_prefetched_times",validTrain&  io.train.bits.prefetched)
+  XSPerfAccumulate("NextLine_load_miss_and_hit_prefetched_times",validTrain& !io.train.bits.hit&  io.train.bits.prefetched)
 
   
-  XSPerfAccumulate("transmit_prefetch_req_times",prefetcherPattern.io.resp.valid && prefetcherPattern.io.resp.bits.needPrefetch && 
+  XSPerfAccumulate("NextLine_transmit_prefetch_req_times",prefetcherPattern.io.resp.valid && prefetcherPattern.io.resp.bits.needPrefetch && 
                   io.enable)
   
-  XSPerfAccumulate("timeSampleCount_reset_times",(!timeSampleCounter.orR) & shouldTrain)
+  XSPerfAccumulate("NextLine_timeSampleCount_reset_times",(!timeSampleCounter.orR) & shouldTrain)
 
 }
 

@@ -408,7 +408,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   XSPerfAccumulate("prefetch_req_selectTP", hasTPReq && !hasReceiverReq && !hasVBOPReq && !hasPBOPReq)
   XSPerfAccumulate("prefetch_req_selectNL", hasNLReq && !hasTPReq && !hasReceiverReq && !hasVBOPReq && !hasPBOPReq)
   XSPerfAccumulate("prefetch_req_SMS_other_overlapped",
-    hasReceiverReq && (hasVBOPReq || hasPBOPReq || hasTPReq))
+    hasReceiverReq && (hasVBOPReq || hasPBOPReq || hasTPReq || hasNLReq))
 
   // NOTE: set basicDB false when debug over
   // TODO: change the enable signal to not target the BOP
