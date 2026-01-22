@@ -381,7 +381,7 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
 
   // Encapsulate replace state table write request
   val s1_sampleTableUpdateStateReq = Wire(new SampleTableReplaceStateWriteReq())
-  s1_sampleTableUpdateStateReq.en      := s1_sampleTableUpdateEn
+  s1_sampleTableUpdateStateReq.en      := s1_valid & sampleTableUpdateHit //follow Gem5 design 
   s1_sampleTableUpdateStateReq.setIdx  := s1_sampleTableSet
   s1_sampleTableUpdateStateReq.wayMask := s1_sampleTableUpdateHitWayOH
   s1_sampleTableUpdateStateReq.state   := s1_sampleTableUpdataNextState
@@ -551,10 +551,10 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
  
 
   // update the PLRU state of the set
-  val readUpdateState  = Mux(s1_reqValid, patternTableReplacer.get_next_state(patternTableReplaceState, s1_prefetchReadIdx), patternTableReplaceState)
-  val trainUpdateState = Mux(s1_trainValid, patternTableReplacer.get_next_state(readUpdateState, Mux(s1_trainResp.hit, 
-                                                                                                                      s1_trainResp.hitIdx, s1_patternInsertIdx)), 
-                                                                                                readUpdateState)
+
+  val trainUpdateState = patternTableReplacer.get_next_state(patternTableReplaceState, Mux(s1_trainResp.hit, 
+                                                                                         s1_trainResp.hitIdx, s1_patternInsertIdx))
+                                                                                              
   patternTableReplaceState := trainUpdateState
   
   
