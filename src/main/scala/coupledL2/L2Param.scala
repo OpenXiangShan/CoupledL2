@@ -78,7 +78,7 @@ case class L2Param(
    * 2 for all except prefetch & !accessed
    * 3 for all
    */
-  mmioBridgeSize: Int = 8,
+  mmioBridgeSize: Int = 16,
 
   // Client
   echoField: Seq[BundleFieldBase] = Nil,
