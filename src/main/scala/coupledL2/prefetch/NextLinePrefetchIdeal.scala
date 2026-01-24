@@ -196,7 +196,7 @@ class SampleDb(implicit p: Parameters) extends NLBundle {
   val trainEn = Bool()
   val hit        = Bool()
   val timeSampleDetal = UInt(timeSampleCounterBits.W)
-  val victimData = Vec(nlParams.sampleTableWays,new SampleTableEntryField()) //victim entry
+  val victimData = new SampleTableEntryField()//victim entry
   val insertData = new SampleTableEntryField()
   val updateData = new SampleTableEntryField()
   val plru_state = UInt(3.W)
@@ -315,6 +315,8 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   val s1_SampleTableUpdatedHitEntry  = Wire(new SampleTableEntryField)
   val s1_sampleTableUpdateEn         = Wire(Bool())
   val s1_sampleTableUpdatedEntry     = Wire(new SampleTableEntryField)
+  val s1_sampleTableUpdateIdx        = s1_sampleTableSet -1.U 
+
 
   s1_sampleTableUpdataState     := sampleTableReplaceStateRegs.io.r(sampleTableUpdatePort).resp.data(0)
   
@@ -346,6 +348,7 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   val s1_sampleTableReplaceEn     = RegNext(s0_sampleTableReplaceEn)
   val s1_sampleTableReplaceEntries = RegNext(sampleTable.io.r(sampleTableReplacePort).resp.data)  // Vec(ways, SampleTableEntryField)
   val s1_sampleTableReplaceState = RegInit(0.U(sampleTableReplacer.nBits.W))
+  val s1_sampleTableReplaceIdx = s1_sampleTableSet 
 
   s1_sampleTableReplaceState := sampleTableReplaceStateRegs.io.r(sampleTableReplacePort).resp.data(0)
 
@@ -369,13 +372,13 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   // Encapsulate the two write requests of the Sample Table
   val s1_sampleTableUpdateReq      = Wire(new SampleTableWriteReq())
   s1_sampleTableUpdateReq.en       := s1_sampleTableUpdateEn
-  s1_sampleTableUpdateReq.setIdx   := s1_sampleTableSet
+  s1_sampleTableUpdateReq.setIdx   := s1_sampleTableUpdateIdx
   s1_sampleTableUpdateReq.wayMask  := s1_sampleTableUpdateHitWayOH
   s1_sampleTableUpdateReq.entry    := s1_sampleTableUpdatedEntry
 
   val s1_sampleTableReplaceReq      = Wire(new SampleTableWriteReq())
   s1_sampleTableReplaceReq.en      := s1_sampleTableReplaceEn
-  s1_sampleTableReplaceReq.setIdx  := s1_sampleTableSet
+  s1_sampleTableReplaceReq.setIdx  := s1_sampleTableReplaceIdx
   s1_sampleTableReplaceReq.wayMask := s1_sampleTableReplaceWayOH
   s1_sampleTableReplaceReq.entry   := s1_sampleTableReplaceEntry
 
