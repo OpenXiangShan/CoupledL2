@@ -151,7 +151,7 @@ class SampleTableWriteReq(implicit p: Parameters) extends NLBundle {
 }
 
 
-class SampleTableReplaceStateWriteReq(implicit p: Parameters) extends NLBundle {
+class SampleTableStateWriteReq(implicit p: Parameters) extends NLBundle {
   val en      = Bool()
   val setIdx  = UInt(sampleTableSetBits.W)
   val wayMask = UInt(1.W)  
@@ -357,7 +357,7 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
 
   //caculate victim way id
   val s1_sampleTableReplaceWayIdx    = sampleTableReplacer.get_replace_way(s1_sampleTableReplaceState)
-  val s1_sampleTableReplaceNextState = sampleTableReplacer.get_next_state(s1_sampleTableReplaceState,s1_sampleTableUpdateHitWayIdx)
+  val s1_sampleTableReplaceNextState = sampleTableReplacer.get_next_state(s1_sampleTableReplaceState,s1_sampleTableReplaceWayIdx)
   
   //get victim way data
   val s1_sampleTableReplaceWayOH = UIntToOH(s1_sampleTableReplaceWayIdx)
@@ -386,13 +386,13 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   s1_sampleTableReplaceReq.entry   := s1_sampleTableReplaceEntry
 
   // Encapsulate replace state table write request
-  val s1_sampleTableUpdateStateReq = Wire(new SampleTableReplaceStateWriteReq())
+  val s1_sampleTableUpdateStateReq = Wire(new SampleTableStateWriteReq())
   s1_sampleTableUpdateStateReq.en      := s1_valid & sampleTableUpdateHit //follow Gem5 design 
   s1_sampleTableUpdateStateReq.setIdx  := s1_sampleTableUpdateIdx
   s1_sampleTableUpdateStateReq.wayMask := s1_sampleTableUpdateHitWayOH
   s1_sampleTableUpdateStateReq.state   := s1_sampleTableUpdataNextState
 
-  val s1_sampleTableReplaceStateReq = Wire(new SampleTableReplaceStateWriteReq())
+  val s1_sampleTableReplaceStateReq = Wire(new SampleTableStateWriteReq())
   s1_sampleTableReplaceStateReq.en      := s1_sampleTableReplaceEn
   s1_sampleTableReplaceStateReq.setIdx  := s1_sampleTableReplaceIdx
   s1_sampleTableReplaceStateReq.wayMask := s1_sampleTableReplaceWayOH
@@ -517,6 +517,7 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
 
   val s1_patternInsertEn = WireInit(false.B)
   val s1_patternInsertIdx = WireInit(0.U(log2Ceil(nlParams.patternTableSets).W))
+  
   val s1_patternNewEntry = WireInit(s1_trainResp.data)
  
   //update or insert
@@ -543,25 +544,26 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
     }
   }
 
+  // update the PLRU state of the set
+  val trainUpdateState = patternTableReplacer.get_next_state(patternTableReplaceState, Mux(s1_trainResp.hit, 
+                                                                                         s1_trainResp.hitIdx, s1_patternInsertIdx))
+                                                                                              
+  patternTableReplaceState := trainUpdateState
+
   //************Prefetch part***************//
   val s1_reqValid     = RegNext(s0_reqValid, false.B)
   val s1_reqPc        = RegNext(s0_reqPc)
   val s1_reqAddr      = RegNext(s0_reqAddr)
   val s1_reqResp = RegNext(patternTable.io.r(patternTablePrefetchPort).resp)
 
-  val s1_prefetchReadIdx = s1_reqResp.hitIdx
-  val s1_reqHitValidEntry = s1_reqValid && s1_reqResp.hit && 
-                           s1_reqResp.data.valid
+  
+  val s1_reqHitValidEntry = s1_reqValid && s1_reqResp.hit 
+  
   val s1_needPrefetch = s1_reqHitValidEntry & (s1_reqResp.data.sat === ((1.U << patternTableSatBits) - 1.U))
   
  
 
-  // update the PLRU state of the set
 
-  val trainUpdateState = patternTableReplacer.get_next_state(patternTableReplaceState, Mux(s1_trainResp.hit, 
-                                                                                         s1_trainResp.hitIdx, s1_patternInsertIdx))
-                                                                                              
-  patternTableReplaceState := trainUpdateState
   
   
   io.db.Sat := s1_trainResp.data.sat
