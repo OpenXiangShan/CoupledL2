@@ -74,6 +74,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
     task.off := parseAddress(c.address)._3
     task.alias.foreach(_ := 0.U)
     task.vaddr.foreach(_ := 0.U)
+    task.pc.foreach(_ := 0.U)
     task.isKeyword.foreach(_ := false.B)
     task.opcode := c.opcode
     task.param := c.param

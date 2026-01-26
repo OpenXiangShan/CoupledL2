@@ -45,6 +45,7 @@ class MergeTaskBundle(implicit p: Parameters) extends L2Bundle {
   val off = UInt(offsetBits.W)
   val alias = aliasBitsOpt.map(_ => UInt(aliasBitsOpt.get.W)) // color bits in cache-alias issue
   val vaddr = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W)) // vaddr passed by client cache, for prefetcher train
+  val pc = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W))
   val isKeyword = isKeywordBitsOpt.map(_ => Bool())
   val opcode = UInt(3.W) // type of the task operation
   val param = UInt(3.W)
@@ -63,6 +64,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val off = UInt(offsetBits.W)
   val alias = aliasBitsOpt.map(_ => UInt(aliasBitsOpt.get.W)) // color bits in cache-alias issue
   val vaddr = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W)) // vaddr passed by client cache
+  val pc = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W)) // pc from upper cache
   // from L1 load miss require 
   val isKeyword = isKeywordBitsOpt.map(_ => Bool())
   val opcode = UInt(4.W)                  // type of the task operation
@@ -88,6 +90,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val fromL2pft = prefetchOpt.map(_ => Bool()) // Is the prefetch req from L2(BOP) or from L1 prefetch?
                                           // If true, MSHR should send an ack to L2 prefetcher.
   val needHint = prefetchOpt.map(_ => Bool())
+  val hitCount = prefetchOpt.map(_ => UInt(hitCountWidth.W))
 
   // For DirtyKey in Release
   val dirty = Bool()
@@ -470,4 +473,22 @@ class IOCMOAll(implicit p: Parameters) extends Bundle {
   val cmoLineDone = Input(Bool())  // during process of cmo flush all, flush 1 CacheLine is done 
   val mshrValid = Input(Bool())    // 1: mshr has entry valid  0: no mshr entry valid
   val cmoAllBlock = Output(Bool()) // 1: in process of cmo flush all  0: not in process of cmo flush all
+}
+
+class TPmetaReq(implicit p: Parameters) extends L2Bundle {
+  // TODO: rawData's width is determined by L2; when L2's offsetBits change, rawData should change accordingly
+  val hartid = UInt(hartIdLen.W)
+  val set = UInt(10.W) // determined by TP
+  val way = UInt(4.W)
+  val wmode = Bool()
+  val rawData = Vec(512 / (fullAddressBits - offsetBits), UInt((fullAddressBits - offsetBits).W))
+  val length = UInt(log2Ceil(512 / (fullAddressBits - offsetBits)).W)
+  val hitCount = UInt(hitCountWidth.W)
+}
+
+class TPmetaResp(implicit p: Parameters) extends L2Bundle {
+  val hartid = UInt(hartIdLen.W)
+  val rawData = Vec(512 / (fullAddressBits - offsetBits), UInt((fullAddressBits - offsetBits).W))
+  val length = UInt(log2Ceil(512 / (fullAddressBits - offsetBits)).W)
+  val hitCount = UInt(hitCountWidth.W)
 }

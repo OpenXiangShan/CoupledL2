@@ -575,6 +575,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val metaW_s3_mshr = WireInit(Mux(req_s3.mergeA, req_s3.aMergeTask.meta, req_s3.meta))
   metaW_s3_mshr.tagErr := req_s3.denied
   metaW_s3_mshr.dataErr := req_s3.corrupt
+  metaW_s3_mshr.hitCount := req_s3.hitCount.getOrElse(0.U)
   val metaW_s3_cmo  = MetaEntry()   // invalid the block
 
   val metaW_way = Mux(
@@ -719,6 +720,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       train.bits.prefetched := Mux(req_s3.mergeA, true.B, meta_s3.prefetch.getOrElse(false.B))
       train.bits.pfsource := meta_s3.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) // TODO
       train.bits.reqsource := req_s3.reqSource
+      train.bits.pc := req_s3.pc.getOrElse(0.U)
+      train.bits.hitCount := dirResult_s3.meta.hitCount
   }
 
   /* ======== Stage 4 ======== */

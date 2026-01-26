@@ -117,6 +117,7 @@ class PrefetchReq(implicit p: Parameters) extends PrefetchBundle {
   val needT = Bool()
   val source = UInt(sourceIdBits.W)
   val pfSource = UInt(MemReqSource.reqSourceBits.W)
+  val hitCount = UInt(hitCountWidth.W)
 
   def addr: UInt = Cat(tag, set, 0.U(offsetBits.W))
   def isBOP:Bool = pfSource === MemReqSource.Prefetch2L2BOP.id.U
@@ -160,6 +161,8 @@ class PrefetchTrain(implicit p: Parameters) extends PrefetchBundle {
   val prefetched = Bool()
   val pfsource = UInt(PfSource.pfSourceBits.W)
   val reqsource = UInt(MemReqSource.reqSourceBits.W)
+  val pc = UInt(fullVAddrBits.W)
+  val hitCount = UInt(hitCountWidth.W)
 
   def addr: UInt = Cat(tag, set, 0.U(offsetBits.W))
 }
@@ -231,9 +234,9 @@ class PrefetchQueue(implicit p: Parameters) extends PrefetchModule {
 
 class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val io = IO(new PrefetchIO)
-  val tpio = IO(new Bundle() {
-    val tpmeta_port = if (hasTPPrefetcher) Some(new tpmetaPortIO(hartIdLen, fullAddressBits, offsetBits)) else None
-  })
+//  val tpio = IO(new Bundle() {
+//    val tpmeta_port = if (hasTPPrefetcher) Some(new tpmetaPortIO(hartIdLen, fullAddressBits, offsetBits)) else None
+//  })
   val hartId = IO(Input(UInt(hartIdLen.W)))
   val pfCtrlFromCore = IO(Input(new PrefetchCtrlFromCore))
 
@@ -312,6 +315,11 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     pbop.get.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
     pbop.get.io.resp <> io.resp
     pbop.get.io.resp.valid := io.resp.valid && io.resp.bits.isPBOP
+  } else {
+    io.tlb_req.req.valid := false.B
+    io.tlb_req.req.bits := DontCare
+    io.tlb_req.req_kill := false.B
+    io.tlb_req.resp.ready := false.B
   }
   if (hasReceiver) {
     pfRcv.get.io_enable := pfRcv_en
@@ -340,7 +348,6 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     tp.get.io.req.ready := (if(hasReceiver) !pfRcv.get.io.req.valid else true.B) &&
       (if(hasBOP) !vbop.get.io.req.valid && !pbop.get.io.req.valid else true.B)
 
-    tp.get.io.tpmeta_port <> tpio.tpmeta_port.get
   }
   private val mbistPl = MbistPipeline.PlaceMbistPipeline(2, "MbistPipeL2Prefetcher", cacheParams.hasMbist && (hasBOP || hasTPPrefetcher))
 

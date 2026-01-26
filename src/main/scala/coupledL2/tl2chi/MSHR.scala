@@ -458,6 +458,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_release.off := 0.U
     mp_release.alias.foreach(_ := 0.U)
     mp_release.vaddr.foreach(_ := 0.U)
+    mp_release.pc.foreach(_ := 0.U)
     mp_release.isKeyword.foreach(_ := false.B)
     // if dirty, we must ReleaseData
     // if accessed, we ReleaseData to keep the data in L3, for future access to be faster
@@ -481,6 +482,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_release.way := dirResult.way
     mp_release.fromL2pft.foreach(_ := false.B)
     mp_release.needHint.foreach(_ := false.B)
+    mp_release.hitCount.foreach(_ := 0.U)
     mp_release.dirty := false.B//meta.dirty && meta.state =/= INVALID || probeDirty
     mp_release.metaWen := false.B
     mp_release.meta := MetaEntry()
@@ -567,6 +569,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_cbwrdata.off := 0.U
     mp_cbwrdata.alias.foreach(_ := 0.U)
     mp_cbwrdata.vaddr.foreach(_ := 0.U)
+    mp_cbwrdata.pc.foreach(_ := 0.U)
     mp_cbwrdata.isKeyword.foreach(_ := false.B)
     mp_cbwrdata.opcode := 0.U
     mp_cbwrdata.param := 0.U
@@ -583,6 +586,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_cbwrdata.way := dirResult.way
     mp_cbwrdata.fromL2pft.foreach(_ := false.B)
     mp_cbwrdata.needHint.foreach(_ := false.B)
+    mp_cbwrdata.hitCount.foreach(_ := 0.U)
     mp_cbwrdata.dirty := false.B // DontCare
     mp_cbwrdata.metaWen := false.B
     mp_cbwrdata.meta := MetaEntry()
@@ -623,6 +627,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_probeack.off := req.off
     mp_probeack.alias.foreach(_ := 0.U)
     mp_probeack.vaddr.foreach(_ := 0.U)
+    mp_probeack.pc.foreach(_ := 0.U)
     mp_probeack.isKeyword.foreach(_ := false.B)
     mp_probeack.opcode := 0.U
     mp_probeack.param := DontCare
@@ -639,6 +644,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_probeack.way := dirResult.way
     mp_probeack.fromL2pft.foreach(_ := false.B)
     mp_probeack.needHint.foreach(_ := false.B)
+    mp_probeack.hitCount.foreach(_ := 0.U)
     mp_probeack.dirty := hitDirty
     mp_probeack.meta := MetaEntry(
       /**
@@ -729,6 +735,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_grant.sourceId := req.sourceId
     mp_grant.alias.foreach(_ := 0.U)
     mp_grant.vaddr.foreach(_ := 0.U)
+    mp_grant.pc.foreach(_ := 0.U)
     mp_grant.isKeyword.foreach(_ := req.isKeyword.getOrElse(false.B))
     mp_grant.opcode := odOpGen(req.opcode)
     mp_grant.param := Mux(
@@ -798,6 +805,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_grant.dsWen := (gotGrantData || probeDirty && (req_get || req.aliasTask.getOrElse(false.B))) && !denied
     mp_grant.fromL2pft.foreach(_ := req.fromL2pft.get)
     mp_grant.needHint.foreach(_ := false.B)
+    mp_grant.hitCount.foreach(_ := req.hitCount.get)
     mp_grant.replTask := !dirResult.hit && !state.w_replResp && !denied
     mp_grant.cmoTask := cmo_cbo
     mp_grant.wayMask := 0.U(cacheParams.ways.W)
@@ -813,6 +821,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_grant.aMergeTask.off := merge_task.off
     mp_grant.aMergeTask.alias.foreach(_ := merge_task.alias.getOrElse(0.U))
     mp_grant.aMergeTask.vaddr.foreach(_ := merge_task.vaddr.getOrElse(0.U))
+    mp_grant.aMergeTask.pc.foreach(_ := merge_task.pc.getOrElse(0.U))
     mp_grant.aMergeTask.isKeyword.foreach(_ := merge_task_isKeyword)
     mp_grant.aMergeTask.opcode := odOpGen(merge_task.opcode)
     mp_grant.aMergeTask.param := MuxLookup( // Acquire -> Grant
@@ -852,6 +861,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_dct.off := req.off
     mp_dct.alias.foreach(_ := 0.U)
     mp_dct.vaddr.foreach(_ := 0.U)
+    mp_dct.pc.foreach(_ := 0.U)
     mp_dct.isKeyword.foreach(_ := 0.U)
     mp_dct.opcode := 0.U // DontCare
     mp_dct.param := 0.U // DontCare
@@ -868,6 +878,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_dct.way := dirResult.way
     mp_dct.fromL2pft.foreach(_ := false.B)
     mp_dct.needHint.foreach(_ := false.B)
+    mp_dct.hitCount.foreach((_ := false.B))
     mp_dct.dirty := hitDirty
     mp_dct.meta := MetaEntry()
     mp_dct.metaWen := false.B // meta is written by SnpResp[Data]Fwded, not CompData
@@ -912,6 +923,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_cmometaw.off := req.off
     mp_cmometaw.alias.foreach(_ := 0.U)
     mp_cmometaw.vaddr.foreach(_ := 0.U)
+    mp_cmometaw.pc.foreach(_ := 0.U)
     mp_cmometaw.isKeyword.foreach(_ := 0.U)
     mp_cmometaw.opcode := 0.U // DontCare
     mp_cmometaw.param := 0.U // DontCare
@@ -928,6 +940,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_cmometaw.way := dirResult.way
     mp_cmometaw.fromL2pft.foreach(_ := false.B)
     mp_cmometaw.needHint.foreach(_ := false.B)
+    mp_cmometaw.hitCount.foreach(_ := 0.U)
     mp_cmometaw.dirty := hitDirty
     
     // write meta for compensation of ProbeAck TtoB/TtoN by cbo.clean
