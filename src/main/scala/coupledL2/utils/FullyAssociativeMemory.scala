@@ -38,6 +38,7 @@ class CAMReadResp[T <: Data](gen: T, numEntries: Int) extends Bundle {
   val hit = Bool()
   val hitIdx = UInt(log2Up(numEntries).W)  
   val data = gen.cloneType
+  val multHit = Bool()
 }
 
 class CAMWriteReq[T <: Data](gen: T, keyWidth: Int, numEntries: Int) extends Bundle {
@@ -79,7 +80,7 @@ class FullyAssociativeMemory[T <: Data](
     //debug
     val debug = Output(new Bundle {
       val valid = Vec(numEntries, Bool())
-      val keys = Vec(numEntries, UInt(keyWidth.W))
+      val keys  = Vec(numEntries, UInt(keyWidth.W))
     })
   })
 
@@ -127,6 +128,7 @@ class FullyAssociativeMemory[T <: Data](
     io.r(i).resp.hit := hit || bypassHit
     io.r(i).resp.hitIdx := Mux(bypassHit, bypassIdx, hitIdx)
     io.r(i).resp.data := Mux(hit || bypassHit, bypassData, 0.U.asTypeOf(gen))
+    io.r(i).resp.multHit := PopCount(matchVec) > 1.U
   }  
   // ==================== write port====================
   for (i <- 0 until numWritePorts) {

@@ -20,23 +20,14 @@ case class NLParameters(
     timeSampleRate : Int = 256, //Sampling rate
     timeSampleMinDistance :Int = 4, //Minimum sampling distance
 
-    //zzq Sample Table config 
-    //use 4 way，then there are 8 blocks in way 
+    //Sample Table config 
     sampleTableWays: Int = 4, 
-    // sampleTableSets: Int = 32,
-
-    //zzq offset bits in a block
-    //sample entry  tag bits ,it used to distinguish with other entry
-  
     sampleTableTouchedBits: Int = 1,
     sampleTableReplacementPolicy: String = "plru",
     
-    //zzq Pattern Table config 
+    //Pattern Table config 
     patternTableWays: Int = 1,
-    patternTableSets: Int = 64,
-   
-     //zzq offset bits in a block
-    
+    patternTableSets: Int = 64, 
     patternTableSatBits: Int = 2,
     patternTableReplacementPolicy: String = "plru",
 
@@ -62,27 +53,27 @@ trait HasNLParams extends HasCoupledL2Parameters {
     case _ => false
   }.get.asInstanceOf[NLParameters]
 
-  def vaddrBits = fullVAddrBits
-  def tablePcTagBits        = vaddrBits  //The PcTag field of sampleTable is the same 50 bits as the tag field of patternTable.
+  def vaddrBits      = fullVAddrBits
+  def tablePcTagBits = vaddrBits  //The PcTag field of sampleTable is the same 50 bits as the tag field of patternTable.
 
   //timeSampleCounter 
   def timeSampleCounterBits = nlParams.timeSampleCounterBits
   def timeSampleCounterMax  = ((BigInt(1) << timeSampleCounterBits) - 1).U(timeSampleCounterBits.W)
   def timeSampleRateBits    = log2Ceil(nlParams.timeSampleRate)
   def timeSampleMinDistance = nlParams.timeSampleMinDistance
-  def timeSampleMaxDistance = blocks * nlParams.L2SliceNum / 2 //it Calculate how many bytes the L2 cache is. then div 2
+  def timeSampleMaxDistance = blocks * nlParams.L2SliceNum / 2 //it Calculate how many bytes the L2 cache is. then div 2, 512*8*4/2
   
   //sample
-  def sampleTableBlocks    = timeSampleMaxDistance / nlParams.timeSampleRate 
-  def sampleTableSets      = sampleTableBlocks / nlParams.sampleTableWays 
+  def sampleTableBlocks    = timeSampleMaxDistance / nlParams.timeSampleRate //512*8*4/2/256=32
+  def sampleTableSets      = sampleTableBlocks / nlParams.sampleTableWays //32/4=8
   def sampleTableSetBits   = log2Ceil(sampleTableSets)
   def sampleTableWaysBits  = log2Ceil(nlParams.sampleTableWays)
   def sampleTableTagBits   = vaddrBits - sampleTableSetBits - offsetBits // offsetBits=6bit，setBits=3bit, tag=50-3-6=41
   def sampleTablePcTagBits = tablePcTagBits
-  def sampleTableTimeSampleBits = nlParams.timeSampleCounterBits
+  def sampleTableTimeSampleBits    = nlParams.timeSampleCounterBits
   def sampleTableReplacementPolicy = nlParams.sampleTableReplacementPolicy
-  def sampleTableUpdatePort     = nlParams.sampleTableUpdatePort
-  def sampleTableReplacePort    = nlParams.sampleTableReplacePort
+  def sampleTableUpdatePort        = nlParams.sampleTableUpdatePort
+  def sampleTableReplacePort       = nlParams.sampleTableReplacePort
 
   // pattern 
   def patternTableSetBits  = log2Ceil(nlParams.patternTableSets)
@@ -93,8 +84,8 @@ trait HasNLParams extends HasCoupledL2Parameters {
   def maxSat = (1.U << patternTableSatBits) - 1.U 
 
   def patternTableReplacementPolicy = nlParams.patternTableReplacementPolicy
-  def patternTableTrainPort     = nlParams.patternTableTrainPort
-  def patternTablePrefetchPort  = nlParams.patternTablePrefetchPort
+  def patternTableTrainPort         = nlParams.patternTableTrainPort
+  def patternTablePrefetchPort      = nlParams.patternTablePrefetchPort
   
   def patternTableUpdatePort  = nlParams.patternTableUpdatePort
   def patternTableInsertPort  = nlParams.patternTableInsertPort  
@@ -124,9 +115,9 @@ abstract class NLModule(implicit val p: Parameters) extends Module with HasNLPar
   }
   
   def parseTrainData(blockAddr: UInt): (UInt, UInt) = {
-    val sampleSet = getSampleTableSet(blockAddr)
     val sampleTag = getSampleTableTag(blockAddr)
-    (sampleSet, sampleTag)
+    val sampleSet = getSampleTableSet(blockAddr)
+    (sampleTag,sampleSet)
   }
 }
 class TrainData(implicit p: Parameters ) extends NLBundle{
@@ -186,32 +177,45 @@ class PatternResp(implicit p: Parameters) extends NLBundle {
 }
 //chiselDB interface
 class SampleDb(implicit p: Parameters) extends NLBundle {
-  val addr       = UInt(vaddrBits.W)
+  val trainEn    = Bool()
   val pc         = UInt(vaddrBits.W)
+  val addr       = UInt(vaddrBits.W)
   val timeSample = UInt(timeSampleCounterBits.W)
 
-  val trainEn = Bool()
   val hit        = Bool()
-  val timeSampleDetal = UInt(timeSampleCounterBits.W)
-  val victimData = new SampleTableEntryField()//victim entry
-  val insertData = new SampleTableEntryField()
-  val updateData = new SampleTableEntryField()
   val plru_state = UInt(3.W)
+ 
+  val updateEn   = Bool()
+  val updateIdx  = UInt(sampleTableSetBits.W)
+  val updateMask = UInt(nlParams.sampleTableWays.W)
+  val updateData = new SampleTableEntryField()
+  val timeSampleDetal = UInt(timeSampleCounterBits.W)
+
+
+  val insertEn   = Bool()
+  val insertIdx  = UInt(sampleTableSetBits.W)
+  val insertMask = UInt(nlParams.sampleTableWays.W)
+  val insertData = new SampleTableEntryField()
+  val victimData = new SampleTableEntryField()//victim entry
+ 
+  
 }
 
 class PatternDb(implicit p: Parameters) extends NLBundle {
 
- val hit = Bool()
+ val hit     = Bool()
  val hitData = new PatternTableEntryField()
  val Sat     = UInt(3.W)
 
- val trainEn = Bool()
+ val trainEn   = Bool()
  val trainData = new SampleTableEntryField()
 
- val updateEn = Bool()
+ val updateEn   = Bool()
+ val updateIdx  = UInt(patternTableSetBits.W)
  val updateData = new PatternTableEntryField()
 
- val insertEn = Bool()
+ val insertEn   = Bool()
+ val insertIdx  = UInt(patternTableSetBits.W)
  val insertData = new PatternTableEntryField()
 }
 
@@ -245,7 +249,6 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
     val train = Flipped(DecoupledIO(new SampleTrain)) 
     val resp  = DecoupledIO(new PatternTrain) 
     val db    = Output(new SampleDb)
-
   })
 
   // Sample Table
@@ -277,7 +280,8 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   val s0_timeSample = io.train.bits.timeSample
   val s0_addr       = io.train.bits.addr 
   val s0_pc         = io.train.bits.pc
-  
+
+ //****************replace part******************//
   //When [timeSampleRateBits-1,0] of timeSample is 0, that is, finish round of timeSampleRate,
   //and a new sample arrives at this time, it is inserted into the table.
   val s0_sampleTableReplaceEn = s0_valid & (!s0_timeSample(timeSampleRateBits-1,0).orR)
@@ -285,20 +289,19 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   //Parse address
   val s0_sampleTableReplacBlockAddr = getBlockAddr(s0_addr)
   val s0_sampleTableReplaceIdx      = getSampleTableSet(s0_sampleTableReplacBlockAddr)
-
+  sampleTable.io.r(sampleTableReplacePort).req.setIdx := s0_sampleTableReplaceIdx   
+  sampleTableReplaceStateRegs.io.r(sampleTableReplacePort).req.setIdx := s0_sampleTableReplaceIdx 
+  
+  //****************update part******************//
   val s0_sampleTableUpdateBlockAddr = s0_sampleTableReplacBlockAddr -1.U
   val s0_sampleTableUpdateIdx       = getSampleTableSet(s0_sampleTableUpdateBlockAddr)
 
-
-  // read sampleTable Plru data table
   sampleTable.io.r(sampleTableUpdatePort).req.setIdx  := s0_sampleTableUpdateIdx 
-  sampleTable.io.r(sampleTableReplacePort).req.setIdx := s0_sampleTableReplaceIdx        
-
-
-  // read sampleTable Plru state table
-  sampleTableReplaceStateRegs.io.r(sampleTableUpdatePort).req.setIdx := s0_sampleTableUpdateIdx 
-  sampleTableReplaceStateRegs.io.r(sampleTableReplacePort).req.setIdx := s0_sampleTableReplaceIdx
+  sampleTableReplaceStateRegs.io.r(sampleTableUpdatePort).req.setIdx  := s0_sampleTableUpdateIdx 
   
+
+    
+
   /***************Stage 1: handle  data of Sample Table reading *******************/
   val s1_valid                 = RegNext(s0_valid, false.B)
   val s1_timeSample            = RegNext(s0_timeSample)
@@ -309,9 +312,8 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   val s1_sampleTableUpdateBlockAddr = s1_sampleTableReplacBlockAddr - 1.U
 
 
-  val (s1_sampleTableReplaceIdx, s1_sampleTableReplaceTag) = parseTrainData(s1_sampleTableReplacBlockAddr)
-  val (s1_sampleTableUpdateIdx, s1_sampleTableUpdateTag)  = parseTrainData(s1_sampleTableUpdateBlockAddr)
-  val s1_patternTableTag = getPatternTableTag(s1_pc)
+  
+ 
 
   //****************update part******************//
   val s1_sampleTableUpdateEntries    = RegNext(sampleTable.io.r(sampleTableUpdatePort).resp.data)  // Vec(ways, SampleTableEntryField)
@@ -320,38 +322,53 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   val s1_sampleTableUpdateEn         = Wire(Bool())
   val s1_sampleTableUpdatedEntry     = Wire(new SampleTableEntryField)
 
+  val (s1_sampleTableUpdateTag, s1_sampleTableUpdateIdx)   = parseTrainData(s1_sampleTableUpdateBlockAddr)
 
 
   s1_sampleTableUpdataState     := sampleTableReplaceStateRegs.io.r(sampleTableUpdatePort).resp.data(0)
   
   // UpdateData Hit check:
   val s1_sampleTableUpdateHitVec     = VecInit(s1_sampleTableUpdateEntries.map(entry => entry.valid && (entry.tag === s1_sampleTableUpdateTag)))
-  val sampleTableUpdateHit           = s1_sampleTableUpdateHitVec.asUInt.orR  // example: (1000)===>1
-  val s1_sampleTableUpdateHitWayOH   = s1_sampleTableUpdateHitVec.asUInt      // example: 1000===>8
-  val s1_sampleTableUpdateHitWayIdx  = OHToUInt(s1_sampleTableUpdateHitWayOH) // example: 8===>3 
+  val sampleTableUpdateHit           = s1_sampleTableUpdateHitVec.asUInt.orR  // example: (1010)===>1
+  val s1_sampleTableUpdateHitWayIdx  = PriorityEncoder(s1_sampleTableUpdateHitVec.asUInt)// example: vec(0):0,vec(1)=1,vec(2)=0,vec(3)=1 ===>1 
+  val s1_sampleTableUpdateHitWayOH   = UIntToOH(s1_sampleTableUpdateHitWayIdx)    // example: 1===>0010
+  
 
   val s1_sampleTableUpdataNextState  = sampleTableReplacer.get_next_state(s1_sampleTableUpdataState,s1_sampleTableUpdateHitWayIdx) 
   s1_SampleTableUpdatedHitEntry     := s1_sampleTableUpdateEntries(s1_sampleTableUpdateHitWayIdx)
 
   
   // check if update
-  val timeSampleDelta  = s1_timeSample -s1_SampleTableUpdatedHitEntry.sampleTime
-  val realate = timeSampleDelta < timeSampleMaxDistance.U && timeSampleMinDistance.U < timeSampleDelta
+  val timeSampleDelta  = s1_timeSample - s1_SampleTableUpdatedHitEntry.sampleTime
+  val realate = (timeSampleDelta < timeSampleMaxDistance.U) && (timeSampleMinDistance.U < timeSampleDelta)
   when(s1_valid & sampleTableUpdateHit & realate ) {//if hit and update condition ,then update   
-    s1_sampleTableUpdateEn := true.B
-    s1_sampleTableUpdatedEntry := s1_SampleTableUpdatedHitEntry
+    s1_sampleTableUpdateEn             := true.B
+    s1_sampleTableUpdatedEntry         := s1_SampleTableUpdatedHitEntry
     s1_sampleTableUpdatedEntry.touched := true.B
-    
   }.otherwise{//if not satisfied, do not update
-    s1_sampleTableUpdateEn := false.B
-    s1_sampleTableUpdatedEntry := 0.U.asTypeOf(new SampleTableEntryField)
-      
+    s1_sampleTableUpdateEn             := false.B
+    s1_sampleTableUpdatedEntry         := 0.U.asTypeOf(new SampleTableEntryField)
   }
+
+  val s1_sampleTableUpdateReq      = Wire(new SampleTableWriteReq())
+  s1_sampleTableUpdateReq.en       := s1_sampleTableUpdateEn
+  s1_sampleTableUpdateReq.setIdx   := s1_sampleTableUpdateIdx
+  s1_sampleTableUpdateReq.wayMask  := s1_sampleTableUpdateHitWayOH
+  s1_sampleTableUpdateReq.entry    := s1_sampleTableUpdatedEntry
+
+  val s1_sampleTableUpdateStateReq = Wire(new SampleTableStateWriteReq())
+  s1_sampleTableUpdateStateReq.en      := s1_valid & sampleTableUpdateHit //follow Gem5 design 
+  s1_sampleTableUpdateStateReq.setIdx  := s1_sampleTableUpdateIdx
+  s1_sampleTableUpdateStateReq.wayMask := (s1_valid & sampleTableUpdateHit).asUInt// The state reg has only 1 way (ways=1), so the wayMask is always 1.
+  s1_sampleTableUpdateStateReq.state   := s1_sampleTableUpdataNextState
 
   //***************replace part*******************//
   val s1_sampleTableReplaceEn      = RegNext(s0_sampleTableReplaceEn)
   val s1_sampleTableReplaceEntries = RegNext(sampleTable.io.r(sampleTableReplacePort).resp.data)  // Vec(ways, SampleTableEntryField)
   val s1_sampleTableReplaceState   = RegInit(0.U(sampleTableReplacer.nBits.W))
+
+  val (s1_sampleTableReplaceTag, s1_sampleTableReplaceIdx) = parseTrainData(s1_sampleTableReplacBlockAddr)
+  val s1_patternTableTag = getPatternTableTag(s1_pc)
 
   s1_sampleTableReplaceState := sampleTableReplaceStateRegs.io.r(sampleTableReplacePort).resp.data(0)
 
@@ -361,7 +378,7 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   
   //get victim way data
   val s1_sampleTableReplaceWayOH = UIntToOH(s1_sampleTableReplaceWayIdx)
-  val s1_sampleTableVictimEntry = s1_sampleTableReplaceEntries(s1_sampleTableReplaceWayIdx) 
+  val s1_sampleTableVictimEntry  = s1_sampleTableReplaceEntries(s1_sampleTableReplaceWayIdx) 
 
   //set insert entry data
   val s1_sampleTableReplaceEntry = Wire(new SampleTableEntryField)  
@@ -373,12 +390,6 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   
 
   // Encapsulate the two write requests of the Sample Table
-  val s1_sampleTableUpdateReq      = Wire(new SampleTableWriteReq())
-  s1_sampleTableUpdateReq.en       := s1_sampleTableUpdateEn
-  s1_sampleTableUpdateReq.setIdx   := s1_sampleTableUpdateIdx
-  s1_sampleTableUpdateReq.wayMask  := s1_sampleTableUpdateHitWayOH
-  s1_sampleTableUpdateReq.entry    := s1_sampleTableUpdatedEntry
-
   val s1_sampleTableReplaceReq      = Wire(new SampleTableWriteReq())
   s1_sampleTableReplaceReq.en      := s1_sampleTableReplaceEn
   s1_sampleTableReplaceReq.setIdx  := s1_sampleTableReplaceIdx
@@ -386,16 +397,10 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   s1_sampleTableReplaceReq.entry   := s1_sampleTableReplaceEntry
 
   // Encapsulate replace state table write request
-  val s1_sampleTableUpdateStateReq = Wire(new SampleTableStateWriteReq())
-  s1_sampleTableUpdateStateReq.en      := s1_valid & sampleTableUpdateHit //follow Gem5 design 
-  s1_sampleTableUpdateStateReq.setIdx  := s1_sampleTableUpdateIdx
-  s1_sampleTableUpdateStateReq.wayMask := s1_sampleTableUpdateHitWayOH
-  s1_sampleTableUpdateStateReq.state   := s1_sampleTableUpdataNextState
-
   val s1_sampleTableReplaceStateReq = Wire(new SampleTableStateWriteReq())
   s1_sampleTableReplaceStateReq.en      := s1_sampleTableReplaceEn
   s1_sampleTableReplaceStateReq.setIdx  := s1_sampleTableReplaceIdx
-  s1_sampleTableReplaceStateReq.wayMask := s1_sampleTableReplaceWayOH
+  s1_sampleTableReplaceStateReq.wayMask := s1_sampleTableReplaceEn.asUInt
   s1_sampleTableReplaceStateReq.state   := s1_sampleTableReplaceNextState
 
   //Data sent to the pattern table
@@ -403,49 +408,58 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   io.resp.bits.pcTag   := s1_sampleTableVictimEntry.pcTag 
   io.resp.bits.touched := s1_sampleTableVictimEntry.touched 
 
-  //db
-  io.db.addr       := s1_blockAddr
-  io.db.hit        := sampleTableUpdateHit  
-  io.db.insertData := s1_sampleTableReplaceEntry
-  io.db.pc         := s1_pc
-  io.db.plru_state := s1_sampleTableReplaceNextState
-  io.db.timeSample := s1_timeSample
-  io.db.trainEn    := s1_valid
-  io.db.updateData := s1_sampleTableUpdatedEntry
-  io.db.victimData := s1_sampleTableVictimEntry
-  // detailed time delta for analysis
-  io.db.timeSampleDetal := timeSampleDelta
   /***************Stage 2: writeback*******************/
-  val s2_valid = RegNext(s1_valid, false.B)
-
   val s2_sampleTableUpdateReq       = RegNext(s1_sampleTableUpdateReq)
   val s2_sampleTableUpdateStateReq  = RegNext(s1_sampleTableUpdateStateReq)
   val s2_sampleTableReplaceReq      = RegNext(s1_sampleTableReplaceReq)
   val s2_sampleTableReplaceStateReq = RegNext(s1_sampleTableReplaceStateReq)
 
   // sampleTable update writebacek
-  sampleTable.io.w(sampleTableUpdatePort).en          := s2_valid && s2_sampleTableUpdateReq.en
+  sampleTable.io.w(sampleTableUpdatePort).en          := s2_sampleTableUpdateReq.en
   sampleTable.io.w(sampleTableUpdatePort).req.setIdx  := s2_sampleTableUpdateReq.setIdx
   sampleTable.io.w(sampleTableUpdatePort).req.wayMask := s2_sampleTableUpdateReq.wayMask   
   sampleTable.io.w(sampleTableUpdatePort).req.data    := VecInit(Seq.fill(nlParams.sampleTableWays)(s2_sampleTableUpdateReq.entry))
 
-  sampleTableReplaceStateRegs.io.w(sampleTableUpdatePort).en          := s2_valid && s2_sampleTableUpdateStateReq.en
+  sampleTableReplaceStateRegs.io.w(sampleTableUpdatePort).en          := s2_sampleTableUpdateStateReq.en
   sampleTableReplaceStateRegs.io.w(sampleTableUpdatePort).req.setIdx  := s2_sampleTableUpdateStateReq.setIdx
   sampleTableReplaceStateRegs.io.w(sampleTableUpdatePort).req.wayMask := s2_sampleTableUpdateStateReq.wayMask   
   sampleTableReplaceStateRegs.io.w(sampleTableUpdatePort).req.data    := VecInit(Seq.fill(1)(s2_sampleTableUpdateStateReq.state))
 
   // sampleTable replace writeback
-  sampleTable.io.w(sampleTableReplacePort).en          := s2_valid && s2_sampleTableReplaceReq.en
+  sampleTable.io.w(sampleTableReplacePort).en          := s2_sampleTableReplaceReq.en
   sampleTable.io.w(sampleTableReplacePort).req.setIdx  := s2_sampleTableReplaceReq.setIdx
   sampleTable.io.w(sampleTableReplacePort).req.wayMask := s2_sampleTableReplaceReq.wayMask
   sampleTable.io.w(sampleTableReplacePort).req.data    := VecInit(Seq.fill(nlParams.sampleTableWays)(s2_sampleTableReplaceReq.entry))
 
-  sampleTableReplaceStateRegs.io.w(sampleTableReplacePort).en          := s2_valid && s2_sampleTableReplaceStateReq.en
+  sampleTableReplaceStateRegs.io.w(sampleTableReplacePort).en          := s2_sampleTableReplaceStateReq.en
   sampleTableReplaceStateRegs.io.w(sampleTableReplacePort).req.setIdx  := s2_sampleTableReplaceStateReq.setIdx
   sampleTableReplaceStateRegs.io.w(sampleTableReplacePort).req.wayMask := s2_sampleTableReplaceStateReq.wayMask   
   sampleTableReplaceStateRegs.io.w(sampleTableReplacePort).req.data    := VecInit(Seq.fill(1)(s2_sampleTableReplaceStateReq.state))
 
 
+ 
+  //db
+  io.db.trainEn    := s1_valid
+  io.db.addr       := s1_blockAddr
+  io.db.pc         := s1_pc
+  io.db.timeSample := s1_timeSample
+ 
+  io.db.hit        := sampleTableUpdateHit  
+  io.db.plru_state := s1_sampleTableReplaceNextState
+
+  io.db.updateEn   := s1_sampleTableUpdateEn
+  io.db.updateIdx  := s1_sampleTableUpdateIdx
+  io.db.updateMask := s1_sampleTableUpdateHitWayOH
+  io.db.updateData := s1_sampleTableUpdatedEntry
+  io.db.timeSampleDetal := timeSampleDelta
+
+  io.db.insertEn   := s1_sampleTableReplaceEn
+  io.db.insertIdx  := s1_sampleTableReplaceIdx
+  io.db.insertMask := s1_sampleTableReplaceWayOH
+  io.db.insertData := s1_sampleTableReplaceEntry
+  io.db.victimData := s1_sampleTableVictimEntry
+
+  // detailed time delta for analysis
   XSPerfAccumulate("nlSampleTrainTimes",s0_valid)
   
   XSPerfAccumulate("nlSampleInsertTimes", s0_sampleTableReplaceEn)
@@ -455,6 +469,7 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   XSPerfAccumulate("nlSampleUpdateReqHitOverBoardTimes",s1_valid & sampleTableUpdateHit & !realate)
   XSPerfAccumulate("nlSampleUpdateTimes",s1_sampleTableUpdateEn) 
   XSPerfAccumulate("nlSampleStateUpdateTimes",s1_valid & sampleTableUpdateHit)
+  XSPerfAccumulate("nlSampleUpdateReqMulHitTimes",s1_valid & PopCount(s1_sampleTableUpdateHitVec)>1.U)
 
   //victim data analysis
   XSPerfAccumulate("nlSampleVictimTouchedTrueTimes",s1_sampleTableReplaceEn & s1_sampleTableVictimEntry.touched)
@@ -468,9 +483,9 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
 class NextLinePattern(implicit p: Parameters) extends NLModule {
   val io = IO(new Bundle() {
     val train = Flipped(DecoupledIO(new PatternTrain))
-    val req = Flipped(DecoupledIO(new PatternReq))
-    val resp = DecoupledIO(new PatternResp)
-    val db   = Output(new PatternDb)
+    val req   = Flipped(DecoupledIO(new PatternReq))
+    val resp  = DecoupledIO(new PatternResp)
+    val db    = Output(new PatternDb)
   })
 
   //pattern Table
@@ -488,20 +503,18 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
 
   // default all ready
   io.train.ready := true.B
-  io.req.ready := true.B
+  io.req.ready   := true.B
   
   /***************Stage 0: read Pattern Table*******************/
   val s0_trainValid = io.train.fire 
   val s0_trainPcTag = io.train.bits.pcTag
   val s0_trainTouched = io.train.bits.touched
+  patternTable.io.r(patternTableTrainPort).req.key := s0_trainPcTag
   
   val s0_reqValid = io.req.fire  
   val s0_reqPc    = io.req.bits.pc
   val s0_reqAddr  = io.req.bits.addr
   val s0_reqPcTag = getPatternTableTag(s0_reqPc)
-  
-  // Issue two types of read requests to patternTable
-  patternTable.io.r(patternTableTrainPort).req.key := s0_trainPcTag
   patternTable.io.r(patternTablePrefetchPort).req.key := s0_reqPcTag
   
 
@@ -512,13 +525,13 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   val s1_trainTouched       = RegNext(s0_trainTouched)
   val s1_trainResp          = RegNext(patternTable.io.r(patternTableTrainPort).resp)
   
-  val s1_patternUpdateEn = WireInit(false.B)
-  val s1_patternUpdateIdx = WireInit(0.U(log2Ceil(nlParams.patternTableSets).W))
+  val s1_patternUpdateEn  = WireInit(false.B)
+  val s1_patternUpdateIdx = WireInit(0.U(patternTableSetBits.W))
 
-  val s1_patternInsertEn = WireInit(false.B)
-  val s1_patternInsertIdx = WireInit(0.U(log2Ceil(nlParams.patternTableSets).W))
+  val s1_patternInsertEn  = WireInit(false.B)
+  val s1_patternInsertIdx = WireInit(0.U(patternTableSetBits.W))
   
-  val s1_patternNewEntry = WireInit(s1_trainResp.data)
+  val s1_patternNewEntry  = WireInit(s1_trainResp.data)
  
   //update or insert
   when(s1_trainValid) {
@@ -554,39 +567,15 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   val s1_reqValid     = RegNext(s0_reqValid, false.B)
   val s1_reqPc        = RegNext(s0_reqPc)
   val s1_reqAddr      = RegNext(s0_reqAddr)
-  val s1_reqResp = RegNext(patternTable.io.r(patternTablePrefetchPort).resp)
+  val s1_reqResp      = RegNext(patternTable.io.r(patternTablePrefetchPort).resp)
 
   
   val s1_reqHitValidEntry = s1_reqValid && s1_reqResp.hit 
   
   val s1_needPrefetch = s1_reqHitValidEntry & (s1_reqResp.data.sat === ((1.U << patternTableSatBits) - 1.U))
-  
- 
-
-
-  
-  
-  io.db.Sat := s1_trainResp.data.sat
-  io.db.hit := s1_trainResp.hit
-  io.db.hitData := s1_trainResp.data
-
-  io.db.trainEn := s1_trainValid
-
-  io.db.trainData.pcTag := s1_trainPcTag
-  io.db.trainData.valid := true.B 
-  io.db.trainData.tag :=0.U 
-  io.db.trainData.sampleTime := 0.U
-  io.db.trainData.touched := s1_trainTouched
-
-  io.db.updateEn := s1_patternUpdateEn
-  io.db.updateData := s1_patternNewEntry
-  io.db.insertEn := s1_patternInsertEn
-  io.db.insertData := s1_patternNewEntry
-
-  
   /***************Stage 2: write Pattern Table*******************/
-  val s2_patternUpdateEn    = RegNext(s1_patternUpdateEn, false.B)
-  val s2_patternUpdateIdx   = RegNext(s1_patternUpdateIdx)
+  val s2_patternUpdateEn  = RegNext(s1_patternUpdateEn, false.B)
+  val s2_patternUpdateIdx = RegNext(s1_patternUpdateIdx)
  
   val s2_patternInsertEn  = RegNext(s1_patternInsertEn, false.B)
   val s2_patternInsertIdx = RegNext(s1_patternInsertIdx)
@@ -595,27 +584,49 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   val s2_patternNewEntry  = RegNext(s1_patternNewEntry)
 
   // update
-  patternTable.io.w(patternTableUpdatePort).en := s2_patternUpdateEn
+  patternTable.io.w(patternTableUpdatePort).en        := s2_patternUpdateEn
   patternTable.io.w(patternTableUpdatePort).req.valid := true.B  
-  patternTable.io.w(patternTableUpdatePort).req.key := s2_patternNewKey
-  patternTable.io.w(patternTableUpdatePort).req.idx := s2_patternUpdateIdx
-  patternTable.io.w(patternTableUpdatePort).req.data := s2_patternNewEntry
+  patternTable.io.w(patternTableUpdatePort).req.key   := s2_patternNewKey
+  patternTable.io.w(patternTableUpdatePort).req.idx   := s2_patternUpdateIdx
+  patternTable.io.w(patternTableUpdatePort).req.data  := s2_patternNewEntry
   
 
   // insert
-  patternTable.io.w(patternTableInsertPort).en := s2_patternInsertEn
+  patternTable.io.w(patternTableInsertPort).en        := s2_patternInsertEn
   patternTable.io.w(patternTableInsertPort).req.valid := true.B  
-  patternTable.io.w(patternTableInsertPort).req.key := s2_patternNewKey
-  patternTable.io.w(patternTableInsertPort).req.idx := s2_patternInsertIdx
-  patternTable.io.w(patternTableInsertPort).req.data :=  s2_patternNewEntry
+  patternTable.io.w(patternTableInsertPort).req.key   := s2_patternNewKey
+  patternTable.io.w(patternTableInsertPort).req.idx   := s2_patternInsertIdx
+  patternTable.io.w(patternTableInsertPort).req.data  := s2_patternNewEntry
 
   //prefetcher initiate a prefetch request
   io.resp.valid             := RegNext(s1_needPrefetch, false.B) 
   io.resp.bits.needPrefetch := RegNext(s1_needPrefetch, false.B)
   io.resp.bits.nextAddr     := RegNext(s1_reqAddr + blockBytes.U, 0.U)
 
+  //db  
+  io.db.Sat := s1_trainResp.data.sat
+  io.db.hit := s1_trainResp.hit
+  io.db.hitData := s1_trainResp.data
+
+  io.db.trainEn := s1_trainValid
+
+  io.db.trainData.pcTag := s1_trainPcTag
+  io.db.trainData.valid := true.B 
+  io.db.trainData.tag   := 0.U 
+  io.db.trainData.sampleTime := 0.U
+  io.db.trainData.touched    := s1_trainTouched
+
+  io.db.updateEn   := s1_patternUpdateEn
+  io.db.updateIdx  := s1_patternUpdateIdx
+  io.db.updateData := s1_patternNewEntry
+
+  io.db.insertEn   := s1_patternInsertEn
+  io.db.insertIdx  := s1_patternInsertIdx 
+  io.db.insertData := s1_patternNewEntry
+
 
   XSPerfAccumulate("nlPatternTrainTimes",s1_trainValid) 
+  XSPerfAccumulate("nlPatternTrainMulHitTimes",s1_trainResp.multHit||s1_reqResp.multHit)
   //replace analysis
   XSPerfAccumulate("nlPatternTrainReplaceTimes",s1_patternInsertEn)
 
@@ -663,7 +674,7 @@ class NextLinePrefetchIdeal(implicit p: Parameters) extends NLModule {
     }
   }
 
-  val prefetcherSample = Module(new NextLineSample())
+  val prefetcherSample  = Module(new NextLineSample())
   val prefetcherPattern = Module(new NextLinePattern())
 
   
@@ -733,29 +744,36 @@ class NextLineMonitor(implicit p: Parameters) extends NLModule {
 
   val hartId = cacheParams.hartId
   val shouldTrain = io.sampleDb.trainEn
-  val sampleHit   = io.sampleDb.hit
+  val sampleTrainHit   = io.sampleDb.hit
+  val sampleInsertEn  = io.sampleDb.insertEn
+  val timeSample      = io.sampleDb.timeSample
   val patternHit  = io.patternDb.hit
   val patternTrainEn = io.patternDb.trainEn
 
-  val nlTable = ChiselDB.createTable(s"NLchiseldb", new NlDb, basicDB = true)
-  val nlDbdata = Wire(new NlDb)
+  // val nlTable = ChiselDB.createTable(s"NLchiseldb", new NlDb, basicDB = true)
+  // val nlDbdata = Wire(new NlDb)
+
+  // nlDbdata.addr := io.sampleDb.addr
+  // nlDbdata.pc   := io.sampleDb.pc
+  // nlDbdata.timeSample := io.sampleDb.timeSample
+  // nlDbdata.sampleHit  := io.sampleDb.hit
+  // nlDbdata.patternHit := io.patternDb.hit 
+  // nlDbdata.patternSat := io.patternDb.Sat
+
+  // nlTable.log(nlDbdata, shouldTrain, s"Nl${hartId}", clock, reset)
+
+  //sample table db 
+  val sampleTable  = ChiselDB.createTable(s"NLsampledb", new SampleDb, basicDB = true)
+  val sampleDbData = Wire(new SampleDb())
+  sampleDbData := io.sampleDb 
+  sampleTable.log(sampleDbData, (shouldTrain&(sampleTrainHit||sampleInsertEn)) || (timeSample<(1.U<<14)), s"Nlsample${hartId}", clock, reset)
 
 
-  nlDbdata.addr := io.sampleDb.addr
-  nlDbdata.pc   := io.sampleDb.pc
-  nlDbdata.timeSample := io.sampleDb.timeSample
-  nlDbdata.sampleHit  := io.sampleDb.hit
-  nlDbdata.patternHit := io.patternDb.hit 
-  nlDbdata.patternSat := io.patternDb.Sat
-
-  nlTable.log(nlDbdata, shouldTrain, s"Nl${hartId}", clock, reset)
-
-  val samplePatternTable  = ChiselDB.createTable(s"NLsamplePatterdb", new SamplePatterDb, basicDB = true)
-  val samplePatternDbData = Wire(new SamplePatterDb())
-  samplePatternDbData.sample  := io.sampleDb 
-  samplePatternDbData.pattern := io.patternDb
-
-  samplePatternTable.log(samplePatternDbData, (shouldTrain&(sampleHit||patternHit))||patternTrainEn, s"NlsamplePatter${hartId}", clock, reset)
+  // val samplePatternTable  = ChiselDB.createTable(s"NLsamplePatterdb", new SamplePatterDb, basicDB = true)
+  // val samplePatternDbData = Wire(new SamplePatterDb())
+  // samplePatternDbData.sample  := io.sampleDb 
+  // samplePatternDbData.pattern := io.patternDb
+  // samplePatternTable.log(samplePatternDbData, shouldTrain&(sampleTrainHit||sampleInsertEn), s"NlsamplePatter${hartId}", clock, reset)
 
 }
 
