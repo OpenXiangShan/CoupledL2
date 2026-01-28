@@ -4,7 +4,7 @@ import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import utility.{ChiselDB, Constantin, MemReqSource}
-import coupledL2.utils.{MultiPortRegFile,FullyAssociativeMemory}
+import coupledL2.utils.{MultiPortRegFile,FullyAssociativeMemory,OverwriteQueue}
 import coupledL2.HasCoupledL2Parameters
 import coupledL2.utils.ReplacementPolicy
 import huancun.{TPmetaReq, TPmetaResp}
@@ -16,6 +16,9 @@ import utility.XSPerfAccumulate
 //define Next-Line Prefetcher base parameters
 case class NLParameters(
     L2SliceNum:Int = 4, //L2 cache slice number
+    nlPrefetchQueueEntries: Int = 64,
+
+    //timeSample
     timeSampleCounterBits:Int = 64, //Sampling counter bit width
     timeSampleRate : Int = 256, //Sampling rate
     timeSampleMinDistance :Int = 4, //Minimum sampling distance
@@ -172,7 +175,6 @@ class PatternReq(implicit p: Parameters) extends NLBundle {
 }
 
 class PatternResp(implicit p: Parameters) extends NLBundle {
-    val needPrefetch = Bool()
     val nextAddr = UInt(vaddrBits.W)  
 }
 //chiselDB interface
@@ -600,7 +602,6 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
 
   //prefetcher initiate a prefetch request
   io.resp.valid             := RegNext(s1_needPrefetch, false.B) 
-  io.resp.bits.needPrefetch := RegNext(s1_needPrefetch, false.B)
   io.resp.bits.nextAddr     := RegNext(s1_reqAddr + blockBytes.U, 0.U)
 
   //db  
@@ -676,7 +677,11 @@ class NextLinePrefetchIdeal(implicit p: Parameters) extends NLModule {
 
   val prefetcherSample  = Module(new NextLineSample())
   val prefetcherPattern = Module(new NextLinePattern())
-
+  val prefetchQueue     = Module(new OverwriteQueue( 
+          gen = UInt(vaddrBits.W), 
+          entries = nlParams.nlPrefetchQueueEntries,
+          foreverFlow = false,
+          flow = true))
   
   io.train.ready := prefetcherSample.io.train.ready && prefetcherPattern.io.train.ready
   io.resp.ready := true.B  
@@ -695,13 +700,12 @@ class NextLinePrefetchIdeal(implicit p: Parameters) extends NLModule {
   prefetcherPattern.io.req.valid := shouldQuery
   prefetcherPattern.io.req.bits.addr := io.train.bits.addr
   prefetcherPattern.io.req.bits.pc := io.train.bits.pc.getOrElse(0.U)
-  // ========== io.req ==========
-  
-  prefetcherPattern.io.resp.ready := !io.enable //dont use io.resp
-  val nextAddr = prefetcherPattern.io.resp.bits.nextAddr 
-  
-  io.req.valid := io.enable && prefetcherPattern.io.resp.valid && 
-                  prefetcherPattern.io.resp.bits.needPrefetch 
+  //pattern.resp --> prefetchQueue.in
+  prefetchQueue.io.enq <> prefetcherPattern.io.resp
+  // ========== prefetchQueue.out --->io.req ==========
+  val nextAddr = prefetchQueue.io.deq.bits
+  io.req.valid := io.enable && prefetchQueue.io.deq.valid
+  prefetchQueue.io.deq.ready := io.req.ready
   
   //fullTagBits=[cacheTagBits,bankBits]
   //set=512，That is, a slice contains 512 rows, with offsetBits = 6 bits and bankBits = 2 bits.
@@ -728,8 +732,9 @@ class NextLinePrefetchIdeal(implicit p: Parameters) extends NLModule {
   XSPerfAccumulate("nlLoadMissAndHitPrefetchedTimes",validTrain& !io.train.bits.hit&  io.train.bits.prefetched)
 
   
-  XSPerfAccumulate("nlTransmitPrefetchReqTimes",prefetcherPattern.io.resp.valid && prefetcherPattern.io.resp.bits.needPrefetch && 
-                  io.enable)
+  XSPerfAccumulate("nlPrefetchReqTimes",prefetcherPattern.io.resp.valid  && io.enable)
+  XSPerfAccumulate("nlTransmitPrefetchReqTimes",io.req.fire  && io.enable)
+
   
   XSPerfAccumulate("nlTimeSampleCountResetTimes",(!timeSampleCounter.orR) & shouldTrain)
 
