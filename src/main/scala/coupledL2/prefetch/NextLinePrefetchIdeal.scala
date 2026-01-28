@@ -3,12 +3,11 @@ package coupledL2.prefetch
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
-import utility.{ChiselDB, Constantin, MemReqSource}
+import utility.{ChiselDB, Constantin, MemReqSource,sram,XSPerfAccumulate,XSPerfHistogram}
 import coupledL2.utils.{MultiPortRegFile,FullyAssociativeMemory,OverwriteQueue}
 import coupledL2.HasCoupledL2Parameters
 import coupledL2.utils.ReplacementPolicy
 import huancun.{TPmetaReq, TPmetaResp}
-import utility.{sram,XSPerfAccumulate,ChiselDB}
 import freechips.rocketchip.util.SeqToAugmentedSeq
 import freechips.rocketchip.rocket.CSR.X
 import utility.XSPerfAccumulate
@@ -678,7 +677,7 @@ class NextLinePrefetchIdeal(implicit p: Parameters) extends NLModule {
   val prefetcherSample  = Module(new NextLineSample())
   val prefetcherPattern = Module(new NextLinePattern())
   val prefetchQueue     = Module(new OverwriteQueue( 
-          gen = UInt(vaddrBits.W), 
+          gen = new PatternResp ,
           entries = nlParams.nlPrefetchQueueEntries,
           foreverFlow = false,
           flow = true))
@@ -703,7 +702,7 @@ class NextLinePrefetchIdeal(implicit p: Parameters) extends NLModule {
   //pattern.resp --> prefetchQueue.in
   prefetchQueue.io.enq <> prefetcherPattern.io.resp
   // ========== prefetchQueue.out --->io.req ==========
-  val nextAddr = prefetchQueue.io.deq.bits
+  val nextAddr = prefetchQueue.io.deq.bits.nextAddr
   io.req.valid := io.enable && prefetchQueue.io.deq.valid
   prefetchQueue.io.deq.ready := io.req.ready
   
@@ -734,6 +733,7 @@ class NextLinePrefetchIdeal(implicit p: Parameters) extends NLModule {
   
   XSPerfAccumulate("nlPrefetchReqTimes",prefetcherPattern.io.resp.valid  && io.enable)
   XSPerfAccumulate("nlTransmitPrefetchReqTimes",io.req.fire  && io.enable)
+  XSPerfHistogram("grant_grantack_period", prefetchQueue.io.count, io.req.ready, 0,nlParams.nlPrefetchQueueEntries, 1)
 
   
   XSPerfAccumulate("nlTimeSampleCountResetTimes",(!timeSampleCounter.orR) & shouldTrain)
