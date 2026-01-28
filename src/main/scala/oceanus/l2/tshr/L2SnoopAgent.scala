@@ -5,7 +5,7 @@ import chisel3.util._
 import oceanus.compactchi.CCHIComponent
 import oceanus.l2.L2CacheClientState
 
-object SnoopAgent {
+object L2SnoopAgent {
 
   class PathTSHRSnp(client: CCHIComponent) extends Bundle {
 
@@ -19,18 +19,21 @@ object SnoopAgent {
     val SnpToClean = Input(Bool())
 
     val SnpResp = Output(Bool())
+    val SnpRespData0Ptl = Output(Bool())
+    val SnpRespData2Ptl = Output(Bool())
   }
 
   class PathTSHR(clients: Seq[CCHIComponent]) extends Bundle {
 
-    val SnpToUniqueCompAck = Input(Bool())
-
     val REQ = clients.map(new PathTSHRSnp(_))
+    val REQSnpToUniqueCompAck = Input(Bool())
+
     val SNP = clients.map(new PathTSHRSnp(_))
+    val SNPSnpToUniqueCompAck = Input(Bool())
   }
 }
 
-class SnoopAgent {
+class L2SnoopAgent {
 
   
 }
