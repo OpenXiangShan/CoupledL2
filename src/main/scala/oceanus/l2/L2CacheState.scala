@@ -4,7 +4,7 @@ import chisel3._
 import chisel3.util._
 import oceanus.compactchi.CCHIComponent
 
-object Constants {
+object L2CacheStates {
     def U: UInt = 2.U(2.W)
     def S: UInt = 1.U(2.W)
     def I: UInt = 0.U(2.W)
@@ -12,6 +12,23 @@ object Constants {
 
 trait L2CacheStateTrait {
     def norm: UInt
+
+    def satisfy(state: UInt) = norm >= state
+    def satisfy(state: L2CacheStateTrait) = norm >= state.norm
+    def satU = norm >= L2CacheStates.U
+    def satS = norm >= L2CacheStates.S
+    def satI = norm >= L2CacheStates.I
+
+    def is(state: UInt) = norm == state
+    def is(state: L2CacheStateTrait) = norm == state.norm
+    def isU = norm == L2CacheStates.U
+    def isS = norm == L2CacheStates.S
+    def isI = norm == L2CacheStates.I
+
+    def notI = norm =/= L2CacheStates.I
+
+    def surpass(state: UInt) = norm > state
+    def surpass(state: L2CacheStateTrait) = norm > state.norm
 }
 
 class L2CacheLocalState extends Bundle with L2CacheStateTrait {

@@ -56,7 +56,7 @@ class FlitUpRSP extends Bundle {
   val TraceTag = UInt(1.W)
 }
 
-class FlitDnDAT extends Bundle {
+class FlitDnDATWithoutData extends Bundle {
   val TxnID = UInt(8.W) // TODO: configured by L1 parameter
   val DBID = UInt(8.W) // TODO: configured by L2 parameter
   val Opcode = UInt(1.W)
@@ -66,16 +66,22 @@ class FlitDnDAT extends Bundle {
   val CBusy = UInt(3.W)
   val WayValid = Bool()
   val Way = UInt(2.W) // TODO: configured by L2 way count
-  val Data = UInt(256.W)
   val TraceTag = UInt(1.W)
 }
 
-class FlitUpDAT extends Bundle {
+class FlitDnDAT extends FlitDnDATWithoutData {
+  val Data = UInt(256.W)
+}
+
+class FlitUpDATWithoutData extends Bundle {
   val TxnID = UInt(8.W) // TODO: configured by maximum value of L1 parameter and L2 parameter
   val Opcode = UInt(2.W)
   val RespErr = UInt(2.W)
   val Resp = UInt(3.W)
+  val TraceTag = UInt(1.W)
+}
+
+class FlitUpDAT extends FlitUpDATWithoutData {
   val Data = UInt(256.W)
   val BE = UInt(32.W)
-  val TraceTag = UInt(1.W)
 }
