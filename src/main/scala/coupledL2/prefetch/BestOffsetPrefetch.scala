@@ -215,7 +215,7 @@ class RecentRequestTable(name: String)(implicit p: Parameters) extends BOPModule
   class WRRTEntry extends Bundle{
     val addr = UInt(fullAddrBits.W)
   }
-  val wrrt = ChiselDB.createTable(name+"WriteRecentRequestTable", new WRRTEntry, basicDB = false)
+  val wrrt = ChiselDB.createTable(name+"WriteRecentRequestTable", new WRRTEntry, basicDB = true)
   val e = Wire(new WRRTEntry)
   e.addr := wAddr
   wrrt.log(e, io.w.valid && !io.r.req.valid, site = "RecentRequestTable", clock, reset)
@@ -334,7 +334,7 @@ class OffsetScoreTable(name: String = "")(implicit p: Parameters) extends BOPMod
     val offsets = Vec(offsetList.length, UInt(offsetWidth.W))
     val scores = Vec(offsetList.length, UInt(scoreBits.W))
   }
-  val l2BopTrainTable = ChiselDB.createTable(name+"OffsetScoreTable", new BopTrainEntry, basicDB = false)
+  val l2BopTrainTable = ChiselDB.createTable(name+"OffsetScoreTable", new BopTrainEntry, basicDB = true)
   val data = Wire(new BopTrainEntry)
   data.bestOffset := bestOffset
   data.bestScore := bestScore
@@ -589,7 +589,7 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
 
   /*
   val enTalbe = WireInit(Constantin.createRecord(name+"_isWriteL2BopTable", 1.U))
-  val l2BOPTable = ChiselDB. createTable("L2BOPTable", new BopReqBufferEntry, basicDB = false)
+  val l2BOPTable = ChiselDB.createTable("L2BOPTable", new BopReqBufferEntry, basicDB = true)
   for (i <- 0 until REQ_FILTER_SIZE){
     when(alloc(i)){
       l2BOPTable.log(
