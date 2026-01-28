@@ -299,11 +299,12 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val pfRcv = if (hasReceiver) Some(Module(new PrefetchReceiver())) else None
 
   // =================== Connection for each Prefetcher =====================
-  // Rcv > VBOP > PBOP > TP
+  // Rcv > NL >VBOP > PBOP > TP
   if (hasBOP) {
     vbop.get.io.enable := vbop_en
     vbop.get.io.pfCtrlOfDelayLatency := delay_latency
-    vbop.get.io.req.ready :=  (if(hasReceiver) !pfRcv.get.io.req.valid else true.B)
+    vbop.get.io.req.ready :=  (if(hasReceiver) !pfRcv.get.io.req.valid else true.B)&&
+                              (if(hasNLPrefetcher) !nl.get.io.req.valid else true.B) 
     vbop.get.io.train <> io.train
     vbop.get.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
     vbop.get.io.resp <> io.resp
@@ -315,6 +316,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     pbop.get.io.pfCtrlOfDelayLatency := delay_latency
     pbop.get.io.req.ready :=
       (if(hasReceiver) !pfRcv.get.io.req.valid else true.B) &&
+      (if(hasNLPrefetcher) !nl.get.io.req.valid else true.B) &&
       (if(hasBOP) !vbop.get.io.req.valid else true.B)
     pbop.get.io.train <> io.train
     pbop.get.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
@@ -340,29 +342,29 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       pfRcv.get.io.req.bits.pfSource === MemReqSource.Prefetch2L2Berti.id.U
     )
   }
+  //add next_line prefetcher into L2 prefetcher
+  if (hasNLPrefetcher) {//is open NL prefetcher? 
+    nl.get.io.enable := true.B
+    nl.get.io.train <> io.train //input train data 
+    nl.get.io.resp <> io.resp  //return prefetch en and prefetch addr
+
+    //nl priority lowest,wait L1 prefetcher, BOP and TP prefetcher
+    nl.get.io.req.ready := (if(hasReceiver) !pfRcv.get.io.req.valid else true.B) 
+  }
+
   if (hasTPPrefetcher) {
     tp.get.io.enable := tp_en
     tp.get.io.train <> io.train
     tp.get.io.resp <> io.resp
     tp.get.io.hartid := hartId
     tp.get.io.req.ready := (if(hasReceiver) !pfRcv.get.io.req.valid else true.B) &&
+      (if(hasNLPrefetcher) !nl.get.io.req.valid else true.B) &&
       (if(hasBOP) !vbop.get.io.req.valid && !pbop.get.io.req.valid else true.B)
 
     tp.get.io.tpmeta_port <> tpio.tpmeta_port.get
   }
-  //zzq add next_line prefetcher into L2 prefetcher
-  if (hasNLPrefetcher) {
-    //is open NL prefetcher? 
-    nl.get.io.enable := true.B
-    nl.get.io.train <> io.train //input train data 
-    nl.get.io.resp <> io.resp  //return prefetch en and prefetch addr
-
-    //nl priority lowest,wait L1 prefetcher, BOP and TP prefetcher
-    nl.get.io.req.ready := (if(hasReceiver) !pfRcv.get.io.req.valid else true.B) &&
-      (if(hasBOP) !vbop.get.io.req.valid && !pbop.get.io.req.valid else true.B) &&
-      (if(hasTPPrefetcher) !tp.get.io.req.valid else true.B)
-  }
-  //zzq add end 
+  
+  
   private val mbistPl = MbistPipeline.PlaceMbistPipeline(2, "MbistPipeL2Prefetcher", cacheParams.hasMbist && (hasBOP || hasTPPrefetcher))
 
   // =================== Connection of all Prefetchers =====================
@@ -379,10 +381,10 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
 
   pftQueue.io.enq.bits := ParallelPriorityMux(Seq(
     if (hasReceiver)     pfRcv.get.io.req.valid -> pfRcv.get.io.req.bits else false.B -> 0.U.asTypeOf(io.req.bits),
+    if (hasNLPrefetcher) nl.get.io.req.valid -> nl.get.io.req.bits       else false.B -> 0.U.asTypeOf(io.req.bits),
     if (hasBOP)          vbop.get.io.req.valid -> vbop.get.io.req.bits   else false.B -> 0.U.asTypeOf(io.req.bits),
     if (hasBOP)          pbop.get.io.req.valid -> pbop.get.io.req.bits   else false.B -> 0.U.asTypeOf(io.req.bits),
-    if (hasTPPrefetcher) tp.get.io.req.valid -> tp.get.io.req.bits       else false.B -> 0.U.asTypeOf(io.req.bits),
-    if (hasNLPrefetcher) nl.get.io.req.valid -> nl.get.io.req.bits       else false.B -> 0.U.asTypeOf(io.req.bits)
+    if (hasTPPrefetcher) tp.get.io.req.valid -> tp.get.io.req.bits       else false.B -> 0.U.asTypeOf(io.req.bits)
   ))
 
   pipe.io.in <> pftQueue.io.deq
