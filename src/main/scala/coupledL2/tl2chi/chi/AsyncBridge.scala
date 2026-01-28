@@ -51,6 +51,51 @@ class AsyncPortIO(
   val rx = Flipped(new AsyncUpwardsLinkIO(params))
 }
 
+/*
+ * This module enhances the standard async bridge by adding a front-end shadow buffer
+ * to decouple local processing from asynchronous latency and provide instant credit
+ * return to upstream modules
+ *
+ *   Upstream → [Shadow Buffer (16)] → [AsyncQueueSource (4)] → Async Domain → Downstream
+ *                 ↑                        ↑
+ *            Instant Credit return         Async Credit
+ *
+ * The shadow buffer allows immediate credit return to upstream for flits accepted into
+ * the shadow buffer, while actual credit recovery happens asynchronously when downstream
+ * processes the flits.
+ */
+object ToAsyncBundleWithBuf {
+  def channel[T <: Data](
+    chn: ChannelIO[T],
+    params: AsyncQueueParams = AsyncQueueParams(depth = 4),
+    name: Option[String] = None
+  ): (Data, Bool) = {
+    /*
+     1. Shadow Buffer (depth=16, flow mode for low latency)
+     */
+    val shadow_buffer = Module(new Queue(chiselTypeOf(chn.flit), 16, flow = true, pipe = false))
+    if (name.isDefined) { shadow_buffer.suggestName("shadowBuffer_" + name.get) }
+    shadow_buffer.io.enq.valid := chn.flitv
+    shadow_buffer.io.enq.bits  := chn.flit
+    /*
+     2. For rx channel (CMN->L2), send out lcrdv right after a flit entering Shadow buffer(enqFire) 
+     */
+    val enqReady = shadow_buffer.io.enq.ready
+    val enqFire = enqReady & chn.flitv
+    dontTouch(enqFire)
+    assert(!chn.flitv || shadow_buffer.io.enq.ready, s"${name.getOrElse("ToAsyncBundle")}: Shadow buffer overflow!")
+    /*
+     3. AsyncQueueSource (depth=4) 
+     */
+    val source = Module(new AsyncQueueSource(chiselTypeOf(chn.flit), params))
+    if (name.isDefined) { source.suggestName("asyncQSource_" + name.get) }
+    source.io.enq <> shadow_buffer.io.deq
+
+    (source.io.async, enqFire)
+  }
+}
+
+
 object ToAsyncBundle {
   def channel[T <: Data](
     chn: ChannelIO[T],
@@ -81,15 +126,16 @@ object FromAsyncBundle {
   def channel(
     async: AsyncBundle[UInt],
     params: AsyncQueueParams = AsyncQueueParams(),
-    name: Option[String] = None
+    name: Option[String] = None,
+    lcrdvReady: Option[Bool]= None
   ) = {
     val gen = chiselTypeOf(async.mem.head)
     val out = Wire(new ChannelIO(gen))
     val sink = Module(new AsyncQueueSink(gen, params))
     if (name.isDefined) { sink.suggestName("asyncQSink_" + name.get) }
     sink.io.async <> async
-    sink.io.deq.ready := true.B
-    out.flitv := sink.io.deq.valid
+    sink.io.deq.ready := lcrdvReady.getOrElse(true.B)
+    out.flitv := sink.io.deq.valid & sink.io.deq.ready
     out.flit := sink.io.deq.bits
     // flitpend and lcrdv are assigned independently
     out.flitpend := DontCare
@@ -121,9 +167,17 @@ class CHIAsyncBridgeSource(params: AsyncQueueParams = AsyncQueueParams())(implic
     val resetFinish = Output(Bool())
   })
 
-  io.async.tx.req.flit <> ToAsyncBundle.channel(io.enq.tx.req, params, Some("txreq_flit"))
-  io.async.tx.rsp.flit <> ToAsyncBundle.channel(io.enq.tx.rsp, params, Some("txrsp_flit"))
-  io.async.tx.dat.flit <> ToAsyncBundle.channel(io.enq.tx.dat, params, Some("txdat_flit"))
+  val async_tx_req = ToAsyncBundleWithBuf.channel(io.enq.tx.req, params, Some("txreq_flit"))
+  val async_tx_rsp = ToAsyncBundleWithBuf.channel(io.enq.tx.rsp, params, Some("txrsp_flit"))
+  val async_tx_dat = ToAsyncBundleWithBuf.channel(io.enq.tx.dat, params, Some("txdat_flit"))
+
+  io.async.tx.req.flit <> async_tx_req._1
+  io.async.tx.rsp.flit <> async_tx_rsp._1
+  io.async.tx.dat.flit <> async_tx_dat._1
+
+//  io.async.tx.req.flit <> ToAsyncBundle.channel(io.enq.tx.req, params, Some("txreq_flit"))
+//  io.async.tx.rsp.flit <> ToAsyncBundle.channel(io.enq.tx.rsp, params, Some("txrsp_flit"))
+//  io.async.tx.dat.flit <> ToAsyncBundle.channel(io.enq.tx.dat, params, Some("txdat_flit"))
 
   io.enq.tx.req.lcrdv <> FromAsyncBundle.bitPulse(io.async.tx.req.lcrdv, params, Some("txreq_lcrdv"))
   io.enq.tx.rsp.lcrdv <> FromAsyncBundle.bitPulse(io.async.tx.rsp.lcrdv, params, Some("txrsp_lcrdv"))
@@ -187,21 +241,36 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
     val resetFinish = Output(Bool())
   })
 
-  io.deq.tx.req <> FromAsyncBundle.channel(io.async.tx.req.flit, params, Some("txreq_flit"))
-  io.deq.tx.rsp <> FromAsyncBundle.channel(io.async.tx.rsp.flit, params, Some("txrsp_flit"))
-  io.deq.tx.dat <> FromAsyncBundle.channel(io.async.tx.dat.flit, params, Some("txdat_flit"))
+  val txreq_lcrdvReady = Wire(Bool())
+  val txrsp_lcrdvReady = Wire(Bool())
+  val txdat_lcrdvReady = Wire(Bool())
+  io.deq.tx.req <> FromAsyncBundle.channel(io.async.tx.req.flit, params, Some("txreq_flit"), Some(txreq_lcrdvReady))
+  io.deq.tx.rsp <> FromAsyncBundle.channel(io.async.tx.rsp.flit, params, Some("txrsp_flit"), Some(txrsp_lcrdvReady))
+  io.deq.tx.dat <> FromAsyncBundle.channel(io.async.tx.dat.flit, params, Some("txdat_flit"), Some(txdat_lcrdvReady))
+//  io.deq.tx.req <> FromAsyncBundle.channel(io.async.tx.req.flit, params, Some("txreq_flit"))
+//  io.deq.tx.rsp <> FromAsyncBundle.channel(io.async.tx.rsp.flit, params, Some("txrsp_flit"))
+//  io.deq.tx.dat <> FromAsyncBundle.channel(io.async.tx.dat.flit, params, Some("txdat_flit"))
 
   io.async.tx.req.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.req.lcrdv, params, Some("txreq_lcrdv"))
   io.async.tx.rsp.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.rsp.lcrdv, params, Some("txrsp_lcrdv"))
   io.async.tx.dat.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.dat.lcrdv, params, Some("txdat_lcrdv"))
 
-  io.async.rx.rsp.flit <> ToAsyncBundle.channel(io.deq.rx.rsp, params, Some("rxrsp_flit"))
-  io.async.rx.dat.flit <> ToAsyncBundle.channel(io.deq.rx.dat, params, Some("rxdat_flit"))
+//  io.async.rx.rsp.flit <> ToAsyncBundleWithBuf.channel(io.deq.rx.rsp, params, Some("rxrsp_flit"))
+//  io.async.rx.dat.flit <> ToAsyncBundleWithBuf.channel(io.deq.rx.dat, params, Some("rxdat_flit"))
+  val async_rx_rsp = ToAsyncBundleWithBuf.channel(io.deq.rx.rsp, params, Some("rxrsp_flit"))
+  val async_rx_dat = ToAsyncBundleWithBuf.channel(io.deq.rx.dat, params, Some("rxdat_flit"))
+  io.async.rx.rsp.flit <> async_rx_rsp._1
+  io.async.rx.dat.flit <> async_rx_dat._1
+
   io.async.rx.snp.flit <> ToAsyncBundle.channel(io.deq.rx.snp, params, Some("rxsnp_flit"))
 
   io.deq.rx.rsp.lcrdv <> FromAsyncBundle.bitPulse(io.async.rx.rsp.lcrdv, params, Some("rxrsp_lcrdv"))
   io.deq.rx.dat.lcrdv <> FromAsyncBundle.bitPulse(io.async.rx.dat.lcrdv, params, Some("rxdat_lcrdv"))
   io.deq.rx.snp.lcrdv <> FromAsyncBundle.bitPulse(io.async.rx.snp.lcrdv, params, Some("rxsnp_lcrdv"))
+
+  io.deq.rx.rsp.lcrdv := RegNext(async_rx_rsp._2, false.B)
+  io.deq.rx.dat.lcrdv := RegNext(async_rx_dat._2, false.B)
+
 
   io.async.rxsactive := io.deq.rxsactive
   io.async.tx.linkactiveack := io.deq.tx.linkactiveack
@@ -240,5 +309,58 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
     io.resetFinish := resetFinish
   }
 
+
+  /*
+   Duplicate Link Monitor tx/rx state FSM by using deq.rx deq.tx active signals which outuput to DownStream CHI
+   */
+  val txState = RegInit(LinkStates.STOP)
+  val rxState = RegInit(LinkStates.STOP)
+
+  Seq(txState, rxState).zip(MixedVecInit(Seq(io.deq.tx, io.deq.rx))).foreach { case (state, link) =>
+    state := MuxLookup(Cat(link.linkactivereq, link.linkactiveack), LinkStates.STOP)(Seq(
+      Cat(true.B, false.B) -> LinkStates.ACTIVATE,
+      Cat(true.B, true.B) -> LinkStates.RUN,
+      Cat(false.B, true.B) -> LinkStates.DEACTIVATE,
+      Cat(false.B, false.B) -> LinkStates.STOP
+    ))
+  }
+  /*
+   For rx channel, add l-credit manager module to generate lcrdv inside bridge
+   a. Try to use io.deq.rx as LCredit interface to output lcrdv right after rx flit received.
+   b. The maximum number of L-Credits that CoupledL2 can provide is 4.
+   c. rxsnp is not in this practice and still use lcrdv generated in CoupledL2 since snoop may be unpredictablely blocked   
+   */
+  /*val rxrspDeact, rxdatDeact = Wire(Bool())
+   val rxin = WireInit(0.U asTypeOf(Flipped(new DecoupledPortIO()))) //fake Decoupled IO to provide ready
+   rxin.rx.rsp.ready := async_rx_rsp._2
+   rxin.rx.dat.ready := async_rx_dat._2
+   LCredit2Decoupled(io.deq.rx.rsp, rxin.rx.rsp, LinkState(rxState), rxrspDeact, Some("rxrsp"), 15, false)
+   LCredit2Decoupled(io.deq.rx.dat, rxin.rx.dat, LinkState(rxState), rxdatDeact, Some("rxdat"), 15, false)
+  */
+
+  /*
+   For tx channel, add l-credit manager module to generate 'ready' to block tx flit to DownStream CHI
+   a. The maximum number of L-Credits in tx channel is 4 inside bridge
+   b. Use L-Credits number more than 4 in CoupledL2 to cover lcrdv sync delay from DownStream CHI to CoupledL2
+   */
+  val txin = WireInit(0.U asTypeOf(Flipped(new DecoupledPortIO()))) //fake Decoupled IO to provide flitv
+  val txout = WireInit(0.U asTypeOf(new PortIO))//fake LCredit IO to provide lcrdv 
+  txout.tx.req.lcrdv := io.deq.tx.req.lcrdv
+  txout.tx.rsp.lcrdv := io.deq.tx.rsp.lcrdv
+  txout.tx.dat.lcrdv := io.deq.tx.dat.lcrdv
+
+  txin.tx.req.valid := io.deq.tx.req.flitv
+  txin.tx.rsp.valid := io.deq.tx.rsp.flitv
+  txin.tx.dat.valid := io.deq.tx.dat.flitv
+
+  Decoupled2LCredit(txin.tx.req, txout.tx.req, LinkState(txState), Some("txreq"))
+  Decoupled2LCredit(txin.tx.rsp, txout.tx.rsp, LinkState(txState), Some("txrsp"))
+  Decoupled2LCredit(txin.tx.dat, txout.tx.dat, LinkState(txState), Some("txdat"))
+
+  txreq_lcrdvReady := txin.tx.req.ready
+  txrsp_lcrdvReady := txin.tx.rsp.ready
+  txdat_lcrdvReady := txin.tx.dat.ready
+ 
   dontTouch(io)
+
 }
