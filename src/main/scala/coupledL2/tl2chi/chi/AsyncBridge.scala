@@ -255,8 +255,6 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
   io.async.tx.rsp.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.rsp.lcrdv, params, Some("txrsp_lcrdv"))
   io.async.tx.dat.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.dat.lcrdv, params, Some("txdat_lcrdv"))
 
-//  io.async.rx.rsp.flit <> ToAsyncBundleWithBuf.channel(io.deq.rx.rsp, params, Some("rxrsp_flit"))
-//  io.async.rx.dat.flit <> ToAsyncBundleWithBuf.channel(io.deq.rx.dat, params, Some("rxdat_flit"))
   val async_rx_rsp = ToAsyncBundleWithBuf.channel(io.deq.rx.rsp, params, Some("rxrsp_flit"))
   val async_rx_dat = ToAsyncBundleWithBuf.channel(io.deq.rx.dat, params, Some("rxdat_flit"))
   io.async.rx.rsp.flit <> async_rx_rsp._1
@@ -267,10 +265,6 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
   io.deq.rx.rsp.lcrdv <> FromAsyncBundle.bitPulse(io.async.rx.rsp.lcrdv, params, Some("rxrsp_lcrdv"))
   io.deq.rx.dat.lcrdv <> FromAsyncBundle.bitPulse(io.async.rx.dat.lcrdv, params, Some("rxdat_lcrdv"))
   io.deq.rx.snp.lcrdv <> FromAsyncBundle.bitPulse(io.async.rx.snp.lcrdv, params, Some("rxsnp_lcrdv"))
-
-  io.deq.rx.rsp.lcrdv := RegNext(async_rx_rsp._2, false.B)
-  io.deq.rx.dat.lcrdv := RegNext(async_rx_dat._2, false.B)
-
 
   io.async.rxsactive := io.deq.rxsactive
   io.async.tx.linkactiveack := io.deq.tx.linkactiveack
@@ -327,16 +321,15 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
   /*
    For rx channel, add l-credit manager module to generate lcrdv inside bridge
    a. Try to use io.deq.rx as LCredit interface to output lcrdv right after rx flit received.
-   b. The maximum number of L-Credits that CoupledL2 can provide is 4.
-   c. rxsnp is not in this practice and still use lcrdv generated in CoupledL2 since snoop may be unpredictablely blocked   
+   b. rxsnp is not in this practice and still use lcrdv generated in CoupledL2 since snoop may be unpredictablely blocked   
    */
-  /*val rxrspDeact, rxdatDeact = Wire(Bool())
-   val rxin = WireInit(0.U asTypeOf(Flipped(new DecoupledPortIO()))) //fake Decoupled IO to provide ready
-   rxin.rx.rsp.ready := async_rx_rsp._2
-   rxin.rx.dat.ready := async_rx_dat._2
-   LCredit2Decoupled(io.deq.rx.rsp, rxin.rx.rsp, LinkState(rxState), rxrspDeact, Some("rxrsp"), 15, false)
-   LCredit2Decoupled(io.deq.rx.dat, rxin.rx.dat, LinkState(rxState), rxdatDeact, Some("rxdat"), 15, false)
-  */
+  val rxrspDeact, rxdatDeact = Wire(Bool())
+  val rxin = WireInit(0.U asTypeOf(Flipped(new DecoupledPortIO()))) //fake Decoupled IO to provide ready
+  rxin.rx.rsp.ready := async_rx_rsp._2
+  rxin.rx.dat.ready := async_rx_dat._2
+  LCredit2Decoupled(io.deq.rx.rsp, rxin.rx.rsp, LinkState(rxState), rxrspDeact, Some("rxrsp"), 15, false)
+  LCredit2Decoupled(io.deq.rx.dat, rxin.rx.dat, LinkState(rxState), rxdatDeact, Some("rxdat"), 15, false)
+  
 
   /*
    For tx channel, add l-credit manager module to generate 'ready' to block tx flit to DownStream CHI
