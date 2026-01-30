@@ -21,7 +21,7 @@ import chisel3._
 import chisel3.util._
 import utility.mbist.MbistPipeline
 import coupledL2.utils._
-import utility.{ParallelPriorityMux, RegNextN, XSPerfAccumulate, Code}
+import utility.{ParallelPriorityMux, RegNextN, XSPerfAccumulate, Code, MemReqSource}
 import utility.sram.SRAMTemplate
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.prefetch.PfSource
@@ -333,6 +333,69 @@ class Directory(implicit p: Parameters) extends L2Module {
   io.replResp.bits.meta := metaAll_s3(finalWay)
   io.replResp.bits.mshrId := req_s3.mshrId
   io.replResp.bits.retry := refillRetry
+
+ 
+  val victimIsNlPrefetch = metaAll_s3(finalWay).prefetch.getOrElse(false.B) && 
+    metaAll_s3(finalWay).prefetchSrc.getOrElse(0.U) === MemReqSource.Prefetch2L2NL.id.U
+  val evict_pf_block = io.replResp.valid && !io.replResp.bits.retry && victimIsNlPrefetch
+  val replace_req_src = req_s3.replacerInfo.reqSource
+
+  // total prefetch-victim replacements
+  XSPerfAccumulate("evict_nl_block_total", evict_pf_block)
+
+  // evicted by CPU/demand (group CPUInst/Load/Store/Atomic)
+  val evicted_by_cpu = evict_pf_block && (
+    replace_req_src === MemReqSource.CPUInst.id.U ||
+    replace_req_src === MemReqSource.CPULoadData.id.U ||
+    replace_req_src === MemReqSource.CPUStoreData.id.U ||
+    replace_req_src === MemReqSource.CPUAtomicData.id.U
+  )
+  XSPerfAccumulate("evict_nl_block_by_CPU", evicted_by_cpu)
+
+  // L1 prefetches
+  XSPerfAccumulate("evict_nl_block_by_L1InstPrefetch", evict_pf_block && (replace_req_src === MemReqSource.L1InstPrefetch.id.U))
+  XSPerfAccumulate("evict_nl_block_by_L1DataPrefetch", evict_pf_block && (replace_req_src === MemReqSource.L1DataPrefetch.id.U))
+
+  // L2 prefetch types: break down by known L2 prefetch sources
+  XSPerfAccumulate("evict_nl_block_by_L2_NL", evict_pf_block && (replace_req_src === MemReqSource.Prefetch2L2NL.id.U))
+  XSPerfAccumulate("evict_nl_block_by_L2_Stream", evict_pf_block && (replace_req_src === MemReqSource.Prefetch2L2Stream.id.U))
+  XSPerfAccumulate("evict_nl_block_by_L2_Stride", evict_pf_block && (replace_req_src === MemReqSource.Prefetch2L2Stride.id.U))
+  XSPerfAccumulate("evict_nl_block_by_L2_BOP", evict_pf_block && (replace_req_src === MemReqSource.Prefetch2L2BOP.id.U))
+  XSPerfAccumulate("evict_nl_block_by_L2_PBOP", evict_pf_block && (replace_req_src === MemReqSource.Prefetch2L2PBOP.id.U))
+  XSPerfAccumulate("evict_nl_block_by_L2_SMS", evict_pf_block && (replace_req_src === MemReqSource.Prefetch2L2SMS.id.U))
+  XSPerfAccumulate("evict_nl_block_by_L2_TP", evict_pf_block && (replace_req_src === MemReqSource.Prefetch2L2TP.id.U))
+  XSPerfAccumulate("evict_nl_block_by_L2_Berti", evict_pf_block && (replace_req_src === MemReqSource.Prefetch2L2Berti.id.U))
+  XSPerfAccumulate("evict_nl_block_by_L2_Unknown", evict_pf_block && (replace_req_src === MemReqSource.Prefetch2L2Unknown.id.U))
+
+  // PTW and other sources
+  XSPerfAccumulate("evict_nl_block_by_PTW", evict_pf_block && (replace_req_src === MemReqSource.PTW.id.U))
+
+  // catch-all for any other sources not enumerated above
+  val known_srcs = Cat(
+    replace_req_src === MemReqSource.CPUInst.id.U,
+    replace_req_src === MemReqSource.CPULoadData.id.U,
+    replace_req_src === MemReqSource.CPUStoreData.id.U,
+    replace_req_src === MemReqSource.CPUAtomicData.id.U,
+    replace_req_src === MemReqSource.L1InstPrefetch.id.U,
+    replace_req_src === MemReqSource.L1DataPrefetch.id.U,
+    replace_req_src === MemReqSource.Prefetch2L2NL.id.U,
+    replace_req_src === MemReqSource.Prefetch2L2Stream.id.U,
+    replace_req_src === MemReqSource.Prefetch2L2Stride.id.U,
+    replace_req_src === MemReqSource.Prefetch2L2BOP.id.U,
+    replace_req_src === MemReqSource.Prefetch2L2PBOP.id.U,
+    replace_req_src === MemReqSource.Prefetch2L2SMS.id.U,
+    replace_req_src === MemReqSource.Prefetch2L2TP.id.U,
+    replace_req_src === MemReqSource.Prefetch2L2Berti.id.U,
+    replace_req_src === MemReqSource.Prefetch2L2Unknown.id.U,
+    replace_req_src === MemReqSource.Prefetch2L3Stream.id.U,
+    replace_req_src === MemReqSource.Prefetch2L3Stride.id.U,
+    replace_req_src === MemReqSource.Prefetch2L3Berti.id.U,
+    replace_req_src === MemReqSource.Prefetch2L3Unknown.id.U,
+    replace_req_src === MemReqSource.Prefetch2L2Berti.id.U,
+    replace_req_src === MemReqSource.NoWhere.id.U,
+    replace_req_src === MemReqSource.Prefetch2L2Unknown.id.U
+  )
+  XSPerfAccumulate("evict_nl_block_by_other", evict_pf_block && !known_srcs.orR)
 
   /* ====== Update ====== */
   // PLRU: update replacer only when A hit or refill, at stage 3

@@ -218,12 +218,16 @@ class PrefetchQueue(implicit p: Parameters) extends PrefetchModule {
 
   // The reqs that are discarded = enq - deq
   XSPerfAccumulate("prefetch_queue_enq",         io.enq.fire)
+  XSPerfAccumulate("prefetch_queue_enq_fromL1", io.enq.fire && !io.enq.bits.fromL2)
+  XSPerfAccumulate("prefetch_queue_enq_fromNL", io.enq.fire && io.enq.bits.isNL)
   XSPerfAccumulate("prefetch_queue_enq_fromBOP", io.enq.fire && io.enq.bits.isBOP)
   XSPerfAccumulate("prefetch_queue_enq_fromPBOP", io.enq.fire && io.enq.bits.isPBOP)
   XSPerfAccumulate("prefetch_queue_enq_fromSMS", io.enq.fire && io.enq.bits.isSMS)
   XSPerfAccumulate("prefetch_queue_enq_fromTP",  io.enq.fire && io.enq.bits.isTP)
 
   XSPerfAccumulate("prefetch_queue_deq",         io.deq.fire)
+  XSPerfAccumulate("prefetch_queue_deq_fromL1", io.deq.fire && !io.deq.bits.fromL2)
+  XSPerfAccumulate("prefetch_queue_deq_fromNL", io.deq.fire && io.deq.bits.isNL)
   XSPerfAccumulate("prefetch_queue_deq_fromBOP", io.deq.fire && io.deq.bits.isBOP)
   XSPerfAccumulate("prefetch_queue_deq_fromPBOP", io.deq.fire && io.deq.bits.isPBOP)
   XSPerfAccumulate("prefetch_queue_deq_fromSMS", io.deq.fire && io.deq.bits.isSMS)
@@ -404,11 +408,11 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   XSPerfAccumulate("prefetch_req_fromNL",  hasNLReq)
 
   XSPerfAccumulate("prefetch_req_selectL1", hasReceiverReq)
-  XSPerfAccumulate("prefetch_req_selectVBOP", hasVBOPReq && !hasReceiverReq)
-  XSPerfAccumulate("prefetch_req_selectPBOP", hasPBOPReq && !hasReceiverReq && !hasVBOPReq)
-  XSPerfAccumulate("prefetch_req_selectBOP", (hasPBOPReq || hasVBOPReq) && !hasReceiverReq)
-  XSPerfAccumulate("prefetch_req_selectTP", hasTPReq && !hasReceiverReq && !hasVBOPReq && !hasPBOPReq)
-  XSPerfAccumulate("prefetch_req_selectNL", hasNLReq && !hasTPReq && !hasReceiverReq && !hasVBOPReq && !hasPBOPReq)
+  XSPerfAccumulate("prefetch_req_selectNL", hasNLReq && !hasReceiverReq )
+  XSPerfAccumulate("prefetch_req_selectVBOP", hasVBOPReq && !hasReceiverReq && !hasNLReq)
+  XSPerfAccumulate("prefetch_req_selectPBOP", hasPBOPReq && !hasReceiverReq && !hasNLReq && !hasVBOPReq)
+  XSPerfAccumulate("prefetch_req_selectBOP", (hasPBOPReq || hasVBOPReq) && !hasReceiverReq && !hasNLReq)
+  XSPerfAccumulate("prefetch_req_selectTP", hasTPReq && !hasReceiverReq && !hasVBOPReq && !hasPBOPReq && !hasNLReq)
   XSPerfAccumulate("prefetch_req_SMS_other_overlapped",
     hasReceiverReq && (hasVBOPReq || hasPBOPReq || hasTPReq || hasNLReq))
 
