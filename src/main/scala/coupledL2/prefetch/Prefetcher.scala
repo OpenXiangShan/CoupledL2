@@ -406,7 +406,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   trainTT.log(
     data = e1,
     en = io.train.valid,
-    site = "L2Train_onlyBOP",
+    site = "L2TrainLog",
     clock, reset
   )
 
@@ -422,8 +422,8 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   e2.pfsource := io.req.bits.pfSource
   pfTT.log(
     data = e2,
-    en = io.req.fire && io.req.bits.pfSource === MemReqSource.Prefetch2L2BOP.id.U,
-    site = "L2Prefetch_onlyBOP",
+    en = io.req.fire,
+    site = "L2PrefetchLog",
     clock, reset
   )
 }
