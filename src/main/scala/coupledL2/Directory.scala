@@ -21,7 +21,7 @@ import chisel3._
 import chisel3.util._
 import utility.mbist.MbistPipeline
 import coupledL2.utils._
-import utility.{ParallelPriorityMux, RegNextN, XSPerfAccumulate, Code, MemReqSource}
+import utility.{ParallelPriorityMux, RegNextN, XSPerfAccumulate, Code, MemReqSource, ChiselDB}
 import utility.sram.SRAMTemplate
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.prefetch.PfSource
@@ -110,6 +110,15 @@ class TagWrite(implicit p: Parameters) extends L2Bundle {
   val set = UInt(setBits.W)
   val way = UInt(wayBits.W)
   val wtag = UInt(tagBits.W)
+}
+
+// DB entry for NL prefetch lifecycle events
+class NlPrefetchDbEntry(implicit p: Parameters) extends L2Bundle {
+  val set = UInt(setBits.W)
+  val tag = UInt(tagBits.W)
+  val way = UInt(wayBits.W)
+  val event = UInt(2.W) // 0: arrival, 1: access, 2: eviction
+  val reqSource = UInt(MemReqSource.reqSourceBits.W)
 }
 
 
@@ -398,6 +407,45 @@ class Directory(implicit p: Parameters) extends L2Module {
   XSPerfAccumulate("evict_nl_block_by_other", evict_pf_block && !known_srcs.orR)
 
   /* ====== Update ====== */
+  /* ====== ChiselDB logging for NL prefetch lifecycle ====== */
+  if (cacheParams.enableMonitor && !cacheParams.FPGAPlatform) {
+    val hartId = cacheParams.hartId
+    val nlTable = ChiselDB.createTable(s"L2_NL_Prefetch$hartId", new NlPrefetchDbEntry, basicDB = true)
+
+    // arrival: meta write that marks a block as NL-prefetched
+    val arrivalCond = io.metaWReq.valid && io.metaWReq.bits.wmeta.prefetch.getOrElse(false.B) &&
+      (io.metaWReq.bits.wmeta.prefetchSrc.getOrElse(0.U) === MemReqSource.Prefetch2L2NL.id.U)
+    val nlArrival = Wire(new NlPrefetchDbEntry)
+    nlArrival.set := io.metaWReq.bits.set
+    nlArrival.way := OHToUInt(io.metaWReq.bits.wayOH)
+    // try to attach tag when tagWReq coincides with metaWReq
+    val arrivalHasTag = io.tagWReq.valid && (io.tagWReq.bits.set === io.metaWReq.bits.set) &&
+      (OHToUInt(io.metaWReq.bits.wayOH) === io.tagWReq.bits.way)
+    nlArrival.tag := Mux(arrivalHasTag, io.tagWReq.bits.wtag, 0.U)
+    nlArrival.event := 0.U
+    nlArrival.reqSource := io.metaWReq.bits.wmeta.prefetchSrc.getOrElse(MemReqSource.NoWhere.id.U)
+    nlTable.log(nlArrival, arrivalCond, s"L2${hartId}_${p(SliceIdKey)}", clock, reset)
+
+    // access: when a read hits a NL-prefetched block
+    val accessCond = io.resp.valid && io.resp.bits.hit && io.resp.bits.meta.prefetch.getOrElse(false.B) &&
+      (io.resp.bits.meta.prefetchSrc.getOrElse(0.U) === MemReqSource.Prefetch2L2NL.id.U)
+    val nlAccess = Wire(new NlPrefetchDbEntry)
+    nlAccess.set := io.resp.bits.set
+    nlAccess.tag := io.resp.bits.tag
+    nlAccess.way := io.resp.bits.way
+    nlAccess.event := 1.U
+    nlAccess.reqSource := io.resp.bits.replacerInfo.reqSource
+    nlTable.log(nlAccess, accessCond, s"L2${hartId}_${p(SliceIdKey)}", clock, reset)
+
+    // eviction: when Directory issues a replacement for a NL-prefetched block
+    val nlEvict = Wire(new NlPrefetchDbEntry)
+    nlEvict.set := io.replResp.bits.set
+    nlEvict.tag := io.replResp.bits.tag
+    nlEvict.way := io.replResp.bits.way
+    nlEvict.event := 2.U
+    nlEvict.reqSource := replace_req_src
+    nlTable.log(nlEvict, evict_pf_block, s"L2${hartId}_${p(SliceIdKey)}", clock, reset)
+  }
   // PLRU: update replacer only when A hit or refill, at stage 3
   // RRIP: update replacer when A/C hit or refill
   val updateHit = if(cacheParams.replacement == "drrip" || cacheParams.replacement == "srrip"){
