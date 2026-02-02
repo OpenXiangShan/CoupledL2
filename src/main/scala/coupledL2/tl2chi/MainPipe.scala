@@ -1025,7 +1025,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   XSPerfAccumulate("acquire_hit", hit_s3 && req_s3.fromA &&
     (req_s3.opcode === AcquireBlock || req_s3.opcode === AcquirePerm))
   XSPerfAccumulate("get_hit", hit_s3 && req_s3.fromA && req_s3.opcode === Get)
-  XSPerfAccumulate("retry", mshr_refill_s3 && retry)
+  XSPerfAccumulate("retry", mshr_refill_s3 && retry && task_s3.valid)
 
   XSPerfAccumulate("a_req_miss", miss_s3 && req_s3.fromA)
   XSPerfAccumulate("acquire_miss", miss_s3 && req_s3.fromA &&
