@@ -25,7 +25,8 @@ import coupledL2._
 import coupledL2.prefetch.PrefetchIO
 import utility.MemReqSource
 
-class OuterBundle(implicit p: Parameters) extends DecoupledPortIO with BaseOuterBundle
+// class OuterBundle(implicit p: Parameters) extends DecoupledPortIO with BaseOuterBundle
+class OuterBundle(implicit p: Parameters) extends DecoupledPortIO_withAddr with BaseOuterBundle
 
 class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   with HasCoupledL2Parameters
@@ -74,10 +75,12 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
 
   txdat.io.in <> mainPipe.io.toTXDAT
   txdat.io.pipeStatusVec := status_vec_toTX
+  txdat.io.sliceId := io.sliceId
 
   txrsp.io.pipeRsp <> mainPipe.io.toTXRSP
   txrsp.io.mshrRsp <> mshrCtl.io.toTXRSP
   txrsp.io.pipeStatusVec := status_vec_toTX
+  txrsp.io.sliceId := io.sliceId
 
   rxsnp.io.msInfo := mshrCtl.io.msInfo
 

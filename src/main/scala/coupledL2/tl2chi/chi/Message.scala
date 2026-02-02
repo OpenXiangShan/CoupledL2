@@ -581,3 +581,51 @@ class CHIRSP(implicit p: Parameters) extends CHIBundle {
   val traceTag = Bool()
   /* MSB */
 }
+
+// CHIRSP_withAddr is CHIRSP with an additional 'addr' field which is used for release to loadQueueRAR
+class CHIRSP_withAddr(implicit p: Parameters) extends CHIRSP {
+  val addr = UInt(ADDR_WIDTH.W)
+}
+object CHIRSP_withAddr{
+  def apply(chirsp: CHIRSP, addr: UInt)(implicit p: Parameters): CHIRSP_withAddr = {
+    val chirsp_with_addr = Wire(new CHIRSP_withAddr)
+    chirsp.elements.foreach { case (name, data) =>
+      chirsp_with_addr.elements(name) := data
+    }
+    chirsp_with_addr.addr := addr
+    chirsp_with_addr
+  }
+  def toCHIRSP(chirsp_with_addr: CHIRSP_withAddr)(implicit p: Parameters): CHIRSP = {
+    val chirsp = Wire(new CHIRSP)
+    chirsp_with_addr.elements.foreach { case (name, data) =>
+      if (chirsp.elements.contains(name)) {
+        chirsp.elements(name) := data
+      }
+    }
+    chirsp
+  }
+}
+
+// CHIDAT_withAddr is CHIDAT with an additional 'addr' field which is used for release to loadQueueRAR
+class CHIDAT_withAddr(implicit p: Parameters) extends CHIDAT {
+  val addr = UInt(ADDR_WIDTH.W)
+}
+object CHIDAT_withAddr{
+  def apply(chidat: CHIDAT, addr: UInt)(implicit p: Parameters): CHIDAT_withAddr = {
+    val chidat_with_addr = Wire(new CHIDAT_withAddr)
+    chidat.elements.foreach { case (name, data) =>
+      chidat_with_addr.elements(name) := data
+    }
+    chidat_with_addr.addr := addr
+    chidat_with_addr
+  }
+  def toCHIDAT(chidat_with_addr: CHIDAT_withAddr)(implicit p: Parameters): CHIDAT = {
+    val chidat = Wire(new CHIDAT)
+    chidat_with_addr.elements.foreach { case (name, data) =>
+      if (chidat.elements.contains(name)) {
+        chidat.elements(name) := data
+      }
+    }
+    chidat
+  }
+}
