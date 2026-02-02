@@ -4,6 +4,7 @@ import chisel3._
 import chisel3.util._
 import utility.mbist.MbistClockGateCell
 import utility.sram.{SramBroadcastBundle, SramHelper}
+import utility.ClockGate
 
 // SplittedSRAM with clockGate to each of the small splitted srams
 // - this is a requirement from DFT, cause mbist needs to access each sram separately
@@ -39,23 +40,32 @@ class GatedSplittedSRAM[T <: Data]
   extClockGate = withClockGate,
   suffix = Some(suffix.getOrElse(SramHelper.getSramSuffix(valName.value)))
 ) {
+  require(
+    !readMCP2 || (extraHold && withClockGate),
+    "When readMCP2 is true, both extraHold and withClockGate must be true"
+  )
+
   // en is the actual r/w valid (last for one cycle)
   // en is used to generate gated_clock for each SRAM
   val io_en = IO(Input(Bool()))
 
   // Create a ClockGate module for each element in the array
   if (withClockGate) {
-    array.map(_.map(_.map(a => {
-      val cg = Module(new MbistClockGateCell(extraHold))
-      cg.E := io_en
-      cg.dft.fromBroadcast(a.io.broadcast.getOrElse(0.U.asTypeOf(new SramBroadcastBundle)))
-      cg.mbist.req := a.io.mbistCgCtl.map(_.en).getOrElse(false.B)
-      cg.mbist.writeen := a.io.mbistCgCtl.map(_.wckEn).getOrElse(false.B)
-      cg.mbist.readen := a.io.mbistCgCtl.map(_.rckEn).getOrElse(false.B)
-      a.io.mbistCgCtl.foreach(_.wclk := cg.out_clock)
-      a.io.mbistCgCtl.foreach(_.rclk := cg.out_clock)
-      a.clock := clock
-    })))
+    if (hasMbist) {
+      array.map(_.map(_.map(a => {
+        val cg = Module(new MbistClockGateCell(extraHold))
+        cg.E := io_en
+        cg.dft.fromBroadcast(a.io.broadcast.getOrElse(0.U.asTypeOf(new SramBroadcastBundle)))
+        cg.mbist.req := a.io.mbistCgCtl.map(_.en).getOrElse(false.B)
+        cg.mbist.writeen := a.io.mbistCgCtl.map(_.wckEn).getOrElse(false.B)
+        cg.mbist.readen := a.io.mbistCgCtl.map(_.rckEn).getOrElse(false.B)
+        a.io.mbistCgCtl.foreach(_.wclk := cg.out_clock)
+        a.io.mbistCgCtl.foreach(_.rclk := cg.out_clock)
+        a.clock := clock
+      })))
+    } else {
+      array.map(_.map(_.map(_.clock := ClockGate(false.B, io_en, clock))))
+    }
   }
 
   // TODO: for now, all small SRAMs use the unified `io_en` signal for gating.
