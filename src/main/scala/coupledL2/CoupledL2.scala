@@ -404,17 +404,12 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
 
     // ** WARNING:TODO: this depends on where the latch is
     // ** if Hint latched in slice, while D-Channel latched in XSTile
-    // ** we need only [hintCycleAhead - 1] later
-    val sliceAhead = hintCycleAhead - 1
+    // ** we need only [hintCycleAhead - 2] later
+    val sliceAhead = hintCycleAhead - 2
 
     val hintChosen = Wire(UInt(banks.W))
     val hintFire = Wire(Bool())
-
-    // if Hint indicates that this slice should fireD, yet no D resp comes out of this slice
-    // then we releaseSourceD, enabling io.d.ready for other slices
-    // TODO: if Hint for single slice is 100% accurate, may consider remove this
-    val releaseSourceD = Wire(Vec(banks, Bool()))
-    val allCanFire = (RegNextN(!hintFire, sliceAhead) && RegNextN(!hintFire, sliceAhead + 1)) || Cat(releaseSourceD).orR
+    val hintWithData = Wire(Bool())
 
     val slices = node.in.zip(node.out).zipWithIndex.map {
       case (((in, edgeIn), (out, edgeOut)), i) =>
@@ -444,12 +439,15 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
           // If slice X has no grant then, it means that the hint at cycle T is wrong,
           // so we relax the restriction on grant selection.
           val sliceCanFire = RegNextN(hintFire && i.U === hintChosen, sliceAhead) ||
-            RegNextN(hintFire && i.U === hintChosen, sliceAhead + 1)
+            RegNextN(hintFire && i.U === hintChosen && hintWithData, sliceAhead + 1)
 
-          releaseSourceD(i) := sliceCanFire && !slice.io.in.d.valid
+          when(sliceCanFire) {
+            assert(slice.io.in.d.valid)
+          }
 
-          in.d.valid := slice.io.in.d.valid && (sliceCanFire || allCanFire)
-          slice.io.in.d.ready := in.d.ready && (sliceCanFire || allCanFire)
+          in.d.valid := slice.io.in.d.valid && sliceCanFire
+          assert(in.d.ready)
+          slice.io.in.d.ready := in.d.ready && sliceCanFire
         }
         in.b.bits.address := restoreAddress(slice.io.in.b.bits.address, i)
         slice.io.sliceId := i.U
@@ -523,7 +521,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     if (enableHintGuidedGrant) {
       // for timing consideration, hint should latch one cycle before sending to L1
       // instead of adding a Pipeline/Queue to latch here, we just set hintQueue in GrantBuf & CustomL1Hint "flow=false"
-      val l1HintArb = Module(new Arbiter(new L2ToL1Hint(), slices.size))
+      val l1HintArb = Module(new FastArbiter(new L2ToL1Hint(), slices.size))
       val slices_l1Hint = slices.zipWithIndex.map {
         case (s, i) => s.io.l1Hint
       }
@@ -538,11 +536,13 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       io.l2_hint.valid := l1HintArb.io.out.fire && sourceIsDcache
       io.l2_hint.bits.sourceId := l1HintArb.io.out.bits.sourceId - dcacheSourceIdStart
       io.l2_hint.bits.isKeyword := l1HintArb.io.out.bits.isKeyword
-      // continuous hints can only be sent every two cycle, since GrantData takes two cycles
-      l1HintArb.io.out.ready := !RegNext(io.l2_hint.valid, false.B)
+      io.l2_hint.bits.isGrantData := l1HintArb.io.out.bits.isGrantData
 
       hintChosen := l1HintArb.io.chosen // ! THIS IS NOT ONE-HOT !
-      hintFire := io.l2_hint.valid
+      hintFire := l1HintArb.io.out.fire
+      hintWithData := l1HintArb.io.out.bits.isGrantData
+      // continuous hints can only be sent every two cycle, since GrantData takes two cycles
+      l1HintArb.io.out.ready := !RegNext(hintFire && hintWithData, false.B)
     }
 
     // Outer interface connection
