@@ -112,12 +112,12 @@ class TagWrite(implicit p: Parameters) extends L2Bundle {
   val wtag = UInt(tagBits.W)
 }
 
-// DB entry for NL prefetch lifecycle events
+// DB entry for NL prefetch lifecycle nlOpts
 class NlPrefetchDbEntry(implicit p: Parameters) extends L2Bundle {
   val set = UInt(setBits.W)
   val tag = UInt(tagBits.W)
   val way = UInt(wayBits.W)
-  val event = UInt(2.W) // 0: arrival, 1: access, 2: eviction
+  val nlOpt = UInt(2.W) // 0: arrival, 1: access, 2: eviction
   val reqSource = UInt(MemReqSource.reqSourceBits.W)
 }
 
@@ -350,6 +350,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   val replace_req_src = req_s3.replacerInfo.reqSource
 
   // total prefetch-victim replacements
+  XSPerfAccumulate("asscce_nl_block_total",victimIsNlPrefetch)
   XSPerfAccumulate("evict_nl_block_total", evict_pf_block)
 
   // evicted by CPU/demand (group CPUInst/Load/Store/Atomic)
@@ -410,7 +411,8 @@ class Directory(implicit p: Parameters) extends L2Module {
   /* ====== ChiselDB logging for NL prefetch lifecycle ====== */
   if (cacheParams.enableMonitor && !cacheParams.FPGAPlatform) {
     val hartId = cacheParams.hartId
-    val nlTable = ChiselDB.createTable(s"L2_NL_Prefetch$hartId", new NlPrefetchDbEntry, basicDB = true)
+    val nlArrivalTable = ChiselDB.createTable(s"L2_NL_Prefetch$hartId", new NlPrefetchDbEntry, basicDB = true)
+    val 
 
     // arrival: meta write that marks a block as NL-prefetched
     val arrivalCond = io.metaWReq.valid && io.metaWReq.bits.wmeta.prefetch.getOrElse(false.B) &&
@@ -422,7 +424,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     val arrivalHasTag = io.tagWReq.valid && (io.tagWReq.bits.set === io.metaWReq.bits.set) &&
       (OHToUInt(io.metaWReq.bits.wayOH) === io.tagWReq.bits.way)
     nlArrival.tag := Mux(arrivalHasTag, io.tagWReq.bits.wtag, 0.U)
-    nlArrival.event := 0.U
+    nlArrival.nlOpt := 0.U
     nlArrival.reqSource := io.metaWReq.bits.wmeta.prefetchSrc.getOrElse(MemReqSource.NoWhere.id.U)
     nlTable.log(nlArrival, arrivalCond, s"L2${hartId}_${p(SliceIdKey)}", clock, reset)
 
@@ -433,7 +435,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     nlAccess.set := io.resp.bits.set
     nlAccess.tag := io.resp.bits.tag
     nlAccess.way := io.resp.bits.way
-    nlAccess.event := 1.U
+    nlAccess.nlOpt := 1.U
     nlAccess.reqSource := io.resp.bits.replacerInfo.reqSource
     nlTable.log(nlAccess, accessCond, s"L2${hartId}_${p(SliceIdKey)}", clock, reset)
 
@@ -442,7 +444,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     nlEvict.set := io.replResp.bits.set
     nlEvict.tag := io.replResp.bits.tag
     nlEvict.way := io.replResp.bits.way
-    nlEvict.event := 2.U
+    nlEvict.nlOpt := 2.U
     nlEvict.reqSource := replace_req_src
     nlTable.log(nlEvict, evict_pf_block, s"L2${hartId}_${p(SliceIdKey)}", clock, reset)
   }
