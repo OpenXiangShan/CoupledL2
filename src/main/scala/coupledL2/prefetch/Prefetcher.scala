@@ -421,7 +421,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   e1.reqsource := io.train.bits.reqsource
   trainTT.log(
     data = e1,
-    en = io.train.valid,
+    en = io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U),
     site = "L2Train",
     clock, reset
   )
