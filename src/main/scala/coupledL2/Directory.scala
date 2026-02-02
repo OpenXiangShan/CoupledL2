@@ -104,6 +104,13 @@ class MetaWrite(implicit p: Parameters) extends L2Bundle {
   val set = UInt(setBits.W)
   val wayOH = UInt(cacheParams.ways.W)
   val wmeta = new MetaEntry
+  val release = Valid(new Bundle() { // Release-only mode, write mask bundle
+    val dirty = Bool()
+    val clients = Bool()
+    val state = Bool()
+    val tagErr = Bool()
+    val dataErr = Bool()
+  }) 
 }
 
 class TagWrite(implicit p: Parameters) extends L2Bundle {
@@ -171,7 +178,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     ))
   }
 
-  val metaArray = Module(new SRAMTemplate(new MetaEntry, sets, ways, singlePort = true, hasMbist = mbist, hasSramCtl = hasSramCtl))
+  val metaArray = Module(new SRAMTemplate(new MetaEntry, sets, ways, singlePort = true, useBitmask = true, hasMbist = mbist, hasSramCtl = hasSramCtl))
 
   val tagRead_s3 = Wire(Vec(ways, UInt(tagBits.W)))
   val metaRead = Wire(Vec(ways, new MetaEntry()))
@@ -234,12 +241,23 @@ class Directory(implicit p: Parameters) extends L2Module {
   errorRead := bankTagError
 
   // Meta R/W
+  val metaMaskNone = Fill(io.metaWReq.bits.wmeta.getWidth, 0.U)
+  val metaMaskAll = Fill(io.metaWReq.bits.wmeta.getWidth, 1.U)
+
+  val metaMaskRelease = WireInit(metaMaskNone.asTypeOf(new MetaEntry))
+  metaMaskRelease.dirty := Fill(metaMaskRelease.dirty.getWidth, io.metaWReq.bits.release.bits.dirty) // masking 'dirty'
+  metaMaskRelease.clients := Fill(metaMaskRelease.clients.getWidth, io.metaWReq.bits.release.bits.clients) // masking 'clients'
+  metaMaskRelease.state := Fill(metaMaskRelease.state.getWidth, io.metaWReq.bits.release.bits.state) // masking 'state'
+  metaMaskRelease.tagErr := Fill(metaMaskRelease.tagErr.getWidth, io.metaWReq.bits.release.bits.tagErr) // masking 'tagErr'
+  metaMaskRelease.dataErr := Fill(metaMaskRelease.dataErr.getWidth, io.metaWReq.bits.release.bits.dataErr) // masking 'dataErr'
+
   metaRead := metaArray.io.r(io.read.fire, io.read.bits.set).resp.data
   metaArray.io.w(
     metaWen,
     io.metaWReq.bits.wmeta,
     io.metaWReq.bits.set,
-    io.metaWReq.bits.wayOH
+    io.metaWReq.bits.wayOH,
+    Mux(io.metaWReq.bits.release.valid, metaMaskRelease.asUInt, metaMaskAll)
   )
 
   val metaAll_s3 = RegEnable(metaRead, 0.U.asTypeOf(metaRead), reqValid_s2)

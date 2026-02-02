@@ -48,7 +48,7 @@ class TestTop_L2()(implicit p: Parameters) extends LazyModule {
         channelBytes = TLChannelBeatBytes(cacheParams.blockBytes),
         minLatency = 1,
         echoFields = Nil,
-        requestFields = Seq(AliasField(2)),
+        requestFields = Seq(AliasField(2), WayField()),
         responseKeys = cacheParams.respKey
       )
     ))
@@ -135,7 +135,7 @@ class TestTop_L2L3()(implicit p: Parameters) extends LazyModule {
         channelBytes = TLChannelBeatBytes(cacheParams.blockBytes),
         minLatency = 1,
         echoFields = Nil,
-        requestFields = Seq(AliasField(2), PrefetchField()),
+        requestFields = Seq(AliasField(2), PrefetchField(), WayField()),
         responseKeys = cacheParams.respKey
       )
     ))
@@ -281,7 +281,7 @@ class TestTop_L2_Standalone()(implicit p: Parameters) extends LazyModule {
         channelBytes = TLChannelBeatBytes(cacheParams.blockBytes),
         minLatency = 1,
         echoFields = Nil,
-        requestFields = Seq(AliasField(2)),
+        requestFields = Seq(AliasField(2), WayField()),
         responseKeys = cacheParams.respKey
       )
     ))
@@ -391,7 +391,7 @@ class TestTop_L2L3L2()(implicit p: Parameters) extends LazyModule {
         channelBytes = TLChannelBeatBytes(cacheParams.blockBytes),
         minLatency = 1,
         echoFields = Nil,
-        requestFields = Seq(AliasField(2)),
+        requestFields = Seq(AliasField(2), WayField()),
         responseKeys = cacheParams.respKey
       )
     ))
@@ -541,7 +541,7 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
         channelBytes = TLChannelBeatBytes(cacheParams.blockBytes),
         minLatency = 1,
         echoFields = Nil,
-        requestFields = Seq(AliasField(2)),
+        requestFields = Seq(AliasField(2), WayField()),
         responseKeys = cacheParams.respKey
       )
     ))

@@ -92,7 +92,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
     /* read DS and write data into ReleaseBuf when the task needs to replace */
     val releaseBufWrite = ValidIO(new MSHRBufWrite())
 
-    val nestedwb = Output(new NestedWriteback)
+    val nestedwb = Flipped(new NestedWriteback)
     val nestedwbData = Output(new DSBlock)
 
     /* send Hint to L1 */
@@ -170,6 +170,8 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   //[Alias] TODO: consider 1 client for now
   val cache_alias           = req_acquire_s3 && dirResult_s3.hit && meta_s3.clients(0) &&
                               meta_s3.alias.getOrElse(0.U) =/= req_s3.alias.getOrElse(0.U)
+
+  val replaceNestedRelease_s3 = task_s3.valid && task_s3.bits.fromC && io.nestedwb.replaceMatch
 
   val mshr_refill_s3 = (mshr_accessackdata_s3 || mshr_hintack_s3 || mshr_grant_s3) // needs refill to L2 DS
   val retry = io.replResp.bits.retry
@@ -374,13 +376,13 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   )
 
   val metaW_s3_c = MetaEntry(
-    dirty = meta_s3.dirty || wen_c,
-    state = Mux(isParamFromT(req_s3.param), TIP, meta_s3.state),
+    dirty = true.B,
+    state = TIP,
     clients = Fill(clientBits, !isToN(req_s3.param)),
-    alias = meta_s3.alias,
-    accessed = meta_s3.accessed,
-    tagErr = Mux(wen_c, req_s3.denied, meta_s3.tagErr),
-    dataErr = Mux(wen_c, req_s3.corrupt, meta_s3.dataErr) // update error when write DS
+    alias = Some(0.U),
+    accessed = false.B,
+    tagErr = req_s3.denied,
+    dataErr = req_s3.corrupt // update error when write DS
   )
   // use merge_meta if mergeA
   val metaW_s3_mshr = WireInit(Mux(req_s3.mergeA, req_s3.aMergeTask.meta, req_s3.meta))
@@ -401,6 +403,12 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
     ),
     MetaEntry()
   )
+  io.metaWReq.bits.release.valid := metaW_valid_s3_c
+  io.metaWReq.bits.release.bits.clients := isToN(req_s3.param)
+  io.metaWReq.bits.release.bits.dirty := req_s3.opcode === ReleaseData
+  io.metaWReq.bits.release.bits.state := isParamFromT(req_s3.param)
+  io.metaWReq.bits.release.bits.tagErr := wen_c
+  io.metaWReq.bits.release.bits.dataErr := wen_c
 
   io.tagWReq.valid     := task_s3.valid && req_s3.tagWen && mshr_refill_s3 && !retry
   io.tagWReq.bits.set  := req_s3.set
@@ -430,6 +438,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   c_s3.bits.task      := source_req_s3
   c_s3.bits.data.data := data_s3
   d_s3.bits.task      := source_req_s3
+  d_s3.bits.task.way  := Mux(req_s3.replTask, io.replResp.bits.way, source_req_s3.way)
   d_s3.bits.data.data := data_s3
 
   /* ======== nested & prefetch ======== */
@@ -755,6 +764,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   io.toMonitor.allocMSHR_s3.valid := io.toMSHRCtl.mshr_alloc_s3.valid
   io.toMonitor.allocMSHR_s3.bits  := io.fromMSHRCtl.mshr_alloc_ptr
   io.toMonitor.metaW_s3 := io.metaWReq
+  io.toMonitor.replaceNestedRelease_s3 := replaceNestedRelease_s3
 
   /* ===== Hardware Performance Monitor ===== */
   val perfEvents = Seq(

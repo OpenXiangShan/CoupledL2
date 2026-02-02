@@ -366,18 +366,21 @@ class BlockInfo(implicit p: Parameters) extends L2Bundle {
 
 // used for nested C Release
 class NestedWriteback(implicit p: Parameters) extends L2Bundle {
-  val set = UInt(setBits.W)
-  val tag = UInt(tagBits.W)
+  val set = Input(UInt(setBits.W))
+  val tag = Input(UInt(tagBits.W))
   // Nested ReleaseData sets block dirty
-  val c_set_dirty = Bool()
+  val c_set_dirty = Input(Bool())
   // Nested Release sets block TIP
-  val c_set_tip = Bool()
+  val c_set_tip = Input(Bool())
   // Nested Snoop invalidates block
-  val b_inv_dirty = Bool()
+  val b_inv_dirty = Input(Bool())
 
-  val b_toB = chiOpt.map(_ => Bool())
-  val b_toN = chiOpt.map(_ => Bool())
-  val b_toClean = chiOpt.map(_ => Bool())
+  val b_toB = chiOpt.map(_ => Input(Bool()))
+  val b_toN = chiOpt.map(_ => Input(Bool()))
+  val b_toClean = chiOpt.map(_ => Input(Bool()))
+
+  // Nested Release hit replace
+  val replaceMatch = Output(Bool())
 }
 
 class PrefetchCtrlFromCore extends Bundle {
