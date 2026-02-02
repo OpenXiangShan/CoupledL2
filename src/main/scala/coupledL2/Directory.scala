@@ -98,6 +98,7 @@ class ReplacerResult(implicit p: Parameters) extends L2Bundle {
   val meta = new MetaEntry()
   val mshrId = UInt(mshrBits.W)
   val retry = Bool()
+  val validHold = Bool()
 }
 
 class MetaWrite(implicit p: Parameters) extends L2Bundle {
@@ -199,6 +200,7 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   val refillReqValid_s2 = RegNext(io.read.fire && io.read.bits.refill, false.B)
   val refillReqValid_s3 = RegNext(refillReqValid_s2, false.B)
+  val refillReqValid_hold_s3 = RegEnable(refillReqValid_s2, false.B, !RegNext(refillReqValid_s2))
 
   // Tag(ECC) R/W
   val tagWrite = if (enableTagECC) {
@@ -333,6 +335,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   io.replResp.bits.meta := metaAll_s3(finalWay)
   io.replResp.bits.mshrId := req_s3.mshrId
   io.replResp.bits.retry := refillRetry
+  io.replResp.bits.validHold := refillReqValid_hold_s3
 
   /* ====== Update ====== */
   // PLRU: update replacer only when A hit or refill, at stage 3
