@@ -771,7 +771,7 @@ class NextLineMonitor(implicit p: Parameters) extends NLModule {
   val sampleTable  = ChiselDB.createTable(s"NLsampledb", new SampleDb, basicDB = true)
   val sampleDbData = Wire(new SampleDb())
   sampleDbData := io.sampleDb 
-  sampleTable.log(sampleDbData, (shouldTrain&(sampleTrainHit||sampleInsertEn)) || (timeSample<(1.U<<14)), s"Nlsample${hartId}", clock, reset)
+  sampleTable.log(sampleDbData, shouldTrain & (sampleTrainHit || sampleInsertEn || (timeSample<(1.U<<14))), s"Nlsample${hartId}", clock, reset)
 
 
   // val samplePatternTable  = ChiselDB.createTable(s"NLsamplePatterdb", new SamplePatterDb, basicDB = true)
