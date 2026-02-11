@@ -333,7 +333,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     )
   }
   if (hasTPPrefetcher) {
-    tp.get.io.enable := tp_en
+    tp.get.io.enable := tp_en && false.B
     tp.get.io.train <> io.train
     tp.get.io.resp <> io.resp
     tp.get.io.hartid := hartId
@@ -350,10 +350,10 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val pftQueue = Module(new PrefetchQueue)
   val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
 
-  pftQueue.io.enq.valid :=
-    (if (hasReceiver)     pfRcv.get.io.req.valid                         else false.B) ||
-    (if (hasBOP)          vbop.get.io.req.valid || pbop.get.io.req.valid else false.B) ||
-    (if (hasTPPrefetcher) tp.get.io.req.valid                            else false.B)
+  pftQueue.io.enq.valid := false.B
+//    (if (hasReceiver)     pfRcv.get.io.req.valid                         else false.B) ||
+//    (if (hasBOP)          vbop.get.io.req.valid || pbop.get.io.req.valid else false.B) ||
+//    (if (hasTPPrefetcher) tp.get.io.req.valid                            else false.B)
   pftQueue.io.enq.bits := ParallelPriorityMux(Seq(
     if (hasReceiver)     pfRcv.get.io.req.valid -> pfRcv.get.io.req.bits else false.B -> 0.U.asTypeOf(io.req.bits),
     if (hasBOP)          vbop.get.io.req.valid -> vbop.get.io.req.bits   else false.B -> 0.U.asTypeOf(io.req.bits),
