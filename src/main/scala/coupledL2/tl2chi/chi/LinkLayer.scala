@@ -208,9 +208,9 @@ class LCredit2Decoupled[T <: Bundle](
     QueuePerf(size = lcreditNum, utilization = queue.io.count, full = queue.io.count === lcreditNum.U)
   } else {
     val lcreditReturn = WireInit(false.B)
-    lcreditOut := (lcreditPool > 0.U) && enableLCredit
+    lcreditOut := (lcreditPool > 0.U) && enableLCredit && io.out.ready
 
-    assert(!accept || io.out.ready)
+    //assert(!accept || io.out.ready) /*reuse this module and considering upstream may not always ready to accept*/
 
     io.out.valid := accept && !lcreditReturn
     var lsb = 0
@@ -254,7 +254,10 @@ object LCredit2Decoupled {
   }
 }
 
-class Decoupled2LCredit[T <: Bundle](gen: T)(implicit p: Parameters) extends Module {
+class Decoupled2LCredit[T <: Bundle](
+  gen: T,
+  overlcreditNum: Option[Int] = None,
+)(implicit p: Parameters) extends Module {
   val io = IO(new Bundle() {
     val in = Flipped(DecoupledIO(gen.cloneType))
     val out = ChannelIO(gen.cloneType)
@@ -270,15 +273,17 @@ class Decoupled2LCredit[T <: Bundle](gen: T)(implicit p: Parameters) extends Mod
 
   // The maximum number of L-Credits that a receiver can provide is 15.
   val lcreditsMax = 15
-  val lcreditPool = RegInit(0.U(log2Up(lcreditsMax).W))
+  val overlcreditVal = overlcreditNum.getOrElse(0)
+  val lcreditsMaxAll = lcreditsMax + overlcreditVal
+  val lcreditPool = RegInit(overlcreditVal.U(log2Up(lcreditsMaxAll+1).W))
 
-  val returnLCreditValid = !io.in.valid && state === LinkStates.DEACTIVATE && lcreditPool =/= 0.U
+  val returnLCreditValid = !io.in.valid && state === LinkStates.DEACTIVATE && lcreditPool =/= overlcreditVal.U
   val flitv = io.in.fire || returnLCreditValid
 
   when (acceptLCredit) {
     when (!flitv) {
       lcreditPool := lcreditPool + 1.U
-      assert(lcreditPool + 1.U =/= 0.U, "L-Credit pool overflow")
+      assert(lcreditPool < lcreditsMaxAll.U, "L-Credit pool overflow")
     }
   }.otherwise {
     when (flitv) {
@@ -304,9 +309,10 @@ object Decoupled2LCredit {
     left: DecoupledIO[T],
     right: ChannelIO[T],
     state: LinkState,
-    suggestName: Option[String] = None
+    suggestName: Option[String] = None,
+    overlcreditNum: Option[Int] = None
   )(implicit p: Parameters): Unit = {
-    val mod = Module(new Decoupled2LCredit(left.bits.cloneType))
+    val mod = Module(new Decoupled2LCredit(left.bits.cloneType, overlcreditNum))
     suggestName.foreach(name => mod.suggestName(s"Decoupled2LCredit_${name}"))
     
     mod.io.in <> left
@@ -339,9 +345,9 @@ class LinkMonitor(implicit p: Parameters) extends L2Module with HasCHIOpcodes {
   /* IO assignment */
   val rxsnpDeact, rxrspDeact, rxdatDeact = Wire(Bool())
   val rxDeact = rxsnpDeact && rxrspDeact && rxdatDeact
-  Decoupled2LCredit(setSrcID(io.in.tx.req, io.nodeID), io.out.tx.req, LinkState(txState), Some("txreq"))
-  Decoupled2LCredit(setSrcID(io.in.tx.rsp, io.nodeID), io.out.tx.rsp, LinkState(txState), Some("txrsp"))
-  Decoupled2LCredit(setSrcID(io.in.tx.dat, io.nodeID), io.out.tx.dat, LinkState(txState), Some("txdat"))
+  Decoupled2LCredit(setSrcID(io.in.tx.req, io.nodeID), io.out.tx.req, LinkState(txState), Some("txreq"), Some(8))
+  Decoupled2LCredit(setSrcID(io.in.tx.rsp, io.nodeID), io.out.tx.rsp, LinkState(txState), Some("txrsp"), Some(8))
+  Decoupled2LCredit(setSrcID(io.in.tx.dat, io.nodeID), io.out.tx.dat, LinkState(txState), Some("txdat"), Some(8))
   LCredit2Decoupled(io.out.rx.snp, io.in.rx.snp, LinkState(rxState), rxsnpDeact, Some("rxsnp"))
   LCredit2Decoupled(io.out.rx.rsp, io.in.rx.rsp, LinkState(rxState), rxrspDeact, Some("rxrsp"), 15, false)
   LCredit2Decoupled(io.out.rx.dat, io.in.rx.dat, LinkState(rxState), rxdatDeact, Some("rxdat"), 15, false)
