@@ -22,6 +22,7 @@ import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import utility._
 import coupledL2.L2Module
+import coupledL2.HasCoupledL2Parameters
 
 class ChannelIO[+T <: Data](gen: T) extends Bundle {
   // Flit Pending. Early indication that a flit might be transmitted in the following cycle
@@ -257,7 +258,7 @@ object LCredit2Decoupled {
 class Decoupled2LCredit[T <: Bundle](
   gen: T,
   overlcreditNum: Option[Int] = None,
-)(implicit p: Parameters) extends Module {
+)(implicit val p: Parameters) extends Module with HasCoupledL2Parameters {
   val io = IO(new Bundle() {
     val in = Flipped(DecoupledIO(gen.cloneType))
     val out = ChannelIO(gen.cloneType)
@@ -273,7 +274,8 @@ class Decoupled2LCredit[T <: Bundle](
 
   // The maximum number of L-Credits that a receiver can provide is 15.
   val lcreditsMax = 15
-  val overlcreditVal = overlcreditNum.getOrElse(0)
+  val enableCHIAsync = cacheParams.enableCHIAsyncBridge.getOrElse(false)
+  val overlcreditVal = if(enableCHIAsync) overlcreditNum.getOrElse(0) else 0 
   val lcreditsMaxAll = lcreditsMax + overlcreditVal
   val lcreditPool = RegInit(overlcreditVal.U(log2Up(lcreditsMaxAll+1).W))
 
