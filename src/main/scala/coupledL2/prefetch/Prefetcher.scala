@@ -348,7 +348,6 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   /* prefetchers -> pftQueue -> pipe -> Slices.SinkA */
 
   val pftQueue = Module(new PrefetchQueue)
-  val pfFilter = Module(new PrefetchFilterTable)
   val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
 
   private val SRC_NUM = 4
@@ -372,8 +371,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     pftQueueEnqArb.io.in(tp_idx).valid := tp.get.io.req.valid
     pftQueueEnqArb.io.in(tp_idx).bits := tp.get.io.req.bits
   }
-  pfFilter.io.in <> pftQueueEnqArb.io.out
-  pftQueue.io.enq <> pfFilter.io.out
+  pftQueue.io.enq <> pftQueueEnqArb.io.out
 
   pipe.io.in <> pftQueue.io.deq
   io.req <> pipe.io.out
