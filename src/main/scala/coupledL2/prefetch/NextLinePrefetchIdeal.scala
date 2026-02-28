@@ -382,7 +382,7 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   val s1_sampleTableVictimEntry  = s1_sampleTableReplaceEntries(s1_sampleTableReplaceWayIdx) 
 
   //set insert entry data
-  val s1_sampleTableReplaceEntry = Wire(new SampleTableEntryField)  
+  val s1_sampleTableReplaceEntry        = Wire(new SampleTableEntryField)  
   s1_sampleTableReplaceEntry.valid      := true.B
   s1_sampleTableReplaceEntry.tag        := s1_sampleTableReplaceTag
   s1_sampleTableReplaceEntry.sampleTime := s1_timeSample
@@ -391,14 +391,14 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   
 
   // Encapsulate the two write requests of the Sample Table
-  val s1_sampleTableReplaceReq      = Wire(new SampleTableWriteReq())
+  val s1_sampleTableReplaceReq     = Wire(new SampleTableWriteReq())
   s1_sampleTableReplaceReq.en      := s1_sampleTableReplaceEn
   s1_sampleTableReplaceReq.setIdx  := s1_sampleTableReplaceIdx
   s1_sampleTableReplaceReq.wayMask := s1_sampleTableReplaceWayOH
   s1_sampleTableReplaceReq.entry   := s1_sampleTableReplaceEntry
 
   // Encapsulate replace state table write request
-  val s1_sampleTableReplaceStateReq = Wire(new SampleTableStateWriteReq())
+  val s1_sampleTableReplaceStateReq     = Wire(new SampleTableStateWriteReq())
   s1_sampleTableReplaceStateReq.en      := s1_sampleTableReplaceEn
   s1_sampleTableReplaceStateReq.setIdx  := s1_sampleTableReplaceIdx
   s1_sampleTableReplaceStateReq.wayMask := s1_sampleTableReplaceEn.asUInt
@@ -437,8 +437,6 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   sampleTableReplaceStateRegs.io.w(sampleTableReplacePort).req.wayMask := s2_sampleTableReplaceStateReq.wayMask   
   sampleTableReplaceStateRegs.io.w(sampleTableReplacePort).req.data    := VecInit(Seq.fill(1)(s2_sampleTableReplaceStateReq.state))
 
-
- 
   //db
   io.db.trainEn    := s1_valid
   io.db.addr       := s1_blockAddr
@@ -471,6 +469,7 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   XSPerfAccumulate("nlSampleUpdateTimes",s1_sampleTableUpdateEn) 
   XSPerfAccumulate("nlSampleStateUpdateTimes",s1_valid & sampleTableUpdateHit)
   XSPerfAccumulate("nlSampleUpdateReqMulHitTimes",s1_valid & PopCount(s1_sampleTableUpdateHitVec)>1.U)
+
 
   //victim data analysis
   XSPerfAccumulate("nlSampleVictimTouchedTrueTimes",s1_sampleTableReplaceEn & s1_sampleTableVictimEntry.touched)
@@ -570,10 +569,10 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   val s1_reqAddr      = RegNext(s0_reqAddr)
   val s1_reqResp      = RegNext(patternTable.io.r(patternTablePrefetchPort).resp)
 
-  
+  val s1_prefetchAddr     = s1_reqAddr + blockBytes.U
   val s1_reqHitValidEntry = s1_reqValid && s1_reqResp.hit 
-  
-  val s1_needPrefetch = s1_reqHitValidEntry & (s1_reqResp.data.sat === ((1.U << patternTableSatBits) - 1.U))
+  val s1_crossPage        = getPPN(s1_reqAddr) =/= getPPN(s1_prefetchAddr)
+  val s1_needPrefetch     = s1_reqHitValidEntry & (s1_reqResp.data.sat === maxSat) & !s1_crossPage
   /***************Stage 2: write Pattern Table*******************/
   val s2_patternUpdateEn  = RegNext(s1_patternUpdateEn, false.B)
   val s2_patternUpdateIdx = RegNext(s1_patternUpdateIdx)
@@ -601,7 +600,7 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
 
   //prefetcher initiate a prefetch request
   io.resp.valid             := RegNext(s1_needPrefetch, false.B) 
-  io.resp.bits.nextAddr     := RegNext(s1_reqAddr + blockBytes.U, 0.U)
+  io.resp.bits.nextAddr     := RegNext(s1_prefetchAddr, 0.U)
 
   //db  
   io.db.Sat := s1_trainResp.data.sat
@@ -636,11 +635,10 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   XSPerfAccumulate("nlPatternUpdateTouchedTrueTimes",s1_trainValid & s1_trainResp.hit & s1_trainTouched)
   XSPerfAccumulate("nlPatternUpdateTouchedFalseTimes",s1_trainValid & s1_trainResp.hit & !s1_trainTouched)
 
- 
-
   //pc prefetch analysis
   XSPerfAccumulate("nlPatternPcHitTimes",s1_reqResp.hit && s1_reqValid)
   XSPerfAccumulate("nlPatternPcHitValidEntryTimes",s1_reqHitValidEntry)
+  XSPerfAccumulate("nlPatternCrossPageTimes", s1_reqHitValidEntry & (s1_reqResp.data.sat === maxSat) & s1_crossPage)
 
   XSPerfAccumulate("nlPatternPcHitValidEntrySatEq3Times",s1_reqHitValidEntry&(s1_reqResp.data.sat===3.U) )
   XSPerfAccumulate("nlPatternPcHitValidEntrySatEq2Times",s1_reqHitValidEntry&(s1_reqResp.data.sat===2.U) )
@@ -730,12 +728,10 @@ class NextLinePrefetchIdeal(implicit p: Parameters) extends NLModule {
   XSPerfAccumulate("nlLoadHitPrefetchedTimes",validTrain&  io.train.bits.prefetched)
   XSPerfAccumulate("nlLoadMissAndHitPrefetchedTimes",validTrain& !io.train.bits.hit&  io.train.bits.prefetched)
 
-  
   XSPerfAccumulate("nlPrefetchReqTimes",prefetcherPattern.io.resp.valid  && io.enable)
   XSPerfAccumulate("nlTransmitPrefetchReqTimes",io.req.fire  && io.enable)
   XSPerfHistogram("grant_grantack_period", prefetchQueue.io.count, io.req.ready, 0,nlParams.nlPrefetchQueueEntries, 1)
 
-  
   XSPerfAccumulate("nlTimeSampleCountResetTimes",(!timeSampleCounter.orR) & shouldTrain)
 
 }
@@ -755,30 +751,17 @@ class NextLineMonitor(implicit p: Parameters) extends NLModule {
   val patternHit  = io.patternDb.hit
   val patternTrainEn = io.patternDb.trainEn
 
-  // val nlTable = ChiselDB.createTable(s"NLchiseldb", new NlDb, basicDB = true)
-  // val nlDbdata = Wire(new NlDb)
-
-  // nlDbdata.addr := io.sampleDb.addr
-  // nlDbdata.pc   := io.sampleDb.pc
-  // nlDbdata.timeSample := io.sampleDb.timeSample
-  // nlDbdata.sampleHit  := io.sampleDb.hit
-  // nlDbdata.patternHit := io.patternDb.hit 
-  // nlDbdata.patternSat := io.patternDb.Sat
-
-  // nlTable.log(nlDbdata, shouldTrain, s"Nl${hartId}", clock, reset)
-
   //sample table db 
-  val sampleTable  = ChiselDB.createTable(s"NLsampledb", new SampleDb, basicDB = true)
+  val sampleTable  = ChiselDB.createTable(s"NLsampledb", new SampleDb, basicDB = false)
   val sampleDbData = Wire(new SampleDb())
   sampleDbData := io.sampleDb 
   sampleTable.log(sampleDbData, shouldTrain & (sampleTrainHit || sampleInsertEn || (timeSample<(1.U<<14))), s"Nlsample${hartId}", clock, reset)
 
-
-  // val samplePatternTable  = ChiselDB.createTable(s"NLsamplePatterdb", new SamplePatterDb, basicDB = true)
-  // val samplePatternDbData = Wire(new SamplePatterDb())
-  // samplePatternDbData.sample  := io.sampleDb 
-  // samplePatternDbData.pattern := io.patternDb
-  // samplePatternTable.log(samplePatternDbData, shouldTrain&(sampleTrainHit||sampleInsertEn), s"NlsamplePatter${hartId}", clock, reset)
+  val samplePatternTable  = ChiselDB.createTable(s"NLsamplePatterdb", new SamplePatterDb, basicDB = false)
+  val samplePatternDbData = Wire(new SamplePatterDb())
+  samplePatternDbData.sample  := io.sampleDb 
+  samplePatternDbData.pattern := io.patternDb
+  samplePatternTable.log(samplePatternDbData, shouldTrain&(sampleTrainHit||sampleInsertEn), s"NlsamplePatter${hartId}", clock, reset)
 
 }
 

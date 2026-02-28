@@ -113,12 +113,14 @@ class TagWrite(implicit p: Parameters) extends L2Bundle {
 }
 
 // DB entry for NL prefetch lifecycle nlOpts
-class NlPrefetchDbEntry(implicit p: Parameters) extends L2Bundle {
+class PrefetchDbEntry(implicit p: Parameters) extends L2Bundle {
   val setIdx    = UInt(setBits.W)
   val isPrefetch= Bool()
+  val ishit     = Bool()
   val tag       = UInt(tagBits.W)
   val way       = UInt(wayBits.W)
   val nlOpt     = UInt(2.W) // 0: arrival, 1: access, 2: eviction
+  val metaSource  = UInt(PfSource.pfSourceBits.W)
   val reqSource = UInt(MemReqSource.reqSourceBits.W)
 }
 
@@ -344,112 +346,63 @@ class Directory(implicit p: Parameters) extends L2Module {
   io.replResp.bits.mshrId := req_s3.mshrId
   io.replResp.bits.retry := refillRetry
 
+  val evict_block_en = io.replResp.valid && !io.replResp.bits.retry
+  val evict_block_meta = metaAll_s3(finalWay)
+  
  
-  val victimIsNlPrefetch = metaAll_s3(finalWay).prefetch.getOrElse(false.B) && 
-    metaAll_s3(finalWay).prefetchSrc.getOrElse(0.U) === MemReqSource.Prefetch2L2NL.id.U
-  val evict_pf_block = io.replResp.valid && !io.replResp.bits.retry && metaAll_s3(finalWay).prefetch.getOrElse(false.B)
+  val evict_pf_block_en = evict_block_en && evict_block_meta.prefetch.getOrElse(false.B)
   val replace_req_src = req_s3.replacerInfo.reqSource
 
-  // total prefetch-victim replacements
-  XSPerfAccumulate("asscce_nl_block_total",victimIsNlPrefetch)
-  XSPerfAccumulate("evict_nl_block_total", evict_pf_block)
-
-  // evicted by CPU/demand (group CPUInst/Load/Store/Atomic)
-  val evicted_by_cpu = evict_pf_block && (
-    replace_req_src === MemReqSource.CPUInst.id.U ||
-    replace_req_src === MemReqSource.CPULoadData.id.U ||
-    replace_req_src === MemReqSource.CPUStoreData.id.U ||
-    replace_req_src === MemReqSource.CPUAtomicData.id.U
-  )
-  XSPerfAccumulate("evict_nl_block_by_CPU", evicted_by_cpu)
-
-  // L1 prefetches
-  XSPerfAccumulate("evict_nl_block_by_L1InstPrefetch", evict_pf_block && (replace_req_src === MemReqSource.L1InstPrefetch.id.U))
-  XSPerfAccumulate("evict_nl_block_by_L1DataPrefetch", evict_pf_block && (replace_req_src === MemReqSource.L1DataPrefetch.id.U))
-
-  // L2 prefetch types: break down by known L2 prefetch sources
-  XSPerfAccumulate("evict_nl_block_by_L2_NL", evict_pf_block && (replace_req_src === MemReqSource.Prefetch2L2NL.id.U))
-  XSPerfAccumulate("evict_nl_block_by_L2_Stream", evict_pf_block && (replace_req_src === MemReqSource.Prefetch2L2Stream.id.U))
-  XSPerfAccumulate("evict_nl_block_by_L2_Stride", evict_pf_block && (replace_req_src === MemReqSource.Prefetch2L2Stride.id.U))
-  XSPerfAccumulate("evict_nl_block_by_L2_BOP", evict_pf_block && (replace_req_src === MemReqSource.Prefetch2L2BOP.id.U))
-  XSPerfAccumulate("evict_nl_block_by_L2_PBOP", evict_pf_block && (replace_req_src === MemReqSource.Prefetch2L2PBOP.id.U))
-  XSPerfAccumulate("evict_nl_block_by_L2_SMS", evict_pf_block && (replace_req_src === MemReqSource.Prefetch2L2SMS.id.U))
-  XSPerfAccumulate("evict_nl_block_by_L2_TP", evict_pf_block && (replace_req_src === MemReqSource.Prefetch2L2TP.id.U))
-  XSPerfAccumulate("evict_nl_block_by_L2_Berti", evict_pf_block && (replace_req_src === MemReqSource.Prefetch2L2Berti.id.U))
-  XSPerfAccumulate("evict_nl_block_by_L2_Unknown", evict_pf_block && (replace_req_src === MemReqSource.Prefetch2L2Unknown.id.U))
-
-  // PTW and other sources
-  XSPerfAccumulate("evict_nl_block_by_PTW", evict_pf_block && (replace_req_src === MemReqSource.PTW.id.U))
-
-  // catch-all for any other sources not enumerated above
-  val known_srcs = Cat(
-    replace_req_src === MemReqSource.CPUInst.id.U,
-    replace_req_src === MemReqSource.CPULoadData.id.U,
-    replace_req_src === MemReqSource.CPUStoreData.id.U,
-    replace_req_src === MemReqSource.CPUAtomicData.id.U,
-    replace_req_src === MemReqSource.L1InstPrefetch.id.U,
-    replace_req_src === MemReqSource.L1DataPrefetch.id.U,
-    replace_req_src === MemReqSource.Prefetch2L2NL.id.U,
-    replace_req_src === MemReqSource.Prefetch2L2Stream.id.U,
-    replace_req_src === MemReqSource.Prefetch2L2Stride.id.U,
-    replace_req_src === MemReqSource.Prefetch2L2BOP.id.U,
-    replace_req_src === MemReqSource.Prefetch2L2PBOP.id.U,
-    replace_req_src === MemReqSource.Prefetch2L2SMS.id.U,
-    replace_req_src === MemReqSource.Prefetch2L2TP.id.U,
-    replace_req_src === MemReqSource.Prefetch2L2Berti.id.U,
-    replace_req_src === MemReqSource.Prefetch2L2Unknown.id.U,
-    replace_req_src === MemReqSource.Prefetch2L3Stream.id.U,
-    replace_req_src === MemReqSource.Prefetch2L3Stride.id.U,
-    replace_req_src === MemReqSource.Prefetch2L3Berti.id.U,
-    replace_req_src === MemReqSource.Prefetch2L3Unknown.id.U,
-    replace_req_src === MemReqSource.Prefetch2L2Berti.id.U,
-    replace_req_src === MemReqSource.NoWhere.id.U,
-    replace_req_src === MemReqSource.Prefetch2L2Unknown.id.U
-  )
-  XSPerfAccumulate("evict_nl_block_by_other", evict_pf_block && !known_srcs.orR)
-
-  /* ====== Update ====== */
-  /* ====== ChiselDB logging for NL prefetch lifecycle ====== */
+  
+  
+  /* ====== ChiselDB logging for  prefetcher lifecycle ====== */
   if (cacheParams.enableMonitor && !cacheParams.FPGAPlatform) {
     val hartId = cacheParams.hartId
-    val nlWriteTable = ChiselDB.createTable(s"L2_NL_Read_Slice${p(SliceIdKey)}Prefetch$hartId", new NlPrefetchDbEntry, basicDB = true)
-    val nlReadTable  = ChiselDB.createTable(s"L2_NL_Write_Slice${p(SliceIdKey)}Prefetch$hartId", new NlPrefetchDbEntry, basicDB = true)
-    val nlEvictTable = ChiselDB.createTable(s"L2_NL_Evict_Slice${p(SliceIdKey)}Prefetch$hartId", new NlPrefetchDbEntry, basicDB = true)
+    val pfReqWriteTable = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Write_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = true)
+    val pfReqReadTable  = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Read_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = true)
+    val pfReqEvictTable = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Evict_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = true)
 
-    // arrival: meta write that marks a block as NL-prefetched
+    // arrival: meta write that marks a block as prefetched
     val arrivalCond = io.metaWReq.valid && io.metaWReq.bits.wmeta.prefetch.getOrElse(false.B) 
-    val nlArrival = Wire(new NlPrefetchDbEntry)
-    nlArrival.setIdx := io.metaWReq.bits.set
-    nlArrival.way := OHToUInt(io.metaWReq.bits.wayOH)
+    val pfReqWrite = Wire(new PrefetchDbEntry)
+    pfReqWrite.ishit := false.B
+    pfReqWrite.setIdx := io.metaWReq.bits.set
+    pfReqWrite.way := OHToUInt(io.metaWReq.bits.wayOH)
     // try to attach tag when tagWReq coincides with metaWReq
     val arrivalHasTag = io.tagWReq.valid && (io.tagWReq.bits.set === io.metaWReq.bits.set) &&
       (OHToUInt(io.metaWReq.bits.wayOH) === io.tagWReq.bits.way)
-    nlArrival.tag := Mux(arrivalHasTag, io.tagWReq.bits.wtag, 0.U)
-    nlArrival.isPrefetch := io.metaWReq.bits.wmeta.prefetch.getOrElse(false.B)
-    nlArrival.nlOpt := 0.U
-    nlArrival.reqSource := io.metaWReq.bits.wmeta.prefetchSrc.getOrElse(MemReqSource.NoWhere.id.U)
-    nlWriteTable.log(nlArrival, arrivalCond, s"L2${hartId}_${p(SliceIdKey)}", clock, reset)
+    pfReqWrite.tag := Mux(arrivalHasTag, io.tagWReq.bits.wtag, 0.U)
+    pfReqWrite.isPrefetch := io.metaWReq.bits.wmeta.prefetch.getOrElse(false.B)
+    pfReqWrite.nlOpt := 0.U
+    pfReqWrite.metaSource := io.metaWReq.bits.wmeta.prefetchSrc.getOrElse(MemReqSource.NoWhere.id.U)
+    pfReqWrite.reqSource := io.metaWReq.bits.wmeta.prefetchSrc.getOrElse(MemReqSource.NoWhere.id.U)
+    pfReqWriteTable.log(pfReqWrite, arrivalCond, s"L2${hartId}_${p(SliceIdKey)}", clock, reset)
 
     // access: when a read hits a NL-prefetched block
     val accessCond = io.resp.valid && io.resp.bits.hit && io.resp.bits.meta.prefetch.getOrElse(false.B) 
-    val nlAccess = Wire(new NlPrefetchDbEntry)
-    nlAccess.setIdx := io.resp.bits.set
-    nlAccess.tag := io.resp.bits.tag
-    nlAccess.isPrefetch := io.resp.bits.meta.prefetch.getOrElse(false.B)
-    nlAccess.way := io.resp.bits.way
-    nlAccess.nlOpt := 1.U
-    nlAccess.reqSource := io.resp.bits.replacerInfo.reqSource
-    nlReadTable.log(nlAccess, accessCond, s"L2${hartId}_${p(SliceIdKey)}", clock, reset)
+    val pfReqRead = Wire(new PrefetchDbEntry)
+    pfReqRead.ishit      := io.resp.bits.hit
+    pfReqRead.setIdx     := io.resp.bits.set
+    pfReqRead.tag        := io.resp.bits.tag
+    pfReqRead.isPrefetch := io.resp.bits.meta.prefetch.getOrElse(false.B)
+    pfReqRead.way        := io.resp.bits.way
+    pfReqRead.nlOpt      := 1.U
+    pfReqRead.metaSource := io.resp.bits.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U)
 
-    // eviction: when Directory issues a replacement for a NL-prefetched block
-    val nlEvict = Wire(new NlPrefetchDbEntry)
-    nlEvict.setIdx := io.replResp.bits.set
-    nlEvict.tag := io.replResp.bits.tag
-    nlEvict.isPrefetch := io.metaWReq.bits.wmeta.prefetch.getOrElse(false.B)
-    nlEvict.way := io.replResp.bits.way
-    nlEvict.nlOpt := 2.U
-    nlEvict.reqSource := replace_req_src
-    nlEvictTable.log(nlEvict, evict_pf_block, s"L2${hartId}_${p(SliceIdKey)}", clock, reset)
+    pfReqRead.reqSource := io.resp.bits.replacerInfo.reqSource
+    pfReqReadTable.log(pfReqRead, accessCond, s"L2${hartId}_${p(SliceIdKey)}", clock, reset)
+
+    // eviction: when Directory issues a replacement for a prefetched block
+    val pfReqEvict = Wire(new PrefetchDbEntry)
+    pfReqEvict.ishit      := io.resp.bits.hit
+    pfReqEvict.setIdx     := io.replResp.bits.set
+    pfReqEvict.tag        := io.replResp.bits.tag
+    pfReqEvict.isPrefetch := io.replResp.bits.meta.prefetch.getOrElse(false.B)
+    pfReqEvict.way        := io.replResp.bits.way
+    pfReqEvict.metaSource := io.replResp.bits.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U)
+    pfReqEvict.nlOpt      := 2.U
+    pfReqEvict.reqSource  := replace_req_src
+    pfReqEvictTable.log(pfReqEvict, evict_pf_block_en, s"L2${hartId}_${p(SliceIdKey)}", clock, reset)
   }
   // PLRU: update replacer only when A hit or refill, at stage 3
   // RRIP: update replacer when A/C hit or refill
