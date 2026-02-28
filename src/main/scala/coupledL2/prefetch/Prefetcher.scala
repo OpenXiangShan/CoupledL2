@@ -198,11 +198,21 @@ class PrefetchQueue(implicit p: Parameters) extends PrefetchModule {
   val empty = head === tail && !valids.last
   val full = head === tail && valids.last
 
+  // val enq_valid = Wire(Bool())
+  // val repeat_vec: Vec[Bool] = VecInit(queue.zip(valids).map { case (d, v) =>
+  //   d.tag === io.enq.bits.tag && d.set === io.enq.bits.set && v
+  // })
+ 
+  // enq_valid := io.enq.valid && !repeat_vec.asUInt.orR //enq valid only when no repeat
+  // val enq_fire = enq_valid && io.enq.ready 
+  // val filted = io.enq.fire && !enq_fire
+
   when(!empty && io.deq.ready) {
     valids(head) := false.B
     head := head + 1.U
   }
 
+  // when(enq_valid) {
   when(io.enq.valid) {
     queue(tail) := io.enq.bits
     valids(tail) := !empty || !io.deq.ready // true.B
@@ -214,16 +224,25 @@ class PrefetchQueue(implicit p: Parameters) extends PrefetchModule {
 
   io.enq.ready := true.B
   io.deq.valid := !empty || io.enq.valid
+  // io.deq.valid := !empty || enq_valid
   io.deq.bits := Mux(empty, io.enq.bits, queue(head))
 
   // The reqs that are discarded = enq - deq
-  XSPerfAccumulate("prefetch_queue_enq",         io.enq.fire)
-  XSPerfAccumulate("prefetch_queue_enq_fromL1", io.enq.fire && !io.enq.bits.fromL2)
-  XSPerfAccumulate("prefetch_queue_enq_fromNL", io.enq.fire && io.enq.bits.isNL)
-  XSPerfAccumulate("prefetch_queue_enq_fromBOP", io.enq.fire && io.enq.bits.isBOP)
-  XSPerfAccumulate("prefetch_queue_enq_fromPBOP", io.enq.fire && io.enq.bits.isPBOP)
-  XSPerfAccumulate("prefetch_queue_enq_fromSMS", io.enq.fire && io.enq.bits.isSMS)
-  XSPerfAccumulate("prefetch_queue_enq_fromTP",  io.enq.fire && io.enq.bits.isTP)
+  // XSPerfAccumulate("prefetch_queue_filt_num", filted)
+  // XSPerfAccumulate("prefetch_queue_filt_fromL1", filted && !io.enq.bits.fromL2)
+  // XSPerfAccumulate("prefetch_queue_filt_fromNL", filted && io.enq.bits.isNL)
+  // XSPerfAccumulate("prefetch_queue_filt_fromBOP", filted && io.enq.bits.isBOP)
+  // XSPerfAccumulate("prefetch_queue_filt_fromPBOP", filted && io.enq.bits.isPBOP)
+  // XSPerfAccumulate("prefetch_queue_filt_fromSMS", filted && io.enq.bits.isSMS)
+  // XSPerfAccumulate("prefetch_queue_filt_fromTP", filted && io.enq.bits.isTP)
+  
+  // XSPerfAccumulate("prefetch_queue_enq",         enq_fire)
+  // XSPerfAccumulate("prefetch_queue_enq_fromL1", enq_fire && !io.enq.bits.fromL2)
+  // XSPerfAccumulate("prefetch_queue_enq_fromNL", enq_fire && io.enq.bits.isNL)
+  // XSPerfAccumulate("prefetch_queue_enq_fromBOP", enq_fire && io.enq.bits.isBOP)
+  // XSPerfAccumulate("prefetch_queue_enq_fromPBOP", enq_fire && io.enq.bits.isPBOP)
+  // XSPerfAccumulate("prefetch_queue_enq_fromSMS", enq_fire && io.enq.bits.isSMS)
+  // XSPerfAccumulate("prefetch_queue_enq_fromTP",  enq_fire && io.enq.bits.isTP)
 
   XSPerfAccumulate("prefetch_queue_deq",         io.deq.fire)
   XSPerfAccumulate("prefetch_queue_deq_fromL1", io.deq.fire && !io.deq.bits.fromL2)
