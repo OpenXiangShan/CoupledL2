@@ -28,7 +28,7 @@ import freechips.rocketchip.tilelink.TLPermissions._
 import coupledL2._
 import coupledL2.utils._
 import coupledL2.debug._
-import coupledL2.prefetch.{PfSource, PrefetchTrain}
+import coupledL2.prefetch.{PfSource, PrefetchTrain, PrefetchReplaceDemandBundle}
 
 class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   val io = IO(new Bundle() {
@@ -102,6 +102,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
     /* send prefetchTrain to Prefetch to trigger a prefetch req */
     val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain))
+    val pfReplaceDemand = prefetchOpt.map(_ => Output(ValidIO(new PrefetchReplaceDemandBundle)))
 
     val toMonitor = Output(new MainpipeMoni())
 
@@ -442,6 +443,15 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   io.nestedwb.b_inv_dirty := false.B
 
   io.nestedwbData := c_releaseData_s3.asTypeOf(new DSBlock)
+
+  io.pfReplaceDemand.foreach { u =>
+    val refillVictim = task_s3.valid && mshr_req_s3 && mshr_refill_s3 && !retry && need_repl && req_s3.fromA
+    val reqIsPrefetch = MemReqSource.isL2Prefetch(req_s3.reqSource)
+    val victimNotPrefetch = !io.replResp.bits.meta.prefetch.getOrElse(false.B)
+    u.valid := refillVictim && io.replResp.valid && reqIsPrefetch && victimNotPrefetch
+    u.bits.demandAddr := Cat(io.replResp.bits.tag, req_s3.set, 0.U(offsetBits.W))
+    u.bits.pfReqSrc := req_s3.reqSource
+  }
 
   io.prefetchTrain.foreach {
     train =>

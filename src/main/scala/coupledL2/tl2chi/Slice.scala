@@ -178,6 +178,11 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
 
   /* IO Connection */
   io.l1Hint <> mainPipe.io.l1Hint
+  prefetchOpt.foreach {
+    _ =>
+      io.pfReplaceDemand.get := mainPipe.io.pfReplaceDemand.get
+      io.dataRefill.get := mshrCtl.io.dataRefill.get
+  }
   topDownOpt.foreach (
     _ => {
       io.msStatus.get := mshrCtl.io.msStatus.get

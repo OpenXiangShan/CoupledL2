@@ -182,8 +182,27 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   })
   val hartId = IO(Input(UInt(hartIdLen.W)))
   val pfCtrlFromCore = IO(Input(new PrefetchCtrlFromCore))
+  val l2ToL1PfCtrl = IO(Output(new L2ToL1PfCtrl))
+  val pfFeedbackVec = IO(Input(Vec(banks, new PrefetchFeedbackBundle())))
+
+  val prefetchController = Module(new PrefetchController)
+  prefetchController.io.isDemandTrain := io.train.valid && MemReqSource.isCPUReq(io.train.bits.reqsource)
+  prefetchController.io.pfFeedbackVec := pfFeedbackVec
 
   // l2 receive need 2 cycles to transmit from core
+  val stream_degree = prefetchController.io.l2PfFbCtrl.streamDegree
+  val stride_degree = prefetchController.io.l2PfFbCtrl.strideDegree
+  val berti_degree = prefetchController.io.l2PfFbCtrl.bertiDegree
+  val sms_degree = prefetchController.io.l2PfFbCtrl.smsDegree
+  val vbop_degree = prefetchController.io.l2PfFbCtrl.vbopDegree
+  val pbop_degree = prefetchController.io.l2PfFbCtrl.pbopDegree
+  val tp_degree = prefetchController.io.l2PfFbCtrl.tpDegree
+
+  l2ToL1PfCtrl.streamDegree := stream_degree
+  l2ToL1PfCtrl.strideDegree := stride_degree
+  l2ToL1PfCtrl.bertiDegree := berti_degree
+  l2ToL1PfCtrl.smsDegree := sms_degree
+
   val pfRcv_en = RegNextN(pfCtrlFromCore.l2_pf_master_en && pfCtrlFromCore.l2_pf_recv_en, 2, Some(true.B))
   val pbop_en = pfCtrlFromCore.l2_pf_master_en && pfCtrlFromCore.l2_pbop_en
   val vbop_en = pfCtrlFromCore.l2_pf_master_en && pfCtrlFromCore.l2_vbop_en
@@ -260,17 +279,9 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     pbop.get.io.resp.valid := io.resp.valid && io.resp.bits.isPBOP
   }
   if (hasReceiver) {
-    pfRcv.get.io_enable := pfRcv_en
+    pfRcv.get.io.enable := pfRcv_en
     pfRcv.get.io.req.ready := true.B
     pfRcv.get.io.recv_addr := ValidIODelay(io.recv_addr, 2)
-    pfRcv.get.io.train.valid := false.B
-    pfRcv.get.io.train.bits := 0.U.asTypeOf(new PrefetchTrain)
-    pfRcv.get.io.resp.valid := false.B
-    pfRcv.get.io.resp.bits := 0.U.asTypeOf(new PrefetchResp)
-    pfRcv.get.io.tlb_req.req.ready := true.B
-    pfRcv.get.io.tlb_req.resp.valid := false.B
-    pfRcv.get.io.tlb_req.resp.bits := DontCare
-    pfRcv.get.io.tlb_req.pmp_resp := DontCare
     assert(!pfRcv.get.io.req.valid ||
       pfRcv.get.io.req.bits.pfSource === MemReqSource.Prefetch2L2SMS.id.U ||
       pfRcv.get.io.req.bits.pfSource === MemReqSource.Prefetch2L2Stream.id.U ||
@@ -312,13 +323,13 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     pftQueueEnqArb.io.in(rcv_idx).bits := pfRcv.get.io.req.bits
   }
   if (hasBOP) {
-    pftQueueEnqArb.io.in(vbop_idx).valid := vbop.get.io.req.valid
+    pftQueueEnqArb.io.in(vbop_idx).valid := vbop.get.io.req.valid && vbop_degree.orR
     pftQueueEnqArb.io.in(vbop_idx).bits := vbop.get.io.req.bits
-    pftQueueEnqArb.io.in(pbop_idx).valid := pbop.get.io.req.valid
+    pftQueueEnqArb.io.in(pbop_idx).valid := pbop.get.io.req.valid && pbop_degree.orR
     pftQueueEnqArb.io.in(pbop_idx).bits := pbop.get.io.req.bits
   }
   if (hasTPPrefetcher) {
-    pftQueueEnqArb.io.in(tp_idx).valid := tp.get.io.req.valid
+    pftQueueEnqArb.io.in(tp_idx).valid := tp.get.io.req.valid && tp_degree.orR
     pftQueueEnqArb.io.in(tp_idx).bits := tp.get.io.req.bits
   }
   pftQueue.io.enq <> pftQueueEnqArb.io.out
@@ -343,6 +354,10 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       pftQueueEnqArb.io.in(vbop_idx).valid || pftQueueEnqArb.io.in(pbop_idx).valid || pftQueueEnqArb.io.in(tp_idx).valid
     )
   )
+
+  XSPerfAccumulate("feedback_control_drop_vbop", vbop.get.io.req.valid && !vbop_degree.orR)
+  XSPerfAccumulate("feedback_control_drop_pbop", pbop.get.io.req.valid && !pbop_degree.orR)
+  XSPerfAccumulate("feedback_control_drop_tp", tp.get.io.req.valid && !tp_degree.orR)
 
   // NOTE: set basicDB false when debug over
   // TODO: change the enable signal to not target the BOP

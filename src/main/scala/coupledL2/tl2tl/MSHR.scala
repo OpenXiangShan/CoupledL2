@@ -26,7 +26,7 @@ import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2._
-import coupledL2.prefetch.{PfSource, PrefetchTrain}
+import coupledL2.prefetch.{DemandRefillBundle, PfSource, PrefetchTrain}
 
 class MSHRTasks(implicit p: Parameters) extends L2Bundle {
   // outer
@@ -49,6 +49,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
     val id = Input(UInt(mshrBits.W))
     val status = ValidIO(new MSHRStatus)
     val statAlloc = ValidIO(new MSHRAllocStatus)
+    val dataRefill = ValidIO(new DemandRefillBundle)
     val msInfo = ValidIO(new MSHRInfo)
     val alloc = Flipped(ValidIO(new MSHRRequest))
     val tasks = new MSHRTasks()
@@ -103,6 +104,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val req_acquirePerm = req.opcode === AcquirePerm
   val req_get = req.opcode === Get
   val req_prefetch = req.opcode === Hint
+  val req_isDemandOrPrefetch = req_acquire || req_get || req_prefetch
 
   val promoteT_normal =  dirResult.hit && meta_no_client && meta.state === TIP
   val promoteT_L3     = !dirResult.hit && gotT
@@ -488,6 +490,12 @@ class MSHR(implicit p: Parameters) extends L2Module {
     }
   }
 
+  io.dataRefill.valid := d_resp.valid && d_resp.bits.last
+  io.dataRefill.bits.isDemand := req_acquire || req_get
+  io.dataRefill.bits.isPrefetch := req_prefetch
+  io.dataRefill.bits.addr := Cat(req.tag, req.set, 0.U(offsetBits.W))
+  io.dataRefill.bits.latency := timer
+
   val replResp = io.replResp.bits
   when (io.replResp.valid && replResp.retry) {
     state.s_refill := false.B
@@ -559,6 +567,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.msInfo.bits.way := dirResult.way
   io.msInfo.bits.reqTag := req.tag
   io.msInfo.bits.reqSource := req.reqSource
+  io.msInfo.bits.reqTimer := timer
   io.msInfo.bits.aliasTask.foreach(_ := req.aliasTask.getOrElse(false.B))
   io.msInfo.bits.needRelease := !state.w_releaseack
   // if releaseTask is already in mainpipe_s1/s2, while a refillTask in mainpipe_s3, the refill should also be blocked and retry
