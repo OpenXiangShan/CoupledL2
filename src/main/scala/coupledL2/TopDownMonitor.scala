@@ -31,6 +31,7 @@ class PfStatInMSHRBundle()(implicit p: Parameters) extends L2Bundle {
 
   val hitPf = Bool()
   val hitPfReqSrc = UInt(MemReqSource.reqSourceBits.W)
+  val hitPfLatency = UInt(timestampBits.W)
 }
 
 // TODO: Accommodate CHI

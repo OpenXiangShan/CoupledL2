@@ -240,6 +240,7 @@ class MSHRInfo(implicit p: Parameters) extends L2Bundle with HasTLChannelBits {
   val way = UInt(wayBits.W)
   val reqTag = UInt(tagBits.W)
   val reqSource = UInt(MemReqSource.reqSourceBits.W)
+  val reqTimer = UInt(timestampBits.W)
   val willFree = Bool()
   val aliasTask = aliasBitsOpt.map(_ => Bool())
 
@@ -397,6 +398,25 @@ class PrefetchRecv extends Bundle {
   val pf_source = UInt(MemReqSource.reqSourceBits.W)
   val addr_valid = Bool()
   val l2_pf_en = Bool()
+}
+
+// custom l2 - l1 prefetch control interface
+class L2ToL1PfCtrl extends Bundle {
+  val streamDegree = UInt(2.W)
+  val strideDegree = UInt(2.W)
+  val bertiDegree = UInt(2.W)
+  val smsDegree = UInt(2.W)
+}
+
+object L2ToL1PfCtrl {
+  def default() = {
+    val ctrl = Wire(new L2ToL1PfCtrl)
+    ctrl.streamDegree := 1.U
+    ctrl.strideDegree := 1.U
+    ctrl.bertiDegree := 1.U
+    ctrl.smsDegree := 1.U
+    ctrl
+  }
 }
 
 // custom l2 - l1 interface

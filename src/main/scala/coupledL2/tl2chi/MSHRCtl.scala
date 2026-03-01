@@ -24,7 +24,7 @@ import utility._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
-import coupledL2.prefetch.PrefetchTrain
+import coupledL2.prefetch.{DemandRefillBundle, PrefetchTrain}
 import coupledL2._
 
 class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes with HasPerfEvents {
@@ -81,6 +81,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
     /* for TopDown Monitor */
     val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
     val msAlloc = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRAllocStatus)))
+    val dataRefill = prefetchOpt.map(_ => ValidIO(new DemandRefillBundle))
 
     /* to Slice Top for pCrd info.*/
     val pCrd = Vec(mshrsAll, new PCrdQueryBundle)
@@ -186,7 +187,9 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
   assert(RegNext(PopCount(mshrs.map(_.io.nestedwbData)) <= 1.U), "should only be one nestedwbData")
 
 
-  /* Status for topDown monitor */
+  /* Status for prefetch controller and topDown monitor */
+  io.dataRefill.get.valid := mshrs.map(_.io.dataRefill.valid).reduce(_ || _)
+  io.dataRefill.get.bits := ParallelPriorityMux(mshrs.map(_.io.dataRefill.valid).zip(mshrs.map(_.io.dataRefill.bits)))
   topDownOpt.foreach { _ =>
     io.msStatus.get.zip(io.msAlloc.get).zip(mshrs).foreach {
       case ((statusOut, allocOut), mshr) =>

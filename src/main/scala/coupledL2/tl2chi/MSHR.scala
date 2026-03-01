@@ -25,7 +25,7 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.prefetch.{PfSource, PrefetchTrain}
+import coupledL2.prefetch.{DemandRefillBundle, PfSource, PrefetchTrain}
 import coupledL2.tl2chi.CHICohStates._
 import coupledL2.tl2chi.CHIChannel
 import coupledL2.tl2chi.RespErrEncodings._
@@ -53,6 +53,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     val id = Input(UInt(mshrBits.W))
     val status = ValidIO(new MSHRStatus)
     val statAlloc = ValidIO(new MSHRAllocStatus)
+    val dataRefill = ValidIO(new DemandRefillBundle)
     val msInfo = ValidIO(new MSHRInfo)
     val alloc = Flipped(ValidIO(new MSHRRequest))
     val tasks = new MSHRTasks()
@@ -166,6 +167,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val req_acquirePerm = req.opcode === AcquirePerm
   val req_get = req.opcode === Get
   val req_prefetch = req.opcode === Hint
+  val req_isDemandOrPrefetch = req_acquire || req_get || req_prefetch
 
   val req_mayRepl = req_acquire || req_get || req_prefetch
 
@@ -1139,6 +1141,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val rxrspIsU = rxrsp.bits.resp.get === UC /*UC_UD*/
 
   // RXDAT
+  val rxdatLastValid = WireInit(false.B)
   when (rxdat.valid) {
     val nderr = rxdat.bits.respErr.getOrElse(OK) === NDERR
     val derr = rxdat.bits.respErr.getOrElse(OK) === DERR
@@ -1149,6 +1152,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         beatCnt := beatCnt + 1.U
         state.w_grantfirst := true.B
         state.w_grantlast := state.w_grantfirst && beatCnt === (beatSize - 1).U
+        rxdatLastValid := state.w_grantfirst && beatCnt === (beatSize - 1).U
         state.w_replResp := state.w_replResp || nderr
         gotT := rxdatIsU || rxdatIsU_PD
         gotDirty := gotDirty || rxdatIsU_PD
@@ -1163,6 +1167,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       require(beatSize == 2) // TODO: This is ugly
       state.w_grantfirst := true.B
       state.w_grantlast := state.w_grantfirst
+      rxdatLastValid := state.w_grantfirst
       state.w_grant := true.B
       state.w_replResp := state.w_replResp || nderr
       gotT := rxdatIsU || rxdatIsU_PD
@@ -1178,6 +1183,12 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       req.traceTag.get := req.traceTag.get || rxdat.bits.traceTag.getOrElse(false.B)
     }
   }
+
+  io.dataRefill.valid := rxdat.valid && rxdatLastValid
+  io.dataRefill.bits.isDemand := req_acquire || req_get
+  io.dataRefill.bits.isPrefetch := req_prefetch
+  io.dataRefill.bits.addr := Cat(req.tag, req.set, 0.U(offsetBits.W))
+  io.dataRefill.bits.latency := timer
 
   // RXRSP
   when (rxrsp.valid) {
@@ -1329,6 +1340,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   io.msInfo.bits.way := dirResult.way
   io.msInfo.bits.reqTag := req.tag
   io.msInfo.bits.reqSource := req.reqSource
+  io.msInfo.bits.reqTimer := timer
   io.msInfo.bits.aliasTask.foreach(_ := req.aliasTask.getOrElse(false.B))
   io.msInfo.bits.needRelease := !state.w_releaseack
   // if releaseTask is already in mainpipe_s1/s2, while a refillTask in mainpipe_s3, the refill should also be blocked and retry

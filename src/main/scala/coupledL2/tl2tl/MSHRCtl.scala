@@ -24,7 +24,7 @@ import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2._
-import coupledL2.prefetch.PrefetchTrain
+import coupledL2.prefetch.{DemandRefillBundle, PrefetchTrain}
 
 class MSHRSelector(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
@@ -91,6 +91,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
     /* for TopDown Monitor */
     val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
     val msAlloc = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRAllocStatus)))
+    val dataRefill = prefetchOpt.map(_ => ValidIO(new DemandRefillBundle))
 
     /* for TopDown */
     val l2Miss = Output(Bool())
@@ -177,6 +178,9 @@ class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
   dontTouch(io.sourceA)
 
+  /* Status for prefetch controller and topDown monitor */
+  io.dataRefill.get.valid := mshrs.map(_.io.dataRefill.valid).reduce(_ || _)
+  io.dataRefill.get.bits := ParallelPriorityMux(mshrs.map(_.io.dataRefill.valid).zip(mshrs.map(_.io.dataRefill.bits)))
   topDownOpt.foreach { _ =>
     io.msStatus.get.zip(io.msAlloc.get).zip(mshrs).foreach {
       case ((statusOut, allocOut), mshr) =>
