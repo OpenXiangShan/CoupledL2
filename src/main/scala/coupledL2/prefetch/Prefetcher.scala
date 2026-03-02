@@ -175,60 +175,6 @@ class PrefetchIO(implicit p: Parameters) extends PrefetchBundle {
   }))
 }
 
-class PrefetchQueue(implicit p: Parameters) extends PrefetchModule {
-  val io = IO(new Bundle {
-    val enq = Flipped(DecoupledIO(new PrefetchReq))
-    val deq = DecoupledIO(new PrefetchReq)
-  })
-  /*  Here we implement a queue that
-   *  1. is pipelined  2. flows
-   *  3. always has the latest reqs, which means the queue is always ready for enq and deserting the eldest ones
-   */
-  val queue = RegInit(VecInit(Seq.fill(inflightEntries)(0.U.asTypeOf(new PrefetchReq))))
-  val valids = RegInit(VecInit(Seq.fill(inflightEntries)(false.B)))
-  val idxWidth = log2Up(inflightEntries)
-  val head = RegInit(0.U(idxWidth.W))
-  val tail = RegInit(0.U(idxWidth.W))
-  val empty = head === tail && !valids.last
-  val full = head === tail && valids.last
-
-  when(!empty && io.deq.ready) {
-    valids(head) := false.B
-    head := head + 1.U
-  }
-
-  when(io.enq.valid) {
-    queue(tail) := io.enq.bits
-    valids(tail) := !empty || !io.deq.ready // true.B
-    tail := tail + (!empty || !io.deq.ready).asUInt
-    when(full && !io.deq.ready) {
-      head := head + 1.U
-    }
-  }
-
-  io.enq.ready := true.B
-  io.deq.valid := !empty || io.enq.valid
-  io.deq.bits := Mux(empty, io.enq.bits, queue(head))
-
-  // The reqs that are discarded = enq - deq
-  XSPerfAccumulate("prefetch_queue_enq",         io.enq.fire)
-  XSPerfAccumulate("prefetch_queue_enq_fromBOP", io.enq.fire && io.enq.bits.isBOP)
-  XSPerfAccumulate("prefetch_queue_enq_fromPBOP", io.enq.fire && io.enq.bits.isPBOP)
-  XSPerfAccumulate("prefetch_queue_enq_fromSMS", io.enq.fire && io.enq.bits.isSMS)
-  XSPerfAccumulate("prefetch_queue_enq_fromTP",  io.enq.fire && io.enq.bits.isTP)
-
-  XSPerfAccumulate("prefetch_queue_deq",         io.deq.fire)
-  XSPerfAccumulate("prefetch_queue_deq_fromBOP", io.deq.fire && io.deq.bits.isBOP)
-  XSPerfAccumulate("prefetch_queue_deq_fromPBOP", io.deq.fire && io.deq.bits.isPBOP)
-  XSPerfAccumulate("prefetch_queue_deq_fromSMS", io.deq.fire && io.deq.bits.isSMS)
-  XSPerfAccumulate("prefetch_queue_deq_fromTP",  io.deq.fire && io.deq.bits.isTP)
-
-  XSPerfHistogram("prefetch_queue_entry", PopCount(valids.asUInt),
-    true.B, 0, inflightEntries, 1)
-  XSPerfAccumulate("prefetch_queue_empty", empty)
-  XSPerfAccumulate("prefetch_queue_full", full)
-}
-
 class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val io = IO(new PrefetchIO)
   val tpio = IO(new Bundle() {
@@ -347,7 +293,11 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   // =================== Connection of all Prefetchers =====================
   /* prefetchers -> pftQueue -> pipe -> Slices.SinkA */
 
-  val pftQueue = Module(new PrefetchQueue)
+  override val inflightEntries: Int = 32
+  val pftQueue = Module(new PrefetchQueue(
+    inflightEntries, enableFilter = true, enableFlow = true,
+    gen = new PrefetchReq, addrOf = ((x: PrefetchReq) => x.addr)
+  ))
   val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
 
   private val SRC_NUM = 4
