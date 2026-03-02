@@ -111,7 +111,7 @@ class WPUWrapper(implicit p:Parameters) extends L2Module {
   XSPerfAccumulate(s"WPU_repl", repl)
   XSPerfAccumulate(s"WPU_evict", evict)
 
-  if (wpuParam.debug) {
+//   if (wpuParam.debug) {
     val updTimeVec = RegInit(VecInit(Seq.fill(cacheParams.sets)((0.U(64.W)))))
     val updTimeFlag = if (wpuParam.updOnLookup) { wpu.in.upd.fire } else
       { wpu.in.upd.fire && (wpu.in.upd.bits.isEvict || wpu.in.upd.bits.isReplace) }
@@ -120,6 +120,6 @@ class WPUWrapper(implicit p:Parameters) extends L2Module {
     }
     val pred_fail_cause = pred_fail && pred_bits.timeCnt.get <= updTimeVec(pred_bits.set)
     XSPerfAccumulate("WPU_pred_fail_caused_by_late_upd", pred_fail_cause)
-    // assert(Mux(pred_valid, pred_succ | pred_fail && pred_fail_cause, true.B))
-  }
+    assert(Mux(pred_valid, pred_succ | pred_fail && pred_fail_cause, true.B))
+//   }
 }
