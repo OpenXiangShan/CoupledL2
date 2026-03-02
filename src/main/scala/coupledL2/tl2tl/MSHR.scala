@@ -493,6 +493,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.dataRefill.valid := d_resp.valid && d_resp.bits.last
   io.dataRefill.bits.isDemand := req_acquire || req_get
   io.dataRefill.bits.isPrefetch := req_prefetch
+  io.dataRefill.bits.pfReqSrc := req.reqSource
   io.dataRefill.bits.addr := Cat(req.tag, req.set, 0.U(offsetBits.W))
   io.dataRefill.bits.latency := timer
 

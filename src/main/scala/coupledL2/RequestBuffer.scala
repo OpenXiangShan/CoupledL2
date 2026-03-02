@@ -31,6 +31,7 @@ class ReqEntry(entries: Int = 4)(implicit p: Parameters) extends L2Bundle() {
   val valid    = Bool()
   val rdy      = Bool()
   val task     = new TaskBundle()
+  val timer    = UInt(timestampBits.W) // for prefetch controller analysis
 
   /* blocked by MainPipe
   * [3] by stage1, a same-set entry just fired
@@ -229,6 +230,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       io.mainPipeBlock(1),
       0.U(1.W))
     entry.waitMS  := conflictMask(in)
+    entry.timer   := 1.U
 
 //    entry.depMask := depMask
     assert(PopCount(conflictMaskFromA(in)) <= 2.U)
@@ -256,6 +258,8 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   /* ======== Update rdy and masks ======== */
   buffer.zipWithIndex.foreach { case (e, i) =>
     when(e.valid) {
+      e.timer := e.timer + 1.U
+
       val waitMSUpdate  = WireInit(e.waitMS)
 //      val depMaskUpdate = WireInit(e.depMask)
 
@@ -308,6 +312,11 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   when(chosenQ.io.deq.fire && !cancel) {
     buffer(chosenQ.io.deq.bits.id).valid := false.B
   }
+
+  io.pfStatInMSHR.pfReleaseFromReqBuffer := chosenQ.io.deq.fire && !cancel &&
+    buffer(chosenQ.io.deq.bits.id).task.fromA && buffer(chosenQ.io.deq.bits.id).task.opcode === Hint
+  io.pfStatInMSHR.reqBufferPfReqSrc := buffer(chosenQ.io.deq.bits.id).task.reqSource
+  io.pfStatInMSHR.reqBufferHoldLatency := buffer(chosenQ.io.deq.bits.id).timer
 
   // for Dir to choose a free way
   io.out.bits.wayMask := Fill(cacheParams.ways, 1.U(1.W))

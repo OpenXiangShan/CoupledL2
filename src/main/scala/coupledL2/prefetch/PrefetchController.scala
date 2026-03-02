@@ -6,6 +6,7 @@ import utility._
 import org.chipsalliance.cde.config.Parameters
 import utility.mbist.MbistPipeline
 import coupledL2._
+import freechips.rocketchip.tilelink.TLAtomics.MAX
 
 class PrefetchReplaceDemandBundle()(implicit p: Parameters) extends L2Bundle {
   val demandAddr = UInt(fullAddressBits.W)
@@ -15,6 +16,7 @@ class PrefetchReplaceDemandBundle()(implicit p: Parameters) extends L2Bundle {
 class DemandRefillBundle()(implicit p: Parameters) extends L2Bundle {
   val isDemand = Bool()
   val isPrefetch = Bool()
+  val pfReqSrc = UInt(MemReqSource.reqSourceBits.W)
   val addr = UInt(fullAddressBits.W)
   val latency = UInt(timestampBits.W)
 }
@@ -54,6 +56,7 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
   private val PF_PBOP   = 5
   private val PF_TP     = 6
   private val PF_NUM    = 7
+  private val PF_NAME_VEC = Seq("Stream", "Stride", "Berti", "SMS", "VBOP", "PBOP", "TP")
 
   private def pfIdxFromReqSource(src: UInt): UInt = {
     MuxLookup(src, PF_NUM.U)(Seq(
@@ -82,7 +85,8 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
   // latency calculation
   def avgLatency(old: UInt, newLatency: UInt): UInt = {
     // moving average with alpha = 0.5
-    Mux(old === 0.U, newLatency, (old + newLatency) >> 1)
+    // if newLatency > 500.U, it may occur ddr flush, causing to long and instable latency
+    Mux(old === 0.U, newLatency, Mux(newLatency > 500.U, old, old + newLatency) >> 1)
   }
 
   def _signedExtend(x: UInt, width: Int): SInt = {
@@ -120,8 +124,10 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
   }
 
   // ========== structure and io ==========
+  val epochID = RegInit(0.U(64.W))
   val peVec = RegInit(VecInit(Seq.fill(PF_NUM)(0.S(peBits.W))))
   val latencyAvg = RegInit(0.U(timestampBits.W))
+  val latencyLastEpoch = RegInit(0.U(timestampBits.W))
   val phtValid = RegInit(VecInit(Seq.fill(banks)(VecInit(Seq.fill(PHT_ENTRIES)(false.B)))))
   val phtTag = RegInit(VecInit(Seq.fill(banks)(VecInit(Seq.fill(PHT_ENTRIES)(0.U(PHT_TAG_BITS.W))))))
   val phtPfId = RegInit(VecInit(Seq.fill(banks)(VecInit(Seq.fill(PHT_ENTRIES)(0.U(log2Ceil(PF_NUM).W))))))
@@ -138,6 +144,17 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
   latencyAvg := dataRefill.map(x => 
     Mux(x.valid, avgLatency(latencyAvg, x.bits.latency), latencyAvg)
   ).reduce(_ + _) >> bankBits
+
+  // record for debug //
+  val refillRecordTable = ChiselDB.createTable("RefillRecordTable", new DemandRefillBundle, basicDB = true)
+  dataRefill.foreach { r =>
+    refillRecordTable.log(
+      data = r.bits,
+      en = r.valid,
+      site = "L2PrefetchController",
+      clock, reset
+    )
+  }
 
   // ========== pht lookup and update ==========
   val p0_phtHitVec = Wire(Vec(banks, Bool()))
@@ -175,73 +192,179 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
   }
 
   // ========== PE calculation ==========
+  // at least ratio=1/MultipeLog useful
+  private val prefetchYieldMultipeLog = log2Ceil(8)
+  private val l1PrefetchCacheHitMultipeLog = log2Ceil(4)
+
   def isHitPfInCache(r: ValidIO[DirResult], i: Int): Bool = {
-    r.valid && r.bits.replacerInfo.channel === 1.U && 
-      MemReqSource.isCPUReq(r.bits.replacerInfo.reqSource) && r.bits.hit &&
+    r.valid && r.bits.replacerInfo.channel === 1.U && r.bits.hit &&
       r.bits.meta.prefetch.getOrElse(false.B) && 
       pfIdxFromPfSource(r.bits.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U)) === i.U
   }
+  
+  def isDemandHitPfInCache(r: ValidIO[DirResult], i: Int): Bool = {
+    isHitPfInCache(r, i) && MemReqSource.isCPUReq(r.bits.replacerInfo.reqSource)
+  }
 
+  def isL1PrefetchHitPfInCache(r: ValidIO[DirResult], i: Int): Bool = {
+    isHitPfInCache(r, i) && MemReqSource.isL1Prefetch(r.bits.replacerInfo.reqSource)
+  }
+
+  // if timing is bad, there can add pipelines arbitrarily.
+  val statMshrHitVec = Wire(Vec(PF_NUM, Vec(banks, Bool())))
+  val statDemandCacheHitVec = Wire(Vec(PF_NUM, Vec(banks, Bool())))
+  val statL1PrefetchCacheHitVec = Wire(Vec(PF_NUM, Vec(banks, Bool())))
+  val statPollutionHoldVec = Wire(Vec(PF_NUM, Vec(banks, Bool())))
+  val statPfMshrHoldVec = Wire(Vec(PF_NUM, Vec(banks, Bool())))
+  val statPfReqBufferHoldVec = Wire(Vec(PF_NUM, Vec(banks, Bool())))
+  val deltaMshrHitVec = Wire(Vec(PF_NUM, Vec(banks, SInt(peBits.W))))
+  val deltaDemandCacheHitVec = Wire(Vec(PF_NUM, Vec(banks, SInt(peBits.W))))
+  val deltaL1PrefetchCacheHitVec = Wire(Vec(PF_NUM, Vec(banks, SInt(peBits.W))))
+  val deltaPollutionHoldVec = Wire(Vec(PF_NUM, Vec(banks, SInt(peBits.W))))
+  val deltaPfMshrHoldVec = Wire(Vec(PF_NUM, Vec(banks, SInt(peBits.W))))
+  val deltaPfReqBufferHoldVec = Wire(Vec(PF_NUM, Vec(banks, SInt(peBits.W))))
   for (i <- 0 until PF_NUM) {
     val peDeltaSliceVec = RegInit(VecInit(Seq.fill(banks)(0.S(peBits.W))))
 
     // pe0: get the pe of each slice
     for (s <- 0 until banks) {
-      val mshrHitDelta = Mux(
-        pfStatInMSHR(s).hitPf && pfIdxFromReqSource(pfStatInMSHR(s).hitPfReqSrc) === i.U, 
+      statMshrHitVec(i)(s) := pfStatInMSHR(s).hitPf &&
+        pfIdxFromReqSource(pfStatInMSHR(s).hitPfReqSrc) === i.U
+      statDemandCacheHitVec(i)(s) := isDemandHitPfInCache(dirResult(s), i)
+      statL1PrefetchCacheHitVec(i)(s) := isL1PrefetchHitPfInCache(dirResult(s), i)
+      statPollutionHoldVec(i)(s) := p1_phtHitVec(s) && p1_phtHitPfIdx(s) === i.U
+      statPfMshrHoldVec(i)(s) := dataRefill(s).valid && dataRefill(s).bits.isPrefetch &&
+        pfIdxFromReqSource(dataRefill(s).bits.pfReqSrc) === i.U
+      statPfReqBufferHoldVec(i)(s) := pfStatInMSHR(s).pfReleaseFromReqBuffer && 
+        pfIdxFromReqSource(pfStatInMSHR(s).reqBufferPfReqSrc) === i.U
+
+      deltaMshrHitVec(i)(s) := Mux(
+        statMshrHitVec(i)(s),
         _zeroExtend(pfStatInMSHR(s).hitPfLatency, peBits), 
         0.S(peBits.W)
       )
-      val cacheHitDelta =
-        Mux(isHitPfInCache(dirResult(s), i), _zeroExtend(latencyAvg, peBits), 0.S(peBits.W))
-      val phtDelta = 
-        Mux(p1_phtHitVec(s) && p1_phtHitPfIdx(s) === i.U, _zeroExtend(p1_phtHitLatencyVec(s), peBits), 0.S(peBits.W))
-      peDeltaSliceVec(s) := mshrHitDelta + cacheHitDelta - phtDelta
+      deltaDemandCacheHitVec(i)(s) := Mux(
+        statDemandCacheHitVec(i)(s),
+        _zeroExtend(latencyAvg, peBits),
+        0.S(peBits.W)
+      )
+      deltaL1PrefetchCacheHitVec(i)(s) := Mux(
+        statL1PrefetchCacheHitVec(i)(s),
+        _zeroExtend(latencyAvg >> l1PrefetchCacheHitMultipeLog, peBits),
+        0.S(peBits.W)
+      )
+      deltaPollutionHoldVec(i)(s) := Mux(
+        statPollutionHoldVec(i)(s),
+        // _zeroExtend(p1_phtHitLatencyVec(s), peBits),
+        _zeroExtend(latencyAvg, peBits), // to avoid long latency because of ddr flush 
+        0.S(peBits.W)
+      )
+      deltaPfMshrHoldVec(i)(s) := Mux(
+        statPfMshrHoldVec(i)(s),
+        // _zeroExtend(dataRefill(s).bits.latency, peBits) >> prefetchYieldMultipeLog,
+        _zeroExtend(latencyAvg >> prefetchYieldMultipeLog, peBits), // to avoid long latency because of ddr flush 
+        0.S(peBits.W)
+      )
+      deltaPfReqBufferHoldVec(i)(s) := Mux(
+        statPfReqBufferHoldVec(i)(s),
+        _zeroExtend(pfStatInMSHR(s).reqBufferHoldLatency, peBits) >> prefetchYieldMultipeLog,
+        0.S(peBits.W)
+      )
+      peDeltaSliceVec(s) := deltaMshrHitVec(i)(s) + deltaDemandCacheHitVec(i)(s) + deltaL1PrefetchCacheHitVec(i)(s) - 
+        deltaPollutionHoldVec(i)(s) - deltaPfMshrHoldVec(i)(s) - deltaPfReqBufferHoldVec(i)(s)
     }
     
     // pe1: get the pe sum of all slices
     peVec(i) := peVec(i) + peDeltaSliceVec.reduce(_ + _)
   }
 
+  // record for debug //
+  class LatencyAttributeBundle extends Bundle {
+    val epochID = UInt(64.W)
+    val deltaMshrHit = UInt(peBits.W)
+    val deltaDemandCacheHit = UInt(peBits.W)
+    val deltaL1PrefetchCacheHit = UInt(peBits.W)
+    val deltaPollutionHold = UInt(peBits.W)
+    val deltaPfMshrHold = UInt(peBits.W )
+    val deltaPfReqBufferHold = UInt(peBits.W)
+  }
+  for (i <- 0 until PF_NUM) {
+    val latencyAttribute = Wire(new LatencyAttributeBundle())
+    latencyAttribute.epochID := epochID
+    latencyAttribute.deltaMshrHit := deltaMshrHitVec(i).reduce(_ + _).asUInt
+    latencyAttribute.deltaDemandCacheHit := deltaDemandCacheHitVec(i).reduce(_ + _).asUInt
+    latencyAttribute.deltaL1PrefetchCacheHit := deltaL1PrefetchCacheHitVec(i).reduce(_ + _).asUInt
+    latencyAttribute.deltaPollutionHold := deltaPollutionHoldVec(i).reduce(_ + _).asUInt
+    latencyAttribute.deltaPfMshrHold := deltaPfMshrHoldVec(i).reduce(_ + _).asUInt
+    latencyAttribute.deltaPfReqBufferHold := deltaPfReqBufferHoldVec(i).reduce(_ + _).asUInt
+    val w = statMshrHitVec(i).asUInt.orR ||
+      statDemandCacheHitVec(i).asUInt.orR ||
+      statL1PrefetchCacheHitVec(i).asUInt.orR ||
+      statPollutionHoldVec(i).asUInt.orR ||
+      statPfMshrHoldVec(i).asUInt.orR ||
+      statPfReqBufferHoldVec(i).asUInt.orR
+    val latencyAttributeTable = ChiselDB.createTable(s"LatencyAttributeTable_${PF_NAME_VEC(i)}", new LatencyAttributeBundle, basicDB = true)
+    latencyAttributeTable.log(latencyAttribute, w, "L2PrefetchController", clock, reset)
+  }
+
   // ========== control engine ==========
+  // becase ddr flush may cause long latency, so epochEdge can not be too large.
   private val epochEdge = 256
   private val epochBits = log2Ceil(epochEdge)
+  private def latencyDownThreshold(x: UInt): UInt = x >> 1 // ratio of last latency or other constant
+  private def maxDegree = (1 << degreeBits) - 1
+
   val activeVec = RegInit(VecInit(Seq.fill(PF_NUM)(true.B)))
-  val aggressiveVec = RegInit(VecInit(Seq.fill(PF_NUM)(1.U(degreeBits.W))))
+  val levelVec = RegInit(VecInit(Seq.fill(PF_NUM)(0.U(degreeBits.W))))
   val demandCnt = RegInit(0.U(epochBits.W))
 
-  private def pfDegree(idx: Int): UInt = Mux(activeVec(idx), aggressiveVec(idx), 0.U)
+  private def pfDegree(idx: Int): UInt = Mux(
+    !activeVec(idx),
+    Mux(levelVec(idx) === maxDegree.U, maxDegree.U, levelVec(idx) + 1.U),
+    0.U
+  )
 
   val epochEnd = io.isDemandTrain && demandCnt === (epochEdge - 1).U
+  val epochEndReg = RegNext(epochEnd)
   when (epochEnd) {
     demandCnt := 0.U
   }.elsewhen(io.isDemandTrain) {
     demandCnt := demandCnt + 1.U
   }
 
+  val latencyDown = latencyAvg < latencyLastEpoch && 
+    ((latencyLastEpoch - latencyAvg) > latencyDownThreshold(latencyLastEpoch))
   when (epochEnd) {
     for (i <- 0 until PF_NUM) {
       val peEval = peVec(i)
       when (activeVec(i)) {
         when (peEval > 0.S) {
-          aggressiveVec(i) := Mux(aggressiveVec(i) === 3.U, 3.U, aggressiveVec(i) + 1.U)
+          levelVec(i) := Mux(levelVec(i) === maxDegree.U, maxDegree.U, levelVec(i) + 1.U)
         }.elsewhen (peEval < 0.S) {
-          when (aggressiveVec(i) > 0.U) {
-            aggressiveVec(i) := aggressiveVec(i) - 1.U
-          }.otherwise {
+          when (levelVec(i) === 0.U) {
             activeVec(i) := false.B
-            aggressiveVec(i) := 3.U
+            levelVec(i) := maxDegree.U
+          }.otherwise {
+            levelVec(i) := levelVec(i) - 1.U
           }
         }
       }.otherwise {
-        aggressiveVec(i) := Mux(aggressiveVec(i) === 0.U, 0.U, aggressiveVec(i) - 1.U)
-        when (aggressiveVec(i) === 0.U) {
+        when (peEval > 0.S) { // prefetches from previous epoches hit at current epoch
           activeVec(i) := true.B
-          aggressiveVec(i) := 1.U
+          levelVec(i) := 1.U
+        }.elsewhen (levelVec(i) === 0.U) {
+          when(latencyDown) { // latency has downtrend, try to active this prefetcher
+            activeVec(i) := true.B
+            levelVec(i) := 0.U
+          }
+        }.otherwise {
+          levelVec(i) := levelVec(i) - 1.U
         }
       }
       peVec(i) := 0.S
     }
+    latencyLastEpoch := latencyAvg
+    epochID := epochID + 1.U
   }
 
   io.l2PfFbCtrl.streamDegree := pfDegree(PF_STREAM)
@@ -252,9 +375,34 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
   io.l2PfFbCtrl.pbopDegree := pfDegree(PF_PBOP)
   io.l2PfFbCtrl.tpDegree := pfDegree(PF_TP)
 
+  // record for debug //
+  class EpochRecordBundle extends Bundle {
+    val epochID = UInt(64.W)
+    val latencyCurr = UInt(timestampBits.W)
+    val pe = Vec(PF_NUM, UInt(peBits.W))
+  }
+  val epochRecord = Wire(new EpochRecordBundle())
+  epochRecord.epochID := epochID
+  epochRecord.latencyCurr := latencyAvg
+  for (i <- 0 until PF_NUM) {
+    epochRecord.pe(i) := peVec(i).asUInt
+  }
+  val epochRecordTable = ChiselDB.createTable("EpochRecordTable", new EpochRecordBundle(), basicDB = true)
+  epochRecordTable.log(epochRecord, epochEnd, "L2PrefetchController", clock, reset)
+
   XSPerfAccumulate("epochCount", epochEnd)
   XSPerfAccumulate("pfReplaceDemand", PopCount(pfReplaceDemand.map(x => x.valid)))
   XSPerfAccumulate("dataRefill", PopCount(dataRefill.map(x => x.valid)))
-  XSPerfAccumulate("parttenDefined", PopCount((0 until PF_NUM).map(i => !(activeVec(i) && aggressiveVec(i) =/= 1.U))))
+  for (i <- 0 until PF_NUM) {
+    XSPerfAccumulate(s"activeEpochCount${PF_NAME_VEC(i)}", epochEndReg && pfDegree(i)>0.U)
+    XSPerfAccumulate(s"inactiveEpochCount${PF_NAME_VEC(i)}", epochEndReg && pfDegree(i)===0.U)
+    XSPerfAccumulate(s"parttenIdentifiedCount${PF_NAME_VEC(i)}", epochEndReg && !(activeVec(i) && levelVec(i) === 1.U))
+    XSPerfAccumulate(s"mshrHitCount${PF_NAME_VEC(i)}", PopCount(statMshrHitVec(i)))
+    XSPerfAccumulate(s"demandCacheHitCount${PF_NAME_VEC(i)}", PopCount(statDemandCacheHitVec(i)))
+    XSPerfAccumulate(s"l1PrefetchCacheHitCount${PF_NAME_VEC(i)}", PopCount(statL1PrefetchCacheHitVec(i)))
+    XSPerfAccumulate(s"pollutionHoldCount${PF_NAME_VEC(i)}", PopCount(statPollutionHoldVec(i)))
+    XSPerfAccumulate(s"pfMshrHoldCount${PF_NAME_VEC(i)}", PopCount(statPfMshrHoldVec(i)))
+    XSPerfAccumulate(s"pfReqBufferHoldCount${PF_NAME_VEC(i)}", PopCount(statPfReqBufferHoldVec(i)))
+  }
 
 }
