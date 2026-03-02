@@ -240,7 +240,9 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val pfFeedbackVec = IO(Input(Vec(banks, new PrefetchFeedbackBundle())))
 
   val prefetchController = Module(new PrefetchController)
-  prefetchController.io.isDemandTrain := io.train.valid && MemReqSource.isCPUReq(io.train.bits.reqsource)
+  prefetchController.io.isDemandTrain := io.train.valid && (
+    MemReqSource.isCPUReq(io.train.bits.reqsource) || MemReqSource.isL1Prefetch(io.train.bits.reqsource)
+  )
   prefetchController.io.pfFeedbackVec := pfFeedbackVec
 
   // l2 receive need 2 cycles to transmit from core

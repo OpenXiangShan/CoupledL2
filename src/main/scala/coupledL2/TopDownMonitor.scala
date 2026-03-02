@@ -32,6 +32,11 @@ class PfStatInMSHRBundle()(implicit p: Parameters) extends L2Bundle {
   val hitPf = Bool()
   val hitPfReqSrc = UInt(MemReqSource.reqSourceBits.W)
   val hitPfLatency = UInt(timestampBits.W)
+
+  // prefetch request leaves RequestBuffer (issued/released or merged by demand)
+  val pfReleaseFromReqBuffer = Bool()
+  val reqBufferPfReqSrc = UInt(MemReqSource.reqSourceBits.W)
+  val reqBufferHoldLatency = UInt(timestampBits.W)
 }
 
 // TODO: Accommodate CHI
