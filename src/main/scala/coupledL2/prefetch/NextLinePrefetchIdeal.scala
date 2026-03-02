@@ -565,8 +565,9 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
 
   //************Prefetch part***************//
   val s1_reqValid     = RegNext(s0_reqValid, false.B)
-  val s1_reqPc        = RegNext(s0_reqPc)
-  val s1_reqAddr      = RegNext(s0_reqAddr)
+  val s1_reqPc        = RegNext(s0_reqPc, 0.U(vaddrBits.W))
+  val s1_reqAddr      = RegInit(0.U(vaddrBits.W))
+  s1_reqAddr         := s0_reqAddr
   val s1_reqResp      = RegNext(patternTable.io.r(patternTablePrefetchPort).resp)
 
   val s1_prefetchAddr     = s1_reqAddr + blockBytes.U
