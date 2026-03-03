@@ -319,7 +319,7 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
   val demandCnt = RegInit(0.U(epochBits.W))
 
   private def pfDegree(idx: Int): UInt = Mux(
-    !activeVec(idx),
+    activeVec(idx),
     Mux(levelVec(idx) === maxDegree.U, maxDegree.U, levelVec(idx) + 1.U),
     0.U
   )
@@ -334,6 +334,8 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
 
   val latencyDown = latencyAvg < latencyLastEpoch && 
     ((latencyLastEpoch - latencyAvg) > latencyDownThreshold(latencyLastEpoch))
+  val statPfHitLagActiveVec = WireInit(Vec(PF_NUM, Bool()))
+  val statLatencyDownActiveVec = WireInit(Vec(PF_NUM, Bool()))
   when (epochEnd) {
     for (i <- 0 until PF_NUM) {
       val peEval = peVec(i)
@@ -352,10 +354,12 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
         when (peEval > 0.S) { // prefetches from previous epoches hit at current epoch
           activeVec(i) := true.B
           levelVec(i) := 1.U
+          statPfHitLagActiveVec(i) := true.B
         }.elsewhen (levelVec(i) === 0.U) {
           when(latencyDown) { // latency has downtrend, try to active this prefetcher
             activeVec(i) := true.B
             levelVec(i) := 0.U
+            statLatencyDownActiveVec(i) := true.B
           }
         }.otherwise {
           levelVec(i) := levelVec(i) - 1.U
@@ -393,10 +397,14 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
   XSPerfAccumulate("epochCount", epochEnd)
   XSPerfAccumulate("pfReplaceDemand", PopCount(pfReplaceDemand.map(x => x.valid)))
   XSPerfAccumulate("dataRefill", PopCount(dataRefill.map(x => x.valid)))
+  XSPerfAccumulate("latencyDownActiveCountTotal", PopCount(statLatencyDownActiveVec))
+  XSPerfAccumulate("pfHitLagActiveCountTotal", PopCount(statPfHitLagActiveVec))
   for (i <- 0 until PF_NUM) {
-    XSPerfAccumulate(s"activeEpochCount${PF_NAME_VEC(i)}", epochEndReg && pfDegree(i)>0.U)
-    XSPerfAccumulate(s"inactiveEpochCount${PF_NAME_VEC(i)}", epochEndReg && pfDegree(i)===0.U)
-    XSPerfAccumulate(s"parttenIdentifiedCount${PF_NAME_VEC(i)}", epochEndReg && !(activeVec(i) && levelVec(i) === 1.U))
+    XSPerfAccumulate(s"activeEpochCount${PF_NAME_VEC(i)}", epochEndReg && activeVec(i))
+    XSPerfAccumulate(s"inactiveEpochCount${PF_NAME_VEC(i)}", epochEndReg && !activeVec(i))
+    XSPerfAccumulate(s"parttenIdentifiedCount${PF_NAME_VEC(i)}", epochEndReg && !(activeVec(i) && levelVec(i) === 0.U))
+    XSPerfAccumulate(s"latencyDownActiveCount${PF_NAME_VEC(i)}", statLatencyDownActiveVec(i))
+    XSPerfAccumulate(s"pfHitLagActiveCount${PF_NAME_VEC(i)}", statPfHitLagActiveVec(i))
     XSPerfAccumulate(s"mshrHitCount${PF_NAME_VEC(i)}", PopCount(statMshrHitVec(i)))
     XSPerfAccumulate(s"demandCacheHitCount${PF_NAME_VEC(i)}", PopCount(statDemandCacheHitVec(i)))
     XSPerfAccumulate(s"l1PrefetchCacheHitCount${PF_NAME_VEC(i)}", PopCount(statL1PrefetchCacheHitVec(i)))
