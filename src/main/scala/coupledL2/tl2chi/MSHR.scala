@@ -83,6 +83,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val state     = RegInit(new FSMState(), initState)
 
   val req_released_chiOpcode = RegInit(0.U.asTypeOf(UInt(OPCODE_WIDTH.W)))
+  val req_released_likelyShared = RegInit(false.B)
 
   assert(!(req_valid && dirResult.hit && !isT(meta.state) && meta.dirty),
     "directory valid read with dirty under non-T state")
@@ -394,6 +395,10 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     oa.ns := enableNS.B
     // set 'LikelyShared' to 1 here when:
     //  - WriteEvictOrEvict (on retry) with SC state
+    oa.likelyshared := afterIssueEbOrElse(
+      Mux(release_valid2, req_released_likelyShared, false.B),
+      false.B
+    )
     oa.likelyshared := Mux(
       release_valid2,
       afterIssueEbOrElse(req_released_chiOpcode === WriteEvictOrEvict && meta.state === BRANCH, false.B),
@@ -1053,6 +1058,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       }
     }.elsewhen (mp_release_valid) {
       req_released_chiOpcode := mp_release.chiOpcode.get
+      req_released_likelyShared := mp_release.likelyshared.get
       state.s_release := true.B
       state.s_cbwrdata.get := isEvict
       when (isEvict) {
