@@ -102,6 +102,8 @@ case class L2Param(
   prefetch: Seq[PrefetchParameters] = Nil,
   // L2 Flush
   enableL2Flush: Boolean = false,
+  // AsyncBridge
+  enableCHIAsyncBridge: Option[Boolean] = None,
   // Performance analysis
   enablePerf: Boolean = true,
   // RollingDB
