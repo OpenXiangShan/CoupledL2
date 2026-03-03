@@ -334,8 +334,8 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
 
   val latencyDown = latencyAvg < latencyLastEpoch && 
     ((latencyLastEpoch - latencyAvg) > latencyDownThreshold(latencyLastEpoch))
-  val statPfHitLagActiveVec = WireInit(Vec(PF_NUM, Bool()))
-  val statLatencyDownActiveVec = WireInit(Vec(PF_NUM, Bool()))
+  val statPfHitLagActiveVec = WireInit(VecInit(Seq.fill(PF_NUM)(false.B)))
+  val statLatencyDownActiveVec = WireInit(VecInit(Seq.fill(PF_NUM)(false.B)))
   when (epochEnd) {
     for (i <- 0 until PF_NUM) {
       val peEval = peVec(i)
