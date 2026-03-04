@@ -108,6 +108,8 @@ trait HasTPParams extends HasCoupledL2Parameters {
   def samplerFilterSetBits = log2Ceil(samplerFilterNrSet)
   def samplerFilterReplacementPolicy = tpParams.samplerFilterReplacememntPolicy
   def trainQueueDepth = tpParams.trainQueueDepth
+  def filteredCntWidth = 5
+  def filteredCntThrottle = 20
   // sampler table parameters
   def samplerTableAssoc = tpParams.samplerTableAssoc
   def samplerTableNrSet = tpParams.samplerTableEntries / samplerTableAssoc
@@ -194,19 +196,21 @@ class filteredEntry(implicit p: Parameters) extends TPBundle {
   val lastAddr = UInt(metaDataLength.W)
   val currAddr = UInt(metaDataLength.W)
   val tpTableWay = UInt(log2Ceil(tpTableAssoc).W)
+  val cnt = UInt(filteredCntWidth.W)
 }
 
 class filterTableEntry(implicit p: Parameters) extends TPBundle {
   val valid = Bool()
   val pcTag = UInt((pcHashWidth - samplerFilterSetBits).W)
   val lastAddr = UInt(metaDataLength.W)
-  // val cnt = UInt(1.W)
+  val cnt = UInt(filteredCntWidth.W)
 
-  def apply(valid: Bool, tag: UInt, addr: UInt) = {
+  def apply(valid: Bool, tag: UInt, addr: UInt, cnt: UInt) = {
     val entry = Wire(new filterTableEntry)
     entry.valid := valid
     entry.pcTag := tag
     entry.lastAddr := addr
+    entry.cnt := cnt
     entry
   }
 }
@@ -304,6 +308,7 @@ class SamplerFilter(implicit p: Parameters) extends TPModule {
   val victimWay_s1 = repl.get_replace_way(0.U) //TODO: change other repl policy
   val way_s1 = Mux(hit_s1, hitWay_s1, victimWay_s1)
   val lastAddr_s1 = filterRecord_s1(way_s1).lastAddr
+  val cnt_s1 = filterRecord_s1(way_s1).cnt
 
   /* ------- stage 2 ------- */
   // 1. miss: generate new entry; 2. hit: update entry & generate pair for sampler table
@@ -313,6 +318,7 @@ class SamplerFilter(implicit p: Parameters) extends TPModule {
   val pc_s2 = RegInit(0.U(pcHashWidth.W))
   val currAddr_s2 = RegInit(0.U(metaDataLength.W))
   val lastAddr_s2 = RegInit(0.U(metaDataLength.W))
+  val cnt_s2 = RegInit(0.U(filteredCntWidth.W))
   val hit_s2 = RegInit(false.B)
   val way_s2 = RegInit(0.U(log2Ceil(samplerFilterAssoc).W))
 
@@ -320,14 +326,16 @@ class SamplerFilter(implicit p: Parameters) extends TPModule {
     pc_s2 := pc_s1
     currAddr_s2 := currAddr_s1
     lastAddr_s2 := lastAddr_s1
+    cnt_s2 := cnt_s1
     hit_s2 := hit_s1
     way_s2 := way_s1
   }
   val (pcTag_s2, pcSet_s2) = parsePaddr(pc_s2)
+  val updateCnt = Mux(hit_s2 && !cnt_s2.andR, cnt_s2 + 1.U, cnt_s2)
 
-  val updateEntry = WireInit(new filterTableEntry().apply(false.B, 0.U, 0.U))
-  val replEntry = WireInit(new filterTableEntry().apply(true.B, pcTag_s2, currAddr_s2))
-  val resetEntry = WireInit(new filterTableEntry().apply(false.B, 0.U, 0.U))
+  val updateEntry = WireInit(new filterTableEntry().apply(false.B, pcTag_s2, currAddr_s2, updateCnt))
+  val replEntry = WireInit(new filterTableEntry().apply(true.B, pcTag_s2, currAddr_s2, 0.U))
+  val resetEntry = WireInit(new filterTableEntry().apply(false.B, 0.U, 0.U, 0.U))
 
   val filterTableWValid_s2 =  s2_valid || !resetFinish
   val filterTableWSet_s2 = Mux(resetFinish, pcSet_s2, resetIdx)
@@ -346,6 +354,7 @@ class SamplerFilter(implicit p: Parameters) extends TPModule {
   io.trained.bits.pc := pc_s2
   io.trained.bits.lastAddr := lastAddr_s2
   io.trained.bits.currAddr := currAddr_s2
+  io.trained.bits.cnt := cnt_s2
   io.trained.bits.tpTableWay := io.tpTableWay_s2.bits
 
   // assert(io.trained.valid === io.tpTableWay_s2.valid) TODO
@@ -426,6 +435,7 @@ class SamplerTable(implicit p: Parameters) extends TPModule {
   val baseAddr_s0 = Mux(pendingValid_s0, trainPending.lastAddr, io.train.bits.lastAddr)
   val targetAddr_s0 = Mux(pendingValid_s0, trainPending.currAddr, io.train.bits.currAddr)
   val pc_s0 = Mux(pendingValid_s0, trainPending.pc, io.train.bits.pc)
+  val cnt_s0 = Mux(pendingValid_s0, trainPending.cnt, io.train.bits.cnt)
   val tpTableWay_s0 = Mux(pendingValid_s0, trainPending.tpTableWay, io.train.bits.tpTableWay)
 
   val samplerTableRValid = s0_valid
@@ -438,12 +448,14 @@ class SamplerTable(implicit p: Parameters) extends TPModule {
   val baseAddr_s1 = RegInit(0.U(metaDataLength.W))
   val targetAddr_s1 = RegInit(0.U(metaDataLength.W))
   val pc_s1 = RegInit(0.U(pcHashWidth.W))
+  val cnt_s1 = RegInit(0.U(filteredCntWidth.W))
   val tpTableWay_s1 = RegInit(0.U(log2Ceil(tpTableAssoc).W))
 
   when(s0_valid) {
     baseAddr_s1 := baseAddr_s0
     targetAddr_s1 := targetAddr_s0
     pc_s1 := pc_s0
+    cnt_s1 := cnt_s0
     tpTableWay_s1 := tpTableWay_s0
   }
 
@@ -469,6 +481,7 @@ class SamplerTable(implicit p: Parameters) extends TPModule {
   val baseAddr_s2 = RegInit(0.U(metaDataLength.W))
   val targetAddr_s2 = RegInit(0.U(metaDataLength.W))
   val pc_s2 = RegInit(0.U(pcHashWidth.W))
+  val cnt_s2 = RegInit(0.U(filteredCntWidth.W))
   val tpTableWay_s2 = RegInit(0.U(log2Ceil(tpTableAssoc).W))
   val hit_s2 = RegInit(false.B)
   val way_s2 = RegInit(0.U(log2Ceil(samplerTableAssoc).W))
@@ -478,14 +491,17 @@ class SamplerTable(implicit p: Parameters) extends TPModule {
     baseAddr_s2 := baseAddr_s1
     targetAddr_s2 := targetAddr_s1
     pc_s2 := pc_s1
+    cnt_s2 := cnt_s1
     tpTableWay_s2 := tpTableWay_s1
     hit_s2 := hit_s1
     way_s2 := way_s1
   }
+  val cntValid_s2 = cnt_s2 >= filteredCntThrottle.U
 
   val match_s2 = lastPair_s2.targetAddr === targetAddr_s2
   val recordValid_s2 = (match_s2 || lastPair_s2.matchCnt.orR) && hit_s2 && s2_valid
   val pcMatch_s2 = pc_s2 === lastPair_s2.pc
+  val matchValid_s2 = match_s2 && pcMatch_s2
 
   val (baseTag_s2, baseSet_s2) = parsePaddr(baseAddr_s2)
   val maxMatch = lastPair_s2.matchCnt.andR
@@ -511,7 +527,7 @@ class SamplerTable(implicit p: Parameters) extends TPModule {
     waymask = samplerTableWWayOH_s2
   )
 
-  io.trained.valid := recordValid_s2
+  io.trained.valid := recordValid_s2 || cntValid_s2 || matchValid_s2
   io.trained.bits.pc := pc_s2
   io.trained.bits.addr1 := baseAddr_s2
   io.trained.bits.addr2 := targetAddr_s2
