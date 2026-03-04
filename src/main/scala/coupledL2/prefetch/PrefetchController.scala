@@ -211,6 +211,8 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
   }
 
   // if timing is bad, there can add pipelines arbitrarily.
+  val statPeOverflowVec = WireInit(VecInit(Seq.fill(PF_NUM)(false.B)))
+
   val statMshrHitVec = Wire(Vec(PF_NUM, Vec(banks, Bool())))
   val statDemandCacheHitVec = Wire(Vec(PF_NUM, Vec(banks, Bool())))
   val statL1PrefetchCacheHitVec = Wire(Vec(PF_NUM, Vec(banks, Bool())))
@@ -275,7 +277,11 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
     }
     
     // pe1: get the pe sum of all slices
-    peVec(i) := peVec(i) + peDeltaSliceVec.reduce(_ + _)
+    val peDeltaSum = peDeltaSliceVec.reduce(_ + _)
+    val peDeltaSumNarrow = peDeltaSum(peBits - 1, 0).asSInt
+    val peNext = peVec(i) + peDeltaSumNarrow
+    peVec(i) := peNext
+    statPeOverflowVec(i) := peDeltaSumNarrow(peBits - 1) === peVec(i)(peBits - 1) && peNext(peBits - 1) =/= peVec(i)(peBits - 1)
   }
 
   // record for debug //
@@ -397,20 +403,22 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
   XSPerfAccumulate("epochCount", epochEnd)
   XSPerfAccumulate("pfReplaceDemand", PopCount(pfReplaceDemand.map(x => x.valid)))
   XSPerfAccumulate("dataRefill", PopCount(dataRefill.map(x => x.valid)))
-  XSPerfAccumulate("latencyDownActiveCountTotal", PopCount(statLatencyDownActiveVec))
-  XSPerfAccumulate("pfHitLagActiveCountTotal", PopCount(statPfHitLagActiveVec))
+  XSPerfAccumulate("epoch_latencyDownActiveCountTotal", PopCount(statLatencyDownActiveVec))
+  XSPerfAccumulate("epoch_pfHitLagActiveCountTotal", PopCount(statPfHitLagActiveVec))
+  XSPerfAccumulate("other_peVecOverflowCountTotal", PopCount(statPeOverflowVec))
   for (i <- 0 until PF_NUM) {
-    XSPerfAccumulate(s"activeEpochCount${PF_NAME_VEC(i)}", epochEndReg && activeVec(i))
-    XSPerfAccumulate(s"inactiveEpochCount${PF_NAME_VEC(i)}", epochEndReg && !activeVec(i))
-    XSPerfAccumulate(s"parttenIdentifiedCount${PF_NAME_VEC(i)}", epochEndReg && !(activeVec(i) && levelVec(i) === 0.U))
-    XSPerfAccumulate(s"latencyDownActiveCount${PF_NAME_VEC(i)}", statLatencyDownActiveVec(i))
-    XSPerfAccumulate(s"pfHitLagActiveCount${PF_NAME_VEC(i)}", statPfHitLagActiveVec(i))
-    XSPerfAccumulate(s"mshrHitCount${PF_NAME_VEC(i)}", PopCount(statMshrHitVec(i)))
-    XSPerfAccumulate(s"demandCacheHitCount${PF_NAME_VEC(i)}", PopCount(statDemandCacheHitVec(i)))
-    XSPerfAccumulate(s"l1PrefetchCacheHitCount${PF_NAME_VEC(i)}", PopCount(statL1PrefetchCacheHitVec(i)))
-    XSPerfAccumulate(s"pollutionHoldCount${PF_NAME_VEC(i)}", PopCount(statPollutionHoldVec(i)))
-    XSPerfAccumulate(s"pfMshrHoldCount${PF_NAME_VEC(i)}", PopCount(statPfMshrHoldVec(i)))
-    XSPerfAccumulate(s"pfReqBufferHoldCount${PF_NAME_VEC(i)}", PopCount(statPfReqBufferHoldVec(i)))
+    XSPerfAccumulate(s"delta_mshrHitCount${PF_NAME_VEC(i)}", PopCount(statMshrHitVec(i)))
+    XSPerfAccumulate(s"delta_demandCacheHitCount${PF_NAME_VEC(i)}", PopCount(statDemandCacheHitVec(i)))
+    XSPerfAccumulate(s"delta_l1PrefetchCacheHitCount${PF_NAME_VEC(i)}", PopCount(statL1PrefetchCacheHitVec(i)))
+    XSPerfAccumulate(s"delta_pollutionHoldCount${PF_NAME_VEC(i)}", PopCount(statPollutionHoldVec(i)))
+    XSPerfAccumulate(s"delta_pfMshrHoldCount${PF_NAME_VEC(i)}", PopCount(statPfMshrHoldVec(i)))
+    XSPerfAccumulate(s"delta_pfReqBufferHoldCount${PF_NAME_VEC(i)}", PopCount(statPfReqBufferHoldVec(i)))
+    XSPerfAccumulate(s"epoch_activeEpochCount${PF_NAME_VEC(i)}", epochEndReg && activeVec(i))
+    XSPerfAccumulate(s"epoch_inactiveEpochCount${PF_NAME_VEC(i)}", epochEndReg && !activeVec(i))
+    XSPerfAccumulate(s"epoch_parttenIdentifiedCount${PF_NAME_VEC(i)}", epochEndReg && !(activeVec(i) && levelVec(i) === 0.U))
+    XSPerfAccumulate(s"epoch_latencyDownActiveCount${PF_NAME_VEC(i)}", statLatencyDownActiveVec(i))
+    XSPerfAccumulate(s"epoch_pfHitLagActiveCount${PF_NAME_VEC(i)}", statPfHitLagActiveVec(i))
+    XSPerfAccumulate(s"other_peOverflowCount${PF_NAME_VEC(i)}", statPeOverflowVec(i))
   }
 
 }
