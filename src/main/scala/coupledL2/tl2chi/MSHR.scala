@@ -83,6 +83,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val state     = RegInit(new FSMState(), initState)
 
   val req_released_chiOpcode = RegInit(0.U.asTypeOf(UInt(OPCODE_WIDTH.W)))
+  val req_released_likelyShared = RegInit(false.B)
 
   assert(!(req_valid && dirResult.hit && !isT(meta.state) && meta.dirty),
     "directory valid read with dirty under non-T state")
@@ -111,7 +112,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val tagErr = RegInit(false.B) // L2 Tag Error
   val denied = RegInit(false.B)
   val corrupt = RegInit(false.B)
-  val dataCheckErr = RegInit(false.B)
   val cbWrDataTraceTag = RegInit(false.B)
   val metaChi = ParallelLookUp(
     Cat(meta.dirty, meta.state),
@@ -149,7 +149,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     tagErr := io.alloc.bits.dirResult.hit && (io.alloc.bits.dirResult.meta.tagErr || io.alloc.bits.dirResult.error)
     denied := false.B
     corrupt := false.B
-    dataCheckErr := false.B
     cbWrDataTraceTag := false.B
 
     retryTimes := 0.U
@@ -209,7 +208,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     req_chiOpcode === SnpUnique ||
     req_chiOpcode === SnpUniqueStash ||
     req_chiOpcode === SnpCleanShared ||
-    req_chiOpcode === SnpCleanInvalid
+    req_chiOpcode === SnpCleanInvalid ||
+    req_chiOpcode === SnpPreferUnique
   )
   // *NOTICE: Careful on future implementation of adding 'isSnpToNFwd' into condition
   //          'doRespData_retToSrc_fwd'. For now, 'isSnpToNFwd' only covers SnpUniqueFwd,
@@ -326,7 +326,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     req_chiOpcode === SnpUnique ||
     req_chiOpcode === SnpUniqueStash ||
     req_chiOpcode === SnpCleanShared ||
-    req_chiOpcode === SnpCleanInvalid
+    req_chiOpcode === SnpCleanInvalid ||
+    req_chiOpcode === SnpPreferUnique
   ) || hitWriteDirty && isSnpOnceFwd(req_chiOpcode)
   val fwdCacheState = Mux(tagErr, I, Mux(
     isSnpToBFwd(req_chiOpcode),
@@ -394,9 +395,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     oa.ns := enableNS.B
     // set 'LikelyShared' to 1 here when:
     //  - WriteEvictOrEvict (on retry) with SC state
-    oa.likelyshared := Mux(
-      release_valid2,
-      afterIssueEbOrElse(req_released_chiOpcode === WriteEvictOrEvict && meta.state === BRANCH, false.B),
+    oa.likelyshared := afterIssueEbOrElse(
+      Mux(release_valid2, req_released_likelyShared, false.B),
       false.B
     )
     oa.allowRetry := state.s_reissue.getOrElse(false.B)
@@ -839,9 +839,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       accessed = true.B
     )
 
-    // CHI
-    mp_grant.dataCheckErr.get := dataCheckErr
-
     mp_grant
   }
 
@@ -1056,6 +1053,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       }
     }.elsewhen (mp_release_valid) {
       req_released_chiOpcode := mp_release.chiOpcode.get
+      req_released_likelyShared := mp_release.likelyshared.get
       state.s_release := true.B
       state.s_cbwrdata.get := isEvict
       when (isEvict) {
@@ -1155,7 +1153,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         gotGrantData := true.B
         denied := denied || nderr
         corrupt := corrupt || derr || nderr || rxdatCorrupt
-        dataCheckErr := dataCheckErr || rxdat.bits.dataCheckErr.getOrElse(false.B)
       }
     }
 
@@ -1174,7 +1171,6 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       tgtid_rcompack := rxdat.bits.homeNID.getOrElse(0.U)
       denied := denied || nderr
       corrupt := corrupt || derr || nderr || rxdatCorrupt
-      dataCheckErr := dataCheckErr || rxdat.bits.dataCheckErr.getOrElse(false.B)
       req.traceTag.get := req.traceTag.get || rxdat.bits.traceTag.getOrElse(false.B)
     }
   }

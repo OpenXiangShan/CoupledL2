@@ -39,8 +39,9 @@ trait HasCoupledL2Parameters {
   val p: Parameters
   // val tl2tlParams: HasTLL2Parameters = p(L2ParamKey)
   def enableCHI = p(EnableCHI)
+  def enableClockGate = p(EnableL2ClockGate)
   def cacheParams = p(L2ParamKey)
-  def EnablePrivateClint = cacheParams.EnablePrivateClint
+  def PrivateClintRange = cacheParams.PrivateClintRange
 
   def XLEN = 64
   def blocks = cacheParams.sets * cacheParams.ways
@@ -148,7 +149,7 @@ trait HasCoupledL2Parameters {
   def sam = cacheParams.sam
 
   // Hardware Performance Monitor
-  def numPCntHc: Int = 12
+  def numPCntHc: Int = 17
 
   def getClientBitOH(sourceId: UInt): UInt = {
     if (clientBits == 0) {
@@ -565,19 +566,18 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       case EdgeOutKey => node.out.head._2
       case BankBitsKey => bankBits
     })))
-    topDown.foreach { t =>
-      for ((s, i) <- slices.zipWithIndex) {
-        t.io.msStatus(i) := s.io.msStatus.get
-        t.io.msAlloc(i) := s.io.msAlloc.get
-        t.io.dirResult(i) := s.io.dirResult.get
-        t.io.hitPfInMSHR(i) := s.io.hitPfInMSHR.get
-        t.io.pfLateInMSHR(i) := s.io.pfLateInMSHR.get
-        t.io.pfSent(i) := s.io.pfSent.get
-      }
-      t.io.debugTopDown <> io.debugTopDown
-    }
-    if (topDown.isEmpty) {
-      io.debugTopDown.l2MissMatch := false.B
+    topDown match {
+      case Some(t) =>
+        for ((s, i) <- slices.zipWithIndex) {
+          t.io.msStatus(i) := s.io.msStatus.get
+          t.io.msAlloc(i) := s.io.msAlloc.get
+          t.io.dirResult(i) := s.io.dirResult.get
+          t.io.hitPfInMSHR(i) := s.io.hitPfInMSHR.get
+          t.io.pfLateInMSHR(i) := s.io.pfLateInMSHR.get
+          t.io.pfSent(i) := s.io.pfSent.get
+        }
+        t.io.debugTopDown <> io.debugTopDown
+      case None => io.debugTopDown.l2MissMatch := false.B
     }
 
     io.l2Miss := RegNext(slices.map(_.io.l2Miss).reduce(_ || _))

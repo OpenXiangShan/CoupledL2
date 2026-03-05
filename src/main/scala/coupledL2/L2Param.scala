@@ -19,15 +19,16 @@ package coupledL2
 
 import chisel3._
 import chisel3.util.log2Ceil
-import freechips.rocketchip.diplomacy.{BufferParams, AddressSet}
+import freechips.rocketchip.diplomacy.{AddressSet, BufferParams}
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util._
 import org.chipsalliance.cde.config.Field
 import huancun.{AliasKey, CacheParameters, IsHitKey, PrefetchKey}
 import coupledL2.prefetch._
-import utility.{MemReqSource, ReqSourceKey, Code}
+import utility.{Code, MemReqSource, ReqSourceKey}
 
 case object EnableCHI extends Field[Boolean](false)
+case object EnableL2ClockGate extends Field[Boolean](true)
 
 // L1 Cache Params, used for TestTop generation
 case class L1Param
@@ -82,7 +83,7 @@ case class L2Param(
    * 2 for all except prefetch & !accessed
    * 3 for all
    */
-  mmioBridgeSize: Int = 8,
+  mmioBridgeSize: Int = 16,
 
   // Client
   echoField: Seq[BundleFieldBase] = Nil,
@@ -105,6 +106,8 @@ case class L2Param(
   prefetch: Seq[PrefetchParameters] = Nil,
   // L2 Flush
   enableL2Flush: Boolean = false,
+  // AsyncBridge
+  enableCHIAsyncBridge: Option[Boolean] = None,
   // Performance analysis
   enablePerf: Boolean = true,
   // RollingDB
@@ -135,8 +138,8 @@ case class L2Param(
   hasMbist: Boolean = false,
   hasSramCtl: Boolean = false,
 
-  // Enable new clint
-  EnablePrivateClint: Boolean = false
+  // both EnablePrivateClint and PrivateClintRange are from soc parameters.
+  PrivateClintRange: Option[AddressSet] = None
 ) {
   def toCacheParams: CacheParameters = CacheParameters(
     name = name,
