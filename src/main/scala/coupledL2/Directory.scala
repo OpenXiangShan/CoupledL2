@@ -459,9 +459,10 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   if (cacheParams.enableMonitor && !cacheParams.FPGAPlatform) {
     val hartId = cacheParams.hartId
-    val pfReqWriteTable = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Write_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = true)
-    val pfReqReadTable  = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Read_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = true)
-    val pfReqEvictTable = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Evict_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = true)
+    val pfReqWriteTable = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Write_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = false)
+    val pfReqReadTable  = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Read_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = false)
+    val pfReqEvictTable = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Evict_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = false)
+    
 
     // arrival: meta write that marks a block as prefetched
     val arrivalCond = io.metaWReq.valid && io.metaWReq.bits.wmeta.prefetch.getOrElse(false.B) 
