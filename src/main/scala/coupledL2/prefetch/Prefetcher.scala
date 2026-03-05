@@ -215,7 +215,13 @@ class PrefetchQueue(implicit p: Parameters) extends PrefetchModule {
   io.enq.ready := true.B
   io.deq.valid := !empty || io.enq.valid
   io.deq.bits := Mux(empty, io.enq.bits, queue(head))
-
+// The reqs that are discarded = enq - deq
+  XSPerfAccumulate("prefetch_queue_enq",         io.enq.fire)
+  XSPerfAccumulate("prefetch_queue_enq_fromBOP", io.enq.fire && io.enq.bits.isBOP)
+  XSPerfAccumulate("prefetch_queue_enq_fromPBOP", io.enq.fire && io.enq.bits.isPBOP)
+  XSPerfAccumulate("prefetch_queue_enq_fromSMS", io.enq.fire && io.enq.bits.isSMS)
+  XSPerfAccumulate("prefetch_queue_enq_fromTP",  io.enq.fire && io.enq.bits.isTP)
+  
   XSPerfAccumulate("prefetch_queue_deq",         io.deq.fire)
   XSPerfAccumulate("prefetch_queue_deq_fromL1", io.deq.fire && !io.deq.bits.fromL2)
   XSPerfAccumulate("prefetch_queue_deq_fromNL", io.deq.fire && io.deq.bits.isNL)

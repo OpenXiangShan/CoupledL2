@@ -346,64 +346,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   io.replResp.bits.mshrId := req_s3.mshrId
   io.replResp.bits.retry := refillRetry
 
-  val evict_block_en = io.replResp.valid && !io.replResp.bits.retry
-  val evict_block_meta = metaAll_s3(finalWay)
-  
- 
-  val evict_pf_block_en = evict_block_en && evict_block_meta.prefetch.getOrElse(false.B)
-  val replace_req_src = req_s3.replacerInfo.reqSource
-
-  
-  
-  /* ====== ChiselDB logging for  prefetcher lifecycle ====== */
-  if (cacheParams.enableMonitor && !cacheParams.FPGAPlatform) {
-    val hartId = cacheParams.hartId
-    val pfReqWriteTable = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Write_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = true)
-    val pfReqReadTable  = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Read_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = true)
-    val pfReqEvictTable = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Evict_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = true)
-
-    // arrival: meta write that marks a block as prefetched
-    val arrivalCond = io.metaWReq.valid && io.metaWReq.bits.wmeta.prefetch.getOrElse(false.B) 
-    val pfReqWrite = Wire(new PrefetchDbEntry)
-    pfReqWrite.ishit := false.B
-    pfReqWrite.setIdx := io.metaWReq.bits.set
-    pfReqWrite.way := OHToUInt(io.metaWReq.bits.wayOH)
-    // try to attach tag when tagWReq coincides with metaWReq
-    val arrivalHasTag = io.tagWReq.valid && (io.tagWReq.bits.set === io.metaWReq.bits.set) &&
-      (OHToUInt(io.metaWReq.bits.wayOH) === io.tagWReq.bits.way)
-    pfReqWrite.tag := Mux(arrivalHasTag, io.tagWReq.bits.wtag, 0.U)
-    pfReqWrite.isPrefetch := io.metaWReq.bits.wmeta.prefetch.getOrElse(false.B)
-    pfReqWrite.nlOpt := 0.U
-    pfReqWrite.metaSource := io.metaWReq.bits.wmeta.prefetchSrc.getOrElse(MemReqSource.NoWhere.id.U)
-    pfReqWrite.reqSource := io.metaWReq.bits.wmeta.prefetchSrc.getOrElse(MemReqSource.NoWhere.id.U)
-    pfReqWriteTable.log(pfReqWrite, arrivalCond, s"L2${hartId}_${p(SliceIdKey)}", clock, reset)
-
-    // access: when a read hits a NL-prefetched block
-    val accessCond = io.resp.valid && io.resp.bits.hit && io.resp.bits.meta.prefetch.getOrElse(false.B) 
-    val pfReqRead = Wire(new PrefetchDbEntry)
-    pfReqRead.ishit      := io.resp.bits.hit
-    pfReqRead.setIdx     := io.resp.bits.set
-    pfReqRead.tag        := io.resp.bits.tag
-    pfReqRead.isPrefetch := io.resp.bits.meta.prefetch.getOrElse(false.B)
-    pfReqRead.way        := io.resp.bits.way
-    pfReqRead.nlOpt      := 1.U
-    pfReqRead.metaSource := io.resp.bits.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U)
-
-    pfReqRead.reqSource := io.resp.bits.replacerInfo.reqSource
-    pfReqReadTable.log(pfReqRead, accessCond, s"L2${hartId}_${p(SliceIdKey)}", clock, reset)
-
-    // eviction: when Directory issues a replacement for a prefetched block
-    val pfReqEvict = Wire(new PrefetchDbEntry)
-    pfReqEvict.ishit      := io.resp.bits.hit
-    pfReqEvict.setIdx     := io.replResp.bits.set
-    pfReqEvict.tag        := io.replResp.bits.tag
-    pfReqEvict.isPrefetch := io.replResp.bits.meta.prefetch.getOrElse(false.B)
-    pfReqEvict.way        := io.replResp.bits.way
-    pfReqEvict.metaSource := io.replResp.bits.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U)
-    pfReqEvict.nlOpt      := 2.U
-    pfReqEvict.reqSource  := replace_req_src
-    pfReqEvictTable.log(pfReqEvict, evict_pf_block_en, s"L2${hartId}_${p(SliceIdKey)}", clock, reset)
-  }
+  /* ====== Update ====== */
   // PLRU: update replacer only when A hit or refill, at stage 3
   // RRIP: update replacer when A/C hit or refill
   val updateHit = if(cacheParams.replacement == "drrip" || cacheParams.replacement == "srrip"){
@@ -506,4 +449,60 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   XSPerfAccumulate("dirRead_cnt", io.read.fire)
   XSPerfAccumulate("choose_busy_way", reqValid_s3 && !req_s3.wayMask(chosenWay))
+
+  /* ====== ChiselDB logging for  prefetcher lifecycle ====== */
+  val evict_block_en = io.replResp.valid && !io.replResp.bits.retry
+  val evict_block_meta = metaAll_s3(finalWay)
+  
+  val evict_pf_block_en = evict_block_en && evict_block_meta.prefetch.getOrElse(false.B)
+  val replace_req_src = req_s3.replacerInfo.reqSource
+
+  if (cacheParams.enableMonitor && !cacheParams.FPGAPlatform) {
+    val hartId = cacheParams.hartId
+    val pfReqWriteTable = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Write_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = true)
+    val pfReqReadTable  = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Read_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = true)
+    val pfReqEvictTable = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Evict_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = true)
+
+    // arrival: meta write that marks a block as prefetched
+    val arrivalCond = io.metaWReq.valid && io.metaWReq.bits.wmeta.prefetch.getOrElse(false.B) 
+    val pfReqWrite = Wire(new PrefetchDbEntry)
+    pfReqWrite.ishit := false.B
+    pfReqWrite.setIdx := io.metaWReq.bits.set
+    pfReqWrite.way := OHToUInt(io.metaWReq.bits.wayOH)
+    // try to attach tag when tagWReq coincides with metaWReq
+    val arrivalHasTag = io.tagWReq.valid && (io.tagWReq.bits.set === io.metaWReq.bits.set) &&
+      (OHToUInt(io.metaWReq.bits.wayOH) === io.tagWReq.bits.way)
+    pfReqWrite.tag := Mux(arrivalHasTag, io.tagWReq.bits.wtag, 0.U)
+    pfReqWrite.isPrefetch := io.metaWReq.bits.wmeta.prefetch.getOrElse(false.B)
+    pfReqWrite.nlOpt := 0.U
+    pfReqWrite.metaSource := io.metaWReq.bits.wmeta.prefetchSrc.getOrElse(MemReqSource.NoWhere.id.U)
+    pfReqWrite.reqSource := io.metaWReq.bits.wmeta.prefetchSrc.getOrElse(MemReqSource.NoWhere.id.U)
+    pfReqWriteTable.log(pfReqWrite, arrivalCond, s"L2${hartId}_${p(SliceIdKey)}", clock, reset)
+
+    // access: when a read hits a NL-prefetched block
+    val accessCond = io.resp.valid && io.resp.bits.hit && io.resp.bits.meta.prefetch.getOrElse(false.B) 
+    val pfReqRead = Wire(new PrefetchDbEntry)
+    pfReqRead.ishit      := io.resp.bits.hit
+    pfReqRead.setIdx     := io.resp.bits.set
+    pfReqRead.tag        := io.resp.bits.tag
+    pfReqRead.isPrefetch := io.resp.bits.meta.prefetch.getOrElse(false.B)
+    pfReqRead.way        := io.resp.bits.way
+    pfReqRead.nlOpt      := 1.U
+    pfReqRead.metaSource := io.resp.bits.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U)
+
+    pfReqRead.reqSource := io.resp.bits.replacerInfo.reqSource
+    pfReqReadTable.log(pfReqRead, accessCond, s"L2${hartId}_${p(SliceIdKey)}", clock, reset)
+
+    // eviction: when Directory issues a replacement for a prefetched block
+    val pfReqEvict = Wire(new PrefetchDbEntry)
+    pfReqEvict.ishit      := io.resp.bits.hit
+    pfReqEvict.setIdx     := io.replResp.bits.set
+    pfReqEvict.tag        := io.replResp.bits.tag
+    pfReqEvict.isPrefetch := io.replResp.bits.meta.prefetch.getOrElse(false.B)
+    pfReqEvict.way        := io.replResp.bits.way
+    pfReqEvict.metaSource := io.replResp.bits.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U)
+    pfReqEvict.nlOpt      := 2.U
+    pfReqEvict.reqSource  := replace_req_src
+    pfReqEvictTable.log(pfReqEvict, evict_pf_block_en, s"L2${hartId}_${p(SliceIdKey)}", clock, reset)
+  }
 }
