@@ -25,7 +25,7 @@ import utility.mbist.MbistPipeline
 import coupledL2._
 
 /* virtual address */
-trait HasPrefetcherHelper extends HasCircularQueuePtrHelper with HasCoupledL2Parameters {
+trait HasPrefetcherHelper extends HasCircularQueuePtrHelper with HasCoupledL2Parameters with HasPrefetchParameters {
   // filter
   val TRAIN_FILTER_SIZE = 4
   val REQ_FILTER_SIZE = 16
@@ -246,18 +246,18 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   prefetchController.io.pfFeedbackVec := pfFeedbackVec
 
   // l2 receive need 2 cycles to transmit from core
-  val stream_degree = prefetchController.io.l2PfFbCtrl.streamDegree
-  val stride_degree = prefetchController.io.l2PfFbCtrl.strideDegree
-  val berti_degree = prefetchController.io.l2PfFbCtrl.bertiDegree
-  val sms_degree = prefetchController.io.l2PfFbCtrl.smsDegree
-  val vbop_degree = prefetchController.io.l2PfFbCtrl.vbopDegree
-  val pbop_degree = prefetchController.io.l2PfFbCtrl.pbopDegree
-  val tp_degree = prefetchController.io.l2PfFbCtrl.tpDegree
+  val streamDegree = prefetchController.io.l2PfFbCtrl.streamDegree
+  val strideDegree = prefetchController.io.l2PfFbCtrl.strideDegree
+  val bertiDegree = prefetchController.io.l2PfFbCtrl.bertiDegree
+  val smsDegree = prefetchController.io.l2PfFbCtrl.smsDegree
+  val vbopDegree = prefetchController.io.l2PfFbCtrl.vbopDegree
+  val pbopDegree = prefetchController.io.l2PfFbCtrl.pbopDegree
+  val tpDegree = prefetchController.io.l2PfFbCtrl.tpDegree
 
-  l2ToL1PfCtrl.streamDegree := stream_degree
-  l2ToL1PfCtrl.strideDegree := stride_degree
-  l2ToL1PfCtrl.bertiDegree := berti_degree
-  l2ToL1PfCtrl.smsDegree := sms_degree
+  l2ToL1PfCtrl.streamDegree := streamDegree
+  l2ToL1PfCtrl.strideDegree := strideDegree
+  l2ToL1PfCtrl.bertiDegree := bertiDegree
+  l2ToL1PfCtrl.smsDegree := smsDegree
 
   val pfRcv_en = RegNextN(pfCtrlFromCore.l2_pf_master_en && pfCtrlFromCore.l2_pf_recv_en, 2, Some(true.B))
   val pbop_en = pfCtrlFromCore.l2_pf_master_en && pfCtrlFromCore.l2_pbop_en
@@ -315,6 +315,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   // Rcv > VBOP > PBOP > TP
   if (hasBOP) {
     vbop.get.io.enable := vbop_en
+    vbop.get.io.fdbkDegree := vbopDegree
     vbop.get.io.pfCtrlOfDelayLatency := delay_latency
     vbop.get.io.req.ready :=  (if(hasReceiver) !pfRcv.get.io.req.valid else true.B)
     vbop.get.io.train <> io.train
@@ -325,6 +326,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     vbop.get.io.pbopCrossPage := true.B // pbop.io.pbopCrossPage // let vbop have noting to do with pbop
 
     pbop.get.io.enable := pbop_en
+    pbop.get.io.fdbkDegree := pbopDegree
     pbop.get.io.pfCtrlOfDelayLatency := delay_latency
     pbop.get.io.req.ready :=
       (if(hasReceiver) !pfRcv.get.io.req.valid else true.B) &&
@@ -347,6 +349,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   }
   if (hasTPPrefetcher) {
     tp.get.io.enable := tp_en
+    tp.get.io.fdbkDegree := tpDegree
     tp.get.io.train <> io.train
     tp.get.io.resp <> io.resp
     tp.get.io.hartid := hartId
@@ -375,13 +378,13 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     pftQueueEnqArb.io.in(rcv_idx).bits := pfRcv.get.io.req.bits
   }
   if (hasBOP) {
-    pftQueueEnqArb.io.in(vbop_idx).valid := vbop.get.io.req.valid && vbop_degree.orR
+    pftQueueEnqArb.io.in(vbop_idx).valid := vbop.get.io.req.valid
     pftQueueEnqArb.io.in(vbop_idx).bits := vbop.get.io.req.bits
-    pftQueueEnqArb.io.in(pbop_idx).valid := pbop.get.io.req.valid && pbop_degree.orR
+    pftQueueEnqArb.io.in(pbop_idx).valid := pbop.get.io.req.valid
     pftQueueEnqArb.io.in(pbop_idx).bits := pbop.get.io.req.bits
   }
   if (hasTPPrefetcher) {
-    pftQueueEnqArb.io.in(tp_idx).valid := tp.get.io.req.valid && tp_degree.orR
+    pftQueueEnqArb.io.in(tp_idx).valid := tp.get.io.req.valid
     pftQueueEnqArb.io.in(tp_idx).bits := tp.get.io.req.bits
   }
   pftQueue.io.enq <> pftQueueEnqArb.io.out
@@ -406,10 +409,6 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       pftQueueEnqArb.io.in(vbop_idx).valid || pftQueueEnqArb.io.in(pbop_idx).valid || pftQueueEnqArb.io.in(tp_idx).valid
     )
   )
-
-  XSPerfAccumulate("feedback_control_drop_vbop", vbop.get.io.req.valid && !vbop_degree.orR)
-  XSPerfAccumulate("feedback_control_drop_pbop", pbop.get.io.req.valid && !pbop_degree.orR)
-  XSPerfAccumulate("feedback_control_drop_tp", tp.get.io.req.valid && !tp_degree.orR)
 
   // NOTE: set basicDB false when debug over
   // TODO: change the enable signal to not target the BOP

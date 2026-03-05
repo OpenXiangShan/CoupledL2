@@ -94,7 +94,7 @@ trait HasBOPParams extends HasPrefetcherHelper {
   def roundMax = bopParams.roundMax
   def badScore = bopParams.badScore
   def offsetList = bopParams.offsetList
-  def inflightEntries = bopParams.inflightEntries
+  override def inflightEntries = bopParams.inflightEntries
   def dQEntries = bopParams.dQEntries
   def dQLatency = bopParams.dQLatency
   def dQMaxLatency = bopParams.dQMaxLatency
@@ -678,6 +678,7 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   val io = IO(new Bundle() {
     val enable = Input(Bool())
     val pfCtrlOfDelayLatency = Input(UInt(10.W))
+    val fdbkDegree = Input(UInt(degreeBits.W))
     val train = Flipped(DecoupledIO(new PrefetchTrain))
     val pbopCrossPage = Input(Bool())
     val tlb_req = new L2ToL1TlbIO(nRespDups= 1)
@@ -756,7 +757,7 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     reqFilter.io.in_req.valid := false.B
     reqFilter.io.in_req.bits := DontCare
   }.otherwise{
-    reqFilter.io.in_req.valid := s1_req_valid
+    reqFilter.io.in_req.valid := enable && s1_req_valid && io.fdbkDegree > 0.U
     reqFilter.io.in_req.bits.full_vaddr := s1_newFullAddr
     reqFilter.io.in_req.bits.base_vaddr := s1_reqVaddr
     reqFilter.io.in_req.bits.needT := s1_needT
@@ -774,7 +775,7 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     io.tlb_req.req_kill := false.B
 
     /* s1 send prefetch req */
-    io.req.valid := enable && s1_req_valid
+    io.req.valid := enable && s1_req_valid && io.fdbkDegree > 0.U
     io.req.bits.tag := parseFullAddress(s1_newFullAddr)._1
     io.req.bits.set := parseFullAddress(s1_newFullAddr)._2
     io.req.bits.vaddr.foreach(_ := 0.U)
@@ -802,12 +803,14 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     XSPerfAccumulate("bop_cross_page", scoreTable.io.req.fire && s0_crossPage)
   }
   XSPerfAccumulate("bop_drop_for_disable", scoreTable.io.req.fire && prefetchDisable)
+  XSPerfAccumulate("bop_l2_feedback_control_drop", enable && s1_req_valid && io.fdbkDegree === 0.U)
 }
 
 class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   val io = IO(new Bundle() {
     val enable = Input(Bool())
     val pfCtrlOfDelayLatency = Input(UInt(10.W))
+    val fdbkDegree = Input(UInt(degreeBits.W))
     val train = Flipped(DecoupledIO(new PrefetchTrain))
     val pbopCrossPage = Output(Bool())
     val req = DecoupledIO(new PrefetchReq)
@@ -851,7 +854,7 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   }
 
   io.pbopCrossPage := crossPage
-  io.req.valid := enable && req_valid
+  io.req.valid := enable && req_valid && io.fdbkDegree > 0.U
   io.req.bits := req
   io.req.bits.pfSource := MemReqSource.Prefetch2L2PBOP.id.U
   io.train.ready := delayQueue.io.in.ready && scoreTable.io.req.ready && (!req_valid || io.req.ready)
@@ -870,4 +873,5 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   XSPerfAccumulate("bop_train_stall_for_st_not_ready", io.train.valid && !scoreTable.io.req.ready)
   XSPerfAccumulate("bop_drop_for_cross_page", scoreTable.io.req.fire && crossPage)
   XSPerfAccumulate("bop_drop_for_disable", scoreTable.io.req.fire && prefetchDisable)
+  XSPerfAccumulate("bop_l2_feedback_control_drop", enable && req_valid && io.fdbkDegree === 0.U)
 }
