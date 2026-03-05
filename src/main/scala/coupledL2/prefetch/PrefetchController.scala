@@ -357,7 +357,7 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
 
   private def pfDegree(idx: Int): UInt = Mux(
     activeVec(idx),
-    1.U, // Mux(levelVec(idx) === maxDegree.U, maxDegree.U, levelVec(idx) + 1.U),
+    degreeVec(idx), // Mux(levelVec(idx) === maxDegree.U, maxDegree.U, levelVec(idx) + 1.U),
     0.U
   )
 
