@@ -295,7 +295,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
 
   override val inflightEntries: Int = 32
   val pftQueue = Module(new PrefetchQueue(
-    inflightEntries, enableFilter = true, enableFlow = true,
+    inflightEntries, enableFilter = false, enableFlow = true,
     gen = new PrefetchReq, addrOf = ((x: PrefetchReq) => x.addr)
   ))
   val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
