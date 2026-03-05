@@ -374,8 +374,8 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val pftQueue = Module(new PrefetchQueue)
   val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
 
-  private val SRC_NUM = 4
-  private val Seq(rcv_idx, vbop_idx, pbop_idx, tp_idx) = (0 until SRC_NUM).toSeq
+  private val SRC_NUM = 5
+  private val Seq(rcv_idx, vbop_idx, pbop_idx, tp_idx, nl_idx) = (0 until SRC_NUM).toSeq
   val pftQueueEnqArb = Module(new Arbiter(new PrefetchReq, SRC_NUM))
   pftQueueEnqArb.io.in.foreach{ x =>
     x.valid := false.B
@@ -395,6 +395,10 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     pftQueueEnqArb.io.in(tp_idx).valid := tp.get.io.req.valid
     pftQueueEnqArb.io.in(tp_idx).bits := tp.get.io.req.bits
   }
+  if(hasNLPrefetcher) {
+    pftQueueEnqArb.io.in(nl_idx).valid := nl.get.io.req.valid
+    pftQueueEnqArb.io.in(nl_idx).bits := nl.get.io.req.bits
+  }
   pftQueue.io.enq <> pftQueueEnqArb.io.out
 
   pipe.io.in <> pftQueue.io.deq
@@ -406,15 +410,18 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   XSPerfAccumulate("prefetch_req_fromPBOP", pftQueueEnqArb.io.in(pbop_idx).valid)
   XSPerfAccumulate("prefetch_req_fromBOP", pftQueueEnqArb.io.in(vbop_idx).valid || pftQueueEnqArb.io.in(pbop_idx).valid)
   XSPerfAccumulate("prefetch_req_fromTP",  pftQueueEnqArb.io.in(tp_idx).valid)
+  XSPerfAccumulate("prefetch_req_fromNL",  pftQueueEnqArb.io.in(nl_idx).valid)
 
   XSPerfAccumulate("prefetch_req_selectL1", pftQueueEnqArb.io.in(rcv_idx).fire)
   XSPerfAccumulate("prefetch_req_selectVBOP", pftQueueEnqArb.io.in(vbop_idx).fire)
   XSPerfAccumulate("prefetch_req_selectPBOP", pftQueueEnqArb.io.in(pbop_idx).fire)
   XSPerfAccumulate("prefetch_req_selectBOP", pftQueueEnqArb.io.in(vbop_idx).fire || pftQueueEnqArb.io.in(pbop_idx).fire)
   XSPerfAccumulate("prefetch_req_selectTP",  pftQueueEnqArb.io.in(tp_idx).fire)
+  XSPerfAccumulate("prefetch_req_selectNL",  pftQueueEnqArb.io.in(nl_idx).fire)
   XSPerfAccumulate("prefetch_req_SMS_other_overlapped",
     pftQueueEnqArb.io.in(rcv_idx).valid && (
       pftQueueEnqArb.io.in(vbop_idx).valid || pftQueueEnqArb.io.in(pbop_idx).valid || pftQueueEnqArb.io.in(tp_idx).valid
+      || pftQueueEnqArb.io.in(nl_idx).valid
     )
   )
 
