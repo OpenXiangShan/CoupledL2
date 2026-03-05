@@ -576,7 +576,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       }
       t.io.debugTopDown <> io.debugTopDown
     }
-    when (topDown.isEmpty.B) {
+    if (topDown.isEmpty) {
       io.debugTopDown.l2MissMatch := false.B
     }
 
