@@ -352,6 +352,7 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
 
   val activeVec = RegInit(VecInit(Seq.fill(PF_NUM)(true.B)))
   val levelVec = RegInit(VecInit(Seq.fill(PF_NUM)(0.U(degreeBits.W))))
+  val degreeVec = RegInit(VecInit(Seq.fill(PF_NUM)(1.U(degreeBits.W))))
   val demandCnt = RegInit(0.U(epochBits.W))
 
   private def pfDegree(idx: Int): UInt = Mux(
@@ -368,33 +369,33 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
     demandCnt := demandCnt + 1.U
   }
 
+  val latencyUp = latencyAvg > latencyLastEpoch && 
+    ((latencyAvg - latencyLastEpoch) > latencyDownThreshold(latencyLastEpoch))
   val latencyDown = latencyAvg < latencyLastEpoch && 
     ((latencyLastEpoch - latencyAvg) > latencyDownThreshold(latencyLastEpoch))
   val statPfHitLagActiveVec = WireInit(VecInit(Seq.fill(PF_NUM)(false.B)))
   val statLatencyDownActiveVec = WireInit(VecInit(Seq.fill(PF_NUM)(false.B)))
+  val statLatencyUpDecrDegreeVec = WireInit(VecInit(Seq.fill(PF_NUM)(false.B)))
+  val statLatencyDownIncrDegreeVec = WireInit(VecInit(Seq.fill(PF_NUM)(false.B)))
   when (epochEnd) {
     for (i <- 0 until PF_NUM) {
       val peEval = peVec(i)
       when (activeVec(i)) {
-        when (peEval > 0.S) {
-          levelVec(i) := Mux(levelVec(i) === maxDegree.U, maxDegree.U, levelVec(i) + 1.U)
-        }.elsewhen (peEval < 0.S) {
-          when (levelVec(i) === 0.U) {
-            activeVec(i) := false.B
-            levelVec(i) := maxDegree.U
-          }.otherwise {
-            levelVec(i) := levelVec(i) - 1.U
-          }
+        when (peEval < 0.S) {
+          activeVec(i) := false.B
+          levelVec(i) := maxDegree.U
+        }.elsewhen (latencyUp && degreeVec(i) > 1.U) {
+          degreeVec(i) := degreeVec(i) - 1.U
+          statLatencyUpDecrDegreeVec(i) := true.B
+        }.elsewhen (latencyDown && degreeVec(i) < maxDegree.U) {
+          degreeVec(i) := degreeVec(i) + 1.U
+          statLatencyDownIncrDegreeVec(i) := true.B
         }
       }.otherwise {
-        when (peEval > 0.S) { // prefetches from previous epoches hit at current epoch
-          activeVec(i) := true.B
-          levelVec(i) := 1.U
-          statPfHitLagActiveVec(i) := true.B
-        }.elsewhen (levelVec(i) === 0.U) {
+        when (levelVec(i) === 0.U) {
           when(latencyDown) { // latency has downtrend, try to active this prefetcher
             activeVec(i) := true.B
-            levelVec(i) := 0.U
+            degreeVec(i) := 1.U
             statLatencyDownActiveVec(i) := true.B
           }
         }.otherwise {
@@ -434,12 +435,16 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
   XSPerfAccumulate("pfReplaceDemand", PopCount(pfReplaceDemand.map(x => x.valid)))
   XSPerfAccumulate("dataRefill", PopCount(dataRefill.map(x => x.valid)))
   XSPerfAccumulate("epoch_latencyDownActiveCountTotal", PopCount(statLatencyDownActiveVec))
+  XSPerfAccumulate(s"epoch_LatencyUpDecrDegreeTotal", PopCount(statLatencyUpDecrDegreeVec))
+  XSPerfAccumulate(s"epoch_LatencyDownIncrDegreeTotal", PopCount(statLatencyDownIncrDegreeVec))
   XSPerfAccumulate("epoch_pfHitLagActiveCountTotal", PopCount(statPfHitLagActiveVec))
   XSPerfAccumulate("other_peVecOverflowCountTotal", PopCount(statPeOverflowVec))
   for (i <- 0 until PF_NUM) {
     XSPerfAccumulate(s"epoch_activeEpochCount${PF_NAME_VEC(i)}", epochEndReg && activeVec(i))
     XSPerfAccumulate(s"epoch_inactiveEpochCount${PF_NAME_VEC(i)}", epochEndReg && !activeVec(i))
     XSPerfAccumulate(s"epoch_latencyDownActiveCount${PF_NAME_VEC(i)}", statLatencyDownActiveVec(i))
+    XSPerfAccumulate(s"epoch_LatencyUpDecrDegreeCount${PF_NAME_VEC(i)}", statLatencyUpDecrDegreeVec(i))
+    XSPerfAccumulate(s"epoch_LatencyDownIncrDegreeCount${PF_NAME_VEC(i)}", statLatencyDownIncrDegreeVec(i))
     XSPerfAccumulate(s"epoch_pfHitLagActiveCount${PF_NAME_VEC(i)}", statPfHitLagActiveVec(i))
     for (k <- 0 until (1 << degreeBits)) {
       XSPerfAccumulate(s"epoch_partten${PF_NAME_VEC(i)}_0_${k}", epochEndReg && !activeVec(i) && levelVec(i) === k.U)
