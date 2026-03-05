@@ -2,7 +2,19 @@ package coupledL2.utils
 import chisel3._
 import chisel3.util._
 
-
+/*************************************************************************************
+ * This file defines an OverwriteQueue, a hardware queue that can overwrite old data when full.
+ * It supports three modes of operation:
+ * 1. foreverFlow: The queue behaves like a passthrough, where enqueued data is directly available at the output without buffering. The queue can still track the count of enqueued entries.
+ * 2. flow: When the queue is empty, new enqueued data is directly passed to the output (bypassed). When the queue has entries, it behaves like a normal queue. This allows for reduced latency when the queue is empty.
+ * 3. normal: The queue operates as a standard FIFO with no bypassing or passthrough behavior.
+ * 
+ * The queue uses a circular buffer implementation with head and tail pointers, and a valid bit array to track which entries contain valid data. When the queue is full and a new entry is enqueued, the head pointer advances to overwrite the oldest entry.
+ * 
+ * The io.count output indicates how many entries have been saved in the current clock cycle, which can be useful for monitoring the occupancy of the queue.
+ * 
+ * Note: The number of entries must be a power of 2 to simplify pointer arithmetic.
+ */
 class OverwriteQueue[T <: Data](
   gen: T, 
   entries: Int, //Must be a power of 2

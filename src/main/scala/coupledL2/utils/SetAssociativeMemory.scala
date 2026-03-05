@@ -21,32 +21,32 @@ import chisel3._
 import chisel3.util._
 
 
-class MultiPortRegFileReadReq(sets: Int, ways: Int) extends Bundle {
+class SetAssociativeMemoryReadReq(sets: Int, ways: Int) extends Bundle {
   val setIdx = UInt(log2Up(sets).W)
 }
 
-class MultiPortRegFileReadResp[T <: Data](gen: T, ways: Int) extends Bundle {
+class SetAssociativeMemoryReadResp[T <: Data](gen: T, ways: Int) extends Bundle {
   val data = Vec(ways, gen)  
 }
 
-class MultiPortRegFileWriteReq[T <: Data](gen: T, sets: Int, ways: Int) extends Bundle {
+class SetAssociativeMemoryWriteReq[T <: Data](gen: T, sets: Int, ways: Int) extends Bundle {
   val setIdx = UInt(log2Up(sets).W)
   val wayMask = UInt(ways.W)  
   val data = Vec(ways, gen)   
 }
 
-class MultiPortRegFileReadPort[T <: Data](gen: T, sets: Int, ways: Int) extends Bundle {
-  val req = Input(new MultiPortRegFileReadReq(sets, ways))
-  val resp = Output(new MultiPortRegFileReadResp(gen, ways))
+class SetAssociativeMemoryReadPort[T <: Data](gen: T, sets: Int, ways: Int) extends Bundle {
+  val req = Input(new SetAssociativeMemoryReadReq(sets, ways))
+  val resp = Output(new SetAssociativeMemoryReadResp(gen, ways))
 }
 
-class MultiPortRegFileWritePort[T <: Data](gen: T, sets: Int, ways: Int) extends Bundle {
-  val req = Input(new MultiPortRegFileWriteReq(gen, sets, ways))
+class SetAssociativeMemoryWritePort[T <: Data](gen: T, sets: Int, ways: Int) extends Bundle {
+  val req = Input(new SetAssociativeMemoryWriteReq(gen, sets, ways))
   val en = Input(Bool()) 
 }
 
 
-class MultiPortRegFile[T <: Data](
+class SetAssociativeMemory[T <: Data](
   gen: T,
   sets: Int,
   ways: Int,
@@ -60,12 +60,12 @@ class MultiPortRegFile[T <: Data](
   require(numWritePorts > 0, "numWritePorts must be positive")
 
   val io = IO(new Bundle {
-    val r = Vec(numReadPorts,  new MultiPortRegFileReadPort(gen, sets, ways))
-    val w = Vec(numWritePorts, new MultiPortRegFileWritePort(gen, sets, ways))
+    val r = Vec(numReadPorts,  new SetAssociativeMemoryReadPort(gen, sets, ways))
+    val w = Vec(numWritePorts, new SetAssociativeMemoryWritePort(gen, sets, ways))
   })
 
   // Mutex write ports: handle write conflicts, higher port number has higher priority
-  val mutex_w = Wire(Vec(numWritePorts, new MultiPortRegFileWritePort(gen, sets, ways)))
+  val mutex_w = Wire(Vec(numWritePorts, new SetAssociativeMemoryWritePort(gen, sets, ways)))
   
   // Default connect req data fields
   for (i <- 0 until numWritePorts) {

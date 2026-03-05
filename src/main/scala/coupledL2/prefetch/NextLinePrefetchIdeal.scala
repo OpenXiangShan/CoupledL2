@@ -4,7 +4,7 @@ import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import utility.{ChiselDB, Constantin, MemReqSource,sram,XSPerfAccumulate,XSPerfHistogram}
-import coupledL2.utils.{MultiPortRegFile,FullyAssociativeMemory,OverwriteQueue}
+import coupledL2.utils.{SetAssociativeMemory,FullyAssociativeMemory,OverwriteQueue}
 import coupledL2.HasCoupledL2Parameters
 import coupledL2.utils.ReplacementPolicy
 import huancun.{TPmetaReq, TPmetaResp}
@@ -253,7 +253,7 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   })
 
   // Sample Table
-  val sampleTable= Module(new MultiPortRegFile(
+  val sampleTable= Module(new SetAssociativeMemory(
       gen  = new SampleTableEntryField(),
       sets = sampleTableSets,
       ways = nlParams.sampleTableWays,
@@ -264,7 +264,7 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
 
   //replacer
   val sampleTableReplacer = ReplacementPolicy.fromString(sampleTableReplacementPolicy,nlParams.sampleTableWays)
-  val sampleTableReplaceStateRegs = Module(new MultiPortRegFile(
+  val sampleTableReplaceStateRegs = Module(new SetAssociativeMemory(
       gen = UInt(sampleTableReplacer.nBits.W),
       sets = sampleTableSets,
       ways = 1,
