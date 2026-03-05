@@ -283,7 +283,7 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
       )
       deltaPfReqBufferHoldVec(i)(s) := Mux(
         statPfReqBufferHoldVec(i)(s),
-        _zeroExtend(pfStatInMSHR(s).reqBufferHoldLatency, peBits) >> prefetchYieldMultipeLog,
+        _zeroExtend(pfStatInMSHR(s).reqBufferHoldLatency >> prefetchYieldMultipeLog, peBits) + 1.S, // to avoid 0
         0.S(peBits.W)
       )
       deltaPfLateInMshrVec(i)(s) := Mux(
