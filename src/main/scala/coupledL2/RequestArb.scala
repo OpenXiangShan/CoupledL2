@@ -128,13 +128,19 @@ class RequestArb(implicit p: Parameters) extends L2Module
     mshr_task_s1.bits := io.mshrTask.bits
   }
 
+  /* CMO All will block channel B snoop with same set*/
+  val cmoAllBlockSnoop = if (enableCHI) {
+    io.sinkA.bits.cmoAllSnpBlock && io.sinkB.bits.set === io.sinkA.bits.cmoAllSnpBlockSet
+  } else {
+    false.B
+  }
 
   /* Channel interaction from s1 */
   val A_task = io.sinkA.bits
   val B_task = io.sinkB.bits
   val C_task = io.sinkC.bits
   val block_A = io.fromMSHRCtl.blockA_s1 || io.fromMainPipe.blockA_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockA_s1
-  val block_B = io.fromMSHRCtl.blockB_s1 || io.fromMainPipe.blockB_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockB_s1 ||
+  val block_B = io.fromMSHRCtl.blockB_s1 || io.fromMainPipe.blockB_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockB_s1 || cmoAllBlockSnoop ||
     (if (io.fromSourceC.isDefined) io.fromSourceC.get.blockSinkBReqEntrance else false.B) ||
     (if (io.fromTXDAT.isDefined) io.fromTXDAT.get.blockSinkBReqEntrance else false.B) ||
     (if (io.fromTXRSP.isDefined) io.fromTXRSP.get.blockSinkBReqEntrance else false.B)
