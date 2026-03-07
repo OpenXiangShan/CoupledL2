@@ -413,7 +413,7 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
   io.l2PfFbCtrl.smsDegree := pfDegree(PF_SMS)
   io.l2PfFbCtrl.vbopDegree := pfDegree(PF_VBOP)
   io.l2PfFbCtrl.pbopDegree := pfDegree(PF_PBOP)
-  io.l2PfFbCtrl.tpDegree := pfDegree(PF_TP)
+  io.l2PfFbCtrl.tpDegree := 1.U // always active TP prefetcher, because it is simple and has less pollution
 
   // record for debug //
   class EpochRecordBundle extends Bundle {
