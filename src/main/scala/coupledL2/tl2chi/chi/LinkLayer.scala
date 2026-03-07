@@ -365,7 +365,7 @@ class LinkMonitor(implicit p: Parameters) extends L2Module with HasCHIOpcodes {
   )
 
   io.out.syscoreq := RegNext(!exitco, init = false.B)
-  io.out.txsactive := RegNext(!exitcoDone && io.out.syscoreq && io.out.syscoack, init = false.B) 
+  io.out.txsactive := RegNext(!exitcoDone, init = false.B) 
 
   val retryAckCnt = RegInit(0.U(64.W))
   val pCrdGrantCnt = RegInit(0.U(64.W))
