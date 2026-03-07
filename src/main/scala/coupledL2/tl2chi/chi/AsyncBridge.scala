@@ -50,6 +50,12 @@ class AsyncPortIO(
   val tx = new AsyncDownwardsLinkIO(params)
   val rx = Flipped(new AsyncUpwardsLinkIO(params))
 }
+
+class ChannelWithActive[T <: Data](gen: T) extends Bundle {
+  val channel = new ChannelIO(gen)
+  val active = Bool()
+}
+
 /*
  * This module enhances the standard async bridge by adding a front-end shadow buffer
  * to decouple local processing from asynchronous latency and provide instant credit
@@ -124,8 +130,9 @@ object FromAsyncBundle {
     async: AsyncBundle[UInt],
     params: AsyncQueueParams = AsyncQueueParams(),
     name: Option[String] = None,
-    lcrdvReady: Option[Bool]= None
-  ) = {
+    lcrdvReady: Option[Bool]= None,
+    withPowerAck: Boolean = false
+  ): = Data {
     val gen = chiselTypeOf(async.mem.head)
     val out = Wire(new ChannelIO(gen))
     val sink = Module(new AsyncQueueSink(gen, params))
@@ -137,7 +144,15 @@ object FromAsyncBundle {
     // flitpend and lcrdv are assigned independently
     out.flitpend := DontCare
     out.lcrdv := DontCare
-    out
+    // extend out with 'Active' to indicate sink Queue is NOT empty 
+    if (withPowerAck) {
+      val result = Wire(new ChannelWithActive(gen))
+      result.channel <> out
+      result.active := sink.io.deq.valid
+      result
+    } else {
+      out
+    }
   }
 
   def bitPulse[T <: Data](
@@ -232,14 +247,31 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
     val async = Flipped(new AsyncPortIO(params))
     val deq = new PortIO
     val resetFinish = Output(Bool())
+    val powerAck = new Bundle {
+      val QACTIVE = Output(Bool())
+      val QACCEPTn = Output(Bool())
+      val QREQ = Input(Bool())
+    }
   })
 
   val txreq_lcrdvReady = Wire(Bool())
   val txrsp_lcrdvReady = Wire(Bool())
   val txdat_lcrdvReady = Wire(Bool())
-  io.deq.tx.req <> FromAsyncBundle.channel(io.async.tx.req.flit, params, Some("txreq_flit"), Some(txreq_lcrdvReady))
-  io.deq.tx.rsp <> FromAsyncBundle.channel(io.async.tx.rsp.flit, params, Some("txrsp_flit"), Some(txrsp_lcrdvReady))
-  io.deq.tx.dat <> FromAsyncBundle.channel(io.async.tx.dat.flit, params, Some("txdat_flit"), Some(txdat_lcrdvReady))
+
+//  io.deq.tx.req <> FromAsyncBundle.channel(io.async.tx.req.flit, params, Some("txreq_flit"), Some(txreq_lcrdvReady))
+//  io.deq.tx.rsp <> FromAsyncBundle.channel(io.async.tx.rsp.flit, params, Some("txrsp_flit"), Some(txrsp_lcrdvReady))
+//  io.deq.tx.dat <> FromAsyncBundle.channel(io.async.tx.dat.flit, params, Some("txdat_flit"), Some(txdat_lcrdvReady))
+
+  val txreq = FromAsyncBundle.channel(io.async.tx.req.flit, params, Some("txreq_flit"), Some(txreq_lcrdvReady), true).asInstanceOf[ChannelWithActive[UInt]]
+  val txrsp = FromAsyncBundle.channel(io.async.tx.rsp.flit, params, Some("txrsp_flit"), Some(txrsp_lcrdvReady), true).asInstanceOf[ChannelWithActive[UInt]]
+  val txdat = FromAsyncBundle.channel(io.async.tx.dat.flit, params, Some("txdat_flit"), Some(txdat_lcrdvReady), true).asInstanceOf[ChannelWithActive[UInt]]
+  io.deq.tx.req <> txreq.channel
+  io.deq.tx.rsp <> txrsp.channel
+  io.deq.tx.dat <> txdat.channel
+  // Add handshake to confirm Sink Tx Queue is completely drained
+  val txActive = txreq.active || txrsp.active || txdat.active
+  io.powerAck.QACTIVE := txActive
+  io.powerAck.QACCEPTn := !(io.powerAck.QREQ && !txActive)
 
   io.async.tx.req.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.req.lcrdv, params, Some("txreq_lcrdv"))
   io.async.tx.rsp.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.rsp.lcrdv, params, Some("txrsp_lcrdv"))
@@ -322,6 +354,7 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
    For tx channel, add l-credit manager module to generate 'ready' to block tx flit to DownStream CHI
    a. The maximum number of L-Credits in tx channel is 4 inside bridge
    b. Use L-Credits number more than 4 in CoupledL2 to cover lcrdv sync delay from DownStream CHI to CoupledL2
+   c. Normal flits are controlled by credits (from AsyncBridge Sink), Return flits in DEACTIVATE are controlled by credits (from L2)
    */
   val txin = WireInit(0.U asTypeOf(Flipped(new DecoupledPortIO()))) //fake Decoupled IO to provide flitv
   val txout = WireInit(0.U asTypeOf(new PortIO))//fake LCredit IO to provide lcrdv
@@ -334,9 +367,9 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
   Decoupled2LCredit(txin.tx.req, txout.tx.req, LinkState(txState), Some("txreq"))
   Decoupled2LCredit(txin.tx.rsp, txout.tx.rsp, LinkState(txState), Some("txrsp"))
   Decoupled2LCredit(txin.tx.dat, txout.tx.dat, LinkState(txState), Some("txdat"))
-  txreq_lcrdvReady := txin.tx.req.ready
-  txrsp_lcrdvReady := txin.tx.rsp.ready
-  txdat_lcrdvReady := txin.tx.dat.ready
+  txreq_lcrdvReady := txin.tx.req.ready || txState === LinkStates.DEACTIVATE
+  txrsp_lcrdvReady := txin.tx.rsp.ready || txState === LinkStates.DEACTIVATE
+  txdat_lcrdvReady := txin.tx.dat.ready || txState === LinkStates.DEACTIVATE
 
   dontTouch(io)
 }
