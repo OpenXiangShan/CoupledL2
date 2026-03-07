@@ -132,7 +132,7 @@ object FromAsyncBundle {
     name: Option[String] = None,
     lcrdvReady: Option[Bool]= None,
     withPowerAck: Boolean = false
-  ): = Data {
+  ): Data = {
     val gen = chiselTypeOf(async.mem.head)
     val out = Wire(new ChannelIO(gen))
     val sink = Module(new AsyncQueueSink(gen, params))
