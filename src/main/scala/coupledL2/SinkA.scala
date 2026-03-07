@@ -89,6 +89,8 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
     task.cmoAll := cmoAllValid
+    task.cmoAllSnpBlock := stateVal =/= sIDLE && stateVal=/= sDONE
+    task.cmoAllSnpBlockSet := setVal
     task
   }
   def fromPrefetchReqtoTaskBundle(req: PrefetchReq): TaskBundle = {
@@ -127,6 +129,9 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.isKeyword.foreach(_ := false.B)
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+    task.cmoAll := false.B
+    task.cmoAllSnpBlock := false.B
+    task.cmoAllSnpBlockSet := 0.U
     task
   }
   if (prefetchOpt.nonEmpty) {
