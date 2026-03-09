@@ -109,8 +109,6 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   // for CMO
   val cmoTask = Bool() // cmo with address
   val cmoAll = Bool()  // cmo without address but to flush whole L2$ to memory
-  val cmoAllSnpBlock = Bool()
-  val cmoAllSnpBlockSet = UInt(setBits.W)
 
   // for TopDown Monitor (# TopDown)
   val reqSource = UInt(MemReqSource.reqSourceBits.W)
@@ -505,11 +503,13 @@ class L2CacheErrorInfo(implicit p: Parameters) extends L2Bundle {
   val address = UInt(addressBits.W)
 }
 
-class IOCMOAll(implicit p: Parameters) extends Bundle {
+class IOCMOAll(implicit p: Parameters) extends L2Bundle {
   val l2Flush = Input(Bool())      // cmo flush l2$ all enable
   val l2FlushDone = Output(Bool()) // cmo flush l2$ all done 
 
   val cmoLineDone = Input(Bool())  // during process of cmo flush all, flush 1 CacheLine is done 
   val mshrValid = Input(Bool())    // 1: mshr has entry valid  0: no mshr entry valid
   val cmoAllBlock = Output(Bool()) // 1: in process of cmo flush all  0: not in process of cmo flush all
+  val cmoAllSnpBlock = Output(Bool()) //1: cmoAll need to block the same set snoop  0: no need to block
+  val cmoAllSnpBlockSet = Output(UInt(setBits.W)) // when cmoAllSnpBlock is 1, this used to block the same set snoop
 }

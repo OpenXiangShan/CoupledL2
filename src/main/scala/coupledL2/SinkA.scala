@@ -50,6 +50,8 @@ class SinkA(implicit p: Parameters) extends L2Module {
   val cmoAllBlock = stateVal === sCMOREQ || stateVal === sWAITLINE
   io.cmoAll.foreach { cmoAll => cmoAll.l2FlushDone := stateVal === sDONE }
   io.cmoAll.foreach { cmoAll => cmoAll.cmoAllBlock := cmoAllBlock }
+  io.cmoAll.foreach { cmoAll => cmoAll.cmoAllSnpBlock := stateVal =/= sIDLE && stateVal=/= sDONE }
+  io.cmoAll.foreach { cmoAll => cmoAll.cmoAllSnpBlockSet := setVal }
 
   def fromTLAtoTaskBundle(a: TLBundleA): TaskBundle = {
     val task = Wire(new TaskBundle)
@@ -89,8 +91,6 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
     task.cmoAll := cmoAllValid
-    task.cmoAllSnpBlock := stateVal =/= sIDLE && stateVal=/= sDONE
-    task.cmoAllSnpBlockSet := setVal
     task
   }
   def fromPrefetchReqtoTaskBundle(req: PrefetchReq): TaskBundle = {
@@ -130,8 +130,6 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
     task.cmoAll := false.B
-    task.cmoAllSnpBlock := false.B
-    task.cmoAllSnpBlockSet := 0.U
     task
   }
   if (prefetchOpt.nonEmpty) {

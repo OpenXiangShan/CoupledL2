@@ -73,6 +73,10 @@ class RequestArb(implicit p: Parameters) extends L2Module
 
     /* MSHR Status */
     val msInfo = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo())))
+
+    /* l2 flush (CMO All) */
+    val cmoAllSnpBlock = Option.when(cacheParams.enableL2Flush) (Input(Bool()))
+    val cmoAllSnpBlockSet = Option.when(cacheParams.enableL2Flush) (Input(UInt(setBits.W)))
   })
 
   /* ======== Reset ======== */
@@ -130,7 +134,7 @@ class RequestArb(implicit p: Parameters) extends L2Module
 
   /* CMO All will block channel B snoop with same set*/
   val cmoAllBlockSnoop = if (enableCHI) {
-    io.sinkA.bits.cmoAllSnpBlock && io.sinkB.bits.set === io.sinkA.bits.cmoAllSnpBlockSet
+    io.cmoAllSnpBlock.getOrElse(false.B) && io.sinkB.bits.set === io.cmoAllSnpBlockSet.getOrElse(0.U)
   } else {
     false.B
   }
