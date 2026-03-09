@@ -29,8 +29,9 @@ trait PrefetchParameters {
   val inflightEntries: Int // max num of inflight prefetch reqs
 }
 
-trait HasPrefetchParameters extends HasCoupledL2Parameters {
+trait HasPrefetchParameters extends HasCoupledL2Parameters with HasPrefetcherHelper{
   val inflightEntries = if(prefetchers.nonEmpty) prefetchers.map(_.inflightEntries).max else 0
+  val banks = 1 << bankBits
 }
 
 abstract class PrefetchBundle(implicit val p: Parameters) extends Bundle with HasPrefetchParameters

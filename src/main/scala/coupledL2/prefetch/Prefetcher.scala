@@ -236,6 +236,13 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   })
   val hartId = IO(Input(UInt(hartIdLen.W)))
   val pfCtrlFromCore = IO(Input(new PrefetchCtrlFromCore))
+  val trainInVec = IO(Input(Vec(banks, DecoupledIO(new PrefetchTrain()))))
+
+  val trainBuffer = Module(new TrainBuffer(16, "l2TrainBuffer"))
+  trainBuffer.io.enable := true.B
+  trainBuffer.io.flush := false.B
+  trainBuffer.io.trainInVec <> trainInVec
+  val trainOne = trainBuffer.io.trainOut
 
   // l2 receive need 2 cycles to transmit from core
   val pfRcv_en = RegNextN(pfCtrlFromCore.l2_pf_master_en && pfCtrlFromCore.l2_pf_recv_en, 2, Some(true.B))
@@ -296,8 +303,8 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     vbop.get.io.enable := vbop_en
     vbop.get.io.pfCtrlOfDelayLatency := delay_latency
     vbop.get.io.req.ready :=  (if(hasReceiver) !pfRcv.get.io.req.valid else true.B)
-    vbop.get.io.train <> io.train
-    // vbop.get.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
+    vbop.get.io.train <> trainOne
+    // vbop.get.io.train.valid := trainOne.valid && (trainOne.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
     vbop.get.io.resp <> io.resp
     vbop.get.io.resp.valid := io.resp.valid && io.resp.bits.isBOP
     vbop.get.io.tlb_req <> io.tlb_req
@@ -308,8 +315,8 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     pbop.get.io.req.ready :=
       (if(hasReceiver) !pfRcv.get.io.req.valid else true.B) &&
       (if(hasBOP) !vbop.get.io.req.valid else true.B)
-    pbop.get.io.train <> io.train
-    // pbop.get.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
+    pbop.get.io.train <> trainOne
+    // pbop.get.io.train.valid := trainOne.valid && (trainOne.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
     pbop.get.io.resp <> io.resp
     pbop.get.io.resp.valid := io.resp.valid && io.resp.bits.isPBOP
   }
@@ -334,7 +341,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   }
   if (hasTPPrefetcher) {
     tp.get.io.enable := tp_en
-    tp.get.io.train <> io.train
+    tp.get.io.train <> trainOne
     tp.get.io.resp <> io.resp
     tp.get.io.hartid := hartId
     tp.get.io.req.ready := (if(hasReceiver) !pfRcv.get.io.req.valid else true.B) &&
@@ -376,7 +383,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   pipe.io.in <> pftQueue.io.deq
   io.req <> pipe.io.out
 
-  XSPerfAccumulate("prefetch_train_valid", io.train.valid)
+  XSPerfAccumulate("prefetch_train_valid", trainOne.valid)
   XSPerfAccumulate("prefetch_req_fromL1", pftQueueEnqArb.io.in(rcv_idx).valid)
   XSPerfAccumulate("prefetch_req_fromVBOP", pftQueueEnqArb.io.in(vbop_idx).valid)
   XSPerfAccumulate("prefetch_req_fromPBOP", pftQueueEnqArb.io.in(pbop_idx).valid)
@@ -408,17 +415,17 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   }
   val trainTT = ChiselDB.createTable("L2PrefetchTrainTable", new TrainEntry, basicDB = true)
   val e1 = Wire(new TrainEntry)
-  e1.paddr := io.train.bits.addr
-  e1.vaddr := io.train.bits.vaddr.getOrElse(0.U) << offsetBits
-  e1.needT := io.train.bits.needT
-  e1.hit := io.train.bits.hit
-  e1.prefetched := io.train.bits.prefetched
-  e1.source := io.train.bits.source
-  e1.pfsource := io.train.bits.pfsource
-  e1.reqsource := io.train.bits.reqsource
+  e1.paddr := trainOne.bits.addr
+  e1.vaddr := trainOne.bits.vaddr.getOrElse(0.U) << offsetBits
+  e1.needT := trainOne.bits.needT
+  e1.hit := trainOne.bits.hit
+  e1.prefetched := trainOne.bits.prefetched
+  e1.source := trainOne.bits.source
+  e1.pfsource := trainOne.bits.pfsource
+  e1.reqsource := trainOne.bits.reqsource
   trainTT.log(
     data = e1,
-    en = io.train.valid,
+    en = trainOne.valid,
     site = "L2Train_onlyBOP",
     clock, reset
   )

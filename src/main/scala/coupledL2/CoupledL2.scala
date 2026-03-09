@@ -372,7 +372,9 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     io.l2_tlb_req <> DontCare // TODO: l2_tlb_req should be Option
     prefetchOpt.foreach {
       _ =>
-        fastArb(prefetchTrains.get, prefetcher.get.io.train, Some("prefetch_train"))
+        // fastArb(prefetchTrains.get, prefetcher.get.io.train, Some("prefetch_train"))
+        prefetcher.get.io.train.valid := false.B
+        prefetcher.get.io.train.bits := DontCare
         prefetcher.get.io.req.ready := Cat(prefetchReqsReady).orR
         prefetcher.get.hartId := io.hartId
         prefetcher.get.pfCtrlFromCore := io.pfCtrlFromCore
@@ -554,6 +556,12 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
             out.c.bits.address := restoreAddress(slice.io.out.c.bits.address, i)
           case slice: tl2chi.Slice =>
         }
+    }
+    // ==================== Prefetch replenish (after slice initilize)===================
+    prefetcher.foreach{ p =>
+      for ((pt, st) <- p.trainInVec zip prefetchTrains.get) {
+        pt <> st
+      }
     }
 
     // ==================== TopDown ====================
