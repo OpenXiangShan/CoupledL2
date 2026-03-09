@@ -24,7 +24,7 @@ import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2._
-import coupledL2.prefetch.{DemandRefillBundle, PrefetchTrain}
+import coupledL2.prefetch.{BusContentionBundle, DemandRefillBundle, PrefetchTrain}
 
 class MSHRSelector(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
@@ -92,6 +92,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
     val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
     val msAlloc = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRAllocStatus)))
     val dataRefill = prefetchOpt.map(_ => ValidIO(new DemandRefillBundle))
+    val busContention = prefetchOpt.map(_ => ValidIO(new BusContentionBundle))
 
     /* for TopDown */
     val l2Miss = Output(Bool())
@@ -179,8 +180,32 @@ class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
   dontTouch(io.sourceA)
 
   /* Status for prefetch controller and topDown monitor */
-  io.dataRefill.get.valid := mshrs.map(_.io.dataRefill.valid).reduce(_ || _)
-  io.dataRefill.get.bits := ParallelPriorityMux(mshrs.map(_.io.dataRefill.valid).zip(mshrs.map(_.io.dataRefill.bits)))
+  prefetchOpt.foreach { _ =>
+    io.dataRefill.get.valid := mshrs.map(_.io.dataRefill.valid).reduce(_ || _)
+    io.dataRefill.get.bits := ParallelPriorityMux(mshrs.map(_.io.dataRefill.valid).zip(mshrs.map(_.io.dataRefill.bits)))
+
+    val mshrReqAddr = mshrs.map(m => Cat(m.io.status.bits.reqTag, m.io.status.bits.set, 0.U(offsetBits.W)))
+    val mshrInFlightDemand = mshrs.map { m =>
+      m.io.status.valid && !m.io.status.bits.will_free && m.io.status.bits.is_miss && !m.io.status.bits.is_prefetch
+    }
+    val delayHitVec = Wire(Vec(mshrsAll, Bool()))
+    val busHitVec = Wire(Vec(mshrsAll, Bool()))
+    val bankHitVec = Wire(Vec(mshrsAll, Bool()))
+    val pfRefillReturn = io.dataRefill.get.valid && io.dataRefill.get.bits.isPrefetch
+    for (i <- 0 until mshrsAll) {
+      val pfAddr = io.dataRefill.get.bits.addr
+      delayHitVec(i) := pfRefillReturn && mshrInFlightDemand(i)
+      busHitVec(i) := pfRefillReturn && mshrInFlightDemand(i) &&
+        getDramChannel(mshrReqAddr(i)) === getDramChannel(pfAddr)
+      bankHitVec(i) := pfRefillReturn && mshrInFlightDemand(i) &&
+        getDramBank(mshrReqAddr(i)) === getDramBank(pfAddr)
+    }
+    io.busContention.get.valid := pfRefillReturn
+    io.busContention.get.bits.delayHit := delayHitVec.asUInt.orR
+    io.busContention.get.bits.busHit := busHitVec.asUInt.orR
+    io.busContention.get.bits.bankHit := bankHitVec.asUInt.orR
+  }
+
   topDownOpt.foreach { _ =>
     io.msStatus.get.zip(io.msAlloc.get).zip(mshrs).foreach {
       case ((statusOut, allocOut), mshr) =>

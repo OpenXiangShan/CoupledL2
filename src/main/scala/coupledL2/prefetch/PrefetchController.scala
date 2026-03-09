@@ -21,6 +21,12 @@ class DemandRefillBundle()(implicit p: Parameters) extends L2Bundle {
   val latency = UInt(timestampBits.W)
 }
 
+class BusContentionBundle()(implicit p: Parameters) extends L2Bundle {
+  val delayHit = Bool()
+  val busHit = Bool()
+  val bankHit = Bool()
+}
+
 class L2PfFeedbackCtrl(implicit p: Parameters) extends PrefetchBundle {
   val streamDegree = UInt(degreeBits.W)
   val strideDegree = UInt(degreeBits.W)
@@ -36,6 +42,7 @@ class PrefetchFeedbackBundle(implicit p: Parameters) extends PrefetchBundle {
   val dataRefill = Valid(new DemandRefillBundle()) // for pollution hit and latency update
   val dirResult = Valid(new DirResult()) // for cache hit
   val pfStatInMSHR = new PfStatInMSHRBundle() // for mshr hit
+  val busContention = Valid(new BusContentionBundle())
 }
 class PrefetchControllerIO(implicit p: Parameters) extends PrefetchBundle {
   // FIXME lyq: epoch 方式：isDemand, isDemandTrain(miss/pfhit)
@@ -138,6 +145,7 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
   val dataRefill = io.pfFeedbackVec.map(x => x.dataRefill)
   val dirResult = io.pfFeedbackVec.map(x => x.dirResult)
   val pfStatInMSHR = io.pfFeedbackVec.map(x => x.pfStatInMSHR)
+  val busContention = io.pfFeedbackVec.map(x => x.busContention)
 
   // ========== latency update ==========
   // TODO lyq: timing
@@ -226,6 +234,9 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
   val statPfReqBufferHoldVec = Wire(Vec(PF_NUM, Vec(banks, Bool())))
   val statPfLateInMshrVec = Wire(Vec(PF_NUM, Vec(banks, Bool())))
   val statPfLateInCacheVec = Wire(Vec(PF_NUM, Vec(banks, Bool())))
+  val statTnocVec = Wire(Vec(PF_NUM, Vec(banks, Bool())))
+  val statTbusVec = Wire(Vec(PF_NUM, Vec(banks, Bool())))
+  val statTbankVec = Wire(Vec(PF_NUM, Vec(banks, Bool())))
 
   val deltaMshrHitVec = Wire(Vec(PF_NUM, Vec(banks, SInt(peBits.W))))
   val deltaDemandCacheHitVec = Wire(Vec(PF_NUM, Vec(banks, SInt(peBits.W))))
@@ -235,6 +246,9 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
   val deltaPfReqBufferHoldVec = Wire(Vec(PF_NUM, Vec(banks, SInt(peBits.W))))
   val deltaPfLateInMshrVec = Wire(Vec(PF_NUM, Vec(banks, SInt(peBits.W))))
   val deltaPfLateInCacheVec = Wire(Vec(PF_NUM, Vec(banks, SInt(peBits.W))))
+  val deltaTnocVec = Wire(Vec(PF_NUM, Vec(banks, SInt(peBits.W))))
+  val deltaTbusVec = Wire(Vec(PF_NUM, Vec(banks, SInt(peBits.W))))
+  val deltaTbankVec = Wire(Vec(PF_NUM, Vec(banks, SInt(peBits.W))))
 
   for (i <- 0 until PF_NUM) {
     val peDeltaSliceVec = RegInit(VecInit(Seq.fill(banks)(0.S(peBits.W))))
@@ -253,6 +267,9 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
       statPfLateInMshrVec(i)(s) := pfStatInMSHR(s).pfLate &&
         pfIdxFromReqSource(pfStatInMSHR(s).pfLateReqSrc) === i.U
       statPfLateInCacheVec(i)(s) := isPfLateInCache(dirResult(s), i)
+      statTnocVec(i)(s) := busContention(s).valid && busContention(s).bits.delayHit
+      statTbusVec(i)(s) := busContention(s).valid && busContention(s).bits.busHit
+      statTbankVec(i)(s) := busContention(s).valid && busContention(s).bits.bankHit
 
       deltaMshrHitVec(i)(s) := Mux(
         statMshrHitVec(i)(s),
@@ -296,15 +313,34 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
         1.S(peBits.W),
         0.S(peBits.W)
       )
+      deltaTnocVec(i)(s) := Mux(
+        statTnocVec(i)(s),
+        estTnoc.S(peBits.W),
+        0.S(peBits.W)
+      )
+      deltaTbusVec(i)(s) := Mux(
+        statTbusVec(i)(s),
+        estTbus.S(peBits.W),
+        0.S(peBits.W)
+      )
+      deltaTbankVec(i)(s) := Mux(
+        statTbankVec(i)(s),
+        estTbank.S(peBits.W),
+        0.S(peBits.W)
+      )
+      
+      // PE Equation 0: I-POP origin
+      peDeltaSliceVec(s) := deltaDemandCacheHitVec(i)(s) - deltaPollutionHoldVec(i)(s) -
+        deltaTnocVec(i)(s) - deltaTbusVec(i)(s) - deltaTbankVec(i)(s)
 
       // PE Equation 1
       // peDeltaSliceVec(s) := deltaMshrHitVec(i)(s) + deltaDemandCacheHitVec(i)(s) + deltaL1PrefetchCacheHitVec(i)(s) - 
       //   deltaPollutionHoldVec(i)(s) - deltaPfMshrHoldVec(i)(s) - deltaPfReqBufferHoldVec(i)(s)
 
       // PE Equation 2
-      peDeltaSliceVec(s) := deltaMshrHitVec(i)(s) + deltaDemandCacheHitVec(i)(s) + deltaL1PrefetchCacheHitVec(i)(s) - 
-        deltaPollutionHoldVec(i)(s) - deltaPfMshrHoldVec(i)(s) - deltaPfReqBufferHoldVec(i)(s) -
-        deltaPfLateInMshrVec(i)(s) - deltaPfLateInCacheVec(i)(s)
+      // peDeltaSliceVec(s) := deltaMshrHitVec(i)(s) + deltaDemandCacheHitVec(i)(s) + deltaL1PrefetchCacheHitVec(i)(s) - 
+      //   deltaPollutionHoldVec(i)(s) - deltaPfMshrHoldVec(i)(s) - deltaPfReqBufferHoldVec(i)(s) -
+      //   deltaPfLateInMshrVec(i)(s) - deltaPfLateInCacheVec(i)(s)
     }
     
     // pe1: get the pe sum of all slices
@@ -326,6 +362,9 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
     val deltaPfReqBufferHold = UInt(peBits.W)
     val deltaPfLateInMshr = UInt(peBits.W)
     val deltaPfLateInCache = UInt(peBits.W)
+    val deltaTnoc = UInt(peBits.W)
+    val deltaTbus = UInt(peBits.W)
+    val deltaTbank = UInt(peBits.W)
   }
   for (i <- 0 until PF_NUM) {
     val latencyAttribute = Wire(new LatencyAttributeBundle())
@@ -338,6 +377,9 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
     latencyAttribute.deltaPfReqBufferHold := deltaPfReqBufferHoldVec(i).reduce(_ + _).asUInt
     latencyAttribute.deltaPfLateInMshr := deltaPfLateInMshrVec(i).reduce(_ + _).asUInt
     latencyAttribute.deltaPfLateInCache := deltaPfLateInCacheVec(i).reduce(_ + _).asUInt
+    latencyAttribute.deltaTnoc := deltaTnocVec(i).reduce(_ + _).asUInt
+    latencyAttribute.deltaTbus := deltaTbusVec(i).reduce(_ + _).asUInt
+    latencyAttribute.deltaTbank := deltaTbankVec(i).reduce(_ + _).asUInt
     val w = statMshrHitVec(i).asUInt.orR ||
       statDemandCacheHitVec(i).asUInt.orR ||
       statL1PrefetchCacheHitVec(i).asUInt.orR ||
@@ -345,7 +387,10 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
       statPfMshrHoldVec(i).asUInt.orR ||
       statPfReqBufferHoldVec(i).asUInt.orR ||
       statPfLateInMshrVec(i).asUInt.orR ||
-      statPfLateInCacheVec(i).asUInt.orR
+      statPfLateInCacheVec(i).asUInt.orR ||
+      statTnocVec(i).asUInt.orR ||
+      statTbusVec(i).asUInt.orR ||
+      statTbankVec(i).asUInt.orR
     val latencyAttributeTable = ChiselDB.createTable(s"LatencyAttributeTable_${PF_NAME_VEC(i)}", new LatencyAttributeBundle, basicDB = true)
     latencyAttributeTable.log(latencyAttribute, w, "L2PrefetchController", clock, reset)
   }
@@ -461,6 +506,9 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
     XSPerfAccumulate(s"stat_pfReqBufferHoldCount${PF_NAME_VEC(i)}", PopCount(statPfReqBufferHoldVec(i)))
     XSPerfAccumulate(s"stat_pfLateInMshrCount${PF_NAME_VEC(i)}", PopCount(statPfLateInMshrVec(i)))
     XSPerfAccumulate(s"stat_pfLateInCacheCount${PF_NAME_VEC(i)}", PopCount(statPfLateInCacheVec(i)))
+    XSPerfAccumulate(s"stat_tnocCount${PF_NAME_VEC(i)}", PopCount(statTnocVec(i)))
+    XSPerfAccumulate(s"stat_tbusCount${PF_NAME_VEC(i)}", PopCount(statTbusVec(i)))
+    XSPerfAccumulate(s"stat_tbankCount${PF_NAME_VEC(i)}", PopCount(statTbankVec(i)))
 
     XSPerfAccumulate(s"delta_mshrHitSum${PF_NAME_VEC(i)}", deltaMshrHitVec(i).reduce(_ + _).asUInt)
     XSPerfAccumulate(s"delta_demandCacheHitSum${PF_NAME_VEC(i)}", deltaDemandCacheHitVec(i).reduce(_ + _).asUInt)
@@ -470,6 +518,9 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
     XSPerfAccumulate(s"delta_pfReqBufferHoldSum${PF_NAME_VEC(i)}", deltaPfReqBufferHoldVec(i).reduce(_ + _).asUInt)
     XSPerfAccumulate(s"delta_pfLateInMshrSum${PF_NAME_VEC(i)}", deltaPfLateInMshrVec(i).reduce(_ + _).asUInt)
     XSPerfAccumulate(s"delta_pfLateInCacheSum${PF_NAME_VEC(i)}", deltaPfLateInCacheVec(i).reduce(_ + _).asUInt)
+    XSPerfAccumulate(s"delta_tnocSum${PF_NAME_VEC(i)}", deltaTnocVec(i).reduce(_ + _).asUInt)
+    XSPerfAccumulate(s"delta_tbusSum${PF_NAME_VEC(i)}", deltaTbusVec(i).reduce(_ + _).asUInt)
+    XSPerfAccumulate(s"delta_tbankSum${PF_NAME_VEC(i)}", deltaTbankVec(i).reduce(_ + _).asUInt)
 
     XSPerfAccumulate(s"other_peOverflowCount${PF_NAME_VEC(i)}", statPeOverflowVec(i))
   }

@@ -244,6 +244,33 @@ trait HasCoupledL2Parameters {
   def bank_eq(set: UInt, bankId: Int, bankBits: Int): Bool = {
     if(bankBits == 0) true.B else set(bankBits - 1, 0) === bankId.U
   }
+
+  // I-POP statistic: dram addr mapping
+  def get_chrabgbaroco(addr: UInt): (UInt, UInt, UInt, UInt, UInt, UInt) = {
+    // Address mapping follows DRAMsim3 XiangShan.ini: roracobabgch
+    // bits of channel, rank, bankgroup, bank, row, col, offset
+    val field_widths = Seq(1, 0, 2, 2, 16, 7, 3)
+    val res = Wire(Vec(6, UInt(addr.getWidth.W)))
+    for (i <- 0 until (field_widths.length - 1)) {
+      if (field_widths(i) > 0) {
+        res(i) := addr(field_widths.drop(i).sum-1, field_widths.drop(i+1).sum)
+      } else {
+        res(i) := 0.U
+      }
+    }
+    // channel, rank, bankgroup, bank, row, col
+    (res(0), res(1), res(2), res(3), res(4), res(5))
+  }
+  
+  def getDramChannel(addr: UInt) = {
+    val (ch, _, _, _, _, _) = get_chrabgbaroco(addr)
+    ch
+  }
+
+  def getDramBank(addr: UInt) = {
+    val (_, _, bg, b, _, _) = get_chrabgbaroco(addr)
+    Cat(bg, b)
+  }
 }
 
 abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with HasCoupledL2Parameters {
@@ -569,6 +596,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         f.dataRefill := s.io.dataRefill.get
         f.dirResult := s.io.dirResult.get
         f.pfStatInMSHR := s.io.pfStatInMSHR.get
+        f.busContention := s.io.busContention.get
       }
     }
 

@@ -34,6 +34,17 @@ trait HasPrefetchParameters extends HasCoupledL2Parameters {
   val peBits = 20
   val banks = 1 << bankBits
   val degreeBits = 2
+
+  // I-POP style delay counting rules at prefetch refill return
+  def estTcas = 30.24 // Column Access Strobe latency  16 cycles(CL  ) * 0.63 ns * 3 GHz = 30.24 cycle
+  def estTrcd = 34.02 // Row to Column Delay           18 cycles(tRCD) * 0.63 ns * 3 GHz = 34.02 cycle
+  def estTrp  = 34.02 // Row Precharge time            18 cycles(tRP ) * 0.63 ns * 3 GHz = 34.02 cycle
+  def estRBMissRate = 0.5 // NOTE: this is a very rough estimation for now, because there is no way to get it.
+  def estTcommand = 1 // Ref origin paper
+  def estTdata = 1 // Ref origin paper
+  def estTnoc = 0 // Ref origin paper: 0 cycle for single-core, 2 cycles for multi-core
+  def estTbus = ((1 + 2 * estRBMissRate) * estTcommand + estTdata).toInt // Ref origin paper
+  def estTbank = (estTcas + estRBMissRate * (estTrp + estTrcd)).toInt // Ref origin paper
 }
 
 abstract class PrefetchBundle(implicit val p: Parameters) extends Bundle with HasPrefetchParameters
