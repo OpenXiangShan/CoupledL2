@@ -296,8 +296,15 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
         1.S(peBits.W),
         0.S(peBits.W)
       )
+
+      // PE Equation 1
+      // peDeltaSliceVec(s) := deltaMshrHitVec(i)(s) + deltaDemandCacheHitVec(i)(s) + deltaL1PrefetchCacheHitVec(i)(s) - 
+      //   deltaPollutionHoldVec(i)(s) - deltaPfMshrHoldVec(i)(s) - deltaPfReqBufferHoldVec(i)(s)
+
+      // PE Equation 2
       peDeltaSliceVec(s) := deltaMshrHitVec(i)(s) + deltaDemandCacheHitVec(i)(s) + deltaL1PrefetchCacheHitVec(i)(s) - 
-        deltaPollutionHoldVec(i)(s) - deltaPfMshrHoldVec(i)(s) - deltaPfReqBufferHoldVec(i)(s)
+        deltaPollutionHoldVec(i)(s) - deltaPfMshrHoldVec(i)(s) - deltaPfReqBufferHoldVec(i)(s) -
+        deltaPfLateInMshrVec(i)(s) - deltaPfLateInCacheVec(i)(s)
     }
     
     // pe1: get the pe sum of all slices
