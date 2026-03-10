@@ -50,8 +50,6 @@ class SinkA(implicit p: Parameters) extends L2Module {
   val cmoAllBlock = stateVal === sCMOREQ || stateVal === sWAITLINE
   io.cmoAll.foreach { cmoAll => cmoAll.l2FlushDone := stateVal === sDONE }
   io.cmoAll.foreach { cmoAll => cmoAll.cmoAllBlock := cmoAllBlock }
-  io.cmoAll.foreach { cmoAll => cmoAll.cmoAllSnpBlock := stateVal =/= sIDLE && stateVal=/= sDONE }
-  io.cmoAll.foreach { cmoAll => cmoAll.cmoAllSnpBlockSet := setVal }
 
   def fromTLAtoTaskBundle(a: TLBundleA): TaskBundle = {
     val task = Wire(new TaskBundle)
@@ -181,7 +179,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
       }.otherwise {
         way.foreach { _ := wayVal + 1.U }
       }
-      when (mshrValid) {
+      when (!mshrValid) {
         state.foreach { _ := sCMOREQ }
       }.otherwise {
         state.foreach { _ := sWAITMSHR }

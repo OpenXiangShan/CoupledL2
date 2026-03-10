@@ -510,6 +510,4 @@ class IOCMOAll(implicit p: Parameters) extends L2Bundle {
   val cmoLineDone = Input(Bool())  // during process of cmo flush all, flush 1 CacheLine is done 
   val mshrValid = Input(Bool())    // 1: mshr has entry valid  0: no mshr entry valid
   val cmoAllBlock = Output(Bool()) // 1: in process of cmo flush all  0: not in process of cmo flush all
-  val cmoAllSnpBlock = Output(Bool()) //1: cmoAll need to block the same set snoop  0: no need to block
-  val cmoAllSnpBlockSet = Output(UInt(setBits.W)) // when cmoAllSnpBlock is 1, this used to block the same set snoop
 }
