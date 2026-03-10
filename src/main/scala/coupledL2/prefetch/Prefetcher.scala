@@ -236,8 +236,9 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   })
   val hartId = IO(Input(UInt(hartIdLen.W)))
   val pfCtrlFromCore = IO(Input(new PrefetchCtrlFromCore))
-  val trainInVec = IO(Input(Vec(banks, DecoupledIO(new PrefetchTrain()))))
+  val trainInVec = IO(Vec(banks, Flipped(DecoupledIO(new PrefetchTrain()))))
 
+  io.train.ready := true.B
   val trainBuffer = Module(new TrainBuffer(16, "l2TrainBuffer"))
   trainBuffer.io.enable := true.B
   trainBuffer.io.flush := false.B
