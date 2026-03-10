@@ -46,12 +46,12 @@ case class TPParameters(
                          tpDataQueueDepth: Int = 8,
                          tpMetaResetQueueDepth: Int = 8, // extreme condition: use 9
                          throttleCycles: Int = 4,  // unused yet
-                         replacementPolicy: String = "random",
+                         replacementPolicy: String = "plru",
 
                          // sampler filter parameters
                          samplerFileterEntries: Int = 1024 * 4,
                          samplerFilterAssoc: Int = 4 * 2,
-                         samplerFilterReplacememntPolicy: String = "random",
+                         samplerFilterReplacememntPolicy: String = "plru",
                          pcHashHeadReservedWidth: Int = 2,
                          pcHashTailReservedWidth: Int = 6,
                          pcHashMidWidth: Int = 14, // pc width = 50
@@ -60,11 +60,11 @@ case class TPParameters(
                          samplerTableEntries: Int = 16384,
                          samplerTableAssoc: Int = 16,
                          samplerTableMatchCntWidth: Int = 3,
-                         samplerTableReplacementPolicy: String = "random",
+                         samplerTableReplacementPolicy: String = "plru",
                          // recorder table parameters
                          recorderTableEntries: Int = 512,
                          recorderTableAssoc: Int = 2,
-                         recorderTableReplacementPolicy: String = "random",
+                         recorderTableReplacementPolicy: String = "plru",
 
                          globalHitCountConfidenceWidth: Int = 5,
                          globalHitCountConfidenceInitVal: Int = 21,
@@ -253,6 +253,10 @@ class SamplerFilter(implicit p: Parameters) extends TPModule {
     )
   )
   val repl = ReplacementPolicy.fromString(samplerFilterReplacementPolicy, samplerFilterAssoc)
+  val randomRepl = samplerFilterReplacementPolicy == "random"
+  val replSRAM = if(randomRepl) None else
+    Some(Module(new SRAMTemplate(UInt(repl.nBits.W), samplerFilterNrSet, 1, singlePort = true, shouldReset = true, hasMbist = false, hasSramCtl = false)))
+
   val resetFinish = RegInit(false.B)
   val resetIdx = RegInit((samplerFilterNrSet - 1).U)
 
@@ -299,16 +303,32 @@ class SamplerFilter(implicit p: Parameters) extends TPModule {
   }
   val (pcTag_s1, pcSet_s1) = parsePaddr(pc_s1)
 
+  val replState_s1 = if(randomRepl) {
+    0.U
+  } else {
+    val repl_sram_r = replSRAM.get.io.r(s0_valid, pcSet_s0).resp.data(0)
+    val repl_state = repl_sram_r
+    repl_state
+  }
+
   val tagMatchVec_s1 = filterRecord_s1.map(_.pcTag === pcTag_s1)
   val validVec_s1 = filterRecord_s1.map(_.valid)
   val hitVec_s1 = tagMatchVec_s1.zip(validVec_s1).map(x => x._1 && x._2)
   val hit_s1 = Cat(hitVec_s1).orR
 
   val hitWay_s1 = OHToUInt(hitVec_s1)
-  val victimWay_s1 = repl.get_replace_way(0.U) //TODO: change other repl policy
+  val victimWay_s1 = repl.get_replace_way(replState_s1)
   val way_s1 = Mux(hit_s1, hitWay_s1, victimWay_s1)
   val lastAddr_s1 = filterRecord_s1(way_s1).lastAddr
   val cnt_s1 = filterRecord_s1(way_s1).cnt
+
+  val nextState_s1 = repl.get_next_state(replState_s1, way_s1)
+  replSRAM.get.io.w(
+    !resetFinish || (s1_valid && !hit_s1),
+    Mux(resetFinish, nextState_s1, 0.U),
+    Mux(resetFinish, pcSet_s1, resetIdx),
+    1.U
+  )
 
   /* ------- stage 2 ------- */
   // 1. miss: generate new entry; 2. hit: update entry & generate pair for sampler table
@@ -411,6 +431,10 @@ class SamplerTable(implicit p: Parameters) extends TPModule {
     )
   )
   val repl = ReplacementPolicy.fromString(samplerTableReplacementPolicy, samplerTableAssoc)
+  val randomRepl = samplerFilterReplacementPolicy == "random"
+  val replSRAM = if(randomRepl) None else
+    Some(Module(new SRAMTemplate(UInt(repl.nBits.W), samplerTableNrSet, 1, singlePort = true, shouldReset = true, hasMbist = false, hasSramCtl = false)))
+
   val resetFinish = RegInit(false.B)
   val resetIdx = RegInit((samplerTableNrSet - 1).U)
 
@@ -459,6 +483,14 @@ class SamplerTable(implicit p: Parameters) extends TPModule {
     tpTableWay_s1 := tpTableWay_s0
   }
 
+  val replState_s1 = if(randomRepl) {
+    0.U
+  } else {
+    val repl_sram_r = replSRAM.get.io.r(s0_valid, baseSet_s0).resp.data(0)
+    val repl_state = repl_sram_r
+    repl_state
+  }
+
   val (baseTag_s1, baseSet_s1) = parsePaddr(baseAddr_s1)
   val tagMatchVec_s1 = pairs_s1.map(_.baseTag === baseTag_s1)
   val validVec_s1 = pairs_s1.map(_.valid)
@@ -466,10 +498,17 @@ class SamplerTable(implicit p: Parameters) extends TPModule {
   val hit_s1 = Cat(hitVec_s1).orR
 
   val hitWay_s1 = OHToUInt(hitVec_s1)
-  val victimWay_s1 = repl.get_replace_way(0.U) //TODO: change other repl policy
+  val victimWay_s1 = repl.get_replace_way(replState_s1)
   val way_s1 = Mux(hit_s1, hitWay_s1, victimWay_s1)
   val lastPair_s1 = pairs_s1(way_s1)
 
+  val nextState_s1 = repl.get_next_state(replState_s1, way_s1)
+  replSRAM.get.io.w(
+    !resetFinish || (s1_valid && !hit_s1),
+    Mux(resetFinish, nextState_s1, 0.U),
+    Mux(resetFinish, baseSet_s1, resetIdx),
+    1.U
+  )
 
   /* ------- stage 2 ------- */
   // (1) hit: compare targetAddr with hit entry's targetAddr; generate new entry
@@ -593,6 +632,10 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
     )
   )
   val repl = ReplacementPolicy.fromString(recorderTableReplacementPolicy, recorderTableAssoc)
+  val randomRepl = samplerFilterReplacementPolicy == "random"
+  val replSRAM = if(randomRepl) None else
+    Some(Module(new SRAMTemplate(UInt(repl.nBits.W), recorderTableNrSet, 1, singlePort = true, shouldReset = true, hasMbist = false, hasSramCtl = false)))
+
   val resetFinish = RegInit(false.B)
   val resetIdx = RegInit((recorderTableNrSet - 1).U)
 
@@ -638,6 +681,14 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
     tpTableWay_s1 := tpTableWay_s0
   }
 
+  val replState_s1 = if(randomRepl) {
+    0.U
+  } else {
+    val repl_sram_r = replSRAM.get.io.r(s0_valid, pcSet_s0).resp.data(0)
+    val repl_state = repl_sram_r
+    repl_state
+  }
+
   val (pcTag_s1, pcSet_s1) = parsePaddr(pc_s1)
   val tagMatchVec_s1 = recorders_s1.map(_.pcTag === pcTag_s1)
   val validVec_s1 = recorders_s1.map(_.valid)
@@ -645,10 +696,17 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
   val hit_s1 = Cat(hitVec_s1).orR
 
   val hitWay_s1 = OHToUInt(hitVec_s1)
-  val victimWay_s1 = repl.get_replace_way(0.U) //TODO: change other repl policy
+  val victimWay_s1 = repl.get_replace_way(replState_s1)
   val way_s1 = Mux(hit_s1, hitWay_s1, victimWay_s1)
   val recorder_s1 = recorders_s1(way_s1)
 
+  val nextState_s1 = repl.get_next_state(replState_s1, way_s1)
+  replSRAM.get.io.w(
+    !resetFinish || (s1_valid && !hit_s1),
+    Mux(resetFinish, nextState_s1, 0.U),
+    Mux(resetFinish, pcSet_s1, resetIdx),
+    1.U
+  )
 
   /* ------- stage 2 ------- */
   // hit: update record
@@ -910,7 +968,12 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val dataWriteQueue = Module(new Queue(new TPmetaReq(), dataWriteQueueDepth, pipe = false, flow = false))
   val tpDataQueue = Module(new Queue(new tpDataEntry(), tpDataQueueDepth + 1, pipe = false, flow = false))
   val tpMetaResetQueue = Module(new Queue(new tpMetaResetEntry(), tpMetaResetQueueDepth, pipe = false, flow = false))
+
   val repl = ReplacementPolicy.fromString(tpTableReplacementPolicy, tpTableAssoc)
+  val randomRepl = samplerFilterReplacementPolicy == "random"
+  val replSRAM = if(randomRepl) None else
+    Some(Module(new SRAMTemplate(UInt(repl.nBits.W), tpTableNrSet, 1, singlePort = true, shouldReset = true, hasMbist = false, hasSramCtl = false)))
+
   val resetFinish = RegInit(false.B)
   val resetIdx = RegInit((tpTableNrSet - 1).U)
 
@@ -992,17 +1055,33 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   // val (vtag_s1, vset_s1) = if (vaddrBitsOpt.nonEmpty) parseVaddr(trainVaddr_s1) else (0.U, 0.U)
   val (tag_s1, set_s1) = parsePaddr(trainIndex_s1)
 
+  val replState_s1 = if(randomRepl) {
+    0.U
+  } else {
+    val repl_sram_r = replSRAM.get.io.r(s0_valid, set_s0).resp.data(0)
+    val repl_state = repl_sram_r
+    repl_state
+  }
+
   // val tagMatchVec = metas.map(_.triggerTag === Mux(trainOnVaddr.orR, vtag_s1, ptag_s1))
   val tagMatchVec = metas.map(_.tag === tag_s1)
   val metaValidVec = metas.map(_.valid === true.B)
 
   val hitVec = tagMatchVec.zip(metaValidVec).map(x => x._1 && x._2)
   val hitWay = OHToUInt(hitVec)
-  val victimWay = repl.get_replace_way(0.U /*never mind for random*/)
+  val victimWay = repl.get_replace_way(replState_s1)
 
   val hit_s1 = Cat(hitVec).orR
   val way_s1 = Mux(hit_s1, hitWay, victimWay)
   val hitCount_s1 = hitCount(set_s1)(way_s1).hitCount
+
+  val nextState_s1 = repl.get_next_state(replState_s1, way_s1)
+  replSRAM.get.io.w(
+    !resetFinish || (s1_valid && !hit_s1),
+    Mux(resetFinish, nextState_s1, 0.U),
+    Mux(resetFinish, set_s1, resetIdx),
+    1.U
+  )
 
   // meta reset queue
   // now use to upadte hitCount
