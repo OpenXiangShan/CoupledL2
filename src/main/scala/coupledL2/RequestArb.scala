@@ -73,10 +73,6 @@ class RequestArb(implicit p: Parameters) extends L2Module
 
     /* MSHR Status */
     val msInfo = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo())))
-
-    /* l2 flush (CMO All) */
-    val cmoAllSnpBlock = Option.when(cacheParams.enableL2Flush) (Input(Bool()))
-    val cmoAllSnpBlockSet = Option.when(cacheParams.enableL2Flush) (Input(UInt(setBits.W)))
   })
 
   /* ======== Reset ======== */
@@ -132,19 +128,12 @@ class RequestArb(implicit p: Parameters) extends L2Module
     mshr_task_s1.bits := io.mshrTask.bits
   }
 
-  /* CMO All will block channel B snoop with same set*/
-  val cmoAllBlockSnoop = if (enableCHI) {
-    io.cmoAllSnpBlock.getOrElse(false.B) && io.sinkB.bits.set === io.cmoAllSnpBlockSet.getOrElse(0.U)
-  } else {
-    false.B
-  }
-
   /* Channel interaction from s1 */
   val A_task = io.sinkA.bits
   val B_task = io.sinkB.bits
   val C_task = io.sinkC.bits
   val block_A = io.fromMSHRCtl.blockA_s1 || io.fromMainPipe.blockA_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockA_s1
-  val block_B = io.fromMSHRCtl.blockB_s1 || io.fromMainPipe.blockB_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockB_s1 || cmoAllBlockSnoop ||
+  val block_B = io.fromMSHRCtl.blockB_s1 || io.fromMainPipe.blockB_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockB_s1 ||
     (if (io.fromSourceC.isDefined) io.fromSourceC.get.blockSinkBReqEntrance else false.B) ||
     (if (io.fromTXDAT.isDefined) io.fromTXDAT.get.blockSinkBReqEntrance else false.B) ||
     (if (io.fromTXRSP.isDefined) io.fromTXRSP.get.blockSinkBReqEntrance else false.B)
