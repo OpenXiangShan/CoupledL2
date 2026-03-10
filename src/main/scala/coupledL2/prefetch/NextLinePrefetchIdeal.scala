@@ -341,8 +341,8 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   
   // check if update
   val timeSampleDelta  = s1_timeSample - s1_SampleTableUpdatedHitEntry.sampleTime
-  val realate = (timeSampleDelta < timeSampleMaxDistance.U) && (timeSampleMinDistance.U < timeSampleDelta)
-  when(s1_valid & sampleTableUpdateHit & realate ) {//if hit and update condition ,then update   
+  val inRange = (timeSampleDelta < timeSampleMaxDistance.U) && (timeSampleMinDistance.U < timeSampleDelta)
+  when(s1_valid & sampleTableUpdateHit & inRange ) {//if hit and update condition ,then update   
     s1_sampleTableUpdateEn             := true.B
     s1_sampleTableUpdatedEntry         := s1_SampleTableUpdatedHitEntry
     s1_sampleTableUpdatedEntry.touched := true.B
