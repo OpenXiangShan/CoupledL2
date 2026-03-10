@@ -45,19 +45,25 @@ class TrainBuffer(size: Int, name: String)(implicit p: Parameters) extends Prefe
   val needAlloc = Wire(Vec(enqLen, Bool()))
   val canAlloc = Wire(Vec(enqLen, Bool()))
 
+  val entry_match = Wire(Vec(enqLen, Bool()))
+  val prev_enq_match = Wire(Vec(enqLen, Bool()))
   for(i <- (0 until enqLen)) {
     val req = reqs_l(i)
     val req_v = reqs_vl(i)
     val index = PopCount(needAlloc.take(i))
     val allocPtr = enqPtrExt(index)
-    val entry_match = Cat(entries.zip(valids).map {
+    entry_match(i) := Cat(entries.zip(valids).map {
       case(e, v) => v && block_hash_tag(e.addr) === block_hash_tag(req.addr)
     }).orR
-    val prev_enq_match = if(i == 0) false.B else Cat(reqs_l.zip(reqs_vl).take(i).map {
-      case(pre, pre_v) => pre_v && block_hash_tag(pre.addr) === block_hash_tag(req.addr)
-    }).orR
+    if(i == 0){
+      prev_enq_match(i) := false.B
+    } else {
+      prev_enq_match(i) := Cat(reqs_l.zip(reqs_vl).take(i).map {
+        case(pre, pre_v) => pre_v && block_hash_tag(pre.addr) === block_hash_tag(req.addr)
+      }).orR
+    }
 
-    needAlloc(i) := req_v && !entry_match && !prev_enq_match
+    needAlloc(i) := req_v && !entry_match(i) && !prev_enq_match(i)
     canAlloc(i) := needAlloc(i) && allocPtr >= deqPtrExt && io.enable
 
     when(canAlloc(i)) {
@@ -101,6 +107,7 @@ class TrainBuffer(size: Int, name: String)(implicit p: Parameters) extends Prefe
   val actual_enq_pattern = Cat(canAlloc)
   XSPerfAccumulate(s"${name}_train_filter_enq", allocNum)
   XSPerfAccumulate(s"${name}_train_filter_enq_multi", allocNum > 0.U)
+  XSPerfAccumulate(s"${name}_train_filter_enq_filter", PopCount(entry_match) + PopCount(prev_enq_match))
   XSPerfAccumulate(s"${name}_train_filter_deq", io.trainOut.fire)
   for(i <- 0 until (1 << enqLen)) {
     XSPerfAccumulate(s"${name}_train_filter_raw_enq_pattern_${toBinary(i)}", raw_enq_pattern === i.U)
