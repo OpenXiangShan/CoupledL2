@@ -112,7 +112,7 @@ class TagWrite(implicit p: Parameters) extends L2Bundle {
   val wtag = UInt(tagBits.W)
 }
 
-// DB entry for NL prefetch lifecycle nlOpts
+// DB entry for prefetch lifecycle tracking (arrival, access, eviction)
 class PrefetchDbEntry(implicit p: Parameters) extends L2Bundle {
   val setIdx    = UInt(setBits.W)
   val isPrefetch= Bool()

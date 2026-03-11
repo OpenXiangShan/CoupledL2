@@ -10,7 +10,6 @@ import coupledL2.utils.ReplacementPolicy
 import huancun.{TPmetaReq, TPmetaResp}
 import freechips.rocketchip.util.SeqToAugmentedSeq
 import freechips.rocketchip.rocket.CSR.X
-import utility.XSPerfAccumulate
 
 //define Next-Line Prefetcher base parameters
 case class NLParameters(
@@ -48,7 +47,7 @@ case class NLParameters(
   override val inflightEntries: Int = 16 
 }
 
-//define Next-Line Prefetcher usefull parameters
+//define Next-Line Prefetcher useful parameters
 trait HasNLParams extends HasCoupledL2Parameters {
   val nlParams = prefetchers.find {
     case p: NLParameters => true 
@@ -206,7 +205,7 @@ class PatternDb(implicit p: Parameters) extends NLBundle {
 
  val hit     = Bool()
  val hitData = new PatternTableEntryField()
- val Sat     = UInt(3.W)
+ val sat     = UInt(3.W)
 
  val trainEn   = Bool()
  val trainData = new SampleTableEntryField()
@@ -229,12 +228,11 @@ class NlDb(implicit p: Parameters) extends NLBundle {
   val patternSat = UInt(3.W)
 }
 
-class SamplePatterDb(implicit p: Parameters) extends NLBundle {
+class SamplePatternDb(implicit p: Parameters) extends NLBundle {
   val sample  = new SampleDb()
   val pattern = new PatternDb()
 }
 /*
-```
 vaddr (50bit):
 ┌────────────────────┬─────────┬────────┐
 │    Sample Tag      │   Set   │ Offset │
@@ -243,7 +241,6 @@ vaddr (50bit):
      ↑                  ↑         ↑
      getSampleTableTag  │         getBlockAddr
                         getSampleTableSet
-```
 */
 class NextLineSample(implicit p: Parameters) extends NLModule {
   val io = IO(new Bundle() {
@@ -340,9 +337,9 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
 
   
   // check if update
-  val timeSampleDelta  = s1_timeSample - s1_SampleTableUpdatedHitEntry.sampleTime
-  val realate = (timeSampleDelta < timeSampleMaxDistance.U) && (timeSampleMinDistance.U < timeSampleDelta)
-  when(s1_valid & sampleTableUpdateHit & realate ) {//if hit and update condition ,then update   
+  val timeSampleDetal  = s1_timeSample - s1_SampleTableUpdatedHitEntry.sampleTime
+  val inRange = (timeSampleDetal < timeSampleMaxDistance.U) && (timeSampleMinDistance.U < timeSampleDetal)
+  when(s1_valid & sampleTableUpdateHit & inRange ) {//if hit and update condition ,then update   
     s1_sampleTableUpdateEn             := true.B
     s1_sampleTableUpdatedEntry         := s1_SampleTableUpdatedHitEntry
     s1_sampleTableUpdatedEntry.touched := true.B
@@ -415,7 +412,7 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   val s2_sampleTableReplaceReq      = RegNext(s1_sampleTableReplaceReq)
   val s2_sampleTableReplaceStateReq = RegNext(s1_sampleTableReplaceStateReq)
 
-  // sampleTable update writebacek
+  // sampleTable update writeback
   sampleTable.io.w(sampleTableUpdatePort).en          := s2_sampleTableUpdateReq.en
   sampleTable.io.w(sampleTableUpdatePort).req.setIdx  := s2_sampleTableUpdateReq.setIdx
   sampleTable.io.w(sampleTableUpdatePort).req.wayMask := s2_sampleTableUpdateReq.wayMask   
@@ -450,7 +447,7 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   io.db.updateIdx  := s1_sampleTableUpdateIdx
   io.db.updateMask := s1_sampleTableUpdateHitWayOH
   io.db.updateData := s1_sampleTableUpdatedEntry
-  io.db.timeSampleDetal := timeSampleDelta
+  io.db.timeSampleDetal := timeSampleDetal
 
   io.db.insertEn   := s1_sampleTableReplaceEn
   io.db.insertIdx  := s1_sampleTableReplaceIdx
@@ -465,7 +462,7 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
 
   //update analysis
   XSPerfAccumulate("nlSampleUpdateReqNotHitTimes",s1_valid & !sampleTableUpdateHit)
-  XSPerfAccumulate("nlSampleUpdateReqHitOverBoardTimes",s1_valid & sampleTableUpdateHit & !realate)
+  XSPerfAccumulate("nlSampleUpdateReqHitOverBoardTimes",s1_valid & sampleTableUpdateHit & !inRange)
   XSPerfAccumulate("nlSampleUpdateTimes",s1_sampleTableUpdateEn) 
   XSPerfAccumulate("nlSampleStateUpdateTimes",s1_valid & sampleTableUpdateHit)
   XSPerfAccumulate("nlSampleUpdateReqMulHitTimes",s1_valid & PopCount(s1_sampleTableUpdateHitVec)>1.U)
@@ -535,7 +532,7 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
  
   //update or insert
   when(s1_trainValid) {
-    when(s1_trainResp.hit) { //If the training data is hit, the route will be updated.
+    when(s1_trainResp.hit) { //If the training data is hit, will update entry.
 
       s1_patternUpdateEn := true.B 
       s1_patternNewEntry.valid := true.B
@@ -548,7 +545,7 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
         s1_patternNewEntry.sat := Mux(currentSat === 0.U, 0.U, currentSat - 1.U)
       }
       
-    }.otherwise {//If the training data is hit, the route will be updated.
+    }.otherwise {//If the training data is NOT hit, insert a new entry.
       s1_patternInsertEn := s1_trainTouched 
      
       s1_patternNewEntry.valid := s1_trainTouched
@@ -567,7 +564,7 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   val s1_reqValid     = RegNext(s0_reqValid, false.B)
   val s1_reqPc        = RegNext(s0_reqPc, 0.U(vaddrBits.W))
   val s1_reqAddr      = RegInit(0.U(vaddrBits.W))
-  s1_reqAddr         := s0_reqAddr
+  s1_reqAddr          := s0_reqAddr
   val s1_reqResp      = RegNext(patternTable.io.r(patternTablePrefetchPort).resp)
 
   val s1_prefetchAddr     = s1_reqAddr + blockBytes.U
@@ -604,7 +601,7 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   io.resp.bits.nextAddr     := RegNext(s1_prefetchAddr, 0.U)
 
   //db  
-  io.db.Sat := s1_trainResp.data.sat
+  io.db.sat := s1_trainResp.data.sat
   io.db.hit := s1_trainResp.hit
   io.db.hitData := s1_trainResp.data
 
@@ -663,7 +660,6 @@ class NextLinePrefetchIdeal(implicit p: Parameters) extends NLModule {
   val validTrain  = io.enable && io.train.fire &&io.train.bits.reqsource === MemReqSource.CPULoadData.id.U  //Only use load requests for training and prediction
   val shouldTrain = validTrain && (!io.train.bits.hit || io.train.bits.prefetched)
 
-  // Helper function: Address parsing
   val timeSampleCounter = RegInit(0.U(timeSampleCounterBits.W))
   when(shouldTrain) {
     when(timeSampleCounter === timeSampleCounterMax) {
@@ -690,15 +686,15 @@ class NextLinePrefetchIdeal(implicit p: Parameters) extends NLModule {
   prefetcherSample.io.train.bits.pc := io.train.bits.pc.getOrElse(0.U)
   prefetcherSample.io.train.bits.timeSample := timeSampleCounter
 
-  // Sample -> Pattern 
+  // Sample ---> Pattern 
   prefetcherPattern.io.train <> prefetcherSample.io.resp
 
-  //io.train --> pattern.req 
+  //io.train ---> pattern.req 
   val shouldQuery = shouldTrain
   prefetcherPattern.io.req.valid := shouldQuery
   prefetcherPattern.io.req.bits.addr := io.train.bits.addr
   prefetcherPattern.io.req.bits.pc := io.train.bits.pc.getOrElse(0.U)
-  //pattern.resp --> prefetchQueue.in
+  //pattern.resp ---> prefetchQueue.in
   prefetchQueue.io.enq <> prefetcherPattern.io.resp
   // ========== prefetchQueue.out --->io.req ==========
   val nextAddr = prefetchQueue.io.deq.bits.nextAddr
@@ -758,8 +754,8 @@ class NextLineMonitor(implicit p: Parameters) extends NLModule {
   sampleDbData := io.sampleDb 
   sampleTable.log(sampleDbData, shouldTrain & (sampleTrainHit || sampleInsertEn || (timeSample<(1.U<<14))), s"Nlsample${hartId}", clock, reset)
 
-  val samplePatternTable  = ChiselDB.createTable(s"NLsamplePatterdb", new SamplePatterDb, basicDB = false)
-  val samplePatternDbData = Wire(new SamplePatterDb())
+  val samplePatternTable  = ChiselDB.createTable(s"NLSamplePatternDb", new SamplePatternDb, basicDB = false)
+  val samplePatternDbData = Wire(new SamplePatternDb())
   samplePatternDbData.sample  := io.sampleDb 
   samplePatternDbData.pattern := io.patternDb
   samplePatternTable.log(samplePatternDbData, shouldTrain&(sampleTrainHit||sampleInsertEn), s"NlsamplePatter${hartId}", clock, reset)
