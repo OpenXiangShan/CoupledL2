@@ -211,7 +211,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   ms_task.alias.foreach(_  := req_s3.alias.getOrElse(0.U))
   ms_task.vaddr.foreach(_  := req_s3.vaddr.getOrElse(0.U))
   ms_task.isKeyword.foreach(_ := req_s3.isKeyword.get)  //OrElse(false.B))
-
+  ms_task.pc.foreach(_    := req_s3.pc.getOrElse(0.U))      
   ms_task.opcode           := req_s3.opcode
   ms_task.param            := req_s3.param
   ms_task.size             := req_s3.size
@@ -454,6 +454,9 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
       train.bits.needT := Mux(req_s3.mergeA, needT(req_s3.aMergeTask.opcode, req_s3.aMergeTask.param),req_needT_s3)
       train.bits.source := Mux(req_s3.mergeA, req_s3.aMergeTask.sourceId, req_s3.sourceId)
       train.bits.vaddr.foreach(_ := Mux(req_s3.mergeA, req_s3.aMergeTask.vaddr.getOrElse(0.U), req_s3.vaddr.getOrElse(0.U)))
+      train.bits.pc.foreach { pc =>
+        pc := Mux(req_s3.mergeA, req_s3.aMergeTask.pc.getOrElse(0.U), req_s3.pc.getOrElse(0.U))
+      }
       train.bits.hit := Mux(req_s3.mergeA, true.B, dirResult_s3.hit)
       train.bits.prefetched := Mux(req_s3.mergeA, true.B, meta_s3.prefetch.getOrElse(false.B))
       train.bits.pfsource := meta_s3.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) // TODO
