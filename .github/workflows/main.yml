@@ -72,7 +72,7 @@ jobs:
       - name: Setup Mill
         uses: jodersky/setup-mill@v0.2.3
         with:
-          mill-version: 0.11.1
+          mill-version: 0.12.3
 
       # - name: Check scalafmt
       #   run: make checkformat
