@@ -686,7 +686,8 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   })
   // 0 / 1: whether to enable
   private val cstEnable = Constantin.createRecord("vbop_enable"+cacheParams.hartId.toString, initValue = 1)
-  val enable = io.enable && cstEnable.orR
+  // val enable = io.enable && cstEnable.orR
+  val enable = false.B
 
   val delayQueue = Module(new DelayQueue("vbop"))
   val rrTable = Module(new RecentRequestTable("vbop"))
@@ -774,7 +775,8 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     io.tlb_req.req_kill := false.B
 
     /* s1 send prefetch req */
-    io.req.valid := enable && s1_req_valid
+    // io.req.valid := enable && s1_req_valid
+    io.req.valid := false.B
     io.req.bits.tag := parseFullAddress(s1_newFullAddr)._1
     io.req.bits.set := parseFullAddress(s1_newFullAddr)._2
     io.req.bits.vaddr.foreach(_ := 0.U)
@@ -816,7 +818,8 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
 
   // 0 / 1: whether to enable
   private val cstEnable = Constantin.createRecord("pbop_enable"+cacheParams.hartId.toString, initValue = 1)
-  val enable = io.enable && cstEnable.orR
+  // val enable = io.enable && cstEnable.orR
+  val enable = false.B
 
   val delayQueue = Module(new DelayQueue("pbop"))
   val rrTable = Module(new RecentRequestTable("pbop"))
@@ -851,7 +854,8 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   }
 
   io.pbopCrossPage := crossPage
-  io.req.valid := enable && req_valid
+  // io.req.valid := enable && req_valid
+  io.req.valid := false.B
   io.req.bits := req
   io.req.bits.pfSource := MemReqSource.Prefetch2L2PBOP.id.U
   io.train.ready := delayQueue.io.in.ready && scoreTable.io.req.ready && (!req_valid || io.req.ready)
