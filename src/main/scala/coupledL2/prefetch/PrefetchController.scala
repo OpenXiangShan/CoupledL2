@@ -54,6 +54,10 @@ class PrefetchControllerIO(implicit p: Parameters) extends PrefetchBundle {
 class PrefetchController(implicit p: Parameters) extends PrefetchModule {
   val io = IO(new PrefetchControllerIO)
 
+  val hartId = p(L2ParamKey).hartId
+  private val Seq(none, ipop, default, defaultLate, defaultUseless) = Seq(0, 1, 2, 3, 4)
+  val controlMode = Constantin.createRecord(s"l2pf_controlMode$hartId", initValue = default)
+
   // prefetch number
   private val PF_STREAM = 0
   private val PF_STRIDE = 1
@@ -340,23 +344,25 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
         estTbank.S(peBits.W),
         0.S(peBits.W)
       )
-      
-      // PE Equation 0: I-POP origin
-      peDeltaSliceVec(s) := deltaDemandCacheHitVec(i)(s) - deltaPollutionHoldVec(i)(s) -
-        deltaTnocVec(i)(s) - deltaTbusVec(i)(s) - deltaTbankVec(i)(s)
 
-      // PE Equation 1
-      // peDeltaSliceVec(s) := deltaMshrHitVec(i)(s) + deltaDemandCacheHitVec(i)(s) + deltaL1PrefetchCacheHitVec(i)(s) - 
-      //   deltaPollutionHoldVec(i)(s) - deltaPfMshrHoldVec(i)(s) - deltaPfReqBufferHoldVec(i)(s)
+      // TODO lyq: 确认方案后，利用 parm 的方式生成，避免时序压力
+      when(controlMode === default.U) {
+        peDeltaSliceVec(s) := deltaMshrHitVec(i)(s) + deltaDemandCacheHitVec(i)(s) + deltaL1PrefetchCacheHitVec(i)(s) -
+          deltaPollutionHoldVec(i)(s) - deltaPfReqBufferHoldVec(i)(s) - deltaPfMshrHoldVec(i)(s)
+      }.elsewhen(controlMode === defaultUseless.U) {
+        peDeltaSliceVec(s) := deltaMshrHitVec(i)(s) + deltaDemandCacheHitVec(i)(s) + deltaL1PrefetchCacheHitVec(i)(s) -
+          deltaPollutionHoldVec(i)(s) - deltaPfReqBufferHoldVec(i)(s) - deltaPfUselessVec(i)(s)
+      }.elsewhen(controlMode === defaultLate.U) {
+        peDeltaSliceVec(s) := deltaMshrHitVec(i)(s) + deltaDemandCacheHitVec(i)(s) + deltaL1PrefetchCacheHitVec(i)(s) -
+          deltaPollutionHoldVec(i)(s) - deltaPfReqBufferHoldVec(i)(s) - deltaPfMshrHoldVec(i)(s) -
+          deltaPfLateInMshrVec(i)(s) - deltaPfLateInCacheVec(i)(s)
+      }.elsewhen(controlMode === ipop.U) {
+        peDeltaSliceVec(s) := deltaDemandCacheHitVec(i)(s) - deltaPollutionHoldVec(i)(s) -
+          deltaTnocVec(i)(s) - deltaTbusVec(i)(s) - deltaTbankVec(i)(s)
+      }.otherwise {
+        peDeltaSliceVec(s) := 0.S(peBits.W)
+      }
 
-      // PE Equation 2
-      // peDeltaSliceVec(s) := deltaMshrHitVec(i)(s) + deltaDemandCacheHitVec(i)(s) + deltaL1PrefetchCacheHitVec(i)(s) - 
-      //   deltaPollutionHoldVec(i)(s) - deltaPfMshrHoldVec(i)(s) - deltaPfReqBufferHoldVec(i)(s) -
-      //   deltaPfLateInMshrVec(i)(s) - deltaPfLateInCacheVec(i)(s)
-
-      // PE Equation 3
-      // peDeltaSliceVec(s) := deltaMshrHitVec(i)(s) + deltaDemandCacheHitVec(i)(s) + deltaL1PrefetchCacheHitVec(i)(s) - 
-      //   deltaPollutionHoldVec(i)(s) - deltaPfReqBufferHoldVec(i)(s) - deltaPfUselessVec(i)(s)
     }
     
     // pe1: get the pe sum of all slices
