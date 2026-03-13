@@ -201,6 +201,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
         getDramBank(mshrReqAddr(i)) === getDramBank(pfAddr)
     }
     io.busContention.get.valid := pfRefillReturn
+    io.busContention.get.bits.pfReqSrc := io.dataRefill.get.bits.pfReqSrc
     io.busContention.get.bits.delayHit := delayHitVec.asUInt.orR
     io.busContention.get.bits.busHit := busHitVec.asUInt.orR
     io.busContention.get.bits.bankHit := bankHitVec.asUInt.orR

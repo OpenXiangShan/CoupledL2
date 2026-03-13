@@ -22,6 +22,7 @@ class DemandRefillBundle()(implicit p: Parameters) extends L2Bundle {
 }
 
 class BusContentionBundle()(implicit p: Parameters) extends L2Bundle {
+  val pfReqSrc = UInt(MemReqSource.reqSourceBits.W)
   val delayHit = Bool()
   val busHit = Bool()
   val bankHit = Bool()
@@ -278,9 +279,12 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
       statPfLateInCacheVec(i)(s) := isPfLateInCache(dirResult(s), i)
       statPfUselessVec(i)(s) := replaceRecord(s).valid &&
         pfIdxFromPfSource(replaceRecord(s).bits.victimPfSource) === i.U
-      statTnocVec(i)(s) := busContention(s).valid && busContention(s).bits.delayHit
-      statTbusVec(i)(s) := busContention(s).valid && busContention(s).bits.busHit
-      statTbankVec(i)(s) := busContention(s).valid && busContention(s).bits.bankHit
+      statTnocVec(i)(s) := busContention(s).valid && busContention(s).bits.delayHit &&
+        pfIdxFromReqSource(busContention(s).bits.pfReqSrc) === i.U
+      statTbusVec(i)(s) := busContention(s).valid && busContention(s).bits.busHit &&
+        pfIdxFromReqSource(busContention(s).bits.pfReqSrc) === i.U
+      statTbankVec(i)(s) := busContention(s).valid && busContention(s).bits.bankHit &&
+        pfIdxFromReqSource(busContention(s).bits.pfReqSrc) === i.U
 
       deltaMshrHitVec(i)(s) := Mux(
         statMshrHitVec(i)(s),

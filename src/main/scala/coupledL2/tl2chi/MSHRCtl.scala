@@ -210,6 +210,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
         getDramBank(mshrReqAddr(i)) === getDramBank(pfAddr)
     }
     io.busContention.get.valid := pfRefillReturn
+    io.busContention.get.bits.pfReqSrc := io.dataRefill.get.bits.pfReqSrc
     io.busContention.get.bits.delayHit := delayHitVec.asUInt.orR
     io.busContention.get.bits.busHit := busHitVec.asUInt.orR
     io.busContention.get.bits.bankHit := bankHitVec.asUInt.orR
