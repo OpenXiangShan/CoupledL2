@@ -592,7 +592,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     // ==================== Prefetch replenish (after slice initilize)===================
     prefetcher.foreach{ p =>
       for ((f, s) <- p.pfFeedbackVec zip slices) {
-        f.pfReplaceDemand := s.io.pfReplaceDemand.get
+        f.replaceRecord := s.io.replaceRecord.get
         f.dataRefill := s.io.dataRefill.get
         f.dirResult := s.io.dirResult.get
         f.pfStatInMSHR := s.io.pfStatInMSHR.get

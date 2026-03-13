@@ -32,7 +32,7 @@ abstract class BaseSliceIO[T_OUT <: BaseOuterBundle](implicit p: Parameters) ext
   val sliceId = Input(UInt(bankBits.W))
   val l1Hint = DecoupledIO(new L2ToL1Hint())
   val prefetch = prefetchOpt.map(_ => Flipped(new PrefetchIO))
-  val pfReplaceDemand = prefetchOpt.map(_ => ValidIO(new PrefetchReplaceDemandBundle))
+  val replaceRecord = prefetchOpt.map(_ => ValidIO(new ReplaceBundle))
   val dataRefill = prefetchOpt.map(_ => ValidIO(new DemandRefillBundle))
   val busContention = prefetchOpt.map(_ => ValidIO(new BusContentionBundle))
   val dirResult = topDownOpt.map(_ => ValidIO(new DirResult))
