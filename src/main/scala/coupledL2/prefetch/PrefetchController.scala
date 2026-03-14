@@ -56,7 +56,7 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
   val io = IO(new PrefetchControllerIO)
 
   val hartId = p(L2ParamKey).hartId
-  private val Seq(none, ipop, default, defaultLate, defaultUseless) = Seq(0, 1, 2, 3, 4)
+  private val Seq(none, ipop, default, defaultLate, defaultUseless, ipopHitFine) = Seq(0, 1, 2, 3, 4, 5)
   val controlMode = Constantin.createRecord(s"l2pf_controlMode$hartId", initValue = default)
 
   // prefetch number
@@ -363,6 +363,9 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
       }.elsewhen(controlMode === ipop.U) {
         peDeltaSliceVec(s) := deltaDemandCacheHitVec(i)(s) - deltaPollutionHoldVec(i)(s) -
           deltaTnocVec(i)(s) - deltaTbusVec(i)(s) - deltaTbankVec(i)(s)
+      }.elsewhen(controlMode === ipopHitFine.U) {
+        peDeltaSliceVec(s) := deltaMshrHitVec(i)(s) + deltaDemandCacheHitVec(i)(s) + deltaL1PrefetchCacheHitVec(i)(s) -
+          deltaPollutionHoldVec(i)(s) - deltaTnocVec(i)(s) - deltaTbusVec(i)(s) - deltaTbankVec(i)(s)
       }.otherwise {
         peDeltaSliceVec(s) := 0.S(peBits.W)
       }
