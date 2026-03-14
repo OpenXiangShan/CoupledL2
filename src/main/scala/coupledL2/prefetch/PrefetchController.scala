@@ -57,7 +57,7 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
 
   val hartId = p(L2ParamKey).hartId
   private val Seq(none, ipop, default, defaultLate, defaultUseless, ipopHitFine) = Seq(0, 1, 2, 3, 4, 5)
-  val controlMode = Constantin.createRecord(s"l2pf_controlMode$hartId", initValue = default)
+  val controlMode = Constantin.createRecord(s"l2pf_controlMode$hartId", initValue = none)
 
   // prefetch number
   private val PF_STREAM = 0
