@@ -28,6 +28,7 @@ import coupledL2._
 import coupledL2.prefetch.{PrefetchTrain, PfSource}
 import coupledL2.tl2chi.CHICohStates._
 import coupledL2.MetaData._
+import coupledL2.prefetch.CDPDetectTrigger
 
 class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes with HasPerfEvents {
   val io = IO(new Bundle() {
@@ -116,6 +117,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     /* l2 flush (CMO All) */
     val cmoAllBlock = Option.when(cacheParams.enableL2Flush) (Input(Bool()))
     val cmoLineDone = Option.when(cacheParams.enableL2Flush) (Output(Bool()))
+
+    /* to CDP for detection */
+    val cdp_trigger = ValidIO(new CDPDetectTrigger)
   })
 
   require(chiOpt.isDefined)
@@ -572,6 +576,12 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     tagErr = Mux(wen_c, req_s3.denied, meta_s3.tagErr),
     dataErr = Mux(wen_c, req_s3.corrupt, meta_s3.dataErr) // update error when write DS
   )
+  if (hasCDP) {
+    // clean the depth if demand hit from L1
+    val need_clean_depth = req_acquireBlock_s3 && dirResult_s3.hit && MemReqSource.isCPUReq(req_s3.reqSource)
+    metaW_s3_a.pfDepth := Mux(need_clean_depth, 0.U, meta_s3.pfDepth)
+  }
+
   // use merge_meta if mergeA
   val metaW_s3_mshr = WireInit(Mux(req_s3.mergeA, req_s3.aMergeTask.meta, req_s3.meta))
   metaW_s3_mshr.tagErr := req_s3.denied
@@ -721,6 +731,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       train.bits.prefetched := Mux(req_s3.mergeA, true.B, meta_s3.prefetch.getOrElse(false.B))
       train.bits.pfsource := meta_s3.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) // TODO
       train.bits.reqsource := req_s3.reqSource
+
+      // for CDP, we train on both hit & miss
+      train.bits.trigger_valid := task_s3.valid && ((req_acquire_s3 || req_get_s3) && req_s3.needHint.getOrElse(false.B) || req_s3.mergeA)
   }
 
   /* ======== Stage 4 ======== */
@@ -853,6 +866,21 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   txdat_s5.bits.task.denied := tagError_s5
   txdat_s5.bits.task.corrupt := task_s5.bits.corrupt || dataError_s5
   txdat_s5.bits.data.data := out_data_s5
+
+  /* for CDP trigger */
+  val dirResult_s5_hit = RegNext(RegNext(dirResult_s3.hit))
+  val req_s5_sinkA = !task_s5.bits.mshrTask && task_s5.bits.fromA
+  val req_s5_acquire_block = req_s5_sinkA && task_s5.bits.opcode === AcquireBlock
+
+  val is_hit_trigger = task_s5.valid && dirResult_s5_hit && req_s5_acquire_block
+
+  val req_s5_mshr = task_s5.bits.mshrTask
+  val req_s5_grantdata = req_s5_mshr && task_s5.bits.opcode === GrantData
+  val is_refill_trigger = task_s5.valid && req_s5_grantdata
+
+  io.cdp_trigger.valid := is_hit_trigger || is_refill_trigger
+  io.cdp_trigger.bits.cacheblock  := out_data_s5
+  io.cdp_trigger.bits.pfDepth     := DontCare   // TODO
 
   /* ======== BlockInfo ======== */
   // if s2/s3 might write Dir, we must block s1 sink entrance

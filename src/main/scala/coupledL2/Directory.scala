@@ -39,6 +39,9 @@ class MetaEntry(implicit p: Parameters) extends L2Bundle {
   val tagErr = Bool() // ECC error from L1/L3; DataCheck for CHI
   val dataErr = Bool()
 
+  // for CDP
+  val pfDepth = UInt(4.W)
+
   def =/=(entry: MetaEntry): Bool = {
     this.asUInt =/= entry.asUInt
   }
@@ -51,7 +54,7 @@ object MetaEntry {
   }
   def apply(dirty: Bool, state: UInt, clients: UInt, alias: Option[UInt], prefetch: Bool = false.B,
             pfsrc: UInt = PfSource.NoWhere.id.U, accessed: Bool = false.B,
-            tagErr: Bool = false.B, dataErr: Bool = false.B
+            tagErr: Bool = false.B, dataErr: Bool = false.B, pfDepth: UInt = 0.U
   )(implicit p: Parameters) = {
     val entry = Wire(new MetaEntry)
     entry.dirty := dirty
@@ -63,6 +66,7 @@ object MetaEntry {
     entry.accessed := accessed
     entry.tagErr := tagErr
     entry.dataErr := dataErr
+    entry.pfDepth := pfDepth
     entry
   }
 }

@@ -268,6 +268,14 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
           Cat(slices.zipWithIndex.map { case (s, i) => s.io.l2FlushDone.getOrElse(false.B)}).andR && io_cpu_halt.getOrElse(false.B)
         }
 
+        /* CDP Prefetch Detect Trigger */
+        if (hasCDP) {
+          slices.zipWithIndex.map{
+            case (s, i) =>
+              s.io_cdp_triggers <> prefetcher.get.cdpio.cdp_trigger.get(i)
+          }
+        }
+
         /**
           * performance counters
           */
