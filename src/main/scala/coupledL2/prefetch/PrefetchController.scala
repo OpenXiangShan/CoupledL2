@@ -456,6 +456,33 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
     ((latencyLastEpoch - latencyAvg) > latencyDownThreshold(latencyLastEpoch))
   val statPfHitLagActiveVec = WireInit(VecInit(Seq.fill(PF_NUM)(false.B)))
   val statLatencyDownActiveVec = WireInit(VecInit(Seq.fill(PF_NUM)(false.B)))
+
+when(controlMode === ipop.U) {
+  when (epochEnd) {
+    for (i <- 0 until PF_NUM) {
+      val peEval = peVec(i)
+      when (activeVec(i)) {
+        when (peEval < 0.S) {
+          activeVec(i) := false.B
+          levelVec(i) := maxDegree.U
+        }
+      }.otherwise {
+        when (levelVec(i) === 0.U) {
+          when(latencyDown) { // latency has downtrend, try to active this prefetcher
+            activeVec(i) := true.B
+            levelVec(i) := 0.U
+            statLatencyDownActiveVec(i) := true.B
+          }
+        }.otherwise {
+          levelVec(i) := levelVec(i) - 1.U
+        }
+      }
+      peVec(i) := 0.S
+    }
+    latencyLastEpoch := latencyAvg
+    epochID := epochID + 1.U
+  }
+}.otherwise {
   when (epochEnd) {
     for (i <- 0 until PF_NUM) {
       val peEval = peVec(i)
@@ -490,6 +517,7 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
     latencyLastEpoch := latencyAvg
     epochID := epochID + 1.U
   }
+}
 
   io.l2PfFbCtrl.streamDegree := pfDegree(PF_STREAM)
   io.l2PfFbCtrl.strideDegree := pfDegree(PF_STRIDE)
