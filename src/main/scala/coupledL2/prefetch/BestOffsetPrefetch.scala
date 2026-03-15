@@ -386,6 +386,7 @@ class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
     req.needT := needT
     req.source := source
     req.pfSource := MemReqSource.Prefetch2L2BOP.id.U
+    req.pfDepth := 0.U  // Only for CDP, we don't need it in BOP, set it to 0.U here --- IGNORE ---
     req
   }
 
