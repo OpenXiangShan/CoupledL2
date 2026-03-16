@@ -3,8 +3,8 @@ package coupledL2.prefetch
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
-import utility.{ChiselDB, Constantin, MemReqSource,sram,XSPerfAccumulate,XSPerfHistogram}
-import coupledL2.utils.{SetAssociativeMemory,FullyAssociativeMemory,OverwriteQueue}
+import utility.{ChiselDB, Constantin, MemReqSource, XSPerfAccumulate, XSPerfHistogram, sram}
+import coupledL2.utils.{FullyAssociativeMemory, OverwriteQueue, SetAssociativeMemory}
 import coupledL2.HasCoupledL2Parameters
 import coupledL2.utils.ReplacementPolicy
 import huancun.{TPmetaReq, TPmetaResp}
@@ -185,7 +185,7 @@ class SampleDb(implicit p: Parameters) extends NLBundle {
   val updateIdx = UInt(sampleTableSetBits.W)
   val updateMask = UInt(nlParams.sampleTableWays.W)
   val updateData = new SampleTableEntryField()
-  val timeSampleDetal = UInt(timeSampleCounterBits.W)
+  val timeSampleDelta = UInt(timeSampleCounterBits.W)
 
   val insertEn = Bool()
   val insertIdx = UInt(sampleTableSetBits.W)
@@ -197,7 +197,7 @@ class SampleDb(implicit p: Parameters) extends NLBundle {
 class PatternDb(implicit p: Parameters) extends NLBundle {
  val hit = Bool()
  val hitData = new PatternTableEntryField()
- val sat = UInt(3.W)
+ val sat = UInt(patternTableSatBits.W)
 
  val trainEn = Bool()
  val trainData = new SampleTableEntryField()
@@ -252,7 +252,7 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   ))
 
   //replacer
-  val sampleTableReplacer = ReplacementPolicy.fromString(sampleTableReplacementPolicy,nlParams.sampleTableWays)
+  val sampleTableReplacer = ReplacementPolicy.fromString(sampleTableReplacementPolicy, nlParams.sampleTableWays)
   val sampleTableReplaceStateRegs = Module(new SetAssociativeMemory(
       gen = UInt(sampleTableReplacer.nBits.W),
       sets = sampleTableSets,
@@ -272,13 +272,13 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   //and a new sample arrives at this time, it is inserted into the table.
   val s0_sampleTableReplaceEn = s0_valid & (!s0_timeSample(timeSampleRateBits-1,0).orR)
   //Parse address
-  val s0_sampleTableReplacBlockAddr = getBlockAddr(s0_addr)
-  val s0_sampleTableReplaceIdx = getSampleTableSet(s0_sampleTableReplacBlockAddr)
+  val s0_sampleTableReplaceBlockAddr  = getBlockAddr(s0_addr)
+  val s0_sampleTableReplaceIdx = getSampleTableSet(s0_sampleTableReplaceBlockAddr )
   sampleTable.io.r(sampleTableReplacePort).req.setIdx := s0_sampleTableReplaceIdx   
   sampleTableReplaceStateRegs.io.r(sampleTableReplacePort).req.setIdx := s0_sampleTableReplaceIdx 
   
   //****************update part******************//
-  val s0_sampleTableUpdateBlockAddr = s0_sampleTableReplacBlockAddr -1.U
+  val s0_sampleTableUpdateBlockAddr = s0_sampleTableReplaceBlockAddr  -1.U
   val s0_sampleTableUpdateIdx = getSampleTableSet(s0_sampleTableUpdateBlockAddr)
 
   sampleTable.io.r(sampleTableUpdatePort).req.setIdx := s0_sampleTableUpdateIdx 
@@ -286,9 +286,9 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
 
   /***************Stage 1: handle  data of Sample Table reading *******************/
   val s1_valid = RegNext(s0_valid, false.B)
-  val s1_timeSample = RegNext(s0_timeSample)
-  val s1_blockAddr = RegNext(s0_sampleTableReplacBlockAddr)
-  val s1_pc = RegNext(s0_pc)
+  val s1_timeSample = RegEnable(s0_timeSample, s0_valid)
+  val s1_blockAddr = RegEnable(s0_sampleTableReplaceBlockAddr, s0_valid)
+  val s1_pc = RegEnable(s0_pc, s0_valid)
   val s1_sampleTableReplacBlockAddr = s1_blockAddr
   val s1_sampleTableUpdateBlockAddr = s1_sampleTableReplacBlockAddr - 1.U
 
@@ -310,9 +310,9 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   s1_SampleTableUpdatedHitEntry := s1_sampleTableUpdateEntries(s1_sampleTableUpdateHitWayIdx)
 
   // check if update
-  val timeSampleDetal = s1_timeSample - s1_SampleTableUpdatedHitEntry.sampleTime
-  val inRange = (timeSampleDetal < timeSampleMaxDistance.U) && (timeSampleMinDistance.U < timeSampleDetal)
-  when(s1_valid & sampleTableUpdateHit & inRange ) {//if hit and update condition ,then update   
+  val timeSampleDelta = s1_timeSample - s1_SampleTableUpdatedHitEntry.sampleTime
+  val inRange = (timeSampleDelta < timeSampleMaxDistance.U) && (timeSampleMinDistance.U < timeSampleDelta)
+  when(s1_valid && sampleTableUpdateHit && inRange ) {//if hit and update condition ,then update   
     s1_sampleTableUpdateEn := true.B
     s1_sampleTableUpdatedEntry := s1_SampleTableUpdatedHitEntry
     s1_sampleTableUpdatedEntry.touched := true.B
@@ -335,8 +335,8 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
 
   //***************replace part*******************//
   val s1_sampleTableReplaceEn = RegNext(s0_sampleTableReplaceEn)
-  val s1_sampleTableReplaceEntries = RegNext(sampleTable.io.r(sampleTableReplacePort).resp.data)  // Vec(ways, SampleTableEntryField)
-  val s1_sampleTableReplaceState = RegInit(0.U(sampleTableReplacer.nBits.W))
+  val s1_sampleTableReplaceEntries = RegEnable(sampleTable.io.r(sampleTableReplacePort).resp.data, s0_sampleTableReplaceEn)  // Vec(ways, SampleTableEntryField)
+  val s1_sampleTableReplaceState = RegEnable(sampleTableReplaceStateRegs.io.r(sampleTableReplacePort).resp.data(0), s0_sampleTableReplaceEn)
   val (s1_sampleTableReplaceTag, s1_sampleTableReplaceIdx) = parseTrainData(s1_sampleTableReplacBlockAddr)
   val s1_patternTableTag = getPatternTableTag(s1_pc)
   s1_sampleTableReplaceState := sampleTableReplaceStateRegs.io.r(sampleTableReplacePort).resp.data(0)
@@ -417,7 +417,7 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   io.db.updateIdx := s1_sampleTableUpdateIdx
   io.db.updateMask := s1_sampleTableUpdateHitWayOH
   io.db.updateData := s1_sampleTableUpdatedEntry
-  io.db.timeSampleDetal := timeSampleDetal
+  io.db.timeSampleDelta := timeSampleDelta
 
   io.db.insertEn := s1_sampleTableReplaceEn
   io.db.insertIdx := s1_sampleTableReplaceIdx
@@ -481,9 +481,9 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   /***************Stage 1: process train and prefetch requests*******************/
   /************** train part*******************/
   val s1_trainValid         = RegNext(s0_trainValid, false.B)
-  val s1_trainPcTag         = RegNext(s0_trainPcTag)
-  val s1_trainTouched       = RegNext(s0_trainTouched)
-  val s1_trainResp          = RegNext(patternTable.io.r(patternTableTrainPort).resp)
+  val s1_trainPcTag         = RegEnable(s0_trainPcTag, s0_trainValid)
+  val s1_trainTouched       = RegEnable(s0_trainTouched, s0_trainValid)
+  val s1_trainResp          = RegEnable(patternTable.io.r(patternTableTrainPort).resp, s0_trainValid)
   
   val s1_patternUpdateEn  = WireInit(false.B)
   val s1_patternUpdateIdx = WireInit(0.U(patternTableSetBits.W))
@@ -525,10 +525,9 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
 
   //************Prefetch part***************//
   val s1_reqValid = RegNext(s0_reqValid, false.B)
-  val s1_reqPc = RegNext(s0_reqPc, 0.U(vaddrBits.W))
-  val s1_reqAddr = RegInit(0.U(vaddrBits.W))
-  s1_reqAddr := s0_reqAddr
-  val s1_reqResp = RegNext(patternTable.io.r(patternTablePrefetchPort).resp)
+  val s1_reqPc = RegEnable(s0_reqPc, s0_reqValid)
+  val s1_reqAddr = RegEnable(s0_reqAddr, s0_reqValid)
+  val s1_reqResp = RegEnable(patternTable.io.r(patternTablePrefetchPort).resp, s0_reqValid)
 
   val s1_prefetchAddr = s1_reqAddr + blockBytes.U
   val s1_reqHitValidEntry = s1_reqValid && s1_reqResp.hit 
@@ -536,13 +535,13 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   val s1_needPrefetch = s1_reqHitValidEntry & (s1_reqResp.data.sat === maxSat) & !s1_crossPage
   /***************Stage 2: write Pattern Table*******************/
   val s2_patternUpdateEn = RegNext(s1_patternUpdateEn, false.B)
-  val s2_patternUpdateIdx = RegNext(s1_patternUpdateIdx)
+  val s2_patternUpdateIdx = RegEnable(s1_patternUpdateIdx, s1_patternUpdateEn)
  
   val s2_patternInsertEn = RegNext(s1_patternInsertEn, false.B)
-  val s2_patternInsertIdx = RegNext(s1_patternInsertIdx)
+  val s2_patternInsertIdx = RegEnable(s1_patternInsertIdx, s1_patternInsertEn)
   
-  val s2_patternNewKey = RegNext(s1_trainPcTag)
-  val s2_patternNewEntry = RegNext(s1_patternNewEntry)
+  val s2_patternNewKey = RegEnable(s1_trainPcTag, s1_patternUpdateEn || s1_patternInsertEn)
+  val s2_patternNewEntry = RegEnable(s1_patternNewEntry, s1_patternUpdateEn || s1_patternInsertEn)
 
   // update
   patternTable.io.w(patternTableUpdatePort).en := s2_patternUpdateEn
@@ -560,7 +559,7 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
 
   //prefetcher initiate a prefetch request
   io.resp.valid := RegNext(s1_needPrefetch, false.B) 
-  io.resp.bits.nextAddr := RegNext(s1_prefetchAddr, 0.U)
+  io.resp.bits.nextAddr := RegEnable(s1_prefetchAddr, s1_needPrefetch)
 
   //db  
   io.db.sat := s1_trainResp.data.sat
@@ -586,7 +585,6 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
 
   XSPerfAccumulate("nlPatternTrainTimes",s1_trainValid) 
   XSPerfAccumulate("nlPatternTrainMulHitTimes",s1_trainResp.multHit||s1_reqResp.multHit)
-  //replace analysis
   XSPerfAccumulate("nlPatternTrainReplaceTimes",s1_patternInsertEn)
 
   //update analysis
