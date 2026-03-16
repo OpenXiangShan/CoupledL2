@@ -118,6 +118,16 @@ trait HasBOPParams extends HasPrefetcherHelper {
 abstract class BOPBundle(implicit val p: Parameters) extends Bundle with HasBOPParams
 abstract class BOPModule(implicit val p: Parameters) extends Module with HasBOPParams
 
+class BopTrainTrace(implicit p: Parameters) extends BOPBundle {
+  val addr = UInt(fullAddrBits.W)
+}
+
+class BopPrefetchTrace(implicit p: Parameters) extends BOPBundle {
+  val prefetchAddr = UInt(fullAddrBits.W)
+  val triggerAddr = UInt(fullAddrBits.W)
+  val offset = UInt(offsetWidth.W)
+}
+
 class ScoreTableEntry(implicit p: Parameters) extends BOPBundle {
   // val offset = UInt(offsetWidth.W)
   val score = UInt(scoreBits.W)
@@ -353,6 +363,7 @@ class BopReqBundle(implicit p: Parameters) extends BOPBundle{
   val needT = Bool()
   val source = UInt(sourceIdBits.W)
   val isBOP = Bool()
+  val offset = UInt(offsetWidth.W)
 }
 
 class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
@@ -366,6 +377,7 @@ class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
   // for pf req
   val needT = Bool()
   val source = UInt(sourceIdBits.W)
+  val offset = UInt(offsetWidth.W)
 
   def fromBopReqBundle(req: BopReqBundle) = {
     paddrValid := false.B
@@ -376,6 +388,7 @@ class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
     paddrNoOffset := 0.U
     needT := req.needT
     source := req.source
+    offset := req.offset
   }
 
   def toPrefetchReq(): PrefetchReq = {
@@ -488,6 +501,7 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
   val s0_req_valid = io.in_req.valid && !s0_conflict_prev && !s0_match && s0_has_invalid_way
   val s0_tlb_fire_oh = VecInit(tlb_req_arb.io.in.map(_.fire)).asUInt
   val s0_pf_fire_oh = VecInit(pf_req_arb.io.in.map(_.fire)).asUInt
+  val pf_fire = s0_pf_fire_oh.orR
   //val s0_access_way = Mux(s0_match, OHToUInt(s0_match_oh), OHToUInt(s0_replace_oh))
   //when(s0_req_valid){
   //  replacement.access(s0_access_way)
@@ -716,12 +730,19 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   scoreTable.io.req.valid := io.train.valid
   scoreTable.io.req.bits := s0_oldFullAddr
 
+  // ======== chiseldb log: vbop train trace ========
+  val vbopTrainTable = ChiselDB.createTable(s"VBOPTrainTrace_h${cacheParams.hartId}", new BopTrainTrace, basicDB = true)
+  val vbopTrainEntry = Wire(new BopTrainTrace)
+  vbopTrainEntry.addr := s0_oldFullAddr
+  vbopTrainTable.log(vbopTrainEntry, io.train.fire, s"VBOPTrainTrace_h${cacheParams.hartId}", clock, reset)
+
   /* s1 get or send req */
   val s1_req_valid = RegInit(false.B)
   val s1_needT = RegEnable(io.train.bits.needT, s0_fire)
   val s1_source = RegEnable(io.train.bits.source, s0_fire)
   val s1_newFullAddr = RegEnable(s0_newFullAddr, s0_fire)
   val s1_reqVaddr = RegEnable(s0_reqVaddr, s0_fire)
+  val s1_offset = RegEnable(prefetchOffset, s0_fire)
   // val out_req = Wire(new PrefetchReq)
   // val out_req_valid = Wire(Bool())
   // val out_drop_req = WireInit(false.B)
@@ -762,6 +783,7 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     reqFilter.io.in_req.bits.needT := s1_needT
     reqFilter.io.in_req.bits.source := s1_source
     reqFilter.io.in_req.bits.isBOP := true.B
+    reqFilter.io.in_req.bits.offset := s1_offset
   }
 
   if(virtualTrain){
@@ -783,6 +805,14 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     io.req.bits.pfSource := MemReqSource.Prefetch2L2BOP.id.U
     io.req.bits.isBOP := true.B
   }
+
+  // ======== chiseldb log: vbop prefetch trace (virtual addr) ========
+  val vbopPrefetchTable = ChiselDB.createTable(s"VBOPPrefetchTrace_h${cacheParams.hartId}", new BopPrefetchTrace, basicDB = true)
+  val vbopPrefetchEntry = Wire(new BopPrefetchTrace)
+  vbopPrefetchEntry.prefetchAddr := s1_newFullAddr
+  vbopPrefetchEntry.triggerAddr := Cat(s1_reqVaddr, 0.U(offsetBits.W))
+  vbopPrefetchEntry.offset := s1_offset
+  vbopPrefetchTable.log(vbopPrefetchEntry, io.req.fire, s"VBOPPrefetchTrace_h${cacheParams.hartId}", clock, reset)
 
   for (off <- offsetList) {
     if (off < 0) {
@@ -836,8 +866,17 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   scoreTable.io.req.valid := io.train.valid
   scoreTable.io.req.bits := oldAddr
 
+  // ======== chiseldb log: pbop train trace ========
+  val pbopTrainTable = ChiselDB.createTable(s"PBOPTrainTrace_h${cacheParams.hartId}", new BopTrainTrace, basicDB = true)
+  val pbopTrainEntry = Wire(new BopTrainTrace)
+  pbopTrainEntry.addr := oldAddr
+  pbopTrainTable.log(pbopTrainEntry, io.train.fire, s"PBOPTrainTrace_h${cacheParams.hartId}", clock, reset)
+
   val req = Reg(new PrefetchReq)
   val req_valid = RegInit(false.B)
+  val req_triggerAddr = RegInit(0.U(fullAddressBits.W))
+  val req_prefetchAddr = RegInit(0.U(fullAddressBits.W))
+  val req_offset = RegInit(0.U(offsetWidth.W))
   val crossPage = getPPN(newAddr) =/= getPPN(oldAddr) // unequal tags
   when(io.req.fire) {
     req_valid := false.B
@@ -848,12 +887,23 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     req.needT := io.train.bits.needT
     req.source := io.train.bits.source
     req_valid := !crossPage && !prefetchDisable // stop prefetch when prefetch req crosses pages
+    req_triggerAddr := oldAddr
+    req_prefetchAddr := newAddr
+    req_offset := prefetchOffset
   }
 
   io.pbopCrossPage := crossPage
   io.req.valid := enable && req_valid
   io.req.bits := req
   io.req.bits.pfSource := MemReqSource.Prefetch2L2PBOP.id.U
+
+  // ======== chiseldb log: pbop prefetch trace ========
+  val pbopPrefetchTable = ChiselDB.createTable(s"PBOPPrefetchTrace_h${cacheParams.hartId}", new BopPrefetchTrace, basicDB = true)
+  val pbopPrefetchEntry = Wire(new BopPrefetchTrace)
+  pbopPrefetchEntry.prefetchAddr := req_prefetchAddr
+  pbopPrefetchEntry.triggerAddr := req_triggerAddr
+  pbopPrefetchEntry.offset := req_offset
+  pbopPrefetchTable.log(pbopPrefetchEntry, io.req.fire, s"PBOPPrefetchTrace_h${cacheParams.hartId}", clock, reset)
   io.train.ready := delayQueue.io.in.ready && scoreTable.io.req.ready && (!req_valid || io.req.ready)
   io.resp.ready := rrTable.io.w.ready
 

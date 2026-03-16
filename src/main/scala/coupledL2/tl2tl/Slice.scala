@@ -56,6 +56,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   prbq.io <> DontCare // @XiaBin TODO
 
   a_reqBuf.io.in <> sinkA.io.task
+  a_reqBuf.io.sliceId := io.sliceId
   a_reqBuf.io.mshrInfo := mshrCtl.io.msInfo
   a_reqBuf.io.mainPipeBlock := mainPipe.io.toReqBuf
   a_reqBuf.io.s1Entrance := reqArb.io.s1Entrance

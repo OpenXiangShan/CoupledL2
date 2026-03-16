@@ -68,11 +68,18 @@ class AMergeTask(implicit p: Parameters) extends L2Bundle {
   val task = new TaskBundle()
 }
 
+class ReqBufPrefetchDb(implicit p: Parameters) extends L2Bundle {
+  val addr = UInt(fullAddressBits.W)
+  val pfSource = UInt(MemReqSource.reqSourceBits.W)
+  val dropped = Bool()
+}
+
 class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Parameters) extends L2Module {
 
   val io = IO(new Bundle() {
     val in          = Flipped(DecoupledIO(new TaskBundle))
     val out         = DecoupledIO(new TaskBundle)
+    val sliceId     = Input(UInt(bankBits.W))
     val mshrInfo  = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo)))
     val aMergeTask = ValidIO(new AMergeTask)
     val mainPipeBlock = Input(Vec(2, Bool()))
@@ -196,6 +203,14 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   val dup        = isPrefetch && dupMask.orR
 
   //!! TODO: we can also remove those that duplicate with mainPipe
+
+  // ==== chiseldb log: prefetch arrival to ReqBuffer ====
+  val reqBufPrefetchTable = ChiselDB.createTable("L2PrefetchReqBufTable", new ReqBufPrefetchDb, basicDB = true)
+  val reqBufPrefetchEntry = Wire(new ReqBufPrefetchDb)
+  reqBufPrefetchEntry.addr := restoreAddressUInt(Cat(in.tag, in.set, 0.U(offsetBits.W)), io.sliceId)
+  reqBufPrefetchEntry.pfSource := in.reqSource
+  reqBufPrefetchEntry.dropped := dup
+  reqBufPrefetchTable.log(reqBufPrefetchEntry, io.in.fire && isPrefetch, s"L2PrefetchReqBuf_s${p(SliceIdKey)}", clock, reset)
 
   /* ======== Alloc ======== */
   io.in.ready   := !full || doFlow || mergeA || dup

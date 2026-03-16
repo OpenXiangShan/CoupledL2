@@ -174,7 +174,8 @@ class PatternReq(implicit p: Parameters) extends NLBundle {
 }
 
 class PatternResp(implicit p: Parameters) extends NLBundle {
-    val nextAddr = UInt(vaddrBits.W)  
+  val nextAddr = UInt(vaddrBits.W)  
+  val triggerPc = UInt(vaddrBits.W)
 }
 //chiselDB interface
 class SampleDb(implicit p: Parameters) extends NLBundle {
@@ -227,6 +228,16 @@ class NlDb(implicit p: Parameters) extends NLBundle {
   val sampleHit  = Bool()
   val patternHit = Bool()
   val patternSat = UInt(3.W)
+}
+
+class NLTrainReqDb(implicit p: Parameters) extends NLBundle {
+  val pc   = UInt(vaddrBits.W)
+  val addr = UInt(fullAddressBits.W)
+}
+
+class NLPrefetchReqDb(implicit p: Parameters) extends NLBundle {
+  val triggerPc    = UInt(vaddrBits.W)
+  val prefetchAddr = UInt(fullAddressBits.W)
 }
 
 class SamplePatterDb(implicit p: Parameters) extends NLBundle {
@@ -602,6 +613,7 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   //prefetcher initiate a prefetch request
   io.resp.valid             := RegNext(s1_needPrefetch, false.B) 
   io.resp.bits.nextAddr     := RegNext(s1_reqAddr + blockBytes.U, 0.U)
+  io.resp.bits.triggerPc    := RegNext(s1_reqPc, 0.U)
 
   //db  
   io.db.Sat := s1_trainResp.data.sat
@@ -719,6 +731,19 @@ class NextLinePrefetchIdeal(implicit p: Parameters) extends NLModule {
   io.req.bits.source := 0.U  
   io.req.bits.pfSource := MemReqSource.Prefetch2L2NL.id.U  
 
+  // ========== chiseldb log ==========
+  val nlTrainTable = ChiselDB.createTable("NLTrainReqTable", new NLTrainReqDb, basicDB = true)
+  val nlTrainEntry = Wire(new NLTrainReqDb)
+  nlTrainEntry.pc := io.train.bits.pc.getOrElse(0.U)
+  nlTrainEntry.addr := io.train.bits.addr
+  nlTrainTable.log(nlTrainEntry, shouldTrain, "NLTrainReq", clock, reset)
+
+  val nlPrefetchTable = ChiselDB.createTable("NLPrefetchReqTable", new NLPrefetchReqDb, basicDB = true)
+  val nlPrefetchEntry = Wire(new NLPrefetchReqDb)
+  nlPrefetchEntry.triggerPc := prefetchQueue.io.deq.bits.triggerPc
+  nlPrefetchEntry.prefetchAddr := io.req.bits.addr
+  nlPrefetchTable.log(nlPrefetchEntry, io.req.fire, "NLPrefetchReq", clock, reset)
+
   // ========== performance counter==========
   val monitor = Module(new NextLineMonitor())
   monitor.io.patternDb := prefetcherPattern.io.db 
@@ -781,4 +806,3 @@ class NextLineMonitor(implicit p: Parameters) extends NLModule {
   // samplePatternTable.log(samplePatternDbData, shouldTrain&(sampleTrainHit||sampleInsertEn), s"NlsamplePatter${hartId}", clock, reset)
 
 }
-
