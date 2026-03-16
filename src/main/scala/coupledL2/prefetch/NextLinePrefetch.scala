@@ -211,19 +211,6 @@ class PatternDb(implicit p: Parameters) extends NLBundle {
  val insertData = new PatternTableEntryField()
 }
 
-class NlDb(implicit p: Parameters) extends NLBundle {
-  val addr = UInt(vaddrBits.W)
-  val pc = UInt(vaddrBits.W)
-  val timeSample = UInt(timeSampleCounterBits.W)
-  val sampleHit = Bool()
-  val patternHit = Bool()
-  val patternSat = UInt(3.W)
-}
-
-class SamplePatternDb(implicit p: Parameters) extends NLBundle {
-  val sample = new SampleDb()
-  val pattern = new PatternDb()
-}
 /*
 vaddr (50bit):
 ┌────────────────────┬─────────┬────────┐
