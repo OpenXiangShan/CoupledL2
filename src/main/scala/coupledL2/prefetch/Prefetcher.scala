@@ -297,7 +297,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
 
   val tp = if (hasTPPrefetcher) Some(Module(new TemporalPrefetch())) else None
   // define Next-Line Prefetcher
-  val nl = if (hasNLPrefetcher) Some(Module(new NextLinePrefetchIdeal())) else None
+  val nl = if (hasNLPrefetcher) Some(Module(new NextLinePrefetch())) else None
   // prefetch from upper level
   val pfRcv = if (hasReceiver) Some(Module(new PrefetchReceiver())) else None
 

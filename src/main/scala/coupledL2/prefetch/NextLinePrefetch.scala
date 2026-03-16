@@ -195,13 +195,9 @@ class PatternDb(implicit p: Parameters) extends NLBundle {
  val trainEn = Bool()
  val trainData = new SampleTableEntryField()
 
- val updateEn = Bool()
- val updateIdx = UInt(patternTableSetBits.W)
- val updateData = new PatternTableEntryField()
-
- val insertEn = Bool()
- val insertIdx = UInt(patternTableSetBits.W)
- val insertData = new PatternTableEntryField()
+ val we = Bool()
+ val writeIdx = UInt(patternTableSetBits.W)
+ val writeData = new PatternTableEntryField()
 }
 
 /*
@@ -401,14 +397,14 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
       shouldReset = true
   ))
 
-  val replacer = ReplacementPolicy.fromString(patternTableReplacementPolicy, nlParams.patternTableSets)
-  val replaceState = RegInit(0.U(replacer.nBits.W))
+  // Replacer: SetAssocReplacer with single set (fully associative)
+  val replacer = new SetAssocReplacer(1, nlParams.patternTableSets, patternTableReplacementPolicy)
 
   // Local port aliases
   private val trainPort = patternTableTrainPort
   private val prefetchPort = patternTablePrefetchPort
-  private val updatePort = patternTableUpdatePort
-  private val insertPort = patternTableInsertPort
+
+  private val writePort = patternTableInsertPort
 
   io.train.ready := true.B
   io.req.ready := true.B
@@ -432,18 +428,15 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   val s1_trainTouched = RegEnable(s0_trainTouched, s0_trainValid)
   val s1_trainResp = RegEnable(pt.io.r(trainPort).resp, s0_trainValid)
 
-  val s1_updateEn = WireInit(false.B)
-  val s1_updateIdx = WireInit(0.U(patternTableSetBits.W))
-  val s1_insertEn = WireInit(false.B)
-  val s1_insertIdx = WireInit(0.U(patternTableSetBits.W))
+  val s1_we = WireInit(false.B)
+  val s1_writeIdx = WireInit(0.U(patternTableSetBits.W))
   val s1_newEntry = WireInit(s1_trainResp.data)
 
   when(s1_trainValid) {
     when(s1_trainResp.hit) {
-      s1_updateEn := true.B
+      s1_we := true.B
+      s1_writeIdx := s1_trainResp.hitIdx
       s1_newEntry.valid := true.B
-      s1_updateIdx := s1_trainResp.hitIdx
-
       val currentSat = s1_trainResp.data.sat
       when(s1_trainTouched) {
         s1_newEntry.sat := Mux(currentSat === maxSat, maxSat, currentSat + 1.U)
@@ -451,16 +444,17 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
         s1_newEntry.sat := Mux(currentSat === 0.U, 0.U, currentSat - 1.U)
       }
     }.otherwise {
-      s1_insertEn := s1_trainTouched
+      s1_we := s1_trainTouched
+      s1_writeIdx := replacer.way(0.U)  // Get victim from single-set replacer
       s1_newEntry.valid := s1_trainTouched
-      s1_insertIdx := replacer.get_replace_way(replaceState)
       s1_newEntry.sat := 1.U
     }
   }
 
-  // Update PLRU state
-  val nextState = replacer.get_next_state(replaceState, Mux(s1_trainResp.hit, s1_trainResp.hitIdx, s1_insertIdx))
-  replaceState := nextState
+  // Update PLRU state on access (hit or insert)
+  when(s1_trainValid) {
+    replacer.access(0.U, Mux(s1_trainResp.hit, s1_trainResp.hitIdx, s1_writeIdx))
+  }
 
   // -------------------- Prefetch Part --------------------
   val s1_reqValid = RegNext(s0_reqValid, false.B)
@@ -475,26 +469,17 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   val s1_needPrefetch = s1_reqHit && (s1_reqResp.data.sat === maxSat) && !s1_crossPage
 
   // ==================== Stage 2: Writeback ====================
-  val s2_updateEn = RegNext(s1_updateEn, false.B)
-  val s2_updateIdx = RegEnable(s1_updateIdx, s1_updateEn)
-  val s2_insertEn = RegNext(s1_insertEn, false.B)
-  val s2_insertIdx = RegEnable(s1_insertIdx, s1_insertEn)
-  val s2_newKey = RegEnable(s1_trainPcHash, s1_updateEn || s1_insertEn)
-  val s2_newEntry = RegEnable(s1_newEntry, s1_updateEn || s1_insertEn)
+  val s2_we = RegNext(s1_we, false.B)
+  val s2_writeIdx = RegEnable(s1_writeIdx, s1_we)
+  val s2_newKey = RegEnable(s1_trainPcHash, s1_we)
+  val s2_newEntry = RegEnable(s1_newEntry, s1_we)
 
-  // Update writeback
-  pt.io.w(updatePort).en := s2_updateEn
-  pt.io.w(updatePort).req.valid := true.B
-  pt.io.w(updatePort).req.key := s2_newKey
-  pt.io.w(updatePort).req.idx := s2_updateIdx
-  pt.io.w(updatePort).req.data := s2_newEntry
-
-  // Insert writeback
-  pt.io.w(insertPort).en := s2_insertEn
-  pt.io.w(insertPort).req.valid := true.B
-  pt.io.w(insertPort).req.key := s2_newKey
-  pt.io.w(insertPort).req.idx := s2_insertIdx
-  pt.io.w(insertPort).req.data := s2_newEntry
+  //writeback
+  pt.io.w(writePort).en := s1_we
+  pt.io.w(writePort).req.valid := true.B
+  pt.io.w(writePort).req.key := s2_newKey
+  pt.io.w(writePort).req.idx := s2_writeIdx
+  pt.io.w(writePort).req.data := s2_newEntry
 
   // Output
   io.resp.valid := RegNext(s1_needPrefetch, false.B)
@@ -503,7 +488,7 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   // ==================== Debug & Performance ====================
   val dbTable = ChiselDB.createTable(s"NLpatterndb", new PatternDb, basicDB = false)
   val dbData = Wire(new PatternDb())
-  dbTable.log(dbData, dbData.trainEn && (dbData.hit || dbData.insertEn), s"Nlpattern", clock, reset)
+  dbTable.log(dbData, dbData.trainEn && (dbData.hit || dbData.we), s"Nlpattern", clock, reset)
 
   dbData.sat := s1_trainResp.data.sat
   dbData.hit := s1_trainResp.hit
@@ -514,16 +499,14 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   dbData.trainData.tag := 0.U
   dbData.trainData.sampleTime := 0.U
   dbData.trainData.touched := s1_trainTouched
-  dbData.updateEn := s1_updateEn
-  dbData.updateIdx := s1_updateIdx
-  dbData.updateData := s1_newEntry
-  dbData.insertEn := s1_insertEn
-  dbData.insertIdx := s1_insertIdx
-  dbData.insertData := s1_newEntry
+  dbData.we := s1_we
+  dbData.writeIdx := s1_writeIdx
+  dbData.writeData := s1_newEntry
+ 
 
   XSPerfAccumulate("nlPatternTrainTimes", s1_trainValid)
   XSPerfAccumulate("nlPatternTrainMulHitTimes", s1_trainResp.multHit || s1_reqResp.multHit)
-  XSPerfAccumulate("nlPatternTrainReplaceTimes", s1_insertEn)
+  XSPerfAccumulate("nlPatternTrainReplaceTimes", !s1_trainResp.hit)
   XSPerfAccumulate("nlPatternUpdateTimes", s1_trainValid && s1_trainResp.hit)
   XSPerfAccumulate("nlPatternUpdateTouchedTrueTimes", s1_trainValid && s1_trainResp.hit && s1_trainTouched)
   XSPerfAccumulate("nlPatternUpdateTouchedFalseTimes", s1_trainValid && s1_trainResp.hit && !s1_trainTouched)
@@ -609,11 +592,9 @@ class NextLinePrefetch(implicit p: Parameters) extends NLModule {
   XSPerfAccumulate("nlLoadMissTimes", validTrain & !io.train.bits.hit)
   XSPerfAccumulate("nlLoadHitPrefetchedTimes",validTrain & io.train.bits.prefetched)
   XSPerfAccumulate("nlLoadMissAndHitPrefetchedTimes",validTrain & !io.train.bits.hit & io.train.bits.prefetched)
-
   XSPerfAccumulate("nlPrefetchReqTimes",prefetcherPattern.io.resp.valid && io.enable)
   XSPerfAccumulate("nlTransmitPrefetchReqTimes",io.req.fire && io.enable)
   XSPerfHistogram("grant_grantack_period", prefetchQueue.io.count, io.req.ready, 0, nlParams.nlPrefetchQueueEntries, 1)
-
   XSPerfAccumulate("nlTimeSampleCountResetTimes",(!timeSampleCounter.orR) & shouldTrain)
 
 }
