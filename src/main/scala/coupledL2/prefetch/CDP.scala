@@ -22,6 +22,7 @@ case class CDPParameters(
   VpnTableTagBits:      Int = 10,     // should be a val within (0, 18 - log2(VpnTableSubEntryNum)]
   CounterBits:          Int = 10,
   VpnResetPeriod:       Int = 128,    // Every $VpnResetPeriod visits, VPN entries will be reset
+  EntryBits:            Int = 20,     // Every SubEntry maintain for 2^20 Bits = 1M space
 
   Degree:   Int = 1,      // issue how many prefetch req?
 
@@ -78,26 +79,33 @@ trait HasCDPParams extends HasPrefetcherHelper with HasCoupledL2Parameters {
 
   val VpnResetPeriod      = cdpParams.VpnResetPeriod
 
+  val EntryBits     = cdpParams.EntryBits
   val mainEntryBits = log2Ceil(VpnTableSetNum)
   val subEntryBits  = log2Ceil(VpnTableSubEntryNum)
   val vpnTabTagBits = cdpParams.VpnTableTagBits
   val vpnWayBits    = log2Ceil(VpnTableWayNum)
 
-  // addr => [vpn2, vpn1] => [vpn_addr, sub_idx]
-  def get_vpn_addr(addr: UInt) = addr(38, 21 + subEntryBits)
+  // vaddr => [ Tag | MainEntryIdx | SubEntryIdx | EntryBits(1M Space) ]
+  // vpn_addr => [ Tag | MainEntryIdx | SubEntryIdx ]
+
+  def get_vpn_addr(addr: UInt) = addr(addr.getWidth - 1, EntryBits + 1)  // TODO: parameterize
 
   def get_main_idx(addr: UInt) = {
-    // Hash vpn_addr (18 - $subEntryBits bits) to $mainEntryBits
     val vpn_addr = get_vpn_addr(addr)
 
-    get_folded_hash(vpn_addr, mainEntryBits)
+    vpn_addr(subEntryBits + mainEntryBits - 1, subEntryBits)
   }
 
-  def get_sub_idx(addr: UInt) = addr(20 + subEntryBits, 20)
+  def get_sub_idx(addr: UInt) = {
+    val vpn_addr = get_vpn_addr(addr)
+    vpn_addr(subEntryBits - 1, 0)
+  }
 
   def get_vpntab_tag(addr: UInt) = {
     val vpn_addr = get_vpn_addr(addr)
-    get_folded_hash(vpn_addr, vpnTabTagBits)
+
+    val origin_tag = vpn_addr(vpn_addr.getWidth - 1 ,subEntryBits + mainEntryBits) // TODO: parameterize
+    get_folded_hash(origin_tag, vpnTabTagBits)
   }
 
   // Req Filter Params
@@ -183,8 +191,8 @@ class VpnTable(implicit p: Parameters) extends CDPModule {
   for (i <- 0 until DetectPipeNum + 1) {
     val (req, rsp) = (query_req(i), query_rsp(i))
 
-    req.ready := !train_req.valid & !is_reset
-    rsp.valid := !train_req.valid & !is_reset
+    req.ready := !is_reset
+    rsp.valid := !is_reset
 
     val (main_idx, sub_idx) = (req.bits.main_idx, req.bits.sub_idx)
 
@@ -317,6 +325,11 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   val s3_ready = Wire(Bool())
   val s4_ready = Wire(Bool())
 
+  val s0_s1_same = Wire(Bool())
+  val s0_s2_same = Wire(Bool())
+  val s0_s3_same = Wire(Bool())
+  val s0_s4_same = Wire(Bool())
+
   // ----------- s0 -----------
   s0_ready := reset.asBool || s1_ready
   s0_valid := train_req.valid
@@ -328,7 +341,9 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
 
   // ----------- s1 -----------
   // search the Vpn Table
-  s1_ready := reset.asBool || !s1_valid || s2_ready && vt_query_req.ready && vt_query_rsp.valid
+  val same_addr = s0_s1_same || s0_s2_same || s0_s3_same || s0_s4_same
+
+  s1_ready := reset.asBool || !s1_valid || s2_ready && vt_query_req.ready && vt_query_rsp.valid && !same_addr
   s1_valid := RegEnable(s0_valid, s1_ready)
 
   val s1_main_idx = RegEnable(s0_main_idx, s1_ready)
@@ -340,8 +355,10 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   vt_query_req.bits.main_idx := s1_main_idx
   vt_query_req.bits.sub_idx  := s1_sub_idx
 
+  s0_s1_same := s1_valid && s0_main_idx === s1_main_idx && s0_sub_idx === s1_sub_idx && s0_tag === s1_tag
+
   // ----------- s2 -----------
-  // check whether hit/miss
+  // check for hit/miss
   s2_ready := reset.asBool || !s2_valid || s3_ready
   s2_valid := RegEnable(s1_valid, s2_ready)
 
@@ -361,6 +378,8 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   val s2_hit      = s2_hit_vec.reduce(_ || _)
   val s2_hit_idx  = PriorityEncoder(s2_hit_vec)
   assert(PopCount(s2_hit_vec) < 2.U, "Meta multiple hit!")
+
+  s0_s2_same := s2_valid && s0_main_idx === s2_main_idx && s0_sub_idx === s2_sub_idx && s0_tag === s2_tag
 
   // ----------- s3 -----------
   // get plru replacer info & calculate update info
@@ -386,6 +405,8 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   s3_update_info.need_alloc := !s3_hit
   s3_update_info.target_way := Mux(s3_hit, s3_hit_idx, plru_way)
 
+  s0_s3_same := s3_valid && s0_main_idx === s3_main_idx && s0_sub_idx === s3_sub_idx && s0_tag === s3_tag
+
   // ----------- s4 -----------
   // update plru && VpnTable
   s4_ready  := !reset.asBool
@@ -399,6 +420,8 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   replace_upt.valid := s4_valid
   replace_upt.bits.set  := s4_update_info.main_idx
   replace_upt.bits.way  := s4_update_info.target_way
+
+  s0_s4_same := s4_valid && s0_main_idx === s4_update_info.main_idx && s0_sub_idx === s4_update_info.sub_idx && s0_tag === s4_update_info.tag
 }
 
 class DetectPipeline(implicit p: Parameters) extends CDPModule {
@@ -668,7 +691,9 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
     val train = Flipped(DecoupledIO(new PrefetchTrain))
   })
 
-  val enable = io.enable
+  private val cstEnable = Constantin.createRecord("cdp_enable"+cacheParams.hartId.toString, initValue = 1)
+
+  val enable = io.enable & cstEnable.orR
   val train = io.train
 
   val l2_triggers = io.l2_detect_triggers
@@ -716,7 +741,7 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
   train_trig_queue.io.enq.valid := train.valid && enable
   train_trig_queue.io.enq.bits.vaddr := train.bits.vaddr.getOrElse(0.U)
   train.ready := train_trig_queue.io.enq.ready
-  assert(!train_trig_queue.io.enq.valid | train_trig_queue.io.enq.ready, "l1_demand_hit_train_trigger should always be ready to accept new trigger!")
+  //assert(!train_trig_queue.io.enq.valid | train_trig_queue.io.enq.ready, "l1_demand_hit_train_trigger should always be ready to accept new trigger!")
 
   train_pipe.io.train_req.valid := train_trig_queue.io.deq.valid
   train_trig_queue.io.deq.ready := train_pipe.io.train_req.ready
@@ -774,4 +799,9 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
   pft_req_filter.io.cdp_pft_req <> pft_req_buffer.io.deq(0)
   pft_req_filter.io.tlb_req <> io.tlb_req
   pft_req_filter.io.pft_req <> io.pft_req
+
+  // ------------------- Performance Counter -------------------
+  XSPerfAccumulate("train_trigger_enq", train_trig_queue.io.enq.fire)
+  XSPerfAccumulate("train_trigger_deq", train_trig_queue.io.deq.fire)
+  XSPerfAccumulate("train_trigger_discard", train_trig_queue.io.enq.valid && !train_trig_queue.io.enq.ready)
 }

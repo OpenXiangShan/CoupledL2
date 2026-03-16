@@ -225,12 +225,14 @@ class PrefetchQueue(implicit p: Parameters) extends PrefetchModule {
   XSPerfAccumulate("prefetch_queue_enq_fromPBOP", io.enq.fire && io.enq.bits.isPBOP)
   XSPerfAccumulate("prefetch_queue_enq_fromSMS", io.enq.fire && io.enq.bits.isSMS)
   XSPerfAccumulate("prefetch_queue_enq_fromTP",  io.enq.fire && io.enq.bits.isTP)
+  XSPerfAccumulate("prefetch_queue_enq_fromCDP", io.enq.fire && io.enq.bits.isCDP)
 
   XSPerfAccumulate("prefetch_queue_deq",         io.deq.fire)
   XSPerfAccumulate("prefetch_queue_deq_fromBOP", io.deq.fire && io.deq.bits.isBOP)
   XSPerfAccumulate("prefetch_queue_deq_fromPBOP", io.deq.fire && io.deq.bits.isPBOP)
   XSPerfAccumulate("prefetch_queue_deq_fromSMS", io.deq.fire && io.deq.bits.isSMS)
   XSPerfAccumulate("prefetch_queue_deq_fromTP",  io.deq.fire && io.deq.bits.isTP)
+  XSPerfAccumulate("prefetch_queue_deq_fromCDP", io.deq.fire && io.deq.bits.isCDP)
 
   XSPerfHistogram("prefetch_queue_entry", PopCount(valids.asUInt),
     true.B, 0, inflightEntries, 1)
