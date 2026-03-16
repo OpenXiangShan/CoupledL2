@@ -146,7 +146,7 @@ class PrefetchResp(implicit p: Parameters) extends PrefetchBundle {
   def isPBOP: Bool = pfSource === MemReqSource.Prefetch2L2PBOP.id.U
   def isSMS: Bool = pfSource === MemReqSource.Prefetch2L2SMS.id.U
   def isTP: Bool = pfSource === MemReqSource.Prefetch2L2TP.id.U
-  def isNL: Bool = pfSource === MemReqSource.Prefetch2L2NL.id.U //add L2 nextline 
+  def isNL: Bool = pfSource === MemReqSource.Prefetch2L2NL.id.U 
   def fromL2: Bool =
     pfSource === MemReqSource.Prefetch2L2BOP.id.U ||
       pfSource === MemReqSource.Prefetch2L2PBOP.id.U ||

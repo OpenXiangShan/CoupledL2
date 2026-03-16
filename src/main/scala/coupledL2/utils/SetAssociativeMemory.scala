@@ -88,8 +88,6 @@ class SetAssociativeMemory[T <: Data](
     }
   }
  
-  
-  
   //Register array: sets × ways
   val regArray = if (shouldReset) {
     RegInit(VecInit(Seq.fill(sets)(VecInit(Seq.fill(ways)(0.U.asTypeOf(gen))))))
@@ -135,7 +133,5 @@ class SetAssociativeMemory[T <: Data](
       }
     }
   }
-
-  
 }
 
