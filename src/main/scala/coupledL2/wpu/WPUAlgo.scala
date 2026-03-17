@@ -97,7 +97,7 @@ class UtagWPU(wpuParam: WPUParameters)(implicit p:Parameters) extends BaseWPU {
 
   val stateRead = stateRegs.io.r(in.read.valid, in.read.bits.set)
   val utagMatchVec = VecInit(stateRead.resp.data.map(_.asTypeOf(new Entry))
-    .map(entry => entry.utag === utag_hash(in.read.bits.tag) & entry.valid)
+    .map(entry => entry.utag === RegNext(utag_hash(in.read.bits.tag)) & entry.valid)
   ).asUInt
   val hit = utagMatchVec.orR
   val way = OHToUInt(utagMatchVec)

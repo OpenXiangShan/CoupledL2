@@ -143,6 +143,8 @@ class Directory(implicit p: Parameters) extends L2Module {
   // val tagArray  = Module(new SRAMTemplate(UInt(tagBits.W), sets, ways, singlePort = true))
   private val mbist = p(L2ParamKey).hasMbist
   private val hasSramCtl = p(L2ParamKey).hasSramCtl
+    println(s"trag width: ${encTagBankBits}")
+    println(s"trag width: ${tagBits}")
   val tagArray = if (enableTagECC) {
     Module(new SplittedSRAM(
       gen = UInt((tagBankSplit * encTagBankBits).W),

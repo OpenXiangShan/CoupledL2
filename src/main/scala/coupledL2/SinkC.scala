@@ -185,7 +185,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
 
   io.c.ready := !isRelease || !first || !full
 
-  io.bufResp.data := RegNext(RegEnable(dataBuf(io.task.bits.bufIdx), io.task.fire))
+  io.bufResp.data := Pipe(io.task.fire && io.task.bits.opcode === ReleaseData, dataBuf(io.task.bits.bufIdx), 3).bits
   when(RegNext(io.task.fire)) {
     beatValids(RegNext(io.task.bits.bufIdx)).foreach(_ := false.B)
   }

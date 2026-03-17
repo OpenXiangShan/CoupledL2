@@ -338,16 +338,16 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       XSPerfAccumulate(s"req_buffer_util_$i", cntEnable)
     }
     val bufferTimer = RegInit(VecInit(Seq.fill(entries)(0.U(16.W))))
-    buffer zip bufferTimer map {
-      case (e, t) =>
+    buffer.zip(bufferTimer).zipWithIndex map {
+      case ((e, t), i) =>
         when(e.valid) { t := t + 1.U }
         when(RegNext(RegNext(e.valid) && !e.valid)) { t := 0.U }
         assert(t < 20000.U, "ReqBuf Leak")
 
         val enable = RegNext(e.valid) && !e.valid
-        XSPerfHistogram("reqBuf_timer", t, enable, 0, 20, 1, right_strict = true)
-        XSPerfHistogram("reqBuf_timer", t, enable, 20, 400, 20, left_strict = true)
-        XSPerfMax("max_reqBuf_timer", t, enable)
+        XSPerfHistogram(s"reqBuf${i}_timer", t, enable, 0, 20, 1, right_strict = true)
+        XSPerfHistogram(s"reqBuf${i}_timer", t, enable, 20, 400, 20, left_strict = true)
+        XSPerfMax(s"max_reqBuf${i}_timer", t, enable)
 
         // assert !(all entries occupied for 100 cycles)
     }

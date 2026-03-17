@@ -161,6 +161,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
     if (wpuParam.debug) {
       assert(Mux(wpuQueue.get.io.deq.fire, wpuQueue.get.io.deq.bits.set.get === tlaTask.set &&
         wpuQueue.get.io.deq.bits.tag.get === tlaTask.tag, true.B))
+      assert(Mux(io.task.fire && io.task.bits.opcode === AcquireBlock, io.task.bits.wpu.get.valid, true.B))
     }
     assert(wpuQueue.get.io.enq.ready || !wpuQueue.get.io.enq.ready && !wpuQueue.get.io.enq.valid)
     assert(!(!wpuQueue.get.io.deq.valid && wpuQueue.get.io.deq.ready))
