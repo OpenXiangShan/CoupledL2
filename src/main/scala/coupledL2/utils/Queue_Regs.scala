@@ -1,9 +1,26 @@
+/** *************************************************************************************
+  * Copyright (c) 2020-2021 Institute of Computing Technology, Chinese Academy of Sciences
+  * Copyright (c) 2020-2021 Peng Cheng Laboratory
+  *
+  * XiangShan is licensed under Mulan PSL v2.
+  * You can use this software according to the terms and conditions of the Mulan PSL v2.
+  * You may obtain a copy of Mulan PSL v2 at:
+  * http://license.coscl.org.cn/MulanPSL2
+  *
+  * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+  * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+  *
+  * See the Mulan PSL v2 for more details.
+  * *************************************************************************************
+  */
+
 package coupledL2.utils
 import chisel3._
 import chisel3.util._
 
 /*************************************************************************************
- * This file defines an OverwriteQueue, a hardware queue that can overwrite old data when full.
+ * This file defines an Queue by Regs.
  * It supports the following configurable features:
  * 
  * - hasOverWrite: When true and the queue is full, new enqueued data overwrites the oldest
@@ -31,7 +48,6 @@ class Queue_Regs[T <: Data](
     val enq = Flipped(DecoupledIO(gen))
     val deq = DecoupledIO(gen)
     val flush = if (hasFlush) Some(Input(Bool())) else None
-    val count = Output(UInt(log2Up(entries + 1).W)) // Indicates how many entries have been saved in the current clock cycle
   })
   
   require(entries > 0, "Queue must have positive entries")
@@ -63,9 +79,11 @@ class Queue_Regs[T <: Data](
   }
 
   // Dequeue fire when deq is valid and consumer ready
+  // Note:It does not necessarily come from the data already stored in the Queue.
   val do_deq = deq_valid && io.deq.ready && !flushEn
 
   // Enqueue fire (data presented at input)
+  // Note:Data is not necessarily stored inside the Queue.
   val do_enq = io.enq.valid && io.enq.ready && !flushEn
 
   // hasFlow bypass: data flows directly to output without entering queue
@@ -73,7 +91,7 @@ class Queue_Regs[T <: Data](
 
   // Overwrite condition: queue is full, overwrite enabled, and enqueue happens
   // Note: full and empty are mutually exclusive, so no need to check !flowBypass
-  val overwriteHappens = full && hasOverWrite.B && do_enq && !do_deq
+  val overwriteHappens = hasOverWrite.B && full &&  do_enq && !do_deq
 
   when(flushEn) {  
     maybe_full := false.B 
@@ -101,8 +119,5 @@ class Queue_Regs[T <: Data](
 
   // Drive deq outputs
   io.deq.valid := deq_valid && !flushEn
-  io.deq.bits := Mux(flowBypass, io.enq.bits, queue(headPtr))
- 
-  val ptr_diff = tailPtr - headPtr
-  io.count := Mux(maybe_full && (headPtr === tailPtr), entries.U, ptr_diff)
+  io.deq.bits := Mux(flowBypass, io.enq.bits, queue(headPtr)) 
 }

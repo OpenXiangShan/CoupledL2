@@ -23,6 +23,7 @@ import utility._
 import org.chipsalliance.cde.config.Parameters
 import utility.mbist.MbistPipeline
 import coupledL2._
+import coupledL2.utils.Queue_Regs
 
 /* virtual address */
 trait HasPrefetcherHelper extends HasCircularQueuePtrHelper with HasCoupledL2Parameters {
@@ -373,7 +374,14 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   // =================== Connection of all Prefetchers =====================
   /* prefetchers -> pftQueue -> pipe -> Slices.SinkA */
 
-  val pftQueue = Module(new PrefetchQueue)
+  // val pftQueue = Module(new PrefetchQueue)
+  val pftQueue = Module(new Queue_Regs( 
+          gen = new PrefetchReq ,
+          entries = inflightEntries,
+          hasFlush = false, 
+          hasOverWrite = true,
+          hasFlow = false))
+
   val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
 
   private val SRC_NUM = 5

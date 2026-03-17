@@ -1,10 +1,36 @@
+/** *************************************************************************************
+ * Copyright (c) 2020-2021 Institute of Computing Technology, Chinese Academy of Sciences
+ * Copyright (c) 2020-2021 Peng Cheng Laboratory
+ *
+ * XiangShan is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ * http://license.coscl.org.cn/MulanPSL2
+ *
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ *
+ * See the Mulan PSL v2 for more details.
+ *
+ *
+ * Acknowledgement
+ *
+ * This implementation is inspired by several key papers:
+ * [1] Pierre Michaud. "[A Best-Offset Prefetcher.](https://inria.hal.science/hal-01165600/)" 2nd Data Prefetching
+ * Championship (DPC). 2015.
+ * [2] Pierre Michaud. "[Best-Offset Hardware Prefetching.](https://doi.org/10.1109/HPCA.2016.7446087)" IEEE
+ * International Symposium on High Performance Computer Architecture (HPCA). 2016.
+ * *************************************************************************************
+ */
+
 package coupledL2.prefetch
 
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.HasCoupledL2Parameters
-import coupledL2.utils.{FullyAssociativeMemory, OverwriteQueue, ReplacementPolicy, SetAssociativeMemory, SetAssocReplacer}
+import coupledL2.utils.{FullyAssociativeMemory, Queue_Regs, ReplacementPolicy, SetAssociativeMemory, SetAssocReplacer}
 import utility.{ChiselDB, MemReqSource, XSPerfAccumulate, XSPerfHistogram}
 
 // Next-Line Prefetcher base parameters
@@ -28,6 +54,7 @@ case class NLParameters(
     patternTableWays: Int = 1,
     patternTableSets: Int = 64, 
     patternTableSatBits: Int = 2,
+    patternTableSatDefultValue:Int = 1,
     patternTableReplacementPolicy: String = "plru",
     patternTableRPortNum: Int = 2,
     patternTableWPortNum: Int = 1,
@@ -52,7 +79,15 @@ trait HasNLParams extends HasCoupledL2Parameters {
     case p: NLParameters => true 
     case _ => false
   }.get.asInstanceOf[NLParameters]
-
+  def L2SliceNum: Int = {
+    // Prefer an explicit configuration via L2NBanksKey if present; otherwise fall back to nlParams
+    try {
+      val nb = p(coupledL2.L2NBanksKey)
+      if (nb > 0) nb else nlParams.L2SliceNum
+    } catch {
+      case _: Throwable => nlParams.L2SliceNum
+    }
+  }
   def blockAddrBits = fullVAddrBits - offsetBits
   def pcHashBits = blockAddrBits  // PC hash bits, same width as patternTable key
 
@@ -61,14 +96,15 @@ trait HasNLParams extends HasCoupledL2Parameters {
   def timeSampleCounterMax = ((BigInt(1) << timeSampleCounterBits) - 1).U(timeSampleCounterBits.W)
   def timeSampleRateBits = log2Ceil(nlParams.timeSampleRate)
   def timeSampleMinDistance = nlParams.timeSampleMinDistance
-  def timeSampleMaxDistance = blocks * nlParams.L2SliceNum / 2 //it Calculate how many bytes the L2 cache is. then div 2, 512*8*4/2
+  // Calculate how many blocks the whole L2 cache has, then /2(if set=512,way=8,slice=4,then 512*8*4/2)
+  def timeSampleMaxDistance = blocks * L2SliceNum / 2 
   
   //sample
   def sampleTableBlocks = timeSampleMaxDistance / nlParams.timeSampleRate //512*8*4/2/256=32
   def sampleTableSets = sampleTableBlocks / nlParams.sampleTableWays //32/4=8
   def sampleTableSetBits = log2Ceil(sampleTableSets)
   def sampleTableWaysBits = log2Ceil(nlParams.sampleTableWays)
-  def sampleTableTagBits = blockAddrBits - sampleTableSetBits - offsetBits // offsetBits=6bit，setBits=3bit, tag=50-3-6=41
+  def sampleTableTagBits = blockAddrBits - sampleTableSetBits - offsetBits // if:blockAddrBits=44,offsetBits=6bit，setBits=3bit,then tag=44-3-6=35
   def sampleTablePcHashBits = pcHashBits
   def sampleTableTimeSampleBits = nlParams.timeSampleCounterBits
   def sampleTableReplacementPolicy = nlParams.sampleTableReplacementPolicy
@@ -81,6 +117,8 @@ trait HasNLParams extends HasCoupledL2Parameters {
   def patternTablePcHashBits = pcHashBits
   def patternTableSatBits = nlParams.patternTableSatBits
   def maxSat = (1.U << patternTableSatBits) - 1.U 
+  def minSat = 0.U
+  def ptDefualtSat = nlParams.patternTableSatDefultValue
   def patternTableReplacementPolicy = nlParams.patternTableReplacementPolicy
   def patternTableTrainPort = nlParams.patternTableTrainPort
   def patternTablePrefetchPort = nlParams.patternTablePrefetchPort
@@ -237,24 +275,23 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   // ==================== Stage 0: Read Request ====================
   val s0_valid = io.train.fire
   val s0_timeSample = io.train.bits.timeSample
-  val s0_addr = io.train.bits.addr
+  val s0_blockAddr = io.train.bits.addr
   val s0_pc = io.train.bits.pc
 
   // Insert part: insert when timeSample reaches a multiple of timeSampleRate
   val s0_insertEn = s0_valid && !s0_timeSample(timeSampleRateBits - 1, 0).orR
-  val s0_insertBlockAddr = getBlockAddr(s0_addr)
-  val s0_insertIdx = getSampleTableSet(s0_insertBlockAddr)
+  val s0_insertIdx = getSampleTableSet(s0_blockAddr)
   st.io.r(insertPort).req.setIdx := s0_insertIdx
 
   // Update part: check previous block address
-  val s0_updateBlockAddr = s0_insertBlockAddr - 1.U
+  val s0_updateBlockAddr = s0_blockAddr - 1.U
   val s0_updateIdx = getSampleTableSet(s0_updateBlockAddr)
   st.io.r(updatePort).req.setIdx := s0_updateIdx
 
   // ==================== Stage 1: Process Read Data ====================
   val s1_valid = RegNext(s0_valid, false.B)
   val s1_timeSample = RegEnable(s0_timeSample, s0_valid)
-  val s1_blockAddr = RegEnable(s0_insertBlockAddr, s0_valid)
+  val s1_blockAddr = RegEnable(s0_blockAddr, s0_valid)
   val s1_pc = RegEnable(s0_pc, s0_valid)
 
   // -------------------- Update Route（uptRt） --------------------
@@ -433,7 +470,7 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   val s1_newEntry = WireInit(s1_trainResp.data)
 
   when(s1_trainValid) {
-    when(s1_trainResp.hit) {
+    when(s1_trainResp.hit) {//update
       s1_we := true.B
       s1_writeIdx := s1_trainResp.hitIdx
       s1_newEntry.valid := true.B
@@ -441,13 +478,13 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
       when(s1_trainTouched) {
         s1_newEntry.sat := Mux(currentSat === maxSat, maxSat, currentSat + 1.U)
       }.otherwise {
-        s1_newEntry.sat := Mux(currentSat === 0.U, 0.U, currentSat - 1.U)
+        s1_newEntry.sat := Mux(currentSat === minSat, minSat, currentSat - 1.U)
       }
-    }.otherwise {
+    }.otherwise {//insert
       s1_we := s1_trainTouched
       s1_writeIdx := replacer.way(0.U)  // Get victim from single-set replacer
       s1_newEntry.valid := s1_trainTouched
-      s1_newEntry.sat := 1.U
+      s1_newEntry.sat := ptDefualtSat.U
     }
   }
 
@@ -539,13 +576,14 @@ class NextLinePrefetch(implicit p: Parameters) extends NLModule {
     }
   }
 
-  val prefetcherSample  = Module(new NextLineSample())
+  val prefetcherSample = Module(new NextLineSample())
   val prefetcherPattern = Module(new NextLinePattern())
-  val prefetchQueue     = Module(new OverwriteQueue( 
+  val prefetchQueue = Module(new Queue_Regs( 
           gen = new PatternResp ,
           entries = nlParams.nlPrefetchQueueEntries,
-          foreverFlow = false,
-          flow = true))
+          hasFlush = false, 
+          hasOverWrite = true,
+          hasFlow = true))
   
   io.train.ready := prefetcherSample.io.train.ready && prefetcherPattern.io.train.ready
   io.resp.ready := true.B  
@@ -594,7 +632,6 @@ class NextLinePrefetch(implicit p: Parameters) extends NLModule {
   XSPerfAccumulate("nlLoadMissAndHitPrefetchedTimes",validTrain & !io.train.bits.hit & io.train.bits.prefetched)
   XSPerfAccumulate("nlPrefetchReqTimes",prefetcherPattern.io.resp.valid && io.enable)
   XSPerfAccumulate("nlTransmitPrefetchReqTimes",io.req.fire && io.enable)
-  XSPerfHistogram("grant_grantack_period", prefetchQueue.io.count, io.req.ready, 0, nlParams.nlPrefetchQueueEntries, 1)
   XSPerfAccumulate("nlTimeSampleCountResetTimes",(!timeSampleCounter.orR) & shouldTrain)
 
 }
