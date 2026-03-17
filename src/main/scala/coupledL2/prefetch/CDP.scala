@@ -604,8 +604,8 @@ class PrefetchFilter(implicit p: Parameters) extends CDPModule {
 
   // --------------- s1 -----------------
   // alloc new entry if not hit
-  s1_valid := RegEnable(s0_valid && !entry_hit, s0_valid)
-  val s1_pft_req = RegEnable(cdp_pft_req.bits, s1_valid)
+  s1_valid := RegNext(s0_valid && !entry_hit)
+  val s1_pft_req = RegNext(cdp_pft_req.bits)
 
   val free_entry_vec = valids.map(!_)
   val has_free_entry = free_entry_vec.reduce(_ || _)
@@ -620,11 +620,12 @@ class PrefetchFilter(implicit p: Parameters) extends CDPModule {
     alloc_entry.pfDepth := s1_pft_req.pfDepth
 
     entry := alloc_entry
+    valids(idx) := true.B
   }
 
   assert(!s1_valid || has_free_entry, "Prefetch Filter is full! Consider increasing the number of entries.") // TODO: use plru
 
-  val need_drop = tlb_rsp.bits.miss ||
+  val need_drop =
     // page/access fault
     tlb_rsp.bits.excp.head.pf.ld || tlb_rsp.bits.excp.head.gpf.ld || tlb_rsp.bits.excp.head.af.ld ||
     // uncache
@@ -678,17 +679,17 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
     val enable = Input(Bool())
 
     // TODO: require Slice Num == 4
+    // detect
     val l2_detect_triggers = Flipped(Vec(4, ValidIO(new CDPDetectTrigger)))
-    val demand_hit_train_trigger   = Flipped(ValidIO(new CDPTrainTrigger))
+
+    // train
+    val train = Flipped(DecoupledIO(new PrefetchTrain))
 
     // tlb?
     val tlb_req = new L2ToL1TlbIO
 
     // prefetch req?
     val pft_req = DecoupledIO(new PrefetchReq)
-
-    // train
-    val train = Flipped(DecoupledIO(new PrefetchTrain))
   })
 
   private val cstEnable = Constantin.createRecord("cdp_enable"+cacheParams.hartId.toString, initValue = 1)
@@ -697,7 +698,6 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
   val train = io.train
 
   val l2_triggers = io.l2_detect_triggers
-  val l1_demand_hit_train_trigger = io.demand_hit_train_trigger
 
   val vpn_table         = Module(new VpnTable)
   val train_pipe        = Module(new TrainPipeline)
