@@ -98,7 +98,7 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
   def avgLatency(old: UInt, newLatency: UInt): UInt = {
     // moving average with alpha = 0.5
     // if newLatency > 500.U, it may occur ddr flush, causing to long and instable latency
-    Mux(old === 0.U, newLatency, Mux(newLatency > 500.U, old, old + newLatency) >> 1)
+    Mux(old === 0.U, newLatency, Mux(newLatency > 500.U, old + 500.U, old + newLatency) >> 1)
   }
 
   def _signedExtend(x: UInt, width: Int): SInt = {
