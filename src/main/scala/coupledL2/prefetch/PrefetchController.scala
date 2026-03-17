@@ -56,7 +56,7 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
   val io = IO(new PrefetchControllerIO)
 
   val hartId = p(L2ParamKey).hartId
-  private val Seq(none, ipop, default, defaultLate, defaultUseless, ipopHitFine) = Seq(0, 1, 2, 3, 4, 5)
+  private val Seq(none, ipop, default, defaultLate, defaultUseless, ipopNewctrl, ipopNewctrlHitfine) = Seq(0, 1, 2, 3, 4, 5, 6)
   val controlMode = Constantin.createRecord(s"l2pf_controlMode$hartId", initValue = none)
 
   // prefetch number
@@ -360,14 +360,16 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
         peDeltaSliceVec(s) := deltaMshrHitVec(i)(s) + deltaDemandCacheHitVec(i)(s) + deltaL1PrefetchCacheHitVec(i)(s) -
           deltaPollutionHoldVec(i)(s) - deltaPfReqBufferHoldVec(i)(s) - deltaPfMshrHoldVec(i)(s) -
           deltaPfLateInMshrVec(i)(s) - deltaPfLateInCacheVec(i)(s)
-      }.elsewhen(controlMode === ipop.U) {
+      }.elsewhen(controlMode === ipop.U || controlMode === ipopNewctrl.U) {
         peDeltaSliceVec(s) := deltaDemandCacheHitVec(i)(s) - deltaPollutionHoldVec(i)(s) -
           deltaTnocVec(i)(s) - deltaTbusVec(i)(s) - deltaTbankVec(i)(s)
-      }.elsewhen(controlMode === ipopHitFine.U) {
+      }.elsewhen(controlMode === ipopNewctrlHitfine.U) {
         peDeltaSliceVec(s) := deltaMshrHitVec(i)(s) + deltaDemandCacheHitVec(i)(s) + deltaL1PrefetchCacheHitVec(i)(s) -
           deltaPollutionHoldVec(i)(s) - deltaTnocVec(i)(s) - deltaTbusVec(i)(s) - deltaTbankVec(i)(s)
-      }.otherwise {
+      }.elsewhen(controlMode === none.U){
         peDeltaSliceVec(s) := 0.S(peBits.W)
+      }.otherwise {
+        assert(false.B, "invalid control mode")
       }
 
     }
