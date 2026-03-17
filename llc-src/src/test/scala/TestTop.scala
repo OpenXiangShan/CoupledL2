@@ -33,11 +33,22 @@ class TestTop_L3()(implicit p: Parameters) extends LazyModule with HasCHIMsgPara
 }
 
 object TestTop_L3 extends App {
-  val config = new Config((_, _, _) => {
+  val config = new Config((_, here, _) => {
     case OpenLLCParamKey => OpenLLCParam(
       clientCaches = (0 until 1).map(i => 
         L2Param()
       )
+    )
+    case LogUtilsOptionsKey => LogUtilsOptions(
+      false,
+      here(OpenLLCParamKey).enablePerf,
+      here(OpenLLCParamKey).FPGAPlatform
+    )
+    case PerfCounterOptionsKey => PerfCounterOptions(
+      here(OpenLLCParamKey).enablePerf && !here(OpenLLCParamKey).FPGAPlatform,
+      false,
+      XSPerfLevel.withName("VERBOSE"),
+      0
     )
   })
 
