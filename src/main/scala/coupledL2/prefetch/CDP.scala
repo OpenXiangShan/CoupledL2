@@ -319,21 +319,16 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   val s3_valid = Wire(Bool())
   val s4_valid = Wire(Bool())
 
-  val s0_ready = Wire(Bool())   // Stage N ready to receive
-  val s1_ready = Wire(Bool())
-  val s2_ready = Wire(Bool())
-  val s3_ready = Wire(Bool())
-  val s4_ready = Wire(Bool())
-
   val s0_s1_same = Wire(Bool())
   val s0_s2_same = Wire(Bool())
   val s0_s3_same = Wire(Bool())
   val s0_s4_same = Wire(Bool())
 
   // ----------- s0 -----------
-  s0_ready := reset.asBool || s1_ready
-  s0_valid := train_req.valid
-  train_req.ready := s0_ready
+  val same_addr = s0_s1_same || s0_s2_same || s0_s3_same || s0_s4_same
+
+  s0_valid := train_req.valid && !same_addr
+  train_req.ready := reset.asBool || !same_addr
 
   val s0_main_idx = get_main_idx(train_req.bits.vaddr)
   val s0_sub_idx  = get_sub_idx(train_req.bits.vaddr)
@@ -341,14 +336,11 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
 
   // ----------- s1 -----------
   // search the Vpn Table
-  val same_addr = s0_s1_same || s0_s2_same || s0_s3_same || s0_s4_same
+  s1_valid  := RegNext(s0_valid)
 
-  s1_ready := reset.asBool || !s1_valid || s2_ready && vt_query_req.ready && vt_query_rsp.valid && !same_addr
-  s1_valid := RegEnable(s0_valid, s1_ready)
-
-  val s1_main_idx = RegEnable(s0_main_idx, s1_ready)
-  val s1_sub_idx  = RegEnable(s0_sub_idx, s1_ready)
-  val s1_tag      = RegEnable(s0_tag, s1_ready)
+  val s1_main_idx = RegNext(s0_main_idx)
+  val s1_sub_idx  = RegNext(s0_sub_idx)
+  val s1_tag      = RegNext(s0_tag)
   val s1_vt_tab_rsp = vt_query_rsp.bits
 
   vt_query_req.valid := s1_valid
@@ -359,13 +351,12 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
 
   // ----------- s2 -----------
   // check for hit/miss
-  s2_ready := reset.asBool || !s2_valid || s3_ready
-  s2_valid := RegEnable(s1_valid, s2_ready)
+  s2_valid := RegNext(s1_valid)
 
-  val s2_main_idx = RegEnable(s1_main_idx, s2_ready)
-  val s2_sub_idx  = RegEnable(s1_sub_idx, s2_ready)
-  val s2_tag      = RegEnable(s1_tag, s2_ready)
-  val s2_vt_tab_rsp = RegEnable(s1_vt_tab_rsp, s2_ready)
+  val s2_main_idx = RegNext(s1_main_idx)
+  val s2_sub_idx  = RegNext(s1_sub_idx)
+  val s2_tag      = RegNext(s1_tag)
+  val s2_vt_tab_rsp = RegNext(s1_vt_tab_rsp)
 
   val s2_tag_vec  = s2_vt_tab_rsp.tag_vec
   val s2_meta_vec = s2_vt_tab_rsp.meta_vec
@@ -383,14 +374,13 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
 
   // ----------- s3 -----------
   // get plru replacer info & calculate update info
-  s3_ready  := reset.asBool || !s3_valid || s4_ready
-  s3_valid  := RegEnable(s2_valid, s3_ready)
+  s3_valid  := RegNext(s2_valid)
 
-  val s3_main_idx = RegEnable(s2_main_idx, s3_ready)
-  val s3_sub_idx  = RegEnable(s2_sub_idx, s3_ready)
-  val s3_tag      = RegEnable(s2_tag, s3_ready)
-  val s3_hit      = RegEnable(s2_hit, s3_ready)
-  val s3_hit_idx  = RegEnable(s2_hit_idx, s3_ready)
+  val s3_main_idx = RegNext(s2_main_idx)
+  val s3_sub_idx  = RegNext(s2_sub_idx)
+  val s3_tag      = RegNext(s2_tag)
+  val s3_hit      = RegNext(s2_hit)
+  val s3_hit_idx  = RegNext(s2_hit_idx)
 
   val s3_update_info = WireInit(0.U.asTypeOf(new vtTrainReq))
 
@@ -409,10 +399,9 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
 
   // ----------- s4 -----------
   // update plru && VpnTable
-  s4_ready  := !reset.asBool
-  s4_valid  := RegEnable(s3_valid, s4_ready)
+  s4_valid  := RegNext(s3_valid)
 
-  val s4_update_info  = RegEnable(s3_update_info, s4_ready)
+  val s4_update_info  = RegNext(s3_update_info)
 
   vt_train_req.valid  := s4_valid
   vt_train_req.bits   := s4_update_info
@@ -426,7 +415,7 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
 
 class DetectPipeline(implicit p: Parameters) extends CDPModule {
   val io = IO(new Bundle {
-    val detect_req    = Flipped(DecoupledIO(new CDPDetectReq))
+    val detect_req    = Flipped(ValidIO(new CDPDetectReq))
 
     // to Vpn Table
     val vt_query_req  = DecoupledIO(new vtQueryReq)
@@ -451,27 +440,19 @@ class DetectPipeline(implicit p: Parameters) extends CDPModule {
   val s3_valid = Wire(Bool())
   val s4_valid = Wire(Bool())
 
-  val s0_ready = Wire(Bool())
-  val s1_ready = Wire(Bool())
-  val s2_ready = Wire(Bool())
-  val s3_ready = Wire(Bool())
-  val s4_ready = Wire(Bool())
-
   // ------------------ s0 ------------------
-  s0_ready  := !reset.asBool || s1_ready
   s0_valid  := detect_req.valid
 
   val s0_addr   = detect_req.bits.vaddr
   val s0_depth  = detect_req.bits.pfDepth
 
-  detect_req.ready := s0_ready
-
   // ------------------ s1 ------------------
-  s1_ready  := !reset.asBool || !s1_valid || s2_ready && vt_query_req.ready && vt_query_rsp.valid
-  s1_valid  := RegEnable(s0_valid, s1_ready)
+  s1_valid  := RegNext(s0_valid)
 
-  val s1_addr   = RegEnable(s0_addr, s1_ready)
-  val s1_depth  = RegEnable(s0_depth, s1_ready)
+  val s1_addr   = Wire(s0_addr.cloneType)
+  val s1_depth  = RegNext(s0_depth)
+
+  s1_addr := RegNext(s0_addr)
 
   val s1_main_idx = get_main_idx(s1_addr)
   val s1_sub_idx  = get_main_idx(s1_addr)
@@ -483,21 +464,22 @@ class DetectPipeline(implicit p: Parameters) extends CDPModule {
   val s1_vt_query_rsp = vt_query_rsp.bits
 
   // ------------------ s2 ------------------
-  s2_ready  := !reset.asBool || !s2_valid || s3_ready
-  s2_valid  := RegEnable(s1_valid, s2_ready)
+  s2_valid  := RegNext(s1_valid)
 
-  val s2_addr   = RegEnable(s1_addr, s2_ready)
-  val s2_depth  = RegEnable(s1_depth, s2_ready)
-  val s2_vt_qeury_rsp = RegEnable(s1_vt_query_rsp, s2_ready)
+  val s2_addr   = Wire(s1_addr.cloneType)
+  val s2_depth  = RegNext(s1_depth)
+  s2_addr := RegNext(s1_addr)
+  
+  val s2_vt_query_rsp = RegNext(s1_vt_query_rsp)
 
   val s2_tag  = get_vpntab_tag(s2_addr)
-  val s2_vt_hit_vec = s2_vt_qeury_rsp.tag_vec.zip(s2_vt_qeury_rsp.meta_vec).map{
+  val s2_vt_hit_vec = s2_vt_query_rsp.tag_vec.zip(s2_vt_query_rsp.meta_vec).map{
     case (t, m) =>
       t === s2_tag && m.valid
   }
   val s2_vt_hit     = s2_vt_hit_vec.reduce(_ || _)
   val s2_vt_hit_idx = PriorityEncoder(s2_vt_hit_vec)
-  val s2_vt_hit_hot = s2_vt_qeury_rsp.meta_vec(s2_vt_hit_idx).hot
+  val s2_vt_hit_hot = s2_vt_query_rsp.meta_vec(s2_vt_hit_idx).hot
 
   val s2_vpn0 = get_vpn0(s2_addr)
   val s2_vpn0_is_nzero    = s2_vpn0 =/= 0.U
@@ -511,14 +493,14 @@ class DetectPipeline(implicit p: Parameters) extends CDPModule {
   val s2_can_pft  = s2_high_bit_is_zero && s2_low_bit_is_zero && s2_vpn0_is_nzero && s2_vt_hit_hot && s2_depth < 3.U    // TODO: maybe we can move this to s3?
 
   // ------------------ s3 ------------------
-  s3_ready  := !reset.asBool || !s3_valid || s4_ready
-  s3_valid  := RegEnable(s2_valid, s3_ready)
+  s3_valid  := RegNext(s2_valid)
 
-  val s3_addr       = RegEnable(s2_addr, s3_ready)    // prefetch target addr
-  val s3_vt_hit     = RegEnable(s2_vt_hit, s3_ready)
-  val s3_vt_hit_idx = RegEnable(s2_vt_hit_idx, s3_ready)
-  val s3_can_pft    = RegEnable(s2_can_pft, s3_ready)
-  val s3_depth      = RegEnable(Mux(s2_depth === 0.U, 4.U, s2_depth + 1.U), s3_ready)
+  val s3_addr       = Wire(s2_addr.cloneType)
+  val s3_vt_hit     = RegNext(s2_vt_hit)
+  val s3_vt_hit_idx = RegNext(s2_vt_hit_idx)
+  val s3_can_pft    = RegNext(s2_can_pft)
+  val s3_depth      = RegNext(Mux(s2_depth === 0.U, 4.U, s2_depth + 1.U))
+  s3_addr := RegNext(s2_addr)
 
   // Update PLRU
   io.replace_upt.valid  := s3_valid && s3_vt_hit
@@ -526,11 +508,11 @@ class DetectPipeline(implicit p: Parameters) extends CDPModule {
   io.replace_upt.bits.way := s3_vt_hit_idx
 
   // ------------------ s4 ------------------
-  s4_ready  := !reset.asBool || !s4_valid || pft_req.ready
-  s4_valid  := RegEnable(s3_valid && s3_can_pft, s4_ready)
+  s4_valid  := RegNext(s3_valid && s3_can_pft)
 
-  val s4_addr   = RegEnable(s3_addr, s4_ready)
-  val s4_depth  = RegEnable(s3_depth, s4_ready)
+  val s4_addr   = Wire(s3_addr.cloneType)
+  val s4_depth  = RegNext(s3_depth)
+  s4_addr := RegNext(s3_addr)
 
   pft_req.valid := s4_valid
   pft_req.bits.pfAddr   := s4_addr
@@ -734,7 +716,7 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
     detect_pipe.io.detect_req.bits.vaddr := detect_trig_arb.io.out.bits.half_cacheblock((i + 1) * 8 - 1, i * 8)
     detect_pipe.io.detect_req.bits.pfDepth := detect_trig_arb.io.out.bits.pfDepth
   }
-  detect_trig_arb.io.out.ready := detect_pipe_seq.map(_.io.detect_req.ready).reduce(_ && _)
+  detect_trig_arb.io.out.ready := true.B
 
   // Train Req
   val train_trig_queue = Module(new Queue(new CDPTrainTrigger, 8))
@@ -804,4 +786,11 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
   XSPerfAccumulate("train_trigger_enq", train_trig_queue.io.enq.fire)
   XSPerfAccumulate("train_trigger_deq", train_trig_queue.io.deq.fire)
   XSPerfAccumulate("train_trigger_discard", train_trig_queue.io.enq.valid && !train_trig_queue.io.enq.ready)
+  for (i <- 0 until 4) {
+    XSPerfAccumulate(s"l2_trigger_${i}_enq", l2_triggers(i).valid)
+  }
+  for (i <- 0 until DetectPipeNum) {
+    XSPerfAccumulate(s"detect_pipe_${i}_pft_drop", detect_pipe_seq(i).io.pft_req.valid && !detect_pipe_seq(i).io.pft_req.ready)
+    XSPerfAccumulate(s"detect_pipe_${i}_detect_enq", detect_pipe_seq(i).io.detect_req.valid)
+  }
 }
