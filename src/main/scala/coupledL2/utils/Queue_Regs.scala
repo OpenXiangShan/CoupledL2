@@ -92,7 +92,6 @@ class Queue_Regs[T <: Data](
   // Overwrite condition: queue is full, overwrite enabled, and enqueue happens
   // Note: full and empty are mutually exclusive, so no need to check !flowBypass
   val overwriteHappens = hasOverWrite.B && full &&  do_enq && !do_deq
-
   when(flushEn) {  
     maybe_full := false.B 
   } .elsewhen(overwriteHappens) {
@@ -116,6 +115,19 @@ class Queue_Regs[T <: Data](
   } .elsewhen(do_deq || overwriteHappens) {
     headCounter.inc()
   }
+
+  //add assert
+  if (!hasOverWrite) {
+    assert(!(io.enq.valid && full), "Queue_Regs: enqueue when full and hasOverWrite=false")
+  }
+  if (hasOverWrite) {
+    assert(!(overwriteHappens && !full), "Queue_Regs: overwriteHappens implies full")
+  }
+  when (flowBypass) {
+    assert(empty, "Queue_Regs: flowBypass but queue not empty")
+    assert(io.deq.ready, "Queue_Regs: flowBypass but deq not ready")
+  }
+  assert(!(io.deq.fire && !io.deq.valid), "Queue_Regs: deq.fire but deq.valid false")
 
   // Drive deq outputs
   io.deq.valid := deq_valid && !flushEn

@@ -385,7 +385,7 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   st.io.w(insertPort).req.data := VecInit(Seq.fill(nlParams.sampleTableWays)(s2_insertReq.entry))
 
   // ==================== Debug & Performance ====================
-  val dbTable = ChiselDB.createTable(s"NLsampledb", new SampleDb, basicDB = false)
+  val dbTable = ChiselDB.createTable(s"NLsampledb", new SampleDb, basicDB = true)
   val dbData = Wire(new SampleDb())
   dbTable.log(dbData, dbData.trainEn && (dbData.hit || dbData.insertEn || (dbData.timeSample < (1.U << 14))), s"Nlsample", clock, reset)
 
@@ -490,7 +490,7 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
 
   // Update PLRU state on access (hit or insert)
   when(s1_trainValid) {
-    replacer.access(0.U, Mux(s1_trainResp.hit, s1_trainResp.hitIdx, s1_writeIdx))
+    replacer.access(0.U, s1_writeIdx)
   }
 
   // -------------------- Prefetch Part --------------------
@@ -512,7 +512,7 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   val s2_newEntry = RegEnable(s1_newEntry, s1_we)
 
   //writeback
-  pt.io.w(writePort).en := s1_we
+  pt.io.w(writePort).en := s2_we
   pt.io.w(writePort).req.valid := true.B
   pt.io.w(writePort).req.key := s2_newKey
   pt.io.w(writePort).req.idx := s2_writeIdx
@@ -523,7 +523,7 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   io.resp.bits.nextAddr := RegEnable(s1_prefetchAddr, s1_needPrefetch)
 
   // ==================== Debug & Performance ====================
-  val dbTable = ChiselDB.createTable(s"NLpatterndb", new PatternDb, basicDB = false)
+  val dbTable = ChiselDB.createTable(s"NLpatterndb", new PatternDb, basicDB = true)
   val dbData = Wire(new PatternDb())
   dbTable.log(dbData, dbData.trainEn && (dbData.hit || dbData.we), s"Nlpattern", clock, reset)
 

@@ -101,7 +101,7 @@ class FullyAssociativeMemory[T <: Data](
     val hitIdx = PriorityEncoder(matchVec.asUInt)  //Priority encoder, find the first match
     
     
-    assert(PopCount(matchVec) <= 1.U, "CAM key conflict detected!")//If multiple hit conflicts occur, it is a design issue.
+    assert(PopCount(matchVec) <= 1.U, f"CAM ${i} key conflict detected!")//If multiple hit conflicts occur, it is a design issue.
     val hitData = entries(hitIdx).data
     
     // ==================== Write-after-read bypass ====================
