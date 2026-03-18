@@ -792,7 +792,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       alias = Some(aliasFinal),
       prefetch = req_prefetch || dirResult.hit && meta_pft,
       pfsrc = PfSource.fromMemReqSource(req.reqSource),
-      accessed = req_acquire || req_get
+      accessed = req_acquire || req_get,
+      pfDepth = meta.pfDepth
     )
     mp_grant.metaWen := !cmo_cbo && !denied
     mp_grant.tagWen := !cmo_cbo && !dirResult.hit && !denied
@@ -803,7 +804,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_grant.cmoTask := cmo_cbo
     mp_grant.wayMask := 0.U(cacheParams.ways.W)
     mp_grant.mshrRetry := !state.s_retry
-    mp_grant.reqSource := 0.U(MemReqSource.reqSourceBits.W)
+    mp_grant.reqSource := req.reqSource
 
     // Add merge grant task for Acquire and late Prefetch
     mp_grant.mergeA := mergeA || io.aMergeTask.valid

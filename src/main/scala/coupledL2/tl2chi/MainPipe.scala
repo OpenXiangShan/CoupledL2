@@ -554,7 +554,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     alias = Some(metaW_s3_a_alias),
     accessed = true.B,
     tagErr = meta_s3.tagErr,
-    dataErr = meta_s3.dataErr
+    dataErr = meta_s3.dataErr,
+    pfDepth = meta_s3.pfDepth
   )
   val metaW_s3_b = Mux(isSnpToN(req_s3.chiOpcode.get), MetaEntry(),
     MetaEntry(
@@ -867,20 +868,27 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   txdat_s5.bits.task.corrupt := task_s5.bits.corrupt || dataError_s5
   txdat_s5.bits.data.data := out_data_s5
 
-  /* for CDP trigger */
+  /* ======== s5 CDP Detect Trigger ======== */
   val dirResult_s5_hit = RegNext(RegNext(dirResult_s3.hit))
   val req_s5_sinkA = !task_s5.bits.mshrTask && task_s5.bits.fromA
-  val req_s5_acquire_block = req_s5_sinkA && task_s5.bits.opcode === AcquireBlock
+  val req_s5_acquire_block = req_s5_sinkA && task_s5.bits.opcode === GrantData && MemReqSource.isDataReq(task_s5.bits.reqSource)
 
-  val is_hit_trigger = task_s5.valid && dirResult_s5_hit && req_s5_acquire_block
+  val is_hit_trigger_s5   = task_s5.valid && dirResult_s5_hit && req_s5_acquire_block
+  val hit_trigger_data_s5 = out_data_s5
 
-  val req_s5_mshr = task_s5.bits.mshrTask
-  val req_s5_grantdata = req_s5_mshr && task_s5.bits.opcode === GrantData
-  val is_refill_trigger = task_s5.valid && req_s5_grantdata
+  val is_refill_trigger_s3 = task_s3.valid && (mshr_grantdata_s3 || mshr_hintack_s3) && MemReqSource.isDataReq(req_s3.reqSource)
+  val is_refill_trigger_s5 = RegNext(RegNext(is_refill_trigger_s3))
+  val refill_trigger_data_s3  = Mux(req_s3.useProbeData, io.releaseBufResp_s3.bits.data, io.refillBufResp_s3.bits.data)
+  val refill_trigger_data_s5  = RegNext(RegNext(refill_trigger_data_s3))
 
-  io.cdp_trigger.valid := is_hit_trigger || is_refill_trigger
-  io.cdp_trigger.bits.cacheblock  := out_data_s5
-  io.cdp_trigger.bits.pfDepth     := DontCare   // TODO
+  io.cdp_trigger.valid := is_hit_trigger_s5 || is_refill_trigger_s5
+  io.cdp_trigger.bits.cacheblock  := Mux(is_hit_trigger_s5, hit_trigger_data_s5, refill_trigger_data_s5)
+  io.cdp_trigger.bits.pfDepth     := RegNext(RegNext(meta_s3.pfDepth))
+
+  XSPerfAccumulate("cdp_detect_trigger_hit", io.cdp_trigger.valid && is_hit_trigger_s5)
+  XSPerfAccumulate("cdp_detect_trigger_refill", io.cdp_trigger.valid && is_refill_trigger_s5)
+  XSPerfAccumulate("cdp_detect_trigger_refill_grantdata", io.cdp_trigger.valid && is_refill_trigger_s5 && RegNext(RegNext(mshr_grantdata_s3)))
+  XSPerfAccumulate("cdp_detect_trigger_refill_hintack", io.cdp_trigger.valid && is_refill_trigger_s5 && RegNext(RegNext(mshr_hintack_s3)))
 
   /* ======== BlockInfo ======== */
   // if s2/s3 might write Dir, we must block s1 sink entrance
