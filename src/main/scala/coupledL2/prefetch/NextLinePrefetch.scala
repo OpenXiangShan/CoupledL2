@@ -30,7 +30,7 @@ import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.HasCoupledL2Parameters
-import coupledL2.utils.{FullyAssociativeMemory, Queue_Regs, ReplacementPolicy, SetAssociativeMemory, SetAssocReplacer}
+import coupledL2.utils.{FullyAssociativeRegs, Queue_Regs, ReplacementPolicy, SetAssociativeRegs, SetAssocReplacer}
 import utility.{ChiselDB, MemReqSource, XSPerfAccumulate, XSPerfHistogram}
 
 // Next-Line Prefetcher base parameters
@@ -51,8 +51,8 @@ case class NLParameters(
     stWPortNum: Int = 2,
     
     //Pattern Table config 
-    ptWays: Int = 1,
-    ptSets: Int = 64, 
+    ptWays: Int = 64,
+    ptSets: Int = 1, 
     ptSatBits: Int = 2,
     ptSatDefultValue:Int = 1,
     ptReplacementPolicy: String = "plru",
@@ -252,7 +252,7 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   })
 
   // ==================== Sample Table (st) ====================
-  val st = Module(new SetAssociativeMemory(
+  val st = Module(new SetAssociativeRegs(
       gen  = new SampleTableEntryField(),
       sets = stSets,
       ways = nlParams.stWays,
@@ -418,17 +418,17 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   })
 
   // ==================== Pattern Table (pt) ====================
-  val pt = Module(new FullyAssociativeMemory(
+  val pt = Module(new FullyAssociativeRegs(
       gen = new PatternTableEntryField(),
       keyWidth = ptPcHashBits,
-      numEntries = nlParams.ptSets,
+      numEntries = nlParams.ptWays,
       numReadPorts = nlParams.ptRPortNum,
       numWritePorts = nlParams.ptWPortNum,
       shouldReset = true
   ))
 
   // Replacer: SetAssocReplacer with single set (fully associative)
-  val replacer = new SetAssocReplacer(1, nlParams.ptSets, ptReplacementPolicy)
+  val replacer = new SetAssocReplacer( nlParams.ptSets, nlParams.ptWays,ptReplacementPolicy)
 
   // Local port aliases
   private val trainPort = ptTrainPort

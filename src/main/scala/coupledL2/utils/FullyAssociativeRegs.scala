@@ -60,7 +60,7 @@ class CAMWritePort[T <: Data](gen: T, keyWidth: Int, numEntries: Int) extends Bu
 }
 
 
-class FullyAssociativeMemory[T <: Data](
+class FullyAssociativeRegs[T <: Data](
   gen: T,
   keyWidth: Int,
   numEntries: Int,
