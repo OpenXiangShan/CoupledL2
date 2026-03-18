@@ -32,7 +32,8 @@ class SetAssociativeMemoryReadResp[T <: Data](gen: T, ways: Int) extends Bundle 
 class SetAssociativeMemoryWriteReq[T <: Data](gen: T, sets: Int, ways: Int) extends Bundle {
   val setIdx = UInt(log2Up(sets).W)
   val wayMask = UInt(ways.W)  
-  val data = Vec(ways, gen)   
+  // Single write data element; will be replicated to selected ways internally
+  val data = gen
 }
 
 class SetAssociativeMemoryReadPort[T <: Data](gen: T, sets: Int, ways: Int) extends Bundle {
@@ -41,8 +42,8 @@ class SetAssociativeMemoryReadPort[T <: Data](gen: T, sets: Int, ways: Int) exte
 }
 
 class SetAssociativeMemoryWritePort[T <: Data](gen: T, sets: Int, ways: Int) extends Bundle {
-  val req = Input(new SetAssociativeMemoryWriteReq(gen, sets, ways))
-  val en = Input(Bool()) 
+  // Use Valid to carry write request (valid + bits). no separate `en` signal.
+  val req = Input(Valid(new SetAssociativeMemoryWriteReq(gen, sets, ways)))
 }
 
 
@@ -67,23 +68,23 @@ class SetAssociativeMemory[T <: Data](
   // Mutex write ports: handle write conflicts, higher port number has higher priority
   val mutex_w = Wire(Vec(numWritePorts, new SetAssociativeMemoryWritePort(gen, sets, ways)))
   
-  // Default connect req data fields
+  // Default connect req data fields (copy bits & valid separately so we can mute valid on conflicts)
   for (i <- 0 until numWritePorts) {
-    mutex_w(i).req := io.w(i).req
+    mutex_w(i).req.bits := io.w(i).req.bits
+    mutex_w(i).req.valid := io.w(i).req.valid
   }
-  
-  // Handle write conflicts: if multiple ports write to the same address, 
-  //disable lower priority ports
+
+  // Handle write conflicts: if multiple ports write to the same address,
+  // disable lower priority ports by clearing their `valid`.
   for (i <- 0 until numWritePorts) {
-    mutex_w(i).en := io.w(i).en
     for (j <- i + 1 until numWritePorts) {
       // Check if writing to the same set and way
-      val sameSet = io.w(i).req.setIdx === io.w(j).req.setIdx // Check if writing to the same set
-      val wayConflict = (io.w(i).req.wayMask & io.w(j).req.wayMask) =/= 0.U // Check if writing to the same way
-      
-      // If both set and way are the same, there is a write conflict
-      when(io.w(i).en && io.w(j).en && sameSet && wayConflict) {
-        mutex_w(i).en := false.B  
+      val sameSet = io.w(i).req.bits.setIdx === io.w(j).req.bits.setIdx
+      val wayConflict = (io.w(i).req.bits.wayMask & io.w(j).req.bits.wayMask) =/= 0.U
+
+      // If both ports are valid and conflict on set+way, mute the lower-priority one
+      when(io.w(i).req.valid && io.w(j).req.valid && sameSet && wayConflict) {
+        mutex_w(i).req.valid := false.B
       }
     }
   }
@@ -106,11 +107,10 @@ class SetAssociativeMemory[T <: Data](
     
     // Check all write ports,
     for (j <- 0 until numWritePorts) {
-      when(mutex_w(j).en && mutex_w(j).req.setIdx === readSetIdx) { // If there is a write to the same set, bypass
-       
+      when(mutex_w(j).req.valid && mutex_w(j).req.bits.setIdx === readSetIdx) { // If there is a write to the same set, bypass
         for (wayIdx <- 0 until ways) { // Check if writing to the same way
-          when(mutex_w(j).req.wayMask(wayIdx)) {// Same set and way, bypass the corresponding way's data with the write data
-            bypassData(wayIdx) := mutex_w(j).req.data(wayIdx) 
+          when(mutex_w(j).req.bits.wayMask(wayIdx)) { // Same set and way, bypass the corresponding way's data with the write data
+            bypassData(wayIdx) := mutex_w(j).req.bits.data
           }
         }
       }
@@ -121,14 +121,15 @@ class SetAssociativeMemory[T <: Data](
 
   // write
   for (i <- 0 until numWritePorts) {
-    when(mutex_w(i).en) {
-      val setIdx    = mutex_w(i).req.setIdx
-      val wayMask   = mutex_w(i).req.wayMask
-      val writeData = mutex_w(i).req.data
-      
+    when(mutex_w(i).req.valid) {
+      val setIdx    = mutex_w(i).req.bits.setIdx
+      val wayMask   = mutex_w(i).req.bits.wayMask
+      val writeData = mutex_w(i).req.bits.data
+
       for (wayIdx <- 0 until ways) {
         when(wayMask(wayIdx)) {
-          regArray(setIdx)(wayIdx) := writeData(wayIdx)
+          // replicate single write data to the masked way
+          regArray(setIdx)(wayIdx) := writeData
         }
       }
     }
