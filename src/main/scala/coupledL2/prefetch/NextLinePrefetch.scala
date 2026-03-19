@@ -30,7 +30,7 @@ import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.HasCoupledL2Parameters
-import coupledL2.utils.{FullyAssociativeRegs, Queue_Regs, ReplacementPolicy, SetAssociativeRegs, SetAssocReplacer}
+import coupledL2.utils.{Queue_Regs, ReplacementPolicy, SetAssociativeRegs, SetAssociativeRegsWriteReq, SetAssocReplacer}
 import utility.{ChiselDB, MemReqSource, XSPerfAccumulate, XSPerfHistogram}
 
 // Next-Line Prefetcher base parameters
@@ -38,19 +38,19 @@ case class NLParameters(
     L2SliceNum: Int = 4, //L2 cache slice number
     nlPrefetchQueueEntries: Int = 8,
 
-    //timeSample
+    // timeSample
     timeSampleCounterBits: Int = 64, //Sampling counter bit width
     timeSampleRate: Int = 256, //Sampling rate
     timeSampleMinDistance :Int = 4, //Minimum sampling distance
 
-    //Sample Table config 
+    // Sample Table config 
     stWays: Int = 4, 
     stTouchedBits: Int = 1,
     stReplacementPolicy: String = "plru",
     stRPortNum: Int = 2,
     stWPortNum: Int = 2,
     
-    //Pattern Table config 
+    // Pattern Table config 
     ptWays: Int = 64,
     ptSets: Int = 1, 
     ptSatBits: Int = 2,
@@ -59,8 +59,8 @@ case class NLParameters(
     ptRPortNum: Int = 2,
     ptWPortNum: Int = 1,
 
-    //Table  port id
-    stUpdatePort: Int = 0 ,
+    // Table port id
+    stUpdatePort: Int = 0,
     stInsertPort: Int = 1,
     ptTrainPort: Int = 0,
     ptPrefetchPort: Int = 1,
@@ -72,7 +72,7 @@ case class NLParameters(
   override val inflightEntries: Int = 16 
 }
 
-//define Next-Line Prefetcher useful parameters
+// define Next-Line Prefetcher useful parameters
 trait HasNLParams extends HasCoupledL2Parameters {
   val nlParams = prefetchers.find {
     case p: NLParameters => true 
@@ -90,7 +90,7 @@ trait HasNLParams extends HasCoupledL2Parameters {
   def blockAddrBits = fullVAddrBits - offsetBits
   def pcHashBits = blockAddrBits  // PC hash bits, same width as patternTable key
 
-  //timeSampleCounter 
+  // timeSampleCounter 
   def timeSampleCounterBits = nlParams.timeSampleCounterBits
   def timeSampleCounterMax = ((BigInt(1) << timeSampleCounterBits) - 1).U(timeSampleCounterBits.W)
   def timeSampleRateBits = log2Ceil(nlParams.timeSampleRate)
@@ -98,9 +98,9 @@ trait HasNLParams extends HasCoupledL2Parameters {
   // Calculate how many blocks the whole L2 cache has, then /2(if set=512,way=8,slice=4,then 512*8*4/2)
   def timeSampleMaxDistance = blocks * L2SliceNum / 2 
   
-  //sample
-  def stBlocks = timeSampleMaxDistance / nlParams.timeSampleRate //512*8*4/2/256=32
-  def stSets = stBlocks / nlParams.stWays //32/4=8
+  // sample
+  def stBlocks = timeSampleMaxDistance / nlParams.timeSampleRate // eg:(512*8*4/2)/256=32
+  def stSets = stBlocks / nlParams.stWays // eg:32/4=8
   def stSetBits = log2Ceil(stSets)
   def stWaysBits = log2Ceil(nlParams.stWays)
   def stTagBits = blockAddrBits - stSetBits - offsetBits // if:blockAddrBits=44,offsetBits=6bit，setBits=3bit,then tag=44-3-6=35
@@ -124,42 +124,42 @@ trait HasNLParams extends HasCoupledL2Parameters {
   def ptWPort = nlParams.ptWPort  
 }
 
-//NL
+// NL
 abstract class NLBundle(implicit val p: Parameters) extends Bundle with HasNLParams
 
 abstract class NLModule(implicit val p: Parameters) extends Module with HasNLParams {
-  
-  // ==================== Helper function: Address parsing====================
   def getBlockAddr(addr: UInt): UInt = {
-    addr >> offsetBits //This offsetBit is determined by the block size of the L2 cache.
+    addr >> offsetBits // This offsetBit is determined by the block size of the L2 cache.
   }
   def getfullVAddr(addr: UInt): UInt = {
     addr << offsetBits
   }
-  
   def getSampleTableSet(blockAddr: UInt): UInt = {
     blockAddr(stSetBits - 1, 0)
   }
-  
   def getSampleTableTag(blockAddr: UInt): UInt = {
     blockAddr(blockAddrBits - offsetBits - 1, stSetBits)
   }
-  
-  def getPcHash(addr: UInt): UInt = {
-    addr
-  }
-  
   def getSampleTableTagAndSet(blockAddr: UInt): (UInt, UInt) = {
     val sampleTag = getSampleTableTag(blockAddr)
     val sampleSet = getSampleTableSet(blockAddr)
     (sampleTag,sampleSet)
   }
-}
-class TrainData(implicit p: Parameters ) extends NLBundle{
-    val addr = UInt(blockAddrBits.W)
-    val pc = UInt(blockAddrBits.W)
+  def getPcHash(addr: UInt): UInt = {
+    addr
+  }
+  
+  // Helper: generic find hit info from a Vec of entries that have `valid` and `tag` fields
+  def findHit[T <: Bundle](entries: Vec[T], key: UInt)(implicit ev: T <:< { val valid: Bool; val tag: UInt }) = {
+    val hitVec = VecInit(entries.map(e => ev(e).valid && ev(e).tag === key))
+    val hit = hitVec.asUInt.orR
+    val hitIdx = PriorityEncoder(hitVec.asUInt)
+    val hitEntry = entries(hitIdx)
+    (hitVec, hit, hitIdx, hitEntry)
+  }
 }
  
+// sample
 class SampleTableEntryField(implicit p: Parameters) extends NLBundle{
     val tag = UInt(stTagBits.W)
     val sampleTime = UInt(stTimeSampleBits.W)
@@ -174,18 +174,19 @@ class SampleTableWriteReq(implicit p: Parameters) extends NLBundle {
   val entry = new SampleTableEntryField()
 }
 
-//sample
 class SampleTrain(implicit p: Parameters) extends NLBundle {
     val addr = UInt(blockAddrBits.W)
     val pc = UInt(blockAddrBits.W)
     val timeSample = UInt(timeSampleCounterBits.W)
 }
 
+// Pattern
 class PatternTableEntryField(implicit p: Parameters) extends NLBundle{
-     val sat = UInt(ptSatBits.W)
-     val valid = Bool()
+  val sat = UInt(ptSatBits.W)
+  val valid = Bool()
+  val tag = UInt(ptPcHashBits.W)
 }
-//Pattern
+
 class PatternTrain(implicit p: Parameters) extends NLBundle {
     val pcHash = UInt(ptPcHashBits.W)
     val touched = Bool() 
@@ -199,15 +200,13 @@ class PatternReq(implicit p: Parameters) extends NLBundle {
 class PatternResp(implicit p: Parameters) extends NLBundle {
     val nextAddr = UInt(blockAddrBits.W)  
 }
-//chiselDB interface
+// chiselDB interface
 class SampleDb(implicit p: Parameters) extends NLBundle {
   val trainEn = Bool()
   val pc = UInt(blockAddrBits.W)
   val addr = UInt(blockAddrBits.W)
   val timeSample = UInt(timeSampleCounterBits.W)
-
   val hit = Bool()
-  val plru_state = UInt(3.W)
  
   val updateEn = Bool()
   val updateIdx = UInt(stSetBits.W)
@@ -219,7 +218,7 @@ class SampleDb(implicit p: Parameters) extends NLBundle {
   val insertIdx = UInt(stSetBits.W)
   val insertMask = UInt(nlParams.stWays.W)
   val insertData = new SampleTableEntryField()
-  val victimData = new SampleTableEntryField()//victim entry
+  val victimData = new SampleTableEntryField() // victim entry
 }
 
 class PatternDb(implicit p: Parameters) extends NLBundle {
@@ -293,15 +292,12 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
 
   // -------------------- Update Route（uptRt） --------------------
   val s1_updateBlockAddr = s1_blockAddr - 1.U
-  val s1_updateREntries = RegNext(st.io.r(updatePort).resp.data)
+  val s1_updateREntries = RegEnable(st.io.r(updatePort).resp.data, s0_valid)
   val (s1_updateTag, s1_updateIdx) = getSampleTableTagAndSet(s1_updateBlockAddr)
 
   // Hit check
-  val s1_updateHitVec = VecInit(s1_updateREntries.map(e => e.valid && e.tag === s1_updateTag))
-  val s1_updateHit = s1_updateHitVec.asUInt.orR
-  val s1_updateHitWayIdx = PriorityEncoder(s1_updateHitVec.asUInt)
+  val (s1_updateHitVec, s1_updateHit, s1_updateHitWayIdx, s1_updateHitEntry) = findHit(s1_updateREntries, s1_updateTag)
   val s1_updateHitWayOH = UIntToOH(s1_updateHitWayIdx)
-  val s1_updateHitEntry = s1_updateREntries(s1_updateHitWayIdx)
 
   // Check if should update
   val timeSampleDelta = s1_timeSample - s1_updateHitEntry.sampleTime
@@ -319,11 +315,11 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   }
 
   // Create a Valid write request for update route at S1
-  val s1_updateReq = Wire(Valid(new SampleTableWriteReq()))
+  val s1_updateReq = Wire(Valid(new SetAssociativeRegsWriteReq(new SampleTableEntryField(), stSets, nlParams.stWays)))
   s1_updateReq.valid := s1_updateEn
   s1_updateReq.bits.setIdx := s1_updateIdx
   s1_updateReq.bits.wayMask := s1_updateHitWayOH
-  s1_updateReq.bits.entry := s1_updateEntry
+  s1_updateReq.bits.data := s1_updateEntry
 
   // Update PLRU state on hit
   when(s1_valid && s1_updateHit) {
@@ -331,7 +327,7 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   }
 
   // -------------------- Insert Route（insRt） --------------------
-  val s1_insertEn = RegNext(s0_insertEn)
+  val s1_insertEn = RegNext(s0_insertEn, false.B)
   val s1_insertREntries = RegEnable(st.io.r(insertPort).resp.data, s0_insertEn)
 
   val (s1_insertTag, s1_insertIdx) = getSampleTableTagAndSet(s1_blockAddr)
@@ -356,11 +352,11 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   s1_insertEntry.touched := false.B
 
   // Create a Valid write request for insert route at S1
-  val s1_insertReq = Wire(Valid(new SampleTableWriteReq()))
+  val s1_insertReq = Wire(Valid(new SetAssociativeRegsWriteReq(new SampleTableEntryField(), stSets, nlParams.stWays)))
   s1_insertReq.valid := s1_insertEn
   s1_insertReq.bits.setIdx := s1_insertIdx
   s1_insertReq.bits.wayMask := s1_insertWayOH
-  s1_insertReq.bits.entry := s1_insertEntry
+  s1_insertReq.bits.data := s1_insertEntry
 
   // Output to pattern table
   io.resp.valid := s1_insertEn && s1_victimEntry.valid
@@ -387,7 +383,6 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   dbData.pc := s1_pc
   dbData.timeSample := s1_timeSample
   dbData.hit := s1_updateHit
-  dbData.plru_state := 0.U  // PLRU state now managed internally by SetAssocReplacer
   dbData.updateEn := s1_updateEn
   dbData.updateIdx := s1_updateIdx
   dbData.updateMask := s1_updateHitWayOH
@@ -417,15 +412,15 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
     val resp  = DecoupledIO(new PatternResp)
   })
 
-  // ==================== Pattern Table (pt) ====================
-  val pt = Module(new FullyAssociativeRegs(
+    // ==================== Pattern Table (pt) ====================
+    val pt = Module(new SetAssociativeRegs(
       gen = new PatternTableEntryField(),
-      keyWidth = ptPcHashBits,
-      numEntries = nlParams.ptWays,
+      sets = nlParams.ptSets,
+      ways = nlParams.ptWays,
       numReadPorts = nlParams.ptRPortNum,
       numWritePorts = nlParams.ptWPortNum,
       shouldReset = true
-  ))
+    ))
 
   // Replacer: SetAssocReplacer with single set (fully associative)
   val replacer = new SetAssocReplacer( nlParams.ptSets, nlParams.ptWays,ptReplacementPolicy)
@@ -433,7 +428,6 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   // Local port aliases
   private val trainPort = ptTrainPort
   private val prefetchPort = ptPrefetchPort
-
   private val writePort = ptWPort
 
   io.train.ready := true.B
@@ -443,73 +437,91 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   val s0_trainValid = io.train.fire
   val s0_trainPcHash = io.train.bits.pcHash
   val s0_trainTouched = io.train.bits.touched
-  pt.io.r(trainPort).req.key := s0_trainPcHash
+
+  // For set-assoc, index by lower bits of pcHash
+  val s0_trainSet = s0_trainPcHash(ptSetBits - 1, 0)
+  pt.io.r(trainPort).req.setIdx := s0_trainSet
+
+  //read data
+  val s0_trainREntries = pt.io.r(trainPort).resp.data
+  val (s0_trainHitVec, s0_trainHit, s0_trainHitWayIdx, s0_trainHitEntry) = findHit(s0_trainREntries, s0_trainPcHash)
 
   val s0_reqValid = io.req.fire
   val s0_reqPc = io.req.bits.pc
   val s0_reqAddr = io.req.bits.addr
   val s0_reqPcHash = getPcHash(s0_reqPc)
-  pt.io.r(prefetchPort).req.key := s0_reqPcHash
+  val s0_reqSet = 0.U
+  pt.io.r(prefetchPort).req.setIdx := s0_reqSet
+
+  val s0_reqREntries = pt.io.r(prefetchPort).resp.data
+  val (s0_reqHitVec, s0_reqHit, s0_reqHitWayIdx, s0_reqHitEntry) = findHit(s0_reqREntries, s0_reqPcHash)
   
   // ==================== Stage 1: Process Read Data ====================
   // -------------------- Train Part --------------------
   val s1_trainValid = RegNext(s0_trainValid, false.B)
   val s1_trainPcHash = RegEnable(s0_trainPcHash, s0_trainValid)
   val s1_trainTouched = RegEnable(s0_trainTouched, s0_trainValid)
-  val s1_trainResp = RegEnable(pt.io.r(trainPort).resp, s0_trainValid)
-
+  val s1_trainHit = RegEnable(s0_trainHit,s0_trainValid)
+  val s1_trainHitWayIdx = RegEnable(s0_trainHitWayIdx, s0_trainValid)
+  val s1_trainHitEntry = RegEnable(s0_trainHitEntry, s0_trainValid)
+  
   val s1_we = WireInit(false.B)
-  val s1_writeIdx = WireInit(0.U(ptSetBits.W))
-  val s1_newEntry = WireInit(s1_trainResp.data)
+  val s1_writeWay = WireInit(0.U(log2Ceil(nlParams.ptWays).W))
+  val s1_writeEntry = WireInit(s1_trainHitEntry)
 
   when(s1_trainValid) {
-    when(s1_trainResp.hit) {//update
+    when(s1_trainHit) { // update
       s1_we := true.B
-      s1_writeIdx := s1_trainResp.hitIdx
-      s1_newEntry.valid := true.B
-      val currentSat = s1_trainResp.data.sat
+      s1_writeWay := s1_trainHitWayIdx
+      s1_writeEntry := s1_trainHitEntry
+      s1_writeEntry.valid := true.B
+      val currentSat = s1_trainHitEntry.sat
       when(s1_trainTouched) {
-        s1_newEntry.sat := Mux(currentSat === ptMaxSat, ptMaxSat, currentSat + 1.U)
+        s1_writeEntry.sat := Mux(currentSat === ptMaxSat, ptMaxSat, currentSat + 1.U)
       }.otherwise {
-        s1_newEntry.sat := Mux(currentSat === ptMinSat, ptMinSat, currentSat - 1.U)
+        s1_writeEntry.sat := Mux(currentSat === ptMinSat, ptMinSat, currentSat - 1.U)
       }
-    }.otherwise {//insert
+    }.otherwise { // insert
       s1_we := s1_trainTouched
-      s1_writeIdx := replacer.way(0.U)  // Get victim from single-set replacer
-      s1_newEntry.valid := s1_trainTouched
-      s1_newEntry.sat := ptDefualtSat.U
+      s1_writeWay := replacer.way(0.U)
+      s1_writeEntry.valid := s1_trainTouched
+      s1_writeEntry.sat := ptDefualtSat.U
+      s1_writeEntry.tag := s1_trainPcHash
     }
   }
 
   // Update PLRU state on access (hit or insert)
   when(s1_trainValid) {
-    replacer.access(0.U, s1_writeIdx)
+    replacer.access(0.U, s1_writeWay)
   }
 
   // -------------------- Prefetch Part --------------------
   val s1_reqValid = RegNext(s0_reqValid, false.B)
-  val s1_reqPc = RegEnable(s0_reqPc, s0_reqValid)
+  val s1_reqPcHash = RegEnable(s0_reqPcHash, s0_reqValid)
   val s1_reqAddr = RegEnable(s0_reqAddr, s0_reqValid)
-  val s1_reqResp = RegEnable(pt.io.r(prefetchPort).resp, s0_reqValid)
+  val s1_reqHit = RegEnable(s0_reqHit, s0_reqValid)
+  val s1_reqHitWayIdx = RegEnable(s0_reqHitWayIdx, s0_reqValid)
+  val s1_reqHitEntry = RegEnable(s0_reqHitEntry, s0_reqValid)
 
-  val s1_prefetchAddr = s1_reqAddr + 1.U
-  val s1_reqHit = s1_reqValid && s1_reqResp.hit
-  //getPPN need full addr
+  val s1_prefetchAddr = s1_reqAddr + 1.U  
   val s1_crossPage = getPPN(getfullVAddr(s1_reqAddr)) =/= getPPN(getfullVAddr(s1_prefetchAddr))
-  val s1_needPrefetch = s1_reqHit && (s1_reqResp.data.sat === ptMaxSat) && !s1_crossPage
+  val s1_needPrefetch = s1_reqHit && (s1_reqHitEntry.sat === ptMaxSat) && !s1_crossPage
 
   // ==================== Stage 2: Writeback ====================
   val s2_we = RegNext(s1_we, false.B)
-  val s2_writeIdx = RegEnable(s1_writeIdx, s1_we)
-  val s2_newKey = RegEnable(s1_trainPcHash, s1_we)
-  val s2_newEntry = RegEnable(s1_newEntry, s1_we)
+  val s2_writeWay = RegEnable(s1_writeWay, s1_we)
+  val s2_writeEntry = RegEnable(s1_writeEntry, s1_we)
 
-  //writeback
-  pt.io.w(writePort).en := s2_we
-  pt.io.w(writePort).req.valid := true.B
-  pt.io.w(writePort).req.key := s2_newKey
-  pt.io.w(writePort).req.idx := s2_writeIdx
-  pt.io.w(writePort).req.data := s2_newEntry
+  //writeback: construct Valid write request for set-assoc table
+  val s2_writeReq = Wire(Valid(new SetAssociativeRegsWriteReq(new PatternTableEntryField(), nlParams.ptSets, nlParams.ptWays)))
+  s2_writeReq.valid := s2_we
+
+  // single set (ptSets may be >1); use set 0 for replacer derived victim, otherwise derive from pcHash lower bits
+  val s2_writeSet = 0.U 
+  s2_writeReq.bits.setIdx := s2_writeSet
+  s2_writeReq.bits.wayMask := UIntToOH(s2_writeWay)
+  s2_writeReq.bits.data := s2_writeEntry
+  pt.io.w(writePort).req := s2_writeReq
 
   // Output
   io.resp.valid := RegNext(s1_needPrefetch, false.B)
@@ -520,9 +532,9 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   val dbData = Wire(new PatternDb())
   dbTable.log(dbData, dbData.trainEn && (dbData.hit || dbData.we), s"Nlpattern", clock, reset)
 
-  dbData.sat := s1_trainResp.data.sat
-  dbData.hit := s1_trainResp.hit
-  dbData.hitData := s1_trainResp.data
+  dbData.sat := s1_trainHitEntry.sat
+  dbData.hit := s1_trainHit
+  dbData.hitData := s1_trainHitEntry
   dbData.trainEn := s1_trainValid
   dbData.trainData.pcHash := s1_trainPcHash
   dbData.trainData.valid := true.B
@@ -530,23 +542,20 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   dbData.trainData.sampleTime := 0.U
   dbData.trainData.touched := s1_trainTouched
   dbData.we := s1_we
-  dbData.writeIdx := s1_writeIdx
-  dbData.writeData := s1_newEntry
+  dbData.writeIdx := s1_writeWay
+  dbData.writeData := s1_writeEntry
  
-
   XSPerfAccumulate("nlPatternTrainTimes", s1_trainValid)
-  XSPerfAccumulate("nlPatternTrainMulHitTimes", s1_trainResp.multHit || s1_reqResp.multHit)
-  XSPerfAccumulate("nlPatternTrainReplaceTimes", !s1_trainResp.hit)
-  XSPerfAccumulate("nlPatternUpdateTimes", s1_trainValid && s1_trainResp.hit)
-  XSPerfAccumulate("nlPatternUpdateTouchedTrueTimes", s1_trainValid && s1_trainResp.hit && s1_trainTouched)
-  XSPerfAccumulate("nlPatternUpdateTouchedFalseTimes", s1_trainValid && s1_trainResp.hit && !s1_trainTouched)
-  XSPerfAccumulate("nlPatternPcHitTimes", s1_reqResp.hit && s1_reqValid)
-  XSPerfAccumulate("nlPatternPcHitValidEntryTimes", s1_reqHit)
-  XSPerfAccumulate("nlPatternCrossPageTimes", s1_reqHit && (s1_reqResp.data.sat === ptMaxSat) && s1_crossPage)
-  XSPerfAccumulate("nlPatternPcHitValidEntrySatEq3Times", s1_reqHit && (s1_reqResp.data.sat === 3.U))
-  XSPerfAccumulate("nlPatternPcHitValidEntrySatEq2Times", s1_reqHit && (s1_reqResp.data.sat === 2.U))
-  XSPerfAccumulate("nlPatternPcHitValidEntrySatEq1Times", s1_reqHit && (s1_reqResp.data.sat === 1.U))
-  XSPerfAccumulate("nlPatternPcHitValidEntrySatEq0Times", s1_reqHit && (s1_reqResp.data.sat === 0.U))
+  XSPerfAccumulate("nlPatternTrainReplaceTimes", s1_trainValid && !s1_trainHit)
+  XSPerfAccumulate("nlPatternUpdateTimes", s1_trainValid && s1_trainHit)
+  XSPerfAccumulate("nlPatternUpdateTouchedTrueTimes", s1_trainValid && s1_trainHit && s1_trainTouched)
+  XSPerfAccumulate("nlPatternUpdateTouchedFalseTimes", s1_trainValid && s1_trainHit && !s1_trainTouched)
+  XSPerfAccumulate("nlPatternPcHitValidEntryTimes", s1_reqValid && s1_reqHit)
+  XSPerfAccumulate("nlPatternCrossPageTimes", s1_reqValid && s1_reqHit && (s1_reqHitEntry.sat === ptMaxSat) && s1_crossPage)
+  XSPerfAccumulate("nlPatternPcHitValidEntrySatEq3Times", s1_reqHit && (s1_reqHitEntry.sat === ptMaxSat))
+  XSPerfAccumulate("nlPatternPcHitValidEntrySatEq2Times", s1_reqHit && (s1_reqHitEntry.sat === 2.U))
+  XSPerfAccumulate("nlPatternPcHitValidEntrySatEq1Times", s1_reqHit && (s1_reqHitEntry.sat === 1.U))
+  XSPerfAccumulate("nlPatternPcHitValidEntrySatEq0Times", s1_reqHit && (s1_reqHitEntry.sat === ptMinSat))
 }
 
 class NextLinePrefetch(implicit p: Parameters) extends NLModule {
@@ -626,6 +635,5 @@ class NextLinePrefetch(implicit p: Parameters) extends NLModule {
   XSPerfAccumulate("nlPrefetchReqTimes",prefetcherPattern.io.resp.valid && io.enable)
   XSPerfAccumulate("nlTransmitPrefetchReqTimes",io.req.fire && io.enable)
   XSPerfAccumulate("nlTimeSampleCountResetTimes",(!timeSampleCounter.orR) & shouldTrain)
-
 }
 

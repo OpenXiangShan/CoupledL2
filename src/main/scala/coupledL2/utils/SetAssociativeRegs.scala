@@ -115,7 +115,6 @@ class SetAssociativeRegs[T <: Data](
         }
       }
     }
-    
     io.r(i).resp.data := bypassData
   }
 
