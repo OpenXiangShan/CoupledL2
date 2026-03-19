@@ -491,7 +491,17 @@ class DetectPipeline(implicit p: Parameters) extends CDPModule {
   val s2_high_bit = s2_addr(fullAddressBits - 1, 39)
   val s2_high_bit_is_zero = s2_high_bit === 0.U
 
-  val s2_can_pft  = s2_high_bit_is_zero && s2_low_bit_is_zero && s2_vpn0_is_nzero && s2_vt_hit_hot && s2_depth < 3.U    // TODO: maybe we can move this to s3?
+  val s2_can_pft  = s2_high_bit_is_zero && s2_low_bit_is_zero && s2_vpn0_is_nzero && s2_vt_hit_hot && s2_depth < 3.U  && s2_vt_hit   // TODO: maybe we can move this to s3?
+
+  XSPerfAccumulate("detect_s2_vpn0_isnzero", s2_vpn0_is_nzero && s2_valid)
+  XSPerfAccumulate("detect_s2_lowbit_iszero", s2_low_bit_is_zero && s2_valid)
+  XSPerfAccumulate("detect_s2_highbit_iszero", s2_high_bit_is_zero && s2_valid)
+  XSPerfAccumulate("detect_s2_vt_hit", s2_vt_hit && s2_valid)
+  XSPerfAccumulate("detect_s2_vt_hit_hot", s2_vt_hit_hot && s2_valid)
+
+  for (i <-0 until 5) {
+    XSPerfAccumulate(s"detect_s2_depth_$i", s2_depth === i.U && s2_valid)
+  }
 
   // ------------------ s3 ------------------
   s3_valid  := RegNext(s2_valid)
@@ -793,13 +803,5 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
   for (i <- 0 until DetectPipeNum) {
     XSPerfAccumulate(s"detect_pipe_${i}_pft_drop", detect_pipe_seq(i).io.pft_req.valid && !detect_pipe_seq(i).io.pft_req.ready)
     XSPerfAccumulate(s"detect_pipe_${i}_detect_enq", detect_pipe_seq(i).io.detect_req.valid)
-
-    XSPerfAccumulate(s"detect_pipe_${i}_s2_high_bit_zero", detect_pipe_seq(i).s2_high_bit_is_zero && detect_pipe_seq(i).s2_valid)
-    XSPerfAccumulate(s"detect_pipe_${i}_s2_low_bit_zero", detect_pipe_seq(i).s2_low_bit_is_zero && detect_pipe_seq(i).s2_valid)
-    XSPerfAccumulate(s"detect_pipe_${i}_s2_vpn0_is_nzero", detect_pipe_seq(i).s2_vpn0_is_nzero && detect_pipe_seq(i).s2_valid)
-    XSPerfAccumulate(s"detect_pipe_${i}_s2_vt_hit_hot", detect_pipe_seq(i).s2_vt_hit_hot && detect_pipe_seq(i).s2_valid)
-    for (j <- 0 until 5) {
-      XSPerfAccumulate(s"detect_pipe_${i}_depth_${j}", detect_pipe_seq(i).s2_valid && detect_pipe_seq(i).s2_depth === j.U)
-    }
   }
 }
