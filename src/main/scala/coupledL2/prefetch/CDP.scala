@@ -236,6 +236,7 @@ class VpnTable(implicit p: Parameters) extends CDPModule {
   }
 
   is_reset := !train_req.valid && resetCnt >= VpnResetPeriod.U
+  XSPerfAccumulate("VpnTable_reset", is_reset)
   when (is_reset) {
     resetCnt := 0.U
 
@@ -792,5 +793,13 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
   for (i <- 0 until DetectPipeNum) {
     XSPerfAccumulate(s"detect_pipe_${i}_pft_drop", detect_pipe_seq(i).io.pft_req.valid && !detect_pipe_seq(i).io.pft_req.ready)
     XSPerfAccumulate(s"detect_pipe_${i}_detect_enq", detect_pipe_seq(i).io.detect_req.valid)
+
+    XSPerfAccumulate(s"detect_pipe_${i}_s2_high_bit_zero", detect_pipe_seq(i).s2_high_bit_is_zero && detect_pipe_seq(i).s2_valid)
+    XSPerfAccumulate(s"detect_pipe_${i}_s2_low_bit_zero", detect_pipe_seq(i).s2_low_bit_is_zero && detect_pipe_seq(i).s2_valid)
+    XSPerfAccumulate(s"detect_pipe_${i}_s2_vpn0_is_nzero", detect_pipe_seq(i).s2_vpn0_is_nzero && detect_pipe_seq(i).s2_valid)
+    XSPerfAccumulate(s"detect_pipe_${i}_s2_vt_hit_hot", detect_pipe_seq(i).s2_vt_hit_hot && detect_pipe_seq(i).s2_valid)
+    for (j <- 0 until 5) {
+      XSPerfAccumulate(s"detect_pipe_${i}_depth_${j}", detect_pipe_seq(i).s2_valid && detect_pipe_seq(i).s2_depth === j.U)
+    }
   }
 }
