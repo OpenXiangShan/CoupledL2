@@ -176,10 +176,6 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   }
   def noFreeWay(task: TaskBundle): Bool = noFreeWayForSet(task.set)
 
-  // flow not allowed when full, or entries might starve
-  val canFlow = flow.B && !full && !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(in)
-  val doFlow  = canFlow && io.out.ready
-
   //  val depMask    = buffer.map(e => e.valid && sameAddr(io.in.bits, e.task))
   // remove duplicate prefetch if same-addr A req in MSHR or ReqBuf
   val isPrefetch = in.fromA && in.opcode === Hint
@@ -191,6 +187,10 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     )
   ).asUInt
   val dup        = isPrefetch && dupMask.orR
+
+  // flow not allowed when full, or entries might starve
+  val canFlow = flow.B && !full && !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(in) && !dup // TODO: exclude mergeA?
+  val doFlow  = canFlow && io.out.ready
 
   // statistics io
   val latePrefetchRes = latePrefetch(in)
