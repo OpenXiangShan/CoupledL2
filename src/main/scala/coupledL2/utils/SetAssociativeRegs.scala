@@ -20,7 +20,6 @@ package coupledL2.utils
 import chisel3._
 import chisel3.util._
 
-
 class SetAssociativeRegsReadReq(sets: Int, ways: Int) extends Bundle {
   val setIdx = UInt(log2Up(sets).W)
 }
@@ -32,7 +31,6 @@ class SetAssociativeRegsReadResp[T <: Data](gen: T, ways: Int) extends Bundle {
 class SetAssociativeRegsWriteReq[T <: Data](gen: T, sets: Int, ways: Int) extends Bundle {
   val setIdx = UInt(log2Up(sets).W)
   val wayMask = UInt(ways.W)  
-  // Single write data element; will be replicated to selected ways internally
   val data = gen
 }
 
@@ -42,7 +40,6 @@ class SetAssociativeRegsReadPort[T <: Data](gen: T, sets: Int, ways: Int) extend
 }
 
 class SetAssociativeRegsWritePort[T <: Data](gen: T, sets: Int, ways: Int) extends Bundle {
-  // Use Valid to carry write request (valid + bits). no separate `en` signal.
   val req = Input(Valid(new SetAssociativeRegsWriteReq(gen, sets, ways)))
 }
 
@@ -65,13 +62,25 @@ class SetAssociativeRegs[T <: Data](
     val w = Vec(numWritePorts, new SetAssociativeRegsWritePort(gen, sets, ways))
   })
 
+  //Register array: sets × ways
+  val regArray = if (shouldReset) {
+    RegInit(VecInit(Seq.fill(sets)(VecInit(Seq.fill(ways)(0.U.asTypeOf(gen))))))
+  } else {
+    Reg(Vec(sets, Vec(ways, gen)))
+  }
+
   // Mutex write ports: handle write conflicts, higher port number has higher priority
   val mutex_w = Wire(Vec(numWritePorts, new SetAssociativeRegsWritePort(gen, sets, ways)))
-  
-  // Default connect req data fields (copy bits & valid separately so we can mute valid on conflicts)
   for (i <- 0 until numWritePorts) {
-    mutex_w(i).req.bits := io.w(i).req.bits
-    mutex_w(i).req.valid := io.w(i).req.valid
+    assert(mutex_w(i).req.bits.setIdx < sets.U, "SetAssociativeRegs: write setIdx out of range")
+    assert(mutex_w(i).req.bits.wayMask < (1.U << ways).asUInt, "SetAssociativeRegs: wayMask width")
+  }
+  for (i <- 0 until numReadPorts) {
+    assert(io.r(i).req.setIdx < sets.U, "SetAssociativeRegs: read setIdx out of range")
+  }
+  
+  for (i <- 0 until numWritePorts) {
+    mutex_w(i).req := io.w(i).req
   }
 
   // Handle write conflicts: if multiple ports write to the same address,
@@ -89,36 +98,34 @@ class SetAssociativeRegs[T <: Data](
     }
   }
  
-  //Register array: sets × ways
-  val regArray = if (shouldReset) {
-    RegInit(VecInit(Seq.fill(sets)(VecInit(Seq.fill(ways)(0.U.asTypeOf(gen))))))
-  } else {
-    Reg(Vec(sets, Vec(ways, gen)))
-  }
-
   //Read port: combinational logic, returns immediately (with read-after-write bypass)
   for (i <- 0 until numReadPorts) {
     val readSetIdx = io.r(i).req.setIdx
     val baseData = regArray(readSetIdx)
     val bypassData = Wire(Vec(ways, gen))
-    
-    // Default to using the data from the register array
-    bypassData := baseData
-    
-    // Check all write ports,
-    for (j <- 0 until numWritePorts) {
-      when(mutex_w(j).req.valid && mutex_w(j).req.bits.setIdx === readSetIdx) { // If there is a write to the same set, bypass
-        for (wayIdx <- 0 until ways) { // Check if writing to the same way
-          when(mutex_w(j).req.bits.wayMask(wayIdx)) { // Same set and way, bypass the corresponding way's data with the write data
-            bypassData(wayIdx) := mutex_w(j).req.bits.data
-          }
-        }
-      }
+
+    // SET conflict on the write port
+    val wPortSetConflict = VecInit((0 until numWritePorts).map { j =>
+      mutex_w(j).req.valid && (mutex_w(j).req.bits.setIdx === readSetIdx)
+    })
+
+    // Collect write data from ports for indexed access
+    val writeDataVec = VecInit((0 until numWritePorts).map { j => mutex_w(j).req.bits.data })
+
+    // For each way, build a small priority selection among write ports; default to baseData
+    for (wayIdx <- 0 until ways) {
+      
+      // way conflict on write ports that have a set conflict
+      val conflictSetVec = VecInit((0 until numWritePorts).map { j =>
+        wPortSetConflict(j) && mutex_w(j).req.bits.wayMask(wayIdx)
+      })
+      val cases = (0 until numWritePorts).map { j => (conflictSetVec(j), writeDataVec(j)) }
+      bypassData(wayIdx) := MuxCase(baseData(wayIdx), cases)
     }
     io.r(i).resp.data := bypassData
   }
 
-  // write
+  // Write Port
   for (i <- 0 until numWritePorts) {
     when(mutex_w(i).req.valid) {
       val setIdx    = mutex_w(i).req.bits.setIdx
@@ -131,6 +138,15 @@ class SetAssociativeRegs[T <: Data](
           regArray(setIdx)(wayIdx) := writeData
         }
       }
+    }
+  }
+
+  for (s <- 0 until sets) {
+    for (w <- 0 until ways) {
+      val writers = VecInit((0 until numWritePorts).map { j =>
+        (mutex_w(j).req.valid && (mutex_w(j).req.bits.setIdx === s.U) && mutex_w(j).req.bits.wayMask(w))
+      })
+      assert(PopCount(writers) <= 1.U, s"SetAssociativeRegs: multiple active writers to same (set=$s,way=$w)")
     }
   }
 }

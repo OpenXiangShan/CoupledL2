@@ -103,7 +103,7 @@ trait HasNLParams extends HasCoupledL2Parameters {
   def stSets = stBlocks / nlParams.stWays // eg:32/4=8
   def stSetBits = log2Ceil(stSets)
   def stWaysBits = log2Ceil(nlParams.stWays)
-  def stTagBits = blockAddrBits - stSetBits - offsetBits // if:blockAddrBits=44,offsetBits=6bit，setBits=3bit,then tag=44-3-6=35
+  def stTagBits = blockAddrBits - stSetBits // if:blockAddrBits=44,setBits=3bit,then tag=44-3=41
   def stPcHashBits = pcHashBits
   def stTimeSampleBits = nlParams.timeSampleCounterBits
   def stReplacementPolicy = nlParams.stReplacementPolicy
@@ -135,10 +135,10 @@ abstract class NLModule(implicit val p: Parameters) extends Module with HasNLPar
     addr << offsetBits
   }
   def getSampleTableSet(blockAddr: UInt): UInt = {
-    blockAddr(stSetBits - 1, 0)
+    if (stSetBits == 0) 0.U else blockAddr(stSetBits - 1, 0)
   }
   def getSampleTableTag(blockAddr: UInt): UInt = {
-    blockAddr(blockAddrBits - offsetBits - 1, stSetBits)
+    blockAddr(blockAddrBits - 1, stSetBits)
   }
   def getSampleTableTagAndSet(blockAddr: UInt): (UInt, UInt) = {
     val sampleTag = getSampleTableTag(blockAddr)
@@ -439,7 +439,7 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   val s0_trainTouched = io.train.bits.touched
 
   // For set-assoc, index by lower bits of pcHash
-  val s0_trainSet = s0_trainPcHash(ptSetBits - 1, 0)
+  val s0_trainSet = if (ptSetBits == 0) 0.U else s0_trainPcHash(ptSetBits - 1, 0)
   pt.io.r(trainPort).req.setIdx := s0_trainSet
 
   //read data
@@ -450,7 +450,7 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   val s0_reqPc = io.req.bits.pc
   val s0_reqAddr = io.req.bits.addr
   val s0_reqPcHash = getPcHash(s0_reqPc)
-  val s0_reqSet = 0.U
+  val s0_reqSet = if (ptSetBits == 0) 0.U else s0_reqPcHash(ptSetBits - 1, 0)
   pt.io.r(prefetchPort).req.setIdx := s0_reqSet
 
   val s0_reqREntries = pt.io.r(prefetchPort).resp.data
@@ -464,9 +464,10 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   val s1_trainHit = RegEnable(s0_trainHit,s0_trainValid)
   val s1_trainHitWayIdx = RegEnable(s0_trainHitWayIdx, s0_trainValid)
   val s1_trainHitEntry = RegEnable(s0_trainHitEntry, s0_trainValid)
+  val s1_trainSet = RegEnable(s0_trainSet, s0_trainValid)
   
   val s1_we = WireInit(false.B)
-  val s1_writeWay = WireInit(0.U(log2Ceil(nlParams.ptWays).W))
+  val s1_writeWay = WireInit(0.U(ptWaysBits.W))
   val s1_writeEntry = WireInit(s1_trainHitEntry)
 
   when(s1_trainValid) {
@@ -483,7 +484,7 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
       }
     }.otherwise { // insert
       s1_we := s1_trainTouched
-      s1_writeWay := replacer.way(0.U)
+      s1_writeWay := replacer.way(s1_trainSet)
       s1_writeEntry.valid := s1_trainTouched
       s1_writeEntry.sat := ptDefualtSat.U
       s1_writeEntry.tag := s1_trainPcHash
@@ -492,7 +493,7 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
 
   // Update PLRU state on access (hit or insert)
   when(s1_trainValid) {
-    replacer.access(0.U, s1_writeWay)
+    replacer.access(s1_trainSet, s1_writeWay)
   }
 
   // -------------------- Prefetch Part --------------------
@@ -516,8 +517,8 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   val s2_writeReq = Wire(Valid(new SetAssociativeRegsWriteReq(new PatternTableEntryField(), nlParams.ptSets, nlParams.ptWays)))
   s2_writeReq.valid := s2_we
 
-  // single set (ptSets may be >1); use set 0 for replacer derived victim, otherwise derive from pcHash lower bits
-  val s2_writeSet = 0.U 
+  // write set: preserve the train-set sampled in S1
+  val s2_writeSet = s1_trainSet
   s2_writeReq.bits.setIdx := s2_writeSet
   s2_writeReq.bits.wayMask := UIntToOH(s2_writeWay)
   s2_writeReq.bits.data := s2_writeEntry

@@ -49,72 +49,70 @@ class Queue_Regs[T <: Data](
     val deq = DecoupledIO(gen)
     val flush = if (hasFlush) Some(Input(Bool())) else None
   })
-  
+  def wrapInc(ptr: UInt): UInt = Mux(ptr === (entries - 1).U, 0.U, ptr + 1.U)
   require(entries > 0, "Queue must have positive entries")
   require((entries & (entries - 1)) == 0, "entries must be a power of 2")
 
   val queue = RegInit(VecInit(Seq.fill(entries)(0.U.asTypeOf(gen))))
   val maybe_full = RegInit(false.B)
-  val headCounter = Counter(entries)
-  val headPtr = headCounter.value
-  val tailCounter =  Counter(entries)
-  val tailPtr = tailCounter.value
+  val ptrBits = log2Up(entries)  // pointer width: ensure at least 1 bit to avoid zero-width UInts
+  val headPtr = RegInit(0.U(ptrBits.W))
+  val tailPtr = RegInit(0.U(ptrBits.W))
   val empty = headPtr === tailPtr && !maybe_full
   val full = headPtr === tailPtr && maybe_full
-  val flushEn = io.flush.getOrElse(false.B) && hasFlush.B
+  val flushHappens = if (hasFlush) io.flush.get else false.B
 
   // Decide enq ready depending on hasOverWrite (elaboration-time constant)
   if (hasOverWrite) {
-    io.enq.ready := !flushEn
+    io.enq.ready := !flushHappens
   } else {
-    io.enq.ready := !full && !flushEn
+    io.enq.ready := !full && !flushHappens
   }
 
   // Compute deq.valid according to modes (use Scala if for param-time branching)
   val deq_valid = if (hasFlow) {
-    // hasFlow mode: Data passes through directly when the queue is empty
-    !empty || io.enq.valid
+    !empty || io.enq.valid // hasFlow mode: Data passes through directly when the queue is empty
   } else {
     !empty
   }
 
   // Dequeue fire when deq is valid and consumer ready
   // Note:It does not necessarily come from the data already stored in the Queue.
-  val do_deq = deq_valid && io.deq.ready && !flushEn
+  val do_deq = deq_valid && io.deq.ready && !flushHappens
 
   // Enqueue fire (data presented at input)
   // Note:Data is not necessarily stored inside the Queue.
-  val do_enq = io.enq.valid && io.enq.ready && !flushEn
+  val do_enq = io.enq.valid && io.enq.ready && !flushHappens
 
-  // hasFlow bypass: data flows directly to output without entering queue
-  val flowBypass = hasFlow.B && empty && do_enq && io.deq.ready
+  val flowHappens = if (hasFlow) empty && do_enq && io.deq.ready else false.B
 
-  // Overwrite condition: queue is full, overwrite enabled, and enqueue happens
-  // Note: full and empty are mutually exclusive, so no need to check !flowBypass
-  val overwriteHappens = hasOverWrite.B && full &&  do_enq && !do_deq
-  when(flushEn) {  
+  val overwriteHappens = if (hasOverWrite) full &&  do_enq && !do_deq else false.B
+  when(flushHappens) {  
     maybe_full := false.B 
   } .elsewhen(overwriteHappens) {
-    // Overwrite: both pointers advance together, queue stays full
-    maybe_full := true.B
+    maybe_full := true.B // Overwrite: both pointers advance together, queue stays full
   } .elsewhen(do_enq =/= do_deq) {
     maybe_full := do_enq
   }
 
   // Enqueue logic
-  when(flushEn) {
-    tailCounter.reset()  
-  } .elsewhen(do_enq) {
+  when(flushHappens) {
+    tailPtr := 0.U
+  } .elsewhen(do_enq && !flowHappens) {
     queue(tailPtr) := io.enq.bits
-    tailCounter.inc()
+    tailPtr := wrapInc(tailPtr)
   }
 
   // Dequeue logic: advance headPtr on dequeue OR overwrite
-  when(flushEn) {
-    headCounter.reset()  
+  when(flushHappens) {
+    headPtr := 0.U
   } .elsewhen(do_deq || overwriteHappens) {
-    headCounter.inc()
+    headPtr := wrapInc(headPtr)
   }
+
+  // Drive deq outputs
+  io.deq.valid := deq_valid && !flushHappens
+  io.deq.bits := Mux(flowHappens, io.enq.bits, queue(headPtr)) 
 
   //add assert
   if (!hasOverWrite) {
@@ -123,13 +121,9 @@ class Queue_Regs[T <: Data](
   if (hasOverWrite) {
     assert(!(overwriteHappens && !full), "Queue_Regs: overwriteHappens implies full")
   }
-  when (flowBypass) {
-    assert(empty, "Queue_Regs: flowBypass but queue not empty")
-    assert(io.deq.ready, "Queue_Regs: flowBypass but deq not ready")
+  when (flowHappens) {
+    assert(empty, "Queue_Regs: flowHappens but queue not empty")
+    assert(io.deq.ready, "Queue_Regs: flowHappens but deq not ready")
   }
   assert(!(io.deq.fire && !io.deq.valid), "Queue_Regs: deq.fire but deq.valid false")
-
-  // Drive deq outputs
-  io.deq.valid := deq_valid && !flushEn
-  io.deq.bits := Mux(flowBypass, io.enq.bits, queue(headPtr)) 
 }
