@@ -875,12 +875,12 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   /* ======== s5 CDP Detect Trigger ======== */
   val dirResult_s5_hit = RegNext(RegNext(dirResult_s3.hit))
   val req_s5_sinkA = !task_s5.bits.mshrTask && task_s5.bits.fromA
-  val req_s5_acquire_block = req_s5_sinkA && task_s5.bits.opcode === GrantData && MemReqSource.isDataReq(task_s5.bits.reqSource)
+  val req_s5_acquire_block = req_s5_sinkA && task_s5.bits.opcode === GrantData
 
   val is_hit_trigger_s5   = task_s5.valid && dirResult_s5_hit && req_s5_acquire_block
   val hit_trigger_data_s5 = out_data_s5
 
-  val is_refill_trigger_s3 = task_s3.valid && (mshr_grantdata_s3 || mshr_hintack_s3) && MemReqSource.isDataReq(req_s3.reqSource)
+  val is_refill_trigger_s3 = task_s3.valid && (mshr_grantdata_s3 || mshr_hintack_s3)
   val is_refill_trigger_s5 = RegNext(RegNext(is_refill_trigger_s3))
   val refill_trigger_data_s3  = Mux(req_s3.useProbeData, io.releaseBufResp_s3.bits.data, io.refillBufResp_s3.bits.data)
   val refill_trigger_data_s5  = RegNext(RegNext(refill_trigger_data_s3))
