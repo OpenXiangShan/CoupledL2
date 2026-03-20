@@ -506,7 +506,7 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
 
   val s1_prefetchAddr = s1_reqAddr + 1.U  
   val s1_crossPage = getPPN(getfullVAddr(s1_reqAddr)) =/= getPPN(getfullVAddr(s1_prefetchAddr))
-  val s1_needPrefetch = s1_reqHit && (s1_reqHitEntry.sat === ptMaxSat) && !s1_crossPage
+  val s1_needPrefetch = s1_reqValid && s1_reqHit && (s1_reqHitEntry.sat === ptMaxSat) && !s1_crossPage
 
   // ==================== Stage 2: Writeback ====================
   val s2_we = RegNext(s1_we, false.B)
