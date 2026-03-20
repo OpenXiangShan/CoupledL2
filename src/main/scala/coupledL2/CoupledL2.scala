@@ -267,8 +267,8 @@ trait HasCoupledL2Parameters {
   }
 
   def getDramBank(addr: UInt) = {
-    val (_, _, _, bp, bg, _) = get_roracobabgch(addr)
-    Cat(bg, bp)
+    val (_, rk, _, bp, bg, ch) = get_roracobabgch(addr)
+    Cat(ch, rk, bg, bp)
   }
 }
 

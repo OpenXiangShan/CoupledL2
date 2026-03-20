@@ -36,12 +36,12 @@ trait HasPrefetchParameters extends HasCoupledL2Parameters {
   val degreeBits = 2
 
   // I-POP style delay counting rules at prefetch refill return
-  def estTcas = 30.24 // Column Access Strobe latency  16 cycles(CL  ) * 0.63 ns * 3 GHz = 30.24 cycle
-  def estTrcd = 34.02 // Row to Column Delay           18 cycles(tRCD) * 0.63 ns * 3 GHz = 34.02 cycle
-  def estTrp  = 34.02 // Row Precharge time            18 cycles(tRP ) * 0.63 ns * 3 GHz = 34.02 cycle
-  def estRBMissRate = 0.5 // NOTE: this is a very rough estimation for now, because there is no way to get it.
-  def estTcommand = 1 // Ref origin paper
-  def estTdata = 1 // Ref origin paper
+  def estTcas = 30.24 // Column Access Strobe latency  16 DDR cycles(CL  ) * 0.63 ns * 3 GHz = 30.24 CPU cycles
+  def estTrcd = 34.02 // Row to Column Delay           18 DDR cycles(tRCD) * 0.63 ns * 3 GHz = 34.02 CPU cycles
+  def estTrp  = 34.02 // Row Precharge time            18 DDR cycles(tRP ) * 0.63 ns * 3 GHz = 34.02 CPU cycles
+  def estRBMissRate = 0.8 // NOTE: this is a very rough estimation for now, because there is no way to get it.
+  def estTcommand = 14 // Ref origin paper             14 DDR cycles       * 0.63 ns * 3 GHz = 26.46 CPU cycles
+  def estTdata = 14 // Ref origin paper                14 DDR cycles       * 0.63 ns * 3 GHz = 26.46 CPU cycles
   def estTnoc = 0 // Ref origin paper: 0 cycle for single-core, 2 cycles for multi-core
   def estTbus = ((1 + 2 * estRBMissRate) * estTcommand + estTdata).toInt // Ref origin paper
   def estTbank = (estTcas + estRBMissRate * (estTrp + estTrcd)).toInt // Ref origin paper
