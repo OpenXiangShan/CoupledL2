@@ -66,9 +66,34 @@ class Monitor(implicit p: Parameters) extends L2Module {
     meta_s3.state === TRUNK && !meta_s3.clients.orR)),
     "Trunk should have some client hit")
 
-  assert(RegNext(!(s3_valid && req_s3.fromC && dirResult_s3.hit &&
-    !meta_s3.clients.orR)),
-    "Invalid Client should not send Release")
+  val rel_hit_no_client_s3 = s3_valid && !mshr_req_s3 && req_s3.fromC && dirResult_s3.hit && !meta_s3.clients.orR
+  val rel_hit_no_client_s4 = RegNext(rel_hit_no_client_s3, false.B)
+  val req_s3_r = RegEnable(req_s3, 0.U.asTypeOf(req_s3), s3_valid)
+  val meta_s3_r = RegEnable(meta_s3, 0.U.asTypeOf(meta_s3), s3_valid)
+  val hit_s3_r = RegEnable(dirResult_s3.hit, false.B, s3_valid)
+
+  val metaW_same_set_s3 = mp.metaW_s3.valid && mp.metaW_s3.bits.set === req_s3.set
+  val metaW_same_way_s3 = metaW_same_set_s3 && mp.metaW_s3.bits.wayOH(dirResult_s3.way)
+  val metaW_same_line_s4 = RegNext(metaW_same_way_s3, false.B)
+  val metaW_clients_s4 = RegEnable(mp.metaW_s3.bits.wmeta.clients, 0.U(clientBits.W), mp.metaW_s3.valid)
+  val metaW_state_s4 = RegEnable(mp.metaW_s3.bits.wmeta.state, 0.U(2.W), mp.metaW_s3.valid)
+  val rel_hit_no_client_hard_s4 = rel_hit_no_client_s4 && !metaW_same_line_s4
+  val rel_hit_no_client_transient_s4 = rel_hit_no_client_s4 && metaW_same_line_s4
+
+  assert(!rel_hit_no_client_hard_s4,
+    "Invalid Client should not send Release (hard): tag=%x set=%x op=%x param=%x hit=%d state=%d clients=%x metaW_same_line=%d metaW_state=%d metaW_clients=%x",
+    req_s3_r.tag, req_s3_r.set, req_s3_r.opcode, req_s3_r.param,
+    hit_s3_r, meta_s3_r.state, meta_s3_r.clients,
+    metaW_same_line_s4, metaW_state_s4, metaW_clients_s4)
+
+  XSPerfAccumulate("release_hit_no_client_hard", rel_hit_no_client_hard_s4)
+  XSPerfAccumulate("release_hit_no_client_transient", rel_hit_no_client_transient_s4)
+  when (rel_hit_no_client_transient_s4) {
+    printf("[L2 Monitor transient] Release hit with no client: tag=%x set=%x op=%x param=%x hit=%d state=%d clients=%x metaW_state=%d metaW_clients=%x\n",
+      req_s3_r.tag, req_s3_r.set, req_s3_r.opcode, req_s3_r.param,
+      hit_s3_r, meta_s3_r.state, meta_s3_r.clients,
+      metaW_state_s4, metaW_clients_s4)
+  }
 
   // assertion for set blocking
   // A channel task @s1 never have same-set task @s2/s3
