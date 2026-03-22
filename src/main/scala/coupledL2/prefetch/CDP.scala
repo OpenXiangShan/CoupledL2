@@ -218,9 +218,13 @@ class VpnTable(implicit p: Parameters) extends CDPModule {
 
       // Update Meta
       for (i <- 0 until VpnTableSubEntryNum) {
-        meta_array(main_idx)(replace_way)(sub_idx)  := 0.U.asTypeOf(new VpnTableMetaInfo)
-        meta_array(main_idx)(replace_way)(sub_idx).valid  := true.B
-        meta_array(main_idx)(replace_way)(sub_idx).refCnt := 1.U
+        when (i.U === sub_idx) {
+          meta_array(main_idx)(replace_way)(i)  := 0.U.asTypeOf(new VpnTableMetaInfo)
+          meta_array(main_idx)(replace_way)(i).valid  := true.B
+          meta_array(main_idx)(replace_way)(i).refCnt := 1.U
+        }.otherwise {
+          meta_array(main_idx)(replace_way)(i)  := 0.U.asTypeOf(new VpnTableMetaInfo)
+        }
       }
     }.otherwise {
       meta_array(main_idx)(target_way)(sub_idx).refCnt := meta_array(main_idx)(target_way)(sub_idx).refCnt + 1.U
