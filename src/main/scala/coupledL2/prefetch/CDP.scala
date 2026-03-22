@@ -724,7 +724,7 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
     val detect_pipe = detect_pipe_seq(i)
 
     detect_pipe.io.detect_req.valid := detect_trig_arb.io.out.valid
-    detect_pipe.io.detect_req.bits.vaddr := detect_trig_arb.io.out.bits.half_cacheblock((i + 1) * 8 - 1, i * 8)
+    detect_pipe.io.detect_req.bits.vaddr := detect_trig_arb.io.out.bits.half_cacheblock((i + 1) * 64 - 1, i * 64)   // 8 Byte ==> 64 bit
     detect_pipe.io.detect_req.bits.pfDepth := detect_trig_arb.io.out.bits.pfDepth
   }
   detect_trig_arb.io.out.ready := true.B
