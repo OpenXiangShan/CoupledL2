@@ -600,6 +600,8 @@ class PrefetchFilter(implicit p: Parameters) extends CDPModule {
   }
   val entry_hit = entry_hit_vec.reduce(_ || _)
 
+  XSPerfAccumulate("drop_dup", s0_valid && entry_hit)
+
   // --------------- s1 -----------------
   // alloc new entry if not hit
   s1_valid := RegNext(s0_valid && !entry_hit)
@@ -620,7 +622,7 @@ class PrefetchFilter(implicit p: Parameters) extends CDPModule {
     valids(idx) := true.B
   }
 
-  assert(!s1_valid || has_free_entry, "Prefetch Filter is full! Consider increasing the number of entries.") // TODO: use plru
+  XSPerfAccumulate("drop_full", s1_valid && !has_free_entry)
 
   val tlb_s0_fire_vec = VecInit(tlb_req_arb.io.in.map(_.fire))
   val tlb_s1_fire_vec = RegNext(tlb_s0_fire_vec)
