@@ -737,7 +737,7 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     s1_ready := io.req.ready || !s1_req_valid
   }
   when(s0_fire) {
-    if(virtualTrain) s1_req_valid := !prefetchDisable && io.pbopCrossPage
+    if(virtualTrain) s1_req_valid := !prefetchDisable && io.pbopCrossPage // now pbopCrossPage is true.B by default
     else s1_req_valid := !prefetchDisable && !s0_crossPage // stop prefetch when prefetch req crosses pages
   }.elsewhen(s1_fire){
     s1_req_valid := false.B
