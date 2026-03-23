@@ -362,9 +362,9 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     pftQueueEnqArb.io.in(rcv_idx).bits := pfRcv.get.io.req.bits
   }
   if (hasBOP) {
-    pftQueueEnqArb.io.in(vbop_idx).valid := false.B
+    pftQueueEnqArb.io.in(vbop_idx).valid := vbop.get.io.req.valid
     pftQueueEnqArb.io.in(vbop_idx).bits := vbop.get.io.req.bits
-    pftQueueEnqArb.io.in(pbop_idx).valid := false.B
+    pftQueueEnqArb.io.in(pbop_idx).valid := pbop.get.io.req.valid
     pftQueueEnqArb.io.in(pbop_idx).bits := pbop.get.io.req.bits
   }
   if (hasTPPrefetcher) {
