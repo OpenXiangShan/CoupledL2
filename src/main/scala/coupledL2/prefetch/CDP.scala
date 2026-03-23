@@ -257,7 +257,7 @@ class VpnTable(implicit p: Parameters) extends CDPModule {
            *  hot -> prevRefCnt > 0 ? 1 : 0
            * */
           // TODO: For better timing, maybe we should pipeline this.
-          val nxt_prevRefCnt = ((entry.refCnt * 4.U) + entry.prevRefCnt) >> 8.U
+          val nxt_prevRefCnt = ((entry.refCnt * 13.U) + (entry.prevRefCnt * 3.U)) >> 4.U
 
           entry.refCnt      := 0.U
           entry.prevRefCnt  := nxt_prevRefCnt
