@@ -6,6 +6,7 @@ import org.chipsalliance.cde.config.Parameters
 import coupledL2.{HasCoupledL2Parameters, L2ToL1TlbIO}
 import utility._
 import coupledL2._
+import utility.TLLogger.b
 
 case class CDPParameters(
   DetectPipeNum: Int = 4,
@@ -611,8 +612,7 @@ class PrefetchFilter(implicit p: Parameters) extends CDPModule {
   val idx = free_entry_idx
   val entry = entries(idx)
   when (s1_valid && has_free_entry) {
-    val alloc_entry = Wire(new PrefetchFilterEntry)
-    alloc_entry := DontCare
+    val alloc_entry = WireInit(0.U.asTypeOf(new PrefetchFilterEntry))
     alloc_entry.vTag := block_addr(s1_pft_req.pfAddr)
     alloc_entry.pfDepth := s1_pft_req.pfDepth
 
@@ -622,37 +622,52 @@ class PrefetchFilter(implicit p: Parameters) extends CDPModule {
 
   assert(!s1_valid || has_free_entry, "Prefetch Filter is full! Consider increasing the number of entries.") // TODO: use plru
 
-  val need_drop =
-    // page/access fault
-    tlb_rsp.bits.excp.head.pf.ld || tlb_rsp.bits.excp.head.gpf.ld || tlb_rsp.bits.excp.head.af.ld ||
-    // uncache
-    pmp_rsp.mmio || Pbmt.isUncache(tlb_rsp.bits.pbmt) ||
-    // pmp access fault
-    pmp_rsp.ld
-  
+  val tlb_s0_fire_vec = VecInit(tlb_req_arb.io.in.map(_.fire))
+  val tlb_s1_fire_vec = RegNext(tlb_s0_fire_vec)
+  val tlb_s2_fire_vec = RegNext(tlb_s1_fire_vec)
+
+  // --------------- tlb s0: arb the tlb req ---------------
   // Arbiter tlb_reqs
   for (i <- 0 until ReqFilterEntryNum) {
     val entry = entries(i)
     val entry_tlb_req = tlb_req_arb.io.in(i)
 
     // req tlb
-    entry_tlb_req.valid := valids(i) && !entry.paddr_valid
+    entry_tlb_req.valid := valids(i) && !entry.paddr_valid && !tlb_s1_fire_vec(i) && !tlb_s2_fire_vec(i)
     entry_tlb_req.bits  := DontCare
     entry_tlb_req.bits.vaddr  := Cat(entry.vTag, 0.U(log2Ceil(blockBytes).W))
     entry_tlb_req.bits.cmd    := TlbCmd.read
     entry_tlb_req.bits.isPrefetch := true.B
     entry_tlb_req.bits.size   := 3.U
+  }
 
-    // update entry
-    val tlb_handled = RegNext(entry_tlb_req.fire)
-    when (tlb_handled && tlb_rsp.valid && !need_drop && !tlb_rsp.bits.miss) {
-      entry.paddr_valid := true.B
-      entry.pTag := block_addr(tlb_rsp.bits.paddr.head)
-    }
+  // --------------- tlb s1: recv tlb rsp ---------------
+  val tlb_s1_rsp = tlb_rsp
 
-    when (tlb_handled && tlb_rsp.valid && need_drop && !tlb_rsp.bits.miss) {
-      // clean the entry if the req is invalid (e.g., unmapped/uncached)
-      valids(i) := false.B
+  // --------------- tlb s2: recv pmp rsp & update entry ---------------
+  val tlb_s2_rsp_valid  = RegNext(tlb_s1_rsp.valid)
+  val tlb_s2_rsp_bits   = RegNext(tlb_s1_rsp.bits)
+  val tlb_s2_pmp        = pmp_rsp
+
+  val fire_idx = PriorityEncoder(tlb_s2_fire_vec)
+  val has_fire = tlb_s2_fire_vec.reduce(_ || _)
+
+  val need_drop = 
+    // page/access fault
+    tlb_s2_rsp_bits.excp.head.pf.ld || tlb_s2_rsp_bits.excp.head.gpf.ld || tlb_s2_rsp_bits.excp.head.af.ld ||
+    // uncache
+    tlb_s2_pmp.mmio || Pbmt.isUncache(tlb_s2_rsp_bits.pbmt) ||
+    // pmp access fault
+    tlb_s2_pmp.ld
+
+  when (tlb_s2_rsp_valid && !tlb_s2_rsp_bits.miss && has_fire) {
+    when (need_drop) {
+      // drop the req, i.e., clear the entry
+      valids(fire_idx) := false.B
+    }.otherwise {
+      // update the entry with paddr
+      entries(fire_idx).paddr_valid := true.B
+      entries(fire_idx).pTag := block_addr(tlb_s2_rsp_bits.paddr.head)
     }
   }
 
