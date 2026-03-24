@@ -37,41 +37,41 @@ import coupledL2.utils.ReplacementPolicy
 import coupledL2.{TPmetaReq, TPmetaResp}
 
 case class TPParameters(
-                         tpTableEntries: Int = 16384,
-                         tpTableAssoc: Int = 16,
-                         // vaddrBits: Int = 50, sv48x4, no longer used(use fullVaddrBits)
-                         blockOffBits: Int = 6,
-                         dataReadQueueDepth: Int = 8,
-                         dataWriteQueueDepth: Int = 4,
-                         tpDataQueueDepth: Int = 8,
-                         tpMetaResetQueueDepth: Int = 8, // extreme condition: use 9
-                         throttleCycles: Int = 4,  // unused yet
-                         replacementPolicy: String = "plru",
+  tpTableEntries: Int = 16384,
+  tpTableAssoc: Int = 16,
+  // vaddrBits: Int = 50, sv48x4, no longer used(use fullVaddrBits)
+  blockOffBits: Int = 6,
+  dataReadQueueDepth: Int = 8,
+  dataWriteQueueDepth: Int = 4,
+  tpDataQueueDepth: Int = 8,
+  tpMetaResetQueueDepth: Int = 8, // extreme condition: use 9
+  throttleCycles: Int = 4,  // unused yet
+  replacementPolicy: String = "plru",
 
-                         // sampler filter parameters
-                         samplerFileterEntries: Int = 1024 * 4,
-                         samplerFilterAssoc: Int = 4 * 2,
-                         samplerFilterReplacememntPolicy: String = "plru",
-                         pcHashHeadReservedWidth: Int = 2,
-                         pcHashTailReservedWidth: Int = 6,
-                         pcHashMidWidth: Int = 14, // pc width = 50
-                         trainQueueDepth: Int = 100,
-                         // sampler table parameters
-                         samplerTableEntries: Int = 16384,
-                         samplerTableAssoc: Int = 16,
-                         samplerTableMatchCntWidth: Int = 3,
-                         samplerTableReplacementPolicy: String = "plru",
-                         // recorder table parameters
-                         recorderTableEntries: Int = 512,
-                         recorderTableAssoc: Int = 2,
-                         recorderTableReplacementPolicy: String = "plru",
+  // sampler filter parameters
+  samplerFileterEntries: Int = 1024 * 4,
+  samplerFilterAssoc: Int = 4 * 2,
+  samplerFilterReplacememntPolicy: String = "plru",
+  pcHashHeadReservedWidth: Int = 2,
+  pcHashTailReservedWidth: Int = 6,
+  pcHashMidWidth: Int = 14, // pc width = 50
+  trainQueueDepth: Int = 100,
+  // sampler table parameters
+  samplerTableEntries: Int = 16384,
+  samplerTableAssoc: Int = 16,
+  samplerTableMatchCntWidth: Int = 3,
+  samplerTableReplacementPolicy: String = "plru",
+  // recorder table parameters
+  recorderTableEntries: Int = 512,
+  recorderTableAssoc: Int = 2,
+  recorderTableReplacementPolicy: String = "plru",
 
-                         globalHitCountConfidenceWidth: Int = 5,
-                         globalHitCountConfidenceInitVal: Int = 21,
-                         globalHitCountConfidenceThrottle: Int = 10,
+  globalHitCountConfidenceWidth: Int = 5,
+  globalHitCountConfidenceInitVal: Int = 21,
+  globalHitCountConfidenceThrottle: Int = 10,
 
-                         debug: Boolean = false
-                       ) extends PrefetchParameters {
+  debug: Boolean = false
+  ) extends PrefetchParameters {
   override val hasPrefetchBit: Boolean = true
   override val hasPrefetchSrc: Boolean = true
   override val inflightEntries: Int = 16 // changed in sv48
@@ -512,9 +512,9 @@ class SamplerTable(implicit p: Parameters) extends TPModule {
   val cntValid_s2 = cnt_s2 >= filteredCntThrottle.U
 
   val match_s2 = lastPair_s2.targetAddr === targetAddr_s2
-  val recordValid_s2 = (match_s2 || lastPair_s2.matchCnt.orR) && hit_s2 && s2_valid
   val pcMatch_s2 = pc_s2 === lastPair_s2.pc
   val matchValid_s2 = match_s2 && pcMatch_s2
+  val recordValid_s2 = (matchValid_s2 || lastPair_s2.matchCnt.orR) && hit_s2 && s2_valid
 
   val (baseTag_s2, baseSet_s2) = parsePaddr(baseAddr_s2)
   val maxMatch = lastPair_s2.matchCnt.andR
@@ -540,7 +540,7 @@ class SamplerTable(implicit p: Parameters) extends TPModule {
     waymask = samplerTableWWayOH_s2
   )
 
-  io.trained.valid := recordValid_s2 || cntValid_s2 || matchValid_s2
+  io.trained.valid := recordValid_s2 || cntValid_s2
   io.trained.bits.pc := pc_s2
   io.trained.bits.addr1 := baseAddr_s2
   io.trained.bits.addr2 := targetAddr_s2
