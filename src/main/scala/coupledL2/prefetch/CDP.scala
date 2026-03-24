@@ -533,6 +533,10 @@ class DetectPipeline(implicit p: Parameters) extends CDPModule {
   pft_req.valid := s4_valid
   pft_req.bits.pfAddr   := s4_addr
   pft_req.bits.pfDepth  := s4_depth
+
+  for (i <- 0 until 5) {
+    XSPerfAccumulate(s"pft_s4_depth_$i", s4_valid && s4_depth === i.U)
+  }
 }
 
 class PrefetchFilterEntry(implicit p: Parameters) extends CDPBundle {
