@@ -1026,6 +1026,10 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   arb(txrsp, io.toTXRSP, Some("toTXRSP"))
   arb(txdat, io.toTXDAT, Some("toTXDAT"))
 
+  for (i <- 0 until 5) {
+    XSPerfAccumulate(s"sourceD_req_depth_$i", io.toSourceD.valid && io.toSourceD.bits.task.meta.pfDepth === i.U)
+  }
+
   io.error.valid := task_s5.valid
   io.error.bits.valid := l2Error_s5 // if not enableECC, should be false
   io.error.bits.address := Cat(task_s5.bits.tag, task_s5.bits.set, task_s5.bits.off)
