@@ -28,6 +28,7 @@ import coupledL2.tl2chi._
 import cc.xiangshan.openncb._
 import cc.xiangshan.openncb.axi._
 import cc.xiangshan.openncb.chi._
+import utility.chi._
 
 class OpenNCB(implicit p: Parameters) extends LazyModule with HasOpenLLCParameters {
   val ncbParams = p(NCBParametersKey)

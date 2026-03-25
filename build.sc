@@ -113,6 +113,8 @@ object OpenLLC extends HasChisel with millbuild.common.OpenLLCModule {
 
   override def millSourcePath = pwd / "openLLC"
 
+  def coupledL2Module: ScalaModule = CoupledL2
+
   def rocketModule: ScalaModule = rocketchip
 
   def utilityModule: ScalaModule = utility

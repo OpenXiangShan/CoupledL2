@@ -21,7 +21,7 @@ import chisel3._
 import chisel3.util._
 import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.tl2chi.{PortIO, CHIIssue}
+import utility.chi.{PortIO, CHIIssue}
 
 class OpenLLC(implicit p: Parameters) extends LLCModule with HasClientInfo {
   private val sizeBytes = cacheParams.toCacheParams.capacity.toDouble 

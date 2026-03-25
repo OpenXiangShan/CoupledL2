@@ -24,8 +24,9 @@ import freechips.rocketchip.amba.axi4.AXI4Parameters._
 import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2chi._
-import coupledL2.tl2chi.CHICohStates._
 import utility._
+import utility.chi._
+import utility.chi.CHICohStates._
 
 class DummyLLC(numRNs: Int = 1)(implicit p: Parameters) extends LazyModule with HasOpenLLCParameters {
   val axi4node = AXI4MasterNode(Seq(AXI4MasterPortParameters(

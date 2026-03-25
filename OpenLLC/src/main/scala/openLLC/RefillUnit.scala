@@ -21,7 +21,8 @@ import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2chi._
-import coupledL2.tl2chi.CHICohStates._
+import utility.chi._
+import utility.chi.CHICohStates._
 import utility.{FastArbiter}
 
 class RefillBufRead(implicit p: Parameters) extends LLCBundle {

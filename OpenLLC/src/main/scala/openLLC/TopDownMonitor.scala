@@ -21,6 +21,7 @@ import org.chipsalliance.cde.config.Parameters
 import chisel3._
 import chisel3.util._
 import coupledL2.tl2chi._
+import utility.chi._
 import utility.{XSPerfAccumulate}
 
 class TopDownMonitor()(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {

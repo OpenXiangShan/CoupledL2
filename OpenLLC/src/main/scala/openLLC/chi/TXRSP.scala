@@ -20,7 +20,7 @@ package openLLC
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.tl2chi.CHIRSP
+import utility.chi.CHIRSP
 
 class TXRSP (implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {
