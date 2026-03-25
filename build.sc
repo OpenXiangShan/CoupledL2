@@ -38,7 +38,7 @@ trait HasChisel extends SbtModule {
 
 object rocketchip extends `rocket-chip`.common.RocketChipModule with HasChisel {
 
-  val rcPath = pwd / "rocket-chip"
+  val rcPath = os.pwd / "rocket-chip"
   override def millSourcePath = rcPath
 
   def mainargsIvy = ivy"com.lihaoyi::mainargs:0.7.0"
@@ -89,13 +89,13 @@ object huancun extends HasChisel {
 }
 
 object openNCB extends HasChisel {
-  override def millSourcePath = pwd / "openNCB"
+  override def millSourcePath = os.pwd / "OpenNCB"
   override def moduleDeps = super.moduleDeps ++ Seq(rocketchip)
 }
 
 object CoupledL2 extends HasChisel with $file.common.CoupledL2Module {
 
-  override def millSourcePath = pwd / "coupledL2"
+  override def millSourcePath = os.pwd / "CoupledL2"
 
   def rocketModule: ScalaModule = rocketchip
 
@@ -109,9 +109,9 @@ object CoupledL2 extends HasChisel with $file.common.CoupledL2Module {
 
 }
 
-object OpenLLC extends HasChisel with millbuild.common.OpenLLCModule {
+object OpenLLC extends SbtModule with HasChisel with millbuild.common.OpenLLCModule {
 
-  override def millSourcePath = pwd / "openLLC"
+  override def millSourcePath = os.pwd / "OpenLLC"
 
   def coupledL2Module: ScalaModule = CoupledL2
 
@@ -121,7 +121,7 @@ object OpenLLC extends HasChisel with millbuild.common.OpenLLCModule {
 
   def openNCBModule: ScalaModule = openNCB
 
-  object test extends SbtTests with TestModule.ScalaTest
+  object test extends SbtModuleTests with TestModule.ScalaTest
 
   override def scalacOptions = super.scalacOptions() ++ Agg("-deprecation", "-feature")
 

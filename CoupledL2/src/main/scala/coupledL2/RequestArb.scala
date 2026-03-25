@@ -20,6 +20,7 @@ package coupledL2
 import chisel3._
 import chisel3.util._
 import utility._
+import utility.chi._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import org.chipsalliance.cde.config.Parameters

@@ -23,6 +23,7 @@ import utility.mbist.MbistPipeline
 import org.chipsalliance.cde.config.Parameters
 import coupledL2._
 import coupledL2.prefetch.PrefetchIO
+import utility.chi._
 import utility.MemReqSource
 
 class OuterBundle(implicit p: Parameters) extends DecoupledPortIO with BaseOuterBundle

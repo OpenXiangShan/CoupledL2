@@ -20,15 +20,16 @@ package coupledL2.tl2chi
 import chisel3._
 import chisel3.util._
 import coupledL2.MetaData._
+import utility.chi._
+import utility.chi.CHICohStates._
+import utility.chi.CHIChannel
+import utility.chi.RespErrEncodings._
 import utility.{MemReqSource, ParallelLookUp, ParallelMux, ParallelPriorityMux}
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.prefetch.{PfSource, PrefetchTrain}
-import coupledL2.tl2chi.CHICohStates._
-import coupledL2.tl2chi.CHIChannel
-import coupledL2.tl2chi.RespErrEncodings._
 import coupledL2.MetaData._
 import coupledL2._
 
