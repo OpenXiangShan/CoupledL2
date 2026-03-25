@@ -21,14 +21,9 @@ import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink.TLPermissions._
+import utility.chi._
 import utility.MemReqSource
 import coupledL2.{HasTLChannelBits, DirResult, PipeStatus}
-
-object CHIChannel {
-  def TXREQ = "b001".U
-  def TXRSP = "b010".U
-  def TXDAT = "b100".U
-}
 
 trait HasCHIChannelBits { this: Bundle =>
   val txChannel = UInt(3.W)

@@ -19,6 +19,7 @@ package coupledL2.tl2chi
 
 import chisel3._
 import chisel3.util._
+import utility.chi._
 import utility.{FastArbiter, Pipeline, ParallelPriorityMux, RegNextN, RRArbiterInit, XSPerfAccumulate}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._

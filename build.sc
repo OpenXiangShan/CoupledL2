@@ -81,15 +81,44 @@ object huancun extends SbtModule with HasChisel {
   )
 }
 
+<<<<<<< HEAD
 object CoupledL2 extends SbtModule with HasChisel with millbuild.common.CoupledL2Module {
 
   override def millSourcePath = millOuterCtx.millSourcePath
+=======
+object openNCB extends HasChisel {
+  override def millSourcePath = os.pwd / "OpenNCB"
+  override def moduleDeps = super.moduleDeps ++ Seq(rocketchip)
+}
+
+object CoupledL2 extends SbtModule with HasChisel with millbuild.common.CoupledL2Module {
+
+  override def millSourcePath = os.pwd / "CoupledL2"
+>>>>>>> a6d3e4c0 (fix(chi): correct CHI-related dependencies and imports)
 
   def rocketModule: ScalaModule = rocketchip
 
   def utilityModule: ScalaModule = utility
 
   def huancunModule: ScalaModule = huancun
+
+  object test extends SbtModuleTests with TestModule.ScalaTest
+
+  override def scalacOptions = super.scalacOptions() ++ Agg("-deprecation", "-feature")
+
+}
+
+object OpenLLC extends SbtModule with HasChisel with millbuild.common.OpenLLCModule {
+
+  override def millSourcePath = os.pwd / "OpenLLC"
+
+  def coupledL2Module: ScalaModule = CoupledL2
+
+  def rocketModule: ScalaModule = rocketchip
+
+  def utilityModule: ScalaModule = utility
+
+  def openNCBModule: ScalaModule = openNCB
 
   object test extends SbtModuleTests with TestModule.ScalaTest
 

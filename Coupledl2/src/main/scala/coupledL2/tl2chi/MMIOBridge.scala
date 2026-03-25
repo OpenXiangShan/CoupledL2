@@ -21,6 +21,7 @@ package coupledL2.tl2chi
 import chisel3._
 import chisel3.util._
 import utility._
+import utility.chi._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._

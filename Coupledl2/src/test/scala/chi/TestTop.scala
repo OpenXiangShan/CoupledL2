@@ -12,6 +12,7 @@ import huancun._
 import coupledL2.prefetch._
 import coupledL2.tl2chi._
 import utility._
+import utility.chi._
 import utility.chiron._
 import scala.collection.mutable.ArrayBuffer
 
