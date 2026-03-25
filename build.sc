@@ -81,11 +81,6 @@ object huancun extends SbtModule with HasChisel {
   )
 }
 
-<<<<<<< HEAD
-object CoupledL2 extends SbtModule with HasChisel with millbuild.common.CoupledL2Module {
-
-  override def millSourcePath = millOuterCtx.millSourcePath
-=======
 object openNCB extends HasChisel {
   override def millSourcePath = os.pwd / "OpenNCB"
   override def moduleDeps = super.moduleDeps ++ Seq(rocketchip)
@@ -94,7 +89,6 @@ object openNCB extends HasChisel {
 object CoupledL2 extends SbtModule with HasChisel with millbuild.common.CoupledL2Module {
 
   override def millSourcePath = os.pwd / "CoupledL2"
->>>>>>> a6d3e4c0 (fix(chi): correct CHI-related dependencies and imports)
 
   def rocketModule: ScalaModule = rocketchip
 
