@@ -793,7 +793,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       prefetch = req_prefetch || dirResult.hit && meta_pft,
       pfsrc = PfSource.fromMemReqSource(req.reqSource),
       accessed = req_acquire || req_get,
-      pfDepth = meta.pfDepth
+      pfDepth = req.pftDepth.get
     )
     mp_grant.metaWen := !cmo_cbo && !denied
     mp_grant.tagWen := !cmo_cbo && !dirResult.hit && !denied

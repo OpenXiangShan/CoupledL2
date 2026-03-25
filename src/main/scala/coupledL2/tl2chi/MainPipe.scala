@@ -142,6 +142,10 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   /* ======== Stage 2 ======== */
   val task_s2 = io.taskFromArb_s2
 
+  for (i <- 0 until 5) {
+    XSPerfAccumulate(s"req_depth_$i", task_s2.valid && task_s2.bits.pftDepth.get === i.U)
+  }
+
   /* ======== Stage 3 ======== */
   val task_s3 = RegInit(0.U.asTypeOf(Valid(new TaskBundle)))
   task_s3.valid := task_s2.valid
@@ -305,6 +309,11 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     task.aliasTask.foreach(_ := cache_alias)
     task.wayMask := 0.U(cacheParams.ways.W)
     // TODO
+  }
+
+  for (i <- 0 until 5) {
+    val perf_task = io.toMSHRCtl.mshr_alloc_s3.bits.task
+    XSPerfAccumulate(s"alloc_depth_$i", io.toMSHRCtl.mshr_alloc_s3.valid && perf_task.pftDepth.get === i.U)
   }
 
   /* ======== Resps to SinkA/B/C Reqs ======== */
@@ -881,17 +890,19 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val req_s5_sinkA = !task_s5.bits.mshrTask && task_s5.bits.fromA
   val req_s5_acquire_block = req_s5_sinkA && task_s5.bits.opcode === GrantData
 
-  val is_hit_trigger_s5   = task_s5.valid && dirResult_s5_hit && dirResult_s5_fromCDP && req_s5_acquire_block
-  val hit_trigger_data_s5 = out_data_s5
+  val is_hit_trigger_s5     = task_s5.valid && dirResult_s5_hit && dirResult_s5_fromCDP && req_s5_acquire_block
+  val hit_trigger_data_s5   = out_data_s5
+  val hit_trigger_depth_s5  = RegNext(RegNext(meta_s3.pfDepth))
 
   val is_refill_trigger_s3 = task_s3.valid && (mshr_grantdata_s3 || mshr_hintack_s3)    // TODO: filter other prefetcher's request
   val is_refill_trigger_s5 = RegNext(RegNext(is_refill_trigger_s3))
   val refill_trigger_data_s3  = Mux(req_s3.useProbeData, io.releaseBufResp_s3.bits.data, io.refillBufResp_s3.bits.data)
   val refill_trigger_data_s5  = RegNext(RegNext(refill_trigger_data_s3))
+  val refill_trigger_depth_s5 = RegNext(RegNext(metaW_s3_mshr.pfDepth))
 
   io.cdp_trigger.valid := is_hit_trigger_s5 || is_refill_trigger_s5
   io.cdp_trigger.bits.cacheblock  := Mux(is_hit_trigger_s5, hit_trigger_data_s5, refill_trigger_data_s5)
-  io.cdp_trigger.bits.pfDepth     := RegNext(RegNext(meta_s3.pfDepth))
+  io.cdp_trigger.bits.pfDepth     := Mux(is_hit_trigger_s5, hit_trigger_depth_s5, refill_trigger_depth_s5)
 
   XSPerfAccumulate("cdp_detect_trigger_hit", io.cdp_trigger.valid && is_hit_trigger_s5)
   XSPerfAccumulate("cdp_detect_trigger_refill", io.cdp_trigger.valid && is_refill_trigger_s5)
@@ -1021,10 +1032,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   arb(txreq, io.toTXREQ, Some("toTXREQ"))
   arb(txrsp, io.toTXRSP, Some("toTXRSP"))
   arb(txdat, io.toTXDAT, Some("toTXDAT"))
-
-  for (i <- 0 until 5) {
-    XSPerfAccumulate(s"sourceD_req_depth_$i", io.toSourceD.valid && io.toSourceD.bits.task.meta.pfDepth === i.U)
-  }
 
   io.error.valid := task_s5.valid
   io.error.bits.valid := l2Error_s5 // if not enableECC, should be false
