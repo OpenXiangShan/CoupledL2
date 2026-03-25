@@ -553,10 +553,10 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   XSPerfAccumulate("nlPatternUpdateTouchedFalseTimes", s1_trainValid && s1_trainHit && !s1_trainTouched)
   XSPerfAccumulate("nlPatternPcHitValidEntryTimes", s1_reqValid && s1_reqHit)
   XSPerfAccumulate("nlPatternCrossPageTimes", s1_reqValid && s1_reqHit && (s1_reqHitEntry.sat === ptMaxSat) && s1_crossPage)
-  XSPerfAccumulate("nlPatternPcHitValidEntrySatEq3Times", s1_reqHit && (s1_reqHitEntry.sat === ptMaxSat))
-  XSPerfAccumulate("nlPatternPcHitValidEntrySatEq2Times", s1_reqHit && (s1_reqHitEntry.sat === 2.U))
-  XSPerfAccumulate("nlPatternPcHitValidEntrySatEq1Times", s1_reqHit && (s1_reqHitEntry.sat === 1.U))
-  XSPerfAccumulate("nlPatternPcHitValidEntrySatEq0Times", s1_reqHit && (s1_reqHitEntry.sat === ptMinSat))
+  XSPerfAccumulate("nlPatternPcHitValidEntrySatEq3Times", s1_reqValid && s1_reqHit && (s1_reqHitEntry.sat === ptMaxSat))
+  XSPerfAccumulate("nlPatternPcHitValidEntrySatEq2Times", s1_reqValid && s1_reqHit && (s1_reqHitEntry.sat === 2.U))
+  XSPerfAccumulate("nlPatternPcHitValidEntrySatEq1Times", s1_reqValid && s1_reqHit && (s1_reqHitEntry.sat === 1.U))
+  XSPerfAccumulate("nlPatternPcHitValidEntrySatEq0Times", s1_reqValid && s1_reqHit && (s1_reqHitEntry.sat === ptMinSat))
 }
 
 class NextLinePrefetch(implicit p: Parameters) extends NLModule {

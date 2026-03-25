@@ -87,6 +87,7 @@ class Queue_Regs[T <: Data](
   val flowHappens = if (hasFlow) empty && do_enq && io.deq.ready else false.B
 
   val overwriteHappens = if (hasOverWrite) full &&  do_enq && !do_deq else false.B
+  
   when(flushHappens) {  
     maybe_full := false.B 
   } .elsewhen(overwriteHappens) {
@@ -96,10 +97,13 @@ class Queue_Regs[T <: Data](
   }
 
   // Enqueue logic
+  when (do_enq && !flowHappens){
+    queue(tailPtr) := io.enq.bits
+  }
+
   when(flushHappens) {
     tailPtr := 0.U
-  } .elsewhen(do_enq && !flowHappens) {
-    queue(tailPtr) := io.enq.bits
+  } .elsewhen(do_enq ) {
     tailPtr := wrapInc(tailPtr)
   }
 
