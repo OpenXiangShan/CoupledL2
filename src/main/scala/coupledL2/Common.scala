@@ -90,6 +90,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val fromL2pft = prefetchOpt.map(_ => Bool()) // Is the prefetch req from L2(BOP) or from L1 prefetch?
                                           // If true, MSHR should send an ack to L2 prefetcher.
   val needHint = prefetchOpt.map(_ => Bool())
+  val pftDepth = prefetchOpt.map(_ => UInt(4.W))
 
   // For DirtyKey in Release
   val dirty = Bool()
