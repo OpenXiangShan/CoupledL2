@@ -13,8 +13,11 @@ init:
 	git submodule update --init
 	cd rocket-chip && git submodule update --init hardfloat cde
 
-compile:
+compile-coupledl2:
 	mill -i CoupledL2.compile
+
+compile-openllc:
+	mill -i OpenLLC.compile
 
 CHI_PASS_ARGS = ISSUE=$(ISSUE) NUM_CORE=$(NUM_CORE) NUM_TL_UL=$(NUM_TL_UL) NUM_SLICE=$(NUM_SLICE) \
 			    WITH_CHISELDB=$(WITH_CHISELDB) WITH_TLLOG=$(WITH_TLLOG) WITH_CHILOG=$(WITH_CHILOG) \
@@ -45,13 +48,13 @@ test-top-l2:
 test-top-l2standalone:
 	$(MAKE) gen-test-top SYSTEM=L2_Standalone
 
-test-top-l2l3:
+test-top-l2l3-huancun:
 	$(MAKE) gen-test-top SYSTEM=L2L3
 
-test-top-l2l3l2:
+test-top-l2l3l2-huancun:
 	$(MAKE) gen-test-top SYSTEM=L2L3L2
 
-test-top-fullsys:
+test-top-fullsys-huancun:
 	$(MAKE) gen-test-top SYSTEM=fullSys
 
 test-top-chi:
@@ -69,6 +72,15 @@ test-top-chi-quadcore-0ul:
 test-top-chi-quadcore-2ul:
 	$(MAKE) gen-test-top-chi SYSTEM=CHIL2 $(CHI_PASS_ARGS) NUM_CORE=4 NUM_TL_UL=2
 
+test-top-l3-openllc:
+	mill -i OpenLLC.test.runMain openLLC.TestTop_L3 -td build --target systemverilog --split-verilog
+
+test-top-l2l3-openllc:
+	mill -i OpenLLC.test.runMain openLLC.TestTopSoC_SingleCore -td build --target systemverilog --split-verilog
+
+test-top-l2l3l2-openllc:
+	mill -i OpenLLC.test.runMain openLLC.TestTopSoC_DualCore -td build --target systemverilog --split-verilog
+
 clean:
 	rm -rf ./build
 
@@ -84,4 +96,4 @@ reformat:
 checkformat:
 	mill -i __.checkFormat
 
-.PHONY: init bsp checkformat clean compile idea reformat 
+.PHONY: init bsp checkformat clean compile-coupledl2 compile-openllc idea reformat 
