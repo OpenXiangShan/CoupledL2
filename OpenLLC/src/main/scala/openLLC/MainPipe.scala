@@ -21,8 +21,9 @@ import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2chi._
-import coupledL2.tl2chi.CHICohStates._
 import utility._
+import utility.chi._
+import utility.chi.CHICohStates._
 
 class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   val io = IO(new Bundle() {

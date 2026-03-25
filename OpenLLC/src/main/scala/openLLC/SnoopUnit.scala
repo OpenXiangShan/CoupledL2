@@ -20,8 +20,8 @@ package openLLC
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
+import utility.chi.HasCHIOpcodes
 import utility.{FastArbiter}
-import coupledL2.tl2chi.HasCHIOpcodes
 
 class SnoopEntry(implicit p: Parameters) extends TaskEntry {
   val ready  = Bool()

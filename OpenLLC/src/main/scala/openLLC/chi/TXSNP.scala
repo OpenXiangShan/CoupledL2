@@ -20,7 +20,7 @@ package openLLC
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.tl2chi.CHISNP
+import utility.chi.CHISNP
 
 // receive inner task and send Snoop upwards
 class TXSNP (implicit p: Parameters) extends LLCModule {

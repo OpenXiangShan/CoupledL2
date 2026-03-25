@@ -15,6 +15,7 @@ import coupledL2.tl2chi._
 import cc.xiangshan.openncb._
 import cc.xiangshan.openncb.chi._
 import utility._
+import utility.chi._
 import utility.chiron._
 
 class TestTop_L3()(implicit p: Parameters) extends LazyModule with HasCHIMsgParameters {

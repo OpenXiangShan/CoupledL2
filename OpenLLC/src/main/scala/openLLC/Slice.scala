@@ -22,7 +22,7 @@ import chisel3.util._
 import freechips.rocketchip.amba.axi4._
 import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.tl2chi.{DecoupledPortIO, DecoupledNoSnpPortIO}
+import utility.chi.{DecoupledPortIO, DecoupledNoSnpPortIO}
 
 class Slice()(implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {

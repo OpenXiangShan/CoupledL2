@@ -108,6 +108,8 @@ object OpenLLC extends SbtModule with HasChisel with millbuild.common.OpenLLCMod
 
   def coupledL2Module: ScalaModule = CoupledL2
 
+  def coupledL2Module: ScalaModule = CoupledL2
+
   def rocketModule: ScalaModule = rocketchip
 
   def utilityModule: ScalaModule = utility

@@ -20,7 +20,7 @@ package openLLC
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.tl2chi.CHIREQ
+import utility.chi.CHIREQ
 
 // receive task from upwards and convert to inner task
 class RXREQ (implicit p: Parameters) extends LLCModule {

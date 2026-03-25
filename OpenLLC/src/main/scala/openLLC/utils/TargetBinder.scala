@@ -23,6 +23,7 @@ import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.diplomacy.AddressSet
 import coupledL2.tl2chi._
 import scala.collection.mutable.{Map}
+import utility.chi._
 import utility.{FastArbiter}
 
 object TargetBinder {

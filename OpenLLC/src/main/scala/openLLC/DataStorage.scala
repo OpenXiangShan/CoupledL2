@@ -21,6 +21,7 @@ import chisel3._
 import chisel3.util._
 import coupledL2.utils.SRAMTemplate
 import org.chipsalliance.cde.config.Parameters
+import utility.chi._
 
 class DSRequest(implicit p: Parameters) extends LLCBundle {
   val way = UInt(wayBits.W)
