@@ -890,9 +890,13 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val req_s5_sinkA = !task_s5.bits.mshrTask && task_s5.bits.fromA
   val req_s5_acquire_block = req_s5_sinkA && task_s5.bits.opcode === GrantData
 
-  val is_hit_trigger_s5     = task_s5.valid && dirResult_s5_hit && dirResult_s5_fromCDP && req_s5_acquire_block
+  // check depth
+  val depth_ok_s3 = dirResult_s3.meta.pfDepth === 2.U || dirResult_s3.meta.pfDepth === 4.U
+  val depth_ok_s5 = RegNext(RegNext(depth_ok_s3))
+
+  val is_hit_trigger_s5     = task_s5.valid && dirResult_s5_hit && dirResult_s5_fromCDP && req_s5_acquire_block && depth_ok_s5
   val hit_trigger_data_s5   = out_data_s5
-  val hit_trigger_depth_s5  = RegNext(RegNext(meta_s3.pfDepth))
+  val hit_trigger_depth_s5  = 1.U
 
   val is_refill_trigger_s3 = task_s3.valid && (mshr_grantdata_s3 || mshr_hintack_s3)    // TODO: filter other prefetcher's request
   val is_refill_trigger_s5 = RegNext(RegNext(is_refill_trigger_s3))
