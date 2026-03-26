@@ -189,9 +189,6 @@ class Directory(implicit p: Parameters) extends L2Module {
   val metaRead = Wire(Vec(ways, new MetaEntry()))
   val errorRead = Wire(Vec(ways, Bool()))
 
-  val resetFinish = RegInit(false.B)
-  val resetIdx = RegInit((sets - 1).U)
-
   // Replacer
   val repl = ReplacementPolicy.fromString(cacheParams.replacement, ways)
   val random_repl = cacheParams.replacement == "random"
@@ -369,12 +366,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   val origin_bits_r = origin_bit_opt.get.io.r(io.read.fire, io.read.bits.set).resp.data
   val origin_bits_hold = Wire(Vec(ways, Bool()))
   origin_bits_hold := HoldUnless(origin_bits_r, RegNext(io.read.fire, false.B))
-  origin_bit_opt.get.io.w(
-      !resetFinish || replacerWen,
-      Mux(resetFinish, hit_s3, false.B),
-      Mux(resetFinish, req_s3.set, resetIdx),
-      UIntToOH(way_s3)
-  )
+  origin_bit_opt.get.io.w(replacerWen, hit_s3, req_s3.set, UIntToOH(way_s3))
   val rrip_req_type = WireInit(0.U(4.W))
   // [3]: 0-firstuse, 1-reuse;
   // [2]: 0-acquire, 1-release;
@@ -390,12 +382,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3, hit_s3, inv, rrip_req_type)
     val repl_init = Wire(Vec(ways, UInt(2.W)))
     repl_init.foreach(_ := 2.U(2.W))
-    replacer_sram_opt.get.io.w(
-      !resetFinish || replacerWen,
-      Mux(resetFinish, next_state_s3, repl_init.asUInt),
-      Mux(resetFinish, set_s3, resetIdx),
-      1.U
-    )
+    replacer_sram_opt.get.io.w(replacerWen, next_state_s3, set_s3, 1.U)
 
   } else if(cacheParams.replacement == "drrip"){
     // Set Dueling
@@ -424,29 +411,13 @@ class Directory(implicit p: Parameters) extends L2Module {
 
     val repl_init = Wire(Vec(ways, UInt(2.W)))
     repl_init.foreach(_ := 2.U(2.W))
-    replacer_sram_opt.get.io.w(
-      !resetFinish || replacerWen,
-      Mux(resetFinish, next_state_s3, repl_init.asUInt),
-      Mux(resetFinish, set_s3, resetIdx),
-      1.U
-    )
+    replacer_sram_opt.get.io.w(replacerWen, next_state_s3, set_s3, 1.U)
   } else {
     val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3)
-    replacer_sram_opt.get.io.w(
-      !resetFinish || replacerWen,
-      Mux(resetFinish, next_state_s3, 0.U),
-      Mux(resetFinish, set_s3, resetIdx),
-      1.U
-    )
+    replacer_sram_opt.get.io.w(replacerWen, next_state_s3, set_s3, 1.U)
   }
 
   /* ====== Reset ====== */
-  when(resetIdx === 0.U) {
-    resetFinish := true.B
-  }
-  when(!resetFinish) {
-    resetIdx := resetIdx - 1.U
-  }
 
   XSPerfAccumulate("dirRead_cnt", io.read.fire)
   XSPerfAccumulate("choose_busy_way", reqValid_s3 && !req_s3.wayMask(replaceWay))
