@@ -254,6 +254,9 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
     }
   })
 
+  val txState = RegInit(LinkStates.STOP)
+  val rxState = RegInit(LinkStates.STOP)
+
   val txreq_lcrdvReady = Wire(Bool())
   val txrsp_lcrdvReady = Wire(Bool())
   val txdat_lcrdvReady = Wire(Bool())
@@ -271,11 +274,13 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
   // Add handshake to confirm Sink Tx Queue is completely drained
   val txActive = txreq.active || txrsp.active || txdat.active
   io.powerAck.QACTIVE := txActive
-  io.powerAck.QACCEPTn := !(io.powerAck.QREQ && !txActive)
+  io.powerAck.QACCEPTn := !(io.powerAck.QREQ && !txActive && txState === LinkStates.STOP)
 
-  io.async.tx.req.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.req.lcrdv, params, Some("txreq_lcrdv"))
-  io.async.tx.rsp.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.rsp.lcrdv, params, Some("txrsp_lcrdv"))
-  io.async.tx.dat.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.dat.lcrdv, params, Some("txdat_lcrdv"))
+  //extend AsyncQueue depth to 16 for tx lcrdv
+  val queueParams = params.copy(depth = 16)
+  io.async.tx.req.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.req.lcrdv, queueParams, Some("txreq_lcrdv"))
+  io.async.tx.rsp.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.rsp.lcrdv, queueParams, Some("txrsp_lcrdv"))
+  io.async.tx.dat.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.dat.lcrdv, queueParams, Some("txdat_lcrdv"))
 
   val async_rx_rsp = ToAsyncBundleWithBuf.channel(io.deq.rx.rsp, params, Some("rxrsp_flit"))
   val async_rx_dat = ToAsyncBundleWithBuf.channel(io.deq.rx.dat, params, Some("rxdat_flit"))
@@ -326,9 +331,6 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
   /*
    Duplicate Link Monitor tx/rx state FSM by using deq.rx deq.tx active signals which outuput to DownStream CHI
    */
-  val txState = RegInit(LinkStates.STOP)
-  val rxState = RegInit(LinkStates.STOP)
-
   Seq(txState, rxState).zip(MixedVecInit(Seq(io.deq.tx, io.deq.rx))).foreach { case (state, link) =>
     state := MuxLookup(Cat(link.linkactivereq, link.linkactiveack), LinkStates.STOP)(Seq(
       Cat(true.B, false.B) -> LinkStates.ACTIVATE,
