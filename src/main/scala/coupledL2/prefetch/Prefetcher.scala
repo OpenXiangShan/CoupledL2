@@ -385,7 +385,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
 
   private val SRC_NUM = 5
-  private val Seq(rcv_idx, vbop_idx, pbop_idx, tp_idx, nl_idx) = (0 until SRC_NUM).toSeq
+  private val Seq(rcv_idx, nl_idx, vbop_idx, pbop_idx, tp_idx) = (0 until SRC_NUM).toSeq
   val pftQueueEnqArb = Module(new Arbiter(new PrefetchReq, SRC_NUM))
   pftQueueEnqArb.io.in.foreach{ x =>
     x.valid := false.B

@@ -426,7 +426,8 @@ class L2NextLinePattern(implicit p: Parameters) extends L2NLModule {
   
   val (s0_trainHitVec, s0_trainHit, s0_trainHitWayIdx, s0_trainHitEntry) = findHit(s0_ptRespData, s0_trainPcHash)
   val (s0_reqHitVec, s0_reqHit, s0_reqHitWayIdx, s0_reqHitEntry) = findHit(s0_ptRespData, s0_reqPcHash)
-  
+  // assert(PopCount(s0_trainHitVec) <= 1.U, " Train CAM key conflict detected!")
+  // assert(PopCount(s0_reqHitVec) <= 1.U, " Request CAM key conflict detected!")
   // ==================== Stage 1: Process Read Data ====================
   // -------------------- Train Part --------------------
   val s1_trainValid = RegNext(s0_trainValid, false.B)
@@ -596,7 +597,7 @@ class NextLinePrefetch(implicit p: Parameters) extends L2NLModule {
 
   // Sample ---> Pattern 
   oldPrefetcherSample.io.resp.ready := true.B
-  oldPrefetcherPattern.io.train.valid := newPrefetcherPattern.io.resp.valid
+  oldPrefetcherPattern.io.train.valid := newPrefetcherSample.io.resp.valid
   oldPrefetcherPattern.io.train.bits.pcTag := newPrefetcherSample.io.resp.bits.pcHash
   oldPrefetcherPattern.io.train.bits.touched := newPrefetcherSample.io.resp.bits.touched
   
@@ -647,6 +648,8 @@ class NextLinePrefetch(implicit p: Parameters) extends L2NLModule {
   )
   XSPerfAccumulate("nlSampleTrainErrorTimes", SampleError)
   XSPerfAccumulate("nlPatternTrainErrorTimes", PatternError)
+  // assert(!SampleError, "Sample Train Error detected!")
+  // assert(!PatternError, "Pattern Train Error detected!")
 
   // ========== performance counter==========
   XSPerfAccumulate("nlTotalTrainTimes", io.enable && io.train.fire)//nl accept req times
