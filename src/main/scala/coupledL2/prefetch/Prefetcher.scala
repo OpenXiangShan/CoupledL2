@@ -374,13 +374,13 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   // =================== Connection of all Prefetchers =====================
   /* prefetchers -> pftQueue -> pipe -> Slices.SinkA */
 
-  // val pftQueue = Module(new PrefetchQueue)
-  val pftQueue = Module(new Queue_Regs( 
-          gen = new PrefetchReq ,
-          entries = inflightEntries,
-          hasFlush = false, 
-          hasOverWrite = true,
-          hasFlow = false))
+  val pftQueue = Module(new PrefetchQueue)
+  // val pftQueue = Module(new Queue_Regs( 
+  //         gen = new PrefetchReq ,
+  //         entries = inflightEntries,
+  //         hasFlush = false, 
+  //         hasOverWrite = true,
+  //         hasFlow = false))
 
   val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
 
