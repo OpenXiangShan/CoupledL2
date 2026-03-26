@@ -75,6 +75,12 @@ class DecoupledDownwardsLinkIO(implicit p: Parameters) extends Bundle {
   val dat = DecoupledIO(new CHIDAT)
 }
 
+class DecoupledDownwardsLinkIO_withAddr(implicit p: Parameters) extends Bundle {
+  val req = DecoupledIO(new CHIREQ)
+  val rsp = DecoupledIO(new CHIRSP_withAddr)
+  val dat = DecoupledIO(new CHIDAT_withAddr)
+}
+
 class DecoupledUpwardsLinkIO(implicit p: Parameters) extends Bundle {
   val rsp = DecoupledIO(new CHIRSP)
   val dat = DecoupledIO(new CHIDAT)
@@ -100,6 +106,11 @@ class PortIO(implicit p: Parameters) extends Bundle
 
 class DecoupledPortIO(implicit p: Parameters) extends Bundle {
   val tx = new DecoupledDownwardsLinkIO
+  val rx = Flipped(new DecoupledUpwardsLinkIO)
+}
+
+class DecoupledPortIO_withAddr(implicit p: Parameters) extends Bundle {
+  val tx = new DecoupledDownwardsLinkIO_withAddr
   val rx = Flipped(new DecoupledUpwardsLinkIO)
 }
 
