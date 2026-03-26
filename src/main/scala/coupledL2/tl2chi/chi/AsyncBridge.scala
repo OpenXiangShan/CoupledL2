@@ -98,6 +98,33 @@ object ToAsyncBundleWithBuf {
 
     (source.io.async, deqReady)
   }
+
+  def bitPulse(
+    bit: Bool,
+    params: AsyncQueueParams = AsyncQueueParams(),
+    name: Option[String] = None
+  ) = {
+    /*
+     1. Shadow Buffer (depth=16, flow mode for low latency)
+     */
+    val shadow_buffer = Module(new Queue(Bool(), 16, flow = true, pipe = false))
+    if (name.isDefined) { shadow_buffer.suggestName("lcrdvShadowBuffer_" + name.get) }
+    shadow_buffer.io.enq.valid := bit
+    shadow_buffer.io.enq.bits  := DontCare
+    /*
+     2. AsyncQueueSource (depth =4)
+     */
+    val source = Module(new AsyncQueueSource(UInt(0.W), params))
+    if (name.isDefined) { source.suggestName("asyncQBitSource_" + name.get) }
+    source.io.enq.valid := shadow_buffer.io.deq.valid
+    source.io.enq.bits := DontCare
+
+    shadow_buffer.io.deq.ready := source.io.enq.ready
+
+    source.io.async
+
+  }
+
 }
 object ToAsyncBundle {
   def channel[T <: Data](
@@ -276,9 +303,9 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
   io.powerAck.QACTIVE := txActive
   io.powerAck.QACCEPTn := !(io.powerAck.QREQ && !txActive && txState === LinkStates.STOP)
 
-  io.async.tx.req.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.req.lcrdv, params, Some("txreq_lcrdv"))
-  io.async.tx.rsp.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.rsp.lcrdv, params, Some("txrsp_lcrdv"))
-  io.async.tx.dat.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.dat.lcrdv, params, Some("txdat_lcrdv"))
+  io.async.tx.req.lcrdv <> ToAsyncBundleWithBuf.bitPulse(io.deq.tx.req.lcrdv, params, Some("txreq_lcrdv"))
+  io.async.tx.rsp.lcrdv <> ToAsyncBundleWithBuf.bitPulse(io.deq.tx.rsp.lcrdv, params, Some("txrsp_lcrdv"))
+  io.async.tx.dat.lcrdv <> ToAsyncBundleWithBuf.bitPulse(io.deq.tx.dat.lcrdv, params, Some("txdat_lcrdv"))
 
   val async_rx_rsp = ToAsyncBundleWithBuf.channel(io.deq.rx.rsp, params, Some("rxrsp_flit"))
   val async_rx_dat = ToAsyncBundleWithBuf.channel(io.deq.rx.dat, params, Some("rxdat_flit"))
