@@ -65,6 +65,11 @@ case class TPParameters(
   recorderTableEntries: Int = 512,
   recorderTableAssoc: Int = 2,
   recorderTableReplacementPolicy: String = "plru",
+  // confidence table parameters
+  confTableEntries: Int = 512,
+  confTableAssoc: Int = 8,
+  confTableReplacementPolicy: String = "plru",
+  confReqQueueDepth: Int = 8,
 
   globalHitCountConfidenceWidth: Int = 5,
   globalHitCountConfidenceInitVal: Int = 21,
@@ -121,6 +126,15 @@ trait HasTPParams extends HasCoupledL2Parameters {
   def recorderTableNrSet = tpParams.samplerTableEntries / samplerTableAssoc
   def recorderTableSetBits = log2Ceil(samplerTableNrSet)
   def recorderTableReplacementPolicy = tpParams.samplerTableReplacementPolicy
+  // confidence table parameters
+  def confTableAssoc = tpParams.confTableAssoc
+  def confTableNrSet = tpParams.confTableEntries / confTableAssoc
+  def confTableSetBits = log2Ceil(confTableNrSet)
+  def confTableReplacementPolicy = tpParams.confTableReplacementPolicy
+  def confReqQueueDepth = tpParams.confReqQueueDepth
+  def accConfWidth = 6
+  // TODO: other conf
+
   //  val tpThrottleCycles = tpParams.throttleCycles
   //  require(tpThrottleCycles > 0, "tpThrottleCycles must be greater than 0")
 
@@ -519,8 +533,8 @@ class SamplerTable(implicit p: Parameters) extends TPModule {
   val (baseTag_s2, baseSet_s2) = parsePaddr(baseAddr_s2)
   val maxMatch = lastPair_s2.matchCnt.andR
   val minMatch = !lastPair_s2.matchCnt.orR
-  val updateMatchCnt = Mux(match_s2 && pcMatch_s2 && !maxMatch, lastPair_s2.matchCnt + 2.U,
-    Mux(match_s2 && !pcMatch_s2 && !maxMatch, lastPair_s2.matchCnt + 1.U,
+  val updateMatchCnt = Mux(match_s2 && pcMatch_s2 && !maxMatch, lastPair_s2.matchCnt + 1.U,
+    Mux(match_s2 && !pcMatch_s2 && !maxMatch, lastPair_s2.matchCnt,
       Mux(!match_s2 && !minMatch, lastPair_s2.matchCnt - 1.U, lastPair_s2.matchCnt)))
   val updateEntry = WireInit(new samplerTableEntry().apply(true.B, baseTag_s2, targetAddr_s2, pc_s2, updateMatchCnt))
   val replEntry = WireInit(new samplerTableEntry().apply(true.B, baseTag_s2, targetAddr_s2, pc_s2, 0.U))
@@ -838,6 +852,156 @@ class Sampler(implicit p: Parameters) extends TPModule {
 
 }
 
+class confTableEntry(implicit p: Parameters) extends TPBundle {
+  val valid = Bool()
+  val tag = UInt((pcHashWidth - confTableSetBits).W) // pc
+  val accConf = UInt(accConfWidth.W)
+
+  def apply(valid: Bool, tag: UInt, accConf: UInt) = {
+    val entry = Wire(new confTableEntry)
+    entry.valid := valid
+    entry.tag := tag
+    entry.accConf := accConf
+    entry
+  }
+}
+
+class confReq(implicit p: Parameters) extends TPBundle {
+  val pc = UInt(pcHashWidth.W)
+  val newMeta = Bool()
+  val pfIssue = Bool()
+  val pfHit = Bool()
+  // TODO: pf train frequency; pf late
+}
+
+class confResp(implicit  p: Parameters) extends TPBundle {
+  val issue = Bool()
+  // TODO: issue length
+}
+
+class confTable(implicit p:Parameters) extends TPModule {
+  val io = IO(new Bundle() {
+    val req = Flipped(ValidIO(new confReq()))
+    val resp = ValidIO(new confResp())
+  })
+
+  def parsePC(x: UInt): (UInt, UInt) = {
+    (x(x.getWidth-1, confTableSetBits), x(confTableSetBits - 1, 0))
+  }
+
+  val confTable = Module(
+    new SRAMTemplate(
+      new confTableEntry(),
+      set = confTableNrSet,
+      way = confTableAssoc,
+      shouldReset = false,
+      singlePort = true
+    )
+  )
+  val repl = ReplacementPolicy.fromString(confTableReplacementPolicy, confTableAssoc)
+
+  val reqQueue = Module(new Queue(new confReq(), confReqQueueDepth, pipe = false, flow = false))
+
+  val resetFinish = RegInit(false.B)
+  val resetIdx = RegInit((confTableNrSet - 1).U)
+  val resetCnt = RegInit(100000.U)
+
+  when(resetIdx === 0.U) {
+    resetFinish := true.B
+  }.elsewhen(!resetFinish) {
+    resetIdx := resetIdx - 1.U
+  }
+
+  when(resetCnt === 0.U) {
+    resetCnt := 100000.U
+    resetIdx := (confTableNrSet - 1).U
+    resetFinish := false.B
+  }.elsewhen(io.req.valid && io.req.bits.newMeta) {
+    resetCnt := resetCnt - 1.U
+  }
+
+  reqQueue.io.enq.valid := io.req.valid
+  reqQueue.io.enq.bits := io.req.bits
+  reqQueue.io.deq.ready := confTable.io.w.req.fire // W first
+
+  /* ------- stage 0 ------- */
+  // query confTable
+  val s0_valid = reqQueue.io.deq.fire
+  val req_s0 = reqQueue.io.deq.bits
+  val (tag_s0, set_s0) = parsePC(req_s0.pc)
+  val newMeta_s0 = req_s0.newMeta
+  val pfHit_s0 = req_s0.pfHit
+  val pfIssue_s0 = req_s0.pfIssue
+
+  val confs = confTable.io.r(s0_valid && !newMeta_s0, set_s0).resp.data
+
+  /* ------- stage 1 ------- */
+  // parse pc to judge whether hit; choose victim way
+  val s1_valid = RegNext(s0_valid, false.B)
+  val tag_s1 = RegEnable(tag_s0, s0_valid)
+  val set_s1 = RegEnable(set_s0, s0_valid)
+  val newMeta_s1 = RegEnable(newMeta_s0, s0_valid)
+  val pfHit_s1 = RegEnable(pfHit_s0, s0_valid)
+  val pfIssue_s1 = RegEnable(pfIssue_s0, s0_valid)
+  val needResp_s1 = RegEnable(req_s0.pfIssue, s0_valid)
+
+  val tagMatchVec_s1 = confs.map(_.tag === tag_s1)
+  val validVec_s1 = confs.map(_.valid)
+  val hitVec_s1 = tagMatchVec_s1.zip(validVec_s1).map(x => x._1 && x._2)
+  val hit_s1 = Cat(hitVec_s1).orR
+
+  val hitWay_s1 = OHToUInt(hitVec_s1)
+  val victimWay_s1 = repl.way
+  val way_s1 = Mux(hit_s1, hitWay_s1, victimWay_s1)
+  val conf_s1 = confs(way_s1)
+
+  when(hit_s1) {
+    repl.access(hitWay_s1)
+  }.otherwise {
+    repl.miss
+  }
+
+  /* ------- stage 2 ------- */
+  // (1) hit: update conf && resp(if need
+  // (2) miss: generate new entry
+  val s2_valid = RegNext(s1_valid, false.B)
+  val tag_s2 = RegEnable(tag_s1, s1_valid)
+  val set_s2 = RegEnable(set_s1, s1_valid)
+  val way_s2 = RegEnable(way_s1, s1_valid)
+  val conf_s2 = RegEnable(conf_s1, s1_valid)
+  val hit_s2 = RegEnable(hit_s1, s1_valid)
+  val newMeta_s2 = RegEnable(newMeta_s1, s1_valid)
+  val pfHit_s2 = RegEnable(pfHit_s1, s1_valid)
+  val pfIssue_s2 = RegEnable(pfIssue_s1, s1_valid)
+  val needResp_s2 = RegEnable(needResp_s1, s1_valid)
+
+  val accUpper = conf_s2.accConf === (1 << accConfWidth - 1).U && pfHit_s2 && !pfIssue_s2
+  val accLower = conf_s2.accConf < 10.U && pfIssue_s2 && !pfHit_s2 || conf_s2.accConf < 9.U && pfIssue_s2 && pfHit_s2
+  val accUpdate = Mux(accUpper, conf_s2.accConf, Mux(accLower, 0.U,
+    Mux(pfHit_s2 && !pfIssue_s2, conf_s2.accConf + 1.U,
+      Mux(pfHit_s2 && pfIssue_s2, conf_s2.accConf - 9.U,
+        Mux(!pfHit_s2 && pfIssue_s0, conf_s2.accConf - 10.U, conf_s2.accConf)))))
+  val updateEntry = WireInit(new confTableEntry().apply(true.B, tag_s2, conf_s2.accConf + accUpdate))
+  val replEntry = WireInit(new confTableEntry().apply(true.B, tag_s2, (1 << accConfWidth - 1).U))
+  val resetEntry = WireInit(new confTableEntry().apply(false.B, 0.U, 0.U))
+
+  val confTableWValid_s2 = s2_valid || !resetFinish
+  val confTableWSet_s2 = Mux(resetFinish, set_s2, resetIdx)
+  val confTableWWayOH_s2 = Mux(resetFinish, UIntToOH(way_s2), Fill(confTableAssoc, true.B))
+  val confTableWEntry_s2 = Mux(resetFinish, Mux(hit_s2, updateEntry, replEntry), resetEntry)
+
+  confTable.io.w.apply(
+    valid = confTableWValid_s2,
+    data = confTableWEntry_s2,
+    setIdx = confTableWSet_s2,
+    waymask = confTableWWayOH_s2
+  )
+
+  io.resp.valid := s2_valid && needResp_s2
+  io.resp.bits.issue := conf_s2.accConf > ((1 << accConfWidth - 1) >> 1).U
+
+}
+
 class tpMetaEntry(implicit p:Parameters) extends TPBundle {
   val valid = Bool()
   // val triggerTag = UInt((fullAddressBits - blockOffBits - tpTableSetBits).W)
@@ -925,10 +1089,12 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val hitCount = RegInit(VecInit(Seq.fill(tpTableNrSet)(VecInit(Seq.fill(tpTableAssoc)(0.U.asTypeOf(new tpMetaHitCountEntry))))))
   val globalConfidence = RegInit(VecInit(Seq.fill(1 << hitCountWidth)(globalHitCountConfidenceInitVal.U(globalHitCountConfidenceWidth.W))))
   val sampler = Module(new Sampler())
+  val confTable = Module(new confTable())
   val dataReadQueue = Module(new Queue(new TPmetaReq(), dataReadQueueDepth, pipe = false, flow = false))
   val dataWriteQueue = Module(new Queue(new TPmetaReq(), dataWriteQueueDepth, pipe = false, flow = false))
   val tpDataQueue = Module(new Queue(new tpDataEntry(), tpDataQueueDepth + 1, pipe = false, flow = false))
   val tpMetaResetQueue = Module(new Queue(new tpMetaResetEntry(), tpMetaResetQueueDepth, pipe = false, flow = false))
+  val confRespQueue = Module(new Queue(new confResp(), confReqQueueDepth + 1, pipe = false, flow = false))
 
   val repl = ReplacementPolicy.fromString(tpTableReplacementPolicy, tpTableAssoc)
 
@@ -946,12 +1112,6 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val tpThrottleCycles = 4.U
   // 0 / 1: whether request to set as trigger on meta hit
   // private val hitAsTrigger = Constantin.createRecord("tp_hitAsTrigger"+hartid.toString, initValue = 1)
-  val hitAsTrigger = true.B
-  // 1 ~ triggerQueueDepth: enqueue threshold for triggerQueue
-  // private val triggerThres = Constantin.createRecord("tp_triggerThres"+hartid.toString, initValue = 1)
-  val triggerThres = true.B
-  // 1 ~ tpEntryMaxLen: record threshold for recorder and sender (storage size will not be affected)
-  // private val recordThres = Constantin.createRecord("tp_recordThres"+hartid.toString, initValue = tpEntryMaxLen)
   val recordThres = tpEntryMaxLen.U
   // 0 / 1: whether to train on vaddr
   // private val trainOnVaddr = Constantin.createRecord("tp_trainOnVaddr"+hartid.toString, initValue = 0)
@@ -1209,6 +1369,20 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     globalConfidence(globalConfidenceDecIndex) := globalConfidence(globalConfidenceDecIndex) - 1.U
   }
 
+  // confidence table
+  val pfHit = s2_valid && train_s2.hit && train_s2.reqsource === MemReqSource.Prefetch2L2TP.id.U
+  val pfIssue = s2_valid && hit_s2
+  val newMeta = sampler.io.trained.valid
+  confTable.io.req.valid := pfHit || pfIssue || newMeta // newMeta could be covered
+  confTable.io.req.bits.pc := Mux(pfHit && pfIssue, hashPC(train_s2.pc), sampler.io.trained.bits.pc)
+  confTable.io.req.bits.pfHit := pfHit
+  confTable.io.req.bits.pfIssue := pfIssue
+  confTable.io.req.bits.newMeta := newMeta
+
+  confRespQueue.io.enq.valid := confTable.io.resp.valid
+  confRespQueue.io.enq.bits.issue := confTable.io.resp.bits.issue
+  confRespQueue.io.deq.ready := tpDataQFull || !do_sending
+  assert(confRespQueue.io.enq.ready === true.B)
 
   /* Performance collection */
   val hitCountS1 = WireInit(0.U(hitCountWidth.W))
