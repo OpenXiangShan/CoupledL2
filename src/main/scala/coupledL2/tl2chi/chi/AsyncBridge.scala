@@ -276,11 +276,9 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
   io.powerAck.QACTIVE := txActive
   io.powerAck.QACCEPTn := !(io.powerAck.QREQ && !txActive && txState === LinkStates.STOP)
 
-  //extend AsyncQueue depth to 16 for tx lcrdv
-  val queueParams = params.copy(depth = 16)
-  io.async.tx.req.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.req.lcrdv, queueParams, Some("txreq_lcrdv"))
-  io.async.tx.rsp.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.rsp.lcrdv, queueParams, Some("txrsp_lcrdv"))
-  io.async.tx.dat.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.dat.lcrdv, queueParams, Some("txdat_lcrdv"))
+  io.async.tx.req.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.req.lcrdv, params, Some("txreq_lcrdv"))
+  io.async.tx.rsp.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.rsp.lcrdv, params, Some("txrsp_lcrdv"))
+  io.async.tx.dat.lcrdv <> ToAsyncBundle.bitPulse(io.deq.tx.dat.lcrdv, params, Some("txdat_lcrdv"))
 
   val async_rx_rsp = ToAsyncBundleWithBuf.channel(io.deq.rx.rsp, params, Some("rxrsp_flit"))
   val async_rx_dat = ToAsyncBundleWithBuf.channel(io.deq.rx.dat, params, Some("rxdat_flit"))
