@@ -18,5 +18,6 @@ class L2VPipeSNP(clients: Seq[CCHIComponent]) extends Module {
   val io = IO(new Bundle {
     val flit = Flipped(Valid(new FlitSNP))
     val payloadRead = Input(new L2VPipeSNP.PathTSHRPayloadRead(clients))
+    val free = Output(Bool())
   })
 }

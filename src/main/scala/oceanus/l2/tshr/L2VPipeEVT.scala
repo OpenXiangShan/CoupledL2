@@ -18,6 +18,7 @@ class L2VPipeEVT(clients: Seq[CCHIComponent]) extends Module {
   val io = IO(new Bundle {
     val flit = Flipped(Valid(new FlitEVT))
     val payloadRead = Input(new L2VPipeEVT.PathTSHRPayloadRead(clients))
+    val free = Output(Bool())
   })
 
 
