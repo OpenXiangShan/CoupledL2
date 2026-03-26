@@ -6,6 +6,7 @@ import utility._
 import oceanus.l2._
 import oceanus.compactchi._
 import oceanus.l2.tshr.L2RBE.PathVPipeBlock
+import org.chipsalliance.cde.config.Parameters
 
 object L2RBE {
 
@@ -21,7 +22,7 @@ class L2RBE[T <: Bundle](
   pipe: Boolean = false,
   flow: Boolean = false,
   direct: Boolean = false
-) extends Module {
+)(implicit val p: Parameters) extends Module {
 
   val io = IO(new Bundle {
 
@@ -32,6 +33,8 @@ class L2RBE[T <: Bundle](
 
     val in = Flipped(Decoupled(gen.cloneType))
     val out = Valid(gen.cloneType)
+
+    val valid = Output(Bool())
   })
 
   // blocking conditions
@@ -57,6 +60,9 @@ class L2RBE[T <: Bundle](
     io.out.bits := queue.io.deq.bits
     io.out.valid := queue.io.deq.fire
 
+    // misc output
+    io.valid := queue.io.count =/= 0.U
+
     //
     _is_stalling := queue.io.deq.valid && !queue.io.deq.ready
 
@@ -66,6 +72,8 @@ class L2RBE[T <: Bundle](
     io.out.valid := io.in.valid && !block
 
     io.in.ready := !block
+
+    io.valid := false.B
 
     //
     _is_stalling := io.in.valid && !io.in.ready
@@ -99,13 +107,13 @@ class L2RBE[T <: Bundle](
   XSPerfAccumulate(s"L2RBE_${gen.className}_stallCycleCnt_byEVT_total", _is_stalling && io.blockFromVPipe.EVT)
   XSPerfAccumulate(s"L2RBE_${gen.className}_stallCycleCnt_bySNP_total", _is_stalling && io.blockFromVPipe.SNP)
   XSPerfAccumulate(s"L2RBE_${gen.className}_stallCycleCnt_byREQ_total", _is_stalling && io.blockFromVPipe.REQ)
-  XSPerfAccumulate(s"L2RBE_${gen.className}_stallCycleCnt_byDirectory", perf_stallCycleCnt_byDirectory, io.out.fire, 0, 40, 2, right_strict = true)
-  XSPerfAccumulate(s"L2RBE_${gen.className}_stallCycleCnt_byDirectory", perf_stallCycleCnt_byDirectory, io.out.fire, 40, 800, 40, left_strict = true)
-  XSPerfAccumulate(s"L2RBE_${gen.className}_stallCycleCnt_byEVT", perf_stallCycleCnt_byEVT, io.out.fire, 0, 40, 2, right_strict = true)
-  XSPerfAccumulate(s"L2RBE_${gen.className}_stallCycleCnt_byEVT", perf_stallCycleCnt_byEVT, io.out.fire, 40, 800, 40, left_strict = true)
-  XSPerfAccumulate(s"L2RBE_${gen.className}_stallCycleCnt_bySNP", perf_stallCycleCnt_bySNP, io.out.fire, 0, 40, 2, right_strict = true)
-  XSPerfAccumulate(s"L2RBE_${gen.className}_stallCycleCnt_bySNP", perf_stallCycleCnt_bySNP, io.out.fire, 40, 800, 40, left_strict = true)
-  XSPerfAccumulate(s"L2RBE_${gen.className}_stallCycleCnt_byREQ", perf_stallCycleCnt_byREQ, io.out.fire, 0, 40, 2, right_strict = true)
-  XSPerfAccumulate(s"L2RBE_${gen.className}_stallCycleCnt_byREQ", perf_stallCycleCnt_byREQ, io.out.fire, 40, 800, 40, left_strict = true)
+  XSPerfHistogram(s"L2RBE_${gen.className}_stallCycleCnt_byDirectory", perf_stallCycleCnt_byDirectory, io.out.fire, 0, 40, 2, right_strict = true)
+  XSPerfHistogram(s"L2RBE_${gen.className}_stallCycleCnt_byDirectory", perf_stallCycleCnt_byDirectory, io.out.fire, 40, 800, 40, left_strict = true)
+  XSPerfHistogram(s"L2RBE_${gen.className}_stallCycleCnt_byEVT", perf_stallCycleCnt_byEVT, io.out.fire, 0, 40, 2, right_strict = true)
+  XSPerfHistogram(s"L2RBE_${gen.className}_stallCycleCnt_byEVT", perf_stallCycleCnt_byEVT, io.out.fire, 40, 800, 40, left_strict = true)
+  XSPerfHistogram(s"L2RBE_${gen.className}_stallCycleCnt_bySNP", perf_stallCycleCnt_bySNP, io.out.fire, 0, 40, 2, right_strict = true)
+  XSPerfHistogram(s"L2RBE_${gen.className}_stallCycleCnt_bySNP", perf_stallCycleCnt_bySNP, io.out.fire, 40, 800, 40, left_strict = true)
+  XSPerfHistogram(s"L2RBE_${gen.className}_stallCycleCnt_byREQ", perf_stallCycleCnt_byREQ, io.out.fire, 0, 40, 2, right_strict = true)
+  XSPerfHistogram(s"L2RBE_${gen.className}_stallCycleCnt_byREQ", perf_stallCycleCnt_byREQ, io.out.fire, 40, 800, 40, left_strict = true)
   XSPerfAccumulate(s"L2RBE_${gen.className}_issueCnt", io.out.fire)
 }
