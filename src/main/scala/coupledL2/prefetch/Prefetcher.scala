@@ -182,6 +182,111 @@ class PrefetchIO(implicit p: Parameters) extends PrefetchBundle {
   }))
 }
 
+class PrefetchReq_Queue_Regs(
+  entries: Int, //Must be a power of 2
+  hasFlush: Boolean = false, 
+  hasOverWrite: Boolean = true,
+  hasFlow: Boolean = true,
+  hasAddrFilter: Boolean = true,
+)(implicit p: Parameters) extends Module {
+  val io = IO(new Bundle {
+    val enq = Flipped(DecoupledIO(new PrefetchReq))
+    val deq = DecoupledIO(new PrefetchReq)
+    val flush = if (hasFlush) Some(Input(Bool())) else None
+  })
+  def wrapInc(ptr: UInt): UInt = Mux(ptr === (entries - 1).U, 0.U, ptr + 1.U)
+  require(entries > 1, "Queue must have positive entries")
+  require((entries & (entries - 1)) == 0, "entries must be a power of 2")
+
+  val queue = RegInit(VecInit(Seq.fill(entries)(0.U.asTypeOf(new PrefetchReq))))
+  val valids = RegInit(VecInit(Seq.fill(entries)(false.B)))
+  val maybe_full = RegInit(false.B)
+  val ptrBits = log2Up(entries)  // pointer width: ensure at least 1 bit to avoid zero-width UInts
+  val headPtr = RegInit(0.U(ptrBits.W))
+  val tailPtr = RegInit(0.U(ptrBits.W))
+  val empty = headPtr === tailPtr && !maybe_full
+  val full = headPtr === tailPtr && maybe_full
+  val flushHappens = if (hasFlush) io.flush.get else false.B
+
+  // Decide enq ready depending on hasOverWrite (elaboration-time constant)
+  if (hasOverWrite) {
+    io.enq.ready := !flushHappens
+  } else {
+    io.enq.ready := !full && !flushHappens
+  }
+
+  // Compute deq.valid according to modes (use Scala if for param-time branching)
+  val deq_valid = if (hasFlow) {
+    !empty || io.enq.valid // hasFlow mode: Data passes through directly when the queue is empty
+  } else {
+    !empty
+  }
+
+  // Dequeue fire when deq is valid and consumer ready
+  // Note:It does not necessarily come from the data already stored in the Queue.
+  val do_deq = deq_valid && io.deq.ready && !flushHappens
+
+  // Enqueue fire (data presented at input)
+  // Note:Data is not necessarily stored inside the Queue.
+  val hitVec = VecInit((0 until entries).map(i => valids(i) && queue(i).addr === io.enq.bits.addr))
+  val hasSameAddr = if (hasAddrFilter) hitVec.asUInt.orR else false.B
+  val do_enq = io.enq.valid && io.enq.ready && !flushHappens && !hasSameAddr
+
+  val flowHappens = if (hasFlow) empty && do_enq && io.deq.ready else false.B
+
+  val overwriteHappens = if (hasOverWrite) full &&  do_enq && !do_deq else false.B
+  
+  when(flushHappens) {  
+    maybe_full := false.B 
+  } .elsewhen(overwriteHappens) {
+    maybe_full := true.B // Overwrite: both pointers advance together, queue stays full
+  } .elsewhen(do_enq =/= do_deq) {
+    maybe_full := do_enq
+  }
+
+  // Enqueue logic
+  when (do_enq && !flowHappens){
+    valids(tailPtr) := true.B
+    queue(tailPtr) := io.enq.bits
+  }
+
+  when(flushHappens) {
+    tailPtr := 0.U
+  } .elsewhen(do_enq ) {
+    tailPtr := wrapInc(tailPtr)
+  }
+
+  // Dequeue logic: advance headPtr on dequeue OR overwrite
+  when(flushHappens) {
+    headPtr := 0.U
+  } .elsewhen(do_deq || overwriteHappens) {
+    valids(headPtr) := false.B
+    headPtr := wrapInc(headPtr)
+  }
+
+  // Flush
+  when(flushHappens) {
+    valids.foreach(_ := 0.U)
+  }
+
+  // Drive deq outputs
+  io.deq.valid := deq_valid && !flushHappens
+  io.deq.bits := Mux(flowHappens, io.enq.bits, queue(headPtr)) 
+
+  //add assert
+  if (!hasOverWrite) {
+    assert(!(io.enq.valid && full), "Queue_Regs: enqueue when full and hasOverWrite=false")
+  }
+  if (hasOverWrite) {
+    assert(!(overwriteHappens && !full), "Queue_Regs: overwriteHappens implies full")
+  }
+  when (flowHappens) {
+    assert(empty, "Queue_Regs: flowHappens but queue not empty")
+    assert(io.deq.ready, "Queue_Regs: flowHappens but deq not ready")
+  }
+  assert(!(io.deq.fire && !io.deq.valid), "Queue_Regs: deq.fire but deq.valid false")
+}
+
 class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val io = IO(new PrefetchIO)
   val tpio = IO(new Bundle() {
@@ -316,12 +421,12 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
 
   // =================== Connection of all Prefetchers =====================
   /* prefetchers -> pftQueue -> pipe -> Slices.SinkA */
-  val pftQueue = Module(new Queue_Regs( 
-          gen = new PrefetchReq ,
+  val pftQueue = Module(new PrefetchReq_Queue_Regs( 
           entries = inflightEntries,
           hasFlush = false, 
           hasOverWrite = true,
-          hasFlow = true))
+          hasFlow = true,
+          hasAddrFilter = true))
 
   val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
 
