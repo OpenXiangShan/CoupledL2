@@ -50,7 +50,7 @@ class Queue_Regs[T <: Data](
     val flush = if (hasFlush) Some(Input(Bool())) else None
   })
   def wrapInc(ptr: UInt): UInt = Mux(ptr === (entries - 1).U, 0.U, ptr + 1.U)
-  require(entries > 0, "Queue must have positive entries")
+  require(entries > 1, "Queue must have positive entries")
   require((entries & (entries - 1)) == 0, "entries must be a power of 2")
 
   val queue = RegInit(VecInit(Seq.fill(entries)(0.U.asTypeOf(gen))))
