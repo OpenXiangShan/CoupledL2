@@ -98,6 +98,8 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   reqArb.io.mshrTask <> mshrCtl.io.mshrTask
   reqArb.io.fromMSHRCtl := mshrCtl.io.toReqArb
   reqArb.io.fromMainPipe := mainPipe.io.toReqArb
+  reqArb.io.fromMPBlockB_debug1 := mainPipe.io.toReqArbBlockB_debug1
+  reqArb.io.fromMPBlockB_debug2 := mainPipe.io.toReqArbBlockB_debug2
   reqArb.io.fromGrantBuffer := grantBuf.io.toReqArb
   reqArb.io.fromTXDAT.foreach(_ := txdat.io.toReqArb)
   reqArb.io.fromTXRSP.foreach(_ := txrsp.io.toReqArb)

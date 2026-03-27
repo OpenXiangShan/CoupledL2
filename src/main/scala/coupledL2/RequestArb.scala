@@ -62,6 +62,8 @@ class RequestArb(implicit p: Parameters) extends L2Module
     /* handle set conflict, capacity conflict */
     val fromMSHRCtl = Input(new BlockInfo())
     val fromMainPipe = Input(new BlockInfo())
+    val fromMPBlockB_debug1 = Input(Bool())
+    val fromMPBlockB_debug2 = Input(Bool())
     val fromGrantBuffer = Input(new Bundle() {
       val blockSinkReqEntrance = new BlockInfo()
       val blockMSHRReqEntrance = Bool()
@@ -121,7 +123,8 @@ class RequestArb(implicit p: Parameters) extends L2Module
 
   /* ======== Stage 1 ======== */
   /* latch mshr_task from s0 to s1 */
-  val mshr_replRead_stall = mshr_task_s1.valid && s1_needs_replRead && (!io.dirRead_s1.ready || io.fromMainPipe.blockG_s1)
+  assert(Mux(io.fromMainPipe.blockG_s1, !s2_ready, true.B))
+  val mshr_replRead_stall = mshr_task_s1.valid && s1_needs_replRead && (!io.dirRead_s1.ready)
   mshr_task_s1.valid := mshr_task_s1.valid && !s1_fire || s0_fire
 
   when (s0_fire) {
@@ -134,11 +137,14 @@ class RequestArb(implicit p: Parameters) extends L2Module
   val B_task = io.sinkB.bits
   val C_task = io.sinkC.bits
   val block_A = io.fromMSHRCtl.blockA_s1 || io.fromMainPipe.blockA_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockA_s1
+  // assert(Mux(io.fromMPBlockB_debug1, !s2_ready, true.B))
+  // assert(Mux(io.fromMPBlockB_debug2, !io.dirRead_s1.ready, true.B))
   val block_B = io.fromMSHRCtl.blockB_s1 || io.fromMainPipe.blockB_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockB_s1 ||
     (if (io.fromSourceC.isDefined) io.fromSourceC.get.blockSinkBReqEntrance else false.B) ||
     (if (io.fromTXDAT.isDefined) io.fromTXDAT.get.blockSinkBReqEntrance else false.B) ||
     (if (io.fromTXRSP.isDefined) io.fromTXRSP.get.blockSinkBReqEntrance else false.B)
-  val block_C = io.fromMSHRCtl.blockC_s1 || io.fromMainPipe.blockC_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockC_s1
+  assert(Mux(io.fromMainPipe.blockC_s1, !s2_ready, true.B))
+  val block_C = io.fromMSHRCtl.blockC_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockC_s1
 
 //  val noFreeWay = Wire(Bool())
 
@@ -173,7 +179,7 @@ class RequestArb(implicit p: Parameters) extends L2Module
 
   /* Meta read request */
   // ^ only sinkA/B/C tasks need to read directory
-  io.dirRead_s1.valid := s2_ready && (chnl_task_s1.valid && !mshr_task_s1.valid || s1_needs_replRead && !io.fromMainPipe.blockG_s1)
+  io.dirRead_s1.valid := s2_ready && (chnl_task_s1.valid && !mshr_task_s1.valid || s1_needs_replRead)
   io.dirRead_s1.bits.set := task_s1.bits.set
   io.dirRead_s1.bits.tag := task_s1.bits.tag
   // invalid way which causes mshr_retry
