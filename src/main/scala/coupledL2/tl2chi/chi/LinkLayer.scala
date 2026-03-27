@@ -357,7 +357,6 @@ class LinkMonitor(implicit p: Parameters) extends L2Module with HasCHIOpcodes {
   //exit coherecy + deactive tx/rx when l2 flush done
   val exitco = io.exitco.getOrElse(false.B)
   val exitcoDone = !io.out.syscoreq && !io.out.syscoack && RegNext(true.B, init = false.B)
-  val txActiveEnable = !exitcoDone && io.out.syscoreq && io.out.syscoack
 
   io.out.tx.linkactivereq := RegNext(!exitcoDone, init = false.B)
   io.out.rx.linkactiveack := RegNext(
@@ -366,7 +365,7 @@ class LinkMonitor(implicit p: Parameters) extends L2Module with HasCHIOpcodes {
   )
 
   io.out.syscoreq := RegNext(!exitco, init = false.B)
-  io.out.txsactive := RegNext(txActiveEnable, init = false.B) 
+  io.out.txsactive := RegNext(!exitcoDone, init = false.B) 
 
   val retryAckCnt = RegInit(0.U(64.W))
   val pCrdGrantCnt = RegInit(0.U(64.W))
