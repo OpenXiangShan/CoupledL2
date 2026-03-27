@@ -1,0 +1,133 @@
+/** *************************************************************************************
+  * Copyright (c) 2020-2021 Institute of Computing Technology, Chinese Academy of Sciences
+  * Copyright (c) 2020-2021 Peng Cheng Laboratory
+  *
+  * XiangShan is licensed under Mulan PSL v2.
+  * You can use this software according to the terms and conditions of the Mulan PSL v2.
+  * You may obtain a copy of Mulan PSL v2 at:
+  * http://license.coscl.org.cn/MulanPSL2
+  *
+  * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+  * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+  *
+  * See the Mulan PSL v2 for more details.
+  * *************************************************************************************
+  */
+
+package coupledL2.utils
+import chisel3._
+import chisel3.util._
+
+/*************************************************************************************
+ * This file defines an Queue by Regs.
+ * It supports the following configurable features:
+ * 
+ * - hasOverWrite: When true and the queue is full, new enqueued data overwrites the oldest
+ *   entry by advancing both head and tail pointers simultaneously. When false, the queue
+ *   behaves like a standard queue and blocks enqueue when full.
+ * 
+ * - hasFlow: When true and the queue is empty, new enqueued data is directly passed to the
+ *   output (bypassed), reducing latency. When the queue has entries, it behaves normally.
+ * 
+ * - hasFlush: When true, provides a flush signal that resets the queue to empty state.
+ * 
+ * The queue uses a circular buffer implementation with head and tail pointers, and a
+ * maybe_full flag to distinguish between empty and full states when pointers are equal.
+ * 
+ * Note: The number of entries must be a power of 2 to simplify pointer arithmetic.
+ */
+class Queue_Regs[T <: Data](
+  gen: T, 
+  entries: Int, //Must be a power of 2
+  hasFlush: Boolean = false, 
+  hasOverWrite: Boolean = true,
+  hasFlow: Boolean = true
+) extends Module {
+  val io = IO(new Bundle {
+    val enq = Flipped(DecoupledIO(gen))
+    val deq = DecoupledIO(gen)
+    val flush = if (hasFlush) Some(Input(Bool())) else None
+  })
+  def wrapInc(ptr: UInt): UInt = Mux(ptr === (entries - 1).U, 0.U, ptr + 1.U)
+  require(entries > 1, "Queue must have positive entries")
+  require((entries & (entries - 1)) == 0, "entries must be a power of 2")
+
+  val queue = RegInit(VecInit(Seq.fill(entries)(0.U.asTypeOf(gen))))
+  val maybe_full = RegInit(false.B)
+  val ptrBits = log2Up(entries)  // pointer width: ensure at least 1 bit to avoid zero-width UInts
+  val headPtr = RegInit(0.U(ptrBits.W))
+  val tailPtr = RegInit(0.U(ptrBits.W))
+  val empty = headPtr === tailPtr && !maybe_full
+  val full = headPtr === tailPtr && maybe_full
+  val flushHappens = if (hasFlush) io.flush.get else false.B
+
+  // Decide enq ready depending on hasOverWrite (elaboration-time constant)
+  if (hasOverWrite) {
+    io.enq.ready := !flushHappens
+  } else {
+    io.enq.ready := !full && !flushHappens
+  }
+
+  // Compute deq.valid according to modes (use Scala if for param-time branching)
+  val deq_valid = if (hasFlow) {
+    !empty || io.enq.valid // hasFlow mode: Data passes through directly when the queue is empty
+  } else {
+    !empty
+  }
+
+  // Dequeue fire when deq is valid and consumer ready
+  // Note:It does not necessarily come from the data already stored in the Queue.
+  val do_deq = deq_valid && io.deq.ready && !flushHappens
+
+  // Enqueue fire (data presented at input)
+  // Note:Data is not necessarily stored inside the Queue.
+  val do_enq = io.enq.valid && io.enq.ready && !flushHappens
+
+  val flowHappens = if (hasFlow) empty && do_enq && io.deq.ready else false.B
+
+  val overwriteHappens = if (hasOverWrite) full &&  do_enq && !do_deq else false.B
+  
+  when(flushHappens) {  
+    maybe_full := false.B 
+  } .elsewhen(overwriteHappens) {
+    maybe_full := true.B // Overwrite: both pointers advance together, queue stays full
+  } .elsewhen(do_enq =/= do_deq) {
+    maybe_full := do_enq
+  }
+
+  // Enqueue logic
+  when (do_enq && !flowHappens){
+    queue(tailPtr) := io.enq.bits
+  }
+
+  when(flushHappens) {
+    tailPtr := 0.U
+  } .elsewhen(do_enq ) {
+    tailPtr := wrapInc(tailPtr)
+  }
+
+  // Dequeue logic: advance headPtr on dequeue OR overwrite
+  when(flushHappens) {
+    headPtr := 0.U
+  } .elsewhen(do_deq || overwriteHappens) {
+    headPtr := wrapInc(headPtr)
+  }
+
+  // Drive deq outputs
+  io.deq.valid := deq_valid && !flushHappens
+  io.deq.bits := Mux(flowHappens, io.enq.bits, queue(headPtr)) 
+
+  //add assert
+  if (!hasOverWrite) {
+    assert(!(io.enq.valid && full), "Queue_Regs: enqueue when full and hasOverWrite=false")
+  }
+  if (hasOverWrite) {
+    assert(!(overwriteHappens && !full), "Queue_Regs: overwriteHappens implies full")
+  }
+  when (flowHappens) {
+    assert(empty, "Queue_Regs: flowHappens but queue not empty")
+    assert(io.deq.ready, "Queue_Regs: flowHappens but deq not ready")
+  }
+  assert(!(io.deq.fire && !io.deq.valid), "Queue_Regs: deq.fire but deq.valid false")
+}
