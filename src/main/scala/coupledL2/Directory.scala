@@ -87,7 +87,9 @@ class DirResult(implicit p: Parameters) extends L2Bundle {
   val set = UInt(setBits.W)
   val way = UInt(wayBits.W)  // hit way or victim way
   val meta = new MetaEntry()
+  val metaOnHit = new MetaEntry()
   val error = Bool()
+  val errOnSnp = Bool()
   val replacerInfo = new ReplacerInfo() // for TopDown usage
 }
 
@@ -296,9 +298,16 @@ class Directory(implicit p: Parameters) extends L2Module {
   val hit_s3 = Cat(hitVec).orR || req_s3.cmoAll
   val way_s3 = Mux(req_s3.cmoAll, req_s3.cmoWay, Mux(hit_s3, hitWay, finalWay))
   val meta_s3 = metaAll_s3(way_s3)
+  val metaOnHit_s3 = metaAll_s3(hitWay)
   val tag_s3 = tagAll_s3(way_s3)
   val set_s3 = req_s3.set
   val replacerInfo_s3 = req_s3.replacerInfo
+  val errorOnSNP_s3 = if (enableTagECC) {
+    errorAll_s3(hitWay)
+  } else {
+    false.B
+  }
+
   val error_s3 = if (enableTagECC) {
     errorAll_s3(way_s3) && reqValid_s3 && !req_s3.cmoAll && meta_s3.state =/= MetaData.INVALID
   } else {
@@ -309,9 +318,11 @@ class Directory(implicit p: Parameters) extends L2Module {
   io.resp.bits.hit   := hit_s3
   io.resp.bits.way   := way_s3
   io.resp.bits.meta  := meta_s3
+  io.resp.bits.metaOnHit := metaOnHit_s3
   io.resp.bits.tag   := tag_s3
   io.resp.bits.set   := set_s3
   io.resp.bits.error := error_s3  // depends on ECC
+  io.resp.bits.errOnSnp := errorOnSNP_s3
   io.resp.bits.replacerInfo := replacerInfo_s3
 
   dontTouch(io)
