@@ -62,8 +62,8 @@ class RequestArb(implicit p: Parameters) extends L2Module
     /* handle set conflict, capacity conflict */
     val fromMSHRCtl = Input(new BlockInfo())
     val fromMainPipe = Input(new BlockInfo())
-    val fromMPBlockB_debug1 = Input(Bool())
-    val fromMPBlockB_debug2 = Input(Bool())
+    val fromMPBlockB_debug1 = Option.when(cacheParams.enablePerf) {Input(Bool())}
+    val fromMPBlockB_debug2 = Option.when(cacheParams.enablePerf) {Input(Bool())}
     val fromGrantBuffer = Input(new Bundle() {
       val blockSinkReqEntrance = new BlockInfo()
       val blockMSHRReqEntrance = Bool()

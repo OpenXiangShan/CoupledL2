@@ -42,8 +42,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     })
     /* block B and C at Entrance */
     val toReqArb = Output(new BlockInfo())
-    val toReqArbBlockB_debug1 = Output(Bool())
-    val toReqArbBlockB_debug2 = Output(Bool())
+    val toReqArbBlockB_debug1 = Option.when (cacheParams.enablePerf) {Output(Bool())}
+    val toReqArbBlockB_debug2 = Option.when (cacheParams.enablePerf) {Output(Bool())}
 
     /* block A at Entrance */
     val toReqBuf = Output(Vec(2, Bool()))
@@ -887,8 +887,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     task_s3.valid && bBlock(task_s3.bits) ||
     task_s4.valid && bBlock(task_s4.bits, tag = true) ||
     task_s5.valid && bBlock(task_s5.bits, tag = true)
-  io.toReqArbBlockB_debug1 := task_s2.valid && bBlock(task_s2.bits)
-  io.toReqArbBlockB_debug2 := task_s3.valid && bBlock(task_s3.bits)
+  io.toReqArbBlockB_debug1.foreach(_ := task_s2.valid && bBlock(task_s2.bits))
+  io.toReqArbBlockB_debug2.foreach(_ := task_s3.valid && bBlock(task_s3.bits))
 
   
   io.toReqArb.blockA_s1 := false.B
