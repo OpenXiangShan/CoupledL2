@@ -27,6 +27,7 @@ class DSRequest(implicit p: Parameters) extends L2Bundle {
   val way = UInt(wayBits.W)
   val set = UInt(setBits.W)
   val wen = Bool()
+  val ren = Bool()
 }
 
 // mask not used
@@ -78,12 +79,12 @@ class DataStorage(implicit p: Parameters) extends L2Module {
     extraHold = true,
     withClockGate = true
   ))
-  array.io_en := io.en
+  array.io_en := io.en && (io.req.bits.ren || io.req.bits.wen)
   private val mbistPl = MbistPipeline.PlaceMbistPipeline(1, "L2DataStorage", p(L2ParamKey).hasMbist)
 
   val arrayIdx = Cat(io.req.bits.way, io.req.bits.set)
   val wen = io.req.valid && io.req.bits.wen
-  val ren = io.req.valid && !io.req.bits.wen
+  val ren = io.req.valid && !io.req.bits.wen && io.req.bits.ren
 
   val arrayWrite = Wire(new DSECCBankBlock)
   val arrayWriteData = if (enableDataECC) {
