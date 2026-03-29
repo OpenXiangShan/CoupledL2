@@ -913,6 +913,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   XSPerfAccumulate("cdp_detect_trigger_refill", io.cdp_trigger.valid && is_refill_trigger_s5)
   XSPerfAccumulate("cdp_detect_trigger_refill_grantdata", io.cdp_trigger.valid && is_refill_trigger_s5 && RegNext(RegNext(mshr_grantdata_s3)))
   XSPerfAccumulate("cdp_detect_trigger_refill_hintack", io.cdp_trigger.valid && is_refill_trigger_s5 && RegNext(RegNext(mshr_hintack_s3)))
+  XSPerfAccumulate("cdp_detect_trigger_refill_hintack_fromCDP", io.cdp_trigger.valid && is_refill_trigger_s5 && RegNext(RegNext(mshr_hintack_s3)) && RegNext(RegNext(req_s3.reqSource === MemReqSource.Prefetch2L2CDP.id.U)))
+  XSPerfAccumulate("cdp_detect_trigger_refill_hintack_notCDP", io.cdp_trigger.valid && is_refill_trigger_s5 && RegNext(RegNext(mshr_hintack_s3)) && RegNext(RegNext(req_s3.reqSource =/= MemReqSource.Prefetch2L2CDP.id.U)))
 
   /* ======== BlockInfo ======== */
   // if s2/s3 might write Dir, we must block s1 sink entrance
