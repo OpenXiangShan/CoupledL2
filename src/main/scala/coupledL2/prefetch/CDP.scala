@@ -120,20 +120,22 @@ abstract class CDPModule(implicit val p: Parameters) extends Module with HasCDPP
 class CDPDetectTrigger(implicit p: Parameters) extends CDPBundle {
   val cacheblock  = UInt(blockBits.W)
   val pfDepth     = UInt(4.W)
-  val isHitCDP    = Bool()
+  val pfSource    = UInt(PfSource.pfSourceBits.W)
+  val is_hit     = Bool()
   // pf Src
 }
 
 class CDPDetectEntry(implicit p: Parameters) extends CDPBundle {
   val half_cacheblock = UInt((blockBits / 2).W)
   val pfDepth         = UInt(4.W)
-  // pf Src
-  val isHitCDP        = Bool()
+  val pfSource        = UInt(PfSource.pfSourceBits.W)
+
+  val is_hit  = Bool()
 }
 
 class CDPTrainTrigger(implicit p: Parameters) extends CDPBundle {
   val vaddr = UInt(fullAddressBits.W)
-  // pf Src
+  // pf Src?
 }
 
 class VpnTableMetaInfo(implicit p: Parameters) extends CDPBundle {
@@ -280,8 +282,9 @@ class CDPTrainReq(implicit p: Parameters) extends CDPBundle {
 class CDPDetectReq(implicit p: Parameters) extends CDPBundle {
   val vaddr     = UInt(fullAddressBits.W)
   val pfDepth   = UInt(4.W)
-  val isHitCDP  = Bool()    // Hit a block prefetched by CDP
-  // pf Src?
+  val pfSource  = UInt(PfSource.pfSourceBits.W)
+
+  val is_hit    = Bool()
 }
 
 class CDPPrefetchReq(implicit p: Parameters) extends CDPBundle {
@@ -443,44 +446,37 @@ class DetectPipeline(implicit p: Parameters) extends CDPModule {
   val (vt_query_req, vt_query_rsp) = (io.vt_query_req, io.vt_query_rsp)
 
   // Pipeline Ctrl Signals
-  val s0_valid = Wire(Bool())
-  val s1_valid = Wire(Bool())
-  val s2_valid = Wire(Bool())
-  val s3_valid = Wire(Bool())
-  val s4_valid = Wire(Bool())
+  val s0_req  = WireInit(0.U.asTypeOf(Valid(new CDPDetectReq)))
+  val s1_req  = WireInit(0.U.asTypeOf(Valid(new CDPDetectReq)))
+  val s2_req  = WireInit(0.U.asTypeOf(Valid(new CDPDetectReq)))
+  val s3_req  = WireInit(0.U.asTypeOf(Valid(new CDPDetectReq)))
+  val s4_req  = WireInit(0.U.asTypeOf(Valid(new CDPDetectReq)))
 
   // ------------------ s0 ------------------
-  s0_valid  := detect_req.valid
-
-  val s0_addr     = detect_req.bits.vaddr
-  val s0_depth    = detect_req.bits.pfDepth
-  val s0_isHitCDP = detect_req.bits.isHitCDP
+  s0_req.valid  := detect_req.valid
+  s0_req.bits   := detect_req.bits
 
   // ------------------ s1 ------------------
-  s1_valid  := RegNext(s0_valid)
+  s1_req.valid  := RegNext(s0_req.valid)
+  s1_req.bits   := RegNext(s0_req.bits)
 
-  val s1_addr     = Wire(s0_addr.cloneType)
-  val s1_depth    = RegNext(s0_depth)
-  val s1_isHitCDP = RegNext(s0_isHitCDP)
-
-  s1_addr := RegNext(s0_addr)
-
+  val s1_addr     = s1_req.bits.vaddr
   val s1_main_idx = get_main_idx(s1_addr)
   val s1_sub_idx  = get_main_idx(s1_addr)
 
-  vt_query_req.valid  := s1_valid
+  vt_query_req.valid  := s1_req.valid
   vt_query_req.bits.main_idx  := s1_main_idx
   vt_query_req.bits.sub_idx   := s1_sub_idx
 
   val s1_vt_query_rsp = vt_query_rsp.bits
 
   // ------------------ s2 ------------------
-  s2_valid  := RegNext(s1_valid)
+  s2_req.valid  := RegNext(s1_req.valid)
+  s2_req.bits   := RegNext(s1_req.bits)
 
-  val s2_addr     = Wire(s1_addr.cloneType)
-  val s2_depth    = RegNext(s1_depth)
-  val s2_isHitCDP = RegNext(s1_isHitCDP)
-  s2_addr := RegNext(s1_addr)
+  val s2_addr   = s2_req.bits.vaddr
+  val s2_depth  = s2_req.bits.pfDepth
+  val s2_is_hit = s2_req.bits.is_hit
   
   val s2_vt_query_rsp = RegNext(s1_vt_query_rsp)
 
@@ -502,56 +498,55 @@ class DetectPipeline(implicit p: Parameters) extends CDPModule {
   val s2_high_bit = s2_addr(fullAddressBits - 1, 39)
   val s2_high_bit_is_zero = s2_high_bit === 0.U
 
-  val s2_isHitCDP_can_pft   = s2_high_bit_is_zero && s2_low_bit_is_zero && s2_vpn0_is_nzero && s2_vt_hit && s2_vt_hit_hot   // depth == 2 || 4 is restricted in MainPipe
-  val s2_nonHitCDP_can_pft  = s2_high_bit_is_zero && s2_low_bit_is_zero && s2_vpn0_is_nzero && s2_vt_hit && s2_vt_hit_hot && s2_depth < 3.U
-  val s2_can_pft  = Mux(s2_isHitCDP, s2_isHitCDP_can_pft, s2_nonHitCDP_can_pft)   // TODO: maybe we can move this to s3?
-
-  XSPerfAccumulate("detect_s2_vpn0_isnzero", s2_vpn0_is_nzero && s2_valid)
-  XSPerfAccumulate("detect_s2_lowbit_iszero", s2_low_bit_is_zero && s2_valid)
-  XSPerfAccumulate("detect_s2_highbit_iszero", s2_high_bit_is_zero && s2_valid)
-  XSPerfAccumulate("detect_s2_vt_hit", s2_vt_hit && s2_valid)
-  XSPerfAccumulate("detect_s2_vt_hit_hot", s2_vt_hit_hot && s2_valid)
-  XSPerfAccumulate("detect_s2_isHitCDP", s2_isHitCDP && s2_valid)
-  XSPerfAccumulate("detect_s2_nonHitCDP", !s2_isHitCDP && s2_valid)
-  XSPerfAccumulate("detect_s2_isHitCDP_pft", s2_isHitCDP_can_pft && s2_valid && s2_isHitCDP)
-  XSPerfAccumulate("detect_s2_nonHitCDP_pft", s2_nonHitCDP_can_pft && s2_valid && !s2_isHitCDP)
-
-  for (i <-0 until 5) {
-    XSPerfAccumulate(s"detect_s2_depth_$i", s2_depth === i.U && s2_valid)
-  }
+  // TODO: maybe we should move depth control totally to the entrance?
+  val s2_is_hit_can_pft     = s2_high_bit_is_zero && s2_low_bit_is_zero && s2_vpn0_is_nzero && s2_vt_hit && s2_vt_hit_hot   // depth == 2 || 4 is restricted when entering
+  val s2_non_hit_can_pft    = s2_high_bit_is_zero && s2_low_bit_is_zero && s2_vpn0_is_nzero && s2_vt_hit && s2_vt_hit_hot && s2_depth < 3.U
+  val s2_can_pft  = Mux(s2_is_hit, s2_is_hit_can_pft, s2_non_hit_can_pft)
 
   // ------------------ s3 ------------------
-  s3_valid  := RegNext(s2_valid)
+  s3_req.valid  := RegNext(s2_req.valid)
+  s3_req.bits   := RegNext(s3_req.bits)
 
-  val s3_addr       = Wire(s2_addr.cloneType)
   val s3_vt_hit     = RegNext(s2_vt_hit)
   val s3_vt_hit_idx = RegNext(s2_vt_hit_idx)
   val s3_can_pft    = RegNext(s2_can_pft)
   val s3_depth      = RegNext(Mux(
-    s2_isHitCDP,
-    1.U,
+    s2_is_hit,
+    1.U,      // hit a CDP prefetched block, depth == 2 or 4, reinforce
     Mux(s2_depth === 0.U, 4.U, s2_depth + 1.U)
   ))
-  s3_addr := RegNext(s2_addr)
+
+  val s3_addr = s3_req.bits.vaddr
 
   // Update PLRU
-  io.replace_upt.valid  := s3_valid && s3_vt_hit
+  io.replace_upt.valid  := s3_req.valid && s3_vt_hit
   io.replace_upt.bits.set :=get_main_idx(s3_addr)
   io.replace_upt.bits.way := s3_vt_hit_idx
 
   // ------------------ s4 ------------------
-  s4_valid  := RegNext(s3_valid && s3_can_pft)
+  s4_req.valid  := RegNext(s3_req.valid && s3_can_pft)
+  s4_req.bits   := RegNext(s3_req.bits)
 
-  val s4_addr   = Wire(s3_addr.cloneType)
+  val s4_addr   = s4_req.bits.vaddr
   val s4_depth  = RegNext(s3_depth)
-  s4_addr := RegNext(s3_addr)
 
-  pft_req.valid := s4_valid
+  pft_req.valid := s4_req.valid
   pft_req.bits.pfAddr   := s4_addr
   pft_req.bits.pfDepth  := s4_depth
 
+  // ------------------ Performance Counter ------------------
+  XSPerfAccumulate(s"pft_from_hit", s4_req.valid && s4_req.bits.is_hit)
+  XSPerfAccumulate(s"pft_from_refill", s4_req.valid && !s4_req.bits.is_hit)
+  XSPerfAccumulate(s"pft_from_refill_cpu", s4_req.valid && s4_req.bits.pfSource === PfSource.NoWhere.id.U)
+  XSPerfAccumulate(s"pft_from_refill_cdp", s4_req.valid && s4_req.bits.pfSource === PfSource.CDP.id.U)
+  XSPerfAccumulate(s"pft_from_refill_other_pft", s4_req.valid && s4_req.bits.pfSource =/= PfSource.NoWhere.id.U && s4_req.bits.pfSource =/= PfSource.CDP.id.U)
+  XSPerfAccumulate(s"pft_from_refill_bop", s4_req.valid && (s4_req.bits.pfSource === PfSource.BOP.id.U || s4_req.bits.pfSource === PfSource.PBOP.id.U))
+  XSPerfAccumulate(s"pft_from_refill_sms", s4_req.valid && s4_req.bits.pfSource === PfSource.SMS.id.U)
+  XSPerfAccumulate(s"pft_from_refill_stream", s4_req.valid && s4_req.bits.pfSource === PfSource.Stream.id.U)
+  XSPerfAccumulate(s"pft_from_refill_stride", s4_req.valid && s4_req.bits.pfSource === PfSource.Stride.id.U)
+  XSPerfAccumulate(s"pft_from_refill_berti", s4_req.valid && s4_req.bits.pfSource === PfSource.Berti.id.U)
   for (i <- 0 until 5) {
-    XSPerfAccumulate(s"pft_s4_depth_$i", s4_valid && s4_depth === i.U)
+    XSPerfAccumulate(s"pft_depth_$i", s4_req.valid && s4_depth === i.U)
   }
 }
 
@@ -747,18 +742,36 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
     val detect_trig_queue = detect_trig_queue_seq(i)
 
     val detect_trig = l2_triggers(i)
+
+    /**
+      * Check : Detection Condition
+      * Hit Trigger:
+          a) Hit a CDP prefetched block, pfDepth == 2 or 4
+          b) Hit a SMS/BOP prefetched block (TODO!)
+
+      * Refill Trigger:
+          a) Refill a true demanded block
+          b) Refill a CDP required block
+          c) Refill other prefetcher's block. (TODO: filter)
+    */
+    val detect_trig_fromCDP = detect_trig.bits.pfSource === PfSource.CDP.id.U
+
+    val hit_trigger       = detect_trig.bits.is_hit && detect_trig_fromCDP && detect_trig.bits.pfDepth === 2.U && detect_trig.bits.pfDepth === 4.U
+    val refill_trigger    = !detect_trig.bits.is_hit
     
     detect_trig_queue.io.flush := reset.asBool
 
-    detect_trig_queue.io.enq(0).valid := detect_trig.valid
+    detect_trig_queue.io.enq(0).valid := detect_trig.valid && (hit_trigger || refill_trigger)
     detect_trig_queue.io.enq(0).bits.half_cacheblock  := detect_trig.bits.cacheblock(blockBits / 2 - 1, 0)
     detect_trig_queue.io.enq(0).bits.pfDepth  := detect_trig.bits.pfDepth
-    detect_trig_queue.io.enq(0).bits.isHitCDP := detect_trig.bits.isHitCDP
+    detect_trig_queue.io.enq(0).bits.pfSource := detect_trig.bits.pfSource
+    detect_trig_queue.io.enq(0).bits.is_hit   := detect_trig.bits.is_hit
 
-    detect_trig_queue.io.enq(1).valid := detect_trig.valid
+    detect_trig_queue.io.enq(1).valid := detect_trig.valid && (hit_trigger || refill_trigger)
     detect_trig_queue.io.enq(1).bits.half_cacheblock  := detect_trig.bits.cacheblock(blockBits - 1, blockBits / 2)
     detect_trig_queue.io.enq(1).bits.pfDepth  := detect_trig.bits.pfDepth
-    detect_trig_queue.io.enq(1).bits.isHitCDP := detect_trig.bits.isHitCDP
+    detect_trig_queue.io.enq(1).bits.pfSource := detect_trig.bits.pfSource
+    detect_trig_queue.io.enq(1).bits.is_hit   := detect_trig.bits.is_hit
 
     detect_trig_arb.io.in(i) <> detect_trig_queue_seq(i).io.deq(0)
   }
@@ -769,7 +782,8 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
     detect_pipe.io.detect_req.valid := detect_trig_arb.io.out.valid
     detect_pipe.io.detect_req.bits.vaddr    := detect_trig_arb.io.out.bits.half_cacheblock((i + 1) * 64 - 1, i * 64)   // 8 Byte ==> 64 bit
     detect_pipe.io.detect_req.bits.pfDepth  := detect_trig_arb.io.out.bits.pfDepth
-    detect_pipe.io.detect_req.bits.isHitCDP := detect_trig_arb.io.out.bits.isHitCDP
+    detect_pipe.io.detect_req.bits.pfSource := detect_trig_arb.io.out.bits.pfSource
+    detect_pipe.io.detect_req.bits.is_hit   := detect_trig_arb.io.out.bits.is_hit
   }
   detect_trig_arb.io.out.ready := true.B
 
