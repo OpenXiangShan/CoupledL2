@@ -32,6 +32,7 @@ import chisel3.util._
 import chisel3.util.random.LFSR
 import freechips.rocketchip.util.{Random, UIntToAugmentedUInt}
 import freechips.rocketchip.util.property.cover
+import freechips.rocketchip.util.SeqToAugmentedSeq
 
 abstract class ReplacementPolicy {
   def nBits: Int
@@ -50,6 +51,10 @@ abstract class ReplacementPolicy {
   def get_next_state(state: UInt, touch_way: UInt, hit: Bool, invalid: Bool, chosen_type: Bool, req_type: UInt): UInt = {0.U}
 
   def get_replace_way(state: UInt): UInt
+  def get_replace_way1(state: UInt) = get_replace_way(state)
+  def get_replace_way2(state: UInt) = get_replace_way(state)
+  def get_replace_way3(state: UInt) = get_replace_way(state)
+  def get_replace_way4(state: UInt) = get_replace_way(state)
 }
 
 abstract class SetAssocReplacementPolicy {
@@ -443,7 +448,7 @@ class BRRIP(n_ways: Int) extends ReplacementPolicy {
     }
     PriorityEncoder(lrrWayVec)
   }
-
+  
   def way = get_replace_way(state_reg)
   def miss = access(way)
   def hit = {}
@@ -484,5 +489,52 @@ class DRRIP(n_ways: Int) extends ReplacementPolicy {
     }
     PriorityEncoder(lrrWayVec)
   }
-  
+
+  override def get_replace_way1(state: UInt): UInt = {
+    val RRPVVec  = Wire(Vec(n_ways, UInt(2.W)))
+    RRPVVec.zipWithIndex.map { case (e, i) =>
+        e := state(2*i+1,2*i)
+    }
+    // scan each way's rrpv, find the least re-referenced way
+    val lrrWayVec = Wire(Vec(n_ways,Bool()))
+    val isLarger = Wire(Vec(n_ways, Vec(n_ways, Bool())))
+    for (i <- 0 until n_ways) {
+      for (j <- 0 until n_ways) {
+        if (j < i) {
+          isLarger(i)(j) := RRPVVec(j) > RRPVVec(i)
+        } else if (j == i) {
+          isLarger(i)(j) := false.B
+        }  else {
+          isLarger(i)(j) := ~isLarger(j)(i)
+        }
+      }
+      lrrWayVec(i) := !isLarger(i).reduce(_ || _)
+    }
+    val lrrWayVec1 = Wire(Vec(n_ways,Bool()))
+    lrrWayVec1.zipWithIndex.map { case (e, i) =>
+      val isLarger1 = Wire(Vec(n_ways,Bool()))
+      for (j <- 0 until n_ways) {
+        isLarger1(j) := RRPVVec(j) > RRPVVec(i)
+        when (isLarger1(j) === isLarger(i)(j)) {
+          println(s"$i, $j -> ${isLarger1(j)}, ${isLarger(i)(j)}")
+        }
+        assert(isLarger1(j) === isLarger(i)(j), s"$i-$j")
+      }
+      e := !(isLarger1.contains(true.B))
+    }
+    PriorityEncoder(lrrWayVec)
+  }
+
+  override def get_replace_way2(state: UInt): UInt = {
+    val rrpv = Wire(Vec(n_ways, UInt(2.W)))
+    for (i <- 0 until n_ways) {
+        rrpv(i) := state(2*i+1, 2*i)
+    }
+
+    val rrpv3 = (0 until n_ways).map(i => rrpv(i) === 3.U).asUInt
+    val rrpv2 = (0 until n_ways).map(i => rrpv(i) === 2.U).asUInt
+    val rrpv1 = (0 until n_ways).map(i => rrpv(i) === 1.U).asUInt
+    val allzero = (0 until n_ways).map(i => rrpv(i) === 0.U).asUInt.andR
+    Mux(allzero, 1.U, PriorityEncoder(Mux(rrpv3.orR, rrpv3, Mux(rrpv2.orR, rrpv2, rrpv1))))
+  }
 }
