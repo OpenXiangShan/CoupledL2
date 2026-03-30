@@ -199,7 +199,7 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   /* ====== Generate response signals ====== */
   // hit/way calculation in stage 3, Cuz SRAM latency is high under high frequency
-  /* stage 1: io.read.fire, access Tag/Meta
+  /* stage 1: io.read.fire, access Tag/Meta    
      stage 2: get Tag/Meta, latch
      stage 3: calculate hit/way and chosen meta/tag by way
   */
@@ -344,7 +344,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     repl_state
   }
 
-  replaceWay := repl.get_replace_way(repl_state_s3)
+  replaceWay := repl.get_replace_way1(repl_state_s3)
 
   io.replResp.valid := refillReqValid_s3
   io.replResp.bits.tag := tagAll_s3(finalWay)
