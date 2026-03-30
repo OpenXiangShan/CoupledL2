@@ -142,10 +142,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   /* ======== Stage 2 ======== */
   val task_s2 = io.taskFromArb_s2
 
-  for (i <- 0 until 5) {
-    XSPerfAccumulate(s"req_depth_$i", task_s2.valid && task_s2.bits.pftDepth.get === i.U)
-  }
-
   /* ======== Stage 3 ======== */
   val task_s3 = RegInit(0.U.asTypeOf(Valid(new TaskBundle)))
   task_s3.valid := task_s2.valid
@@ -309,11 +305,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     task.aliasTask.foreach(_ := cache_alias)
     task.wayMask := 0.U(cacheParams.ways.W)
     // TODO
-  }
-
-  for (i <- 0 until 5) {
-    val perf_task = io.toMSHRCtl.mshr_alloc_s3.bits.task
-    XSPerfAccumulate(s"alloc_depth_$i", io.toMSHRCtl.mshr_alloc_s3.valid && perf_task.pftDepth.get === i.U)
   }
 
   /* ======== Resps to SinkA/B/C Reqs ======== */
@@ -887,34 +878,31 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   /* ======== s5 CDP Detect Trigger ======== */
   val dirResult_s5_hit      = RegNext(RegNext(dirResult_s3.hit))
   val dirResult_s5_fromCDP  = RegNext(RegNext(dirResult_s3.meta.prefetchSrc.get === PfSource.CDP.id.U))
+  val dirResult_s5_fromSMS  = RegNext(RegNext(dirResult_s3.meta.prefetchSrc.get === PfSource.SMS.id.U))
+  val dirResult_s5_fromBOP  = RegNext(RegNext(dirResult_s3.meta.prefetchSrc.get === PfSource.BOP.id.U))
+  val dirResult_s5_fromPBOP = RegNext(RegNext(dirResult_s3.meta.prefetchSrc.get === PfSource.PBOP.id.U))
+  
   val req_s5_sinkA = !task_s5.bits.mshrTask && task_s5.bits.fromA
   val req_s5_acquire_block = req_s5_sinkA && task_s5.bits.opcode === GrantData
 
-  // check depth
-  val depth_ok_s3 = dirResult_s3.meta.pfDepth === 2.U || dirResult_s3.meta.pfDepth === 4.U
-  val depth_ok_s5 = RegNext(RegNext(depth_ok_s3))
-
-  val is_hit_trigger_s5     = task_s5.valid && dirResult_s5_hit && dirResult_s5_fromCDP && req_s5_acquire_block && depth_ok_s5
+  val is_hit_trigger_s5     = task_s5.valid && dirResult_s5_hit && req_s5_acquire_block &&
+    (dirResult_s5_fromCDP || dirResult_s5_fromSMS || dirResult_s5_fromBOP || dirResult_s5_fromPBOP)
   val hit_trigger_data_s5   = out_data_s5
   val hit_trigger_depth_s5  = RegNext(RegNext(dirResult_s3.meta.pfDepth))
+  val hit_trigger_pfsrc_s5  = RegNext(RegNext(dirResult_s3.meta.prefetchSrc.get))
 
   val is_refill_trigger_s3 = task_s3.valid && (mshr_grantdata_s3 || mshr_hintack_s3)    // TODO: filter other prefetcher's request
   val is_refill_trigger_s5 = RegNext(RegNext(is_refill_trigger_s3))
   val refill_trigger_data_s3  = Mux(req_s3.useProbeData, io.releaseBufResp_s3.bits.data, io.refillBufResp_s3.bits.data)
   val refill_trigger_data_s5  = RegNext(RegNext(refill_trigger_data_s3))
   val refill_trigger_depth_s5 = RegNext(RegNext(metaW_s3_mshr.pfDepth))
+  val refill_trigger_pfsrc_s5 = RegNext(RegNext(metaW_s3_mshr.prefetchSrc.get))
 
   io.cdp_trigger.valid := is_hit_trigger_s5 || is_refill_trigger_s5
   io.cdp_trigger.bits.cacheblock  := Mux(is_hit_trigger_s5, hit_trigger_data_s5, refill_trigger_data_s5)
   io.cdp_trigger.bits.pfDepth     := Mux(is_hit_trigger_s5, hit_trigger_depth_s5, refill_trigger_depth_s5)
-  io.cdp_trigger.bits.isHitCDP    := is_hit_trigger_s5
-
-  XSPerfAccumulate("cdp_detect_trigger_hit", io.cdp_trigger.valid && is_hit_trigger_s5)
-  XSPerfAccumulate("cdp_detect_trigger_refill", io.cdp_trigger.valid && is_refill_trigger_s5)
-  XSPerfAccumulate("cdp_detect_trigger_refill_grantdata", io.cdp_trigger.valid && is_refill_trigger_s5 && RegNext(RegNext(mshr_grantdata_s3)))
-  XSPerfAccumulate("cdp_detect_trigger_refill_hintack", io.cdp_trigger.valid && is_refill_trigger_s5 && RegNext(RegNext(mshr_hintack_s3)))
-  XSPerfAccumulate("cdp_detect_trigger_refill_hintack_fromCDP", io.cdp_trigger.valid && is_refill_trigger_s5 && RegNext(RegNext(mshr_hintack_s3)) && RegNext(RegNext(req_s3.reqSource === MemReqSource.Prefetch2L2CDP.id.U)))
-  XSPerfAccumulate("cdp_detect_trigger_refill_hintack_notCDP", io.cdp_trigger.valid && is_refill_trigger_s5 && RegNext(RegNext(mshr_hintack_s3)) && RegNext(RegNext(req_s3.reqSource =/= MemReqSource.Prefetch2L2CDP.id.U)))
+  io.cdp_trigger.bits.pfSource    := Mux(is_hit_trigger_s5, hit_trigger_pfsrc_s5, refill_trigger_pfsrc_s5)
+  io.cdp_trigger.bits.is_hit      := is_hit_trigger_s5
 
   /* ======== BlockInfo ======== */
   // if s2/s3 might write Dir, we must block s1 sink entrance
