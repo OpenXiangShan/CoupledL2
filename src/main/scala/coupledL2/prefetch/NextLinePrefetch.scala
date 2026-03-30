@@ -36,7 +36,7 @@ import utility.{ChiselDB, MemReqSource, XSPerfAccumulate, XSPerfHistogram}
 // Next-Line Prefetcher base parameters
 case class NLParameters(
     L2SliceNum: Int = 4, //L2 cache slice number
-    nlPrefetchQueueEntries: Int = 4,
+    nlPrefetchQueueEntries: Int = 8,
 
     // timeSample
     timeSampleCounterBits: Int = 64, //Sampling counter bit width
