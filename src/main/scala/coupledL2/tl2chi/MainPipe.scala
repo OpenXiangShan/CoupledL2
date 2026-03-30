@@ -214,9 +214,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     nestable_dirResult_s3.tag   := req_s3.tag
   }
 
-  val tagError_s3               = io.dirResp_s3.error || meta_s3.tagErr
-  val dataError_s3              = meta_s3.dataErr
-  val l2Error_s3                = io.dirResp_s3.error
+  val tagError_s3               = (io.dirResp_s3.error || meta_s3.tagErr) && dirResult_s3.hit
+  val dataError_s3              = meta_s3.dataErr && dirResult_s3.hit
+  val l2Error_s3                = io.dirResp_s3.error && dirResult_s3.hit
 
   val mshr_refill_s3 = mshr_accessackdata_s3 || mshr_hintack_s3 || mshr_grant_s3 // needs refill to L2 DS
   val replResp_valid_s3 = io.replResp.valid
@@ -608,6 +608,10 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   /* ======== Interact with Channels (SourceD/TXREQ/TXRSP/TXDAT) ======== */
   val chnl_fire_s3 = d_s3.fire || txreq_s3.fire || txrsp_s3.fire || txdat_s3.fire
+  val chnl_denied_s3 = Mux(task_s3.bits.mshrTask || task_s3.bits.snpHitReleaseWithData, task_s3.bits.denied,
+    task_s3.bits.denied || tagError_s3)
+  val chnl_corrupt_s3 = Mux(task_s3.bits.mshrTask || task_s3.bits.snpHitReleaseWithData, task_s3.bits.corrupt,
+    task_s3.bits.corrupt || dataError_s3)
   val req_drop_s3 = !need_write_releaseBuf && (
     !mshr_req_s3 && need_mshr_s3 || chnl_fire_s3
   ) || mshr_refill_s3 && retry
@@ -659,11 +663,15 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   d_s3.valid := task_s3.valid && isD_s3_ready
   txreq_s3.bits := source_req_s3.toCHIREQBundle()
   txrsp_s3.bits := source_req_s3
+  txrsp_s3.bits.denied := chnl_denied_s3
   txdat_s3.bits.task := source_req_s3
   txdat_s3.bits.data.data := data_s3
+  txdat_s3.bits.task.corrupt := chnl_corrupt_s3
   d_s3.bits.task := source_req_s3
   d_s3.bits.task.opcode := Mux(mshr_req_s3, req_s3.opcode, sink_resp_s3.bits.opcode)
   d_s3.bits.data.data := data_s3
+  d_s3.bits.task.denied := chnl_denied_s3
+  d_s3.bits.task.corrupt := chnl_corrupt_s3
 
   when (task_s3.valid) {
     OneHot.checkOneHot(Seq(isTXREQ_s3, isTXRSP_s3, isTXDAT_s3, isD_s3))
@@ -766,16 +774,24 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val req_drop_s4 = !need_write_releaseBuf_s4 && chnl_fire_s4
 
   val chnl_valid_s4 = task_s4.valid && !RegNext(chnl_fire_s3, false.B)
+  val chnl_denied_s4 = Mux(task_s4.bits.mshrTask || task_s4.bits.snpHitReleaseWithData, task_s4.bits.denied,
+    task_s4.bits.denied || tagError_s4)
+  val chnl_corrupt_s4 = Mux(task_s4.bits.mshrTask || task_s4.bits.snpHitReleaseWithData, task_s4.bits.corrupt,
+    task_s4.bits.corrupt || dataError_s4)
   d_s4.valid := chnl_valid_s4 && isD_s4
   txreq_s4.valid := chnl_valid_s4 && isTXREQ_s4
   txrsp_s4.valid := chnl_valid_s4 && isTXRSP_s4
   txdat_s4.valid := chnl_valid_s4 && isTXDAT_s4
   d_s4.bits.task := task_s4.bits
   d_s4.bits.data.data := data_s4
+  d_s4.bits.task.denied := chnl_denied_s4
+  d_s4.bits.task.corrupt := chnl_corrupt_s4
   txreq_s4.bits := task_s4.bits.toCHIREQBundle()
   txrsp_s4.bits := task_s4.bits
+  txrsp_s4.bits.denied := chnl_denied_s4
   txdat_s4.bits.task := task_s4.bits
   txdat_s4.bits.data.data := data_s4
+  txdat_s4.bits.task.corrupt := chnl_corrupt_s4
 
   /* ======== Stage 5 ======== */
   val task_s5 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
@@ -838,20 +854,23 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   io.releaseBufWrite.bits.beatMask := Fill(beatSize, true.B)
 
   val chnl_valid_s5 = task_s5.valid && !RegNext(chnl_fire_s4, false.B) && !RegNextN(chnl_fire_s3, 2, Some(false.B))
+  val chnl_denied_s5 = Mux(task_s5.bits.mshrTask || task_s5.bits.snpHitReleaseWithData, task_s5.bits.denied,
+    task_s5.bits.denied || tagError_s5)
+  val chnl_corrupt_s5 = Mux(task_s5.bits.mshrTask || task_s5.bits.snpHitReleaseWithData, task_s5.bits.corrupt,
+    task_s5.bits.corrupt || dataError_s5)
   d_s5.valid := chnl_valid_s5 && isD_s5
   txreq_s5.valid := chnl_valid_s5 && isTXREQ_s5
   txrsp_s5.valid := chnl_valid_s5 && isTXRSP_s5
   txdat_s5.valid := chnl_valid_s5 && isTXDAT_s5
   d_s5.bits.task := task_s5.bits
-  d_s5.bits.task.denied := Mux(task_s5.bits.mshrTask || task_s5.bits.snpHitReleaseWithData, task_s5.bits.denied, tagError_s5)
-  d_s5.bits.task.corrupt := Mux(task_s5.bits.mshrTask || task_s5.bits.snpHitReleaseWithData, task_s5.bits.corrupt, dataError_s5)
+  d_s5.bits.task.denied := chnl_denied_s5
+  d_s5.bits.task.corrupt := chnl_corrupt_s5
   d_s5.bits.data.data := out_data_s5
   txreq_s5.bits := task_s5.bits.toCHIREQBundle()
   txrsp_s5.bits := task_s5.bits
-  txrsp_s5.bits.denied := tagError_s5
+  txrsp_s5.bits.denied := chnl_denied_s5
   txdat_s5.bits.task := task_s5.bits
-  txdat_s5.bits.task.denied := tagError_s5
-  txdat_s5.bits.task.corrupt := task_s5.bits.corrupt || dataError_s5
+  txdat_s5.bits.task.corrupt := chnl_corrupt_s5
   txdat_s5.bits.data.data := out_data_s5
 
   /* ======== BlockInfo ======== */
