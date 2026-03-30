@@ -139,58 +139,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   /* ======== Stage 2 ======== */
   val task_s2 = io.taskFromArb_s2
-  val req_s2  = task_s2.bits
-  class SigBundle extends Bundle {
-    val sink_req = Bool()
-    val sinkA_req, sinkB_req, sinkC_req = Bool()
-    val req_acquire, req_acquireBlock, req_prefetch, req_get, req_cbo_clean, req_cbo_inval, req_cbo_flush = Bool()
-    val mshr_grant, mshr_grantdata, mshr_accessackdata, mshr_hintack, mshr_cmoresp = Bool()
-    val mshr_snpResp, mshr_snpRespFwded, mshr_snpRespData, mshr_snpRespDataPtl, mshr_snpRespDataFwded = Bool()
-    val mshr_dct = Bool()
-    val mshr_writeCleanFull, mshr_writeBackFull, mshr_writeEvictFull, mshr_writeEvictOrEvict, mshr_evict = Bool()
-    val mshr_cbWrData = Bool()
-    val req_needT = Bool()
-  }
-  val sig_s2 = WireInit(0.U.asTypeOf(new SigBundle))
-
-  sig_s2.sink_req := !req_s2.mshrTask
-  sig_s2.sinkA_req := sig_s2.sink_req && req_s2.fromA
-  sig_s2.sinkB_req := sig_s2.sink_req && req_s2.fromB
-  sig_s2.sinkC_req := sig_s2.sink_req && req_s2.fromC
-
-  // Decode in s2 and register into s3.
-  sig_s2.req_acquire := sig_s2.sinkA_req && (req_s2.opcode === AcquireBlock || req_s2.opcode === AcquirePerm)
-  sig_s2.req_acquireBlock := sig_s2.sinkA_req && req_s2.opcode === AcquireBlock
-  sig_s2.req_prefetch := sig_s2.sinkA_req && req_s2.opcode === Hint
-  sig_s2.req_get := sig_s2.sinkA_req && req_s2.opcode === Get
-  sig_s2.req_cbo_clean := sig_s2.sinkA_req && req_s2.opcode === CBOClean
-  sig_s2.req_cbo_inval := sig_s2.sinkA_req && req_s2.opcode === CBOInval
-  sig_s2.req_cbo_flush := sig_s2.sinkA_req && req_s2.opcode === CBOFlush
-
-  sig_s2.mshr_grant := req_s2.mshrTask && req_s2.fromA && (req_s2.opcode === Grant || req_s2.opcode === GrantData)
-  sig_s2.mshr_grantdata := req_s2.mshrTask && req_s2.fromA && req_s2.opcode === GrantData
-  sig_s2.mshr_accessackdata := req_s2.mshrTask && req_s2.fromA && req_s2.opcode === AccessAckData
-  sig_s2.mshr_hintack := req_s2.mshrTask && req_s2.fromA && req_s2.opcode === HintAck
-  sig_s2.mshr_cmoresp := req_s2.mshrTask && req_s2.fromA && req_s2.opcode === CBOAck
-
-  sig_s2.mshr_snpResp := req_s2.mshrTask && req_s2.toTXRSP && req_s2.chiOpcode.get === SnpResp
-  sig_s2.mshr_snpRespFwded := req_s2.mshrTask && req_s2.toTXRSP && req_s2.chiOpcode.get === SnpRespFwded
-  sig_s2.mshr_snpRespData := req_s2.mshrTask && req_s2.toTXDAT && req_s2.chiOpcode.get === SnpRespData
-  sig_s2.mshr_snpRespDataPtl := req_s2.mshrTask && req_s2.toTXDAT && req_s2.chiOpcode.get === SnpRespDataPtl
-  sig_s2.mshr_snpRespDataFwded := req_s2.mshrTask && req_s2.toTXDAT && req_s2.chiOpcode.get === SnpRespDataFwded
-
-  sig_s2.mshr_dct := req_s2.mshrTask && req_s2.toTXDAT && req_s2.chiOpcode.get === CompData
-
-  sig_s2.mshr_writeCleanFull := req_s2.mshrTask && req_s2.toTXREQ && req_s2.chiOpcode.get === WriteCleanFull
-  sig_s2.mshr_writeBackFull := req_s2.mshrTask && req_s2.toTXREQ && req_s2.chiOpcode.get === WriteBackFull
-  sig_s2.mshr_writeEvictFull := req_s2.mshrTask && req_s2.toTXREQ && req_s2.chiOpcode.get === WriteEvictFull
-  sig_s2.mshr_writeEvictOrEvict := req_s2.mshrTask && req_s2.toTXREQ &&
-    afterIssueEbOrElse(req_s2.chiOpcode.get === WriteEvictOrEvict, false.B)
-  sig_s2.mshr_evict := req_s2.mshrTask && req_s2.toTXREQ && req_s2.chiOpcode.get === Evict
-
-  sig_s2.mshr_cbWrData := req_s2.mshrTask && req_s2.toTXDAT && req_s2.chiOpcode.get === CopyBackWrData
-
-  sig_s2.req_needT := needT(req_s2.opcode, req_s2.param)
 
   /* ======== Stage 3 ======== */
   val task_s3 = RegInit(0.U.asTypeOf(Valid(new TaskBundle)))
@@ -205,49 +153,49 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val metaOnHit_s3    = dirResult_s3.metaOnHit
   val req_s3          = task_s3.bits
   val cmoHitInvalid   = io.cmoAllBlock.getOrElse(false.B) && (meta_s3.state === INVALID)
-  val sig_s3          = RegEnable(sig_s2, task_s2.valid)
 
   val mshr_req_s3     = req_s3.mshrTask
-  val sink_req_s3     = sig_s3.sink_req
-  val sinkA_req_s3    = sig_s3.sinkA_req
-  val sinkB_req_s3    = sig_s3.sinkB_req
-  val sinkC_req_s3    = sig_s3.sinkC_req
+  val sink_req_s3     = !mshr_req_s3
+  val sinkA_req_s3    = !mshr_req_s3 && req_s3.fromA
+  val sinkB_req_s3    = !mshr_req_s3 && req_s3.fromB
+  val sinkC_req_s3    = !mshr_req_s3 && req_s3.fromC
 
-  val req_acquire_s3  = sig_s3.req_acquire
-  val req_acquireBlock_s3 = sig_s3.req_acquireBlock
-  val req_prefetch_s3 = sig_s3.req_prefetch
-  val req_get_s3 = sig_s3.req_get
-  val req_cbo_clean_s3 = sig_s3.req_cbo_clean
-  val req_cbo_inval_s3 = sig_s3.req_cbo_inval
-  val req_cbo_flush_s3 = sig_s3.req_cbo_flush && !cmoHitInvalid
+  val req_acquire_s3            = sinkA_req_s3 && (req_s3.opcode === AcquireBlock || req_s3.opcode === AcquirePerm)
+  val req_acquireBlock_s3       = sinkA_req_s3 && req_s3.opcode === AcquireBlock
+  val req_prefetch_s3           = sinkA_req_s3 && req_s3.opcode === Hint
+  val req_get_s3                = sinkA_req_s3 && req_s3.opcode === Get
+  val req_cbo_clean_s3          = sinkA_req_s3 && req_s3.opcode === CBOClean
+  val req_cbo_flush_s3          = sinkA_req_s3 && req_s3.opcode === CBOFlush && !cmoHitInvalid
+  val req_cbo_inval_s3          = sinkA_req_s3 && req_s3.opcode === CBOInval
 
-  val mshr_grant_s3 = sig_s3.mshr_grant
-  val mshr_grantdata_s3 = sig_s3.mshr_grantdata
-  val mshr_accessackdata_s3 = sig_s3.mshr_accessackdata
-  val mshr_hintack_s3 = sig_s3.mshr_hintack
-  val mshr_cmoresp_s3 = sig_s3.mshr_cmoresp
+  val mshr_grant_s3             = mshr_req_s3 && req_s3.fromA && (req_s3.opcode === Grant || req_s3.opcode === GrantData)
+  val mshr_grantdata_s3         = mshr_req_s3 && req_s3.fromA && req_s3.opcode === GrantData
+  val mshr_accessackdata_s3     = mshr_req_s3 && req_s3.fromA && req_s3.opcode === AccessAckData
+  val mshr_hintack_s3           = mshr_req_s3 && req_s3.fromA && req_s3.opcode === HintAck
+  val mshr_cmoresp_s3           = mshr_req_s3 && req_s3.fromA && req_s3.opcode === CBOAck
 
-  val mshr_snpResp_s3 = sig_s3.mshr_snpResp
-  val mshr_snpRespFwded_s3 = sig_s3.mshr_snpRespFwded
-  val mshr_snpRespData_s3 = sig_s3.mshr_snpRespData
-  val mshr_snpRespDataPtl_s3 = sig_s3.mshr_snpRespDataPtl
-  val mshr_snpRespDataFwded_s3 = sig_s3.mshr_snpRespDataFwded
+  val mshr_snpResp_s3           = mshr_req_s3 && req_s3.toTXRSP && req_s3.chiOpcode.get === SnpResp
+  val mshr_snpRespFwded_s3      = mshr_req_s3 && req_s3.toTXRSP && req_s3.chiOpcode.get === SnpRespFwded
+  val mshr_snpRespData_s3       = mshr_req_s3 && req_s3.toTXDAT && req_s3.chiOpcode.get === SnpRespData
+  val mshr_snpRespDataPtl_s3    = mshr_req_s3 && req_s3.toTXDAT && req_s3.chiOpcode.get === SnpRespDataPtl
+  val mshr_snpRespDataFwded_s3  = mshr_req_s3 && req_s3.toTXDAT && req_s3.chiOpcode.get === SnpRespDataFwded
   val mshr_snpRespX_s3 = mshr_snpResp_s3 || mshr_snpRespFwded_s3
   val mshr_snpRespDataX_s3 = mshr_snpRespData_s3 || mshr_snpRespDataPtl_s3 || mshr_snpRespDataFwded_s3
 
-  val mshr_dct_s3 = sig_s3.mshr_dct
+  val mshr_dct_s3               = mshr_req_s3 && req_s3.toTXDAT && req_s3.chiOpcode.get === CompData
 
-  val mshr_writeCleanFull_s3 = sig_s3.mshr_writeCleanFull
-  val mshr_writeBackFull_s3 = sig_s3.mshr_writeBackFull
-  val mshr_writeEvictFull_s3 = sig_s3.mshr_writeEvictFull
-  val mshr_writeEvictOrEvict_s3 = sig_s3.mshr_writeEvictOrEvict
-  val mshr_evict_s3 = sig_s3.mshr_evict
-
-  val mshr_cbWrData_s3 = sig_s3.mshr_cbWrData
+  val mshr_writeCleanFull_s3    = mshr_req_s3 && req_s3.toTXREQ && req_s3.chiOpcode.get === WriteCleanFull
+  val mshr_writeBackFull_s3     = mshr_req_s3 && req_s3.toTXREQ && req_s3.chiOpcode.get === WriteBackFull
+  val mshr_writeEvictFull_s3    = mshr_req_s3 && req_s3.toTXREQ && req_s3.chiOpcode.get === WriteEvictFull
+  val mshr_writeEvictOrEvict_s3 = mshr_req_s3 && req_s3.toTXREQ &&
+    afterIssueEbOrElse(req_s3.chiOpcode.get === WriteEvictOrEvict, false.B)
+  val mshr_evict_s3             = mshr_req_s3 && req_s3.toTXREQ && req_s3.chiOpcode.get === Evict
+  
+  val mshr_cbWrData_s3          = mshr_req_s3 && req_s3.toTXDAT && req_s3.chiOpcode.get === CopyBackWrData
 
   val meta_has_clients_s3       = meta_s3.clients.orR
   val metaOnHit_has_clients_s3    = metaOnHit_s3.clients.orR
-  val req_needT_s3              = sig_s3.req_needT
+  val req_needT_s3              = needT(req_s3.opcode, req_s3.param)
 
   val cmo_cbo_retention_s3      = req_cbo_clean_s3 || req_cbo_flush_s3
   val cmo_cbo_s3                = req_cbo_clean_s3 || req_cbo_flush_s3 || req_cbo_inval_s3
