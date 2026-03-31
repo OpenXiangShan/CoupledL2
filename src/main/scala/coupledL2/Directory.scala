@@ -290,24 +290,24 @@ class Directory(implicit p: Parameters) extends L2Module {
   // TODO: req_s3.wayMask not take into consideration
   val finalReplOH = MuxCase(MaskToOH(freeWayMask_s3), Seq (
     inv -> invOH,
-    Mux1H(replaceOH, freeWayMask_s3) -> replaceOH
+    OHMux(replaceOH, freeWayMask_s3) -> replaceOH
   ))
   val hit_s3 = Cat(hitVec).orR || req_s3.cmoAll
   val wayOH_s3 = Mux(req_s3.cmoAll, UIntToOH(req_s3.cmoWay), Mux(hit_s3, hitOH, finalReplOH))
   val way_s3 = OHToUInt(wayOH_s3)
-  val meta_s3 = Mux1H(wayOH_s3, metaAll_s3)
-  val metaOnHit_s3 = Mux1H(hitOH, metaAll_s3) // only valid when hit
-  val tag_s3 = Mux1H(wayOH_s3, tagAll_s3)
+  val meta_s3 = OHMux(wayOH_s3, metaAll_s3)
+  val metaOnHit_s3 = OHMux(hitOH, metaAll_s3) // only valid when hit
+  val tag_s3 = OHMux(wayOH_s3, tagAll_s3)
   val set_s3 = req_s3.set
   val replacerInfo_s3 = req_s3.replacerInfo
   val errorOnSNP_s3 = if (enableTagECC) {
-    Mux1H(hitOH, errorAll_s3)
+    OHMux(hitOH, errorAll_s3)
   } else {
     false.B
   }
 
   val error_s3 = if (enableTagECC) {
-    Mux1H(wayOH_s3, errorAll_s3) && reqValid_s3 && !req_s3.cmoAll && meta_s3.state =/= MetaData.INVALID
+    OHMux(wayOH_s3, errorAll_s3) && reqValid_s3 && !req_s3.cmoAll && meta_s3.state =/= MetaData.INVALID
   } else {
     false.B
   }
@@ -348,10 +348,10 @@ class Directory(implicit p: Parameters) extends L2Module {
   replaceWay := OHToUInt(replaceOH)
 
   io.replResp.valid := refillReqValid_s3
-  io.replResp.bits.tag := Mux1H(finalReplOH, tagAll_s3)
+  io.replResp.bits.tag := OHMux(finalReplOH, tagAll_s3)
   io.replResp.bits.set := req_s3.set
   io.replResp.bits.way := OHToUInt(finalReplOH)
-  io.replResp.bits.meta := Mux1H(finalReplOH, metaAll_s3)
+  io.replResp.bits.meta := OHMux(finalReplOH, metaAll_s3)
   io.replResp.bits.mshrId := req_s3.mshrId
   io.replResp.bits.retry := refillRetry
   io.replResp.bits.validHold := refillReqValid_hold_s3
@@ -385,9 +385,9 @@ class Directory(implicit p: Parameters) extends L2Module {
   // [2]: 0-acquire, 1-release;
   // [1]: 0-non-prefetch, 1-prefetch;
   // [0]: 0-not-refill, 1-refill
-  rrip_req_type := Cat(Mux1H(hitOH, origin_bits_hold),
+  rrip_req_type := Cat(OHMux(hitOH, origin_bits_hold),
     req_s3.replacerInfo.channel(2),
-    (!refillReqValid_s3 && req_s3.replacerInfo.channel(0) && req_s3.replacerInfo.opcode === Hint) || (req_s3.replacerInfo.channel(2) && Mux1H(wayOH_s3, metaAll_s3).prefetch.getOrElse(false.B)) || (refillReqValid_s3 && req_s3.replacerInfo.refill_prefetch),
+    (!refillReqValid_s3 && req_s3.replacerInfo.channel(0) && req_s3.replacerInfo.opcode === Hint) || (req_s3.replacerInfo.channel(2) && OHMux(wayOH_s3, metaAll_s3).prefetch.getOrElse(false.B)) || (refillReqValid_s3 && req_s3.replacerInfo.refill_prefetch),
     req_s3.refill
   )
   private val mbistPl = MbistPipeline.PlaceMbistPipeline(1, "L2Directory", mbist)

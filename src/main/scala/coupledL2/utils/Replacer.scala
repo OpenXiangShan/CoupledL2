@@ -338,7 +338,7 @@ class StaticRRIP(n_ways: Int) extends ReplacementPolicy {
       e := state(2*i+1,2*i)
     }
     // hit-Promotion, miss-Insertion & Aging
-    val increcement = 3.U(2.W) - Mux1H(touch_wayOH, State)
+    val increcement = 3.U(2.W) - OHMux(touch_wayOH, State)
     // req_type[3]: 0-firstuse, 1-reuse; req_type[2]: 0-acquire, 1-release;
     // req_type[1]: 0-non-prefetch, 1-prefetch; req_type[0]: 0-not-refill, 1-refill
     // rrpv: non-pref_hit/non-pref_refill(miss)/non-pref_release_reuse = 0;
@@ -401,7 +401,7 @@ class BRRIP(n_ways: Int) extends ReplacementPolicy {
     }
     
     // hit-Promotion, miss-Insertion & Aging
-    val increcement = 3.U(2.W) - Mux1H(touch_wayOH, State)
+    val increcement = 3.U(2.W) - OHMux(touch_wayOH, State)
     // req_type[3]: 0-firstuse, 1-reuse; req_type[2]: 0-acquire, 1-release;
     // req_type[1]: 0-non-prefetch, 1-prefetch; req_type[0]: 0-not-refill, 1-refill
     // rrpv: non-pref_hit/non-pref_refill(miss)/non-pref_release_reuse = 0;
