@@ -46,23 +46,29 @@ trait HasCDPParams extends HasPrefetcherHelper with HasCoupledL2Parameters {
   val UseFilteredDetect = cdpParams.UseFilteredDetect
 
   // helper function
-  def get_folded_hash(origin_val: UInt, res_len: Int) = {    // fold $origin_val length value into $res_len
+  def get_folded_hash(origin_val: UInt, resultBitWidth: Int): UInt = {    // fold $origin_val length value into $resultBitWidth
     val totalBits = origin_val.getWidth
 
-    val groupSize = totalBits / res_len
-    val remainder = totalBits % res_len
+    // Handle zero-width origin_val to avoid reduce on an empty sequence
+    if (totalBits == 0) {
+      0.U(resultBitWidth.W)
+    } else {
+      val groupNum  = if (totalBits % resultBitWidth == 0) totalBits / resultBitWidth else totalBits / resultBitWidth + 1
 
-    val paddedBits = if (remainder == 0) totalBits else (groupSize + 1) * res_len
-    val padded_val = Cat(0.U((paddedBits - totalBits).W), origin_val)
+      val paddedBits = groupNum * resultBitWidth
+      val padWidth = paddedBits - totalBits
+      val padded_val =
+        if (padWidth == 0) origin_val
+        else Cat(0.U(padWidth.W), origin_val)
 
-    val actualGroupSize = paddedBits / res_len
-    val groups = Seq.tabulate(res_len) { i =>
-      val startBit = i * actualGroupSize
-      val endBit = (i + 1) * actualGroupSize - 1
-      padded_val(endBit, startBit)
+      val groups = Seq.tabulate(groupNum) { i =>
+        val startBit = i * resultBitWidth
+        val endBit = (i + 1) * resultBitWidth - 1
+        padded_val(endBit, startBit)
+      }
+
+      groups.reduce(_ ^ _)
     }
-
-    groups.reduce(_ ^ _)
   }
 
   val DetectPipeNum = cdpParams.DetectPipeNum
