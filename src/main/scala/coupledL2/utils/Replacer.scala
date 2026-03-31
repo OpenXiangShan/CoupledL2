@@ -51,10 +51,6 @@ abstract class ReplacementPolicy {
   def get_next_state(state: UInt, touch_way: UInt, hit: Bool, invalid: Bool, chosen_type: Bool, req_type: UInt): UInt = {0.U}
 
   def get_replace_way(state: UInt): UInt
-  def get_replace_way1(state: UInt) = get_replace_way(state)
-  def get_replace_way2(state: UInt) = get_replace_way(state)
-  def get_replace_way3(state: UInt) = get_replace_way(state)
-  def get_replace_way4(state: UInt) = get_replace_way(state)
 }
 
 abstract class SetAssocReplacementPolicy {
@@ -335,28 +331,28 @@ class StaticRRIP(n_ways: Int) extends ReplacementPolicy {
   def access(touch_ways: Seq[Valid[UInt]]) = {}
   def get_next_state(state: UInt, touch_way: UInt) = 0.U //DontCare
 
-  override def get_next_state(state: UInt, touch_way: UInt, hit: Bool, invalid: Bool, req_type: UInt): UInt = {
+  override def get_next_state(state: UInt, touch_wayOH: UInt, hit: Bool, invalid: Bool, req_type: UInt): UInt = {
     val State  = Wire(Vec(n_ways, UInt(2.W)))
     val nextState  = Wire(Vec(n_ways, UInt(2.W)))
     State.zipWithIndex.map { case (e, i) =>
       e := state(2*i+1,2*i)
     }
     // hit-Promotion, miss-Insertion & Aging
-    val increcement = 3.U(2.W) - State(touch_way)
+    val increcement = 3.U(2.W) - Mux1H(touch_wayOH, State)
     // req_type[3]: 0-firstuse, 1-reuse; req_type[2]: 0-acquire, 1-release;
     // req_type[1]: 0-non-prefetch, 1-prefetch; req_type[0]: 0-not-refill, 1-refill
     // rrpv: non-pref_hit/non-pref_refill(miss)/non-pref_release_reuse = 0;
     // pref_hit do nothing; pref_refill = 1; non-pref_release_firstuse/pref_release = 2;
-    nextState.zipWithIndex.map { case (e, i) =>
-      e := Mux(i.U === touch_way,
+    nextState.zip(State).zip(touch_wayOH.asBools).map { case ((e, s), w) =>
+      e := Mux(w,
         // for touch_way
-        MuxCase(State(i), Seq(
+        MuxCase(s, Seq(
           ((req_type(2,0) === 0.U && hit) || req_type(2,0) === 1.U || req_type === 12.U) -> 0.U,
           (req_type(2,0) === 3.U) -> 1.U,
           (req_type === 4.U || req_type(2,0) === 6.U) -> 2.U
         )),
         // for other ways
-        Mux(hit || invalid, State(i), State(i)+increcement)
+        Mux(hit || invalid, s, s+increcement)
       )
     }
     Cat(nextState.map(x=>x).reverse)
@@ -397,7 +393,7 @@ class BRRIP(n_ways: Int) extends ReplacementPolicy {
   def access(touch_ways: Seq[Valid[UInt]]) = {}
   def get_next_state(state: UInt, touch_way: UInt) = 0.U //DontCare
 
-  override def get_next_state(state: UInt, touch_way: UInt, hit: Bool, invalid: Bool, req_type: UInt): UInt = {
+  override def get_next_state(state: UInt, touch_wayOH: UInt, hit: Bool, invalid: Bool, req_type: UInt): UInt = {
     val State  = Wire(Vec(n_ways, UInt(2.W)))
     val nextState  = Wire(Vec(n_ways, UInt(2.W)))
     State.zipWithIndex.map { case (e, i) =>
@@ -405,21 +401,21 @@ class BRRIP(n_ways: Int) extends ReplacementPolicy {
     }
     
     // hit-Promotion, miss-Insertion & Aging
-    val increcement = 3.U(2.W) - State(touch_way)
+    val increcement = 3.U(2.W) - Mux1H(touch_wayOH, State)
     // req_type[3]: 0-firstuse, 1-reuse; req_type[2]: 0-acquire, 1-release;
     // req_type[1]: 0-non-prefetch, 1-prefetch; req_type[0]: 0-not-refill, 1-refill
     // rrpv: non-pref_hit/non-pref_refill(miss)/non-pref_release_reuse = 0;
     // pref_hit do nothing; pref_refill = 1; non-pref_release_firstuse/pref_release = 3;
-    nextState.zipWithIndex.map { case (e, i) =>
-      e := Mux(i.U === touch_way,
+    nextState.zip(State).zip(touch_wayOH.asBools).map { case ((e, s), w) =>
+      e := Mux(w,
         // for touch_way
-        MuxCase(State(i), Seq(
+        MuxCase(s, Seq(
           ((req_type(2,0) === 0.U && hit) || req_type(2,0) === 1.U || req_type === 12.U) -> 0.U,
           (req_type(2,0) === 3.U) -> 1.U,
           (req_type === 4.U || req_type(2,0) === 6.U) -> 3.U
         )),
         // for other ways
-        Mux(hit || invalid, State(i), State(i)+increcement)
+        Mux(hit || invalid, s, s+increcement)
       )
     }
     /* val random = (rand.nextInt(32)).U 
@@ -448,7 +444,7 @@ class BRRIP(n_ways: Int) extends ReplacementPolicy {
     }
     PriorityEncoder(lrrWayVec)
   }
-  
+
   def way = get_replace_way(state_reg)
   def miss = access(way)
   def hit = {}
@@ -470,8 +466,8 @@ class DRRIP(n_ways: Int) extends ReplacementPolicy {
   def hit = {}
 
   def get_next_state(state: UInt, touch_way: UInt) = 0.U //DontCare
-  override def get_next_state(state: UInt, touch_way: UInt, hit: Bool, invalid: Bool, chosen_type: Bool, req_type: UInt): UInt = {
-    Mux(chosen_type, repl_BRRIP.get_next_state(state, touch_way, hit, invalid, req_type), repl_SRRIP.get_next_state(state, touch_way, hit, invalid, req_type))
+  override def get_next_state(state: UInt, touch_wayOH: UInt, hit: Bool, invalid: Bool, chosen_type: Bool, req_type: UInt): UInt = {
+    Mux(chosen_type, repl_BRRIP.get_next_state(state, touch_wayOH, hit, invalid, req_type), repl_SRRIP.get_next_state(state, touch_wayOH, hit, invalid, req_type))
   }
   def get_replace_way(state: UInt): UInt = {
     val RRPVVec  = Wire(Vec(n_ways, UInt(2.W)))
@@ -487,10 +483,11 @@ class DRRIP(n_ways: Int) extends ReplacementPolicy {
       }
       e := !(isLarger.contains(true.B))
     }
-    PriorityEncoder(lrrWayVec)
+    // PriorityEncoder(lrrWayVec)
+    MaskToOH(lrrWayVec.asUInt)
   }
 
-  override def get_replace_way1(state: UInt): UInt = {
+  def get_replace_way1(state: UInt) = {
     val RRPVVec  = Wire(Vec(n_ways, UInt(2.W)))
     RRPVVec.zipWithIndex.map { case (e, i) =>
         e := state(2*i+1,2*i)
@@ -510,22 +507,12 @@ class DRRIP(n_ways: Int) extends ReplacementPolicy {
       }
       lrrWayVec(i) := !isLarger(i).reduce(_ || _)
     }
-    val lrrWayVec1 = Wire(Vec(n_ways,Bool()))
-    lrrWayVec1.zipWithIndex.map { case (e, i) =>
-      val isLarger1 = Wire(Vec(n_ways,Bool()))
-      for (j <- 0 until n_ways) {
-        isLarger1(j) := RRPVVec(j) > RRPVVec(i)
-        when (isLarger1(j) === isLarger(i)(j)) {
-          println(s"$i, $j -> ${isLarger1(j)}, ${isLarger(i)(j)}")
-        }
-        assert(isLarger1(j) === isLarger(i)(j), s"$i-$j")
-      }
-      e := !(isLarger1.contains(true.B))
-    }
-    PriorityEncoder(lrrWayVec)
+    assert(lrrWayVec.asUInt =/= 0.U, "There should be at least one way with the least RRPV")
+    val oh = MaskToOH(lrrWayVec.asUInt)
+    (OHToUInt(oh), oh)
   }
 
-  override def get_replace_way2(state: UInt): UInt = {
+  def get_replace_way2(state: UInt) = {
     val rrpv = Wire(Vec(n_ways, UInt(2.W)))
     for (i <- 0 until n_ways) {
         rrpv(i) := state(2*i+1, 2*i)
@@ -535,6 +522,9 @@ class DRRIP(n_ways: Int) extends ReplacementPolicy {
     val rrpv2 = (0 until n_ways).map(i => rrpv(i) === 2.U).asUInt
     val rrpv1 = (0 until n_ways).map(i => rrpv(i) === 1.U).asUInt
     val allzero = (0 until n_ways).map(i => rrpv(i) === 0.U).asUInt.andR
-    Mux(allzero, 1.U, PriorityEncoder(Mux(rrpv3.orR, rrpv3, Mux(rrpv2.orR, rrpv2, rrpv1))))
+    val mask = Mux(rrpv3.orR, rrpv3, Mux(rrpv2.orR, rrpv2, rrpv1))
+    val oh = Mux(allzero, 1.U, MaskToOH(mask))
+    assert(oh =/= 0.U, "There should be at least one way with the least RRPV")
+    oh
   }
 }
