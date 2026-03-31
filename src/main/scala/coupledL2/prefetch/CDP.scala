@@ -90,7 +90,7 @@ trait HasCDPParams extends HasPrefetcherHelper with HasCoupledL2Parameters {
   // vaddr => [ Tag | MainEntryIdx | SubEntryIdx | EntryBits(1M Space) ]
   // vpn_addr => [ Tag | MainEntryIdx | SubEntryIdx ]
 
-  def get_vpn_addr(addr: UInt) = addr(addr.getWidth - 1, EntryBits + 1)  // TODO: parameterize
+  def get_vpn_addr(addr: UInt) = addr(addr.getWidth - 1, EntryBits)  // TODO: parameterize
 
   def get_main_idx(addr: UInt) = {
     val vpn_addr = get_vpn_addr(addr)
@@ -467,7 +467,7 @@ class DetectPipeline(implicit p: Parameters) extends CDPModule {
 
   val s1_addr     = s1_req.bits.vaddr
   val s1_main_idx = get_main_idx(s1_addr)
-  val s1_sub_idx  = get_main_idx(s1_addr)
+  val s1_sub_idx  = get_sub_idx(s1_addr)
 
   vt_query_req.valid  := s1_req.valid
   vt_query_req.bits.main_idx  := s1_main_idx
@@ -510,7 +510,7 @@ class DetectPipeline(implicit p: Parameters) extends CDPModule {
 
   // ------------------ s3 ------------------
   s3_req.valid  := RegNext(s2_req.valid)
-  s3_req.bits   := RegNext(s3_req.bits)
+  s3_req.bits   := RegNext(s2_req.bits)
 
   val s3_vt_hit     = RegNext(s2_vt_hit)
   val s3_vt_hit_idx = RegNext(s2_vt_hit_idx)
