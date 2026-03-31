@@ -180,7 +180,9 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   val metaArray = Module(new SRAMTemplate(new MetaEntry, sets, ways, singlePort = true, hasMbist = mbist, hasSramCtl = hasSramCtl))
 
+  val tagRead_s3 = Wire(Vec(ways, UInt(tagBits.W)))
   val metaRead = Wire(Vec(ways, new MetaEntry()))
+  val errorRead = Wire(Vec(ways, Bool()))
 
   // Replacer
   val repl = ReplacementPolicy.fromString(cacheParams.replacement, ways)
@@ -211,6 +213,14 @@ class Directory(implicit p: Parameters) extends L2Module {
     io.tagWReq.bits.wtag
   }
   val tagRead = tagArray.io.r(io.read.fire, io.read.bits.set).resp.data
+  val bankTagRead = if (enableTagECC) {
+    tagRead.map(x =>
+      Cat(VecInit(Seq.tabulate(tagBankSplit)(i => x(encTagBankBits * (i + 1) - 1, encTagBankBits * i)(tagBankBits - 1, 0))))
+    )
+  } else {
+    tagRead
+  }
+  tagRead_s3 := bankTagRead
   assert(PopCount(io.tagWReq.bits.wayOH) <= 1.U, "Tag write should be one-hot")
   tagArray.io.w(
     tagWen,
@@ -218,6 +228,16 @@ class Directory(implicit p: Parameters) extends L2Module {
     io.tagWReq.bits.set,
     io.tagWReq.bits.wayOH
   )
+
+  val bankTagError = if (enableTagECC) {
+    tagRead.map(x =>
+      VecInit(Seq.tabulate(tagBankSplit)(i => x(encTagBankBits * (i + 1) - 1, encTagBankBits * i))).
+        map(tag => cacheParams.dataCode.decode(tag).error).reduce(_ | _)
+    )
+  } else {
+    VecInit(Seq.fill(ways)(false.B))
+  }
+  errorRead := bankTagError
 
   // Meta R/W
   metaRead := metaArray.io.r(io.read.fire, io.read.bits.set).resp.data
@@ -229,22 +249,8 @@ class Directory(implicit p: Parameters) extends L2Module {
   )
 
   val metaAll_s3 = RegEnable(metaRead, 0.U.asTypeOf(metaRead), reqValid_s2)
-  val tagRead_s3 = RegEnable(tagRead, reqValid_s2)
-  val tagAll_s3 = if (enableTagECC) {
-    tagRead_s3.map(x =>
-      Cat(VecInit(Seq.tabulate(tagBankSplit)(i => x(encTagBankBits * (i + 1) - 1, encTagBankBits * i)(tagBankBits - 1, 0))))
-    )
-  } else {
-    tagRead_s3
-  }
-  val errorAll_s3 = if (enableTagECC) {
-    tagRead_s3.map(x =>
-      VecInit(Seq.tabulate(tagBankSplit)(i => x(encTagBankBits * (i + 1) - 1, encTagBankBits * i))).
-        map(tag => cacheParams.dataCode.decode(tag).error).reduce(_ | _)
-    )
-  } else {
-    VecInit(Seq.fill(ways)(false.B))
-  }
+  val tagAll_s3 = RegEnable(tagRead_s3, 0.U.asTypeOf(tagRead_s3), reqValid_s2)
+  val errorAll_s3 = RegEnable(errorRead, 0.U.asTypeOf(errorRead), reqValid_s2)
 
   val tagMatchVec = tagAll_s3.map(_ (tagBits - 1, 0) === req_s3.tag)
   val metaValidVec = metaAll_s3.map(_.state =/= MetaData.INVALID)
