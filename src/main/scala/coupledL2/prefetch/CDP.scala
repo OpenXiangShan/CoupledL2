@@ -785,7 +785,7 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
     */
     val detect_trig_fromCDP = detect_trig.bits.pfSource === PfSource.CDP.id.U
 
-    val hit_trigger       = detect_trig.bits.is_hit && detect_trig_fromCDP && detect_trig.bits.pfDepth === 2.U && detect_trig.bits.pfDepth === 4.U
+    val hit_trigger       = detect_trig.bits.is_hit && detect_trig_fromCDP && (detect_trig.bits.pfDepth === 2.U || detect_trig.bits.pfDepth === 4.U)
     val refill_trigger    = !detect_trig.bits.is_hit
     
     detect_trig_queue.io.flush := reset.asBool
