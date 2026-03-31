@@ -12,15 +12,6 @@
  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
  *
  * See the Mulan PSL v2 for more details.
- *
- *
- * Acknowledgement
- *
- * This implementation is inspired by several key papers:
- * [1] Pierre Michaud. "[A Best-Offset Prefetcher.](https://inria.hal.science/hal-01165600/)" 2nd Data Prefetching
- * Championship (DPC). 2015.
- * [2] Pierre Michaud. "[Best-Offset Hardware Prefetching.](https://doi.org/10.1109/HPCA.2016.7446087)" IEEE
- * International Symposium on High Performance Computer Architecture (HPCA). 2016.
  * *************************************************************************************
  */
 
@@ -30,42 +21,40 @@ import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.HasCoupledL2Parameters
-import coupledL2.utils.{Queue_Regs, ReplacementPolicy, SetAssociativeRegs, SetAssociativeRegsWriteReq, SetAssocReplacer}
+import coupledL2.utils.{OverwriteQueue, ReplacementPolicy, SetAssocReplacer}
 import utility.{ChiselDB, MemReqSource, XSPerfAccumulate, XSPerfHistogram}
 
 // Next-Line Prefetcher base parameters
 case class NLParameters(
-    L2SliceNum: Int = 4, //L2 cache slice number
-    nlPrefetchQueueEntries: Int = 8,
+  L2SliceNum: Int = 4, //L2 cache slice number
+  nlPrefetchQueueEntries: Int = 8,
 
-    // timeSample
-    timeSampleCounterBits: Int = 64, //Sampling counter bit width
-    timeSampleRate: Int = 256, //Sampling rate
-    timeSampleMinDistance :Int = 4, //Minimum sampling distance
+  // timeSample
+  timeSampleCounterBits: Int = 64, //Sampling counter bit width
+  timeSampleRate: Int = 256, //Sampling rate
+  timeSampleMinDistance :Int = 4, //Minimum sampling distance
 
-    // Sample Table config 
-    stWays: Int = 4, 
-    stTouchedBits: Int = 1,
-    stReplacementPolicy: String = "plru",
-    stRPortNum: Int = 2,
-    stWPortNum: Int = 2,
+  // Sample Table config 
+  stWays: Int = 4, 
+  stTouchedBits: Int = 1,
+  stReplacementPolicy: String = "plru",
+  stRPortNum: Int = 2,
+  stWPortNum: Int = 2,
     
-    // Pattern Table config 
-    ptWays: Int = 64,
-    ptSets: Int = 1, 
-    ptSatBits: Int = 2,
-    ptSatDefultValue:Int = 1,
-    ptReplacementPolicy: String = "plru",
-    ptRPortNum: Int = 1,
-    ptWPortNum: Int = 1,
+  // Pattern Table config 
+  ptWays: Int = 64,
+  ptSets: Int = 1, 
+  ptSatBits: Int = 2,
+  ptSatDefultValue:Int = 1,
+  ptReplacementPolicy: String = "plru",
+  ptRPortNum: Int = 1,
+  ptWPortNum: Int = 1,
 
-    // Table port id
-    stUpdatePort: Int = 0,
-    stInsertPort: Int = 1,
-
-    ptRPort: Int = 0,
-    ptWPort: Int = 0
-
+  // Table port id
+  stUpdatePort: Int = 0,
+  stInsertPort: Int = 1,
+  ptRPort: Int = 0,
+  ptWPort: Int = 0
 ) extends PrefetchParameters {
   override val hasPrefetchBit: Boolean = true 
   override val hasPrefetchSrc: Boolean = true 
@@ -74,13 +63,11 @@ case class NLParameters(
 
 // define Next-Line Prefetcher useful parameters
 trait HasNLParams extends HasCoupledL2Parameters {
- val nlParams = prefetchers.find {
+  val nlParams = prefetchers.find {
     case p: NLParameters => true 
     case _ => false
   }.get.asInstanceOf[NLParameters]
-  
   def L2SliceNum: Int = {
-    // Prefer an explicit configuration via L2NBanksKey if present; otherwise fall back to nlParams
     try {
       val nb = p(coupledL2.L2NBanksKey)
       if (nb > 0) nb else nlParams.L2SliceNum
@@ -96,6 +83,7 @@ trait HasNLParams extends HasCoupledL2Parameters {
   def timeSampleCounterMax = ((BigInt(1) << timeSampleCounterBits) - 1).U(timeSampleCounterBits.W)
   def timeSampleRateBits = log2Ceil(nlParams.timeSampleRate)
   def timeSampleMinDistance = nlParams.timeSampleMinDistance
+
   // Calculate how many blocks the whole L2 cache has, then /2(if set=512,way=8,slice=4,then 512*8*4/2)
   def timeSampleMaxDistance = blocks * L2SliceNum / 2 
   
@@ -159,13 +147,144 @@ abstract class NLModule(implicit val p: Parameters) extends Module with HasNLPar
   }
 }
  
+class SetAssociativeRegsReadReq(sets: Int, ways: Int) extends Bundle {
+  val setIdx = UInt(log2Up(sets).W)
+}
+
+class SetAssociativeRegsReadResp[T <: Data](gen: T, ways: Int) extends Bundle {
+  val data = Vec(ways, gen)  
+}
+
+class SetAssociativeRegsWriteReq[T <: Data](gen: T, sets: Int, ways: Int) extends Bundle {
+  val setIdx = UInt(log2Up(sets).W)
+  val wayMask = UInt(ways.W)  
+  val data = gen
+}
+
+class SetAssociativeRegsReadPort[T <: Data](gen: T, sets: Int, ways: Int) extends Bundle {
+  val req = Input(new SetAssociativeRegsReadReq(sets, ways))
+  val resp = Output(new SetAssociativeRegsReadResp(gen, ways))
+}
+
+class SetAssociativeRegsWritePort[T <: Data](gen: T, sets: Int, ways: Int) extends Bundle {
+  val req = Input(Valid(new SetAssociativeRegsWriteReq(gen, sets, ways)))
+}
+
+class SetAssociativeRegs[T <: Data](
+  gen: T,
+  sets: Int,
+  ways: Int,
+  numReadPorts: Int,
+  numWritePorts: Int,
+  shouldReset: Boolean = false
+) extends Module {
+  require(sets > 0, "sets must be positive")
+  require(ways > 0, "ways must be positive")
+  require(numReadPorts > 0, "numReadPorts must be positive")
+  require(numWritePorts > 0, "numWritePorts must be positive")
+
+  val io = IO(new Bundle {
+    val r = Vec(numReadPorts,  new SetAssociativeRegsReadPort(gen, sets, ways))
+    val w = Vec(numWritePorts, new SetAssociativeRegsWritePort(gen, sets, ways))
+  })
+
+  //Register array: sets × ways
+  val regArray = if (shouldReset) {
+    RegInit(VecInit(Seq.fill(sets)(VecInit(Seq.fill(ways)(0.U.asTypeOf(gen))))))
+  } else {
+    Reg(Vec(sets, Vec(ways, gen)))
+  }
+
+  // Mutex write ports: handle write conflicts, higher port number has higher priority
+  val mutex_w = Wire(Vec(numWritePorts, new SetAssociativeRegsWritePort(gen, sets, ways)))
+  for (i <- 0 until numWritePorts) {
+    assert(mutex_w(i).req.bits.setIdx < sets.U, "SetAssociativeRegs: write setIdx out of range")
+    assert(mutex_w(i).req.bits.wayMask < (1.U << ways).asUInt, "SetAssociativeRegs: wayMask width")
+  }
+  for (i <- 0 until numReadPorts) {
+    assert(io.r(i).req.setIdx < sets.U, "SetAssociativeRegs: read setIdx out of range")
+  }
+  
+  for (i <- 0 until numWritePorts) {
+    mutex_w(i).req := io.w(i).req
+  }
+
+  // Handle write conflicts: if multiple ports write to the same address,
+  // disable lower priority ports by clearing their `valid`.
+  for (i <- 0 until numWritePorts) {
+    for (j <- i + 1 until numWritePorts) {
+
+      // Check if writing to the same set and way
+      val sameSet = io.w(i).req.bits.setIdx === io.w(j).req.bits.setIdx
+      val wayConflict = (io.w(i).req.bits.wayMask & io.w(j).req.bits.wayMask) =/= 0.U
+
+      // If both ports are valid and conflict on set+way, mute the lower-priority one
+      when(io.w(i).req.valid && io.w(j).req.valid && sameSet && wayConflict) {
+        mutex_w(i).req.valid := false.B
+      }
+    }
+  }
+ 
+  //Read port: combinational logic, returns immediately (with read-after-write bypass)
+  for (i <- 0 until numReadPorts) {
+    val readSetIdx = io.r(i).req.setIdx
+    val baseData = regArray(readSetIdx)
+    val bypassData = Wire(Vec(ways, gen))
+
+    // SET conflict on the write port
+    val wPortSetConflict = VecInit((0 until numWritePorts).map { j =>
+      mutex_w(j).req.valid && (mutex_w(j).req.bits.setIdx === readSetIdx)
+    })
+
+    // Collect write data from ports for indexed access
+    val writeDataVec = VecInit((0 until numWritePorts).map { j => mutex_w(j).req.bits.data })
+
+    // For each way, build a small priority selection among write ports; default to baseData
+    for (wayIdx <- 0 until ways) {
+      
+      // way conflict on write ports that have a set conflict
+      val conflictSetVec = VecInit((0 until numWritePorts).map { j =>
+        wPortSetConflict(j) && mutex_w(j).req.bits.wayMask(wayIdx)
+      })
+      val cases = (0 until numWritePorts).map { j => (conflictSetVec(j), writeDataVec(j)) }
+      bypassData(wayIdx) := MuxCase(baseData(wayIdx), cases)
+    }
+    io.r(i).resp.data := bypassData
+  }
+
+  // Write Port
+  for (i <- 0 until numWritePorts) {
+    when(mutex_w(i).req.valid) {
+      val setIdx    = mutex_w(i).req.bits.setIdx
+      val wayMask   = mutex_w(i).req.bits.wayMask
+      val writeData = mutex_w(i).req.bits.data
+
+      for (wayIdx <- 0 until ways) {
+        when(wayMask(wayIdx)) {
+          // replicate single write data to the masked way
+          regArray(setIdx)(wayIdx) := writeData
+        }
+      }
+    }
+  }
+
+  for (s <- 0 until sets) {
+    for (w <- 0 until ways) {
+      val writers = VecInit((0 until numWritePorts).map { j =>
+        (mutex_w(j).req.valid && (mutex_w(j).req.bits.setIdx === s.U) && mutex_w(j).req.bits.wayMask(w))
+      })
+      assert(PopCount(writers) <= 1.U, s"SetAssociativeRegs: multiple active writers to same (set=$s,way=$w)")
+    }
+  }
+}
+
 // sample
 class SampleTableEntryField(implicit p: Parameters) extends NLBundle{
-    val tag = UInt(stTagBits.W)
-    val sampleTime = UInt(stTimeSampleBits.W)
-    val pcHash = UInt(stPcHashBits.W)
-    val touched = Bool()
-    val valid = Bool() 
+  val tag = UInt(stTagBits.W)
+  val sampleTime = UInt(stTimeSampleBits.W)
+  val pcHash = UInt(stPcHashBits.W)
+  val touched = Bool()
+  val valid = Bool() 
 }
 
 class SampleTableWriteReq(implicit p: Parameters) extends NLBundle {
@@ -175,9 +294,9 @@ class SampleTableWriteReq(implicit p: Parameters) extends NLBundle {
 }
 
 class SampleTrain(implicit p: Parameters) extends NLBundle {
-    val addr = UInt(blockAddrBits.W)
-    val pc = UInt(pcHashBits.W)
-    val timeSample = UInt(timeSampleCounterBits.W)
+  val addr = UInt(blockAddrBits.W)
+  val pc = UInt(pcHashBits.W)
+  val timeSample = UInt(timeSampleCounterBits.W)
 }
 
 // Pattern
@@ -188,31 +307,28 @@ class PatternTableEntryField(implicit p: Parameters) extends NLBundle{
 }
 
 class PatternTrain(implicit p: Parameters) extends NLBundle {
-    val pcHash = UInt(ptPcHashBits.W)
-    val touched = Bool() 
+  val pcHash = UInt(ptPcHashBits.W)
+  val touched = Bool() 
 }
 
 class PatternReq(implicit p: Parameters) extends NLBundle {
-    val pc = UInt(pcHashBits.W)    
-    val addr = UInt(blockAddrBits.W) 
+  val pc = UInt(pcHashBits.W)    
+  val addr = UInt(blockAddrBits.W) 
 }
 
 class PatternResp(implicit p: Parameters) extends NLBundle {
-    val nextAddr = UInt(blockAddrBits.W)  
+  val nextAddr = UInt(blockAddrBits.W)  
 }
-// chiselDB interface
 
 class PatternDb(implicit p: Parameters) extends NLBundle {
- val hit = Bool()
- val hitData = new PatternTableEntryField()
- val sat = UInt(ptSatBits.W)
-
- val trainEn = Bool()
- val trainData = new SampleTableEntryField()
-
- val we = Bool()
- val writeIdx = UInt(ptSetBits.W)
- val writeData = new PatternTableEntryField()
+  val hit = Bool()
+  val hitData = new PatternTableEntryField()
+  val sat = UInt(ptSatBits.W)
+  val trainEn = Bool()
+  val trainData = new SampleTableEntryField()
+  val we = Bool()
+  val writeIdx = UInt(ptSetBits.W)
+  val writeData = new PatternTableEntryField()
 }
 
 /*
@@ -232,14 +348,16 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   })
 
   // ==================== Sample Table (st) ====================
-  val st = Module(new SetAssociativeRegs(
+  val st = Module(
+    new SetAssociativeRegs(
       gen  = new SampleTableEntryField(),
       sets = stSets,
       ways = nlParams.stWays,
       numReadPorts = nlParams.stRPortNum,
       numWritePorts = nlParams.stWPortNum,
       shouldReset = true
-  ))
+    )
+  )
 
   // Replacer: SetAssocReplacer maintains per-set PLRU state internally
   val replacer = new SetAssocReplacer(stSets, nlParams.stWays, stReplacementPolicy)
@@ -337,7 +455,6 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
   st.io.w(insertPort).req := RegNext(s1_insertReq )
 
   // ==================== Debug & Performance ====================
-
   XSPerfAccumulate("nlSampleTrainTimes", s0_valid)
   XSPerfAccumulate("nlSampleInsertTimes", s0_insertEn)
   XSPerfAccumulate("nlSampleUpdateReqNotHitTimes", s1_valid && !s1_updateHit)
@@ -356,25 +473,26 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
     val resp  = DecoupledIO(new PatternResp)
   })
 
-    // ==================== Pattern Table (pt) ====================
-    val pt = Module(new SetAssociativeRegs(
+  // ==================== Pattern Table (pt) ====================
+  val pt = Module(
+    new SetAssociativeRegs(
       gen = new PatternTableEntryField(),
       sets = nlParams.ptSets,
       ways = nlParams.ptWays,
       numReadPorts = nlParams.ptRPortNum,
       numWritePorts = nlParams.ptWPortNum,
       shouldReset = true
-    ))
+    )
+  )
 
   val replacer = new SetAssocReplacer( nlParams.ptSets, nlParams.ptWays,ptReplacementPolicy)
-
   io.train.ready := true.B
   io.req.ready := true.B
+
   // ==================== Stage 0: Read Request ====================
   val s0_trainValid = io.train.fire
   val s0_trainPcHash = io.train.bits.pcHash
   val s0_trainTouched = io.train.bits.touched
-
   val s0_reqValid = io.req.fire
   val s0_reqAddr = io.req.bits.addr
   val s0_reqPcHash = getPcHash(io.req.bits.pc)
@@ -388,6 +506,7 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   val (s0_reqHitVec, s0_reqHit, s0_reqHitWayIdx, s0_reqHitEntry) = findHit(s0_ptRespData, s0_reqPcHash)
   // assert(PopCount(s0_trainHitVec) <= 1.U, " Train CAM key conflict detected!")
   // assert(PopCount(s0_reqHitVec) <= 1.U, " Request CAM key conflict detected!")
+
   // ==================== Stage 1: Process Read Data ====================
   // -------------------- Train Part --------------------
   val s1_trainValid = RegNext(s0_trainValid, false.B)
@@ -409,12 +528,12 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   s1_writeEntry.tag := s1_trainPcHash
 
   when(s1_trainHit) { // update
-      val currentSat = s1_trainHitEntry.sat
-      when(s1_trainTouched) {
-        s1_writeEntry.sat := Mux(currentSat === ptMaxSat, ptMaxSat, currentSat + 1.U)
-      }.otherwise {
-        s1_writeEntry.sat := Mux(currentSat === ptMinSat, ptMinSat, currentSat - 1.U)
-      }
+    val currentSat = s1_trainHitEntry.sat
+    when(s1_trainTouched) {
+      s1_writeEntry.sat := Mux(currentSat === ptMaxSat, ptMaxSat, currentSat + 1.U)
+    }.otherwise {
+      s1_writeEntry.sat := Mux(currentSat === ptMinSat, ptMinSat, currentSat - 1.U)
+    }
   }.otherwise { // insert
     s1_writeEntry.sat := ptDefualtSat.U
   }
@@ -430,7 +549,6 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   val s1_reqHit = RegEnable(s0_reqHit, s0_reqValid)
   val s1_reqHitWayIdx = RegEnable(s0_reqHitWayIdx, s0_reqValid)
   val s1_reqHitEntry = RegEnable(s0_reqHitEntry, s0_reqValid)
-
   val s1_prefetchAddr = s1_reqAddr + 1.U  
   val s1_crossPage = getPPN(getfullVAddr(s1_reqAddr)) =/= getPPN(getfullVAddr(s1_prefetchAddr))
   val s1_needPrefetch = s1_reqValid && s1_reqHit && (s1_reqHitEntry.sat === ptMaxSat) && !s1_crossPage
@@ -438,14 +556,14 @@ class NextLinePattern(implicit p: Parameters) extends NLModule {
   // Output
   io.resp.valid := s1_needPrefetch
   io.resp.bits.nextAddr := s1_prefetchAddr
+
   // ==================== Stage 2: Writeback ====================
   pt.io.w(ptWPort).req := RegNext(s1_writeReq)
 
   // ==================== Debug & Performance ====================
-  val dbTable = ChiselDB.createTable(s"NLL2PatternDb", new PatternDb, basicDB = true)
+  val dbTable = ChiselDB.createTable(s"NLL2PatternDb", new PatternDb, basicDB = false)
   val dbData = Wire(new PatternDb())
   dbTable.log(dbData, dbData.trainEn && (dbData.hit || dbData.we), s"Nlpattern", clock, reset)
-
   dbData.sat := s1_trainHitEntry.sat
   dbData.hit := s1_trainHit
   dbData.hitData := s1_trainHitEntry
@@ -476,8 +594,8 @@ class NextLinePrefetch(implicit p: Parameters) extends NLModule {
   val io = IO(new Bundle() {
     val enable = Input(Bool()) //enable NL prefetcher
     val train = Flipped(DecoupledIO(new PrefetchTrain))
-    val resp = Flipped(DecoupledIO(new PrefetchResp)) //
-    val req = DecoupledIO(new PrefetchReq) //Next line prefetcher Request access L2
+    val resp = Flipped(DecoupledIO(new PrefetchResp)) 
+    val req = DecoupledIO(new PrefetchReq) //NL prefetcher Request access L2
   })
 
   val validTrain  = io.enable && io.train.fire &&io.train.bits.reqsource === MemReqSource.CPULoadData.id.U  //Only use load requests for training and prediction
@@ -488,13 +606,15 @@ class NextLinePrefetch(implicit p: Parameters) extends NLModule {
   val prefetcherSample = Module(new NextLineSample())
   val prefetcherPattern = Module(new NextLinePattern())
 
-  val prefetchQueue = Module(new Queue_Regs( 
-          gen = new PatternResp ,
-          entries = nlParams.nlPrefetchQueueEntries,
-          hasFlush = false, 
-          hasOverWrite = true,
-          hasFlow = true))
-  
+  val prefetchQueue = Module(
+    new OverwriteQueue( 
+      gen = new PatternResp ,
+      entries = nlParams.nlPrefetchQueueEntries,
+      hasFlush = false, 
+      hasOverWrite = true,
+      hasFlow = true
+    )
+  )
   io.train.ready := prefetcherSample.io.train.ready && prefetcherPattern.io.train.ready
   io.resp.ready := true.B  
 
@@ -516,7 +636,7 @@ class NextLinePrefetch(implicit p: Parameters) extends NLModule {
   // pattern.resp ---> prefetchQueue.in
   prefetchQueue.io.enq <> prefetcherPattern.io.resp
 
-  // ========== prefetchQueue.out --->io.req ==========
+  // prefetchQueue.out --->io.req 
   val nextAddr = getfullVAddr(prefetchQueue.io.deq.bits.nextAddr)
   io.req.valid := io.enable && prefetchQueue.io.deq.valid
   prefetchQueue.io.deq.ready := io.req.ready

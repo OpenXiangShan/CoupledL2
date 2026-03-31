@@ -37,7 +37,7 @@ import chisel3.util._
  * 
  * Note: The number of entries must be a power of 2 to simplify pointer arithmetic.
  */
-class Queue_Regs[T <: Data](
+class OverwriteQueue[T <: Data](
   gen: T, 
   entries: Int, //Must be a power of 2
   hasFlush: Boolean = false, 

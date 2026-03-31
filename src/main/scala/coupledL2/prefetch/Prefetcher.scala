@@ -23,7 +23,7 @@ import utility._
 import org.chipsalliance.cde.config.Parameters
 import utility.mbist.MbistPipeline
 import coupledL2._
-import coupledL2.utils.Queue_Regs
+import coupledL2.utils.OverwriteQueue
 
 /* virtual address */
 trait HasPrefetcherHelper extends HasCircularQueuePtrHelper with HasCoupledL2Parameters {
@@ -125,7 +125,6 @@ class PrefetchReq(implicit p: Parameters) extends PrefetchBundle {
   def isSMS:Bool = pfSource === MemReqSource.Prefetch2L2SMS.id.U
   def isTP:Bool = pfSource === MemReqSource.Prefetch2L2TP.id.U
   def isNL:Bool = pfSource === MemReqSource.Prefetch2L2NL.id.U
-  
   def needAck:Bool = pfSource === MemReqSource.Prefetch2L2BOP.id.U || pfSource === MemReqSource.Prefetch2L2PBOP.id.U
   def fromL2:Bool =
     pfSource === MemReqSource.Prefetch2L2BOP.id.U ||
@@ -207,7 +206,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
         offsetList = Seq(
           -32, -30, -27, -25, -24, -20, -18, -16, -15,
           -12, -10, -9, -8, -6, -5, -4, -3, -2, -1,
-          2, 3, 4, 5, 6, 8, 9, 10,
+          1, 2, 3, 4, 5, 6, 8, 9, 10,
           12, 15, 16, 18, 20, 24, 25, 27, 30
         )
       )))
@@ -227,7 +226,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
           -40, -36, -32, -30, -27, -25, -24, -20,
           -18, -16, -15, -12, -10, -9, -8, -6,
           -5, -4, -3, -2, -1,
-          2, 3, 4, 5, 6, 8,
+          1, 2, 3, 4, 5, 6, 8,
           9, 10, 12, 15, 16, 18, 20, 24,
           25, 27, 30, 32, 36, 40, 45, 48,
           50, 54, 60, 64, 72, 75, 80, 81,
@@ -289,13 +288,11 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       pfRcv.get.io.req.bits.pfSource === MemReqSource.Prefetch2L2Berti.id.U
     )
   }
-  //add next_line prefetcher into L2 prefetcher
-  if (hasNLPrefetcher) {//is open NL prefetcher? 
-    nl.get.io.enable := true.B
-    nl.get.io.train <> io.train //input train data 
-    nl.get.io.resp <> io.resp  //return prefetch en and prefetch addr
 
-    //nl priority lowest,wait L1 prefetcher, BOP and TP prefetcher
+  if (hasNLPrefetcher) {
+    nl.get.io.enable := true.B
+    nl.get.io.train <> io.train 
+    nl.get.io.resp <> io.resp  
     nl.get.io.req.ready := (if(hasReceiver) !pfRcv.get.io.req.valid else true.B) 
   }
 
@@ -316,13 +313,15 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
 
   // =================== Connection of all Prefetchers =====================
   /* prefetchers -> pftQueue -> pipe -> Slices.SinkA */
-  val pftQueue = Module(new Queue_Regs( 
-          gen = new PrefetchReq ,
-          entries = inflightEntries,
-          hasFlush = false, 
-          hasOverWrite = true,
-          hasFlow = true))
-
+  val pftQueue = Module(
+    new OverwriteQueue( 
+      gen = new PrefetchReq ,
+      entries = inflightEntries,
+      hasFlush = false, 
+      hasOverWrite = true,
+      hasFlow = true
+    )
+  )
   val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
 
   private val SRC_NUM = 5

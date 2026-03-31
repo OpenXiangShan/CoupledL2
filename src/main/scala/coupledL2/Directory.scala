@@ -21,7 +21,7 @@ import chisel3._
 import chisel3.util._
 import utility.mbist.MbistPipeline
 import coupledL2.utils._
-import utility.{ParallelPriorityMux, RegNextN, XSPerfAccumulate, Code, MemReqSource, ChiselDB}
+import utility.{ChiselDB,  Code, MemReqSource, ParallelPriorityMux, RegNextN, XSPerfAccumulate}
 import utility.sram.SRAMTemplate
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.prefetch.PfSource
@@ -453,9 +453,9 @@ class Directory(implicit p: Parameters) extends L2Module {
   if (cacheParams.enableMonitor && !cacheParams.FPGAPlatform) {
     val defaultPfSrc = PfSource.NoWhere.id.U
     val hartId = cacheParams.hartId
-    val pfReqWriteTable = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Write_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = true)
-    val pfReqReadTable = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Read_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = true)
-    val pfReqEvictTable = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Evict_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = true)
+    val pfReqWriteTable = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Write_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = false)
+    val pfReqReadTable = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Read_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = false)
+    val pfReqEvictTable = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Evict_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = false)
     
     // Write: meta write that marks a block as prefetched
     val wmeta = io.metaWReq.bits.wmeta
@@ -476,11 +476,11 @@ class Directory(implicit p: Parameters) extends L2Module {
     // Read: when a read hits a prefetched block
     val pfReqReadEn = io.resp.valid && io.resp.bits.hit && io.resp.bits.meta.prefetch.getOrElse(false.B) 
     val pfReqRead = Wire(new PrefetchDbEntry)
-    pfReqRead.isHit      := io.resp.bits.hit // read req hit or not
-    pfReqRead.setIdx     := io.resp.bits.set
-    pfReqRead.tag        := io.resp.bits.tag // read req accsess a prefetched block with which tag
+    pfReqRead.isHit := io.resp.bits.hit // read req hit or not
+    pfReqRead.setIdx := io.resp.bits.set
+    pfReqRead.tag := io.resp.bits.tag // read req accsess a prefetched block with which tag
     pfReqRead.isPrefetch := io.resp.bits.meta.prefetch.getOrElse(false.B) // read req accsess a prefetched block
-    pfReqRead.way        := io.resp.bits.way // read req accsess a prefetched block in which way
+    pfReqRead.way := io.resp.bits.way // read req accsess a prefetched block in which way
     pfReqRead.metaSource := io.resp.bits.meta.prefetchSrc.getOrElse(defaultPfSrc) // source of the block that read req accessed
     pfReqRead.reqSource := io.resp.bits.replacerInfo.reqSource // The source of the read request (eg:bop,tp,prefetcher, etc.)
     pfReqReadTable.log(pfReqRead, pfReqReadEn, s"L2${hartId}_${p(SliceIdKey)}", clock, reset)
@@ -492,14 +492,14 @@ class Directory(implicit p: Parameters) extends L2Module {
     val pfReqEvict = Wire(new PrefetchDbEntry)
 
     // read request info that causes eviction
-    pfReqEvict.isHit      := io.resp.bits.hit // read request :read hit 
-    pfReqEvict.reqSource  :=  req_s3.replacerInfo.reqSource // The source of the read request that caused this Eviction
+    pfReqEvict.isHit := io.resp.bits.hit // read request :read hit 
+    pfReqEvict.reqSource := req_s3.replacerInfo.reqSource // The source of the read request that caused this Eviction
     
     // evict block info
-    pfReqEvict.setIdx     := io.replResp.bits.set //set idx of evict block 
-    pfReqEvict.tag        := io.replResp.bits.tag //tag of evict block 
+    pfReqEvict.setIdx := io.replResp.bits.set //set idx of evict block 
+    pfReqEvict.tag := io.replResp.bits.tag //tag of evict block 
     pfReqEvict.isPrefetch := io.replResp.bits.meta.prefetch.getOrElse(false.B)
-    pfReqEvict.way        := io.replResp.bits.way // way of evict block
+    pfReqEvict.way := io.replResp.bits.way // way of evict block
     pfReqEvict.metaSource := io.replResp.bits.meta.prefetchSrc.getOrElse(defaultPfSrc) // source of the block that evicted
     pfReqEvictTable.log(pfReqEvict, pfReqEvictEn, s"L2${hartId}_${p(SliceIdKey)}", clock, reset)
   }
