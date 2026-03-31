@@ -10,6 +10,8 @@ import utility.TLLogger.b
 import svsim.CommonCompilationSettings.Timescale.Unit.s
 
 case class CDPParameters(
+  UseFilteredDetect:  Boolean = false,
+
   DetectPipeNum: Int = 4,
 
   ReqFilterEntryNum: Int = 16,   // how many entries in the prefetch req filter?
@@ -40,6 +42,8 @@ trait HasCDPParams extends HasPrefetcherHelper with HasCoupledL2Parameters {
     case p: CDPParameters => true
     case _ => false
   }.get.asInstanceOf[CDPParameters]
+
+  val UseFilteredDetect = cdpParams.UseFilteredDetect
 
   // helper function
   def get_folded_hash(origin_val: UInt, res_len: Int) = {    // fold $origin_val length value into $res_len
@@ -543,6 +547,9 @@ class DetectPipeline(implicit p: Parameters) extends CDPModule {
 
   // ------------------ Performance Counter ------------------
   XSPerfAccumulate(s"detect_from_hit", s4_req.valid && s4_req.bits.is_hit)
+  XSPerfAccumulate(s"detect_from_hit_cdp", s4_req.valid && s4_req.bits.is_hit && s4_req.bits.pfSource === PfSource.CDP.id.U)
+  XSPerfAccumulate(s"detect_from_hit_sms", s4_req.valid && s4_req.bits.is_hit && s4_req.bits.pfSource === PfSource.SMS.id.U)
+  XSPerfAccumulate(s"detect_from_hit_bop", s4_req.valid && s4_req.bits.is_hit && (s4_req.bits.pfSource === PfSource.BOP.id.U || s4_req.bits.pfSource === PfSource.PBOP.id.U))
   XSPerfAccumulate(s"detect_from_refill", s4_req.valid && !s4_req.bits.is_hit)
   XSPerfAccumulate(s"detect_from_refill_cpu", s4_req.valid && s4_req.bits.pfSource === PfSource.NoWhere.id.U && !s4_req.bits.is_hit)
   XSPerfAccumulate(s"detect_from_refill_cdp", s4_req.valid && s4_req.bits.pfSource === PfSource.CDP.id.U && !s4_req.bits.is_hit)
@@ -784,9 +791,30 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
           c) Refill other prefetcher's block. (TODO: filter)
     */
     val detect_trig_fromCDP = detect_trig.bits.pfSource === PfSource.CDP.id.U
+    val detect_trig_fromSMS = detect_trig.bits.pfSource === PfSource.SMS.id.U
+    val detect_trig_fromBOP = detect_trig.bits.pfSource === PfSource.BOP.id.U || detect_trig.bits.pfSource === PfSource.PBOP.id.U
+    val detect_trig_fromStream  = detect_trig.bits.pfSource === PfSource.Stream.id.U
+    val detect_trig_fromStride  = detect_trig.bits.pfSource === PfSource.Stride.id.U
+    val detect_trig_fromCPU     = detect_trig.bits.pfSource === PfSource.NoWhere.id.U
 
-    val hit_trigger       = detect_trig.bits.is_hit && detect_trig_fromCDP && (detect_trig.bits.pfDepth === 2.U || detect_trig.bits.pfDepth === 4.U)
-    val refill_trigger    = !detect_trig.bits.is_hit
+    val hit_trigger       = detect_trig.bits.is_hit  &&
+      (
+        if (UseFilteredDetect) {
+          detect_trig_fromCDP && (detect_trig.bits.pfDepth === 2.U || detect_trig.bits.pfDepth === 4.U) || detect_trig_fromSMS || detect_trig_fromBOP
+        }
+        else {
+          detect_trig_fromCDP && (detect_trig.bits.pfDepth === 2.U || detect_trig.bits.pfDepth === 4.U)
+        }
+      )
+    val refill_trigger    = !detect_trig.bits.is_hit && 
+      (
+        if (UseFilteredDetect) {
+          detect_trig_fromCPU || detect_trig_fromCDP || detect_trig_fromStride || detect_trig_fromStream
+        }
+        else {
+          true.B
+        }
+      )
     
     detect_trig_queue.io.flush := reset.asBool
 
