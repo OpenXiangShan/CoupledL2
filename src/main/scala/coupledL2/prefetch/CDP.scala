@@ -10,7 +10,7 @@ import utility.TLLogger.b
 import svsim.CommonCompilationSettings.Timescale.Unit.s
 
 case class CDPParameters(
-  UseFilteredDetect:  Boolean = false,
+  UseFilteredDetect:  Boolean = true,
 
   DetectPipeNum: Int = 4,
 
