@@ -166,6 +166,9 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, ext
     val io = IO(Vec(numCores, new Bundle() {
       val chi = new PortIO
       val nodeId = Input(UInt(NODEID_WIDTH.W))
+      val flushAll = Input(Bool())
+      val flushAllDone = Output(Bool())
+      val cpuHalt = Input(Bool())
     }))
 
     l2_nodes.zipWithIndex.foreach { case (l2, i) =>
@@ -196,6 +199,9 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, ext
       l2.module.io_nodeID := io(i).nodeId
       l2.module.io.debugTopDown := DontCare
       l2.module.io.l2_tlb_req <> DontCare
+      l2.module.io.l2Flush.foreach(_ := io(i).flushAll)
+      io(i).flushAllDone := l2.module.io.l2FlushDone.getOrElse(false.B)
+      l2.module.io_cpu_halt.foreach(_ := io(i).cpuHalt)
     }
   }
 }
@@ -237,7 +243,10 @@ object TestTopCHIHelper {
         enableDataECC       = true,
 
         // using external RN-F SAM
-        sam                 = Seq(AddressSet.everything -> 0)
+        sam                 = Seq(AddressSet.everything -> 0),
+
+        // L2 flush all
+        enableL2Flush       = true
       )
       case CHIIssue => issue
       case EnableCHI => true
