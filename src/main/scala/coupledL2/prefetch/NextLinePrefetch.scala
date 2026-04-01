@@ -75,9 +75,10 @@ trait HasNLParams extends HasCoupledL2Parameters {
       case _: Throwable => nlParams.L2SliceNum
     }
   }
-  def blockAddrBits = fullVAddrBits - offsetBits
-  def pcHashBits = fullVAddrBits  // PC hash bits, same width as patternTable key
-
+  def pcBits = pcBitOpt.getOrElse(fullVAddrBits) 
+  def pcHashBits = pcBits
+  def blockAddrBits = pcBits - offsetBits
+ 
   // timeSampleCounter 
   def timeSampleCounterBits = nlParams.timeSampleCounterBits
   def timeSampleCounterMax = ((BigInt(1) << timeSampleCounterBits) - 1).U(timeSampleCounterBits.W)
@@ -295,7 +296,7 @@ class SampleTableWriteReq(implicit p: Parameters) extends NLBundle {
 
 class SampleTrain(implicit p: Parameters) extends NLBundle {
   val addr = UInt(blockAddrBits.W)
-  val pc = UInt(pcHashBits.W)
+  val pc = UInt(pcBits.W)
   val timeSample = UInt(timeSampleCounterBits.W)
 }
 
@@ -312,7 +313,7 @@ class PatternTrain(implicit p: Parameters) extends NLBundle {
 }
 
 class PatternReq(implicit p: Parameters) extends NLBundle {
-  val pc = UInt(pcHashBits.W)    
+  val pc = UInt(pcBits.W)    
   val addr = UInt(blockAddrBits.W) 
 }
 
@@ -606,12 +607,10 @@ class NextLinePrefetch(implicit p: Parameters) extends NLModule {
   val prefetcherSample = Module(new NextLineSample())
   val prefetcherPattern = Module(new NextLinePattern())
 
-  val prefetchQueue = Module(
+  val prefetchQueue = Module( 
     new OverwriteQueue( 
       gen = new PatternResp ,
       entries = nlParams.nlPrefetchQueueEntries,
-      hasFlush = false, 
-      hasOverWrite = true,
       hasFlow = true
     )
   )

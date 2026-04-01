@@ -838,6 +838,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       prefetch = false.B,
       accessed = true.B
     )
+    mp_grant.aMergeTask.pc.foreach(_ := merge_task.pc.getOrElse(0.U))
 
     mp_grant
   }

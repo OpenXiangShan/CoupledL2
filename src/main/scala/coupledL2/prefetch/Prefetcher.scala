@@ -317,8 +317,6 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     new OverwriteQueue( 
       gen = new PrefetchReq ,
       entries = inflightEntries,
-      hasFlush = false, 
-      hasOverWrite = true,
       hasFlow = true
     )
   )
