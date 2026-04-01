@@ -552,21 +552,38 @@ class DetectPipeline(implicit p: Parameters) extends CDPModule {
   pft_req.bits.is_hit   := s4_req.bits.is_hit
 
   // ------------------ Performance Counter ------------------
-  XSPerfAccumulate(s"detect_from_hit", s4_req.valid && s4_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_from_hit_cdp", s4_req.valid && s4_req.bits.is_hit && s4_req.bits.pfSource === PfSource.CDP.id.U)
-  XSPerfAccumulate(s"detect_from_hit_sms", s4_req.valid && s4_req.bits.is_hit && s4_req.bits.pfSource === PfSource.SMS.id.U)
-  XSPerfAccumulate(s"detect_from_hit_bop", s4_req.valid && s4_req.bits.is_hit && (s4_req.bits.pfSource === PfSource.BOP.id.U || s4_req.bits.pfSource === PfSource.PBOP.id.U))
-  XSPerfAccumulate(s"detect_from_refill", s4_req.valid && !s4_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_from_refill_cpu", s4_req.valid && s4_req.bits.pfSource === PfSource.NoWhere.id.U && !s4_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_from_refill_cdp", s4_req.valid && s4_req.bits.pfSource === PfSource.CDP.id.U && !s4_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_from_refill_other_pft", s4_req.valid && s4_req.bits.pfSource =/= PfSource.NoWhere.id.U && s4_req.bits.pfSource =/= PfSource.CDP.id.U && !s4_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_from_refill_bop", s4_req.valid && (s4_req.bits.pfSource === PfSource.BOP.id.U || s4_req.bits.pfSource === PfSource.PBOP.id.U) && !s4_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_from_refill_sms", s4_req.valid && s4_req.bits.pfSource === PfSource.SMS.id.U && !s4_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_from_refill_stream", s4_req.valid && s4_req.bits.pfSource === PfSource.Stream.id.U && !s4_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_from_refill_stride", s4_req.valid && s4_req.bits.pfSource === PfSource.Stride.id.U && !s4_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_from_refill_berti", s4_req.valid && s4_req.bits.pfSource === PfSource.Berti.id.U && !s4_req.bits.is_hit)
+  XSPerfAccumulate(s"detect_pft_from_hit", s4_req.valid && s4_req.bits.is_hit)
+  XSPerfAccumulate(s"detect_pft_from_hit_cdp", s4_req.valid && s4_req.bits.is_hit && s4_req.bits.pfSource === PfSource.CDP.id.U)
+  XSPerfAccumulate(s"detect_pft_from_hit_sms", s4_req.valid && s4_req.bits.is_hit && s4_req.bits.pfSource === PfSource.SMS.id.U)
+  XSPerfAccumulate(s"detect_pft_from_hit_bop", s4_req.valid && s4_req.bits.is_hit && (s4_req.bits.pfSource === PfSource.BOP.id.U || s4_req.bits.pfSource === PfSource.PBOP.id.U))
+  XSPerfAccumulate(s"detect_pft_from_refill", s4_req.valid && !s4_req.bits.is_hit)
+  XSPerfAccumulate(s"detect_pft_from_refill_cpu", s4_req.valid && s4_req.bits.pfSource === PfSource.NoWhere.id.U && !s4_req.bits.is_hit)
+  XSPerfAccumulate(s"detect_pft_from_refill_cdp", s4_req.valid && s4_req.bits.pfSource === PfSource.CDP.id.U && !s4_req.bits.is_hit)
+  XSPerfAccumulate(s"detect_pft_from_refill_other_pft", s4_req.valid && s4_req.bits.pfSource =/= PfSource.NoWhere.id.U && s4_req.bits.pfSource =/= PfSource.CDP.id.U && !s4_req.bits.is_hit)
+  XSPerfAccumulate(s"detect_pft_from_refill_bop", s4_req.valid && (s4_req.bits.pfSource === PfSource.BOP.id.U || s4_req.bits.pfSource === PfSource.PBOP.id.U) && !s4_req.bits.is_hit)
+  XSPerfAccumulate(s"detect_pft_from_refill_sms", s4_req.valid && s4_req.bits.pfSource === PfSource.SMS.id.U && !s4_req.bits.is_hit)
+  XSPerfAccumulate(s"detect_pft_from_refill_stream", s4_req.valid && s4_req.bits.pfSource === PfSource.Stream.id.U && !s4_req.bits.is_hit)
+  XSPerfAccumulate(s"detect_pft_from_refill_stride", s4_req.valid && s4_req.bits.pfSource === PfSource.Stride.id.U && !s4_req.bits.is_hit)
+  XSPerfAccumulate(s"detect_pft_from_refill_berti", s4_req.valid && s4_req.bits.pfSource === PfSource.Berti.id.U && !s4_req.bits.is_hit)
   for (i <- 0 until 5) {
-    XSPerfAccumulate(s"detect_depth_$i", s4_req.valid && s4_depth === i.U)
+    XSPerfAccumulate(s"detect_pft_depth_$i", s4_req.valid && s4_depth === i.U)
+  }
+
+  XSPerfAccumulate(s"detect_req_from_hit", s0_req.valid && s0_req.bits.is_hit)
+  XSPerfAccumulate(s"detect_req_from_hit_cdp", s0_req.valid && s0_req.bits.is_hit && s0_req.bits.pfSource === PfSource.CDP.id.U)
+  XSPerfAccumulate(s"detect_req_from_hit_sms", s0_req.valid && s0_req.bits.is_hit && s0_req.bits.pfSource === PfSource.SMS.id.U)
+  XSPerfAccumulate(s"detect_req_from_hit_bop", s0_req.valid && s0_req.bits.is_hit && (s0_req.bits.pfSource === PfSource.BOP.id.U || s0_req.bits.pfSource === PfSource.PBOP.id.U))
+  XSPerfAccumulate(s"detect_req_from_refill", s0_req.valid && !s0_req.bits.is_hit)
+  XSPerfAccumulate(s"detect_req_from_refill_cpu", s0_req.valid && s0_req.bits.pfSource === PfSource.NoWhere.id.U && !s0_req.bits.is_hit)
+  XSPerfAccumulate(s"detect_req_from_refill_cdp", s0_req.valid && s0_req.bits.pfSource === PfSource.CDP.id.U && !s0_req.bits.is_hit)
+  XSPerfAccumulate(s"detect_req_from_refill_other_pft", s0_req.valid && s0_req.bits.pfSource =/= PfSource.NoWhere.id.U && s0_req.bits.pfSource =/= PfSource.CDP.id.U && !s0_req.bits.is_hit)
+  XSPerfAccumulate(s"detect_req_from_refill_bop", s0_req.valid && (s0_req.bits.pfSource === PfSource.BOP.id.U || s0_req.bits.pfSource === PfSource.PBOP.id.U) && !s0_req.bits.is_hit)
+  XSPerfAccumulate(s"detect_req_from_refill_sms", s0_req.valid && s0_req.bits.pfSource === PfSource.SMS.id.U && !s0_req.bits.is_hit)
+  XSPerfAccumulate(s"detect_req_from_refill_stream", s0_req.valid && s0_req.bits.pfSource === PfSource.Stream.id.U && !s0_req.bits.is_hit)
+  XSPerfAccumulate(s"detect_req_from_refill_stride", s0_req.valid && s0_req.bits.pfSource === PfSource.Stride.id.U && !s0_req.bits.is_hit)
+  XSPerfAccumulate(s"detect_req_from_refill_berti", s0_req.valid && s0_req.bits.pfSource === PfSource.Berti.id.U && !s0_req.bits.is_hit)
+  for (i <- 0 until 5) {
+    XSPerfAccumulate(s"detect_req_depth_$i", s0_req.valid && s0_req.bits.pfDepth === i.U)
   }
 }
 
