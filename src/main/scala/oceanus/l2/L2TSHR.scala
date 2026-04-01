@@ -43,6 +43,37 @@ object L2TSHR {
       initState
     }
   }
+
+  class DSReadFSM extends Bundle {
+    val PreArb = Bool()     // sending Read Request to Data Storage, waiting for Arbiter completion
+    val PostArb = Bool()    // Read Request has been accepted by Data Storage
+    def NotYet =            // haven't sent Read Request to Data Storage
+      !PreArb && !PostArb
+  }
+
+  object DSReadFSM {
+    def init = {
+      val initState = Wire(new DSReadFSM)
+      initState.elements.foreach(_._2 := false.B)
+      initState
+    }
+  }
+
+  class DSWriteFSM extends Bundle {
+    val PreArb = Bool()     // sending Write Request to Data Storage, waiting for Arbiter completion
+    val PostArb = Bool()    // Write Request has been accepted by Data Storage 
+    val Done = Bool()       // Write Request has been completed and observable to later requests
+    def NotYet =            // haven't sent Write Request to Data Storage
+      !PreArb && !PostArb && !Done
+  }
+
+  object DSWriteFSM {
+    def init = {
+      val initState = Wire(new DSWriteFSM)
+      initState.elements.foreach(_._2 := false.B)
+      initState
+    }
+  }
 }
 
 class L2TSHR(implicit val p: Parameters) extends Module {
@@ -73,6 +104,8 @@ class L2TSHR(implicit val p: Parameters) extends Module {
   val tshr_inactive_vpipe = Wire(Bool())
   val tshr_inactive = tshr_inactive_rbe && tshr_inactive_vpipe
 
+  val tshr_inactivate = Wire(Bool()) // TODO: connect with vPipes and RBEs, act as instant 'willFree'
+
   val tshr_wb_done_dir = Wire(Bool())
   val tshr_wb_done_ds = Wire(Bool()) // TODO: connect with DSWriteFSM
 
@@ -100,7 +133,14 @@ class L2TSHR(implicit val p: Parameters) extends Module {
   val metaWrite_valid = Wire(Bool()) // TODO: write masks might be needed
 
   // TODO: TSHR local meta interactions here
+
   
+  // TSHR Buffer
+  val tshr_buffer_0 = Reg(UInt(256.W))
+  val tshr_buffer_2 = Reg(UInt(256.W))
+
+  // TODO: TSHR Buffer interactions here
+
   
   // RBEs
   val rbeEVT = Module(new L2RBE(new FlitEVT /*TODO: strip PA here*/))
@@ -181,6 +221,13 @@ class L2TSHR(implicit val p: Parameters) extends Module {
 
   assert(!(io.fromDir.DirWbArbComp && !state_dirWrite.PreArb), "receiving DirWbArbComp on unexpected state (expecting PreArb)")
   assert(PopCount(state_dirWrite.asUInt) <= 1.U, "multiple active states in DirWriteFSM")
+
+
+  // Data Storage read states
+  // TODO
+
+  // Data Storage write states
+  // TODO
 
 
   // interactions with Directory
