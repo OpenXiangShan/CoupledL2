@@ -20,6 +20,37 @@ object MaskToOH {
   }
 }
 
+object MaskToOH1 {
+  def apply(in: UInt) = {
+    def onehotWithMulti(x: UInt): UInt = {
+      val w = x.getWidth
+      if (w == 1) {
+        x
+      } else {
+        val highWidth = w / 2
+        val lowWidth  = w - highWidth
+        val high = x(w - 1, lowWidth)
+        val low  = x(lowWidth - 1, 0)
+
+        val highOnehot = onehotWithMulti(high)
+        val lowOnehot  = onehotWithMulti(low)
+
+        val highHasOne = high.orR
+        val lowHasOne  = low.orR
+
+        val onehot = Mux(lowHasOne,
+          Cat(0.U(highWidth.W), lowOnehot),
+          Cat(highOnehot, 0.U(lowWidth.W))
+        )
+
+        onehot
+      }
+    }
+
+    onehotWithMulti(in)
+  }
+}
+
 object OHMux { 
   def apply[T <: Data](sel: Seq[Bool], in: Seq[T]): T = {
     assert(sel.size == in.size, s"input Seqs must have the same length, got sel ${sel.size} and in ${in.size}")
