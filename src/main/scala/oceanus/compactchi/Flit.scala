@@ -3,21 +3,23 @@ package oceanus.compactchi
 import chisel3._
 import chisel3.util._
 
-class FlitEVT extends Bundle {
+class FlitEVTStripped extends Bundle {
   val TxnID = UInt(8.W) // TODO: configured by L1 parameter
   val Opcode = UInt(1.W)
-  val Addr = UInt(48.W)
   val NS = Bool()
   val WayValid = Bool()
   val Way = UInt(2.W) // TODO: configured by L2 way count
   val TraceTag = UInt(1.W)
 }
 
-class FlitREQ extends Bundle {
+class FlitEVT extends FlitEVTStripped {
+  val Addr = UInt(48.W)
+}
+
+class FlitREQStripped extends Bundle {
   val TxnID = UInt(8.W) // TODO: configured by L1 parameter
   val Opcode = UInt(6.W) // TODO: variable width between different types of components
   val Size = UInt(3.W)
-  val Addr = UInt(48.W)
   val NS = Bool()
   val Order = UInt(2.W)
   val MemAttr = UInt(4.W)
@@ -28,12 +30,19 @@ class FlitREQ extends Bundle {
   val TraceTag = UInt(1.W)
 }
 
-class FlitSNP extends Bundle {
+class FlitREQ extends FlitREQStripped {
+  val Addr = UInt(48.W)
+}
+
+class FlitSNPStripped extends Bundle {
   val TxnID = UInt(8.W) // TODO: configured by L2 parameter
   val Opcode = UInt(2.W) // TODO: variable width between different types of components
-  val Addr = UInt((48 - 3).W)
   val NS = Bool()
   val TraceTag = UInt(1.W)
+}
+
+class FlitSNP extends FlitSNPStripped {
+  val Addr = UInt((48 - 3).W)
 }
 
 class FlitDnRSP extends Bundle {
