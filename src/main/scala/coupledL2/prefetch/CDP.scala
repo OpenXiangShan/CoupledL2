@@ -748,6 +748,9 @@ class PrefetchFilter(implicit p: Parameters) extends CDPModule {
   val selected_entry = entries(pf_req_arb.io.chosen)
   
   XSPerfAccumulate("pf_from_hit", pf_req_arb.io.out.valid && selected_entry.is_hit)
+  XSPerfAccumulate("pf_from_hit_cdp", pf_req_arb.io.out.valid && selected_entry.is_hit && selected_entry.pfSource === PfSource.CDP.id.U)
+  XSPerfAccumulate("pf_from_hit_sms", pf_req_arb.io.out.valid && selected_entry.is_hit && selected_entry.pfSource === PfSource.SMS.id.U)
+  XSPerfAccumulate("pf_from_hit_bop", pf_req_arb.io.out.valid && selected_entry.is_hit && (selected_entry.pfSource === PfSource.BOP.id.U || selected_entry.pfSource === PfSource.PBOP.id.U))
   XSPerfAccumulate("pf_from_refill", pf_req_arb.io.out.valid && !selected_entry.is_hit)
   XSPerfAccumulate("pf_from_refill_cpu", pf_req_arb.io.out.valid && selected_entry.pfSource === PfSource.NoWhere.id.U && !selected_entry.is_hit)
   XSPerfAccumulate("pf_from_refill_cdp", pf_req_arb.io.out.valid && selected_entry.pfSource === PfSource.CDP.id.U && !selected_entry.is_hit)
