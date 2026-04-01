@@ -29,18 +29,20 @@ CHI_TOP_ARGS = --issue $(ISSUE) --core $(NUM_CORE) --tl-ul $(NUM_TL_UL) --bank $
 		   	   --chiseldb $(WITH_CHISELDB) --tllog $(WITH_TLLOG) --chilog $(WITH_CHILOG) \
 			   --etime $(BY_ETIME) --vtime $(BY_VTIME) \
 		       --fpga $(FPGA)
-BUILD_DIR = ./build
-TOP_V = $(BUILD_DIR)/$(TOP).sv
+BUILD_DIR_L2 = ./build/coupledl2
+BUILD_DIR_LLC = ./build/openllc
+TOP_V_L2 = $(BUILD_DIR_L2)/$(TOP).sv
+TOP_V_LLC = $(BUILD_DIR_LLC)/$(TOP).sv
 MEM_GEN = ./scripts/vlsi_mem_gen
 MEM_GEN_SEP = ./scripts/gen_sep_mem.sh
 
 gen-test-top:
-	mill -i CoupledL2.test.runMain coupledL2.$(TOP)_$(SYSTEM) -td $(BUILD_DIR) --target systemverilog --split-verilog
-	$(MEM_GEN_SEP) "$(MEM_GEN)" "$(TOP_V).conf" "$(BUILD_DIR)"
+	mill -i CoupledL2.test.runMain coupledL2.$(TOP)_$(SYSTEM) -td $(BUILD_DIR_L2) --target systemverilog --split-verilog
+	$(MEM_GEN_SEP) "$(MEM_GEN)" "$(TOP_V_L2).conf" "$(BUILD_DIR_L2)"
 
 gen-test-top-chi:
-	mill -i CoupledL2.test.runMain coupledL2.$(TOP)_$(SYSTEM) -td $(BUILD_DIR) $(CHI_TOP_ARGS) --target systemverilog --split-verilog
-	$(MEM_GEN_SEP) "$(MEM_GEN)" "$(TOP_V).conf" "$(BUILD_DIR)"
+	mill -i CoupledL2.test.runMain coupledL2.$(TOP)_$(SYSTEM) -td $(BUILD_DIR_L2) $(CHI_TOP_ARGS) --target systemverilog --split-verilog
+	$(MEM_GEN_SEP) "$(MEM_GEN)" "$(TOP_V_L2).conf" "$(BUILD_DIR_L2)"
 
 test-top-l2:
 	$(MAKE) gen-test-top SYSTEM=L2
@@ -76,10 +78,10 @@ test-top-l3-openllc:
 	mill -i OpenLLC.test.runMain openLLC.TestTop_L3 -td build --target systemverilog --split-verilog
 
 test-top-l2l3-openllc:
-	mill -i OpenLLC.test.runMain openLLC.TestTopSoC_SingleCore -td build --target systemverilog --split-verilog
+	mill -i OpenLLC.test.runMain openLLC.TestTopSoC_SingleCore -td $(BUILD_DIR_LLC) --target systemverilog --split-verilog
 
 test-top-l2l3l2-openllc:
-	mill -i OpenLLC.test.runMain openLLC.TestTopSoC_DualCore -td build --target systemverilog --split-verilog
+	mill -i OpenLLC.test.runMain openLLC.TestTopSoC_DualCore -td $(BUILD_DIR_LLC) --target systemverilog --split-verilog
 
 clean:
 	rm -rf ./build
