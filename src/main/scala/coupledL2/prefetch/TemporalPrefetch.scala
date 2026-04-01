@@ -385,6 +385,11 @@ class SamplerFilter(implicit p: Parameters) extends TPModule {
   XSPerfAccumulate("tp_filter_trained_valid", io.train.valid)
   XSPerfAccumulate("tp_filter_hit", hit_s2 & s2_valid)
   XSPerfAccumulate("tp_filter_miss", !hit_s2 & s2_valid)
+
+  val filterDB = ChiselDB.createTable("tpfilter", new filteredEntry(), basicDB = true)
+  val filterPt = Wire(new filteredEntry())
+  filterPt := io.trained.bits
+  filterDB.log(filterPt, io.trained.valid, "", clock, reset)
 }
 
 class trainedPair(implicit p: Parameters) extends TPBundle {
@@ -523,7 +528,7 @@ class SamplerTable(implicit p: Parameters) extends TPModule {
     hit_s2 := hit_s1
     way_s2 := way_s1
   }
-  val cntValid_s2 = cnt_s2 >= filteredCntThrottle.U
+  val cntValid_s2 = cnt_s2 >= filteredCntThrottle.U && s2_valid
 
   val match_s2 = lastPair_s2.targetAddr === targetAddr_s2
   val pcMatch_s2 = pc_s2 === lastPair_s2.pc
@@ -565,8 +570,15 @@ class SamplerTable(implicit p: Parameters) extends TPModule {
   XSPerfAccumulate("tp_sampler_table_hit", s2_valid && hit_s2)
   XSPerfAccumulate("tp_sampler_table_hit_pc_match", s2_valid && hit_s2 && pcMatch_s2)
   XSPerfAccumulate("tp_sampler_table_hit_addr_match", s2_valid && hit_s2 && match_s2)
+  XSPerfHistogram("tp_sampler_table_matchCnt", perfCnt = lastPair_s2.matchCnt, enable = s2_valid && hit_s2, start = 0, stop = log2Ceil(samplerTableMatchCntWidth) - 1, step = 1)
   XSPerfAccumulate("tp_sampler_table_record_valid", recordValid_s2)
+  XSPerfAccumulate("tp_sampler_table_cnt_valid", cntValid_s2)
   XSPerfAccumulate("tp_sampler_table_W", samplerTableWValid)
+
+  val samplerDB = ChiselDB.createTable("tpsampler", new trainedPair(), basicDB = true)
+  val samplerPt = Wire(new trainedPair())
+  samplerPt := io.trained.bits
+  samplerDB.log(samplerPt, io.trained.valid, "", clock, reset)
 }
 
 class trainedRecord(implicit p: Parameters) extends TPBundle {
@@ -825,6 +837,10 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
   XSPerfAccumulate("tp_recorder_table_w", recorderTableWValid)
   XSPerfHistogram("tp_recorder_index", perfCnt = updateEntry.index, enable = hit_s3 && s3_valid, start = 0, stop = tpEntryMaxLen - 1, step = 1)
 
+  val recorderDB = ChiselDB.createTable("tprecorder", new trainedRecord(), basicDB = true)
+  val recorderPt = Wire(new trainedRecord())
+  recorderPt := io.record.bits
+  recorderDB.log(recorderPt, io.record.valid, "", clock, reset)
 }
 
 class Sampler(implicit p: Parameters) extends TPModule {
@@ -871,7 +887,8 @@ class confReq(implicit p: Parameters) extends TPBundle {
   val newMeta = Bool()
   val pfIssue = Bool()
   val pfHit = Bool()
-  // TODO: pf train frequency; pf late
+  val pfLate = Bool()
+  val pfMiss = Bool()
 }
 
 class confResp(implicit  p: Parameters) extends TPBundle {
@@ -998,8 +1015,14 @@ class confTable(implicit p:Parameters) extends TPModule {
   )
 
   io.resp.valid := s2_valid && needResp_s2
-  io.resp.bits.issue := conf_s2.accConf > ((1 << accConfWidth - 1) >> 1).U
+  io.resp.bits.issue := Mux(hit_s2, conf_s2.accConf > ((1 << accConfWidth - 1) >> 1).U, true.B)
 
+  XSPerfAccumulate("tp_conf_table_pf_hit", io.req.valid && io.req.bits.pfHit)
+  XSPerfAccumulate("tp_conf_table_pf_late", io.req.valid && io.req.bits.pfLate)
+  XSPerfAccumulate("tp_conf_table_pf_miss", io.req.valid && io.req.bits.pfMiss)
+  XSPerfAccumulate("tp_conf_table_pf_issue", io.req.valid && io.req.bits.pfIssue)
+  XSPerfAccumulate("tp_conf_table_new_meta", io.req.valid && io.req.bits.newMeta)
+  XSPerfAccumulate("tp_conf_table_resp", io.resp.valid)
 }
 
 class tpMetaEntry(implicit p:Parameters) extends TPBundle {
@@ -1028,7 +1051,7 @@ class tpMetaHitCountEntry(implicit p:Parameters) extends TPBundle {
   val hitCount = UInt(hitCountWidth.W)
 }
 
-class trainBundle(implicit p: Parameters) extends TPBundle {
+class trainBundle(implicit p: Parameters) extends TPBundle { //db
   val vaddr = UInt(vaddrBits.W)
   val paddr = UInt(fullAddressBits.W)
   val hit = Bool()
@@ -1038,12 +1061,11 @@ class trainBundle(implicit p: Parameters) extends TPBundle {
   val pc = UInt(pcHashWidth.W)
 }
 
-class sendBundle(implicit p: Parameters) extends TPBundle {
+class sendBundle(implicit p: Parameters) extends TPBundle { //db
   val paddr = UInt(fullAddressBits.W)
   val vaddr = UInt(vaddrBits.W)
 }
 
-/* VIVT, Physical Data */
 class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val io = IO(new Bundle() {
     val enable = Input(Bool())
@@ -1051,6 +1073,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     val req = DecoupledIO(new PrefetchReq)
     val resp = Flipped(DecoupledIO(new PrefetchResp))
     val hartid = Input(UInt(hartIdLen.W))
+    val feedBack = Flipped(DecoupledIO(new PrefetchFeedBack))
   })
 
   def parseVaddr(x: UInt): (UInt, UInt) = {
@@ -1343,6 +1366,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   io.resp.ready := true.B
   io.train.ready := resetFinish
+  io.feedBack.ready := resetFinish
 
   // global confidence
   val globalConfidenceReset = RegInit(1.U(10.W))
@@ -1370,12 +1394,17 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   }
 
   // confidence table
-  val pfHit = s2_valid && train_s2.hit && train_s2.reqsource === MemReqSource.Prefetch2L2TP.id.U
+  val pfHit = io.feedBack.bits.hit && !MemReqSource.isCPUReq(io.feedBack.bits.reqsource) &&
+    io.feedBack.bits.pfsource === PfSource.TP.id.U
+  val pfLate = io.feedBack.bits.hit && io.feedBack.bits.reqsource =/= MemReqSource.Prefetch2L2TP.id.U
+  val pfMiss = false.B // TODO
   val pfIssue = s2_valid && hit_s2
   val newMeta = sampler.io.trained.valid
-  confTable.io.req.valid := pfHit || pfIssue || newMeta // newMeta could be covered
-  confTable.io.req.bits.pc := Mux(pfHit && pfIssue, hashPC(train_s2.pc), sampler.io.trained.bits.pc)
+  confTable.io.req.valid := io.feedBack.valid || pfIssue || newMeta
+  confTable.io.req.bits.pc := Mux(pfIssue, hashPC(train_s2.pc), Mux(io.feedBack.valid, io.feedBack.bits.pc, sampler.io.trained.bits.pc)) //TODO:add queue?
   confTable.io.req.bits.pfHit := pfHit
+  confTable.io.req.bits.pfLate := pfLate
+  confTable.io.req.bits.pfMiss := pfMiss
   confTable.io.req.bits.pfIssue := pfIssue
   confTable.io.req.bits.newMeta := newMeta
 
@@ -1392,7 +1421,6 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   XSPerfHistogram("tp_pf_hit_count", perfCnt = io.train.bits.hitCount, enable = io.train.bits.hit, start = 0, stop = 1 << hitCountWidth, step = 1)
   XSPerfHistogram("tp_pf_count", perfCnt = io.req.bits.hitCount, enable = io.req.valid, start = 0, stop = 1 << hitCountWidth, step = 1)
-
 
   val trainDB = ChiselDB.createTable("tptrain", new trainBundle(), basicDB = true)
   val trainPt = Wire(new trainBundle())

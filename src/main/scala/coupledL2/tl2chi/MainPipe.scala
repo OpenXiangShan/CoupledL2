@@ -25,7 +25,7 @@ import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2._
-import coupledL2.prefetch.{PrefetchTrain, PfSource}
+import coupledL2.prefetch.{PrefetchTrain, PfSource, PrefetchFeedBack}
 import coupledL2.tl2chi.CHICohStates._
 import coupledL2.MetaData._
 
@@ -106,6 +106,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
     /* send prefetchTrain to Prefetch to trigger a prefetch req */
     val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain))
+    val prefetchFeedback = prefetchOpt.map(_ => DecoupledIO(new PrefetchFeedBack))
 
     /* top-down monitor */
     // TODO
@@ -722,6 +723,17 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       train.bits.reqsource := req_s3.reqSource
       train.bits.pc := req_s3.pc.getOrElse(0.U)
       train.bits.hitCount := dirResult_s3.meta.hitCount
+  }
+  io.prefetchFeedback.foreach {
+    feedback =>
+      feedback.valid := task_s3.valid && (req_acquire_s3 || req_get_s3) && req_s3.needHint.getOrElse(false.B) &&
+        (dirResult_s3.hit || req_s3.mergeA)
+      feedback.bits.hit := Mux(req_s3.mergeA, true.B, dirResult_s3.hit)
+      feedback.bits.pfsource := Mux(req_s3.mergeA, PfSource.fromMemReqSource(req_s3.reqSource),
+        meta_s3.prefetchSrc.getOrElse(PfSource.NoWhere.id.U))
+      feedback.bits.reqsource := req_s3.reqSource // merge should be amergeTask's reqsource
+      feedback.bits.pc := Mux(req_s3.mergeA && !MemReqSource.isCPUReq(req_s3.reqSource),
+        req_s3.aMergeTask.pc.getOrElse(0.U), req_s3.pc.getOrElse(0.U))
   }
 
   /* ======== Stage 4 ======== */

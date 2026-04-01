@@ -368,6 +368,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     }
     val prefetcher = prefetchOpt.map(_ => Module(new Prefetcher()(pftParams)))
     val prefetchTrains = prefetchOpt.map(_ => Wire(Vec(banks, DecoupledIO(new PrefetchTrain()(pftParams)))))
+    val prefetchFeedbacks = prefetchOpt.map(_ => Wire(Vec(banks, DecoupledIO(new PrefetchFeedBack()(pftParams)))))
     val prefetchResps = prefetchOpt.map(_ => Wire(Vec(banks, DecoupledIO(new PrefetchResp()(pftParams)))))
     val prefetchReqsReady = WireInit(VecInit(Seq.fill(banks)(false.B)))
     io.l2_tlb_req <> DontCare // TODO: l2_tlb_req should be Option
@@ -375,6 +376,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       _ =>
         fastArb(prefetchTrains.get, prefetcher.get.io.train, Some("prefetch_train"))
         prefetcher.get.io.req.ready := Cat(prefetchReqsReady).orR
+        fastArb(prefetchFeedbacks.get, prefetcher.get.io.feedback, Some("prefetch_feedback"))
         prefetcher.get.hartId := io.hartId
         prefetcher.get.pfCtrlFromCore := io.pfCtrlFromCore
         fastArb(prefetchResps.get, prefetcher.get.io.resp, Some("prefetch_resp"))

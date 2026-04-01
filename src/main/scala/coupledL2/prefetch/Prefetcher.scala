@@ -167,11 +167,19 @@ class PrefetchTrain(implicit p: Parameters) extends PrefetchBundle {
   def addr: UInt = Cat(tag, set, 0.U(offsetBits.W))
 }
 
+class PrefetchFeedBack(implicit p: Parameters) extends PrefetchBundle {
+  val hit = Bool()
+  val pfsource = UInt(PfSource.pfSourceBits.W)
+  val reqsource = UInt(MemReqSource.reqSourceBits.W)
+  val pc = UInt(fullVAddrBits.W)
+}
+
 class PrefetchIO(implicit p: Parameters) extends PrefetchBundle {
   val train = Flipped(DecoupledIO(new PrefetchTrain))
   val tlb_req = new L2ToL1TlbIO(nRespDups= 1)
   val req = DecoupledIO(new PrefetchReq)
   val resp = Flipped(DecoupledIO(new PrefetchResp))
+  val feedback = Flipped(DecoupledIO(new PrefetchFeedBack))
   val recv_addr = Flipped(ValidIO(new Bundle() {
     val addr = UInt(64.W)
     val pfSource = UInt(MemReqSource.reqSourceBits.W)
@@ -347,7 +355,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     tp.get.io.hartid := hartId
     tp.get.io.req.ready := (if(hasReceiver) !pfRcv.get.io.req.valid else true.B) &&
       (if(hasBOP) !vbop.get.io.req.valid && !pbop.get.io.req.valid else true.B)
-
+    tp.get.io.feedBack <> io.feedback
   }
   private val mbistPl = MbistPipeline.PlaceMbistPipeline(2, "MbistPipeL2Prefetcher", cacheParams.hasMbist && (hasBOP || hasTPPrefetcher))
 
