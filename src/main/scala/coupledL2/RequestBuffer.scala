@@ -115,6 +115,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   def conflictMask(a: TaskBundle): UInt = VecInit(io.mshrInfo.map(s =>
     s.valid && addrConflict(a, s.bits) && !s.bits.willFree)).asUInt
   def conflict(a: TaskBundle): Bool = conflictMask(a).orR
+  def parallelConflict(a: TaskBundle): Bool = ParallelOR(conflictMask(a).asBools)
 
   def conflictMaskFromA(a: TaskBundle): UInt =
     conflictMask(a) & VecInit(io.mshrInfo.map(_.bits.fromA)).asUInt
@@ -144,11 +145,11 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   val in      = io.in.bits
   val full    = Cat(buffer.map(_.valid)).andR
 
-  //
-  val mshrConflictMask = conflictMask(in)
-  val mshrConflictMaskFromA = conflictMaskFromA(in)
-  dontTouch(mshrConflictMask)
-  dontTouch(mshrConflictMaskFromA)
+
+  // val mshrConflictMask = conflictMask(in)
+  // val mshrConflictMaskFromA = conflictMaskFromA(in)
+  // dontTouch(mshrConflictMask)
+  // dontTouch(mshrConflictMaskFromA)
 
   // incoming Acquire can be merged with late_pf MSHR block
   val mergeAMask = VecInit(io.mshrInfo.map(s =>
@@ -177,7 +178,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   def noFreeWay(task: TaskBundle): Bool = noFreeWayForSet(task.set)
 
   // flow not allowed when full, or entries might starve
-  val canFlow = flow.B && !full && !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(in)
+  val canFlow = flow.B && !full && !parallelConflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(in)
   val doFlow  = canFlow && io.out.ready
 
   //  val depMask    = buffer.map(e => e.valid && sameAddr(io.in.bits, e.task))
