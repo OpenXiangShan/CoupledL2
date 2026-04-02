@@ -79,15 +79,15 @@ object ToAsyncBundleWithBuf {
     /*
      1. Shadow Buffer (depth=16, flow mode for low latency)
      */
-    val shadow_buffer = Module(new Queue(chiselTypeOf(chn.flit), 16, flow = true, pipe = false))
+    val shadow_buffer = Module(new Queue(chiselTypeOf(chn.flit), 32, flow = true, pipe = false))
     if (name.isDefined) { shadow_buffer.suggestName("shadowBuffer_" + name.get) }
     shadow_buffer.io.enq.valid := chn.flitv
     shadow_buffer.io.enq.bits  := chn.flit
     /*
      2. For rx channel (CMN->L2), send out lcrdv right after a flit entering Shadow buffer if has space
      */
-    val deqReady = shadow_buffer.io.deq.ready
-    dontTouch(deqReady)
+    val hasSpace = shadow_buffer.io.count <= 16.U 
+    dontTouch(hasSpace)
     assert(!chn.flitv || shadow_buffer.io.enq.ready, s"${name.getOrElse("ToAsyncBundle")}: Shadow buffer overflow!")
     /*
      3. AsyncQueueSource (depth=4)
@@ -96,7 +96,7 @@ object ToAsyncBundleWithBuf {
     if (name.isDefined) { source.suggestName("asyncQSource_" + name.get) }
     source.io.enq <> shadow_buffer.io.deq
 
-    (source.io.async, deqReady)
+    (source.io.async, hasSpace)
   }
 
   def bitPulse(
