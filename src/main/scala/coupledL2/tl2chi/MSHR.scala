@@ -808,8 +808,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     // Add merge grant task for Acquire and late Prefetch
     mp_grant.mergeA := mergeA || io.aMergeTask.valid
     val merge_task_r = RegEnable(io.aMergeTask.bits, 0.U.asTypeOf(new TaskBundle), io.aMergeTask.valid)
-    val merge_task = Mux(io.aMergeTask.valid, io.aMergeTask.bits, merge_task_r)
-    val merge_task_isKeyword = Mux(io.aMergeTask.valid, io.aMergeTask.bits.isKeyword.getOrElse(false.B), merge_task_r.isKeyword.getOrElse(false.B) )
+    val merge_task = merge_task_r
+    val merge_task_isKeyword = merge_task_r.isKeyword.getOrElse(false.B)
 
     mp_grant.aMergeTask.off := merge_task.off
     mp_grant.aMergeTask.alias.foreach(_ := merge_task.alias.getOrElse(0.U))
@@ -1340,6 +1340,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   io.msInfo.bits.param := req.param
   io.msInfo.bits.mergeA := mergeA
   io.msInfo.bits.w_grantfirst := state.w_grantfirst
+  io.msInfo.bits.w_grantlast := state.w_grantlast
   io.msInfo.bits.s_release := state.s_release
   io.msInfo.bits.s_refill := state.s_refill
   io.msInfo.bits.s_cmoresp := state.s_cmoresp
