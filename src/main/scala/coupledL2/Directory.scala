@@ -114,12 +114,12 @@ class TagWrite(implicit p: Parameters) extends L2Bundle {
 
 // DB entry for prefetch lifecycle tracking (arrival, access, eviction)
 class PrefetchDbEntry(implicit p: Parameters) extends L2Bundle {
-  val setIdx    = UInt(setBits.W)
-  val isPrefetch= Bool()
-  val isHit     = Bool()
-  val tag       = UInt(tagBits.W)
-  val way       = UInt(wayBits.W)
-  val metaSource  = UInt(PfSource.pfSourceBits.W)
+  val setIdx = UInt(setBits.W)
+  val isPrefetch = Bool()
+  val isHit = Bool()
+  val tag = UInt(tagBits.W)
+  val way = UInt(wayBits.W)
+  val metaSource = UInt(PfSource.pfSourceBits.W)
   val reqSource = UInt(MemReqSource.reqSourceBits.W)
 }
 
@@ -462,7 +462,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     val pfReqWriteEn = io.metaWReq.valid && wmeta.prefetch.getOrElse(false.B) 
     val pfReqWrite = Wire(new PrefetchDbEntry)
     val writeHasTag = io.tagWReq.valid && (io.tagWReq.bits.set === io.metaWReq.bits.set) &&
-      (OHToUInt(io.metaWReq.bits.wayOH) === io.tagWReq.bits.way)// try to attach tag when tagWReq coincides with metaWReq
+      (OHToUInt(io.metaWReq.bits.wayOH) === io.tagWReq.bits.way) // try to attach tag when tagWReq coincides with metaWReq
 
     pfReqWrite.isHit := false.B //useless for write req, just set it to false.B
     pfReqWrite.setIdx := io.metaWReq.bits.set // when meta write, the set idx to be written

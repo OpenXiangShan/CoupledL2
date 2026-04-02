@@ -161,7 +161,7 @@ class PrefetchTrain(implicit p: Parameters) extends PrefetchBundle {
   val needT = Bool()
   val source = UInt(sourceIdBits.W)
   val vaddr = vaddrBitsOpt.map(_ => UInt(vaddrBitsOpt.get.W))
-  val pc    =  pcBitOpt.map(_ => UInt(pcBitOpt.get.W))
+  val pc = pcBitOpt.map(_ => UInt(pcBitOpt.get.W))
   val hit = Bool()
   val prefetched = Bool()
   val pfsource = UInt(PfSource.pfSourceBits.W)
@@ -249,7 +249,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   if (hasBOP) {
     vbop.get.io.enable := vbop_en
     vbop.get.io.pfCtrlOfDelayLatency := delay_latency
-    vbop.get.io.req.ready :=  (if(hasReceiver) !pfRcv.get.io.req.valid else true.B)&&
+    vbop.get.io.req.ready :=  (if(hasReceiver) !pfRcv.get.io.req.valid else true.B) &&
                               (if(hasNLPrefetcher) !nl.get.io.req.valid else true.B) 
     vbop.get.io.train <> io.train
     vbop.get.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
@@ -307,8 +307,6 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
 
     tp.get.io.tpmeta_port <> tpio.tpmeta_port.get
   }
-  
-  
   private val mbistPl = MbistPipeline.PlaceMbistPipeline(2, "MbistPipeL2Prefetcher", cacheParams.hasMbist && (hasBOP || hasTPPrefetcher))
 
   // =================== Connection of all Prefetchers =====================
@@ -343,7 +341,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     pftQueueEnqArb.io.in(tp_idx).valid := tp.get.io.req.valid
     pftQueueEnqArb.io.in(tp_idx).bits := tp.get.io.req.bits
   }
-  if(hasNLPrefetcher) {
+  if (hasNLPrefetcher) {
     pftQueueEnqArb.io.in(nl_idx).valid := nl.get.io.req.valid
     pftQueueEnqArb.io.in(nl_idx).bits := nl.get.io.req.bits
   }
