@@ -381,7 +381,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     Some(Module(new SRAMTemplate(Bool(), sets, ways, singlePort = true, shouldReset = true, hasMbist = mbist, hasSramCtl = hasSramCtl)))
   val origin_bits_r = origin_bit_opt.get.io.r(io.read.fire, io.read.bits.set).resp.data
   val origin_bits_hold = Wire(Vec(ways, Bool()))
-  origin_bits_hold := HoldUnless(origin_bits_r, RegNext(io.read.fire, false.B))
+  origin_bits_hold := RegEnable(origin_bits_r, reqValid_s2)
   origin_bit_opt.get.io.w(replacerWen, hit_s4, set_s4, wayOH_s4)
   val rrip_req_type = WireInit(0.U(4.W))
   // [3]: 0-firstuse, 1-reuse;
