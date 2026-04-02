@@ -295,7 +295,10 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
   chosenQ.io.deq.ready := io.out.ready || cancel
   io.out.valid := chosenQValid && !cancel || io.in.valid && canFlow
-  io.out.bits  := Mux(canFlow, io.in.bits, chosenQ.io.deq.bits.bits.task)
+  io.out.bits := {
+    if (!flow) chosenQ.io.deq.bits.bits.task
+    else Mux(chosenQValid, chosenQ.io.deq.bits.bits.task, io.in.bits)
+  }
 
   when(chosenQ.io.deq.fire && !cancel) {
     buffer(chosenQ.io.deq.bits.id).valid := false.B
