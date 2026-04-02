@@ -232,10 +232,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   /* ======== Issue ======== */
   issueArb.io.in zip buffer foreach {
     case(in, e) =>
-      // when io.out.valid, we temporarily stall all entries of the same set
-      val pipeBlockOut = io.out.valid && sameSet(e.task, io.out.bits)
-
-      in.valid := e.valid && e.rdy && !pipeBlockOut
+      in.valid := e.valid && e.rdy
       in.bits  := e
   }
 
