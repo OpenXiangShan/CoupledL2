@@ -34,7 +34,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     /* receive task from arbiter at stage 2 */
     val taskFromArb_s2 = Flipped(ValidIO(new TaskBundle()))
     /* status from arbiter at stage1  */
-    val taskInfo_s1 = Flipped(ValidIO(new TaskBundle()))
+    val mshrHintQInfo = Flipped(ValidIO(new TaskBundle))
+    val sinkCHintQInfo = Flipped(ValidIO(new TaskBundle))
 
     /* handle set conflict in req arb */
     val fromReqArb = Input(new Bundle() {
@@ -834,8 +835,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   // TODO: check this
   val customL1Hint = Module(new CustomL1Hint)
 
-  customL1Hint.io.s1 := io.taskInfo_s1
-  // customL1Hint.io.s2 := task_s2
+  customL1Hint.io.mshrHintQInfo := io.mshrHintQInfo
+  customL1Hint.io.sinkCHintQInfo := io.sinkCHintQInfo
 
   customL1Hint.io.s3.task      := task_s3
   // overwrite opcode: if sinkReq can respond, use sink_resp_s3.bits.opcode = Grant/GrantData
