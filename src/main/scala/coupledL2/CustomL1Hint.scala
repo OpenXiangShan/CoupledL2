@@ -26,13 +26,15 @@ import coupledL2.utils._
 
 class HintQueueEntry(implicit p: Parameters) extends L2Bundle {
   val source = UInt(sourceIdBits.W)
-  val opcode = UInt(3.W)
+  val isGrantData = Bool()
   val isKeyword = Bool()
 }
 
 class CustomL1HintIOBundle(implicit p: Parameters) extends L2Bundle {
   // input information
-  val s1 = Flipped(ValidIO(new TaskBundle()))
+  // val s1 = Flipped(ValidIO(new TaskBundle()))
+  val mshrHintQInfo = Flipped(ValidIO(new TaskBundle()))
+  val sinkCHintQInfo = Flipped(ValidIO(new TaskBundle()))
   val s3 = new L2Bundle {
       val task      = Flipped(ValidIO(new TaskBundle()))
       val need_mshr = Input(Bool())
@@ -47,53 +49,50 @@ class CustomL1HintIOBundle(implicit p: Parameters) extends L2Bundle {
 class CustomL1Hint(implicit p: Parameters) extends L2Module {
   val io = IO(new CustomL1HintIOBundle)
 
-  val task_s1 = io.s1
+  val mshr_s1 = io.mshrHintQInfo.bits
+  val mshrMerge_s1 = mshr_s1.aMergeTask
+  val sinkC_s1 = io.sinkCHintQInfo.bits
   val task_s3 = io.s3.task
-  val mshrReq_s1 = task_s1.bits.mshrTask
   val mshrReq_s3 = task_s3.bits.mshrTask
-  val mergeA_s1  = task_s1.bits.mergeA
   val need_mshr_s3 = io.s3.need_mshr
 
-  def isGrantData(t: TaskBundle):  Bool = t.fromA && t.opcode === GrantData
-  def isGrant(t: TaskBundle):      Bool = t.fromA && t.opcode === Grant
-  def isHintAck(t: TaskBundle):    Bool = t.fromA && t.opcode === HintAck // HintAck has no effect on Hint
-  def isRelease(t: TaskBundle):    Bool = t.fromC && (t.opcode === Release || t.opcode === ReleaseData)
-  def isMergeGrantData(t: TaskBundle): Bool = t.fromA && t.mergeA && t.aMergeTask.opcode === GrantData
-  def isMergeGrant(t: TaskBundle):     Bool = t.fromA && t.mergeA && t.aMergeTask.opcode === Grant
+  // def isGrantData(t: TaskBundle, info: HintQueueEntry):  Bool = t.fromA && info.opcode === GrantData
+  // def isGrant(t: TaskBundle, info: HintQueueEntry):      Bool = t.fromA && info.opcode === Grant
+  // def isHintAck(t: TaskBundle, info: HintQueueEntry):    Bool = t.fromA && info.opcode === HintAck // HintAck has no effect on Hint
+  // def isRelease(t: TaskBundle, info: HintQueueEntry):    Bool = t.fromC && (info.opcode === Release || info.opcode === ReleaseData)
+  // def isMergeGrantData(t: TaskBundle): Bool = t.fromA && t.mergeA && t.aMergeTask.opcode === GrantData
+  // def isMergeGrant(t: TaskBundle):     Bool = t.fromA && t.mergeA && t.aMergeTask.opcode === Grant
 
   // ==================== Hint Generation ====================
   // Hint for "MSHRTask and ReleaseAck" will fire@s1
-  val mshr_GrantData_s1 = task_s1.valid &&  mshrReq_s1 && (isGrantData(task_s1.bits) || isMergeGrantData(task_s1.bits))
-  val mshr_Grant_s1     = task_s1.valid &&  mshrReq_s1 && (isGrant(task_s1.bits) || isMergeGrant(task_s1.bits))
-  val chn_Release_s1    = task_s1.valid && !mshrReq_s1 && isRelease(task_s1.bits)
+  // val mshr_GrantData_s1 = task_s1.valid &&  mshrReq_s1 && (isGrantData(task_s1.bits) || isMergeGrantData(task_s1.bits))
+  // val mshr_Grant_s1     = task_s1.valid &&  mshrReq_s1 && (isGrant(task_s1.bits) || isMergeGrant(task_s1.bits))
+  // val chn_Release_s1    = task_s1.valid && !mshrReq_s1 && isRelease(task_s1.bits)
+  val mshr_GrantData_s1 = io.mshrHintQInfo.valid && (mshr_s1.fromA && (mshr_s1.opcode === GrantData || (mshr_s1.mergeA && mshrMerge_s1.opcode === GrantData)))
+  val mshr_Grant_s1     = io.mshrHintQInfo.valid && (mshr_s1.fromA && (mshr_s1.opcode === Grant || (mshr_s1.mergeA && mshrMerge_s1.opcode === Grant)))
+  val chn_Release_s1    = io.sinkCHintQInfo.valid
+  assert(Mux(chn_Release_s1, sinkC_s1.fromC, true.B))
+  assert(Mux(chn_Release_s1, sinkC_s1.opcode === Release || sinkC_s1.opcode === ReleaseData, true.B))
 
   val enqBits_s1 = Wire(new HintQueueEntry)
-  enqBits_s1.source := Mux(task_s1.bits.mergeA, task_s1.bits.aMergeTask.sourceId, task_s1.bits.sourceId)
-  enqBits_s1.isKeyword := Mux(task_s1.bits.mergeA,
-    task_s1.bits.aMergeTask.isKeyword.getOrElse(false.B),
-    task_s1.bits.isKeyword.getOrElse(false.B)
-  )
-  enqBits_s1.opcode := ParallelPriorityMux(
-    Seq(
-      mshr_Grant_s1 -> Grant,
-      mshr_GrantData_s1 -> GrantData,
-      chn_Release_s1 -> ReleaseAck
-    )
-  )
+  // enqBits_s1.source := Mux(task_s1.bits.mergeA, task_s1.bits.aMergeTask.sourceId, task_s1.bits.sourceId)
+  enqBits_s1.source := OHMux(Seq(
+    (io.mshrHintQInfo.valid && mshr_s1.mergeA) -> mshrMerge_s1.sourceId,
+    (io.mshrHintQInfo.valid && !mshr_s1.mergeA) -> mshr_s1.sourceId,
+    io.sinkCHintQInfo.valid -> sinkC_s1.sourceId
+  ))
+  OneHot.checkOneHot(Cat(io.mshrHintQInfo.valid && mshr_s1.mergeA, io.mshrHintQInfo.valid && !mshr_s1.mergeA, io.sinkCHintQInfo.valid))
+  enqBits_s1.isKeyword := Mux(mshr_s1.mergeA, mshrMerge_s1.isKeyword.getOrElse(false.B), mshr_s1.isKeyword.getOrElse(false.B)) 
+  enqBits_s1.isGrantData := mshr_GrantData_s1
 
   // Hint for "chnTask Hit" will fire@s3
-  val chn_Grant_s3     = task_s3.valid && !mshrReq_s3 && !need_mshr_s3 && isGrant(task_s3.bits)
-  val chn_GrantData_s3 = task_s3.valid && !mshrReq_s3 && !need_mshr_s3 && isGrantData(task_s3.bits)
+  val chn_Grant_s3     = task_s3.valid && !mshrReq_s3 && !need_mshr_s3 && task_s3.bits.fromA && task_s3.bits.opcode === Grant
+  val chn_GrantData_s3 = task_s3.valid && !mshrReq_s3 && !need_mshr_s3 && task_s3.bits.fromA && task_s3.bits.opcode === GrantData
   val enqBits_s3 = Wire(new HintQueueEntry)
   val enqValid_s3 = chn_Grant_s3 || chn_GrantData_s3
   enqBits_s3.source := task_s3.bits.sourceId
   enqBits_s3.isKeyword := task_s3.bits.isKeyword.getOrElse(false.B)
-  enqBits_s3.opcode := ParallelPriorityMux(
-    Seq(
-      chn_Grant_s3 -> Grant,
-      chn_GrantData_s3 -> GrantData
-    )
-  )
+  enqBits_s3.isGrantData := chn_GrantData_s3
 
   // ==================== Hint Queue ====================
   val hintEntries = mshrsAll
@@ -101,7 +100,7 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   val hintQueue = Module(new Queue(new HintQueueEntry, hintEntries))
   val canFlow_s1 = !hintQueue.io.deq.valid || hintQueue.io.count === 1.U && hintQueue.io.deq.fire
   val valid_s1 = mshr_GrantData_s1 || mshr_Grant_s1 || chn_Release_s1
-  val flow_s1, arbOut_s1, enq_s3 = Wire(Decoupled(new HintQueueEntry))
+  val flow_s1, enq_s3 = Wire(Decoupled(new HintQueueEntry))
   // noSpaceForSinkReq in GrantBuffer may ensure that these queues will not overflow
   assert(enq_s3.ready || !enq_s3.valid)
 
@@ -114,14 +113,12 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   flow_s1.valid := valid_s1 && canFlow_s1
   flow_s1.bits := enqBits_s1
 
-  arb(Seq(hint_s1Queue.io.out, flow_s1), arbOut_s1, Some("s1"))
-
   enq_s3.valid := enqValid_s3
   enq_s3.bits := enqBits_s3
-  arb(Seq(enq_s3,  arbOut_s1), hintQueue.io.enq, Some("Hint"))
+  fastArb(Seq(enq_s3,  hint_s1Queue.io.out, flow_s1), hintQueue.io.enq, Some("Hint"))
   hintQueue.io.deq.ready := io.l1Hint.ready
 
-  io.l1Hint.valid := hintQueue.io.deq.valid && hintQueue.io.deq.bits.opcode === GrantData
+  io.l1Hint.valid := hintQueue.io.deq.valid && hintQueue.io.deq.bits.isGrantData
   io.l1Hint.bits.sourceId := hintQueue.io.deq.bits.source
   io.l1Hint.bits.isKeyword := hintQueue.io.deq.bits.isKeyword
 }
