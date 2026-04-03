@@ -58,6 +58,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     val errOnSnp_s3 = Input(Bool())
     val dirWayOH_s3 = Input(UInt(cacheParams.ways.W))
     val dirReplWayOH_s3 = Input(UInt(cacheParams.ways.W))
+    val cmoHitInvalid = Input(Bool())
     val replResp = Flipped(ValidIO(new ReplacerResult()))
 
     /* send task to MSHRCtl at stage 3 */
@@ -155,7 +156,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val meta_s3         = dirResult_s3.meta
   val metaOnHit_s3    = io.metaOnHit_s3
   val req_s3          = task_s3.bits
-  val cmoHitInvalid   = io.cmoAllBlock.getOrElse(false.B) && (meta_s3.state === INVALID)
+  val cmoHitInvalid   = io.cmoAllBlock.getOrElse(false.B) && (io.cmoHitInvalid === INVALID)
 
   val mshr_req_s3     = req_s3.mshrTask
   val sink_req_s3     = !mshr_req_s3
@@ -641,18 +642,18 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val isTXRSP_s3 = Mux(
     mshr_req_s3,
     mshr_snpRespX_s3,
-    req_s3.fromB && !need_mshr_s3 && !hasData_s3
+    req_s3.fromB && !need_mshr_s3_b && !hasData_s3
   )
   val isTXDAT_s3 = Mux(
     mshr_req_s3,
     mshr_snpRespDataX_s3 || mshr_cbWrData_s3 || mshr_dct_s3,
-    req_s3.fromB && !need_mshr_s3 && 
+    req_s3.fromB && !need_mshr_s3_b && 
       (doRespData && (!data_unready_s3 || req_s3.snpHitRelease && req_s3.snpHitReleaseWithData))
   )
   val isTXDAT_s3_ready = Mux(
     mshr_req_s3,
     mshr_snpRespDataX_s3 || mshr_cbWrData_s3 || mshr_dct_s3,
-    req_s3.fromB && !need_mshr_s3 && !txdat_s3_latch.B &&
+    req_s3.fromB && !need_mshr_s3_b && !txdat_s3_latch.B &&
       (doRespData && (!data_unready_s3 || req_s3.snpHitRelease && req_s3.snpHitReleaseWithData))
   )
   val isTXREQ_s3 = mshr_req_s3 && (mshr_writeBackFull_s3 || mshr_writeCleanFull_s3 || 
