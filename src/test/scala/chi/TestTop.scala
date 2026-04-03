@@ -166,10 +166,15 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, ext
     val io = IO(Vec(numCores, new Bundle() {
       val chi = new PortIO
       val nodeId = Input(UInt(NODEID_WIDTH.W))
+    }))
+
+    val io_powerdown = IO(Vec(numCores, new Bundle {
       val flushAll = Input(Bool())
       val flushAllDone = Output(Bool())
       val cpuHalt = Input(Bool())
     }))
+
+    val io_linkdown = IO(Vec(numCores, Output(Bool())))
 
     l2_nodes.zipWithIndex.foreach { case (l2, i) =>
 
@@ -199,9 +204,13 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, ext
       l2.module.io_nodeID := io(i).nodeId
       l2.module.io.debugTopDown := DontCare
       l2.module.io.l2_tlb_req <> DontCare
-      l2.module.io.l2Flush.foreach(_ := io(i).flushAll)
-      io(i).flushAllDone := l2.module.io.l2FlushDone.getOrElse(false.B)
-      l2.module.io_cpu_halt.foreach(_ := io(i).cpuHalt)
+      l2.module.io.l2Flush.foreach(_ := io_powerdown(i).flushAll)
+      io_powerdown(i).flushAllDone := l2.module.io.l2FlushDone.getOrElse(false.B)
+      l2.module.io_cpu_halt.foreach(_ := io_powerdown(i).cpuHalt)
+
+      io_linkdown(i) := !l2.module.io_chi.syscoreq && !l2.module.io_chi.syscoack &&
+        !l2.module.io_chi.tx.linkactivereq && !l2.module.io_chi.tx.linkactiveack &&
+        !l2.module.io_chi.rx.linkactivereq && !l2.module.io_chi.rx.linkactiveack
     }
   }
 }
