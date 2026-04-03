@@ -140,6 +140,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     val errOnSnp = Bool()
     val wayOH = Output(UInt(cacheParams.ways.W))
     val replWayOH = Output(UInt(cacheParams.ways.W))
+    val cmoHitInvalid = Output(Bool())
   })
 
   def invalid_way_sel(metaVec: Seq[MetaEntry]) = {
@@ -209,6 +210,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   val reqValid_s3 = RegNext(reqValid_s2, false.B)
   val req_s2 = RegEnable(io.read.bits, 0.U.asTypeOf(io.read.bits), io.read.fire)
   val req_s3 = RegEnable(req_s2, 0.U.asTypeOf(req_s2), reqValid_s2)
+  val cmoWayOH_s3 = RegEnable(UIntToOH(req_s2.cmoWay), reqValid_s2)
 
   val refillReqValid_s2 = RegNext(io.read.fire && io.read.bits.refill, false.B)
   val refillReqValid_s3 = RegNext(refillReqValid_s2, false.B)
@@ -298,7 +300,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     OHMux(replaceOH, freeWayMask_s3) -> replaceOH
   ))
   val hit_s3 = Cat(hitVec).orR || req_s3.cmoAll
-  val wayOH_s3 = Mux(req_s3.cmoAll, UIntToOH(req_s3.cmoWay), Mux(hit_s3, hitOH, finalReplOH))
+  val wayOH_s3 = Mux(req_s3.cmoAll, cmoWayOH_s3, Mux(hit_s3, hitOH, finalReplOH))
   val way_s3 = OHToUInt(wayOH_s3)
   val meta_s3 = OHMux(wayOH_s3, metaAll_s3)
   val metaOnHit_s3 = OHMux(hitOH, metaAll_s3) // only valid when hit
@@ -434,6 +436,8 @@ class Directory(implicit p: Parameters) extends L2Module {
     val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3)
     replacer_sram_opt.get.io.w(replacerWen, next_state_s3, set_s3, 1.U)
   }
+
+  io.cmoHitInvalid := OHMux(cmoWayOH_s3, metaAll_s3).state === MetaData.INVALID
 
   /* ====== Reset ====== */
 
