@@ -210,7 +210,7 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
   // ========== PE calculation ==========
   // at least ratio=1/MultipeLog useful
   private val prefetchYieldMultipeLog = log2Ceil(8)
-  private val l1PrefetchCacheHitMultipeLog = log2Ceil(4)
+  private val l1PrefetchCacheHitMultipeLog = log2Ceil(2) // l1 prefetch accuracy is about 0.5
 
   def isPfLateInCache(r: ValidIO[DirResult], i: Int): Bool = {
     r.valid && r.bits.replacerInfo.channel === 1.U &&
