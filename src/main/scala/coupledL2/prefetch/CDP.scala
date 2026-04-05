@@ -248,11 +248,8 @@ class VpnTable(implicit p: Parameters) extends CDPModule {
   }
 
   // Reset Logic (Reset the entries)
-  val query_req_fire_vec = query_req.map(_.fire)
-  val visit_cnt = PopCount(query_req_fire_vec)
-
-  when (resetCnt < VpnResetPeriod.U){
-    resetCnt := resetCnt + visit_cnt
+  when (resetCnt < VpnResetPeriod.U && train_req.valid){
+    resetCnt := resetCnt + 1.U
   }
 
   is_reset := !train_req.valid && resetCnt >= VpnResetPeriod.U
