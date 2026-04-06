@@ -279,6 +279,10 @@ class VpnTable(implicit p: Parameters) extends CDPModule {
     }
   }
 
+  // ------------------ Performance Counter ------------------
+  XSPerfAccumulate("vt_train_alloc", train_req.valid && train_req.bits.need_alloc)
+  XSPerfAccumulate("vt_train_update", train_req.valid && !train_req.bits.need_alloc)
+  XSPerfAccumulate("train_req_during_reset", train_req.valid && is_reset)
 }
 
 class CDPTrainReq(implicit p: Parameters) extends CDPBundle {
@@ -759,6 +763,8 @@ class PrefetchFilter(implicit p: Parameters) extends CDPModule {
   for (i <- 0 until 5) {
     XSPerfAccumulate(s"pf_depth_$i", pf_req_arb.io.out.valid && selected_entry.pfDepth === i.U)
   }
+
+  XSPerfAccumulate("tlb_req_block", tlb_req.valid && !tlb_req.ready)
 }
 
 class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
