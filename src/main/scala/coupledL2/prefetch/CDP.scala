@@ -218,7 +218,7 @@ class VpnTable(implicit p: Parameters) extends CDPModule {
   }
 
   // Train Logic
-  when (train_req.valid) {
+  when (train_req.valid && !is_reset) {
     val (main_idx, sub_idx) = (train_req.bits.main_idx, train_req.bits.sub_idx)
     val target_way = train_req.bits.target_way
 
@@ -251,7 +251,7 @@ class VpnTable(implicit p: Parameters) extends CDPModule {
     resetCnt := resetCnt + 1.U
   }
 
-  is_reset := !train_req.valid && resetCnt >= VpnResetPeriod.U
+  is_reset := resetCnt >= VpnResetPeriod.U && !reset.asBool
   XSPerfAccumulate("VpnTable_reset", is_reset)
   when (is_reset) {
     resetCnt := 0.U
@@ -840,13 +840,13 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
     
     detect_trig_queue.io.flush := reset.asBool
 
-    detect_trig_queue.io.enq(0).valid := detect_trig.valid && (hit_trigger || refill_trigger)
+    detect_trig_queue.io.enq(0).valid := detect_trig.valid && (hit_trigger || refill_trigger) && enable
     detect_trig_queue.io.enq(0).bits.half_cacheblock  := detect_trig.bits.cacheblock(blockBits / 2 - 1, 0)
     detect_trig_queue.io.enq(0).bits.pfDepth  := detect_trig.bits.pfDepth
     detect_trig_queue.io.enq(0).bits.pfSource := detect_trig.bits.pfSource
     detect_trig_queue.io.enq(0).bits.is_hit   := detect_trig.bits.is_hit
 
-    detect_trig_queue.io.enq(1).valid := detect_trig.valid && (hit_trigger || refill_trigger)
+    detect_trig_queue.io.enq(1).valid := detect_trig.valid && (hit_trigger || refill_trigger) && enable
     detect_trig_queue.io.enq(1).bits.half_cacheblock  := detect_trig.bits.cacheblock(blockBits - 1, blockBits / 2)
     detect_trig_queue.io.enq(1).bits.pfDepth  := detect_trig.bits.pfDepth
     detect_trig_queue.io.enq(1).bits.pfSource := detect_trig.bits.pfSource
