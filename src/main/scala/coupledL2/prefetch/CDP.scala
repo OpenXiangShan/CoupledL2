@@ -806,12 +806,12 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
       * Check : Detection Condition
       * Hit Trigger:
           a) Hit a CDP prefetched block, pfDepth == 2 or 4
-          b) Hit a SMS/BOP prefetched block (TODO!)
+          b) Hit a SMS/BOP prefetched block
 
       * Refill Trigger:
           a) Refill a true demanded block
           b) Refill a CDP required block
-          c) Refill other prefetcher's block. (TODO: filter)
+          c) Refill other prefetcher's block.
     */
     val detect_trig_fromCDP = detect_trig.bits.pfSource === PfSource.CDP.id.U
     val detect_trig_fromSMS = detect_trig.bits.pfSource === PfSource.SMS.id.U
@@ -936,10 +936,12 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
   XSPerfAccumulate("train_trigger_deq", train_trig_queue.io.deq.fire)
   XSPerfAccumulate("train_trigger_discard", train_trig_queue.io.enq.valid && !train_trig_queue.io.enq.ready)
   for (i <- 0 until 4) {
-    XSPerfAccumulate(s"l2_trigger_${i}_enq", l2_triggers(i).valid)
+    XSPerfAccumulate("detect_trigger_enq", detect_trig_queue_seq(i).io.enq(0).fire)
+    XSPerfAccumulate("detect_trigger_deq", detect_trig_queue_seq(i).io.deq(0).fire)
+    XSPerfAccumulate("detect_trigger_discard", detect_trig_queue_seq(i).io.enq(0).valid && !detect_trig_queue_seq(i).io.enq(0).ready)
   }
   for (i <- 0 until DetectPipeNum) {
-    XSPerfAccumulate(s"detect_pipe_${i}_pft_drop", detect_pipe_seq(i).io.pft_req.valid && !detect_pipe_seq(i).io.pft_req.ready)
+    XSPerfAccumulate(s"detect_pipe_${i}_pft_drop", detect_pipe_seq(i).io.pft_req.valid && !detect_pipe_seq(i).io.pft_req.ready)   // drop pft req due to pft_buffer full
     XSPerfAccumulate(s"detect_pipe_${i}_detect_enq", detect_pipe_seq(i).io.detect_req.valid)
   }
 }
