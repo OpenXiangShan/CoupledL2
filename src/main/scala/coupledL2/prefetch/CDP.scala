@@ -939,9 +939,11 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
   XSPerfAccumulate("train_trigger_deq", train_trig_queue.io.deq.fire)
   XSPerfAccumulate("train_trigger_discard", train_trig_queue.io.enq.valid && !train_trig_queue.io.enq.ready)
   for (i <- 0 until 4) {
-    XSPerfAccumulate("detect_trigger_enq", detect_trig_queue_seq(i).io.enq(0).fire)
+    XSPerfAccumulate("detect_trigger_enq0", detect_trig_queue_seq(i).io.enq(0).fire)
+    XSPerfAccumulate("detect_trigger_enq1", detect_trig_queue_seq(i).io.enq(1).fire)
     XSPerfAccumulate("detect_trigger_deq", detect_trig_queue_seq(i).io.deq(0).fire)
-    XSPerfAccumulate("detect_trigger_discard", detect_trig_queue_seq(i).io.enq(0).valid && !detect_trig_queue_seq(i).io.enq(0).ready)
+    XSPerfAccumulate("detect_trigger_discard0", detect_trig_queue_seq(i).io.enq(0).valid && !detect_trig_queue_seq(i).io.enq(0).ready)
+    XSPerfAccumulate("detect_trigger_discard1", detect_trig_queue_seq(i).io.enq(1).valid && !detect_trig_queue_seq(i).io.enq(1).ready)
   }
   for (i <- 0 until DetectPipeNum) {
     XSPerfAccumulate(s"detect_pipe_${i}_pft_drop", pft_req_buffer.io.enq(i).valid && !pft_req_buffer.io.enq(i).ready)   // drop pft req due to pft_buffer full
