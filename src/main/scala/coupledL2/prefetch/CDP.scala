@@ -179,7 +179,7 @@ class vtTrainReq(implicit p: Parameters) extends CDPBundle {
 
 class VpnTable(implicit p: Parameters) extends CDPModule {
   val io = IO(new Bundle {
-    val query_req = Flipped(Vec(DetectPipeNum + 1, DecoupledIO(new vtQueryReq)))   // +1 for train pipe
+    val query_req = Flipped(Vec(DetectPipeNum + 1, ValidIO(new vtQueryReq)))   // +1 for train pipe
     val query_rsp = Vec(DetectPipeNum + 1, ValidIO(new vtQueryRsp))
     val train_req = Flipped(ValidIO(new vtTrainReq))
   })
@@ -207,7 +207,6 @@ class VpnTable(implicit p: Parameters) extends CDPModule {
   for (i <- 0 until DetectPipeNum + 1) {
     val (req, rsp) = (query_req(i), query_rsp(i))
 
-    req.ready := !is_reset
     rsp.valid := !is_reset
 
     val (main_idx, sub_idx) = (req.bits.main_idx, req.bits.sub_idx)
@@ -322,7 +321,7 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
     val train_req = Flipped(DecoupledIO(new CDPTrainReq))
 
     // to VPN Table
-    val vt_query_req = Decoupled(new vtQueryReq)
+    val vt_query_req = ValidIO(new vtQueryReq)
     val vt_query_rsp = Flipped(ValidIO(new vtQueryRsp))
     val vt_train_req = ValidIO(new vtTrainReq)
 
@@ -442,14 +441,14 @@ class DetectPipeline(implicit p: Parameters) extends CDPModule {
     val detect_req    = Flipped(ValidIO(new CDPDetectReq))
 
     // to Vpn Table
-    val vt_query_req  = DecoupledIO(new vtQueryReq)
+    val vt_query_req  = ValidIO(new vtQueryReq)
     val vt_query_rsp  = Flipped(ValidIO(new vtQueryRsp))
 
     // to Replacer
     val replace_upt = ValidIO(new ReplaceUpt)
 
     // Prefetch Req
-    val pft_req = DecoupledIO(new CDPPrefetchReq)
+    val pft_req = ValidIO(new CDPPrefetchReq)
   })
 
   val detect_req  = io.detect_req
@@ -885,7 +884,6 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
     case (tab_req, pipe_req) =>
       tab_req.valid := pipe_req.valid
       tab_req.bits := pipe_req.bits
-      pipe_req.ready := tab_req.ready
   }
   vpn_table.io.query_rsp.zip(vpn_tab_query_rsp_seq).foreach{
     case (tab_rsp, pipe_rsp) =>
@@ -923,7 +921,6 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
   for (i <- 0 until DetectPipeNum) {
     pft_req_buffer.io.enq(i).valid      := detect_pipe_seq(i).io.pft_req.valid
     pft_req_buffer.io.enq(i).bits       := detect_pipe_seq(i).io.pft_req.bits
-    detect_pipe_seq(i).io.pft_req.ready := pft_req_buffer.io.enq(i).ready
   }
 
   val pft_req_filter = Module(new PrefetchFilter)
@@ -941,7 +938,8 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
     XSPerfAccumulate("detect_trigger_discard", detect_trig_queue_seq(i).io.enq(0).valid && !detect_trig_queue_seq(i).io.enq(0).ready)
   }
   for (i <- 0 until DetectPipeNum) {
-    XSPerfAccumulate(s"detect_pipe_${i}_pft_drop", detect_pipe_seq(i).io.pft_req.valid && !detect_pipe_seq(i).io.pft_req.ready)   // drop pft req due to pft_buffer full
-    XSPerfAccumulate(s"detect_pipe_${i}_detect_enq", detect_pipe_seq(i).io.detect_req.valid)
+    XSPerfAccumulate(s"detect_pipe_${i}_pft_drop", pft_req_buffer.io.enq(i).valid && !pft_req_buffer.io.enq(i).ready)   // drop pft req due to pft_buffer full
+    XSPerfAccumulate(s"detect_pipe_${i}_detect_enter", detect_pipe_seq(i).io.detect_req.valid)
+    XSPerfAccumulate(s"detect_pipe_${i}_detect_leave", detect_pipe_seq(i).io.pft_req.valid)
   }
 }
