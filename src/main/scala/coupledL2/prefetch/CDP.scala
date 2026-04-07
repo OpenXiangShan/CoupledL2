@@ -554,6 +554,8 @@ class DetectPipeline(implicit p: Parameters) extends CDPModule {
   // ------------------ Performance Counter ------------------
   XSPerfAccumulate("s2_vt_hit", s2_req.valid && s2_vt_hit)
   XSPerfAccumulate("s2_vt_miss", s2_req.valid && !s2_vt_hit)
+  XSPerfAccumulate("s2_vt_hit_hot", s2_req.valid && s2_vt_hit && s2_vt_hit_hot)
+  XSPerfAccumulate("s2_vt_hit_cold", s2_req.valid && s2_vt_hit && !s2_vt_hit_hot)
   XSPerfAccumulate("s2_vpn0_is_non_zero", s2_req.valid && s2_vpn0_is_nzero)
   XSPerfAccumulate("s2_vpn0_is_zero", s2_req.valid && !s2_vpn0_is_nzero)
   XSPerfAccumulate("s2_low_bit_is_zero", s2_req.valid && s2_low_bit_is_zero)
