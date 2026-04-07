@@ -552,6 +552,15 @@ class DetectPipeline(implicit p: Parameters) extends CDPModule {
   pft_req.bits.is_hit   := s4_req.bits.is_hit
 
   // ------------------ Performance Counter ------------------
+  XSPerfAccumulate("s2_vt_hit", s2_req.valid && s2_vt_hit)
+  XSPerfAccumulate("s2_vt_miss", s2_req.valid && !s2_vt_hit)
+  XSPerfAccumulate("s2_vpn0_is_non_zero", s2_req.valid && s2_vpn0_is_nzero)
+  XSPerfAccumulate("s2_vpn0_is_zero", s2_req.valid && !s2_vpn0_is_nzero)
+  XSPerfAccumulate("s2_low_bit_is_zero", s2_req.valid && s2_low_bit_is_zero)
+  XSPerfAccumulate("s2_low_bit_is_non_zero", s2_req.valid && !s2_low_bit_is_zero)
+  XSPerfAccumulate("s2_high_bit_is_zero", s2_req.valid && s2_high_bit_is_zero)
+  XSPerfAccumulate("s2_high_bit_is_non_zero", s2_req.valid && !s2_high_bit_is_zero)
+
   XSPerfAccumulate(s"detect_pft_from_hit", s4_req.valid && s4_req.bits.is_hit)
   XSPerfAccumulate(s"detect_pft_from_hit_cdp", s4_req.valid && s4_req.bits.is_hit && s4_req.bits.pfSource === PfSource.CDP.id.U)
   XSPerfAccumulate(s"detect_pft_from_hit_sms", s4_req.valid && s4_req.bits.is_hit && s4_req.bits.pfSource === PfSource.SMS.id.U)
