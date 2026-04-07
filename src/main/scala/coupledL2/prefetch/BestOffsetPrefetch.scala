@@ -36,6 +36,7 @@ import coupledL2.{HasCoupledL2Parameters, L2TlbReq, L2ToL1TlbIO, TlbCmd, Pbmt}
 import coupledL2.utils.ReplacementPolicy
 import scopt.Read
 import freechips.rocketchip.util.SeqToAugmentedSeq
+import coupledL2.utils.ArbPerf
 
 case class BOPParameters(
   virtualTrain: Boolean = true,
@@ -420,6 +421,8 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
   //val replacement = ReplacementPolicy.fromString("plru", REQ_FILTER_SIZE)
   val tlb_req_arb = Module(new RRArbiterInit(new L2TlbReq, REQ_FILTER_SIZE))
   val pf_req_arb = Module(new RRArbiterInit(new PrefetchReq, REQ_FILTER_SIZE))
+  ArbPerf(tlb_req_arb, "bop_tlb_req_arb")
+  ArbPerf(pf_req_arb, "bop_pf_req_arb")
 
   def wayMap[T <: Data](f: Int => T) = VecInit((0 until REQ_FILTER_SIZE).map(f))
 

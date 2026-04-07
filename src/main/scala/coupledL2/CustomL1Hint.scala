@@ -115,7 +115,7 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
 
   enq_s3.valid := enqValid_s3
   enq_s3.bits := enqBits_s3
-  fastArb(Seq(enq_s3,  hint_s1Queue.io.out, flow_s1), hintQueue.io.enq, Some("Hint"))
+  arb(Seq(enq_s3,  hint_s1Queue.io.out, flow_s1), hintQueue.io.enq, Some("Hint"))
   hintQueue.io.deq.ready := io.l1Hint.ready
 
   io.l1Hint.valid := hintQueue.io.deq.valid && hintQueue.io.deq.bits.isGrantData
