@@ -34,6 +34,7 @@ import coupledL2.prefetch._
 import huancun.{BankBitsKey, TPmetaReq, TPmetaResp}
 import utility.mbist.{MbistInterface, MbistPipeline}
 import utility.sram.{SramBroadcastBundle, SramHelper}
+import coupledL2.utils.ArbPerf
 
 trait HasCoupledL2Parameters {
   val p: Parameters
@@ -215,11 +216,12 @@ trait HasCoupledL2Parameters {
     out <> arb.io.out
   }
 
-  def fastArb[T <: Bundle](in: Seq[DecoupledIO[T]], out: DecoupledIO[T], name: Option[String] = None): Unit = {
+  def fastArb[T <: Bundle](in: Seq[DecoupledIO[T]], out: DecoupledIO[T], name: Option[String] = None)(implicit p: Parameters): Unit = {
     val arb = Module(new FastArbiter[T](chiselTypeOf(out.bits), in.size))
     if (name.nonEmpty) { arb.suggestName(s"${name.get}_arb") }
     for ((a, req) <- arb.io.in.zip(in)) { a <> req }
     out <> arb.io.out
+    ArbPerf(arb, name.getOrElse("fastArb"))
   }
 
   def odOpGen(r: UInt) = {
