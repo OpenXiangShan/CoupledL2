@@ -28,6 +28,7 @@ import org.chipsalliance.cde.config.{Parameters, Field}
 import scala.math.max
 import coupledL2._
 import coupledL2.prefetch._
+import coupledL2.utils.ArbPerf
 
 abstract class TL2CHIL2Bundle(implicit val p: Parameters) extends Bundle
   with HasCoupledL2Parameters
@@ -129,6 +130,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
       case slices: Seq[Slice] =>
         // TXREQ
         val txreq_arb = Module(new RRArbiterInit(new CHIREQ, slices.size + 1)) // plus 1 for MMIO
+        ArbPerf(txreq_arb, "txreq_arb")
         val txreq = Wire(DecoupledIO(new CHIREQ))
         slices.zip(txreq_arb.io.in.init).foreach { case (s, in) => in <> s.io.out.tx.req }
         txreq_arb.io.in.last <> mmio.io.tx.req
