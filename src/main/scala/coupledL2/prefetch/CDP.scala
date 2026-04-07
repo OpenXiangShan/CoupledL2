@@ -8,7 +8,7 @@ import utility._
 import coupledL2._
 
 case class CDPParameters(
-  UseFilteredDetect:  Boolean = true,
+  UseFilteredDetect:  Boolean = false,
 
   DetectPipeNum: Int = 4,
 
