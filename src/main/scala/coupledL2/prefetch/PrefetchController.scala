@@ -433,7 +433,10 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
   // becase ddr flush may cause long latency, so epochEdge can not be too large.
   private val epochEdge = 256
   private val epochBits = log2Ceil(epochEdge)
-  private def latencyDownThreshold(x: UInt): UInt = x >> 1 // ratio of last latency or other constant
+  // // old method: ratio of last latency or other constant
+  // private def latencyDownThreshold(curr: UInt, last: UInt): Bool = curr < last && ((last - curr) > (last >> 1))
+  // new method: 1.5 * ideal dram access latency
+  private def latencyDownThreshold(curr: UInt, last: UInt): Bool = curr < ((300 * 1.5).toInt).U
   private def maxDegree = (1 << degreeBits) - 1
 
   val activeVec = RegInit(VecInit(Seq.fill(PF_NUM)(true.B)))
@@ -454,8 +457,7 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
     demandCnt := demandCnt + 1.U
   }
 
-  val latencyDown = latencyAvg < latencyLastEpoch && 
-    ((latencyLastEpoch - latencyAvg) > latencyDownThreshold(latencyLastEpoch))
+  val latencyDown = latencyDownThreshold(latencyAvg, latencyLastEpoch)
   val statPfHitLagActiveVec = WireInit(VecInit(Seq.fill(PF_NUM)(false.B)))
   val statLatencyDownActiveVec = WireInit(VecInit(Seq.fill(PF_NUM)(false.B)))
 
