@@ -63,7 +63,7 @@ trait HasCoupledL2Parameters {
                   else cacheParams.clientCaches.head.vaddrBitsOpt
   def fullVAddrBits = vaddrBitsOpt.getOrElse(0) + offsetBits
   // from L1 load miss cache require
-  def pcBitOpt  = if(cacheParams.clientCaches.isEmpty) None
+  def pcBitOpt = if(cacheParams.clientCaches.isEmpty) None
                   else cacheParams.clientCaches.head.pcBitOpt
   def isKeywordBitsOpt = if(cacheParams.clientCaches.isEmpty) None
                   else cacheParams.clientCaches.head.isKeywordBitsOpt

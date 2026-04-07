@@ -470,8 +470,8 @@ class NextLineSample(implicit p: Parameters) extends NLModule {
 class NextLinePattern(implicit p: Parameters) extends NLModule {
   val io = IO(new Bundle() {
     val train = Flipped(DecoupledIO(new PatternTrain))
-    val req   = Flipped(DecoupledIO(new PatternReq))
-    val resp  = DecoupledIO(new PatternResp)
+    val req = Flipped(DecoupledIO(new PatternReq))
+    val resp = DecoupledIO(new PatternResp)
   })
 
   // ==================== Pattern Table (pt) ====================
@@ -599,7 +599,7 @@ class NextLinePrefetch(implicit p: Parameters) extends NLModule {
     val req = DecoupledIO(new PrefetchReq) //NL prefetcher Request access L2
   })
 
-  val validTrain  = io.enable && io.train.fire &&io.train.bits.reqsource === MemReqSource.CPULoadData.id.U  //Only use load requests for training and prediction
+  val validTrain = io.enable && io.train.fire &&io.train.bits.reqsource === MemReqSource.CPULoadData.id.U  //Only use load requests for training and prediction
   val shouldTrain = validTrain && (!io.train.bits.hit || io.train.bits.prefetched)
   val timeSampleCounter = RegInit(0.U(timeSampleCounterBits.W))
   timeSampleCounter := Mux(shouldTrain && timeSampleCounter === timeSampleCounterMax, 0.U,
