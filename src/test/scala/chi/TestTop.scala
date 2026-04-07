@@ -176,6 +176,8 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, ext
 
     val io_linkdown = IO(Vec(numCores, Output(Bool())))
 
+    val io_resetsep = IO(Vec(numCores, Input(Bool())))
+
     l2_nodes.zipWithIndex.foreach { case (l2, i) =>
 
       if (!cacheParams.FPGAPlatform && cacheParams.enableCHILog) {
@@ -207,6 +209,8 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, ext
       l2.module.io.l2Flush.foreach(_ := io_powerdown(i).flushAll)
       io_powerdown(i).flushAllDone := l2.module.io.l2FlushDone.getOrElse(false.B)
       l2.module.io_cpu_halt.foreach(_ := io_powerdown(i).cpuHalt)
+
+      l2.module.reset := io_resetsep(i) || reset.asBool
 
       io_linkdown(i) := !l2.module.io_chi.syscoreq && !l2.module.io_chi.syscoack &&
         !l2.module.io_chi.tx.linkactivereq && !l2.module.io_chi.tx.linkactiveack &&
