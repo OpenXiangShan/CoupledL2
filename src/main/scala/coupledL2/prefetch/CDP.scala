@@ -165,10 +165,12 @@ class vtQueryReq(implicit p: Parameters) extends CDPBundle {
 class vtQueryRsp(implicit p: Parameters) extends CDPBundle {
   val tag_vec   = Vec(VpnTableWayNum, UInt(vpnTabTagBits.W))
   val meta_vec  = Vec(VpnTableWayNum, new VpnTableMetaInfo)
+  val valid_vec = Vec(VpnTableWayNum, Bool())
 }
 
 class vtTrainReq(implicit p: Parameters) extends CDPBundle {
-  val need_alloc  = Bool()    // Allocate a new entry!
+  val alloc_main  = Bool()    // allocate a new MainEntry (clear all the SubEntries)
+  val alloc_sub   = Bool()    // allocate a new SubEntry (refCnt = 1)
   val target_way  = UInt(log2Ceil(VpnTableWayNum).W)
 
   val main_idx    = UInt(mainEntryBits.W)
@@ -187,13 +189,18 @@ class VpnTable(implicit p: Parameters) extends CDPModule {
   val (query_req, query_rsp) = (io.query_req, io.query_rsp)
   val train_req = io.train_req
 
-  val resetCnt = RegInit(0.U(32.W))
-  val is_reset = Wire(Bool())
+  val refreshCnt = RegInit(0.U(32.W))
+  val is_refresh = Wire(Bool())
 
   // TODO: use SRAM ?
   // Tag Array
   val tag_array = RegInit(VecInit(Seq.fill(VpnTableSetNum)(
     VecInit(Seq.fill(VpnTableWayNum)(0.U(vpnTabTagBits.W)))
+  )))
+
+  // Valid Array
+  val valid_array = RegInit(VecInit(Seq.fill(VpnTableSetNum)(
+    VecInit(Seq.fill(VpnTableWayNum)(false.B))
   )))
 
   // Meta Info Array
@@ -207,29 +214,35 @@ class VpnTable(implicit p: Parameters) extends CDPModule {
   for (i <- 0 until DetectPipeNum + 1) {
     val (req, rsp) = (query_req(i), query_rsp(i))
 
-    rsp.valid := !is_reset
+    rsp.valid := !reset.asBool
 
     val (main_idx, sub_idx) = (req.bits.main_idx, req.bits.sub_idx)
 
     for (j <- 0 until VpnTableWayNum) {
       rsp.bits.tag_vec(j)   := tag_array(main_idx)(j)
       rsp.bits.meta_vec(j)  := meta_array(main_idx)(j)(sub_idx)
+      rsp.bits.valid_vec(j) := valid_array(main_idx)(j)
     }
   }
 
   // Train Logic
-  when (train_req.valid && !is_reset) {
+  when (train_req.valid && !is_refresh) {
     val (main_idx, sub_idx) = (train_req.bits.main_idx, train_req.bits.sub_idx)
     val target_way = train_req.bits.target_way
+    val (alloc_main, alloc_sub) = (train_req.bits.alloc_main, train_req.bits.alloc_sub)
+    val no_alloc = !alloc_main && !alloc_sub
 
-    when (train_req.bits.need_alloc) {
-      // Allocate/Replace for a new mainEntry, thus we need to clean all the subEntries
+    assert(!(alloc_main && alloc_sub), "TrainReq can't allocate both main entry and sub entry!")
 
+    when (alloc_main) {
       // use target_way for replacement
       val replace_way = target_way
 
       // Update Tag
       tag_array(main_idx)(replace_way)  := train_req.bits.tag
+
+      // Update Valid
+      valid_array(main_idx)(replace_way) := true.B
 
       // Update Meta
       for (i <- 0 until VpnTableSubEntryNum) {
@@ -241,20 +254,29 @@ class VpnTable(implicit p: Parameters) extends CDPModule {
           meta_array(main_idx)(replace_way)(i)  := 0.U.asTypeOf(new VpnTableMetaInfo)
         }
       }
-    }.otherwise {
+    }
+
+    when (alloc_sub) {
+      // only update the meta of the target sub entry
+      meta_array(main_idx)(target_way)(sub_idx).valid := true.B
+      meta_array(main_idx)(target_way)(sub_idx).refCnt := 1.U
+    }
+
+    when (no_alloc) {
+      // only update the refCnt of the target sub entry
       meta_array(main_idx)(target_way)(sub_idx).refCnt := meta_array(main_idx)(target_way)(sub_idx).refCnt + 1.U
     }
   }
 
-  // Reset Logic (Reset the entries)
-  when (resetCnt < VpnResetPeriod.U && train_req.valid){
-    resetCnt := resetCnt + 1.U
+  // Refresh Logic (Reset the entries)
+  when (refreshCnt < VpnResetPeriod.U && train_req.valid){
+    refreshCnt := refreshCnt + 1.U
   }
 
-  is_reset := resetCnt >= VpnResetPeriod.U && !reset.asBool
-  XSPerfAccumulate("VpnTable_reset", is_reset)
-  when (is_reset) {
-    resetCnt := 0.U
+  is_refresh := refreshCnt >= VpnResetPeriod.U && !reset.asBool
+  XSPerfAccumulate("VpnTable_refresh", is_refresh)
+  when (is_refresh) {
+    refreshCnt := 0.U
 
     // go through every sub entry
     for (i <- 0 until VpnTableSetNum) {
@@ -280,9 +302,10 @@ class VpnTable(implicit p: Parameters) extends CDPModule {
   }
 
   // ------------------ Performance Counter ------------------
-  XSPerfAccumulate("vt_train_alloc", train_req.valid && train_req.bits.need_alloc)
-  XSPerfAccumulate("vt_train_update", train_req.valid && !train_req.bits.need_alloc)
-  XSPerfAccumulate("train_req_during_reset", train_req.valid && is_reset)
+  XSPerfAccumulate("vt_train_alloc_main", train_req.valid && train_req.bits.alloc_main)
+  XSPerfAccumulate("vt_train_alloc_sub", train_req.valid && train_req.bits.alloc_sub)
+  XSPerfAccumulate("vt_train_update", train_req.valid && !train_req.bits.alloc_main && !train_req.bits.alloc_sub)
+  XSPerfAccumulate("train_req_during_refresh", train_req.valid && is_refresh)
 }
 
 class CDPTrainReq(implicit p: Parameters) extends CDPBundle {
@@ -385,17 +408,23 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   val s2_tag      = RegNext(s1_tag)
   val s2_vt_tab_rsp = RegNext(s1_vt_tab_rsp)
 
-  val s2_tag_vec  = s2_vt_tab_rsp.tag_vec
-  val s2_meta_vec = s2_vt_tab_rsp.meta_vec
+  val s2_tag_vec    = s2_vt_tab_rsp.tag_vec
+  val s2_meta_vec   = s2_vt_tab_rsp.meta_vec
+  val s2_valid_vec  = s2_vt_tab_rsp.valid_vec
 
-  val s2_hit_vec = s2_tag_vec.zip(s2_meta_vec).map {
-    case (t, m) =>
-      t === s2_tag && m.valid
+  val s2_hit_main_vec = s2_tag_vec.zip(s2_valid_vec).map {
+    case (t, v) =>
+      t === s2_tag && v
   }
+  val s2_hit_main_idx = PriorityEncoder(s2_hit_main_vec)
+  val s2_hit_main     = s2_hit_main_vec.reduce(_ || _)
+  assert(PopCount(s2_hit_main_vec) < 2.U || !s2_valid, "Main entry multiple hit!")
 
-  val s2_hit      = s2_hit_vec.reduce(_ || _)
-  val s2_hit_idx  = PriorityEncoder(s2_hit_vec)
-  assert(PopCount(s2_hit_vec) < 2.U, "Meta multiple hit!")
+  val s2_hit_sub_vec  = s2_tag_vec.zip(s2_meta_vec).zip(s2_valid_vec).map {
+    case ((t, m), v) =>
+      t === s2_tag && m.valid && v
+  }
+  val s2_hit_sub      = s2_hit_sub_vec.reduce(_ || _)
 
   s0_s2_same := s2_valid && s0_main_idx === s2_main_idx && s0_sub_idx === s2_sub_idx && s0_tag === s2_tag
 
@@ -406,8 +435,10 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   val s3_main_idx = RegNext(s2_main_idx)
   val s3_sub_idx  = RegNext(s2_sub_idx)
   val s3_tag      = RegNext(s2_tag)
-  val s3_hit      = RegNext(s2_hit)
-  val s3_hit_idx  = RegNext(s2_hit_idx)
+
+  val s3_hit_main     = RegNext(s2_hit_main)
+  val s3_hit_sub      = RegNext(s2_hit_sub)
+  val s3_hit_main_idx = RegNext(s2_hit_main_idx)
 
   val s3_update_info = WireInit(0.U.asTypeOf(new vtTrainReq))
 
@@ -419,8 +450,9 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   s3_update_info.main_idx := s3_main_idx
   s3_update_info.sub_idx  := s3_sub_idx
 
-  s3_update_info.need_alloc := !s3_hit
-  s3_update_info.target_way := Mux(s3_hit, s3_hit_idx, plru_way)
+  s3_update_info.alloc_main := !s3_hit_main
+  s3_update_info.alloc_sub  := s3_hit_main && !s3_hit_sub
+  s3_update_info.target_way := Mux(s3_hit_main, s3_hit_main_idx, plru_way)
 
   s0_s3_same := s3_valid && s0_main_idx === s3_main_idx && s0_sub_idx === s3_sub_idx && s0_tag === s3_tag
 
