@@ -214,6 +214,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val nestable_meta_s3          = nestable_dirResult_s3.meta
   val nestable_meta_has_clients_s3 = nestable_dirResult_s3.meta.clients.orR
   nestable_dirResult_s3 := dirResult_s3
+  nestable_dirResult_s3.meta := metaOnHit_s3
   when (req_s3.snpHitRelease) {
     // Meta states from MSHRs were considered as directory result here.
     // Therefore, meta states were always inferred to be hit when nesting release, no matter the fact that directory
