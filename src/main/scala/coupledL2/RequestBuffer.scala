@@ -98,7 +98,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   io.ASet := io.in.bits.set
 
   val buffer = RegInit(VecInit(Seq.fill(entries)(0.U.asTypeOf(new ReqEntry))))
-  val issueArb = Module(new FastArbiter(new ReqEntry, entries))
+  val issueArb = Module(new L2FastArbiter(new ReqEntry, entries))
   ArbPerf(issueArb, "issueArb")
   val chosenQ = Module(new Queue(new ChosenQBundle(log2Ceil(entries)), entries = 1, pipe = true, flow = false))
   val chosenQValid = chosenQ.io.deq.valid
