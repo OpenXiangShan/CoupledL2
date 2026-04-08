@@ -188,6 +188,9 @@ class SinkA(implicit p: Parameters) extends L2Module {
   when (stateVal === sWAITMSHR && !mshrValid) {
     state.foreach { _ := sCMOREQ }
   }
+  when (stateVal === sDONE && !l2Flush) {
+    state.foreach { _ := sIDLE }
+  }
 
   // Performance counters
   // num of reqs
