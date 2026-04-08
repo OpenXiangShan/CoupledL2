@@ -713,7 +713,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       // train on request(with needHint flag) miss or hit on prefetched block
       // trigger train also in a_merge here
       train.valid := task_s3.valid && ((req_acquire_s3 || req_get_s3) && req_s3.needHint.getOrElse(false.B) &&
-        (!dirResult_s3.hit || meta_s3.prefetch.get) || req_s3.mergeA)
+        (!dirResult_s3.hit || metaOnHit_s3.prefetch.get) || req_s3.mergeA)
       train.bits.tag := req_s3.tag
       train.bits.set := req_s3.set
       train.bits.needT := Mux(
@@ -724,8 +724,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       train.bits.source := Mux(req_s3.mergeA, req_s3.aMergeTask.sourceId, req_s3.sourceId)
       train.bits.vaddr.foreach(_ := Mux(req_s3.mergeA, req_s3.aMergeTask.vaddr.getOrElse(0.U), req_s3.vaddr.getOrElse(0.U)))
       train.bits.hit := Mux(req_s3.mergeA, true.B, dirResult_s3.hit)
-      train.bits.prefetched := Mux(req_s3.mergeA, true.B, meta_s3.prefetch.getOrElse(false.B))
-      train.bits.pfsource := meta_s3.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) // TODO
+      train.bits.prefetched := Mux(req_s3.mergeA, true.B, metaOnHit_s3.prefetch.getOrElse(false.B))
+      train.bits.pfsource := Mux(req_s3.mergeA, req_s3.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U), metaOnHit_s3.prefetchSrc.getOrElse(PfSource.NoWhere.id.U)) // TODO
       train.bits.reqsource := req_s3.reqSource
   }
 
