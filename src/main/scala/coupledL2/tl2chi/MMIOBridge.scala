@@ -27,7 +27,7 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.HasCoupledL2Parameters
 import coupledL2.{MemBackTypeMM, MemPageTypeNC}
-import coupledL2.utils.ArbPerf
+import coupledL2.utils._
 
 class MMIOBridge()(implicit p: Parameters) extends LazyModule
   with HasCoupledL2Parameters
@@ -382,7 +382,7 @@ class MMIOBridgeImp(outer: MMIOBridge) extends LazyModuleImp(outer)
     entry.io.id := i.U
   }
 
-  val txreqArb = Module(new RRArbiterInit(chiselTypeOf(io.tx.req.bits), mmioBridgeSize))
+  val txreqArb = Module(new TwoLevelRRArbiter(chiselTypeOf(io.tx.req.bits), mmioBridgeSize))
   ArbPerf(txreqArb, "mmio_txreq_arb")
   for ((a, entry) <- txreqArb.io.in.zip(entries)) {
     val req = entry.io.chi.tx.req
