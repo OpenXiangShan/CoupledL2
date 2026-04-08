@@ -268,13 +268,12 @@ class VpnTable(implicit p: Parameters) extends CDPModule {
     }
   }
 
-  // Refresh Logic (Reset the entries)
+  // Refresh Logic
   when (refreshCnt < VpnResetPeriod.U && train_req.valid){
     refreshCnt := refreshCnt + 1.U
   }
 
   is_refresh := refreshCnt >= VpnResetPeriod.U && !reset.asBool
-  XSPerfAccumulate("VpnTable_refresh", is_refresh)
   when (is_refresh) {
     refreshCnt := 0.U
 
@@ -302,10 +301,14 @@ class VpnTable(implicit p: Parameters) extends CDPModule {
   }
 
   // ------------------ Performance Counter ------------------
-  XSPerfAccumulate("vt_train_alloc_main", train_req.valid && train_req.bits.alloc_main)
-  XSPerfAccumulate("vt_train_alloc_sub", train_req.valid && train_req.bits.alloc_sub)
-  XSPerfAccumulate("vt_train_update", train_req.valid && !train_req.bits.alloc_main && !train_req.bits.alloc_sub)
-  XSPerfAccumulate("train_req_during_refresh", train_req.valid && is_refresh)
+  XSPerfAccumulate("vt_refresh", is_refresh)
+  XSPerfAccumulate("vt_alloc_main", train_req.valid && train_req.bits.alloc_main)
+  XSPerfAccumulate("vt_alloc_sub", train_req.valid && train_req.bits.alloc_sub)
+  XSPerfAccumulate("vt_no_alloc", train_req.valid && !train_req.bits.alloc_main && !train_req.bits.alloc_sub)
+
+  // train trig data
+  XSPerfAccumulate("in_train_trig_used", train_req.valid && !is_refresh)
+  XSPerfAccumulate("in_train_trig_drop_by_refresh", train_req.valid && is_refresh)
 }
 
 class CDPTrainReq(implicit p: Parameters) extends CDPBundle {
@@ -584,49 +587,40 @@ class DetectPipeline(implicit p: Parameters) extends CDPModule {
   pft_req.bits.is_hit   := s4_req.bits.is_hit
 
   // ------------------ Performance Counter ------------------
-  XSPerfAccumulate("s2_vt_hit", s2_req.valid && s2_vt_hit)
-  XSPerfAccumulate("s2_vt_miss", s2_req.valid && !s2_vt_hit)
-  XSPerfAccumulate("s2_vt_hit_hot", s2_req.valid && s2_vt_hit && s2_vt_hit_hot)
-  XSPerfAccumulate("s2_vt_hit_cold", s2_req.valid && s2_vt_hit && !s2_vt_hit_hot)
-  XSPerfAccumulate("s2_vpn0_is_non_zero", s2_req.valid && s2_vpn0_is_nzero)
-  XSPerfAccumulate("s2_vpn0_is_zero", s2_req.valid && !s2_vpn0_is_nzero)
-  XSPerfAccumulate("s2_low_bit_is_zero", s2_req.valid && s2_low_bit_is_zero)
-  XSPerfAccumulate("s2_low_bit_is_non_zero", s2_req.valid && !s2_low_bit_is_zero)
-  XSPerfAccumulate("s2_high_bit_is_zero", s2_req.valid && s2_high_bit_is_zero)
-  XSPerfAccumulate("s2_high_bit_is_non_zero", s2_req.valid && !s2_high_bit_is_zero)
-
-  XSPerfAccumulate(s"detect_pft_from_hit", s4_req.valid && s4_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_pft_from_hit_cdp", s4_req.valid && s4_req.bits.is_hit && s4_req.bits.pfSource === PfSource.CDP.id.U)
-  XSPerfAccumulate(s"detect_pft_from_hit_sms", s4_req.valid && s4_req.bits.is_hit && s4_req.bits.pfSource === PfSource.SMS.id.U)
-  XSPerfAccumulate(s"detect_pft_from_hit_bop", s4_req.valid && s4_req.bits.is_hit && (s4_req.bits.pfSource === PfSource.BOP.id.U || s4_req.bits.pfSource === PfSource.PBOP.id.U))
-  XSPerfAccumulate(s"detect_pft_from_refill", s4_req.valid && !s4_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_pft_from_refill_cpu", s4_req.valid && s4_req.bits.pfSource === PfSource.NoWhere.id.U && !s4_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_pft_from_refill_cdp", s4_req.valid && s4_req.bits.pfSource === PfSource.CDP.id.U && !s4_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_pft_from_refill_other_pft", s4_req.valid && s4_req.bits.pfSource =/= PfSource.NoWhere.id.U && s4_req.bits.pfSource =/= PfSource.CDP.id.U && !s4_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_pft_from_refill_bop", s4_req.valid && (s4_req.bits.pfSource === PfSource.BOP.id.U || s4_req.bits.pfSource === PfSource.PBOP.id.U) && !s4_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_pft_from_refill_sms", s4_req.valid && s4_req.bits.pfSource === PfSource.SMS.id.U && !s4_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_pft_from_refill_stream", s4_req.valid && s4_req.bits.pfSource === PfSource.Stream.id.U && !s4_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_pft_from_refill_stride", s4_req.valid && s4_req.bits.pfSource === PfSource.Stride.id.U && !s4_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_pft_from_refill_berti", s4_req.valid && s4_req.bits.pfSource === PfSource.Berti.id.U && !s4_req.bits.is_hit)
+  // depth distribution
   for (i <- 0 until 5) {
-    XSPerfAccumulate(s"detect_pft_depth_$i", s4_req.valid && s4_depth === i.U)
+    XSPerfAccumulate(s"detect_req_depth_$i", s2_req.valid && s2_depth === i.U)
+    XSPerfAccumulate(s"pft_req_depth_$i", s4_req.valid && s4_depth === i.U)
   }
 
-  XSPerfAccumulate(s"detect_req_from_hit", s0_req.valid && s0_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_req_from_hit_cdp", s0_req.valid && s0_req.bits.is_hit && s0_req.bits.pfSource === PfSource.CDP.id.U)
-  XSPerfAccumulate(s"detect_req_from_hit_sms", s0_req.valid && s0_req.bits.is_hit && s0_req.bits.pfSource === PfSource.SMS.id.U)
-  XSPerfAccumulate(s"detect_req_from_hit_bop", s0_req.valid && s0_req.bits.is_hit && (s0_req.bits.pfSource === PfSource.BOP.id.U || s0_req.bits.pfSource === PfSource.PBOP.id.U))
-  XSPerfAccumulate(s"detect_req_from_refill", s0_req.valid && !s0_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_req_from_refill_cpu", s0_req.valid && s0_req.bits.pfSource === PfSource.NoWhere.id.U && !s0_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_req_from_refill_cdp", s0_req.valid && s0_req.bits.pfSource === PfSource.CDP.id.U && !s0_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_req_from_refill_other_pft", s0_req.valid && s0_req.bits.pfSource =/= PfSource.NoWhere.id.U && s0_req.bits.pfSource =/= PfSource.CDP.id.U && !s0_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_req_from_refill_bop", s0_req.valid && (s0_req.bits.pfSource === PfSource.BOP.id.U || s0_req.bits.pfSource === PfSource.PBOP.id.U) && !s0_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_req_from_refill_sms", s0_req.valid && s0_req.bits.pfSource === PfSource.SMS.id.U && !s0_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_req_from_refill_stream", s0_req.valid && s0_req.bits.pfSource === PfSource.Stream.id.U && !s0_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_req_from_refill_stride", s0_req.valid && s0_req.bits.pfSource === PfSource.Stride.id.U && !s0_req.bits.is_hit)
-  XSPerfAccumulate(s"detect_req_from_refill_berti", s0_req.valid && s0_req.bits.pfSource === PfSource.Berti.id.U && !s0_req.bits.is_hit)
+  XSPerfAccumulate("in_detect_trig_drop_by_PipeChk", s2_req.valid && !s2_can_pft)
+  
+  // Specified drop reason
+  // high_bit_is_zero -> low_bit_is_zero -> vpn0_is_nzero -> vt_hit -> vt_hot -> depth ok (for non-hit)
+  XSPerfAccumulate("PipeChk_drop_due_to_high_bit", s2_req.valid && !s2_can_pft && !s2_high_bit_is_zero)
+  XSPerfAccumulate("PipeChk_drop_due_to_low_bit", s2_req.valid && !s2_can_pft && s2_high_bit_is_zero && !s2_low_bit_is_zero)
+  XSPerfAccumulate("PipeChk_drop_due_to_vpn0", s2_req.valid && !s2_can_pft && s2_high_bit_is_zero && s2_low_bit_is_zero && !s2_vpn0_is_nzero)
+  XSPerfAccumulate("PipeChk_drop_due_to_vt_miss", s2_req.valid && !s2_can_pft && s2_high_bit_is_zero && s2_low_bit_is_zero && s2_vpn0_is_nzero && !s2_vt_hit)
+  XSPerfAccumulate("PipeChk_drop_due_to_vt_cold", s2_req.valid && !s2_can_pft && s2_high_bit_is_zero && s2_low_bit_is_zero && s2_vpn0_is_nzero && s2_vt_hit && !s2_vt_hit_hot)
+  XSPerfAccumulate("PipeChk_drop_due_to_depth", s2_req.valid && !s2_can_pft && s2_high_bit_is_zero && s2_low_bit_is_zero && s2_vpn0_is_nzero && s2_vt_hit && s2_vt_hit_hot && s2_depth >= 3.U)
+
+  // Valid VpnTable hit/miss and distribution
+  XSPerfAccumulate("valid_vt_hit", s2_req.valid && s2_vt_hit && s2_high_bit_is_zero && s2_low_bit_is_zero && s2_vpn0_is_nzero)
+  XSPerfAccumulate("valid_vt_miss", s2_req.valid && !s2_vt_hit && s2_high_bit_is_zero && s2_low_bit_is_zero && s2_vpn0_is_nzero)
+
+  // detect trig info
+  XSPerfAccumulate("detect_trig_from_hit", s2_req.valid && s2_is_hit)
+  XSPerfAccumulate("detect_trig_from_hit_cdpBlk", s2_req.valid && s2_is_hit && s2_req.bits.pfSource === PfSource.CDP.id.U)
+  XSPerfAccumulate("detect_trig_from_hit_smsBlk", s2_req.valid && s2_is_hit && s2_req.bits.pfSource === PfSource.SMS.id.U)
+  XSPerfAccumulate("detect_trig_from_hit_bopBlk", s2_req.valid && s2_is_hit && (s2_req.bits.pfSource === PfSource.BOP.id.U || s2_req.bits.pfSource === PfSource.PBOP.id.U))
+  XSPerfAccumulate("detect_trig_from_refill", s2_req.valid && !s2_is_hit)
+  XSPerfAccumulate("detect_trig_from_refill_cdpBlk", s2_req.valid && !s2_is_hit && s2_req.bits.pfSource === PfSource.CDP.id.U)
+  XSPerfAccumulate("detect_trig_from_refill_bopBlk", s2_req.valid && !s2_is_hit && (s2_req.bits.pfSource === PfSource.BOP.id.U || s2_req.bits.pfSource === PfSource.PBOP.id.U))
+  XSPerfAccumulate("detect_trig_from_refill_smsBlk", s2_req.valid && !s2_is_hit && s2_req.bits.pfSource === PfSource.SMS.id.U)
+  XSPerfAccumulate("detect_trig_from_refill_streamBlk", s2_req.valid && !s2_is_hit && s2_req.bits.pfSource === PfSource.Stream.id.U)
+  XSPerfAccumulate("detect_trig_from_refill_strideBlk", s2_req.valid && !s2_is_hit && s2_req.bits.pfSource === PfSource.Stride.id.U)
   for (i <- 0 until 5) {
-    XSPerfAccumulate(s"detect_req_depth_$i", s0_req.valid && s0_req.bits.pfDepth === i.U)
+    XSPerfAccumulate(s"detect_trig_from_depth_$i", s2_req.valid && s2_req.bits.pfDepth === i.U)
   }
 }
 
@@ -784,30 +778,32 @@ class PrefetchFilter(implicit p: Parameters) extends CDPModule {
     }
   }
 
-  // Performance Counter
-  XSPerfAccumulate("drop_dup", s0_valid && entry_hit)
-  XSPerfAccumulate("drop_full", s1_valid && !has_free_entry)
+  // ------------------- Performance Counter -------------------
+  XSPerfAccumulate("in_detect_trig_drop_by_filterDup", s0_valid && entry_hit)
+  XSPerfAccumulate("in_detect_trig_drop_by_filterFull", s1_valid && !has_free_entry)
 
-  val selected_entry = entries(pf_req_arb.io.chosen)
-  
-  XSPerfAccumulate("pf_from_hit", pf_req_arb.io.out.valid && selected_entry.is_hit)
-  XSPerfAccumulate("pf_from_hit_cdp", pf_req_arb.io.out.valid && selected_entry.is_hit && selected_entry.pfSource === PfSource.CDP.id.U)
-  XSPerfAccumulate("pf_from_hit_sms", pf_req_arb.io.out.valid && selected_entry.is_hit && selected_entry.pfSource === PfSource.SMS.id.U)
-  XSPerfAccumulate("pf_from_hit_bop", pf_req_arb.io.out.valid && selected_entry.is_hit && (selected_entry.pfSource === PfSource.BOP.id.U || selected_entry.pfSource === PfSource.PBOP.id.U))
-  XSPerfAccumulate("pf_from_refill", pf_req_arb.io.out.valid && !selected_entry.is_hit)
-  XSPerfAccumulate("pf_from_refill_cpu", pf_req_arb.io.out.valid && selected_entry.pfSource === PfSource.NoWhere.id.U && !selected_entry.is_hit)
-  XSPerfAccumulate("pf_from_refill_cdp", pf_req_arb.io.out.valid && selected_entry.pfSource === PfSource.CDP.id.U && !selected_entry.is_hit)
-  XSPerfAccumulate("pf_from_refill_other_pft", pf_req_arb.io.out.valid && selected_entry.pfSource =/= PfSource.NoWhere.id.U && selected_entry.pfSource =/= PfSource.CDP.id.U && !selected_entry.is_hit)
-  XSPerfAccumulate("pf_from_refill_bop", pf_req_arb.io.out.valid && (selected_entry.pfSource === PfSource.BOP.id.U || selected_entry.pfSource === PfSource.PBOP.id.U) && !selected_entry.is_hit)
-  XSPerfAccumulate(s"pf_from_refill_sms", pf_req_arb.io.out.valid && selected_entry.pfSource === PfSource.SMS.id.U && !selected_entry.is_hit)
-  XSPerfAccumulate(s"pf_from_refill_stream", pf_req_arb.io.out.valid && selected_entry.pfSource === PfSource.Stream.id.U && !selected_entry.is_hit)
-  XSPerfAccumulate(s"pf_from_refill_stride", pf_req_arb.io.out.valid && selected_entry.pfSource === PfSource.Stride.id.U && !selected_entry.is_hit)
-  XSPerfAccumulate(s"pf_from_refill_berti", pf_req_arb.io.out.valid && selected_entry.pfSource === PfSource.Berti.id.U && !selected_entry.is_hit)
-  for (i <- 0 until 5) {
-    XSPerfAccumulate(s"pf_depth_$i", pf_req_arb.io.out.valid && selected_entry.pfDepth === i.U)
-  }
+  // drop by entry tlb check
+  XSPerfAccumulate("in_detect_trig_drop_by_filterTlbChk", tlb_s2_rsp_valid && has_fire && need_drop && !tlb_s2_rsp_bits.miss)
 
+  // tlb_req block
   XSPerfAccumulate("tlb_req_block", tlb_req.valid && !tlb_req.ready)
+
+  // pfSrc distribution
+  val selected_entry = entries(pf_req_arb.io.chosen)
+
+  XSPerfAccumulate("pf_from_hit", pft_req.fire && selected_entry.is_hit)
+  XSPerfAccumulate("pf_from_hit_cdpBlk", pft_req.fire && selected_entry.is_hit && selected_entry.pfSource === PfSource.CDP.id.U)
+  XSPerfAccumulate("pf_from_hit_smsBlk", pft_req.fire && selected_entry.is_hit && selected_entry.pfSource === PfSource.SMS.id.U)
+  XSPerfAccumulate("pf_from_hit_bopBlk", pft_req.fire && selected_entry.is_hit && (selected_entry.pfSource === PfSource.BOP.id.U || selected_entry.pfSource === PfSource.PBOP.id.U))
+  XSPerfAccumulate("pf_from_refill", pft_req.fire && !selected_entry.is_hit)
+  XSPerfAccumulate("pf_from_refill_cpuBlk", pft_req.fire && !selected_entry.is_hit && selected_entry.pfSource === PfSource.NoWhere.id.U)
+  XSPerfAccumulate("pf_from_refill_cdpBlk", pft_req.fire && !selected_entry.is_hit && selected_entry.pfSource === PfSource.CDP.id.U)
+  XSPerfAccumulate("pf_from_refill_bopBlk", pft_req.fire && !selected_entry.is_hit && (selected_entry.pfSource === PfSource.BOP.id.U || selected_entry.pfSource === PfSource.PBOP.id.U))
+  XSPerfAccumulate("pf_from_refill_strideBlk", pft_req.fire && !selected_entry.is_hit && selected_entry.pfSource === PfSource.Stride.id.U)
+  XSPerfAccumulate("pf_from_refill_streamBlk", pft_req.fire && !selected_entry.is_hit && selected_entry.pfSource === PfSource.Stream.id.U)
+  for (i <- 0 until 5) {
+    XSPerfAccumulate(s"pf_from_depth_$i", pft_req.fire && selected_entry.pfDepth === i.U)
+  }
 }
 
 class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
@@ -978,19 +974,38 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
   pft_req_filter.io.pft_req <> io.pft_req
 
   // ------------------- Performance Counter -------------------
-  XSPerfAccumulate("train_trigger_enq", train_trig_queue.io.enq.fire)
-  XSPerfAccumulate("train_trigger_deq", train_trig_queue.io.deq.fire)
-  XSPerfAccumulate("train_trigger_discard", train_trig_queue.io.enq.valid && !train_trig_queue.io.enq.ready)
+  // all detect triggers
+  val trigger_valid_vec = l2_triggers.map(_.valid)
+  XSPerfAccumulate("in_detect_trig_num", PopCount(trigger_valid_vec) * 8.U)   // 1 cache block has 4 sub-blocks that can trigger
+
+  // drop by detect_trig_queue
   for (i <- 0 until 4) {
-    XSPerfAccumulate("detect_trigger_enq0", detect_trig_queue_seq(i).io.enq(0).fire)
-    XSPerfAccumulate("detect_trigger_enq1", detect_trig_queue_seq(i).io.enq(1).fire)
-    XSPerfAccumulate("detect_trigger_deq", detect_trig_queue_seq(i).io.deq(0).fire)
-    XSPerfAccumulate("detect_trigger_discard0", detect_trig_queue_seq(i).io.enq(0).valid && !detect_trig_queue_seq(i).io.enq(0).ready)
-    XSPerfAccumulate("detect_trigger_discard1", detect_trig_queue_seq(i).io.enq(1).valid && !detect_trig_queue_seq(i).io.enq(1).ready)
+    val not_enq_vec = detect_trig_queue_seq(i).io.enq.map{
+      case enq =>
+        enq.valid && !enq.ready
+    }
+    XSPerfAccumulate(s"in_detect_trig_drop_by_DetectQueueFull_$i", PopCount(not_enq_vec) * 4.U)
   }
+
+  // drop by pft_req_buffer
   for (i <- 0 until DetectPipeNum) {
-    XSPerfAccumulate(s"detect_pipe_${i}_pft_drop", pft_req_buffer.io.enq(i).valid && !pft_req_buffer.io.enq(i).ready)   // drop pft req due to pft_buffer full
-    XSPerfAccumulate(s"detect_pipe_${i}_detect_enter", detect_pipe_seq(i).io.detect_req.valid)
-    XSPerfAccumulate(s"detect_pipe_${i}_detect_leave", detect_pipe_seq(i).io.pft_req.valid)
+    val not_enq_vec = pft_req_buffer.io.enq.map{
+      case enq =>
+        enq.valid && !enq.ready
+    }
+    XSPerfAccumulate(s"in_detect_trig_drop_by_PftBufferFull_$i", PopCount(not_enq_vec) * 4.U)
   }
+
+  // final issued pft_req
+  XSPerfAccumulate("issued_pft_req_num", io.pft_req.fire)
+
+  // block by outside buffer full
+  XSPerfAccumulate(s"pft_req_block", io.pft_req.valid && !io.pft_req.ready)
+
+  // all train triggers
+  XSPerfAccumulate("in_train_trig_num", train.valid)
+
+  // drop by train_trig_queue full
+  XSPerfAccumulate("in_train_trig_drop_by_TrainQueueFull", train_trig_queue.io.enq.valid && !train_trig_queue.io.enq.ready)
+
 }

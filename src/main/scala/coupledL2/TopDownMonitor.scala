@@ -119,7 +119,8 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     ("Stride", MemReqSource.Prefetch2L2Stride.id.U, PfSource.Stride.id.U),
     ("Stream", MemReqSource.Prefetch2L2Stream.id.U, PfSource.Stream.id.U),
     ("TP", MemReqSource.Prefetch2L2TP.id.U, PfSource.TP.id.U),
-    ("Berti", MemReqSource.Prefetch2L2Berti.id.U, PfSource.Berti.id.U)
+    ("Berti", MemReqSource.Prefetch2L2Berti.id.U, PfSource.Berti.id.U),
+    ("CDP", MemReqSource.Prefetch2L2CDP.id.U, PfSource.CDP.id.U)
   )
 
   // sent/useful vector

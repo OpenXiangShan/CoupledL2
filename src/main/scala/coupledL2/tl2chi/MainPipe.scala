@@ -1144,10 +1144,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   XSPerfAccumulate("early_prefetch", meta_s3.prefetch.getOrElse(false.B) && !meta_s3.accessed && !dirResult_s3.hit && task_s3.valid)
 
-  // CDP Prefetcher
-  XSPerfAccumulate("cdp_pft_issue", task_s3.valid && req_prefetch_s3 && miss_s3 && req_s3.reqSource === MemReqSource.Prefetch2L2CDP.id.U)
-  XSPerfAccumulate("cdp_pft_hit", task_s3.valid && req_acquireBlock_s3 && hit_s3 && dirResult_s3.meta.prefetchSrc.get === PfSource.CDP.id.U)
-
   /* ===== Hardware Performance Monitor ===== */
   val perfEvents = Seq(
     ("l2_cache_hit", hit_s3 && req_s3.fromA),
