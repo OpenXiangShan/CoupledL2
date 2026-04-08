@@ -258,6 +258,7 @@ object LCredit2Decoupled {
 class Decoupled2LCredit[T <: Bundle](
   gen: T,
   overlcreditNum: Option[Int] = None,
+  withBuf: Boolean = false
 )(implicit val p: Parameters) extends Module with HasCoupledL2Parameters {
   val io = IO(new Bundle() {
     val in = Flipped(DecoupledIO(gen.cloneType))
@@ -274,14 +275,44 @@ class Decoupled2LCredit[T <: Bundle](
 
   // The maximum number of L-Credits that a receiver can provide is 15.
   val lcreditsMax = 15
-  val enableCHIAsync = cacheParams.enableCHIAsyncBridge.getOrElse(false)
-  val overlcreditVal = if(enableCHIAsync) overlcreditNum.getOrElse(0) else 0 
+  val enableCHIAsync = cacheParams.enableCHIAsyncBridge
+  val overlcreditVal = if(enableCHIAsync) overlcreditNum.getOrElse(0) else 0
   val lcreditsMaxAll = lcreditsMax + overlcreditVal
   val lcreditPool = RegInit(overlcreditVal.U(log2Up(lcreditsMaxAll+1).W))
+  //  val lcreditPool = RegInit(8.U(log2Up(lcreditsMaxAll+1).W))
+  val flitv = WireInit(false.B)
+  val returnLCreditValid = WireInit(false.B)
 
-  val returnLCreditValid = !io.in.valid && state === LinkStates.DEACTIVATE && lcreditPool =/= overlcreditVal.U
-  val flitv = io.in.fire || returnLCreditValid
+  println(s"=== Decoupled2LCredit ===")
+  println(s"cacheParams.enableCHIAsyncBridge = ${cacheParams.enableCHIAsyncBridge}")
+  println(s"  withBuf: $withBuf")
+  println(s"  enableCHIAsync: $enableCHIAsync")
+  println(s"  overlcreditNum: $overlcreditNum")
 
+  if(withBuf &&  enableCHIAsync) {
+    /* Shadow Buffer (depth=32, flow mode for low latency)*/
+    val shadow_buffer = Module(new Queue(gen, 32, flow = true, pipe = false))
+    shadow_buffer.io.enq <> io.in
+
+    val returnLCreditValid = !shadow_buffer.io.deq.valid && !io.in.valid && state === LinkStates.DEACTIVATE && lcreditPool =/= overlcreditVal.U
+    val can_issue_flit = shadow_buffer.io.deq.valid && lcreditPool=/=0.U && !disableFlit
+    shadow_buffer.io.deq.ready := can_issue_flit
+
+    flitv := can_issue_flit || returnLCreditValid
+
+    out.flitv := RegNext(flitv, init = false.B)
+    out.flit := RegEnable(Mux(shadow_buffer.io.deq.valid, Cat(shadow_buffer.io.deq.bits.getElements.map(_.asUInt)), 0.U /* LCrdReturn */), flitv)
+
+  } else {
+    val returnLCreditValid = !io.in.valid && state === LinkStates.DEACTIVATE && lcreditPool =/= overlcreditVal.U
+    io.in.ready := lcreditPool =/= 0.U && !disableFlit
+    flitv := io.in.fire || returnLCreditValid
+
+    out.flitv := RegNext(flitv, init = false.B)
+    out.flit := RegEnable(Mux(io.in.valid, Cat(io.in.bits.getElements.map(_.asUInt)), 0.U /* LCrdReturn */), flitv)
+  }
+
+  //only when has lcredit 
   when (acceptLCredit) {
     when (!flitv) {
       lcreditPool := lcreditPool + 1.U
@@ -293,12 +324,10 @@ class Decoupled2LCredit[T <: Bundle](
     }
   }
 
-  io.in.ready := lcreditPool =/= 0.U && !disableFlit
-
   io.out <> out
   out.flitpend := RegNext(true.B, init = false.B) // TODO
-  out.flitv := RegNext(flitv, init = false.B)
-  out.flit := RegEnable(Mux(io.in.valid, Cat(io.in.bits.getElements.map(_.asUInt)), 0.U /* LCrdReturn */), flitv)
+//  out.flitv := RegNext(flitv, init = false.B)
+//  out.flit := RegEnable(Mux(shadow_buffer.io.deq.valid, Cat(shadow_buffer.io.deq.bits.getElements.map(_.asUInt)), 0.U /* LCrdReturn */), flitv)
 
   /**
     * performance counters
@@ -312,9 +341,10 @@ object Decoupled2LCredit {
     right: ChannelIO[T],
     state: LinkState,
     suggestName: Option[String] = None,
-    overlcreditNum: Option[Int] = None
+    overlcreditNum: Option[Int] = None,
+    withBuf: Boolean = false
   )(implicit p: Parameters): Unit = {
-    val mod = Module(new Decoupled2LCredit(left.bits.cloneType, overlcreditNum))
+    val mod = Module(new Decoupled2LCredit(left.bits.cloneType, overlcreditNum, withBuf))
     suggestName.foreach(name => mod.suggestName(s"Decoupled2LCredit_${name}"))
     
     mod.io.in <> left
@@ -348,9 +378,9 @@ class LinkMonitor(implicit p: Parameters) extends L2Module with HasCHIOpcodes {
   /* IO assignment */
   val rxsnpDeact, rxrspDeact, rxdatDeact = Wire(Bool())
   val rxDeact = rxsnpDeact && rxrspDeact && rxdatDeact
-  Decoupled2LCredit(setSrcID(io.in.tx.req, io.nodeID), io.out.tx.req, LinkState(txState), Some("txreq"), Some(8))
-  Decoupled2LCredit(setSrcID(io.in.tx.rsp, io.nodeID), io.out.tx.rsp, LinkState(txState), Some("txrsp"), Some(8))
-  Decoupled2LCredit(setSrcID(io.in.tx.dat, io.nodeID), io.out.tx.dat, LinkState(txState), Some("txdat"), Some(8))
+  Decoupled2LCredit(setSrcID(io.in.tx.req, io.nodeID), io.out.tx.req, LinkState(txState), Some("txreqLink"), Some(8), true)
+  Decoupled2LCredit(setSrcID(io.in.tx.rsp, io.nodeID), io.out.tx.rsp, LinkState(txState), Some("txrspLink"), Some(8), true)
+  Decoupled2LCredit(setSrcID(io.in.tx.dat, io.nodeID), io.out.tx.dat, LinkState(txState), Some("txdatLink"), Some(8), true)
   LCredit2Decoupled(io.out.rx.snp, io.in.rx.snp, LinkState(rxState), rxsnpDeact, Some("rxsnp"))
   LCredit2Decoupled(io.out.rx.rsp, io.in.rx.rsp, LinkState(rxState), rxrspDeact, Some("rxrsp"), 15, false)
   LCredit2Decoupled(io.out.rx.dat, io.in.rx.dat, LinkState(rxState), rxdatDeact, Some("rxdat"), 15, false)
