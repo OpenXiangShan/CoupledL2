@@ -264,9 +264,6 @@ class Decoupled2LCredit[T <: Bundle](
     val out = ChannelIO(gen.cloneType)
     val state = Input(new LinkState())
   })
-  // Shadow Buffer (depth=32, flow mode for low latency)
-  val shadow_buffer = Module(new Queue(gen, 32, flow = true, pipe = false))
-  shadow_buffer.io.enq <> io.in
 
   val out = Wire(io.out.cloneType)
 
@@ -282,11 +279,8 @@ class Decoupled2LCredit[T <: Bundle](
   val lcreditsMaxAll = lcreditsMax + overlcreditVal
   val lcreditPool = RegInit(overlcreditVal.U(log2Up(lcreditsMaxAll+1).W))
 
-  val returnLCreditValid = !shadow_buffer.io.deq.valid && state === LinkStates.DEACTIVATE && lcreditPool =/= overlcreditVal.U
-  val can_issue_flit = shadow_buffer.io.deq.valid && lcreditPool=/=0.U && !disableFlit
-  shadow_buffer.io.deq.ready := can_issue_flit
-
-  val flitv = can_issue_flit || returnLCreditValid
+  val returnLCreditValid = !io.in.valid && state === LinkStates.DEACTIVATE && lcreditPool =/= overlcreditVal.U
+  val flitv = io.in.fire || returnLCreditValid
 
   when (acceptLCredit) {
     when (!flitv) {
@@ -299,10 +293,12 @@ class Decoupled2LCredit[T <: Bundle](
     }
   }
 
+  io.in.ready := lcreditPool =/= 0.U && !disableFlit
+
   io.out <> out
   out.flitpend := RegNext(true.B, init = false.B) // TODO
   out.flitv := RegNext(flitv, init = false.B)
-  out.flit := RegEnable(Mux(shadow_buffer.io.deq.valid, Cat(shadow_buffer.io.deq.bits.getElements.map(_.asUInt)), 0.U /* LCrdReturn */), flitv)
+  out.flit := RegEnable(Mux(io.in.valid, Cat(io.in.bits.getElements.map(_.asUInt)), 0.U /* LCrdReturn */), flitv)
 
   /**
     * performance counters
