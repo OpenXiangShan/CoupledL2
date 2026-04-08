@@ -98,7 +98,7 @@ class SourceB(implicit p: Parameters) extends L2Module {
   }
 
   /* ======== Issue ======== */
-  val issueArb = Module(new FastArbiter(new SourceBReq, entries))
+  val issueArb = Module(new L2FastArbiter(new SourceBReq, entries))
   ArbPerf(issueArb, "issueArb")
   issueArb.io.in zip probes foreach{
     case (i, p) =>
