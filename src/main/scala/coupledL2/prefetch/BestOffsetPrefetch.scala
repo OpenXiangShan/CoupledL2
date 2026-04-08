@@ -26,7 +26,7 @@
 
 package coupledL2.prefetch
 
-import utility.{ChiselDB, Constantin, MemReqSource, ParallelPriorityMux, RRArbiterInit, XSPerfAccumulate}
+import utility.{ChiselDB, Constantin, MemReqSource, ParallelPriorityMux, XSPerfAccumulate}
 import utility.sram.SRAMTemplate
 import org.chipsalliance.cde.config.Parameters
 import chisel3.DontCare.:=
@@ -37,6 +37,7 @@ import coupledL2.utils.ReplacementPolicy
 import scopt.Read
 import freechips.rocketchip.util.SeqToAugmentedSeq
 import coupledL2.utils.ArbPerf
+import coupledL2.utils.L2FastArbiter
 
 case class BOPParameters(
   virtualTrain: Boolean = true,
@@ -419,8 +420,8 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
   val valids = Seq.fill(REQ_FILTER_SIZE)(RegInit(false.B))
   val entries = Seq.fill(REQ_FILTER_SIZE)(Reg(new BopReqBufferEntry))
   //val replacement = ReplacementPolicy.fromString("plru", REQ_FILTER_SIZE)
-  val tlb_req_arb = Module(new RRArbiterInit(new L2TlbReq, REQ_FILTER_SIZE))
-  val pf_req_arb = Module(new RRArbiterInit(new PrefetchReq, REQ_FILTER_SIZE))
+  val tlb_req_arb = Module(new L2FastArbiter(new L2TlbReq, REQ_FILTER_SIZE))
+  val pf_req_arb = Module(new L2FastArbiter(new PrefetchReq, REQ_FILTER_SIZE))
   ArbPerf(tlb_req_arb, "bop_tlb_req_arb")
   ArbPerf(pf_req_arb, "bop_pf_req_arb")
 
