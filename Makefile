@@ -13,8 +13,11 @@ init:
 	git submodule update --init
 	cd rocket-chip && git submodule update --init hardfloat cde
 
-compile:
+compile-coupledl2:
 	mill -i CoupledL2.compile
+
+compile-openllc:
+	mill -i OpenLLC.compile
 
 CHI_PASS_ARGS = ISSUE=$(ISSUE) NUM_CORE=$(NUM_CORE) NUM_TL_UL=$(NUM_TL_UL) NUM_SLICE=$(NUM_SLICE) \
 			    WITH_CHISELDB=$(WITH_CHISELDB) WITH_TLLOG=$(WITH_TLLOG) WITH_CHILOG=$(WITH_CHILOG) \
@@ -26,18 +29,20 @@ CHI_TOP_ARGS = --issue $(ISSUE) --core $(NUM_CORE) --tl-ul $(NUM_TL_UL) --bank $
 		   	   --chiseldb $(WITH_CHISELDB) --tllog $(WITH_TLLOG) --chilog $(WITH_CHILOG) \
 			   --etime $(BY_ETIME) --vtime $(BY_VTIME) \
 		       --fpga $(FPGA)
-BUILD_DIR = ./build
-TOP_V = $(BUILD_DIR)/$(TOP).sv
+BUILD_DIR_L2 = ./build/coupledl2
+BUILD_DIR_LLC = ./build/openllc
+TOP_V_L2 = $(BUILD_DIR_L2)/$(TOP).sv
+TOP_V_LLC = $(BUILD_DIR_LLC)/$(TOP).sv
 MEM_GEN = ./scripts/vlsi_mem_gen
 MEM_GEN_SEP = ./scripts/gen_sep_mem.sh
 
 gen-test-top:
-	mill -i CoupledL2.test.runMain coupledL2.$(TOP)_$(SYSTEM) -td $(BUILD_DIR) --target systemverilog --split-verilog
-	$(MEM_GEN_SEP) "$(MEM_GEN)" "$(TOP_V).conf" "$(BUILD_DIR)"
+	mill -i CoupledL2.test.runMain coupledL2.$(TOP)_$(SYSTEM) -td $(BUILD_DIR_L2) --target systemverilog --split-verilog
+	$(MEM_GEN_SEP) "$(MEM_GEN)" "$(TOP_V_L2).conf" "$(BUILD_DIR_L2)"
 
 gen-test-top-chi:
-	mill -i CoupledL2.test.runMain coupledL2.$(TOP)_$(SYSTEM) -td $(BUILD_DIR) $(CHI_TOP_ARGS) --target systemverilog --split-verilog
-	$(MEM_GEN_SEP) "$(MEM_GEN)" "$(TOP_V).conf" "$(BUILD_DIR)"
+	mill -i CoupledL2.test.runMain coupledL2.$(TOP)_$(SYSTEM) -td $(BUILD_DIR_L2) $(CHI_TOP_ARGS) --target systemverilog --split-verilog
+	$(MEM_GEN_SEP) "$(MEM_GEN)" "$(TOP_V_L2).conf" "$(BUILD_DIR_L2)"
 
 test-top-l2:
 	$(MAKE) gen-test-top SYSTEM=L2
@@ -45,13 +50,13 @@ test-top-l2:
 test-top-l2standalone:
 	$(MAKE) gen-test-top SYSTEM=L2_Standalone
 
-test-top-l2l3:
+test-top-l2l3-huancun:
 	$(MAKE) gen-test-top SYSTEM=L2L3
 
-test-top-l2l3l2:
+test-top-l2l3l2-huancun:
 	$(MAKE) gen-test-top SYSTEM=L2L3L2
 
-test-top-fullsys:
+test-top-fullsys-huancun:
 	$(MAKE) gen-test-top SYSTEM=fullSys
 
 test-top-chi:
@@ -69,6 +74,15 @@ test-top-chi-quadcore-0ul:
 test-top-chi-quadcore-2ul:
 	$(MAKE) gen-test-top-chi SYSTEM=CHIL2 $(CHI_PASS_ARGS) NUM_CORE=4 NUM_TL_UL=2
 
+test-top-l3-openllc:
+	mill -i OpenLLC.test.runMain openLLC.TestTop_L3 -td build --target systemverilog --split-verilog
+
+test-top-l2l3-openllc:
+	mill -i OpenLLC.test.runMain openLLC.TestTopSoC_SingleCore -td $(BUILD_DIR_LLC) --target systemverilog --split-verilog
+
+test-top-l2l3l2-openllc:
+	mill -i OpenLLC.test.runMain openLLC.TestTopSoC_DualCore -td $(BUILD_DIR_LLC) --target systemverilog --split-verilog
+
 clean:
 	rm -rf ./build
 
@@ -84,4 +98,4 @@ reformat:
 checkformat:
 	mill -i __.checkFormat
 
-.PHONY: init bsp checkformat clean compile idea reformat 
+.PHONY: init bsp checkformat clean compile-coupledl2 compile-openllc idea reformat 
