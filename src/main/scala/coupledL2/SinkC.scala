@@ -23,8 +23,7 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import org.chipsalliance.cde.config.Parameters
 import utility.{MemReqSource, XSPerfAccumulate}
-import coupledL2.utils.ArbPerf
-import coupledL2.utils.L2FastArbiter
+import coupledL2.utils._
 
 class PipeBufferResp(implicit p: Parameters) extends L2Bundle {
   val data = Vec(beatSize, UInt((beatBytes * 8).W))
@@ -56,7 +55,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
   val dataValids = VecInit(beatValids.map(_.asUInt.orR)).asUInt
   val taskBuf = RegInit(VecInit(Seq.fill(bufBlocks)(0.U.asTypeOf(new TaskBundle))))
   val taskValids = RegInit(VecInit(Seq.fill(bufBlocks)(false.B)))
-  val taskArb = Module(new L2FastArbiter(new TaskBundle, bufBlocks))
+  val taskArb = Module(new HalfFastArbiter(new TaskBundle, bufBlocks))
   val bufValids = taskValids.asUInt | dataValids
   ArbPerf(taskArb, "taskArb")
 
