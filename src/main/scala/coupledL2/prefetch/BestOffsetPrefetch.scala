@@ -463,9 +463,21 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
   tlb_req_arb.io.out.ready := true.B
   io.tlb_req.req.valid := RegNext(tlb_req_arb.io.out.valid)
   io.tlb_req.req.bits := RegEnable(tlb_req_arb.io.out.bits, tlb_req_arb.io.out.valid)
+  io.tlb_req.req.bits.cmd := TlbCmd.read
+  io.tlb_req.req.bits.size := 3.U
+  io.tlb_req.req.bits.kill := false.B
+  io.tlb_req.req.bits.no_translate := false.B
+  io.tlb_req.req.bits.isPrefetch := true.B
+  assert(!tlb_req_arb.io.out.valid || tlb_req_arb.io.out.bits.cmd === TlbCmd.read)
+  assert(!tlb_req_arb.io.out.valid || tlb_req_arb.io.out.bits.size === 3.U)
+  assert(!tlb_req_arb.io.out.valid || !tlb_req_arb.io.out.bits.kill)
+  assert(!tlb_req_arb.io.out.valid || !tlb_req_arb.io.out.bits.no_translate)
+  assert(!tlb_req_arb.io.out.valid || tlb_req_arb.io.out.bits.isPrefetch)
   io.tlb_req.req_kill := false.B
   io.tlb_req.resp.ready := true.B
   io.out_req <> pf_req_arb.io.out
+  io.out_req.bits.pfSource := MemReqSource.Prefetch2L2BOP.id.U
+  assert(!pf_req_arb.io.out.valid || pf_req_arb.io.out.bits.pfSource === io.out_req.bits.pfSource)
 
   /* s0: entries look up */
   val prev_in_valid = RegNext(io.in_req.valid, false.B)
@@ -566,6 +578,7 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
   for((e, i) <- entries.zipWithIndex){
     tlb_req_arb.io.in(i).valid := valids(i) && !e.paddrValid && !s1_tlb_fire_oh(i) && !s2_tlb_fire_oh(i) && !s3_tlb_fire_oh(i) && !e.replayCnt.orR
     tlb_req_arb.io.in(i).bits.vaddr := e.get_tlb_vaddr()
+    // these constant can directly assign in arb.io.out
     tlb_req_arb.io.in(i).bits.cmd := TlbCmd.read
     tlb_req_arb.io.in(i).bits.size := 3.U
     tlb_req_arb.io.in(i).bits.kill := false.B
@@ -573,6 +586,7 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
     tlb_req_arb.io.in(i).bits.isPrefetch := true.B
 
     pf_req_arb.io.in(i).valid := can_send_pf(i)
+    // there is some constant assign in this function, so assign them in output
     pf_req_arb.io.in(i).bits := e.toPrefetchReq()
   }
 
