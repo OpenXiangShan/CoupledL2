@@ -26,7 +26,7 @@
 
 package coupledL2.prefetch
 
-import utility.{ChiselDB, Constantin, MemReqSource, ParallelPriorityMux, RRArbiterInit, XSPerfAccumulate}
+import utility.{ChiselDB, Constantin, MemReqSource, ParallelPriorityMux, RRArbiterInit, XSPerfAccumulate, XSPerfHistogram}
 import utility.sram.SRAMTemplate
 import org.chipsalliance.cde.config.Parameters
 import chisel3.DontCare.:=
@@ -54,6 +54,7 @@ case class BOPParameters(
   studentPoolSize: Int = 4,
   studentConfAlphaPct: Int = 0,
   studentCovThresholdPct: Int = 0,
+  studentLowCostArithEnable: Boolean = false,
   studentLargeOffsetPriorityEnable: Boolean = false,
   studentLargeOffsetPriorityCoeffPct: Int = 99,
   studentFilterEntries: Int = 1024,
@@ -115,6 +116,7 @@ trait HasBOPParams extends HasPrefetcherHelper {
   def studentPoolSize = bopParams.studentPoolSize
   def studentConfAlphaPct = bopParams.studentConfAlphaPct
   def studentCovThresholdPct = bopParams.studentCovThresholdPct
+  def studentLowCostArithEnable = bopParams.studentLowCostArithEnable
   def studentLargeOffsetPriorityEnable = bopParams.studentLargeOffsetPriorityEnable
   def studentLargeOffsetPriorityCoeffPct = bopParams.studentLargeOffsetPriorityCoeffPct
   def studentFilterEntries = bopParams.studentFilterEntries
@@ -130,6 +132,7 @@ trait HasBOPParams extends HasPrefetcherHelper {
   def studentFilterIdxBits = log2Up(math.max(studentFilterEntries, 2))
   def studentConfBits = 2
   def studentPhaseTrainBits = log2Up(scores * (roundMax + 2) + 1)
+  def studentPhaseTrainMax = scores * (roundMax + 2)
   // val prefetchIdWidth = log2Up(inflightEntries)
 
   def signedExtend(x: UInt, width: Int): UInt = {
@@ -142,7 +145,54 @@ trait HasBOPParams extends HasPrefetcherHelper {
 }
 
 abstract class BOPBundle(implicit val p: Parameters) extends Bundle with HasBOPParams
-abstract class BOPModule(implicit val p: Parameters) extends Module with HasBOPParams
+abstract class BOPModule(implicit val p: Parameters) extends Module with HasBOPParams {
+  protected def alignUp(value: Int, step: Int): Int = ((value + step - 1) / step) * step
+
+  private def emitHistogramRange(
+    perfName: String,
+    perfCnt: UInt,
+    enable: Bool,
+    start: Int,
+    stop: Int,
+    step: Int,
+    leftStrict: Boolean = false,
+    rightStrict: Boolean = false
+  ): Unit = {
+    if (stop > start) {
+      XSPerfHistogram(
+        perfName,
+        perfCnt,
+        enable,
+        start,
+        stop,
+        step,
+        left_strict = leftStrict,
+        right_strict = rightStrict
+      )
+    }
+  }
+
+  protected def emitOffsetDistCounters(prefix: String, offset: SInt, enable: Bool): Unit = {
+    for (off <- offsetList) {
+      val counterName =
+        if (off < 0) prefix + "_neg_" + (-off).toString
+        else prefix + "_pos_" + off.toString
+      XSPerfAccumulate(counterName, enable && offset === off.S(offsetWidth.W))
+    }
+  }
+
+  protected def emitCoverageHistogram(prefix: String, coverage: UInt, enable: Bool): Unit = {
+    val rawUpper = studentPhaseTrainMax + 1
+    emitHistogramRange(prefix, coverage, enable, 0, math.min(32, rawUpper), 1, rightStrict = true)
+    emitHistogramRange(prefix, coverage, enable, 32, math.min(128, rawUpper), 8,
+      leftStrict = true, rightStrict = true)
+    emitHistogramRange(prefix, coverage, enable, 128, math.min(512, rawUpper), 32,
+      leftStrict = true, rightStrict = true)
+    emitHistogramRange(prefix, coverage, enable, 512, math.min(2048, rawUpper), 128,
+      leftStrict = true, rightStrict = true)
+    emitHistogramRange(prefix, coverage, enable, 2048, alignUp(rawUpper, 512), 512, leftStrict = true)
+  }
+}
 
 class ScoreTableEntry(implicit p: Parameters) extends BOPBundle {
   // val offset = UInt(offsetWidth.W)
@@ -500,9 +550,28 @@ class StudentCoverageLearner(name: String = "")(implicit p: Parameters) extends 
     }
   }
 
-  private def coverageThresholdMet(selectedCov: UInt, phaseLen: UInt): Bool = {
+  // Low-cost mode is elaboration-time selected, so only one arithmetic implementation
+  // exists in the final hardware.
+  private def scaleByConst(x: UInt, factor: Int): UInt = {
+    require(factor >= 0, s"$name scaleByConst factor must be non-negative")
+    if (factor == 0) {
+      0.U(1.W)
+    } else {
+      var acc = 0.U(1.W)
+      for (shift <- 0 to log2Up(factor + 1)) {
+        if (((factor >> shift) & 1) != 0) {
+          acc = acc +& (x << shift)
+        }
+      }
+      acc
+    }
+  }
+
+  private def coverageThresholdMet(selectedCov: UInt, phaseLen: UInt, requiredCov: UInt): Bool = {
     if (studentCovThresholdPct == 0) {
       true.B
+    } else if (studentLowCostArithEnable) {
+      phaseLen.orR && (selectedCov >= requiredCov)
     } else {
       phaseLen.orR &&
         (selectedCov * 100.U) >= (phaseLen * studentCovThresholdPct.U)
@@ -510,13 +579,23 @@ class StudentCoverageLearner(name: String = "")(implicit p: Parameters) extends 
   }
 
   private def withinCoeffRange(lhs: UInt, rhs: UInt): Bool = {
-    (lhs * 100.U) >= (rhs * studentLargeOffsetPriorityCoeffPct.U) &&
-      (lhs * studentLargeOffsetPriorityCoeffPct.U) <= (rhs * 100.U)
+    if (studentLowCostArithEnable) {
+      val lhs100 = scaleByConst(lhs, 100)
+      val rhs100 = scaleByConst(rhs, 100)
+      val lhsCoeff = scaleByConst(lhs, studentLargeOffsetPriorityCoeffPct)
+      val rhsCoeff = scaleByConst(rhs, studentLargeOffsetPriorityCoeffPct)
+      (lhs100 >= rhsCoeff) && (lhsCoeff <= rhs100)
+    } else {
+      (lhs * 100.U) >= (rhs * studentLargeOffsetPriorityCoeffPct.U) &&
+        (lhs * studentLargeOffsetPriorityCoeffPct.U) <= (rhs * 100.U)
+    }
   }
 
   val studentPool = RegInit(VecInit(Seq.fill(studentPoolSize)(0.U.asTypeOf(new StudentPoolEntry))))
   val studentFilterBits = RegInit(VecInit(Seq.fill(studentFilterEntries)(0.U(studentPoolSize.W))))
   val studentPhaseTrainCount = RegInit(0.U(studentPhaseTrainBits.W))
+  val studentPhaseRequiredCov = RegInit(0.U(studentPhaseTrainBits.W))
+  val studentPhaseCovPctAcc = RegInit((if (studentCovThresholdPct == 0) 0 else 99).U(8.W))
   val studentSelectedOffset = RegInit(1.S(offsetWidth.W))
   val studentSelectedValid = RegInit(false.B)
   val studentSelectedEnable = RegInit(false.B)
@@ -532,12 +611,16 @@ class StudentCoverageLearner(name: String = "")(implicit p: Parameters) extends 
   val phaseDuplicateTeacherBest = RegInit(false.B)
   val phaseTeacherBestOffset = RegInit(0.S(offsetWidth.W))
   val phaseTeacherIssueEnable = RegInit(false.B)
+  val phaseRequiredCov = RegInit(0.U(studentPhaseTrainBits.W))
   val phaseBestIdx = RegInit(0.U(studentPoolIdxBits.W))
   val phaseWorstIdx = RegInit(0.U(studentPoolIdxBits.W))
   val phaseMinAbsIdx = RegInit(0.U(studentPoolIdxBits.W))
   val phaseMaxAbsIdx = RegInit(0.U(studentPoolIdxBits.W))
   val phaseVictimIdx = RegInit(0.U(studentPoolIdxBits.W))
   val phaseFirstInvalidIdx = RegInit(0.U(studentPoolIdxBits.W))
+  val phasePerfBestOffset = RegInit(0.S(offsetWidth.W))
+  val phasePerfBestCov = RegInit(0.U(studentPhaseTrainBits.W))
+  val phasePerfWorstCov = RegInit(0.U(studentPhaseTrainBits.W))
 
   // Training state keeps the hot path small: filter query and filter insert only.
   // All phase-end comparisons are snapshotted here and consumed one cycle later.
@@ -651,7 +734,8 @@ class StudentCoverageLearner(name: String = "")(implicit p: Parameters) extends 
   val phaseRewardIdx = Mux(phasePreferLargeOffset, phaseWorstIdx, phaseBestIdx)
   val phasePunishIdx = Mux(phasePreferLargeOffset, phaseBestIdx, phaseWorstIdx)
   val phaseSelectedCov = Mux(phasePreferLargeOffset, phaseWorstCov, phaseBestCov)
-  val phaseSelectedEnable = phaseHasValidPool && coverageThresholdMet(phaseSelectedCov, phaseTrainCount)
+  val phaseSelectedEnable = phaseHasValidPool &&
+    coverageThresholdMet(phaseSelectedCov, phaseTrainCount, phaseRequiredCov)
   val phaseInjectTeacherBest = (studentTeacherTopN > 0).B &&
     (phaseTeacherBestOffset =/= 0.S) &&
     !phaseDuplicateTeacherBest
@@ -683,15 +767,28 @@ class StudentCoverageLearner(name: String = "")(implicit p: Parameters) extends 
       phaseDuplicateTeacherBest := liveDuplicateTeacherBest
       phaseTeacherBestOffset := io.teacherBestOffset.asSInt
       phaseTeacherIssueEnable := io.teacherIssueEnable
+      phaseRequiredCov := studentPhaseRequiredCov
       phaseBestIdx := liveBestIdx
       phaseWorstIdx := liveWorstIdx
       phaseMinAbsIdx := liveMinAbsIdx
       phaseMaxAbsIdx := liveMaxAbsIdx
       phaseVictimIdx := liveVictimIdx
       phaseFirstInvalidIdx := liveFirstInvalidIdx
+      phasePerfBestOffset := Mux(liveHasValidPool, studentPool(liveBestIdx).offset, 0.S)
+      phasePerfBestCov := Mux(liveHasValidPool, studentPool(liveBestIdx).curPhaseCov, 0.U)
+      phasePerfWorstCov := Mux(liveHasValidPool, studentPool(liveWorstIdx).curPhaseCov, 0.U)
       state := s_phaseEnd
     }.elsewhen(io.train.valid) {
       studentPhaseTrainCount := studentPhaseTrainCount + 1.U
+      if (studentLowCostArithEnable && studentCovThresholdPct > 0) {
+        val nextCovPctAcc = studentPhaseCovPctAcc + studentCovThresholdPct.U
+        when(nextCovPctAcc >= 100.U) {
+          studentPhaseCovPctAcc := nextCovPctAcc - 100.U
+          studentPhaseRequiredCov := studentPhaseRequiredCov + 1.U
+        }.otherwise {
+          studentPhaseCovPctAcc := nextCovPctAcc
+        }
+      }
 
       when(liveHasValidPool) {
         val queryIdx = filterIndex(io.train.bits(fullAddrBits - 1, offsetBits))
@@ -749,6 +846,8 @@ class StudentCoverageLearner(name: String = "")(implicit p: Parameters) extends 
     }
     studentFilterBits.foreach(_ := 0.U)
     studentPhaseTrainCount := 0.U
+    studentPhaseRequiredCov := 0.U
+    studentPhaseCovPctAcc := (if (studentCovThresholdPct == 0) 0 else 99).U
     state := s_training
   }
 
@@ -764,6 +863,9 @@ class StudentCoverageLearner(name: String = "")(implicit p: Parameters) extends 
   XSPerfAccumulate("student_override_teacher_disable",
     state === s_phaseEnd && phaseHasValidPool && phaseSelectedEnable && !phaseTeacherIssueEnable)
   XSPerfAccumulate("teacher_best_injected", state === s_phaseEnd && phaseInjectTeacherBest)
+  emitOffsetDistCounters("student_best_offset", phasePerfBestOffset, state === s_phaseEnd && phaseHasValidPool)
+  emitCoverageHistogram("student_best_cov", phasePerfBestCov, state === s_phaseEnd && phaseHasValidPool)
+  emitCoverageHistogram("student_worst_cov", phasePerfWorstCov, state === s_phaseEnd && phaseHasValidPool)
 }
 
 class BopReqBundle(implicit p: Parameters) extends BOPBundle{
@@ -772,6 +874,7 @@ class BopReqBundle(implicit p: Parameters) extends BOPBundle{
   val needT = Bool()
   val source = UInt(sourceIdBits.W)
   val isBOP = Bool()
+  val issueOffset = SInt(offsetWidth.W)
 }
 
 class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
@@ -785,6 +888,7 @@ class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
   // for pf req
   val needT = Bool()
   val source = UInt(sourceIdBits.W)
+  val issueOffset = SInt(offsetWidth.W)
 
   def fromBopReqBundle(req: BopReqBundle) = {
     paddrValid := false.B
@@ -795,6 +899,7 @@ class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
     paddrNoOffset := 0.U
     needT := req.needT
     source := req.source
+    issueOffset := req.issueOffset
   }
 
   def toPrefetchReq(): PrefetchReq = {
@@ -830,6 +935,7 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
     val in_req = Flipped(ValidIO(new BopReqBundle))
     val tlb_req = new L2ToL1TlbIO(nRespDups = 1)
     val out_req = DecoupledIO(new PrefetchReq)
+    val out_issueOffset = Output(SInt(offsetWidth.W))
   })
 
   val firstTlbReplayCnt = Constantin.createRecord(name+"_firstTlbReplayCnt", bopParams.tlbReplayCnt)
@@ -881,6 +987,9 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
   io.tlb_req.req_kill := false.B
   io.tlb_req.resp.ready := true.B
   io.out_req <> pf_req_arb.io.out
+  io.out_issueOffset := Mux1H(entries.indices.map(i =>
+    pf_req_arb.io.in(i).fire -> entries(i).issueOffset.asUInt
+  )).asSInt
 
   /* s0: entries look up */
   val prev_in_valid = RegNext(io.in_req.valid, false.B)
@@ -1153,6 +1262,7 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   val s1_source = RegEnable(io.train.bits.source, s0_fire)
   val s1_newFullAddr = RegEnable(s0_newFullAddr, s0_fire)
   val s1_reqVaddr = RegEnable(s0_reqVaddr, s0_fire)
+  val s1_issueOffset = RegEnable(issueOffset.asSInt, s0_fire)
   // val out_req = Wire(new PrefetchReq)
   // val out_req_valid = Wire(Bool())
   // val out_drop_req = WireInit(false.B)
@@ -1193,6 +1303,7 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     reqFilter.io.in_req.bits.needT := s1_needT
     reqFilter.io.in_req.bits.source := s1_source
     reqFilter.io.in_req.bits.isBOP := true.B
+    reqFilter.io.in_req.bits.issueOffset := s1_issueOffset
   }
 
   if(virtualTrain){
@@ -1215,6 +1326,8 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     io.req.bits.isBOP := true.B
   }
 
+  val prefetchSentIssueOffset = if (virtualTrain) reqFilter.io.out_issueOffset else s1_issueOffset
+
   for (off <- offsetList) {
     if (off < 0) {
       XSPerfAccumulate("best_offset_neg_" + (-off).toString, prefetchOffset === off.S(offsetWidth.W).asUInt)
@@ -1223,6 +1336,7 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     }
   }
   XSPerfAccumulate("bop_req", io.req.fire)
+  emitOffsetDistCounters("prefetch_sent_issue_offset", prefetchSentIssueOffset, io.req.fire)
   XSPerfAccumulate("bop_train", io.train.fire)
   XSPerfAccumulate("bop_resp", io.resp.fire)
   XSPerfAccumulate("bop_train_stall_for_st_not_ready", io.train.valid && !scoreTable.io.req.ready)
@@ -1284,6 +1398,7 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
 
   val req = Reg(new PrefetchReq)
   val req_valid = RegInit(false.B)
+  val reqIssueOffset = RegInit(0.S(offsetWidth.W))
   val crossPageReq = getPPN(newAddr) =/= getPPN(oldAddr) // unequal tags
   when(io.req.fire) {
     req_valid := false.B
@@ -1293,6 +1408,7 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     req.set := parseFullAddress(newAddr)._2
     req.needT := io.train.bits.needT
     req.source := io.train.bits.source
+    reqIssueOffset := issueOffset.asSInt
     req_valid := !crossPageReq && issueEnable // stop prefetch when prefetch req crosses pages
   }
 
@@ -1311,6 +1427,7 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     }
   }
   XSPerfAccumulate("bop_req", io.req.fire)
+  emitOffsetDistCounters("prefetch_sent_issue_offset", reqIssueOffset, io.req.fire)
   XSPerfAccumulate("bop_train", io.train.fire)
   XSPerfAccumulate("bop_resp", io.resp.fire)
   XSPerfAccumulate("bop_train_stall_for_st_not_ready", io.train.valid && !scoreTable.io.req.ready)
