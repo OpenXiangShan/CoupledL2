@@ -3,20 +3,20 @@ package coupledL2.utils
 import chisel3._
 import chisel3.util._
 import utility.ParallelOR
+import freechips.rocketchip.util.SeqToAugmentedSeq
 
 object MaskToOH {
+  def apply(mask: Seq[Bool]): UInt = {
+    val oh = mask.zipWithIndex.map{
+      case (b, 0) => b
+      case (b, i) => b && !Cat(mask.take(i)).orR
+    }.asUInt
+    assert(oh === PriorityEncoderOH(mask.asUInt), "MaskToOH should give the same result as PriorityEncoderOH")
+    oh
+  }
+
   def apply(mask: UInt): UInt = {
-    val width = mask.getWidth
-    val oh = Wire(Vec(width, Bool()))
-    for (i <- 0 until width) {
-      if (i == 0) {
-        oh(i) := mask(i)
-      } else {
-        oh(i) := mask(i) && !ParallelOR(mask(i-1, 0).asBools)
-      }
-    }
-    assert(oh.asUInt === PriorityEncoderOH(mask), "MaskToOH should give the same result as PriorityEncoderOH")
-    oh.asUInt
+    apply(mask.asBools)
   }
 }
 
