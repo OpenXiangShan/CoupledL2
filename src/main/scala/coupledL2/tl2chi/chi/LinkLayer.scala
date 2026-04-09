@@ -274,7 +274,7 @@ class Decoupled2LCredit[T <: Bundle](
 
   // The maximum number of L-Credits that a receiver can provide is 15.
   val lcreditsMax = 15
-  val enableCHIAsync = cacheParams.enableCHIAsyncBridge.getOrElse(false)
+  val enableCHIAsync = cacheParams.enableCHIAsyncBridge
   val overlcreditVal = if(enableCHIAsync) overlcreditNum.getOrElse(0) else 0 
   val lcreditsMaxAll = lcreditsMax + overlcreditVal
   val lcreditPool = RegInit(overlcreditVal.U(log2Up(lcreditsMaxAll+1).W))
