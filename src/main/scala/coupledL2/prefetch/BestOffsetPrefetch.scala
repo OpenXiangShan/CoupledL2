@@ -462,9 +462,15 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
   tlb_req_arb.io.out.ready := true.B
   io.tlb_req.req.valid := RegNext(tlb_req_arb.io.out.valid)
   io.tlb_req.req.bits := RegEnable(tlb_req_arb.io.out.bits, tlb_req_arb.io.out.valid)
+  io.tlb_req.req.bits.cmd := TlbCmd.read
+  io.tlb_req.req.bits.size := 3.U
+  io.tlb_req.req.bits.kill := false.B
+  io.tlb_req.req.bits.no_translate := false.B
+  io.tlb_req.req.bits.isPrefetch := true.B
   io.tlb_req.req_kill := false.B
   io.tlb_req.resp.ready := true.B
   io.out_req <> pf_req_arb.io.out
+  io.out_req.bits.pfSource := MemReqSource.Prefetch2L2BOP.id.U
 
   /* s0: entries look up */
   val prev_in_valid = RegNext(io.in_req.valid, false.B)
@@ -564,12 +570,8 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
   /* tlb & pf */
   for((e, i) <- entries.zipWithIndex){
     tlb_req_arb.io.in(i).valid := valids(i) && !e.paddrValid && !s1_tlb_fire_oh(i) && !s2_tlb_fire_oh(i) && !s3_tlb_fire_oh(i) && !e.replayCnt.orR
+    tlb_req_arb.io.in(i).bits := 0.U.asTypeOf(tlb_req_arb.io.in(i).bits)
     tlb_req_arb.io.in(i).bits.vaddr := e.get_tlb_vaddr()
-    tlb_req_arb.io.in(i).bits.cmd := TlbCmd.read
-    tlb_req_arb.io.in(i).bits.size := 3.U
-    tlb_req_arb.io.in(i).bits.kill := false.B
-    tlb_req_arb.io.in(i).bits.no_translate := false.B
-    tlb_req_arb.io.in(i).bits.isPrefetch := true.B
 
     pf_req_arb.io.in(i).valid := can_send_pf(i)
     pf_req_arb.io.in(i).bits := e.toPrefetchReq()
