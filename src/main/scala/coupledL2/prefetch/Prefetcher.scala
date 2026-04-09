@@ -203,6 +203,17 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       case L2ParamKey => p(L2ParamKey).copy(prefetch = Seq(BOPParameters(
         virtualTrain = false,
         badScore = 1,
+        crossPage = false,
+        enableStudentCover = true,
+        studentTeacherTopN = 1,
+        studentPoolSize = 8,
+        studentConfAlphaPct = 0,
+        studentCovThresholdPct = 5,
+        studentLargeOffsetPriorityEnable = false,
+        studentLargeOffsetPriorityCoeffPct = 99,
+        studentFilterEntries = 2048,
+        studentHashMode = "splitmix",
+        studentHashCount = 1,
         offsetList = Seq(
           -32, -30, -27, -25, -24, -20, -18, -16, -15,
           -12, -10, -9, -8, -6, -5, -4, -3, -2, -1,
@@ -217,6 +228,17 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     Module(new VBestOffsetPrefetch()(p.alterPartial({
       case L2ParamKey => p(L2ParamKey).copy(prefetch = Seq(BOPParameters(
         badScore = 2,
+        crossPage = true,
+        enableStudentCover = true,
+        studentTeacherTopN = 1,
+        studentPoolSize = 4,
+        studentConfAlphaPct = 0,
+        studentCovThresholdPct = 2,
+        studentLargeOffsetPriorityEnable = true,
+        studentLargeOffsetPriorityCoeffPct = 99,
+        studentFilterEntries = 4096,
+        studentHashMode = "bop_rr",
+        studentHashCount = 1,
         offsetList = Seq(
           -117, -147, -91, 117, 147, 91,
           -256, -250, -243, -240, -225, -216, -200,
