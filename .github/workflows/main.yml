@@ -128,16 +128,6 @@ jobs:
           sudo make install
           verilator --version
 
-      - name: Setup Verilator
-        run: |
-          wget https://raw.githubusercontent.com/OpenXiangShan/xs-env/master/install-verilator.sh
-          chmod u+x install-verilator.sh
-          sed -i 's/CC=clang/CC=clang-17/g' install-verilator.sh
-          sed -i 's/CXX=clang++/CXX=clang++-17/g' install-verilator.sh
-          sed -i 's/LINK=clang++/LINK=clang++-17/g' install-verilator.sh
-          sed -i 's/make -j8/make -j4/g' install-verilator.sh
-          sudo bash install-verilator.sh
-
       - name: Setup Scala
         uses: olafurpg/setup-scala@v11
         with:
