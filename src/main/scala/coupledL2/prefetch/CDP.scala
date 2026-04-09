@@ -26,7 +26,7 @@ case class CDPParameters(
   VpnTableTagBits:      Int = 10,     // should be a val within (0, 18 - log2(VpnTableSubEntryNum)]
   CounterBits:          Int = 10,
   VpnResetPeriod:       Int = 128,    // Every $VpnResetPeriod visits, VPN entries will be reset
-  EntryBits:            Int = 21,     // Every SubEntry maintain for 2^21 Bits = 2M space
+  EntryBits:            Int = 20,     // Every SubEntry maintain for 2^20 Bits = 1M space
 
   Degree:   Int = 1,      // issue how many prefetch req?
 
@@ -974,12 +974,12 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
   pft_req_filter.io.pft_req <> io.pft_req
 
   // ------------------- Performance Counter -------------------
-  // all detect triggers
-  val trigger_valid_vec = l2_triggers.map(_.valid)
-  XSPerfAccumulate("in_detect_trig_num", PopCount(trigger_valid_vec) * 8.U)   // 1 cache block has 4 sub-blocks that can trigger
+    for (i <- 0 until 4) {
+    // total trigger num
+    val enq_req_vec = detect_trig_queue_seq(i).io.enq.map(_.valid)
+    XSPerfAccumulate(s"in_detect_trig_num_$i", PopCount(enq_req_vec) * 4.U)
 
-  // drop by detect_trig_queue
-  for (i <- 0 until 4) {
+    // drop by detect_trig_queue
     val not_enq_vec = detect_trig_queue_seq(i).io.enq.map{
       case enq =>
         enq.valid && !enq.ready
