@@ -8,6 +8,7 @@ import oceanus.compactchi._
 import oceanus.l2._
 import oceanus.l2.L2TSHR._
 import oceanus.l2.L2Directory._
+import oceanus.l2.L2DataStorage._
 import oceanus.l2.tshr._
 import org.chipsalliance.cde.config.Parameters
 
@@ -47,6 +48,7 @@ object L2TSHR {
   class DSReadFSM extends Bundle {
     val PreArb = Bool()     // sending Read Request to Data Storage, waiting for Arbiter completion
     val PostArb = Bool()    // Read Request has been accepted by Data Storage
+    val Done = Bool()       // Read Response has been received from Data Storage
     def NotYet =            // haven't sent Read Request to Data Storage
       !PreArb && !PostArb
   }
@@ -65,6 +67,14 @@ object L2TSHR {
     val Done = Bool()       // Write Request has been completed and observable to later requests
     def NotYet =            // haven't sent Write Request to Data Storage
       !PreArb && !PostArb && !Done
+
+    // All possible combinations of state bits
+    def DSWrite_NotYet          = !PreArb && !PostArb && !Done
+    def DSWrite_PreArb          =  PreArb && !PostArb && !Done
+    def DSWrite_PostArb         = !PreArb &&  PostArb && !Done
+    def DSWrite_PostArb_PreArb  =  PreArb &&  PostArb && !Done
+    def DSWrite_Done            = !PreArb && !PostArb &&  Done
+    def DSWrite = DSWrite_NotYet || DSWrite_PreArb || DSWrite_PostArb || DSWrite_PostArb_PreArb || DSWrite_Done
   }
 
   object DSWriteFSM {
@@ -76,16 +86,25 @@ object L2TSHR {
   }
 }
 
-class L2TSHR(implicit val p: Parameters) extends Module {
+class L2TSHR(id: Int)(implicit val p: Parameters) extends Module {
 
   val io = IO(new Bundle {
 
     val toDir = Output(new L2Directory.PathToDirectory)
     val fromDir = Input(new L2Directory.PathFromDirectory)
 
+    val toDS = Output(new L2DataStorage.PathTSHRToDataStorage)
+    val fromDS = Output(new L2DataStorage.PathDataStorageToTSHR)
+
     val RXEVT = Flipped(Decoupled(new FlitEVT))       // L1 EVT
-    val RXSNP = Flipped(Decoupled(new CHIBundleSNP))  // L3 SNP
+    val RXSNP = Flipped(Decoupled(new CHIBundleSNP))  // HN SNP
     val RXREQ = Flipped(Decoupled(new FlitREQ))       // L1/L2 REQ
+
+    val UpRXRSP = Flipped(Valid(new FlitUpRSP))       // RSP from L1
+    val UpRXDAT = Flipped(Valid(new FlitUpDAT))       // DAT from L1
+
+    val DnRXRSP = Flipped(Valid(new CHIBundleRSP))    // RSP from HN
+    val DnRXDAT = Flipped(Valid(new CHIBundleDAT))    // DAT from HN
 
     val alloc = Input(Bool())
     val valid = Output(Bool())
@@ -93,6 +112,14 @@ class L2TSHR(implicit val p: Parameters) extends Module {
 
   // miscs and enchantments
   val req_need_dirRead = Wire(Bool())
+
+  val ds_resp_hit = Wire(Bool()) // TODO: connect with Data Storage interactions, valid only when DSBufResp
+  val ds_resp_miss = Wire(Bool()) // TODO: connect with Data Storage interactions, valid only when DSBufResp
+
+  val ds_read_ahead_en = Wire(Bool()) // TODO: Data Storage Read Ahead valid on TSHR alloc/reuse
+  val ds_read_ahead_q = RegInit(false.B) // TODO: Data Storage Read Ahead flag bit
+
+  val ds_read_rbe_en = Wire(Bool()) // TODO: Data Storage Read on requests passed RBE with valid meta
 
 
   // TSHR valid
@@ -139,6 +166,18 @@ class L2TSHR(implicit val p: Parameters) extends Module {
   val tshr_buffer_0 = Reg(UInt(256.W))
   val tshr_buffer_2 = Reg(UInt(256.W))
 
+  val tshr_buffer_modified_0 = RegInit(false.B)
+  val tshr_buffer_modified_2 = RegInit(false.B)
+
+  val tshr_buffer_modified = tshr_buffer_modified_0 || tshr_buffer_modified_2
+
+  val tshr_buffer_wen_0 = Wire(Bool())
+  val tshr_buffer_wen_2 = Wire(Bool())
+
+  val tshr_buffer_wen = tshr_buffer_wen_0 || tshr_buffer_wen_2
+
+  val tshr_buffer_wen_last = Wire(Bool())
+
   // TODO: TSHR Buffer interactions here
 
   
@@ -182,6 +221,10 @@ class L2TSHR(implicit val p: Parameters) extends Module {
     state_dirRead.Done := true.B
   }
 
+  when (tshr_dealloc) {
+    state_dirRead := DirReadFSM.init
+  }
+
   meta_valid := state_dirRead.Done
 
   assert(!(io.fromDir.DirRdArbComp && !state_dirRead.PreArb), "receiving DirRdArbComp on unexpected state (expecting PreArb)")
@@ -217,6 +260,10 @@ class L2TSHR(implicit val p: Parameters) extends Module {
     state_dirWrite.Done := false.B
   }
 
+  when (tshr_dealloc) {
+    state_dirWrite := DirWriteFSM.init
+  }
+
   tshr_wb_done_dir := state_dirWrite.Done
 
   assert(!(io.fromDir.DirWbArbComp && !state_dirWrite.PreArb), "receiving DirWbArbComp on unexpected state (expecting PreArb)")
@@ -224,15 +271,126 @@ class L2TSHR(implicit val p: Parameters) extends Module {
 
 
   // Data Storage read states
-  // TODO
+  val state_dsRead = RegInit(new DSReadFSM, DSReadFSM.init)
 
+  when (state_dsRead.NotYet) {
+    when (ds_read_ahead_en || ds_read_rbe_en) {
+      state_dsRead.PreArb := true.B
+    }
+  }
+
+  when (state_dsRead.PreArb) {
+    when (io.UpRXDAT.fire || io.DnRXDAT.fire || ds_read_ahead_q) {
+      state_dsRead.PreArb := false.B
+    }
+    when (io.fromDS.DSBufRdArbComp) {
+      state_dsRead.PreArb := false.B
+      state_dsRead.PostArb := true.B
+    }
+  }
+
+  when (state_dsRead.PostArb) {
+    when (ds_resp_miss) {
+      state_dsRead.PostArb := false.B
+      state_dsRead.PreArb := state_dirRead.Done
+    }
+    when (ds_resp_hit) {
+      state_dsRead.PostArb := false.B
+      state_dsRead.Done := true.B
+    }
+  }
+
+  when (tshr_dealloc) {
+    state_dsRead := DSReadFSM.init
+  }
+
+  assert(!(io.fromDS.DSBufRdArbComp && !state_dsRead.PreArb), "receiving DSBufRdArbComp on unexpected state (expecting PreArb)")
+  assert(!(io.fromDS.DSBufRdResp && !state_dsRead.PostArb), "receiving DSBufRdResp on unexpected state (expecting PostArb)")
+  assert(PopCount(state_dsRead.asUInt) <= 1.U, "multiple active states in DSReadFSM")
+  
   // Data Storage write states
-  // TODO
+  val state_dsWrite = RegInit(new DSWriteFSM, DSWriteFSM.init)
+
+  when (!state_dsWrite.PreArb) {
+    when (tshr_buffer_wen_last) {
+      state_dsWrite.PreArb := true.B
+    }
+  }.otherwise {
+    when (io.fromDS.DSBufWbArbComp && !tshr_buffer_wen_last) {
+      state_dsWrite.PreArb := false.B
+    }
+  }
+
+  when (!state_dsWrite.PostArb) {
+    when (io.fromDS.DSBufWbArbComp && !io.fromDS.DSBufWbComp) {
+      state_dsWrite.PostArb := true.B
+    }
+  }.otherwise {
+    when (io.fromDS.DSBufWbComp) {
+      state_dsWrite.PostArb := false.B
+    }
+  }
+
+  when (!state_dsWrite.Done) {
+    when ((tshr_inactivate && !tshr_buffer_modified) || (!tshr_buffer_wen_last && io.fromDS.DSBufWbComp && !state_dsWrite.PreArb)) {
+      state_dsWrite.Done := true.B
+    }
+  }.otherwise {
+    when (tshr_buffer_wen_last) {
+      state_dsWrite.Done := false.B
+    }
+  }
+
+  when (tshr_dealloc) {
+    state_dsWrite := DSWriteFSM.init
+  }
+
+  tshr_wb_done_ds := state_dsWrite.Done
+
+  assert(state_dsWrite.DSWrite, "Illegal combination of DSWrite FSM bits")
+
+  Seq((state_dsWrite, tshr_buffer_wen_last, io.fromDS.DSBufWbArbComp, io.fromDS.DSBufWbComp)).foreach { case (s, bufWr, wbArbComp, wbComp) =>
+    assert(!(s.DSWrite_NotYet && !bufWr && !wbArbComp &&  wbComp), "Illegal transition #1 under DSWrite_NotYet")
+    assert(!(s.DSWrite_NotYet && !bufWr &&  wbArbComp && !wbComp), "Illegal transition #2 under DSWrite_NotYet")
+    assert(!(s.DSWrite_NotYet && !bufWr &&  wbArbComp &&  wbComp), "Illegal transition #3 under DSWrite_NotYet")
+    assert(!(s.DSWrite_NotYet &&  bufWr && !wbArbComp &&  wbComp), "Illegal transition #5 under DSWrite_NotYet")
+    assert(!(s.DSWrite_NotYet &&  bufWr &&  wbArbComp && !wbComp), "Illegal transition #6 under DSWrite_NotYet")
+    assert(!(s.DSWrite_NotYet &&  bufWr &&  wbArbComp &&  wbComp), "Illegal transition #7 under DSWrite_NotYet")
+
+    assert(!(s.DSWrite_PreArb && !bufWr && !wbArbComp &&  wbComp), "Illegal transition #1 under DSWrite_PreArb")
+    assert(!(s.DSWrite_PreArb &&  bufWr && !wbArbComp &&  wbComp), "Illegal transition #5 under DSWrite_PreArb")
+
+    assert(!(s.DSWrite_PostArb && !bufWr &&  wbArbComp && !wbComp), "Illegal transition #2 under DSWrite_PostArb")
+    assert(!(s.DSWrite_PostArb && !bufWr &&  wbArbComp &&  wbComp), "Illegal transition #3 under DSWrite_PostArb")
+    assert(!(s.DSWrite_PostArb &&  bufWr &&  wbArbComp && !wbComp), "Illegal transition #6 under DSWrite_PostArb")
+    assert(!(s.DSWrite_PostArb &&  bufWr &&  wbArbComp &&  wbComp), "Illegal transition #7 under DSWrite_PostArb")
+
+    assert(!(s.DSWrite_PostArb_PreArb && !bufWr &&  wbArbComp && !wbComp), "Illegal transition #2 under DSWrite_PostArb_PreArb")
+    assert(!(s.DSWrite_PostArb_PreArb && !bufWr &&  wbArbComp &&  wbComp), "Illegal transition #3 under DSWrite_PostArb_PreArb")
+    assert(!(s.DSWrite_PostArb_PreArb &&  bufWr &&  wbArbComp && !wbComp), "Illegal transition #6 under DSWrite_PostArb_PreArb")
+    assert(!(s.DSWrite_PostArb_PreArb &&  bufWr &&  wbArbComp &&  wbComp), "Illegal transition #7 under DSWrite_PostArb_PreArb")
+
+    assert(!(s.DSWrite_Done && !bufWr && !wbArbComp &&  wbComp), "Illegal transition #1 under DSWrite_Done")
+    assert(!(s.DSWrite_Done && !bufWr &&  wbArbComp && !wbComp), "Illegal transition #2 under DSWrite_Done")
+    assert(!(s.DSWrite_Done && !bufWr &&  wbArbComp &&  wbComp), "Illegal transition #3 under DSWrite_Done")
+    assert(!(s.DSWrite_Done &&  bufWr && !wbArbComp &&  wbComp), "Illegal transition #5 under DSWrite_Done")
+    assert(!(s.DSWrite_Done &&  bufWr &&  wbArbComp && !wbComp), "Illegal transition #6 under DSWrite_Done")
+    assert(!(s.DSWrite_Done &&  bufWr &&  wbArbComp &&  wbComp), "Illegal transition #7 under DSWrite_Done")
+  }
+
+  XSPerfAccumulate(s"L2TSHR_${id}_DSWrite_PreArb_cycleCnt", state_dsWrite.DSWrite_PreArb)
+  XSPerfAccumulate(s"L2TSHR_${id}_DSWrite_PostArb_cycleCnt", state_dsWrite.DSWrite_PostArb)
+  XSPerfAccumulate(s"L2TSHR_${id}_DSWrite_PostArb_PreArb_cycleCnt", state_dsWrite.DSWrite_PostArb_PreArb)
+  XSPerfAccumulate(s"L2TSHR_${id}_DSWrite_Done_cycleCnt", state_dsWrite.DSWrite_Done)
 
 
   // interactions with Directory
   io.toDir.DirRd := state_dirRead.PreArb
   io.toDir.DirWb := state_dirWrite.PreArb
+
+  // interactions with Data Storage
+  io.toDS.DSBufRd := state_dsRead.PreArb
+  io.toDS.DSBufWb := state_dsWrite.PreArb
 
   // interactions between Directory read states and RBEs
   rbeEVT.io.directoryReadDone := state_dirRead.Done
