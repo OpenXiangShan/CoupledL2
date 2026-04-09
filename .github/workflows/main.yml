@@ -81,6 +81,27 @@ jobs:
         
       - name: Compile
         run: make compile
+
+      - name: Get tl-test-new version
+        run: |
+          test -f ".tl-test-new-version" || (echo "Error: .tl-test-new-version file not found" && exit 1)
+          echo "TL_TEST_NEW_COMMIT=$(cat .tl-test-new-version)" >> $GITHUB_ENV
+
+      - name: Check tl-test-new version
+        run: |
+          if [ -z "${{ env.TL_TEST_NEW_COMMIT }}" ]; then
+            echo "Error: TL_TEST_NEW_COMMIT environment variable is not set"
+            exit 1
+          fi
+          rm -rf tl-test-new
+          git clone https://github.com/OpenXiangShan/tl-test-new
+          cd ./tl-test-new
+          if git rev-parse --verify ${{ env.TL_TEST_NEW_COMMIT }} >/dev/null 2>&1; then
+            echo "Info: tl-test-new version TL_TEST_NEW_COMMIT is valid: ${{ env.TL_TEST_NEW_COMMIT }}"
+          else
+            echo "Error: tl-test-new version TL_TEST_NEW_COMMIT is not a valid commit hash in the current repository"
+            exit 1
+          fi
       
       # Clean artifacts folder (./tl-test-new/run) after successful run
       - name: Unit test for CHI version
@@ -88,6 +109,7 @@ jobs:
             rm -rf tl-test-new
             git clone https://github.com/OpenXiangShan/tl-test-new
             cd ./tl-test-new
+            git checkout ${{ env.TL_TEST_NEW_COMMIT }}
             sed -i 's/ari.target.*/ari.target = 240/g' ./configs/user.tltest.ini
             sed -i 's/cmo.enable .*=.*/cmo.enable = 1/g' ./configs/user.tltest.ini
             sed -i 's/cmo.enable.cbo.clean.*=.*/cmo.enable.cbo.clean = 1/g' ./configs/user.tltest.ini
