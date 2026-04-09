@@ -89,13 +89,13 @@ object huancun extends HasChisel {
 }
 
 object openNCB extends HasChisel {
-  override def millSourcePath = pwd / "openNCB"
+  override def millSourcePath = pwd / "OpenNCB"
   override def moduleDeps = super.moduleDeps ++ Seq(rocketchip)
 }
 
 object CoupledL2 extends HasChisel with $file.common.CoupledL2Module {
 
-  override def millSourcePath = pwd / "coupledL2"
+  override def millSourcePath = pwd / "CoupledL2"
 
   def rocketModule: ScalaModule = rocketchip
 
@@ -109,9 +109,11 @@ object CoupledL2 extends HasChisel with $file.common.CoupledL2Module {
 
 }
 
-object OpenLLC extends HasChisel with millbuild.common.OpenLLCModule {
+object OpenLLC extends HasChisel with $file.common.OpenLLCModule {
 
-  override def millSourcePath = pwd / "openLLC"
+  override def millSourcePath = pwd / "OpenLLC"
+
+  def coupledL2Module: ScalaModule = CoupledL2
 
   def rocketModule: ScalaModule = rocketchip
 
