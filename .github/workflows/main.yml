@@ -80,25 +80,19 @@ jobs:
       #   run: make checkformat
         
       - name: Compile
-        run: make compile
+        run: make compile-coupledl2
       
       # Clean artifacts folder (./tl-test-new/run) after successful run
       - name: Unit test for CHI version
         run: |
             rm -rf tl-test-new
-            git clone https://github.com/OpenXiangShan/tl-test-new
+            git clone -b l2-llc-merge-0409 https://github.com/OpenXiangShan/tl-test-new
             cd ./tl-test-new
             sed -i 's/ari.target.*/ari.target = 240/g' ./configs/user.tltest.ini
             sed -i 's/cmo.enable .*=.*/cmo.enable = 1/g' ./configs/user.tltest.ini
             sed -i 's/cmo.enable.cbo.clean.*=.*/cmo.enable.cbo.clean = 1/g' ./configs/user.tltest.ini
             sed -i 's/cmo.enable.cbo.flush.*=.*/cmo.enable.cbo.flush = 1/g' ./configs/user.tltest.ini
             sed -i 's/cmo.enable.cbo.inval.*=.*/cmo.enable.cbo.inval = 1/g' ./configs/user.tltest.ini
-            cd ./dut
-            git clone https://github.com/OpenXiangShan/OpenLLC
-            cd OpenLLC && make init
-            rm -rf ./coupledL2 && ln -s ../../.. ./coupledL2
-            rm -rf ./utility && ln -s ../../../utility ./utility
-            cd ../..
             make openLLC-test-l2l3l2 run THREADS_BUILD=4 CXX_COMPILER=clang++-17
             rm -rf run/*.vcd run/*.fst run/*.log run/*.db
             
