@@ -59,9 +59,9 @@ object OHMux {
 
   def apply[T <: Data](in: Iterable[(Bool, T)]): T ={
     val typo = in.head._2
-    ParallelOR(in.map { case (b, t) =>
+    (in.map { case (b, t) =>
       Cat(Seq.fill(t.getWidth)(b)) & t.asTypeOf(UInt())
-    }.toSeq).asTypeOf(typo)
+    }.toSeq).reduce(_ | _).asTypeOf(typo)
   }
 
   def apply[T <: Data](sel: UInt, in: Seq[T]): T =
