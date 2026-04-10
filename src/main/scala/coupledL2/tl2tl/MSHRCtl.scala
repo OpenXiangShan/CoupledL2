@@ -73,7 +73,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
     val releaseBufWriteId = Output(UInt(mshrBits.W))
 
     /* nested writeback */
-    val nestedwb = Input(new NestedWriteback)
+    val nestedwb = new NestedWriteback
     val nestedwbDataId = Output(ValidIO(UInt(mshrBits.W)))
 
     /* status of s2 and s3 */
@@ -137,10 +137,21 @@ class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
       m.io.replResp.bits := io.replResp.bits
 
       io.msInfo(i) := m.io.msInfo
-      m.io.nestedwb := io.nestedwb
+
+      m.io.nestedwb.set := io.nestedwb.set
+      m.io.nestedwb.tag := io.nestedwb.tag
+      m.io.nestedwb.c_set_dirty := io.nestedwb.c_set_dirty
+      m.io.nestedwb.c_set_tip := io.nestedwb.c_set_tip
+      m.io.nestedwb.b_inv_dirty := io.nestedwb.b_inv_dirty
+      m.io.nestedwb.b_toB.foreach(_ := io.nestedwb.b_toB.getOrElse(false.B))
+      m.io.nestedwb.b_toN.foreach(_ := io.nestedwb.b_toN.getOrElse(false.B))
+      m.io.nestedwb.b_toClean.foreach(_ := io.nestedwb.b_toClean.getOrElse(false.B))
+
       m.io.aMergeTask.valid := io.aMergeTask.valid && io.aMergeTask.bits.id === i.U
       m.io.aMergeTask.bits := io.aMergeTask.bits.task
   }
+
+  io.nestedwb.replaceMatch := ParallelOR(mshrs.map(_.io.nestedwb.replaceMatch))
 
   io.toReqArb.blockC_s1 := false.B
   io.toReqArb.blockB_s1 := mshrFull   // conflict logic in SinkB
