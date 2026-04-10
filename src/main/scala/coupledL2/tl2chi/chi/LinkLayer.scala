@@ -274,7 +274,7 @@ class Decoupled2LCredit[T <: Bundle](
 
   // The maximum number of L-Credits that a receiver can provide is 15.
   val lcreditsMax = 15
-  val enableCHIAsync = cacheParams.enableCHIAsyncBridge.getOrElse(false)
+  val enableCHIAsync = cacheParams.enableCHIAsyncBridge
   val overlcreditVal = if(enableCHIAsync) overlcreditNum.getOrElse(0) else 0 
   val lcreditsMaxAll = lcreditsMax + overlcreditVal
   val lcreditPool = RegInit(overlcreditVal.U(log2Up(lcreditsMaxAll+1).W))
@@ -328,6 +328,7 @@ class LinkMonitor(implicit p: Parameters) extends L2Module with HasCHIOpcodes {
     val in = Flipped(new DecoupledPortIO())
     val out = new PortIO
     val nodeID = Input(UInt(NODEID_WIDTH.W))
+    val coEnable = Output(Bool())
     val exitco = Option.when(cacheParams.enableL2Flush) (Input(Bool()))
   })
   // val s_stop :: s_activate :: s_run :: s_deactivate :: Nil = Enum(4)
@@ -357,6 +358,7 @@ class LinkMonitor(implicit p: Parameters) extends L2Module with HasCHIOpcodes {
   //exit coherecy + deactive tx/rx when l2 flush done
   val exitco = io.exitco.getOrElse(false.B)
   val exitcoDone = !io.out.syscoreq && !io.out.syscoack && RegNext(true.B, init = false.B)
+  io.coEnable := io.out.syscoreq && io.out.syscoack
 
   io.out.tx.linkactivereq := RegNext(!exitcoDone, init = false.B)
   io.out.rx.linkactiveack := RegNext(
