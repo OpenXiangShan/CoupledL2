@@ -126,9 +126,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   sourceC.io.in <> mainPipe.io.toSourceC
   sourceC.io.pipeStatusVec := reqArb.io.status_vec ++ mainPipe.io.status_vec_toC
 
-  io.l1Hint.valid := mainPipe.io.l1Hint.valid
-  io.l1Hint.bits.sourceId := mainPipe.io.l1Hint.bits.sourceId
-  io.l1Hint.bits.isKeyword := mainPipe.io.l1Hint.bits.isKeyword
+  io.l1Hint <> mainPipe.io.l1Hint
   mainPipe.io.l1Hint.ready := io.l1Hint.ready
   mshrCtl.io.grantStatus := grantBuf.io.grantStatus
 
