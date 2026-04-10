@@ -234,10 +234,14 @@ class Directory(implicit p: Parameters) extends L2Module {
   errorRead := bankTagError
 
   // Meta R/W
+  val metaWrite = Wire(new MetaEntry)
+  metaWrite := io.metaWReq.bits.wmeta
+  metaWrite.alias.foreach(_ := Mux(io.metaWReq.bits.wmeta.clients.orR, io.metaWReq.bits.wmeta.alias.get, 0.U))
+
   metaRead := metaArray.io.r(io.read.fire, io.read.bits.set).resp.data
   metaArray.io.w(
     metaWen,
-    io.metaWReq.bits.wmeta,
+    metaWrite,
     io.metaWReq.bits.set,
     io.metaWReq.bits.wayOH
   )
@@ -304,6 +308,9 @@ class Directory(implicit p: Parameters) extends L2Module {
   io.resp.bits.set   := set_s3
   io.resp.bits.error := error_s3  // depends on ECC
   io.resp.bits.replacerInfo := replacerInfo_s3
+
+  // X-state guard of 'alias' field on client absent (For Get, Prefetch...)
+  io.resp.bits.meta.alias.foreach(_ := Mux(meta_s3.clients.orR, meta_s3.alias.get, 0.U))
 
   dontTouch(io)
   dontTouch(metaArray.io)
