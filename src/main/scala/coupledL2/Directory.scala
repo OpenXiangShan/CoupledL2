@@ -436,5 +436,5 @@ class Directory(implicit p: Parameters) extends L2Module {
   }
 
   XSPerfAccumulate("dirRead_cnt", io.read.fire)
-  XSPerfAccumulate("choose_busy_way", reqValid_s3 && !req_s3.wayMask(chosenWay))
+  XSPerfAccumulate("choose_busy_way", refillReqValid_s3 && !freeWayMask_s3(chosenWay))
 }
