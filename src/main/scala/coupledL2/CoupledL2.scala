@@ -246,6 +246,7 @@ trait HasCoupledL2Parameters {
   }
 
   // I-POP statistic: dram addr mapping
+  /*
   def get_roracobabgch(addr: UInt): (UInt, UInt, UInt, UInt, UInt, UInt) = {
     // Address mapping follows DRAMsim3 XiangShan.ini: roracobabgch
     // row/0, rank/1, column/2, bankPerGroup/3, bankgroup/4, channel/5
@@ -269,6 +270,22 @@ trait HasCoupledL2Parameters {
   def getDramBank(addr: UInt) = {
     val (_, rk, _, bp, bg, ch) = get_roracobabgch(addr)
     Cat(ch, rk, bg, bp)
+  }
+  */
+
+  // 1 channel config: rochracobabg, 1 channel, 2 rank/channel, 16 banks/rank
+  // A[5:0]    : 64B burst 内偏移，不参与 DRAM 地址解码
+  // A[7:6]    : bank group
+  // A[9:8]    : bank
+  // A[16:10]  : column
+  // A[17]     : rank
+  // A[33:18]  : row
+  // channel   : 固定为 0
+  def getDramChannel(addr: UInt): UInt = {
+    0.U
+  }
+  def getDramBank(addr: UInt): UInt = {
+    Cat(addr(17), addr(9, 6))
   }
 }
 
