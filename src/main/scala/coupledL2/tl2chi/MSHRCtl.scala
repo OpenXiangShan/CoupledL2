@@ -161,19 +161,19 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
   io.toReqArb.blockG_s1 := false.B
 
    /* Acquire downwards to TXREQ*/
-  arb(mshrs.map(_.io.tasks.txreq), io.toTXREQ, Some("txreq"))
+  fastArb(mshrs.map(_.io.tasks.txreq), io.toTXREQ, Some("txreq"))
 
   /* Response downwards to TXRSP*/
-  arb(mshrs.map(_.io.tasks.txrsp), io.toTXRSP, Some("txrsp"))
+  fastArb(mshrs.map(_.io.tasks.txrsp), io.toTXRSP, Some("txrsp"))
 
   /* Probe upwards */
   val sourceB = Module(new SourceB())
-  arb(mshrs.map(_.io.tasks.source_b), sourceB.io.task, Some("source_b"))
+  fastArb(mshrs.map(_.io.tasks.source_b), sourceB.io.task, Some("source_b"))
   sourceB.io.grantStatus := io.grantStatus
   io.toSourceB <> sourceB.io.sourceB
 
   /* Arbitrate MSHR task to RequestArbiter */
-  arb(mshrs.map(_.io.tasks.mainpipe), io.mshrTask, Some("mshr_task"))
+  fastArb(mshrs.map(_.io.tasks.mainpipe), io.mshrTask, Some("mshr_task"))
 
   /* releaseBuf link to MSHR id */ 
   io.releaseBufWriteId := ParallelPriorityMux(resp_sinkC_match_vec, (0 until mshrsAll).map(i => i.U))
