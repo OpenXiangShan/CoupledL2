@@ -26,6 +26,7 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.prefetch.PrefetchTrain
 import coupledL2._
+import coupledL2.utils._
 
 class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes with HasPerfEvents {
   val io = IO(new Bundle() {
@@ -148,7 +149,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
 
       io.msInfo(i) := m.io.msInfo
       m.io.nestedwb := io.nestedwb
-      m.io.aMergeTask.valid := io.aMergeTask.valid && io.aMergeTask.bits.id === i.U
+      m.io.aMergeTask.valid := io.aMergeTask.valid && io.aMergeTask.bits.idOH(i)
       m.io.aMergeTask.bits := io.aMergeTask.bits.task
 
       io.pCrd(i) <> m.io.pCrd
@@ -173,7 +174,11 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
   io.toSourceB <> sourceB.io.sourceB
 
   /* Arbitrate MSHR task to RequestArbiter */
-  fastArb(mshrs.map(_.io.tasks.mainpipe), io.mshrTask, Some("mshr_task"))
+  val mshrTask = Wire(Decoupled(new TaskBundle()))
+  fastArb(mshrs.map(_.io.tasks.mainpipe), mshrTask, Some("mshr_task"))
+  io.mshrTask <> mshrTask
+  io.mshrTask.bits.mshrId := OHToUInt(mshrs.map(_.io.tasks.mainpipe.fire))
+  assert(Mux(io.mshrTask.fire, io.mshrTask.bits.mshrId === mshrTask.bits.mshrId, true.B), "mshrId should be consistent")
 
   /* releaseBuf link to MSHR id */ 
   io.releaseBufWriteId := ParallelPriorityMux(resp_sinkC_match_vec, (0 until mshrsAll).map(i => i.U))

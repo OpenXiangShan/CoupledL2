@@ -138,7 +138,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
       io.msInfo(i) := m.io.msInfo
       m.io.nestedwb := io.nestedwb
-      m.io.aMergeTask.valid := io.aMergeTask.valid && io.aMergeTask.bits.id === i.U
+      m.io.aMergeTask.valid := io.aMergeTask.valid && io.aMergeTask.bits.idOH(i)
       m.io.aMergeTask.bits := io.aMergeTask.bits.task
   }
 
