@@ -670,7 +670,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       clients = meta.clients & Fill(clientBits, !snpToN),
       alias = meta.alias, //[Alias] Keep alias bits unchanged
       prefetch = !snpToN && meta_pft,
-      accessed = !snpToN && meta.accessed
+      accessed = !snpToN && meta.accessed,
+      tagErr = denied,
+      dataErr = corrupt
     )
     mp_probeack.metaWen := !req.snpHitReleaseToInval
     mp_probeack.tagWen := false.B
@@ -1106,7 +1108,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     when (isToB(c_resp.bits.param)) {
       meta.state := Mux(isT(meta.state), TIP, meta.state)
     }
-    when (isParamFromT(c_resp.bits.param)) {
+    when (TLPermissions.isReport(c_resp.bits.param)) {
       meta.tagErr := c_resp.bits.denied
       meta.dataErr := c_resp.bits.corrupt
       denied := denied || c_resp.bits.denied
