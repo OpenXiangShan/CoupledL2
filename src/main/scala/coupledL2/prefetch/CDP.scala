@@ -378,7 +378,7 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   val s0_s4_same = Wire(Bool())
 
   // ----------- s0 -----------
-  val same_addr = s0_s1_same || s0_s2_same || s0_s3_same || s0_s4_same
+  val same_addr = s0_s1_same || s0_s2_same || s0_s3_same || s0_s4_same  // to prevent multiple hit
 
   s0_valid := train_req.valid && !same_addr
   train_req.ready := reset.asBool || !same_addr
@@ -400,7 +400,7 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   vt_query_req.bits.main_idx := s1_main_idx
   vt_query_req.bits.sub_idx  := s1_sub_idx
 
-  s0_s1_same := s1_valid && s0_main_idx === s1_main_idx && s0_sub_idx === s1_sub_idx && s0_tag === s1_tag
+  s0_s1_same := s1_valid && s0_main_idx === s1_main_idx && s0_tag === s1_tag
 
   // ----------- s2 -----------
   // check for hit/miss
@@ -429,7 +429,7 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   }
   val s2_hit_sub      = s2_hit_sub_vec.reduce(_ || _)
 
-  s0_s2_same := s2_valid && s0_main_idx === s2_main_idx && s0_sub_idx === s2_sub_idx && s0_tag === s2_tag
+  s0_s2_same := s2_valid && s0_main_idx === s2_main_idx && s0_tag === s2_tag
 
   // ----------- s3 -----------
   // get plru replacer info & calculate update info
@@ -457,7 +457,7 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   s3_update_info.alloc_sub  := s3_hit_main && !s3_hit_sub
   s3_update_info.target_way := Mux(s3_hit_main, s3_hit_main_idx, plru_way)
 
-  s0_s3_same := s3_valid && s0_main_idx === s3_main_idx && s0_sub_idx === s3_sub_idx && s0_tag === s3_tag
+  s0_s3_same := s3_valid && s0_main_idx === s3_main_idx && s0_tag === s3_tag
 
   // ----------- s4 -----------
   // update plru && VpnTable
@@ -472,7 +472,7 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   replace_upt.bits.set  := s4_update_info.main_idx
   replace_upt.bits.way  := s4_update_info.target_way
 
-  s0_s4_same := s4_valid && s0_main_idx === s4_update_info.main_idx && s0_sub_idx === s4_update_info.sub_idx && s0_tag === s4_update_info.tag
+  s0_s4_same := s4_valid && s0_main_idx === s4_update_info.main_idx && s0_tag === s4_update_info.tag
 }
 
 class DetectPipeline(implicit p: Parameters) extends CDPModule {
@@ -535,6 +535,8 @@ class DetectPipeline(implicit p: Parameters) extends CDPModule {
     case (t, m) =>
       t === s2_tag && m.valid
   }
+  assert(PopCount(s2_vt_hit_vec) < 2.U || !s2_req.valid, "VpnTable multiple hit in DetectPipeline!")
+  
   val s2_vt_hit     = s2_vt_hit_vec.reduce(_ || _)
   val s2_vt_hit_idx = PriorityEncoder(s2_vt_hit_vec)
   val s2_vt_hit_hot = s2_vt_query_rsp.meta_vec(s2_vt_hit_idx).hot
