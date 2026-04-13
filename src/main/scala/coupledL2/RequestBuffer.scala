@@ -64,7 +64,7 @@ class ChosenQBundle(idOHWIdth: Int = 2)(implicit p: Parameters) extends L2Bundle
 }
 
 class AMergeTask(implicit p: Parameters) extends L2Bundle {
-  val id = UInt(mshrBits.W)
+  val idOH = UInt(mshrsAll.W)
   val task = new TaskBundle()
 }
 
@@ -160,9 +160,8 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       in.fromA && (in.opcode === AcquireBlock || in.opcode === AcquirePerm) && !s.bits.mergeA && !(in.param === NtoT && s.bits.param === NtoB)
   }).asUInt
   val mergeA = mergeAMask.orR
-  val mergeAId = OHToUInt(mergeAMask)
   io.aMergeTask.valid := io.in.valid && mergeA
-  io.aMergeTask.bits.id := mergeAId
+  io.aMergeTask.bits.idOH := mergeAMask
   io.aMergeTask.bits.task := in
 
   /*
