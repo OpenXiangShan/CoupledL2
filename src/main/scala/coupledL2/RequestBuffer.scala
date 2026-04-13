@@ -127,7 +127,8 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       a.fromA && (a.opcode === AcquireBlock || a.opcode === AcquirePerm)
     ))
     val matched = matchVec.asUInt.orR
-    val matchSrc = ParallelPriorityMux(matchVec, io.mshrInfo.map(_.bits.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U)))
+    assert(PopCount(matchVec) <= 1.U, "Multiple late prefetch MSHRs matched")
+    val matchSrc = OHMux(matchVec, io.mshrInfo.map(_.bits.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U)))
     (matched, matchSrc)
   }
 
