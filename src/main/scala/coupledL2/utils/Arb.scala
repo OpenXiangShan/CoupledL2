@@ -84,6 +84,8 @@ class L2FastArbiter[T <: Data](gen: T, n: Int) extends L2FastArbiterBase[T](gen,
   io.chosenOH := chosenOH
 }
 
+
+// TODO: rename like TwoLevelRRArbiter
 class HalfFastArbiter[T <: Data](gen: T, n: Int) extends L2FastArbiterBase[T](gen, n) {
   val mid = n / 2
   val rest = n - mid
