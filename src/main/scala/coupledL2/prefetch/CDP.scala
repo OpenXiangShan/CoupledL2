@@ -6,8 +6,6 @@ import org.chipsalliance.cde.config.Parameters
 import coupledL2.{HasCoupledL2Parameters, L2ToL1TlbIO}
 import utility._
 import coupledL2._
-import utility.TLLogger.b
-import svsim.CommonCompilationSettings.Timescale.Unit.s
 
 case class CDPParameters(
   UseFilteredDetect:  Boolean = true,
@@ -28,7 +26,7 @@ case class CDPParameters(
   VpnResetPeriod:       Int = 128,    // Every $VpnResetPeriod visits, VPN entries will be reset
   EntryBits:            Int = 20,     // Every SubEntry maintain for 2^20 Bits = 1M space
 
-  Degree:   Int = 1,      // issue how many prefetch req?
+  Degree:   Int = 3,      // issue how many prefetch req?
 
   debug: Boolean = false
 ) extends PrefetchParameters {
@@ -973,7 +971,37 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
   val pft_req_filter = Module(new PrefetchFilter)
   pft_req_filter.io.cdp_pft_req <> pft_req_buffer.io.deq(0)
   pft_req_filter.io.tlb_req <> io.tlb_req
-  pft_req_filter.io.pft_req <> io.pft_req
+
+  // Degree
+  def pft_req_same_page(req1: PrefetchReq, req2: PrefetchReq): Bool = {
+    val req1_addr = Cat(req1.tag, req1.set, 0.U(log2Ceil(blockBytes).W))
+    val req2_addr = Cat(req2.tag, req2.set, 0.U(log2Ceil(blockBytes).W))
+    req1_addr(fullAddressBits - 1, 12) === req2_addr(fullAddressBits - 1, 12)
+  }
+
+  val pft_degree_buf = Module(new MIMOQueue(new PrefetchReq, 8, Degree, 1))
+  val base_addr = Cat(pft_req_filter.io.pft_req.bits.tag, pft_req_filter.io.pft_req.bits.set, 0.U(log2Ceil(blockBytes).W))
+
+  pft_degree_buf.io.flush := reset.asBool
+  for (i <- 0 until Degree) {
+    if (i == 0) {
+      pft_degree_buf.io.enq(i) <> pft_req_filter.io.pft_req
+    }
+    else {
+      val req   = Wire(Valid(new PrefetchReq))
+      
+      req.bits := pft_req_filter.io.pft_req.bits
+      req.bits.tag := parseFullAddress(base_addr + (i * blockBytes).U)._1
+      req.bits.set := parseFullAddress(base_addr + (i * blockBytes).U)._2
+
+      req.valid := pft_req_filter.io.pft_req.valid && pft_req_same_page(pft_req_filter.io.pft_req.bits, req.bits)
+
+      pft_degree_buf.io.enq(i).valid  := req.valid
+      pft_degree_buf.io.enq(i).bits   := req.bits
+    }
+  }
+
+  io.pft_req <> pft_degree_buf.io.deq(0)
 
   // ------------------- Performance Counter -------------------
     for (i <- 0 until 4) {
@@ -998,8 +1026,16 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
     XSPerfAccumulate(s"in_detect_trig_drop_by_PftBufferFull_$i", PopCount(not_enq_vec) * 4.U)
   }
 
-  // final issued pft_req
-  XSPerfAccumulate("issued_pft_req_num", io.pft_req.fire)
+  // pft_req_filter issued pft_req
+  XSPerfAccumulate("issued_pft_req_num", pft_req_filter.io.pft_req.fire)
+
+  // drop by degree
+  for (i <- 0 until Degree) {
+    XSPerfAccumulate(s"pft_req_drop_by_Degree_$i", pft_degree_buf.io.enq(i).valid && !pft_degree_buf.io.enq(i).ready)
+  }
+
+  // final issued pft req after degree expansion
+  XSPerfAccumulate("final_issued_pft_req_num", io.pft_req.fire)
 
   // block by outside buffer full
   XSPerfAccumulate(s"pft_req_block", io.pft_req.valid && !io.pft_req.ready)
@@ -1009,5 +1045,4 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
 
   // drop by train_trig_queue full
   XSPerfAccumulate("in_train_trig_drop_by_TrainQueueFull", train_trig_queue.io.enq.valid && !train_trig_queue.io.enq.ready)
-
 }
