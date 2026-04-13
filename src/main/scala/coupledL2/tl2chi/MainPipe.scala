@@ -930,11 +930,11 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     alloc_state.w_replResp := cmo_cbo_s3 || dirResult_s3.hit
     // need Acquire downwards
     when (need_acquire_s3_a) {
-      alloc_state.s_acquire := false.B
+      alloc_state.s_acquire := io.cmoAllBlock.getOrElse(false.B)
       alloc_state.s_rcompack.get := !need_compack_s3_a
-      alloc_state.w_grantfirst := false.B
-      alloc_state.w_grantlast := false.B
-      alloc_state.w_grant := false.B
+      alloc_state.w_grantfirst := io.cmoAllBlock.getOrElse(false.B)
+      alloc_state.w_grantlast := io.cmoAllBlock.getOrElse(false.B)
+      alloc_state.w_grant := io.cmoAllBlock.getOrElse(false.B)
     }
     // need Probe for alias
     // need Probe when Get hits on a TRUNK block
