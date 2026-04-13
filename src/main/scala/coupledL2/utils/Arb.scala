@@ -74,7 +74,7 @@ class L2FastArbiter[T <: Data](gen: T, n: Int) extends L2FastArbiterBase[T](gen,
   chosenOH := Mux(rrValid, rrSelOH, firstOneOH)
 
   io.out.valid := valids.orR
-  io.out.bits := OHMux(chosenOH, io.in.map(_.bits))
+  io.out.bits := Mux1H(chosenOH, io.in.map(_.bits))
 
   io.in.map(_.ready).zip(chosenOH.asBools).foreach{
     case (rdy, grant) => rdy := grant && io.out.ready
@@ -84,6 +84,8 @@ class L2FastArbiter[T <: Data](gen: T, n: Int) extends L2FastArbiterBase[T](gen,
   io.chosenOH := chosenOH
 }
 
+
+// TODO: rename like TwoLevelRRArbiter
 class HalfFastArbiter[T <: Data](gen: T, n: Int) extends L2FastArbiterBase[T](gen, n) {
   val mid = n / 2
   val rest = n - mid
@@ -137,7 +139,7 @@ class HalfFastArbiter[T <: Data](gen: T, n: Int) extends L2FastArbiterBase[T](ge
   fireHigh := (chosenOHHigh & validsHigh).orR
 
   io.out.valid := valids.orR
-  io.out.bits := OHMux(chosenOH, io.in.map(_.bits))
+  io.out.bits := Mux1H(chosenOH, io.in.map(_.bits))
 
   io.in.map(_.ready).zip(chosenOH.asBools).foreach{
     case (rdy, grant) => rdy := grant && io.out.ready
