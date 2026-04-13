@@ -150,14 +150,17 @@ class Directory(implicit p: Parameters) extends L2Module {
   // val tagArray  = Module(new SRAMTemplate(UInt(tagBits.W), sets, ways, singlePort = true))
   private val mbist = p(L2ParamKey).hasMbist
   private val hasSramCtl = p(L2ParamKey).hasSramCtl
-  def nextEven(x: Int) = if (x % 2 == 0) x else x + 1
   val tagArray = if (enableTagECC) {
     Module(new SplittedSRAM(
-      gen = UInt(nextEven((tagBankSplit * encTagBankBits)).W),
+      gen = UInt((tagBankSplit * encTagBankBits).W),
       set = sets,
       way = ways,
       waySplit = 2,
-      dataSplit = tagSRAMSplit,
+      dataSplit = if (enableTagSRAMSplit) {
+        tagSRAMSplit
+      } else {
+        1
+      },
       singlePort = true,
       readMCP2 = false,
       hasMbist = mbist,
@@ -205,11 +208,11 @@ class Directory(implicit p: Parameters) extends L2Module {
   // Tag(ECC) R/W
   val tagWrite = if (enableTagECC) {
     Cat(VecInit(Seq.tabulate(tagBankSplit)(i =>
-      io.tagWReq.bits.wtag(tagBankBits * (i + 1) - 1, tagBankBits * i))).map(tag => cacheParams.dataCode.encode(tag))).zext.asUInt
+      io.tagWReq.bits.wtag(tagBankBits * (i + 1) - 1, tagBankBits * i))).map(tag => cacheParams.dataCode.encode(tag)))
   } else {
     io.tagWReq.bits.wtag
   }
-  val tagRead = VecInit(tagArray.io.r(io.read.fire, io.read.bits.set).resp.data.map(_(tagBankSplit * encTagBankBits - 1, 0)))
+  val tagRead = tagArray.io.r(io.read.fire, io.read.bits.set).resp.data
   assert(PopCount(io.tagWReq.bits.wayOH) <= 1.U, "Tag write should be one-hot")
   tagArray.io.w(
     tagWen,
