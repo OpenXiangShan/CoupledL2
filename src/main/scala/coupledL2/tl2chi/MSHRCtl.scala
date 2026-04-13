@@ -148,7 +148,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
 
       io.msInfo(i) := m.io.msInfo
       m.io.nestedwb := io.nestedwb
-      m.io.aMergeTask.valid := io.aMergeTask.valid && io.aMergeTask.bits.id === i.U
+      m.io.aMergeTask.valid := io.aMergeTask.valid && io.aMergeTask.bits.idOH(i)
       m.io.aMergeTask.bits := io.aMergeTask.bits.task
 
       io.pCrd(i) <> m.io.pCrd
