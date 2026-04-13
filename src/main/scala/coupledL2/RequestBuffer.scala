@@ -58,9 +58,9 @@ class ReqEntry(entries: Int = 4)(implicit p: Parameters) extends L2Bundle() {
 
 }
 
-class ChosenQBundle(idWIdth: Int = 2)(implicit p: Parameters) extends L2Bundle {
+class ChosenQBundle(idOHWIdth: Int = 2)(implicit p: Parameters) extends L2Bundle {
   val bits = new ReqEntry()
-  val id = UInt(idWIdth.W)
+  val idOH = UInt(idOHWIdth.W)
 }
 
 class AMergeTask(implicit p: Parameters) extends L2Bundle {
@@ -100,7 +100,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   val buffer = RegInit(VecInit(Seq.fill(entries)(0.U.asTypeOf(new ReqEntry))))
   val issueArb = Module(new HalfFastArbiter(new ReqEntry, entries))
   ArbPerf(issueArb, "issueArb")
-  val chosenQ = Module(new Queue(new ChosenQBundle(log2Ceil(entries)), entries = 1, pipe = true, flow = false))
+  val chosenQ = Module(new Queue(new ChosenQBundle(entries), entries = 1, pipe = true, flow = false))
   val chosenQValid = chosenQ.io.deq.valid
 
   /* ======== Enchantment ======== */
@@ -208,28 +208,27 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   /* ======== Alloc ======== */
   io.in.ready   := !full || doFlow || mergeA || dup
 
-  val insertIdx = PriorityEncoder(buffer.map(!_.valid))
+  val insertOH = MaskToOH(buffer.map(!_.valid))
   val alloc = !full && io.in.valid && !doFlow && !dup && !mergeA
-  when(alloc){
-    val entry = buffer(insertIdx)
-    val mpBlock = Cat(io.mainPipeBlock).orR
-    val pipeBlockOut = io.out.fire && sameSet(in, io.out.bits)
-    val probeBlock   = io.s1Entrance.valid && io.s1Entrance.bits.set === in.set // wait for same-addr req to enter MSHR
-    val s1Block      = pipeBlockOut || probeBlock
+  buffer.zip(insertOH.asBools).foreach { case (entry, sel) =>
+    when(alloc && sel){
+      val mpBlock = Cat(io.mainPipeBlock).orR
+      val pipeBlockOut = io.out.fire && sameSet(in, io.out.bits)
+      val probeBlock   = io.s1Entrance.valid && io.s1Entrance.bits.set === in.set // wait for same-addr req to enter MSHR
+      val s1Block      = pipeBlockOut || probeBlock
 
-    entry.valid   := true.B
-    // when Addr-Conflict / Same-Addr-Dependent / MainPipe-Block / noFreeWay-in-Set, entry not ready
-    entry.rdy     := !conflict(in) && !mpBlock && !s1Block && !noFreeWay(in)// && !Cat(depMask).orR
-    entry.task    := io.in.bits
-    entry.waitMP  := Cat(
-      s1Block,
-      io.mainPipeBlock(0),
-      io.mainPipeBlock(1),
-      0.U(1.W))
-    entry.waitMS  := conflictMask(in)
-
-//    entry.depMask := depMask
-    assert(PopCount(conflictMaskFromA(in)) <= 2.U)
+      entry.valid   := true.B
+      // when Addr-Conflict / Same-Addr-Dependent / MainPipe-Block / noFreeWay-in-Set, entry not ready
+      entry.rdy     := !conflict(in) && !mpBlock && !s1Block && !noFreeWay(in)// && !Cat(depMask).orR
+      entry.task    := io.in.bits
+      entry.waitMP  := Cat(
+        s1Block,
+        io.mainPipeBlock(0),
+        io.mainPipeBlock(1),
+        0.U(1.W))
+      entry.waitMS  := conflictMask(in)
+      assert(PopCount(conflictMaskFromA(in)) <= 2.U)
+    }
   }
 
   /* ======== Issue ======== */
@@ -245,7 +244,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   // in such case, we need a place to save it
   chosenQ.io.enq.valid := issueArb.io.out.valid
   chosenQ.io.enq.bits.bits := issueArb.io.out.bits
-  chosenQ.io.enq.bits.id := issueArb.io.chosen
+  chosenQ.io.enq.bits.idOH := issueArb.io.chosenOH
   issueArb.io.out.ready := chosenQ.io.enq.ready
 
   /* ======== Update rdy and masks ======== */
@@ -294,7 +293,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   // when entry.rdy is no longer true,
   // we cancel req in chosenQ, with the entry still held in buffer to issue later
 //  val cancel = (canFlow && sameSet(chosenQ.io.deq.bits.bits.task, io.in.bits)) || !buffer(chosenQ.io.deq.bits.id).rdy
-  val cancel = !buffer(chosenQ.io.deq.bits.id).rdy
+  val cancel = !OHMux(chosenQ.io.deq.bits.idOH, buffer.map(_.rdy))
 
   chosenQ.io.deq.ready := io.out.ready || cancel
   io.out.valid := chosenQValid && !cancel || io.in.valid && canFlow
@@ -303,8 +302,11 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     else Mux(chosenQValid, chosenQ.io.deq.bits.bits.task, io.in.bits)
   }
 
-  when(chosenQ.io.deq.fire && !cancel) {
-    buffer(chosenQ.io.deq.bits.id).valid := false.B
+  buffer.zip(chosenQ.io.deq.bits.idOH.asBools).foreach {
+    case (e, y) =>
+      when(chosenQ.io.deq.fire && y && !cancel) {
+        e.valid := false.B
+      }
   }
 
   // for Dir to choose a free way
