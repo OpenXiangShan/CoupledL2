@@ -246,9 +246,10 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
 
   // =================== Prefetchers =====================
   // TODO: consider separate VBOP and PBOP in prefetch param
+  private val baseBopParams = prefetchers.collectFirst { case params: BOPParameters => params }.get
   val pbop = if (hasBOP) Some(
     Module(new PBestOffsetPrefetch()(p.alterPartial({
-      case L2ParamKey => p(L2ParamKey).copy(prefetch = Seq(BOPParameters(
+      case L2ParamKey => p(L2ParamKey).copy(prefetch = Seq(baseBopParams.copy(
         virtualTrain = false,
         badScore = 1,
         crossPage = false,
@@ -275,12 +276,13 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
 
   val vbop = if (hasBOP) Some(
     Module(new VBestOffsetPrefetch()(p.alterPartial({
-      case L2ParamKey => p(L2ParamKey).copy(prefetch = Seq(BOPParameters(
+      case L2ParamKey => p(L2ParamKey).copy(prefetch = Seq(baseBopParams.copy(
         badScore = 2,
         crossPage = true,
         enableStudentCover = true,
         studentTeacherTopN = 1,
         studentPoolSize = 4,
+        useReqFIFO = true,
         studentConfAlphaPct = 0,
         studentCovThresholdPct = 2,
         studentLowCostArithEnable = false,

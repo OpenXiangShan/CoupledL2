@@ -32,7 +32,7 @@ import org.chipsalliance.cde.config.Parameters
 import chisel3.DontCare.:=
 import chisel3._
 import chisel3.util._
-import coupledL2.{HasCoupledL2Parameters, L2TlbReq, L2ToL1TlbIO, TlbCmd, Pbmt}
+import coupledL2.{HasCoupledL2Parameters, L2TlbReq, L2TlbResp, L2ToL1TlbIO, TlbCmd, Pbmt}
 import coupledL2.utils.ReplacementPolicy
 import scopt.Read
 import freechips.rocketchip.util.SeqToAugmentedSeq
@@ -45,6 +45,7 @@ case class BOPParameters(
   roundMax:       Int = 50,
   badScore:       Int = 2,
   tlbReplayCnt:   Int = 10,
+  useReqFIFO: Boolean = false,
   dQEntries: Int = 16,
   dQLatency: Int = 300,
   dQMaxLatency: Int = 1024,
@@ -105,6 +106,7 @@ trait HasBOPParams extends HasPrefetcherHelper {
   def scoreBits = bopParams.scoreBits
   def roundMax = bopParams.roundMax
   def badScore = bopParams.badScore
+  def useReqFIFO = bopParams.useReqFIFO
   def offsetList = bopParams.offsetList
   def inflightEntries = bopParams.inflightEntries
   def dQEntries = bopParams.dQEntries
@@ -935,13 +937,28 @@ class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
 
 }
 
-class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends BOPModule{
+abstract class PrefetchReqFilterBase(implicit p: Parameters) extends BOPModule {
   val io = IO(new Bundle() {
     val in_req = Flipped(ValidIO(new BopReqBundle))
     val tlb_req = new L2ToL1TlbIO(nRespDups = 1)
     val out_req = DecoupledIO(new PrefetchReq)
     val out_issueOffset = Output(SInt(offsetWidth.W))
   })
+
+  protected def reqMatchesEntry(entry: BopReqBufferEntry, req: BopReqBundle): Bool = {
+    entry.vaddrNoOffset === get_block_vaddr(req.full_vaddr) &&
+      entry.baseVaddr === req.base_vaddr &&
+      entry.needT === req.needT &&
+      entry.source === req.source
+  }
+
+  protected def tlbRespHasException(resp: L2TlbResp): Bool = {
+    resp.excp.head.pf.ld || resp.excp.head.gpf.ld || resp.excp.head.af.ld ||
+      io.tlb_req.pmp_resp.ld || io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(resp.pbmt)
+  }
+}
+
+class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends PrefetchReqFilterBase{
 
   val firstTlbReplayCnt = Constantin.createRecord(name+"_firstTlbReplayCnt", bopParams.tlbReplayCnt)
   // if full then drop new req, so there is no need to use s1_evicted_oh & replacement
@@ -972,11 +989,7 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
     // FIXME lyq: the comparision logic is very complicated, is there a way to simplify
     val v = valids(i)
     val e = entries(i)
-    v &&
-      e.vaddrNoOffset === get_block_vaddr(req.full_vaddr) &&
-      e.baseVaddr === req.base_vaddr &&
-      e.needT === req.needT &&
-      e.source === req.source
+    v && reqMatchesEntry(e, req)
   }
 
   /* timing description:
@@ -1057,10 +1070,7 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
   for ((e, i) <- entries.zipWithIndex){
     alloc(i) := s1_valid && s1_invalid_oh(i)
     pf_fired(i) := s0_pf_fire_oh(i)
-    exp_drop(i) := s3_tlb_fire_oh(i) && s3_tlb_resp_valid && !s3_tlb_resp.miss && (
-      s3_tlb_resp.excp.head.pf.ld || s3_tlb_resp.excp.head.gpf.ld || s3_tlb_resp.excp.head.af.ld ||
-      io.tlb_req.pmp_resp.ld || io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt)
-    )
+    exp_drop(i) := s3_tlb_fire_oh(i) && s3_tlb_resp_valid && !s3_tlb_resp.miss && tlbRespHasException(s3_tlb_resp)
     val miss = s3_tlb_fire_oh(i) && s3_tlb_resp_valid && s3_tlb_resp.miss
     tlb_fired(i) := s3_tlb_fire_oh(i) && s3_tlb_resp_valid && !s3_tlb_resp.miss && !exp_drop(i)
     miss_drop(i) := miss && e.replayEn
@@ -1107,10 +1117,7 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
 
   XSPerfAccumulate("tlb_req", io.tlb_req.req.valid)
   XSPerfAccumulate("tlb_miss", io.tlb_req.resp.valid && io.tlb_req.resp.bits.miss)
-  XSPerfAccumulate("tlb_excp", s3_tlb_resp_valid && !s3_tlb_resp.miss && (
-    s3_tlb_resp.excp.head.pf.ld || s3_tlb_resp.excp.head.gpf.ld || s3_tlb_resp.excp.head.af.ld ||
-    io.tlb_req.pmp_resp.ld || io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt)
-  ))
+  XSPerfAccumulate("tlb_excp", s3_tlb_resp_valid && !s3_tlb_resp.miss && tlbRespHasException(s3_tlb_resp))
   XSPerfAccumulate("tlb_excp_pmp_af", s3_tlb_resp_valid && !s3_tlb_resp.miss && io.tlb_req.pmp_resp.ld)
   XSPerfAccumulate("tlb_excp_uncache", s3_tlb_resp_valid && !s3_tlb_resp.miss && (io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt)))
   XSPerfAccumulate("entry_alloc", PopCount(alloc))
@@ -1135,6 +1142,136 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
     }
   }
   */
+}
+
+class PrefetchReqFIFO(name: String = "vbop")(implicit p: Parameters) extends PrefetchReqFilterBase {
+  val firstTlbReplayCnt = Constantin.createRecord(name+"_firstTlbReplayCnt", bopParams.tlbReplayCnt)
+  val entries = Reg(Vec(REQ_FILTER_SIZE, new BopReqBufferEntry))
+
+  val idxWidth = log2Up(REQ_FILTER_SIZE)
+  val countWidth = log2Ceil(REQ_FILTER_SIZE + 1)
+  val head = RegInit(0.U(idxWidth.W))
+  val tail = RegInit(0.U(idxWidth.W))
+  val count = RegInit(0.U(countWidth.W))
+
+  def wrapInc(ptr: UInt): UInt = Mux(ptr === (REQ_FILTER_SIZE - 1).U(idxWidth.W), 0.U(idxWidth.W), ptr + 1.U)
+  def slotActive(i: Int): Bool = {
+    val idx = i.U(idxWidth.W)
+    Mux(count === REQ_FILTER_SIZE.U(countWidth.W), true.B,
+      Mux(count === 0.U, false.B,
+        Mux(head < tail, idx >= head && idx < tail, idx >= head || idx < tail)
+      )
+    )
+  }
+
+  val empty = count === 0.U
+  val full = count === REQ_FILTER_SIZE.U(countWidth.W)
+  val active = VecInit(entries.indices.map(slotActive))
+  val headValid = !empty
+  val headEntry = entries(head)
+
+  val s0_tlb_fire = WireInit(false.B)
+  val s1_tlb_fire = RegInit(false.B)
+  val s2_tlb_fire = RegInit(false.B)
+  val s3_tlb_fire = RegInit(false.B)
+  val s1_tlb_idx = RegInit(0.U(idxWidth.W))
+  val s2_tlb_idx = RegInit(0.U(idxWidth.W))
+  val s3_tlb_idx = RegInit(0.U(idxWidth.W))
+
+  val tlbPipeBusy = s1_tlb_fire || s2_tlb_fire || s3_tlb_fire
+  val s0_tlb_req = Wire(new L2TlbReq)
+  s0_tlb_req.vaddr := headEntry.get_tlb_vaddr()
+  s0_tlb_req.cmd := TlbCmd.read
+  s0_tlb_req.size := 3.U
+  s0_tlb_req.kill := false.B
+  s0_tlb_req.no_translate := false.B
+  s0_tlb_req.isPrefetch := true.B
+
+  s0_tlb_fire := headValid && !headEntry.paddrValid && !tlbPipeBusy && !headEntry.replayCnt.orR
+  s1_tlb_fire := s0_tlb_fire
+  s2_tlb_fire := s1_tlb_fire
+  s3_tlb_fire := s2_tlb_fire
+  when(s0_tlb_fire) {
+    s1_tlb_idx := head
+  }
+  s2_tlb_idx := s1_tlb_idx
+  s3_tlb_idx := s2_tlb_idx
+
+  io.tlb_req.req.valid := s1_tlb_fire
+  io.tlb_req.req.bits := RegEnable(s0_tlb_req, s0_tlb_fire)
+  io.tlb_req.req_kill := false.B
+  io.tlb_req.resp.ready := true.B
+
+  val outReqBits = Wire(new PrefetchReq)
+  outReqBits := headEntry.toPrefetchReq()
+  io.out_req.valid := headValid && headEntry.paddrValid
+  io.out_req.bits := outReqBits
+  io.out_issueOffset := Mux(headValid, headEntry.issueOffset, 0.S)
+
+  val s3_tlb_resp_valid = RegNext(io.tlb_req.resp.valid, false.B)
+  val s3_tlb_resp = RegEnable(io.tlb_req.resp.bits, io.tlb_req.resp.valid)
+  val s3_tlb_resp_fire = s3_tlb_fire && s3_tlb_resp_valid
+  val s3_tlb_resp_excp = s3_tlb_resp_fire && !s3_tlb_resp.miss && tlbRespHasException(s3_tlb_resp)
+  val s3_tlb_resp_hit = s3_tlb_resp_fire && !s3_tlb_resp.miss && !s3_tlb_resp_excp
+  val s3_tlb_resp_miss = s3_tlb_resp_fire && s3_tlb_resp.miss
+  val s3_resp_entry = entries(s3_tlb_idx)
+  val miss_drop = s3_tlb_resp_miss && s3_resp_entry.replayEn
+  val miss_first_replay = s3_tlb_resp_miss && !s3_resp_entry.replayEn
+
+  val pf_fire = io.out_req.fire
+  val headDropFromTlb = headValid && s3_tlb_resp_fire && s3_tlb_idx === head && (s3_tlb_resp_excp || miss_drop)
+  val headWillPop = pf_fire || headDropFromTlb
+  val activeForMatch = VecInit(entries.indices.map(i => active(i) && !(headWillPop && head === i.U)))
+  val matchVec = VecInit(entries.indices.map(i => activeForMatch(i) && reqMatchesEntry(entries(i), io.in_req.bits)))
+  val req_match = matchVec.asUInt.orR
+  val enq_fire = io.in_req.valid && !req_match && (!full || headWillPop)
+
+  val allocEntry = Wire(new BopReqBufferEntry)
+  allocEntry.fromBopReqBundle(io.in_req.bits)
+
+  for ((e, i) <- entries.zipWithIndex) {
+    when(active(i) && !(headWillPop && head === i.U) && e.replayCnt.orR) {
+      e.replayCnt := e.replayCnt - 1.U
+    }
+  }
+  when(s3_tlb_resp_hit) {
+    entries(s3_tlb_idx).update_paddr(s3_tlb_resp.paddr.head)
+  }.elsewhen(miss_first_replay) {
+    entries(s3_tlb_idx).replayCnt := firstTlbReplayCnt
+    entries(s3_tlb_idx).replayEn := 1.U
+  }
+  when(enq_fire) {
+    entries(tail) := allocEntry
+  }
+
+  when(headWillPop) {
+    head := wrapInc(head)
+  }
+  when(enq_fire) {
+    tail := wrapInc(tail)
+  }
+  when(enq_fire =/= headWillPop) {
+    count := Mux(enq_fire, count + 1.U, count - 1.U)
+  }
+
+  XSPerfAccumulate("recv_req", io.in_req.valid)
+  XSPerfAccumulate("recv_req_drop_conflict", false.B)
+  XSPerfAccumulate("recv_req_drop_match", io.in_req.valid && req_match)
+  XSPerfAccumulate("recv_req_drop_full", io.in_req.valid && !req_match && full && !headWillPop)
+  XSPerfAccumulate("tlb_req", io.tlb_req.req.valid)
+  XSPerfAccumulate("tlb_miss", io.tlb_req.resp.valid && io.tlb_req.resp.bits.miss)
+  XSPerfAccumulate("tlb_excp", s3_tlb_resp_valid && !s3_tlb_resp.miss && tlbRespHasException(s3_tlb_resp))
+  XSPerfAccumulate("tlb_excp_pmp_af", s3_tlb_resp_valid && !s3_tlb_resp.miss && io.tlb_req.pmp_resp.ld)
+  XSPerfAccumulate("tlb_excp_uncache", s3_tlb_resp_valid && !s3_tlb_resp.miss && (io.tlb_req.pmp_resp.mmio || Pbmt.isUncache(s3_tlb_resp.pbmt)))
+  XSPerfAccumulate("entry_alloc", enq_fire)
+  XSPerfAccumulate("entry_miss_first_replay", miss_first_replay)
+  XSPerfAccumulate("entry_miss_drop", miss_drop)
+  XSPerfAccumulate("entry_excp", s3_tlb_resp_excp)
+  XSPerfAccumulate("entry_merge", io.in_req.valid && req_match)
+  XSPerfAccumulate("entry_pf_fire", pf_fire)
+  XSPerfHistogram("prefetch_req_fifo_entry", count, true.B, 0, REQ_FILTER_SIZE, 1)
+  XSPerfAccumulate("prefetch_req_fifo_empty", empty)
+  XSPerfAccumulate("prefetch_req_fifo_full", full)
 }
 
 class DelayQueue(name: String = "")(implicit p: Parameters) extends  BOPModule{
@@ -1300,7 +1437,11 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   io.tlb_req.resp.ready := true.B
 
   // different situation
-  val reqFilter = Module(new PrefetchReqBuffer)
+  val reqFilter: PrefetchReqFilterBase = if (useReqFIFO) {
+    Module(new PrefetchReqFIFO("vbop"))
+  } else {
+    Module(new PrefetchReqBuffer("vbop"))
+  }
   when(!issueEnable || !virtualTrain.B){
     reqFilter.io.in_req.valid := false.B
     reqFilter.io.in_req.bits := DontCare
