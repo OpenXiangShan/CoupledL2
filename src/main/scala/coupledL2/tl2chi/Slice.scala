@@ -103,6 +103,8 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   reqArb.io.fromTXRSP.foreach(_ := txrsp.io.toReqArb)
   reqArb.io.fromTXREQ.foreach(_ := txreq.io.toReqArb)
   reqArb.io.msInfo := mshrCtl.io.msInfo
+  reqArb.io.aMergeTask := reqBuf.io.aMergeTask
+  reqArb.io.aMergePromeT_fromMSCtl := mshrCtl.io.aMergePromoteT_toReqArb
 
   reqBuf.io.in <> sinkA.io.task
   reqBuf.io.mshrInfo := mshrCtl.io.msInfo

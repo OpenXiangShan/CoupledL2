@@ -62,6 +62,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     val aMergeTask = Flipped(ValidIO(new TaskBundle))
     val replResp = Flipped(ValidIO(new ReplacerResult))
     val pCrd = new PCrdQueryBundle
+    val promoteT = Bool()
   })
 
   require (chiOpt.isDefined)
@@ -1351,6 +1352,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
                                 isWriteEvictFull || isWriteEvictOrEvict
   io.msInfo.bits.releaseToClean := releaseToClean
   io.msInfo.bits.channel := req.channel
+  io.promoteT := req_promoteT
 
   assert(!(c_resp.valid && !io.status.bits.w_c_resp))
   assert(!(rxrsp.valid && rxrsp.bits.chiOpcode.get =/= PCrdGrant && !io.status.bits.w_d_resp))

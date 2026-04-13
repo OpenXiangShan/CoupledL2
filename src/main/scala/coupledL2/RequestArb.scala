@@ -25,6 +25,8 @@ import freechips.rocketchip.tilelink.TLMessages._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2tl._
 import coupledL2.tl2chi._
+import freechips.rocketchip.tilelink.TLPermissions._
+import coupledL2.MetaData._
 
 class RequestArb(implicit p: Parameters) extends L2Module
   with HasCHIOpcodes {
@@ -37,6 +39,8 @@ class RequestArb(implicit p: Parameters) extends L2Module
     val s1Entrance = ValidIO(new L2Bundle {
       val set = UInt(setBits.W)
     })
+    val aMergeTask = Flipped(ValidIO(new AMergeTask))
+    val aMergePromeT_fromMSCtl = Input(Bool())
 
     val sinkB    = Flipped(DecoupledIO(new TaskBundle))
     val sinkC    = Flipped(DecoupledIO(new TaskBundle))
@@ -92,6 +96,8 @@ class RequestArb(implicit p: Parameters) extends L2Module
   val s1_cango  = Wire(Bool())
   val s2_ready  = Wire(Bool())
   val mshr_task_s1 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
+  val aMergeValid_s1 = RegNext(io.aMergeTask.valid, false.B)
+  val aMergeTask_s1 = RegEnable(io.aMergeTask.bits, io.aMergeTask.valid)
 
   val s1_needs_replRead = mshr_task_s1.valid && mshr_task_s1.bits.fromA && mshr_task_s1.bits.replTask && (
     mshr_task_s1.bits.opcode === Grant ||
@@ -163,7 +169,37 @@ class RequestArb(implicit p: Parameters) extends L2Module
 
   // mshr_task_s1 is s1_[reg]
   // task_s1 is [wire] to s2_reg
-  val task_s1 = Mux(mshr_task_s1.valid, mshr_task_s1, chnl_task_s1)
+  val task_s1 = Wire(Valid(new TaskBundle()))
+  task_s1 := Mux(mshr_task_s1.valid, mshr_task_s1, chnl_task_s1)
+  if (enableCHI) {
+    val aMergeMatch = aMergeValid_s1 && OHToUInt(aMergeTask_s1.idOH) === mshr_task_s1.bits.mshrId
+    task_s1.bits.mergeA := mshr_task_s1.valid && (mshr_task_s1.bits.mergeA || aMergeMatch)
+    task_s1.bits.aMergeTask := mshr_task_s1.bits.aMergeTask
+    val aMerge = task_s1.bits.aMergeTask
+    when (aMergeMatch) {
+      task_s1.bits.aMergeTask.off := aMergeTask_s1.task.off
+      task_s1.bits.aMergeTask.alias.foreach(_ := aMergeTask_s1.task.alias.getOrElse(0.U))
+      task_s1.bits.aMergeTask.vaddr.foreach(_ := aMergeTask_s1.task.vaddr.getOrElse(0.U))
+      task_s1.bits.aMergeTask.isKeyword.foreach(_ := aMergeTask_s1.task.isKeyword.getOrElse(false.B))
+      task_s1.bits.aMergeTask.opcode := odOpGen(aMergeTask_s1.task.opcode)
+      task_s1.bits.aMergeTask.param := MuxLookup( // Acquire -> Grant
+        aMergeTask_s1.task.param,
+        aMergeTask_s1.task.param)(
+        Seq(
+          NtoB -> Mux(io.aMergePromeT_fromMSCtl, toT, toB),
+          BtoT -> toT,
+          NtoT -> toT
+        )
+      )
+      task_s1.bits.aMergeTask.sourceId := aMergeTask_s1.task.sourceId
+      task_s1.bits.aMergeTask.meta.state := Mux( // Acquire
+          io.aMergePromeT_fromMSCtl || needT(aMergeTask_s1.task.opcode, aMergeTask_s1.task.param),
+          TRUNK,
+          BRANCH
+        )
+      task_s1.bits.aMergeTask.meta.alias.foreach(_ := aMergeTask_s1.task.alias.getOrElse(0.U))
+    }
+  }
   val s1_to_s2_valid = task_s1.valid && !mshr_replRead_stall
 
   s1_cango  := task_s1.valid && !mshr_replRead_stall

@@ -155,8 +155,9 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
   // incoming Acquire can be merged with late_pf MSHR block
   val mergeAMask = VecInit(io.mshrInfo.map { case s =>
-    val mshrInflight = !(s.bits.w_grantlast && s.bits.w_grant)
-    s.valid && s.bits.isPrefetch && sameAddr(in, s.bits) && !s.bits.dirHit && mshrInflight &&
+    assert(Mux(s.valid && s.bits.isPrefetch, !s.bits.dirHit, true.B), "Prefetch in MSHR should not have dirHit")
+    assert(Mux(s.valid && s.bits.isPrefetch, !s.bits.willFree, true.B), "Prefetch in MSHR should not be willFree")
+    s.valid && s.bits.isPrefetch && sameAddr(in, s.bits) && !s.bits.s_refill &&
       in.fromA && (in.opcode === AcquireBlock || in.opcode === AcquirePerm) && !s.bits.mergeA && !(in.param === NtoT && s.bits.param === NtoB)
   }).asUInt
   val mergeA = mergeAMask.orR

@@ -79,6 +79,8 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   reqArb.io.fromGrantBuffer := grantBuf.io.toReqArb
   reqArb.io.fromSourceC.foreach(_ := sourceC.io.toReqArb)
   reqArb.io.msInfo := mshrCtl.io.msInfo
+  reqArb.io.aMergeTask := a_reqBuf.io.aMergeTask
+  reqArb.io.aMergePromeT_fromMSCtl := false.B
 
   mshrCtl.io.fromReqArb.status_s1 := reqArb.io.status_s1
   mshrCtl.io.resps.sinkC := sinkC.io.resp

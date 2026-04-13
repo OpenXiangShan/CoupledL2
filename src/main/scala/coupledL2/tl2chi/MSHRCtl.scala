@@ -75,6 +75,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
     /* MSHR info to Sinks */
     val msInfo = Vec(mshrsAll, ValidIO(new MSHRInfo()))
     val aMergeTask = Flipped(ValidIO(new AMergeTask))
+    val aMergePromoteT_toReqArb = Output(Bool())
 
     /* refill read replacer result */
     val replResp = Flipped(ValidIO(new ReplacerResult))
@@ -179,6 +180,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
   io.mshrTask <> mshrTask
   io.mshrTask.bits.mshrId := OHToUInt(mshrs.map(_.io.tasks.mainpipe.fire))
   assert(Mux(io.mshrTask.fire, io.mshrTask.bits.mshrId === mshrTask.bits.mshrId, true.B), "mshrId should be consistent")
+  io.aMergePromoteT_toReqArb := OHMux(mshrs.map(_.io.tasks.mainpipe.fire), mshrs.map(_.io.promoteT))
 
   /* releaseBuf link to MSHR id */ 
   io.releaseBufWriteId := ParallelPriorityMux(resp_sinkC_match_vec, (0 until mshrsAll).map(i => i.U))
