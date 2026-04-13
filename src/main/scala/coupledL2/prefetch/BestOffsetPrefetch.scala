@@ -875,6 +875,8 @@ class BopReqBundle(implicit p: Parameters) extends BOPBundle{
   val source = UInt(sourceIdBits.W)
   val isBOP = Bool()
   val issueOffset = SInt(offsetWidth.W)
+  val samePagePaddrValid = Bool()
+  val samePagePaddr = UInt(fullAddressBits.W)
 }
 
 class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
@@ -891,12 +893,15 @@ class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
   val issueOffset = SInt(offsetWidth.W)
 
   def fromBopReqBundle(req: BopReqBundle) = {
-    paddrValid := false.B
     vaddrNoOffset := get_block_vaddr(req.full_vaddr)
     baseVaddr := req.base_vaddr
     replayEn := false.B
     replayCnt := 0.U
-    paddrNoOffset := 0.U
+    paddrValid := req.samePagePaddrValid
+    paddrNoOffset := Mux(req.samePagePaddrValid,
+      req.samePagePaddr(req.samePagePaddr.getWidth - 1, offsetBits),
+      0.U
+    )
     needT := req.needT
     source := req.source
     issueOffset := req.issueOffset
@@ -1238,6 +1243,7 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   val s0_oldFullAddr = if(virtualTrain) Cat(io.train.bits.vaddr.getOrElse(0.U), 0.U(offsetBits.W)) else io.train.bits.addr
   val s0_oldFullAddrNoOff = s0_oldFullAddr(s0_oldFullAddr.getWidth-1, offsetBits)
   val s0_newFullAddr = s0_oldFullAddr + signedExtend((issueOffset << offsetBits), fullAddrBits)
+  val s0_newPaddr = io.train.bits.addr + signedExtend((issueOffset << offsetBits), fullAddressBits)
   val s0_crossPage = getPPN(s0_newFullAddr) =/= getPPN(s0_oldFullAddr) // unequal tags
 
   rrTable.io.r <> scoreTable.io.test
@@ -1261,8 +1267,10 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   val s1_needT = RegEnable(io.train.bits.needT, s0_fire)
   val s1_source = RegEnable(io.train.bits.source, s0_fire)
   val s1_newFullAddr = RegEnable(s0_newFullAddr, s0_fire)
+  val s1_newPaddr = RegEnable(s0_newPaddr, s0_fire)
   val s1_reqVaddr = RegEnable(s0_reqVaddr, s0_fire)
   val s1_issueOffset = RegEnable(issueOffset.asSInt, s0_fire)
+  val s1_samePagePaddrValid = RegEnable(!s0_crossPage, s0_fire)
   // val out_req = Wire(new PrefetchReq)
   // val out_req_valid = Wire(Bool())
   // val out_drop_req = WireInit(false.B)
@@ -1304,6 +1312,8 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     reqFilter.io.in_req.bits.source := s1_source
     reqFilter.io.in_req.bits.isBOP := true.B
     reqFilter.io.in_req.bits.issueOffset := s1_issueOffset
+    reqFilter.io.in_req.bits.samePagePaddrValid := s1_samePagePaddrValid
+    reqFilter.io.in_req.bits.samePagePaddr := s1_newPaddr
   }
 
   if(virtualTrain){
