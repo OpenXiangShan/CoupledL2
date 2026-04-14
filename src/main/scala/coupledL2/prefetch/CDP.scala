@@ -29,6 +29,7 @@ case class CDPParameters(
   Degree:   Int = 3,      // issue how many prefetch req?
 
   debug: Boolean = false
+
 ) extends PrefetchParameters {
   override val hasPrefetchBit: Boolean = true
   override val hasPrefetchSrc: Boolean = true
@@ -40,6 +41,8 @@ trait HasCDPParams extends HasPrefetcherHelper with HasCoupledL2Parameters {
     case p: CDPParameters => true
     case _ => false
   }.get.asInstanceOf[CDPParameters]
+
+  val debug = cdpParams.debug
 
   val UseFilteredDetect = cdpParams.UseFilteredDetect
 
@@ -483,7 +486,7 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
     val no_alloc    = Bool()
   }
 
-  val cdpTrainTriggerDB = ChiselDB.createTable("cdpTrain", new trainTriggerEntry, basicDB = false)
+  val cdpTrainTriggerDB = ChiselDB.createTable("cdpTrain", new trainTriggerEntry, basicDB = debug)
 
   val train_trigger_entry = Wire(new trainTriggerEntry)
   train_trigger_entry.vaddr := RegNext(RegNext(RegNext(RegNext(train_req.bits.vaddr))))     // vaddr in s4
@@ -659,7 +662,7 @@ class DetectPipeline(name:String)(implicit p: Parameters) extends CDPModule {
     val canPft      = Bool()
   }
 
-  val cdpDetectTriggerDB = ChiselDB.createTable(name + "_cdpDetect", new detectTriggerEntry, basicDB = false)
+  val cdpDetectTriggerDB = ChiselDB.createTable(name + "_cdpDetect", new detectTriggerEntry, basicDB = debug)
 
   val detect_trigger_entry = Wire(new detectTriggerEntry)
   detect_trigger_entry.vaddr := s2_addr
