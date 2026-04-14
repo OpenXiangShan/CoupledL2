@@ -471,9 +471,33 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   replace_upt.bits.way  := s4_update_info.target_way
 
   s0_s4_same := s4_valid && s0_main_idx === s4_update_info.main_idx && s0_tag === s4_update_info.tag
+
+  // ----------- ChiselDB -----------
+  class trainTriggerEntry extends CDPBundle {
+    val vaddr = UInt(fullAddressBits.W)
+    val main_idx = UInt(mainEntryBits.W)
+    val sub_idx  = UInt(subEntryBits.W)
+    val way      = UInt(vpnWayBits.W)
+    val alloc_main  = Bool()
+    val alloc_sub   = Bool()
+    val no_alloc    = Bool()
+  }
+
+  val cdpTrainTriggerDB = ChiselDB.createTable("cdpTrain", new trainTriggerEntry, basicDB = false)
+
+  val train_trigger_entry = Wire(new trainTriggerEntry)
+  train_trigger_entry.vaddr := RegNext(RegNext(RegNext(RegNext(train_req.bits.vaddr))))     // vaddr in s4
+  train_trigger_entry.main_idx  := s4_update_info.main_idx
+  train_trigger_entry.sub_idx   := s4_update_info.sub_idx
+  train_trigger_entry.way       := s4_update_info.target_way
+  train_trigger_entry.alloc_main := s4_update_info.alloc_main
+  train_trigger_entry.alloc_sub  := s4_update_info.alloc_sub
+  train_trigger_entry.no_alloc   := !s4_update_info.alloc_main && !s4_update_info.alloc_sub
+
+  cdpTrainTriggerDB.log(train_trigger_entry, s4_valid, "", clock, reset)
 }
 
-class DetectPipeline(implicit p: Parameters) extends CDPModule {
+class DetectPipeline(name:String)(implicit p: Parameters) extends CDPModule {
   val io = IO(new Bundle {
     val detect_req    = Flipped(ValidIO(new CDPDetectReq))
 
@@ -622,6 +646,33 @@ class DetectPipeline(implicit p: Parameters) extends CDPModule {
   for (i <- 0 until 5) {
     XSPerfAccumulate(s"detect_trig_from_depth_$i", s2_req.valid && s2_req.bits.pfDepth === i.U)
   }
+
+  // ----------- ChiselDB -----------
+  class detectTriggerEntry extends CDPBundle {
+    val vaddr     = UInt(fullAddressBits.W)
+    val pfDepth   = UInt(4.W)
+    val pfSource  = UInt(PfSource.pfSourceBits.W)
+    val main_idx    = UInt(mainEntryBits.W)
+    val sub_idx     = UInt(subEntryBits.W)
+    val vt_hit      = Bool()
+    val vt_hit_hot  = Bool()
+    val canPft      = Bool()
+  }
+
+  val cdpDetectTriggerDB = ChiselDB.createTable(name + "_cdpDetect", new detectTriggerEntry, basicDB = false)
+
+  val detect_trigger_entry = Wire(new detectTriggerEntry)
+  detect_trigger_entry.vaddr := s2_addr
+  detect_trigger_entry.pfDepth := s2_depth
+  detect_trigger_entry.pfSource := s2_req.bits.pfSource
+  detect_trigger_entry.main_idx := RegNext(s1_main_idx)
+  detect_trigger_entry.sub_idx  := RegNext(s1_sub_idx)
+  detect_trigger_entry.vt_hit := s2_vt_hit
+  detect_trigger_entry.vt_hit_hot := s2_vt_hit_hot
+  detect_trigger_entry.canPft := s2_can_pft
+
+  val en = s2_req.valid && s2_high_bit_is_zero && s2_low_bit_is_zero && s2_vpn0_is_nzero
+  cdpDetectTriggerDB.log(detect_trigger_entry, en, "", clock, reset)
 }
 
 class PrefetchFilterEntry(implicit p: Parameters) extends CDPBundle {
@@ -833,7 +884,7 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
 
   val vpn_table         = Module(new VpnTable)
   val train_pipe        = Module(new TrainPipeline)
-  val detect_pipe_seq   = Seq.fill(DetectPipeNum)(Module(new DetectPipeline))
+  val detect_pipe_seq   = Seq.tabulate(DetectPipeNum)(i => Module(new DetectPipeline(s"dp$i")))
 
   // TODO: ugly...
   // Detect Req
