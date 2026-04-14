@@ -1150,114 +1150,181 @@ class PrefetchReqFIFO(name: String = "vbop")(implicit p: Parameters) extends Pre
 
   val idxWidth = log2Up(REQ_FILTER_SIZE)
   val countWidth = log2Ceil(REQ_FILTER_SIZE + 1)
+  val entryIdWidth = 16
   val head = RegInit(0.U(idxWidth.W))
   val tail = RegInit(0.U(idxWidth.W))
   val count = RegInit(0.U(countWidth.W))
+  val entryIds = Reg(Vec(REQ_FILTER_SIZE, UInt(entryIdWidth.W)))
+  val nextEntryId = RegInit(0.U(entryIdWidth.W))
 
-  def wrapInc(ptr: UInt): UInt = Mux(ptr === (REQ_FILTER_SIZE - 1).U(idxWidth.W), 0.U(idxWidth.W), ptr + 1.U)
-  def slotActive(i: Int): Bool = {
-    val idx = i.U(idxWidth.W)
-    Mux(count === REQ_FILTER_SIZE.U(countWidth.W), true.B,
-      Mux(count === 0.U, false.B,
-        Mux(head < tail, idx >= head && idx < tail, idx >= head || idx < tail)
-      )
-    )
+  def wrapAdd(ptr: UInt, delta: UInt): UInt = {
+    val sum = ptr +& delta
+    val wrapped = Mux(sum >= REQ_FILTER_SIZE.U(sum.getWidth.W), sum - REQ_FILTER_SIZE.U(sum.getWidth.W), sum)
+    wrapped(idxWidth - 1, 0)
   }
 
   val empty = count === 0.U
   val full = count === REQ_FILTER_SIZE.U(countWidth.W)
-  val active = VecInit(entries.indices.map(slotActive))
-  val headValid = !empty
-  val headEntry = entries(head)
+  val queuePosValids = VecInit((0 until REQ_FILTER_SIZE).map(i => i.U < count))
+  val queueSlots = VecInit((0 until REQ_FILTER_SIZE).map(i => wrapAdd(head, i.U(countWidth.W))))
 
   val s0_tlb_fire = WireInit(false.B)
   val s1_tlb_fire = RegInit(false.B)
   val s2_tlb_fire = RegInit(false.B)
   val s3_tlb_fire = RegInit(false.B)
-  val s1_tlb_idx = RegInit(0.U(idxWidth.W))
-  val s2_tlb_idx = RegInit(0.U(idxWidth.W))
-  val s3_tlb_idx = RegInit(0.U(idxWidth.W))
+  val s1_tlb_id = RegInit(0.U(entryIdWidth.W))
+  val s2_tlb_id = RegInit(0.U(entryIdWidth.W))
+  val s3_tlb_id = RegInit(0.U(entryIdWidth.W))
 
-  val tlbPipeBusy = s1_tlb_fire || s2_tlb_fire || s3_tlb_fire
+  def entryIdInTlbPipe(entryId: UInt): Bool = {
+    (s1_tlb_fire && s1_tlb_id === entryId) ||
+    (s2_tlb_fire && s2_tlb_id === entryId) ||
+    (s3_tlb_fire && s3_tlb_id === entryId)
+  }
+
+  val tlbCandidateVec = VecInit((0 until REQ_FILTER_SIZE).map { pos =>
+    val slot = queueSlots(pos)
+    queuePosValids(pos) && !entries(slot).paddrValid && !entries(slot).replayCnt.orR &&
+      !entryIdInTlbPipe(entryIds(slot))
+  })
+  val tlbCandidateValid = tlbCandidateVec.asUInt.orR
+  val tlbCandidatePos = PriorityEncoder(tlbCandidateVec.asUInt)
+  val tlbCandidateSlot = Mux(tlbCandidateValid, queueSlots(tlbCandidatePos), 0.U(idxWidth.W))
+  val tlbCandidateEntry = entries(tlbCandidateSlot)
+
   val s0_tlb_req = Wire(new L2TlbReq)
-  s0_tlb_req.vaddr := headEntry.get_tlb_vaddr()
+  s0_tlb_req.vaddr := tlbCandidateEntry.get_tlb_vaddr()
   s0_tlb_req.cmd := TlbCmd.read
   s0_tlb_req.size := 3.U
   s0_tlb_req.kill := false.B
   s0_tlb_req.no_translate := false.B
   s0_tlb_req.isPrefetch := true.B
 
-  s0_tlb_fire := headValid && !headEntry.paddrValid && !tlbPipeBusy && !headEntry.replayCnt.orR
+  s0_tlb_fire := tlbCandidateValid
   s1_tlb_fire := s0_tlb_fire
   s2_tlb_fire := s1_tlb_fire
   s3_tlb_fire := s2_tlb_fire
   when(s0_tlb_fire) {
-    s1_tlb_idx := head
+    s1_tlb_id := entryIds(tlbCandidateSlot)
   }
-  s2_tlb_idx := s1_tlb_idx
-  s3_tlb_idx := s2_tlb_idx
+  s2_tlb_id := s1_tlb_id
+  s3_tlb_id := s2_tlb_id
 
   io.tlb_req.req.valid := s1_tlb_fire
   io.tlb_req.req.bits := RegEnable(s0_tlb_req, s0_tlb_fire)
   io.tlb_req.req_kill := false.B
   io.tlb_req.resp.ready := true.B
 
+  val pfCandidateVec = VecInit((0 until REQ_FILTER_SIZE).map(pos =>
+    queuePosValids(pos) && entries(queueSlots(pos)).paddrValid
+  ))
+  val pfCandidateValid = pfCandidateVec.asUInt.orR
+  val pfCandidatePos = PriorityEncoder(pfCandidateVec.asUInt)
+  val pfCandidateSlot = Mux(pfCandidateValid, queueSlots(pfCandidatePos), 0.U(idxWidth.W))
+  val pfCandidateEntry = entries(pfCandidateSlot)
   val outReqBits = Wire(new PrefetchReq)
-  outReqBits := headEntry.toPrefetchReq()
-  io.out_req.valid := headValid && headEntry.paddrValid
+  outReqBits := pfCandidateEntry.toPrefetchReq()
+  io.out_req.valid := pfCandidateValid
   io.out_req.bits := outReqBits
-  io.out_issueOffset := Mux(headValid, headEntry.issueOffset, 0.S)
+  io.out_issueOffset := Mux(pfCandidateValid, pfCandidateEntry.issueOffset, 0.S)
 
   val s3_tlb_resp_valid = RegNext(io.tlb_req.resp.valid, false.B)
   val s3_tlb_resp = RegEnable(io.tlb_req.resp.bits, io.tlb_req.resp.valid)
   val s3_tlb_resp_fire = s3_tlb_fire && s3_tlb_resp_valid
-  val s3_tlb_resp_excp = s3_tlb_resp_fire && !s3_tlb_resp.miss && tlbRespHasException(s3_tlb_resp)
-  val s3_tlb_resp_hit = s3_tlb_resp_fire && !s3_tlb_resp.miss && !s3_tlb_resp_excp
-  val s3_tlb_resp_miss = s3_tlb_resp_fire && s3_tlb_resp.miss
-  val s3_resp_entry = entries(s3_tlb_idx)
+  val s3_tlb_matchVec = VecInit((0 until REQ_FILTER_SIZE).map(pos =>
+    queuePosValids(pos) && entryIds(queueSlots(pos)) === s3_tlb_id
+  ))
+  val s3_tlb_matchValid = s3_tlb_matchVec.asUInt.orR
+  val s3_tlb_matchPos = PriorityEncoder(s3_tlb_matchVec.asUInt)
+  val s3_tlb_matchSlot = Mux(s3_tlb_matchValid, queueSlots(s3_tlb_matchPos), 0.U(idxWidth.W))
+  val s3_resp_entry = entries(s3_tlb_matchSlot)
+  val s3_tlb_resp_excp = s3_tlb_resp_fire && s3_tlb_matchValid && !s3_tlb_resp.miss && tlbRespHasException(s3_tlb_resp)
+  val s3_tlb_resp_hit = s3_tlb_resp_fire && s3_tlb_matchValid && !s3_tlb_resp.miss && !s3_tlb_resp_excp
+  val s3_tlb_resp_miss = s3_tlb_resp_fire && s3_tlb_matchValid && s3_tlb_resp.miss
   val miss_drop = s3_tlb_resp_miss && s3_resp_entry.replayEn
   val miss_first_replay = s3_tlb_resp_miss && !s3_resp_entry.replayEn
 
   val pf_fire = io.out_req.fire
-  val headDropFromTlb = headValid && s3_tlb_resp_fire && s3_tlb_idx === head && (s3_tlb_resp_excp || miss_drop)
-  val headWillPop = pf_fire || headDropFromTlb
-  val activeForMatch = VecInit(entries.indices.map(i => active(i) && !(headWillPop && head === i.U)))
-  val matchVec = VecInit(entries.indices.map(i => activeForMatch(i) && reqMatchesEntry(entries(i), io.in_req.bits)))
+  val tlb_drop = s3_tlb_resp_fire && (s3_tlb_resp_excp || miss_drop)
+  val removePosVec = VecInit((0 until REQ_FILTER_SIZE).map(pos =>
+    queuePosValids(pos) && (
+      (pf_fire && pfCandidatePos === pos.U) ||
+      (tlb_drop && s3_tlb_matchPos === pos.U)
+    )
+  ))
+  val activeForMatch = VecInit((0 until REQ_FILTER_SIZE).map(pos => queuePosValids(pos) && !removePosVec(pos)))
+  val matchVec = VecInit((0 until REQ_FILTER_SIZE).map(pos =>
+    activeForMatch(pos) && reqMatchesEntry(entries(queueSlots(pos)), io.in_req.bits)
+  ))
   val req_match = matchVec.asUInt.orR
-  val enq_fire = io.in_req.valid && !req_match && (!full || headWillPop)
 
   val allocEntry = Wire(new BopReqBufferEntry)
   allocEntry.fromBopReqBundle(io.in_req.bits)
+  val keptPosVec = VecInit((0 until REQ_FILTER_SIZE).map(pos => queuePosValids(pos) && !removePosVec(pos)))
+  val keptCount = PopCount(keptPosVec)
+  val canAlloc = keptCount =/= REQ_FILTER_SIZE.U
+  val enq_fire = io.in_req.valid && !req_match && canAlloc
 
-  for ((e, i) <- entries.zipWithIndex) {
-    when(active(i) && !(headWillPop && head === i.U) && e.replayCnt.orR) {
-      e.replayCnt := e.replayCnt - 1.U
+  val updatedEntries = Wire(Vec(REQ_FILTER_SIZE, new BopReqBufferEntry))
+  val updatedIds = Wire(Vec(REQ_FILTER_SIZE, UInt(entryIdWidth.W)))
+  updatedEntries := entries
+  updatedIds := entryIds
+  for (pos <- 0 until REQ_FILTER_SIZE) {
+    val slot = queueSlots(pos)
+    when(queuePosValids(pos) && !removePosVec(pos) && entries(slot).replayCnt.orR) {
+      updatedEntries(slot).replayCnt := entries(slot).replayCnt - 1.U
+    }
+    when(s3_tlb_resp_hit && s3_tlb_matchPos === pos.U) {
+      updatedEntries(slot).update_paddr(s3_tlb_resp.paddr.head)
+    }.elsewhen(miss_first_replay && s3_tlb_matchPos === pos.U) {
+      updatedEntries(slot).replayCnt := firstTlbReplayCnt
+      updatedEntries(slot).replayEn := 1.U
     }
   }
-  when(s3_tlb_resp_hit) {
-    entries(s3_tlb_idx).update_paddr(s3_tlb_resp.paddr.head)
-  }.elsewhen(miss_first_replay) {
-    entries(s3_tlb_idx).replayCnt := firstTlbReplayCnt
-    entries(s3_tlb_idx).replayEn := 1.U
-  }
-  when(enq_fire) {
-    entries(tail) := allocEntry
-  }
 
-  when(headWillPop) {
-    head := wrapInc(head)
+  val nextEntries = Wire(Vec(REQ_FILTER_SIZE, new BopReqBufferEntry))
+  val nextIds = Wire(Vec(REQ_FILTER_SIZE, UInt(entryIdWidth.W)))
+  val keptPrefix = Wire(Vec(REQ_FILTER_SIZE, UInt(countWidth.W)))
+  val firstKeptPos = PriorityEncoder(keptPosVec.asUInt)
+  val removedHeadCount = Mux(keptCount.orR, firstKeptPos, count)
+  val nextHead = wrapAdd(head, removedHeadCount)
+  val nextCount = keptCount + enq_fire.asUInt
+  val enqSlot = wrapAdd(nextHead, keptCount)
+  val nextTail = wrapAdd(nextHead, nextCount)
+
+  nextEntries := updatedEntries
+  nextIds := updatedIds
+  keptPrefix(0) := 0.U
+  for (pos <- 1 until REQ_FILTER_SIZE) {
+    keptPrefix(pos) := keptPrefix(pos - 1) + keptPosVec(pos - 1)
+  }
+  for (pos <- 0 until REQ_FILTER_SIZE) {
+    val srcSlot = queueSlots(pos)
+    val dstSlot = wrapAdd(nextHead, keptPrefix(pos))
+    when(keptPosVec(pos)) {
+      nextEntries(dstSlot) := updatedEntries(srcSlot)
+      nextIds(dstSlot) := updatedIds(srcSlot)
+    }
   }
   when(enq_fire) {
-    tail := wrapInc(tail)
+    nextEntries(enqSlot) := allocEntry
+    nextIds(enqSlot) := nextEntryId
   }
-  when(enq_fire =/= headWillPop) {
-    count := Mux(enq_fire, count + 1.U, count - 1.U)
+  for (i <- 0 until REQ_FILTER_SIZE) {
+    entries(i) := nextEntries(i)
+    entryIds(i) := nextIds(i)
+  }
+  head := nextHead
+  tail := nextTail
+  count := nextCount
+  when(enq_fire) {
+    nextEntryId := nextEntryId + 1.U
   }
 
   XSPerfAccumulate("recv_req", io.in_req.valid)
   XSPerfAccumulate("recv_req_drop_conflict", false.B)
   XSPerfAccumulate("recv_req_drop_match", io.in_req.valid && req_match)
-  XSPerfAccumulate("recv_req_drop_full", io.in_req.valid && !req_match && full && !headWillPop)
+  XSPerfAccumulate("recv_req_drop_full", io.in_req.valid && !req_match && !canAlloc)
   XSPerfAccumulate("tlb_req", io.tlb_req.req.valid)
   XSPerfAccumulate("tlb_miss", io.tlb_req.resp.valid && io.tlb_req.resp.bits.miss)
   XSPerfAccumulate("tlb_excp", s3_tlb_resp_valid && !s3_tlb_resp.miss && tlbRespHasException(s3_tlb_resp))
