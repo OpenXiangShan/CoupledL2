@@ -125,7 +125,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
       )
     }
 
-    slices match {
+    slices.map(_.asInstanceOf[Slice]) match {
       case slices: Seq[Slice] =>
         // TXREQ
         val txreq_arb = Module(new RRArbiterInit(new CHIREQ, slices.size + 1)) // plus 1 for MMIO

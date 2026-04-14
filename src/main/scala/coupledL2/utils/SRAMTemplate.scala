@@ -23,7 +23,6 @@ package coupledL2.utils
 import chisel3._
 import chisel3.util._
 import freechips.rocketchip.tilelink.LFSR64
-import huancun.utils.CustomAnnotations
 
 object HoldUnless {
   def apply[T <: Data](x: T, en: Bool): T = Mux(en, x, RegEnable(x, 0.U.asTypeOf(x), en))
@@ -174,12 +173,6 @@ class SRAMTemplate[T <: Data]
       mem_rdata
     }).map(_.asTypeOf(gen))
 
-  if(clkDivBy2){
-    CustomAnnotations.annotateClkDivBy2(this)
-  }
-  if(!isPow2(set)){
-    CustomAnnotations.annotateSpecialDepth(this)
-  }
   if(readMCP2) {
     array.suggestName("array_mcp2")
   }
