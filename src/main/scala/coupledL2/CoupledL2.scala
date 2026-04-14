@@ -467,8 +467,10 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
             prefetchReqsReady(i) := s.req.ready && bank_eq(Cat(p.io.req.bits.tag, p.io.req.bits.set), i, bankBits)
             val train = Pipeline(s.train)
             val resp = Pipeline(s.resp)
+            val feedback = Pipeline(s.feedback)
             prefetchTrains.get(i) <> train
             prefetchResps.get(i) <> resp
+            prefetchFeedbacks.get(i) <> feedback
             // restore to full address
             if(bankBits != 0){
               val train_full_addr = Cat(

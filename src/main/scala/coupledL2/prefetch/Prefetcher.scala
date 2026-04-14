@@ -347,6 +347,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       pfRcv.get.io.req.bits.pfSource === MemReqSource.Prefetch2L2Stride.id.U ||
       pfRcv.get.io.req.bits.pfSource === MemReqSource.Prefetch2L2Berti.id.U
     )
+    pfRcv.get.io.feedback := DontCare // TODO: fix later, not use dontcare
   }
   if (hasTPPrefetcher) {
     tp.get.io.enable := tp_en

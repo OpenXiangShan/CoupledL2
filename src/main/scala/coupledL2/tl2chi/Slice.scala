@@ -169,6 +169,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
     p.train <> mainPipe.io.prefetchTrain.get
     sinkA.io.prefetchReq.get <> p.req
     p.resp <> grantBuf.io.prefetchResp.get
+    p.feedback <> mainPipe.io.prefetchFeedback.get
     p.tlb_req.req.ready := true.B
     p.tlb_req.resp.valid := false.B
     p.tlb_req.resp.bits := DontCare

@@ -304,14 +304,9 @@ class SamplerFilter(implicit p: Parameters) extends TPModule {
 
   /* ------- stage 1 ------- */
   // compare pc
-  val s1_valid = RegNext(s0_valid)
-  val pc_s1 = RegInit(0.U(pcHashWidth.W))
-  val currAddr_s1 = RegInit(0.U(metaDataLength.W))
-
-  when(s0_valid) {
-    pc_s1 := pc_s0
-    currAddr_s1 := currAddr_s0
-  }
+  val s1_valid = RegNext(s0_valid, false.B)
+  val pc_s1 = RegEnable(pc_s0, s0_valid)
+  val currAddr_s1 = RegEnable(currAddr_s0, s0_valid)
   val (pcTag_s1, pcSet_s1) = parsePaddr(pc_s1)
 
   val tagMatchVec_s1 = filterRecord_s1.map(_.pcTag === pcTag_s1)
@@ -335,22 +330,13 @@ class SamplerFilter(implicit p: Parameters) extends TPModule {
   // 1. miss: generate new entry; 2. hit: update entry & generate pair for sampler table
   // update sampler filter table
   // TODO: add "cnt" to preserve frequent pc
-  val s2_valid = RegNext(s1_valid)
-  val pc_s2 = RegInit(0.U(pcHashWidth.W))
-  val currAddr_s2 = RegInit(0.U(metaDataLength.W))
-  val lastAddr_s2 = RegInit(0.U(metaDataLength.W))
-  val cnt_s2 = RegInit(0.U(filteredCntWidth.W))
-  val hit_s2 = RegInit(false.B)
-  val way_s2 = RegInit(0.U(log2Ceil(samplerFilterAssoc).W))
-
-  when(s1_valid) {
-    pc_s2 := pc_s1
-    currAddr_s2 := currAddr_s1
-    lastAddr_s2 := lastAddr_s1
-    cnt_s2 := cnt_s1
-    hit_s2 := hit_s1
-    way_s2 := way_s1
-  }
+  val s2_valid = RegNext(s1_valid, false.B)
+  val pc_s2 = RegEnable(pc_s1, s1_valid)
+  val currAddr_s2 = RegEnable(currAddr_s1, s1_valid)
+  val lastAddr_s2 = RegEnable(lastAddr_s1, s1_valid)
+  val cnt_s2 = RegEnable(cnt_s1, s1_valid)
+  val hit_s2 = RegEnable(hit_s1, s1_valid)
+  val way_s2 = RegEnable(way_s1, s1_valid)
   val (pcTag_s2, pcSet_s2) = parsePaddr(pc_s2)
   val updateCnt = Mux(hit_s2 && !cnt_s2.andR, cnt_s2 + 1.U, cnt_s2)
 
@@ -472,19 +458,11 @@ class SamplerTable(implicit p: Parameters) extends TPModule {
   /* ------- stage 1 ------- */
   // parse baseAddr to judge whether hit; choose victim way
   val s1_valid = RegNext(s0_valid, false.B)
-  val baseAddr_s1 = RegInit(0.U(metaDataLength.W))
-  val targetAddr_s1 = RegInit(0.U(metaDataLength.W))
-  val pc_s1 = RegInit(0.U(pcHashWidth.W))
-  val cnt_s1 = RegInit(0.U(filteredCntWidth.W))
-  val tpTableWay_s1 = RegInit(0.U(log2Ceil(tpTableAssoc).W))
-
-  when(s0_valid) {
-    baseAddr_s1 := baseAddr_s0
-    targetAddr_s1 := targetAddr_s0
-    pc_s1 := pc_s0
-    cnt_s1 := cnt_s0
-    tpTableWay_s1 := tpTableWay_s0
-  }
+  val baseAddr_s1 = RegEnable(baseAddr_s0, s0_valid)
+  val targetAddr_s1 = RegEnable(targetAddr_s0, s0_valid)
+  val pc_s1 = RegEnable(pc_s0, s0_valid)
+  val cnt_s1 = RegEnable(cnt_s0, s0_valid)
+  val tpTableWay_s1 = RegEnable(tpTableWay_s0, s0_valid)
 
   val (baseTag_s1, baseSet_s1) = parsePaddr(baseAddr_s1)
   val tagMatchVec_s1 = pairs_s1.map(_.baseTag === baseTag_s1)
@@ -510,24 +488,15 @@ class SamplerTable(implicit p: Parameters) extends TPModule {
   // hit & missmatch: update hit entry
   // miss: replace victim entry
   val s2_valid = RegNext(s1_valid, false.B)
-  val baseAddr_s2 = RegInit(0.U(metaDataLength.W))
-  val targetAddr_s2 = RegInit(0.U(metaDataLength.W))
-  val pc_s2 = RegInit(0.U(pcHashWidth.W))
-  val cnt_s2 = RegInit(0.U(filteredCntWidth.W))
-  val tpTableWay_s2 = RegInit(0.U(log2Ceil(tpTableAssoc).W))
-  val hit_s2 = RegInit(false.B)
-  val way_s2 = RegInit(0.U(log2Ceil(samplerTableAssoc).W))
-  val lastPair_s2 = RegNext(lastPair_s1)
+  val baseAddr_s2 = RegEnable(baseAddr_s1, s1_valid)
+  val targetAddr_s2 = RegEnable(targetAddr_s1, s1_valid)
+  val pc_s2 = RegEnable(pc_s1, s1_valid)
+  val cnt_s2 = RegEnable(cnt_s1, s1_valid)
+  val tpTableWay_s2 = RegEnable(tpTableWay_s1, s1_valid)
+  val hit_s2 = RegEnable(hit_s1, s1_valid)
+  val way_s2 = RegEnable(way_s1, s1_valid)
+  val lastPair_s2 = RegEnable(lastPair_s1, s1_valid)
 
-  when(s1_valid) {
-    baseAddr_s2 := baseAddr_s1
-    targetAddr_s2 := targetAddr_s1
-    pc_s2 := pc_s1
-    cnt_s2 := cnt_s1
-    tpTableWay_s2 := tpTableWay_s1
-    hit_s2 := hit_s1
-    way_s2 := way_s1
-  }
   val cntValid_s2 = cnt_s2 >= filteredCntThrottle.U && s2_valid
 
   val match_s2 = lastPair_s2.targetAddr === targetAddr_s2
@@ -666,17 +635,10 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
   /* ------- stage 1 ------- */
   // parse pc to judge whether hit; choose victim way
   val s1_valid = RegNext(s0_valid, false.B)
-  val addr1_s1 = RegInit(0.U(metaDataLength.W))
-  val addr2_s1 = RegInit(0.U(metaDataLength.W))
-  val pc_s1 = RegInit(0.U(pcHashWidth.W))
-  val tpTableWay_s1 = RegInit(0.U(log2Ceil(tpTableAssoc).W))
-
-  when(s0_valid) {
-    addr1_s1 := addr1_s0
-    addr2_s1 := addr2_s0
-    pc_s1 := pc_s0
-    tpTableWay_s1 := tpTableWay_s0
-  }
+  val addr1_s1 = RegEnable(addr1_s0, s0_valid)
+  val addr2_s1 = RegEnable(addr2_s0, s0_valid)
+  val pc_s1 = RegEnable(pc_s0, s0_valid)
+  val tpTableWay_s1 = RegEnable(tpTableWay_s0, s0_valid)
 
   val (pcTag_s1, pcSet_s1) = parsePaddr(pc_s1)
   val tagMatchVec_s1 = recorders_s1.map(_.pcTag === pcTag_s1)
@@ -700,32 +662,20 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
   // miss: replace
   // if full or replaced, output record
   val s2_valid = RegNext(s1_valid, false.B)
-  val addr1_s2 = RegInit(0.U(metaDataLength.W))
-  val addr2_s2 = RegInit(0.U(metaDataLength.W))
-  val pc_s2 = RegInit(0.U(pcHashWidth.W))
-  val tpTableWay_s2 = RegInit(0.U(log2Ceil(tpTableAssoc).W))
-  val hit_s2 = RegInit(false.B)
-  val way_s2 = RegInit(0.U(log2Ceil(recorderTableAssoc).W))
-  val recorder_s2 = RegNext(recorder_s1)
-  val recorderIdx_s2 = RegInit(0.U(log2Ceil(tpEntryMaxLen).W))
-  val recorderData_s2 = RegInit(VecInit(Seq.fill(tpEntryMaxLen)(0.U(metaDataLength.W))))
-  val recorderValid_s2 = RegInit(false.B)
+  val addr1_s2 = RegEnable(addr1_s1, s1_valid)
+  val addr2_s2 = RegEnable(addr2_s1, s1_valid)
+  val pc_s2 = RegEnable(pc_s1, s1_valid)
+  val tpTableWay_s2 = RegEnable(tpTableWay_s1, s1_valid)
+  val hit_s2 = RegEnable(hit_s1, s1_valid)
+  val way_s2 = RegEnable(way_s1, s1_valid)
+  val recorder_s2 = RegEnable(recorder_s1, s1_valid)
+  val recorderIdx_s2 = RegEnable(recorder_s1.index, s1_valid)
+  val recorderData_s2 = RegEnable(recorder_s1.data, s1_valid)
+  val recorderValid_s2 = RegEnable(recorder_s1.valid, s1_valid)
 
   val recorderIdx_s3 = RegInit(0.U(log2Ceil(tpEntryMaxLen).W))
   val recorderData_s3 = RegInit(VecInit(Seq.fill(tpEntryMaxLen)(0.U(metaDataLength.W))))
   val recorderTrigger_s3 = RegInit(0.U(metaDataLength.W))
-
-  when(s1_valid) {
-    addr1_s2 := addr1_s1
-    addr2_s2 := addr2_s1
-    pc_s2 := pc_s1
-    tpTableWay_s2 := tpTableWay_s1
-    hit_s2 := hit_s1
-    way_s2 := way_s1
-    recorderIdx_s2 := recorder_s1.index
-    recorderData_s2 := recorder_s1.data
-    recorderValid_s2 := recorder_s1.valid
-  }
 
   val recordData_s2 = recorder_s2.data
   val recordTpTableWay_s2 = recorder_s2.tpTableWay
@@ -770,25 +720,15 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
 
   /* ------- stage 3 ------- */
   val s3_valid = RegNext(s2_valid, false.B)
-  val addr1_s3 = RegInit(0.U(metaDataLength.W))
-  val addr2_s3 = RegInit(0.U(metaDataLength.W))
-  val pc_s3 = RegInit(0.U(pcHashWidth.W))
-  val tpTableWay_s3 = RegInit(0.U(log2Ceil(tpTableAssoc).W))
-  val recordTpTableWay_s3 = RegInit(0.U(log2Ceil(tpTableAssoc).W))
-  val recorderValid_s3 = RegInit(false.B)
-  val hit_s3 = RegInit(false.B)
-  val way_s3 = RegInit(0.U(log2Ceil(recorderTableAssoc).W))
+  val addr1_s3 = RegEnable(addr1_s2, s2_valid)
+  val addr2_s3 = RegEnable(addr2_s2, s2_valid)
+  val pc_s3 = RegEnable(pc_s2, s2_valid)
+  val tpTableWay_s3 = RegEnable(tpTableWay_s2, s2_valid)
+  val recordTpTableWay_s3 = RegEnable(recordTpTableWay_s2, s2_valid)
+  val recorderValid_s3 = RegEnable(recorderValid_s2, s2_valid)
+  val hit_s3 = RegEnable(hit_s2, s2_valid)
+  val way_s3 = RegEnable(way_s2, s2_valid)
 
-  when(s2_valid) {
-    addr1_s3 := addr1_s2
-    addr2_s3 := addr2_s2
-    pc_s3 := pc_s2
-    tpTableWay_s3 := tpTableWay_s2
-    recordTpTableWay_s3 := recordTpTableWay_s2
-    recorderValid_s3 := recorderValid_s2
-    hit_s3 := hit_s2
-    way_s3 := way_s2
-  }
   val (pcTag_s3, pcSet_s3) = parsePaddr(pc_s3)
   val full_s3 = recorderIdx_s3 === recordThres
   val recordValid_s3 = s3_valid && (full_s3 && hit_s3 || !hit_s3 && recorderValid_s3)
@@ -1014,8 +954,8 @@ class confTable(implicit p:Parameters) extends TPModule {
     waymask = confTableWWayOH_s2
   )
 
-  io.resp.valid := s2_valid && needResp_s2
-  io.resp.bits.issue := Mux(hit_s2, conf_s2.accConf > ((1 << accConfWidth - 1) >> 1).U, true.B)
+  io.resp.valid := s1_valid && needResp_s1
+  io.resp.bits.issue := Mux(hit_s1, conf_s1.accConf > ((1 << accConfWidth - 1) >> 1).U, true.B)
 
   XSPerfAccumulate("tp_conf_table_pf_hit", io.req.valid && io.req.bits.pfHit)
   XSPerfAccumulate("tp_conf_table_pf_late", io.req.valid && io.req.bits.pfLate)
@@ -1023,6 +963,7 @@ class confTable(implicit p:Parameters) extends TPModule {
   XSPerfAccumulate("tp_conf_table_pf_issue", io.req.valid && io.req.bits.pfIssue)
   XSPerfAccumulate("tp_conf_table_new_meta", io.req.valid && io.req.bits.newMeta)
   XSPerfAccumulate("tp_conf_table_resp", io.resp.valid)
+  XSPerfAccumulate("tp_conf_table_resp_issue", io.resp.bits.issue && io.resp.valid)
 }
 
 class tpMetaEntry(implicit p:Parameters) extends TPBundle {
@@ -1338,7 +1279,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     sending_hitCount := tpDataQueue.io.deq.bits.hitCount
     // sending_data_debug := tpDataQueue.io.deq.bits.rawData_debug
     sending_idx := 0.U
-    do_sending := globalConfidence(tpDataQueue.io.deq.bits.hitCount) >= globalHitCountConfidenceThrottle.asUInt // confidence
+    do_sending := globalConfidence(tpDataQueue.io.deq.bits.hitCount) >= globalHitCountConfidenceThrottle.asUInt
   }
   when(((do_sending && !tpDataQFull) || sending_throttle =/= 0.U) && (sending_throttle =/= tpThrottleCycles)) {
     sending_throttle := sending_throttle + 1.U
@@ -1394,7 +1335,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   }
 
   // confidence table
-  val pfHit = io.feedBack.bits.hit && !MemReqSource.isCPUReq(io.feedBack.bits.reqsource) &&
+  val pfHit = io.feedBack.bits.hit && MemReqSource.isCPUReq(io.feedBack.bits.reqsource) &&
     io.feedBack.bits.pfsource === PfSource.TP.id.U
   val pfLate = io.feedBack.bits.hit && io.feedBack.bits.reqsource =/= MemReqSource.Prefetch2L2TP.id.U
   val pfMiss = false.B // TODO
@@ -1410,7 +1351,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   confRespQueue.io.enq.valid := confTable.io.resp.valid
   confRespQueue.io.enq.bits.issue := confTable.io.resp.bits.issue
-  confRespQueue.io.deq.ready := tpDataQFull || !do_sending
+  confRespQueue.io.deq.ready := tpDataQueue.io.deq.fire
   assert(confRespQueue.io.enq.ready === true.B)
 
   /* Performance collection */

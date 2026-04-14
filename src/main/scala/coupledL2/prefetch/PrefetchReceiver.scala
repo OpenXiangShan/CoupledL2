@@ -58,4 +58,6 @@ class PrefetchReceiver()(implicit p: Parameters) extends PrefetchModule {
   io.tlb_req.req.bits := DontCare
   io.tlb_req.req_kill := DontCare
   io.tlb_req.resp.ready := true.B
+
+  io.feedback.ready := true.B
 }
