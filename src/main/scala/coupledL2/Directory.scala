@@ -295,7 +295,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     chosenWay,
     PriorityEncoder(freeWayMask_s3)
   )
-  val hit_s3 = Cat(hitVec).orR || req_s3.cmoAll
+  val hit_s3 = Cat(hitVec).orR || (req_s3.cmoAll && VecInit(metaAll_s3.map(_.state =/= MetaData.INVALID))(req_s3.cmoWay))
   val way_s3 = Mux(req_s3.cmoAll, req_s3.cmoWay, Mux(hit_s3, hitWay, finalWay))
   val meta_s3 = metaAll_s3(way_s3)
   val tag_s3 = tagAll_s3(way_s3)
