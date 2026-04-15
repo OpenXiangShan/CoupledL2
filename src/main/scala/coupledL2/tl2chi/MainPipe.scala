@@ -226,6 +226,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   }
 
   val tagError_s3               = io.dirResp_s3.error || meta_s3.tagErr
+  val tagErrorOnSnp_s3          = io.errOnSnp_s3 || meta_s3.tagErr
   val dataError_s3              = meta_s3.dataErr
   val l2Error_s3                = io.dirResp_s3.error
 
@@ -373,7 +374,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     (req_s3.chiOpcode.get =/= SnpOnce || req_s3.snpHitRelease) &&
     !(isSnpStashX(req_s3.chiOpcode.get) || isSnpQuery(req_s3.chiOpcode.get))
 
-  when (nestable_dirResult_s3.hit && !tagError_s3) {
+  when (nestable_dirResult_s3.hit && !tagErrorOnSnp_s3) {
     when (isSnpToB(req_s3.chiOpcode.get)) {
       respCacheState := Mux(req_s3.snpHitReleaseToInval, I, SC)
     }
