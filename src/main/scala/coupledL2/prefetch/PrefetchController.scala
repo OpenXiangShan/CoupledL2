@@ -459,18 +459,23 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
   val statPfHitLagActiveVec = WireInit(VecInit(Seq.fill(PF_NUM)(false.B)))
   val statLatencyDownActiveVec = WireInit(VecInit(Seq.fill(PF_NUM)(false.B)))
 
+  val activeNextVec = Wire(Vec(PF_NUM, Bool()))
+  activeNextVec := activeVec
+
 when(controlMode === ipop.U) {
   when (epochEnd) {
     for (i <- 0 until PF_NUM) {
       val peEval = peVec(i)
       when (activeVec(i)) {
         when (peEval < 0.S) {
+          activeNextVec(i) := false.B
           activeVec(i) := false.B
           levelVec(i) := maxDegree.U
         }
       }.otherwise {
         when (levelVec(i) === 0.U) {
           when(latencyDown) { // latency has downtrend, try to active this prefetcher
+            activeNextVec(i) := true.B
             activeVec(i) := true.B
             levelVec(i) := 0.U
             statLatencyDownActiveVec(i) := true.B
@@ -493,6 +498,7 @@ when(controlMode === ipop.U) {
           levelVec(i) := Mux(levelVec(i) === maxDegree.U, maxDegree.U, levelVec(i) + 1.U)
         }.elsewhen (peEval < 0.S) {
           when (levelVec(i) === 0.U) {
+            activeNextVec(i) := false.B
             activeVec(i) := false.B
             levelVec(i) := maxDegree.U
           }.otherwise {
@@ -501,11 +507,13 @@ when(controlMode === ipop.U) {
         }
       }.otherwise {
         when (peEval > 0.S) { // prefetches from previous epoches hit at current epoch
+          activeNextVec(i) := true.B
           activeVec(i) := true.B
           levelVec(i) := 1.U
           statPfHitLagActiveVec(i) := true.B
         }.elsewhen (levelVec(i) === 0.U) {
           when(latencyDown) { // latency has downtrend, try to active this prefetcher
+            activeNextVec(i) := true.B
             activeVec(i) := true.B
             levelVec(i) := 0.U
             statLatencyDownActiveVec(i) := true.B
@@ -530,6 +538,71 @@ when(controlMode === ipop.U) {
   io.l2PfFbCtrl.tpDegree := pfDegree(PF_TP)
 
   // record for debug //
+  // epochs waited before re-enable after disable
+  val analRecoverWaitEpochesVec = RegInit(VecInit(Seq.fill(PF_NUM)(0.U(XLEN.W))))
+  // last 3 epochs had positive PE, then this epoch has negative PE and next epoch is disabled
+  val analAccidentalDisableVec = RegInit(VecInit(Seq.fill(PF_NUM)(false.B)))
+  // last 3 epochs had positive PE, then this epoch has negative PE, but a later 3-epoch window has at least one positive PE
+  val analAccidentalMistakeVec = RegInit(VecInit(Seq.fill(PF_NUM)(false.B)))
+  // same as above, and the next epoch is disabled
+  val analAccidentalMistakeDisableVec = RegInit(VecInit(Seq.fill(PF_NUM)(false.B)))
+
+  val analPePositiveHistoryVec = RegInit(VecInit(Seq.fill(PF_NUM)(VecInit(Seq.fill(3)(false.B)))))
+  val analAccidentalPendingVec = RegInit(VecInit(Seq.fill(PF_NUM)(VecInit(Seq.fill(3)(false.B)))))
+  val analAccidentalDisablePendingVec = RegInit(VecInit(Seq.fill(PF_NUM)(VecInit(Seq.fill(3)(false.B)))))
+
+  for (i <- 0 until PF_NUM) {
+    val recoverWaitStop = WireInit(false.B)
+    val recoverWaitEpoches = RegInit(0.U(XLEN.W))
+    XSPerfHistogram(s"analRecoverWaitEpoches${PF_NAME_VEC(i)}", recoverWaitEpoches, recoverWaitStop, 0, 50, 1, true, true)
+    XSPerfHistogram(s"analRecoverWaitEpoches${PF_NAME_VEC(i)}", recoverWaitEpoches, recoverWaitStop, 50, 100, 10, true, false)
+    XSPerfHistogram(s"analRecoverWaitEpoches${PF_NAME_VEC(i)}", recoverWaitEpoches, recoverWaitStop, 100, 300, 50, true, false)
+
+    analAccidentalDisableVec(i) := false.B
+    analAccidentalMistakeVec(i) := false.B
+    analAccidentalMistakeDisableVec(i) := false.B
+    XSPerfAccumulate(s"analAccidentalDisableVec${PF_NAME_VEC(i)}", analAccidentalDisableVec(i))
+    XSPerfAccumulate(s"analAccidentalMistakeVec${PF_NAME_VEC(i)}", analAccidentalMistakeVec(i))
+    XSPerfAccumulate(s"analAccidentalMistakeDisableVec${PF_NAME_VEC(i)}", analAccidentalMistakeDisableVec(i))
+
+    when (epochEnd) {
+      val disableNow = activeVec(i) && !activeNextVec(i)
+      val recoverNow = !activeVec(i) && activeNextVec(i)
+      when (recoverNow) {
+        recoverWaitStop := true.B
+        recoverWaitEpoches := 0.U
+      }.elsewhen (!activeVec(i) && !activeNextVec(i)) {
+        recoverWaitEpoches := recoverWaitEpoches + 1.U
+      }.elsewhen (disableNow) {
+        recoverWaitEpoches := 1.U
+      }.otherwise {
+        recoverWaitEpoches := 0.U
+      }
+
+      val pePositive = peVec(i) > 0.S
+      val peNegative = peVec(i) < 0.S
+      val prevThreePePositive = analPePositiveHistoryVec(i).reduce(_ && _)
+      val accidental = prevThreePePositive && peNegative
+      val accidentalDisable = accidental && disableNow
+
+      analAccidentalDisableVec(i) := accidentalDisable
+      analAccidentalMistakeVec(i) := analAccidentalPendingVec(i).asUInt.orR && pePositive
+      analAccidentalMistakeDisableVec(i) := analAccidentalDisablePendingVec(i).asUInt.orR && pePositive
+
+      analPePositiveHistoryVec(i)(2) := analPePositiveHistoryVec(i)(1)
+      analPePositiveHistoryVec(i)(1) := analPePositiveHistoryVec(i)(0)
+      analPePositiveHistoryVec(i)(0) := pePositive
+
+      analAccidentalPendingVec(i)(2) := analAccidentalPendingVec(i)(1)
+      analAccidentalPendingVec(i)(1) := analAccidentalPendingVec(i)(0)
+      analAccidentalPendingVec(i)(0) := accidental
+
+      analAccidentalDisablePendingVec(i)(2) := analAccidentalDisablePendingVec(i)(1)
+      analAccidentalDisablePendingVec(i)(1) := analAccidentalDisablePendingVec(i)(0)
+      analAccidentalDisablePendingVec(i)(0) := accidentalDisable
+    }
+  }
+
   class EpochRecordBundle extends Bundle {
     val epochID = UInt(64.W)
     val latencyCurr = UInt(timestampBits.W)
