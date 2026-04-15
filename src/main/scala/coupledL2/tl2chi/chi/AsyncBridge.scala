@@ -78,7 +78,7 @@ object ToAsyncBundleWithBuf {
     shadow_buffer.io.enq.valid := chn.flitv
     shadow_buffer.io.enq.bits  := chn.flit
     /*
-     2. For rx channel (CMN->L2), send out lcrdv right after a flit entering Shadow buffer if has space
+     2. For rx channel (CMN----->L2), send out lcrdv right after a flit entering Shadow buffer if has space
      */
     val deqReady = shadow_buffer.io.deq.ready
     dontTouch(deqReady)
