@@ -39,7 +39,6 @@ case class L1Param
   blockBytes: Int = 64,
   aliasBitsOpt: Option[Int] = None,
   vaddrBitsOpt: Option[Int] = None,
-  pcBitOpt: Option[Int] = None,
   isKeywordBitsOpt : Option[Boolean] = None
 ) {
   val capacity = sets * ways * blockBytes
@@ -63,10 +62,6 @@ case class VaddrField(width: Int) extends BundleField[UInt](VaddrKey, Output(UIn
 case object IsKeywordKey extends ControlKey[Bool]("isKeyword")
 case class IsKeywordField() extends BundleField[Bool](IsKeywordKey, Output(Bool()), _ := false.B)
 
-//memblock pass pc of load_miss to l2
-case object PCKey extends ControlKey[UInt]("pc")
-case class PCField(width: Int) extends BundleField[UInt](PCKey, Output(UInt(width.W)), _ := 0.U(width.W))
-
 case class L2Param(
   name: String = "L2",
   ways: Int = 4,
@@ -89,7 +84,8 @@ case class L2Param(
   echoField: Seq[BundleFieldBase] = Nil,
   reqField: Seq[BundleFieldBase] = Nil,
   respKey: Seq[BundleKeyBase] = Seq(IsHitKey),
-  reqKey: Seq[BundleKeyBase] = Seq(AliasKey, VaddrKey, PrefetchKey, ReqSourceKey, PCKey),
+  // Manager
+  reqKey: Seq[BundleKeyBase] = Seq(AliasKey, VaddrKey, PrefetchKey, ReqSourceKey),
   respField: Seq[BundleFieldBase] = Nil,
 
   innerBuf: TLBufferParams = TLBufferParams(),

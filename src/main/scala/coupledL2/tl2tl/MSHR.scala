@@ -404,7 +404,6 @@ class MSHR(implicit p: Parameters) extends L2Module {
       accessed = true.B
     )
     mp_grant.txChannel := 0.U
-    mp_grant.aMergeTask.pc.foreach(_ := merge_task.pc.getOrElse(0.U))
 
     mp_grant
   }
