@@ -158,7 +158,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val meta_s3         = dirResult_s3.meta
   val metaOnHit_s3    = io.metaOnHit_s3
   val req_s3          = task_s3.bits
-  val cmoHitInvalid   = io.cmoAllBlock.getOrElse(false.B) && (io.cmoHitInvalid === INVALID)
+  val cmoHitInvalid   = io.cmoAllBlock.getOrElse(false.B) && io.cmoHitInvalid
 
   val mshr_req_s3     = req_s3.mshrTask
   val sink_req_s3     = !mshr_req_s3
