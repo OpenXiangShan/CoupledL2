@@ -137,7 +137,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     val msInfo = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo)))
   })
 
-  def invalid_way_sel(metaVec: Seq[MetaEntry], repl: UInt) = {
+  def invalid_way_sel(metaVec: Seq[MetaEntry]) = {
     val invalid_vec = metaVec.map(_.state === MetaData.INVALID)
     val has_invalid_way = Cat(invalid_vec).orR
     val way = ParallelPriorityMux(invalid_vec.zipWithIndex.map(x => x._1 -> x._2.U(wayBits.W)))
@@ -277,12 +277,12 @@ class Directory(implicit p: Parameters) extends L2Module {
   )).reduceTree(_ | _)
 
   val freeWayMask_s3 = RegEnable(~occWayMask_s2, refillReqValid_s2)
-  val refillRetry = !(freeWayMask_s3.orR)
+  // val refillRetry = !(freeWayMask_s3.orR)
+  val refillRetry = RegEnable(occWayMask_s2.andR, refillReqValid_s2)
 
   val hitWay = OHToUInt(hitVec)
   val replaceWay = WireInit(UInt(wayBits.W), 0.U)
-  val (inv, invalidWay) = invalid_way_sel(metaAll_s3, replaceWay)
-  val chosenWay = Mux(inv, invalidWay, replaceWay)
+  val (inv, invalidWay) = invalid_way_sel(metaAll_s3)
   // if chosenWay not in wayMask, then choose a way in wayMask
   // for retry bug fixing: if the chosenway cause retry last time, choose another way
   /*val finalWay = Mux(
@@ -292,11 +292,10 @@ class Directory(implicit p: Parameters) extends L2Module {
   )*/
   // for retry bug fixing: if the chosenway not in freewaymask, choose another way
   // TODO: req_s3.wayMask not take into consideration
-  val finalWay = Mux(
-    freeWayMask_s3(chosenWay),
-    chosenWay,
-    PriorityEncoder(freeWayMask_s3)
-  )
+  val finalWay = MuxCase(PriorityEncoder(freeWayMask_s3), Seq (
+    inv -> invalidWay,
+    freeWayMask_s3(replaceWay) -> replaceWay
+  ))
   val hit_s3 = Cat(hitVec).orR || req_s3.cmoAll
   val way_s3 = Mux(req_s3.cmoAll, req_s3.cmoWay, Mux(hit_s3, hitWay, finalWay))
   val meta_s3 = metaAll_s3(way_s3)
@@ -450,7 +449,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   }
 
   XSPerfAccumulate("dirRead_cnt", io.read.fire)
-  XSPerfAccumulate("choose_busy_way", reqValid_s3 && !req_s3.wayMask(chosenWay))
+  XSPerfAccumulate("choose_busy_way", reqValid_s3 && !req_s3.wayMask(replaceWay))
 
   /* ====== ChiselDB logging for  prefetcher lifecycle ====== */
   if (cacheParams.enableMonitor && !cacheParams.FPGAPlatform) {
