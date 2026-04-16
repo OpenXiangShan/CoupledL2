@@ -108,7 +108,8 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   mainPipe.io.releaseBufResp_s3.valid := RegNext(releaseBuf.io.r.valid, false.B)
   mainPipe.io.releaseBufResp_s3.bits := releaseBuf.io.resp.data
   mainPipe.io.fromReqArb.status_s1 := reqArb.io.status_s1
-  mainPipe.io.taskInfo_s1 <> reqArb.io.taskInfo_s1
+  mainPipe.io.mshrHintQInfo := reqArb.io.mshrHintQInfo
+  mainPipe.io.sinkCHintQInfo := reqArb.io.sinkCHintQInfo
 
   // priority: nested-ReleaseData / probeAckData [NEW] > mainPipe DS rdata [OLD]
   // 0/1 might happen at the same cycle with 2

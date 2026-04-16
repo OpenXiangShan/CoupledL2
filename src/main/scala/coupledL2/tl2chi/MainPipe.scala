@@ -34,7 +34,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     /* receive task from arbiter at stage 2 */
     val taskFromArb_s2 = Flipped(ValidIO(new TaskBundle()))
     /* status from arbiter at stage1  */
-    val taskInfo_s1 = Flipped(ValidIO(new TaskBundle()))
+    val mshrHintQInfo = Flipped(ValidIO(new TaskBundle))
+    val sinkCHintQInfo = Flipped(ValidIO(new TaskBundle))
 
     /* handle set conflict in req arb */
     val fromReqArb = Input(new Bundle() {
@@ -53,6 +54,11 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
     /* get dir result at stage 3 */
     val dirResp_s3 = Input(new DirResult())
+    val metaOnHit_s3 = Input(new MetaEntry())
+    val errOnSnp_s3 = Input(Bool())
+    val dirWayOH_s3 = Input(UInt(cacheParams.ways.W))
+    val dirReplWayOH_s3 = Input(UInt(cacheParams.ways.W))
+    val cmoHitInvalid = Input(Bool())
     val replResp = Flipped(ValidIO(new ReplacerResult()))
 
     /* send task to MSHRCtl at stage 3 */
@@ -137,6 +143,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   /* ======== Stage 2 ======== */
   val task_s2 = io.taskFromArb_s2
+  val reqWayOH_s2 = UIntToOH(task_s2.bits.way)
 
   /* ======== Stage 3 ======== */
   val task_s3 = RegInit(0.U.asTypeOf(Valid(new TaskBundle)))
@@ -144,12 +151,14 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   when (task_s2.valid) {
     task_s3.bits := task_s2.bits
   }
+  val reqWayOH_s3 = RegEnable(reqWayOH_s2, task_s2.valid)
 
   /* ======== Enchantment ======== */
   val dirResult_s3    = io.dirResp_s3
   val meta_s3         = dirResult_s3.meta
+  val metaOnHit_s3    = io.metaOnHit_s3
   val req_s3          = task_s3.bits
-  val cmoHitInvalid   = io.cmoAllBlock.getOrElse(false.B) && (meta_s3.state === INVALID)
+  val cmoHitInvalid   = io.cmoAllBlock.getOrElse(false.B) && io.cmoHitInvalid
 
   val mshr_req_s3     = req_s3.mshrTask
   val sink_req_s3     = !mshr_req_s3
@@ -191,19 +200,21 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val mshr_cbWrData_s3          = mshr_req_s3 && req_s3.toTXDAT && req_s3.chiOpcode.get === CopyBackWrData
 
   val meta_has_clients_s3       = meta_s3.clients.orR
+  val metaOnHit_has_clients_s3    = metaOnHit_s3.clients.orR
   val req_needT_s3              = needT(req_s3.opcode, req_s3.param)
 
   val cmo_cbo_retention_s3      = req_cbo_clean_s3 || req_cbo_flush_s3
   val cmo_cbo_s3                = req_cbo_clean_s3 || req_cbo_flush_s3 || req_cbo_inval_s3
 
-  val cache_alias               = req_acquire_s3 && dirResult_s3.hit && meta_s3.clients(0) &&
-                              meta_s3.alias.getOrElse(0.U) =/= req_s3.alias.getOrElse(0.U)
+  val cache_alias               = req_acquire_s3 && dirResult_s3.hit && metaOnHit_s3.clients(0) &&
+                              metaOnHit_s3.alias.getOrElse(0.U) =/= req_s3.alias.getOrElse(0.U)
 
   // *NOTICE: 'nestable_*' must not be used in A Channel related logics.
   val nestable_dirResult_s3     = Wire(chiselTypeOf(dirResult_s3))
   val nestable_meta_s3          = nestable_dirResult_s3.meta
   val nestable_meta_has_clients_s3 = nestable_dirResult_s3.meta.clients.orR
   nestable_dirResult_s3 := dirResult_s3
+  nestable_dirResult_s3.meta := metaOnHit_s3
   when (req_s3.snpHitRelease) {
     // Meta states from MSHRs were considered as directory result here.
     // Therefore, meta states were always inferred to be hit when nesting release, no matter the fact that directory
@@ -219,9 +230,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val l2Error_s3                = io.dirResp_s3.error
 
   val mshr_refill_s3 = mshr_accessackdata_s3 || mshr_hintack_s3 || mshr_grant_s3 // needs refill to L2 DS
-  val replResp_valid_s3 = io.replResp.valid
-  val replResp_valid_s4 = RegNext(io.replResp.valid, init = false.B)
-  val replResp_valid_hold = replResp_valid_s3 || replResp_valid_s4
+  val replResp_valid_hold = io.replResp.bits.validHold
   val retry = replResp_valid_hold && io.replResp.bits.retry
   val need_repl = replResp_valid_hold && io.replResp.bits.meta.state =/= INVALID && req_s3.replTask
 
@@ -229,22 +238,22 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   // *NOTICE: A Channel requests should be blocked by RequestBuffer when MSHR nestable,
   //          'nestable_*' must not be used here.
   val acquire_on_miss_s3 = req_acquire_s3 || req_prefetch_s3 || req_get_s3
-  val acquire_on_hit_s3 = meta_s3.state === BRANCH && req_needT_s3 && !req_prefetch_s3
+  val acquire_on_hit_s3 = metaOnHit_s3.state === BRANCH && req_needT_s3 && !req_prefetch_s3
   val need_acquire_s3_a = req_s3.fromA && (Mux(
     dirResult_s3.hit,
     acquire_on_hit_s3,
     acquire_on_miss_s3
   ) || cmo_cbo_s3)
-  val need_probe_s3_a = dirResult_s3.hit && meta_has_clients_s3 && (
-    req_get_s3 && (meta_s3.state === TRUNK) ||
-    req_cbo_clean_s3 && (meta_s3.state === TRUNK) ||
+  val need_probe_s3_a = dirResult_s3.hit && metaOnHit_has_clients_s3 && (
+    req_get_s3 && (metaOnHit_s3.state === TRUNK) ||
+    req_cbo_clean_s3 && (metaOnHit_s3.state === TRUNK) ||
     req_cbo_flush_s3 ||
     req_cbo_inval_s3
   )
   val need_release_s3_a = dirResult_s3.hit && (
-    req_cbo_clean_s3 && (!need_probe_s3_a && meta_s3.dirty) ||
-    req_cbo_flush_s3 && (isValid(meta_s3.state)) ||
-    req_cbo_inval_s3 && (isValid(meta_s3.state))
+    req_cbo_clean_s3 && (!need_probe_s3_a && metaOnHit_s3.dirty) ||
+    req_cbo_flush_s3 && (isValid(metaOnHit_s3.state)) ||
+    req_cbo_inval_s3 && (isValid(metaOnHit_s3.state))
   )
   val need_cmoresp_s3_a = cmo_cbo_s3
   val need_compack_s3_a = !cmo_cbo_s3
@@ -267,22 +276,24 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     */
   // whether L2 should do forwarding or not
   val expectFwd = isSnpXFwd(req_s3.chiOpcode.get)
-  val canFwd = nestable_dirResult_s3.hit && !(nestable_dirResult_s3.meta.tagErr || nestable_dirResult_s3.error)
+  val canFwd = nestable_dirResult_s3.hit &&
+    !(Mux(req_s3.snpHitRelease, req_s3.snpHitReleaseMeta.tagErr, io.metaOnHit_s3.tagErr) || io.errOnSnp_s3)
   val doFwd = expectFwd && canFwd
   val need_pprobe_s3_b_snpStable = req_s3.fromB && (
     isSnpOnceX(req_s3.chiOpcode.get) || isSnpQuery(req_s3.chiOpcode.get) || isSnpStashX(req_s3.chiOpcode.get)
-  ) && dirResult_s3.hit && meta_s3.state === TRUNK && meta_has_clients_s3
+  ) && dirResult_s3.hit && metaOnHit_s3.state === TRUNK && metaOnHit_has_clients_s3
   val need_pprobe_s3_b_snpToB = req_s3.fromB && (
     isSnpToB(req_s3.chiOpcode.get) ||
     req_s3.chiOpcode.get === SnpCleanShared
-  ) && dirResult_s3.hit && meta_s3.state === TRUNK && meta_has_clients_s3
+  ) && dirResult_s3.hit && metaOnHit_s3.state === TRUNK && metaOnHit_has_clients_s3
   val need_pprobe_s3_b_snpToN = req_s3.fromB && (
     isSnpUniqueX(req_s3.chiOpcode.get) ||
     req_s3.chiOpcode.get === SnpCleanInvalid ||
     isSnpMakeInvalidX(req_s3.chiOpcode.get)
-  ) && dirResult_s3.hit && meta_has_clients_s3
-  val need_pprobe_s3_b_snpNDERR = req_s3.fromB && tagError_s3 && dirResult_s3.hit
-  val need_pprobe_s3_b = need_pprobe_s3_b_snpStable || need_pprobe_s3_b_snpToB || need_pprobe_s3_b_snpToN || need_pprobe_s3_b_snpNDERR
+  ) && dirResult_s3.hit && metaOnHit_has_clients_s3
+  val need_pprobe_s3_b_snpNDERR = req_s3.fromB && (io.errOnSnp_s3 || io.metaOnHit_s3.tagErr) && dirResult_s3.hit
+  val need_pprobe_s3_b = need_pprobe_s3_b_snpStable || need_pprobe_s3_b_snpToB ||
+    need_pprobe_s3_b_snpToN || need_pprobe_s3_b_snpNDERR
   val need_dct_s3_b = doFwd // DCT
   val need_mshr_s3_b = need_pprobe_s3_b || need_dct_s3_b
 
@@ -305,7 +316,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   /* ======== Resps to SinkA/B/C Reqs ======== */
   val sink_resp_s3 = WireInit(0.U.asTypeOf(Valid(new TaskBundle)))
-  val sink_resp_s3_a_promoteT = dirResult_s3.hit && isT(meta_s3.state)
+  val sink_resp_s3_a_promoteT = dirResult_s3.hit && isT(metaOnHit_s3.state)
 
   // whether L2 should respond data to HN or not
   val retToSrc = req_s3.retToSrc.getOrElse(false.B)
@@ -482,22 +493,19 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val wen = wen_c || wen_mshr
 
   // This is to let io.toDS.req_s3.valid hold for 2 cycles (see DataStorage for details)
-  val task_s3_valid_hold2 = RegInit(0.U(2.W))
-  when(task_s2.valid) {
-    task_s3_valid_hold2 := "b11".U
-  }.otherwise {
-    task_s3_valid_hold2 := task_s3_valid_hold2 >> 1.U
-  }
+  val task_s3_valid_hold2 = RegEnable(task_s2.valid, false.B, !RegNext(task_s2.valid))
 
-  io.toDS.en_s3 := task_s3.valid && (ren || wen)
-  io.toDS.req_s3.valid := task_s3_valid_hold2(0) && (ren || wen)
+  io.toDS.en_s3 := task_s3.valid
+  io.toDS.req_s3.valid := task_s3_valid_hold2
   io.toDS.req_s3.bits.way := Mux(
     mshr_refill_s3 && req_s3.replTask,
     io.replResp.bits.way,
     Mux(mshr_req_s3, req_s3.way, dirResult_s3.way)
   )
-  io.toDS.req_s3.bits.set := Mux(mshr_req_s3, req_s3.set, dirResult_s3.set)
+  // io.toDS.req_s3.bits.set := Mux(mshr_req_s3, req_s3.set, dirResult_s3.set)
+  io.toDS.req_s3.bits.set := req_s3.set
   io.toDS.req_s3.bits.wen := wen
+  io.toDS.req_s3.bits.ren := ren
   io.toDS.wdata_s3.data := Mux(
     !mshr_req_s3,
     c_releaseData_s3,
@@ -531,7 +539,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val metaW_valid_s3_b = sinkB_req_s3 && !need_mshr_s3_b && dirResult_s3.hit &&
     (!isSnpOnce(req_s3.chiOpcode.get) || (req_s3.snpHitReleaseToClean && req_s3.snpHitReleaseMeta.dirty)) && 
     !isSnpStashX(req_s3.chiOpcode.get) && !isSnpQuery(req_s3.chiOpcode.get) && (
-      meta_s3.state === TIP || meta_s3.state === BRANCH && isSnpToN(req_s3.chiOpcode.get)
+      metaOnHit_s3.state === TIP || metaOnHit_s3.state === BRANCH && isSnpToN(req_s3.chiOpcode.get)
     )
   val metaW_valid_s3_c = sinkC_req_s3 && dirResult_s3.hit
   val metaW_valid_s3_mshr = mshr_req_s3 && req_s3.metaWen && !(mshr_refill_s3 && retry)
@@ -540,37 +548,37 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   val metaW_s3_a_alias = Mux(
     req_get_s3 || req_prefetch_s3,
-    meta_s3.alias.getOrElse(0.U),
+    metaOnHit_s3.alias.getOrElse(0.U),
     req_s3.alias.getOrElse(0.U)
   )
   val metaW_s3_a = MetaEntry(
-    dirty = meta_s3.dirty,
-    state = Mux(req_needT_s3 || sink_resp_s3_a_promoteT, TRUNK, meta_s3.state),
+    dirty = metaOnHit_s3.dirty,
+    state = Mux(req_needT_s3 || sink_resp_s3_a_promoteT, TRUNK, metaOnHit_s3.state),
     clients = Fill(clientBits, Mux(l2Error_s3, false.B, true.B)),
     alias = Some(metaW_s3_a_alias),
     accessed = true.B,
-    tagErr = meta_s3.tagErr,
-    dataErr = meta_s3.dataErr
+    tagErr = metaOnHit_s3.tagErr,
+    dataErr = metaOnHit_s3.dataErr
   )
   val metaW_s3_b = Mux(isSnpToN(req_s3.chiOpcode.get), MetaEntry(),
     MetaEntry(
       dirty = false.B,
-      state = Mux(req_s3.chiOpcode.get === SnpCleanShared, meta_s3.state, BRANCH),
-      clients = meta_s3.clients,
-      alias = meta_s3.alias,
-      accessed = meta_s3.accessed,
-      tagErr = meta_s3.tagErr,
-      dataErr = meta_s3.dataErr
+      state = Mux(req_s3.chiOpcode.get === SnpCleanShared, metaOnHit_s3.state, BRANCH),
+      clients = metaOnHit_s3.clients,
+      alias = metaOnHit_s3.alias,
+      accessed = metaOnHit_s3.accessed,
+      tagErr = metaOnHit_s3.tagErr,
+      dataErr = metaOnHit_s3.dataErr
     )
   )
   val metaW_s3_c = MetaEntry(
-    dirty = meta_s3.dirty || wen_c,
-    state = Mux(isParamFromT(req_s3.param), TIP, meta_s3.state),
+    dirty = metaOnHit_s3.dirty || wen_c,
+    state = Mux(isParamFromT(req_s3.param), TIP, metaOnHit_s3.state),
     clients = Fill(clientBits, !isToN(req_s3.param)),
-    alias = meta_s3.alias,
-    accessed = meta_s3.accessed,
-    tagErr = Mux(wen_c, req_s3.denied, meta_s3.tagErr),
-    dataErr = Mux(wen_c, req_s3.corrupt, meta_s3.dataErr) // update error when write DS
+    alias = metaOnHit_s3.alias,
+    accessed = metaOnHit_s3.accessed,
+    tagErr = Mux(wen_c, req_s3.denied, metaOnHit_s3.tagErr),
+    dataErr = Mux(wen_c, req_s3.corrupt, metaOnHit_s3.dataErr) // update error when write DS
   )
   // use merge_meta if mergeA
   val metaW_s3_mshr = WireInit(Mux(req_s3.mergeA, req_s3.aMergeTask.meta, req_s3.meta))
@@ -578,17 +586,17 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   metaW_s3_mshr.dataErr := req_s3.corrupt
   val metaW_s3_cmo  = MetaEntry()   // invalid the block
 
-  val metaW_way = Mux(
+  val metaW_wayOH = Mux(
     mshr_refill_s3 && req_s3.replTask,
-    io.replResp.bits.way, // grant always use replResp way
-    Mux(mshr_req_s3, req_s3.way, dirResult_s3.way)
+    io.dirReplWayOH_s3, // grant always use replResp way
+    Mux(mshr_req_s3, reqWayOH_s3, io.dirWayOH_s3)
   )
 
   io.metaWReq.valid := !resetFinish || task_s3.valid && (
     metaW_valid_s3_a || metaW_valid_s3_b || metaW_valid_s3_c || metaW_valid_s3_mshr || metaW_valid_s3_cmo
   )
   io.metaWReq.bits.set := Mux(resetFinish, req_s3.set, resetIdx)
-  io.metaWReq.bits.wayOH := Mux(resetFinish, UIntToOH(metaW_way), Fill(cacheParams.ways, true.B))
+  io.metaWReq.bits.wayOH := Mux(resetFinish, metaW_wayOH, Fill(cacheParams.ways, true.B))
   io.metaWReq.bits.wmeta := Mux(
     resetFinish,
     ParallelPriorityMux(
@@ -600,7 +608,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   io.tagWReq.valid := task_s3.valid && req_s3.tagWen && mshr_refill_s3 && !retry
   io.tagWReq.bits.set := req_s3.set
-  io.tagWReq.bits.way := Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.way, req_s3.way)
+  io.tagWReq.bits.wayOH := Mux(mshr_refill_s3 && req_s3.replTask, io.dirReplWayOH_s3, reqWayOH_s3)
   io.tagWReq.bits.wtag := req_s3.tag
 
   sink_resp_s3_b_metaWen := metaW_valid_s3_b
@@ -636,18 +644,18 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val isTXRSP_s3 = Mux(
     mshr_req_s3,
     mshr_snpRespX_s3,
-    req_s3.fromB && !need_mshr_s3 && !hasData_s3
+    req_s3.fromB && !need_mshr_s3_b && !hasData_s3
   )
   val isTXDAT_s3 = Mux(
     mshr_req_s3,
     mshr_snpRespDataX_s3 || mshr_cbWrData_s3 || mshr_dct_s3,
-    req_s3.fromB && !need_mshr_s3 && 
+    req_s3.fromB && !need_mshr_s3_b && 
       (doRespData && (!data_unready_s3 || req_s3.snpHitRelease && req_s3.snpHitReleaseWithData))
   )
   val isTXDAT_s3_ready = Mux(
     mshr_req_s3,
     mshr_snpRespDataX_s3 || mshr_cbWrData_s3 || mshr_dct_s3,
-    req_s3.fromB && !need_mshr_s3 && !txdat_s3_latch.B &&
+    req_s3.fromB && !need_mshr_s3_b && !txdat_s3_latch.B &&
       (doRespData && (!data_unready_s3 || req_s3.snpHitRelease && req_s3.snpHitReleaseWithData))
   )
   val isTXREQ_s3 = mshr_req_s3 && (mshr_writeBackFull_s3 || mshr_writeCleanFull_s3 || 
@@ -707,7 +715,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       // train on request(with needHint flag) miss or hit on prefetched block
       // trigger train also in a_merge here
       train.valid := task_s3.valid && ((req_acquire_s3 || req_get_s3) && req_s3.needHint.getOrElse(false.B) &&
-        (!dirResult_s3.hit || meta_s3.prefetch.get) || req_s3.mergeA)
+        (!dirResult_s3.hit || metaOnHit_s3.prefetch.get) || req_s3.mergeA)
       train.bits.tag := req_s3.tag
       train.bits.set := req_s3.set
       train.bits.needT := Mux(
@@ -721,8 +729,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
         pc := Mux(req_s3.mergeA, req_s3.aMergeTask.pc.getOrElse(0.U), req_s3.pc.getOrElse(0.U))
       }
       train.bits.hit := Mux(req_s3.mergeA, true.B, dirResult_s3.hit)
-      train.bits.prefetched := Mux(req_s3.mergeA, true.B, meta_s3.prefetch.getOrElse(false.B))
-      train.bits.pfsource := meta_s3.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) // TODO
+      train.bits.prefetched := Mux(req_s3.mergeA, true.B, metaOnHit_s3.prefetch.getOrElse(false.B))
+      train.bits.pfsource := Mux(req_s3.mergeA, req_s3.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U), metaOnHit_s3.prefetchSrc.getOrElse(PfSource.NoWhere.id.U)) // TODO
       train.bits.reqsource := req_s3.reqSource
       
   }
@@ -815,8 +823,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   // TODO: check this
   val customL1Hint = Module(new CustomL1Hint)
 
-  customL1Hint.io.s1 := io.taskInfo_s1
-  // customL1Hint.io.s2 := task_s2
+  customL1Hint.io.mshrHintQInfo := io.mshrHintQInfo
+  customL1Hint.io.sinkCHintQInfo := io.sinkCHintQInfo
 
   customL1Hint.io.s3.task      := task_s3
   // overwrite opcode: if sinkReq can respond, use sink_resp_s3.bits.opcode = Grant/GrantData
@@ -915,7 +923,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   // capacity control of TX channels
   val tx_task_s3 = Wire(Valid(new TaskBundle))
   tx_task_s3.valid := task_s3.valid // TODO: review this
-  tx_task_s3.bits := source_req_s3
+  tx_task_s3.bits := req_s3
   val tasks = Seq(tx_task_s3, task_s4, task_s5)
   io.status_vec_toTX.zip(tasks).foreach { case (status, task) =>
     status.valid := task.valid

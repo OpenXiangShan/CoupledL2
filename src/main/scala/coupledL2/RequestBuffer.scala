@@ -58,13 +58,13 @@ class ReqEntry(entries: Int = 4)(implicit p: Parameters) extends L2Bundle() {
 
 }
 
-class ChosenQBundle(idWIdth: Int = 2)(implicit p: Parameters) extends L2Bundle {
+class ChosenQBundle(idOHWIdth: Int = 2)(implicit p: Parameters) extends L2Bundle {
   val bits = new ReqEntry()
-  val id = UInt(idWIdth.W)
+  val idOH = UInt(idOHWIdth.W)
 }
 
 class AMergeTask(implicit p: Parameters) extends L2Bundle {
-  val id = UInt(mshrBits.W)
+  val idOH = UInt(mshrsAll.W)
   val task = new TaskBundle()
 }
 
@@ -98,8 +98,9 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   io.ASet := io.in.bits.set
 
   val buffer = RegInit(VecInit(Seq.fill(entries)(0.U.asTypeOf(new ReqEntry))))
-  val issueArb = Module(new FastArbiter(new ReqEntry, entries))
-  val chosenQ = Module(new Queue(new ChosenQBundle(log2Ceil(entries)), entries = 1, pipe = true, flow = false))
+  val issueArb = Module(new TwoLevelRRArbiter(new ReqEntry, entries))
+  ArbPerf(issueArb, "issueArb")
+  val chosenQ = Module(new Queue(new ChosenQBundle(entries), entries = 1, pipe = true, flow = false))
   val chosenQValid = chosenQ.io.deq.valid
 
   /* ======== Enchantment ======== */
@@ -115,6 +116,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   def conflictMask(a: TaskBundle): UInt = VecInit(io.mshrInfo.map(s =>
     s.valid && addrConflict(a, s.bits) && !s.bits.willFree)).asUInt
   def conflict(a: TaskBundle): Bool = conflictMask(a).orR
+  def parallelConflict(a: TaskBundle): Bool = ParallelOR(conflictMask(a).asBools)
 
   def conflictMaskFromA(a: TaskBundle): UInt =
     conflictMask(a) & VecInit(io.mshrInfo.map(_.bits.fromA)).asUInt
@@ -125,7 +127,8 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
       a.fromA && (a.opcode === AcquireBlock || a.opcode === AcquirePerm)
     ))
     val matched = matchVec.asUInt.orR
-    val matchSrc = ParallelPriorityMux(matchVec, io.mshrInfo.map(_.bits.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U)))
+    assert(PopCount(matchVec) <= 1.U, "Multiple late prefetch MSHRs matched")
+    val matchSrc = OHMux(matchVec, io.mshrInfo.map(_.bits.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U)))
     (matched, matchSrc)
   }
 
@@ -144,21 +147,21 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   val in      = io.in.bits
   val full    = Cat(buffer.map(_.valid)).andR
 
-  //
-  val mshrConflictMask = conflictMask(in)
-  val mshrConflictMaskFromA = conflictMaskFromA(in)
-  dontTouch(mshrConflictMask)
-  dontTouch(mshrConflictMaskFromA)
+
+  // val mshrConflictMask = conflictMask(in)
+  // val mshrConflictMaskFromA = conflictMaskFromA(in)
+  // dontTouch(mshrConflictMask)
+  // dontTouch(mshrConflictMaskFromA)
 
   // incoming Acquire can be merged with late_pf MSHR block
-  val mergeAMask = VecInit(io.mshrInfo.map(s =>
-    s.valid && s.bits.isPrefetch && sameAddr(in, s.bits) && !s.bits.willFree && !s.bits.dirHit && !s.bits.s_refill &&
+  val mergeAMask = VecInit(io.mshrInfo.map { case s =>
+    val mshrInflight = !(s.bits.w_grantlast && s.bits.w_grant)
+    s.valid && s.bits.isPrefetch && sameAddr(in, s.bits) && !s.bits.dirHit && mshrInflight &&
       in.fromA && (in.opcode === AcquireBlock || in.opcode === AcquirePerm) && !s.bits.mergeA && !(in.param === NtoT && s.bits.param === NtoB)
-  )).asUInt
+  }).asUInt
   val mergeA = mergeAMask.orR
-  val mergeAId = OHToUInt(mergeAMask)
   io.aMergeTask.valid := io.in.valid && mergeA
-  io.aMergeTask.bits.id := mergeAId
+  io.aMergeTask.bits.idOH := mergeAMask
   io.aMergeTask.bits.task := in
 
   /*
@@ -177,7 +180,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   def noFreeWay(task: TaskBundle): Bool = noFreeWayForSet(task.set)
 
   // flow not allowed when full, or entries might starve
-  val canFlow = flow.B && !full && !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(in)
+  val canFlow = flow.B && !full && !parallelConflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(in)
   val doFlow  = canFlow && io.out.ready
 
   //  val depMask    = buffer.map(e => e.valid && sameAddr(io.in.bits, e.task))
@@ -205,37 +208,33 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   /* ======== Alloc ======== */
   io.in.ready   := !full || doFlow || mergeA || dup
 
-  val insertIdx = PriorityEncoder(buffer.map(!_.valid))
+  val insertOH = MaskToOH(buffer.map(!_.valid))
   val alloc = !full && io.in.valid && !doFlow && !dup && !mergeA
-  when(alloc){
-    val entry = buffer(insertIdx)
-    val mpBlock = Cat(io.mainPipeBlock).orR
-    val pipeBlockOut = io.out.fire && sameSet(in, io.out.bits)
-    val probeBlock   = io.s1Entrance.valid && io.s1Entrance.bits.set === in.set // wait for same-addr req to enter MSHR
-    val s1Block      = pipeBlockOut || probeBlock
+  buffer.zip(insertOH.asBools).foreach { case (entry, sel) =>
+    when(alloc && sel){
+      val mpBlock = Cat(io.mainPipeBlock).orR
+      val pipeBlockOut = io.out.fire && sameSet(in, io.out.bits)
+      val probeBlock   = io.s1Entrance.valid && io.s1Entrance.bits.set === in.set // wait for same-addr req to enter MSHR
+      val s1Block      = pipeBlockOut || probeBlock
 
-    entry.valid   := true.B
-    // when Addr-Conflict / Same-Addr-Dependent / MainPipe-Block / noFreeWay-in-Set, entry not ready
-    entry.rdy     := !conflict(in) && !mpBlock && !s1Block && !noFreeWay(in)// && !Cat(depMask).orR
-    entry.task    := io.in.bits
-    entry.waitMP  := Cat(
-      s1Block,
-      io.mainPipeBlock(0),
-      io.mainPipeBlock(1),
-      0.U(1.W))
-    entry.waitMS  := conflictMask(in)
-
-//    entry.depMask := depMask
-    assert(PopCount(conflictMaskFromA(in)) <= 2.U)
+      entry.valid   := true.B
+      // when Addr-Conflict / Same-Addr-Dependent / MainPipe-Block / noFreeWay-in-Set, entry not ready
+      entry.rdy     := !conflict(in) && !mpBlock && !s1Block && !noFreeWay(in)// && !Cat(depMask).orR
+      entry.task    := io.in.bits
+      entry.waitMP  := Cat(
+        s1Block,
+        io.mainPipeBlock(0),
+        io.mainPipeBlock(1),
+        0.U(1.W))
+      entry.waitMS  := conflictMask(in)
+      assert(PopCount(conflictMaskFromA(in)) <= 2.U)
+    }
   }
 
   /* ======== Issue ======== */
   issueArb.io.in zip buffer foreach {
     case(in, e) =>
-      // when io.out.valid, we temporarily stall all entries of the same set
-      val pipeBlockOut = io.out.valid && sameSet(e.task, io.out.bits)
-
-      in.valid := e.valid && e.rdy && !pipeBlockOut
+      in.valid := e.valid && e.rdy
       in.bits  := e
   }
 
@@ -245,7 +244,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   // in such case, we need a place to save it
   chosenQ.io.enq.valid := issueArb.io.out.valid
   chosenQ.io.enq.bits.bits := issueArb.io.out.bits
-  chosenQ.io.enq.bits.id := issueArb.io.chosen
+  chosenQ.io.enq.bits.idOH := issueArb.io.chosenOH
   issueArb.io.out.ready := chosenQ.io.enq.ready
 
   /* ======== Update rdy and masks ======== */
@@ -294,14 +293,20 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   // when entry.rdy is no longer true,
   // we cancel req in chosenQ, with the entry still held in buffer to issue later
 //  val cancel = (canFlow && sameSet(chosenQ.io.deq.bits.bits.task, io.in.bits)) || !buffer(chosenQ.io.deq.bits.id).rdy
-  val cancel = !buffer(chosenQ.io.deq.bits.id).rdy
+  val cancel = !OHMux(chosenQ.io.deq.bits.idOH, buffer.map(_.rdy))
 
   chosenQ.io.deq.ready := io.out.ready || cancel
   io.out.valid := chosenQValid && !cancel || io.in.valid && canFlow
-  io.out.bits  := Mux(canFlow, io.in.bits, chosenQ.io.deq.bits.bits.task)
+  io.out.bits := {
+    if (!flow) chosenQ.io.deq.bits.bits.task
+    else Mux(chosenQValid, chosenQ.io.deq.bits.bits.task, io.in.bits)
+  }
 
-  when(chosenQ.io.deq.fire && !cancel) {
-    buffer(chosenQ.io.deq.bits.id).valid := false.B
+  buffer.zip(chosenQ.io.deq.bits.idOH.asBools).foreach {
+    case (e, y) =>
+      when(chosenQ.io.deq.fire && y && !cancel) {
+        e.valid := false.B
+      }
   }
 
   // for Dir to choose a free way

@@ -34,6 +34,7 @@ import coupledL2.prefetch._
 import huancun.{BankBitsKey, TPmetaReq, TPmetaResp}
 import utility.mbist.{MbistInterface, MbistPipeline}
 import utility.sram.{SramBroadcastBundle, SramHelper}
+import coupledL2.utils._
 
 trait HasCoupledL2Parameters {
   val p: Parameters
@@ -218,11 +219,12 @@ trait HasCoupledL2Parameters {
     out <> arb.io.out
   }
 
-  def fastArb[T <: Bundle](in: Seq[DecoupledIO[T]], out: DecoupledIO[T], name: Option[String] = None): Unit = {
-    val arb = Module(new FastArbiter[T](chiselTypeOf(out.bits), in.size))
+  def fastArb[T <: Bundle](in: Seq[DecoupledIO[T]], out: DecoupledIO[T], name: Option[String] = None)(implicit p: Parameters): Unit = {
+    val arb = Module(new TwoLevelRRArbiter[T](chiselTypeOf(out.bits), in.size))
     if (name.nonEmpty) { arb.suggestName(s"${name.get}_arb") }
     for ((a, req) <- arb.io.in.zip(in)) { a <> req }
     out <> arb.io.out
+    ArbPerf(arb, name.getOrElse("fastArb"))
   }
 
   def odOpGen(r: UInt) = {
@@ -327,7 +329,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       val hartId = Input(UInt(hartIdLen.W))
       val pfCtrlFromCore = Input(new PrefetchCtrlFromCore)
     //  val l2_hint = Valid(UInt(32.W))
-      val l2_hint = ValidIO(new L2ToL1Hint())
+      val l2_hint = ValidIO(new L2ToL1Hint()(l2ECCParams))
       val l2_tlb_req = new L2ToL1TlbIO(nRespDups = 1)(l2TlbParams)
       val debugTopDown = new Bundle {
         val robTrueCommit = Input(UInt(64.W))
@@ -526,7 +528,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     if (enableHintGuidedGrant) {
       // for timing consideration, hint should latch one cycle before sending to L1
       // instead of adding a Pipeline/Queue to latch here, we just set hintQueue in GrantBuf & CustomL1Hint "flow=false"
-      val l1HintArb = Module(new Arbiter(new L2ToL1Hint(), slices.size))
+      val l1HintArb = Module(new Arbiter(new L2ToL1Hint()(l2ECCParams), slices.size))
       val slices_l1Hint = slices.zipWithIndex.map {
         case (s, i) => s.io.l1Hint
       }
