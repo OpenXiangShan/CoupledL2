@@ -85,8 +85,8 @@ class L2FastArbiter[T <: Data](gen: T, n: Int) extends L2FastArbiterBase[T](gen,
 }
 
 
-// TODO: rename like TwoLevelRRArbiter
-class HalfFastArbiter[T <: Data](gen: T, n: Int) extends L2FastArbiterBase[T](gen, n) {
+// TwoLevelRRArbiter is similar to mux of two RRArbiters, reducing the input width of MaskToOH
+class TwoLevelRRArbiter[T <: Data](gen: T, n: Int) extends L2FastArbiterBase[T](gen, n) {
   val mid = n / 2
   val rest = n - mid
 
