@@ -296,6 +296,38 @@ object DynamicSetHardware {
   }
 }
 
+object DynamicMshrMath {
+  def isValidRuntimeMshrs(runtimeMshrs: Int, staticMshrs: Int): Boolean = {
+    runtimeMshrs > 0 && runtimeMshrs <= staticMshrs
+  }
+
+  def eligibleIdleMask(idle: Seq[Boolean], runtimeMshrs: Int): Seq[Boolean] = {
+    idle.zipWithIndex.map { case (isIdle, idx) => isIdle && idx < runtimeMshrs }
+  }
+
+  def isFull(pipeReqCount: Int, mshrCount: Int, runtimeMshrs: Int): Boolean = {
+    pipeReqCount + mshrCount >= runtimeMshrs
+  }
+
+  def isAFull(pipeReqCount: Int, mshrCount: Int, runtimeMshrs: Int): Boolean = {
+    runtimeMshrs <= 1 || pipeReqCount + mshrCount >= runtimeMshrs - 1
+  }
+}
+
+object DynamicMshrHardware {
+  def limitIdle(idle: Seq[Bool], dynMshrs: UInt): Seq[Bool] = {
+    idle.zipWithIndex.map { case (isIdle, idx) => isIdle && (idx.U < dynMshrs) }
+  }
+
+  def isFull(pipeReqCount: UInt, mshrCount: UInt, dynMshrs: UInt): Bool = {
+    dynMshrs === 0.U || (pipeReqCount +& mshrCount) >= dynMshrs
+  }
+
+  def isAFull(pipeReqCount: UInt, mshrCount: UInt, dynMshrs: UInt): Bool = {
+    dynMshrs <= 1.U || (pipeReqCount +& mshrCount) >= (dynMshrs - 1.U)
+  }
+}
+
 abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with HasCoupledL2Parameters {
 
   val xfer = TransferSizes(blockBytes, blockBytes)
@@ -373,6 +405,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     val io = IO(new Bundle {
       val hartId = Input(UInt(hartIdLen.W))
       val sets = Input(UInt(64.W))
+      val mshrs = Input(UInt(64.W))
       val pfCtrlFromCore = Input(new PrefetchCtrlFromCore)
     //  val l2_hint = Valid(UInt(32.W))
       val l2_hint = ValidIO(new L2ToL1Hint())
@@ -505,6 +538,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         in.b.bits.address := restoreAddress(slice.io.in.b.bits.address, i)
         slice.io.sliceId := i.U
         slice.io.dynSets := io.sets
+        slice.io.dynMshrs := io.mshrs
 
         slice.io.error.ready := enableECC.asBool // TODO: fix the datapath as optional
 

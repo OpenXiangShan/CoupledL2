@@ -86,6 +86,9 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
 
     /* for TopDown */
     val l2Miss = Output(Bool())
+
+    /* Dynamic MSHR limiting from DSE */
+    val dynMshrs = Input(UInt(64.W))
   })
 
   /*MSHR allocation pointer gen -> to Mainpipe*/
@@ -104,8 +107,8 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
   val mshrValids = VecInit(mshrs.map(m => m.io.status.valid))
   val pipeReqCount = PopCount(Cat(io.pipeStatusVec.map(_.valid))) // TODO: consider add !mshrTask to optimize
   val mshrCount = PopCount(Cat(mshrs.map(_.io.status.valid)))
-  val mshrFull = pipeReqCount + mshrCount >= mshrsAll.U
-  val a_mshrFull = pipeReqCount + mshrCount >= (mshrsAll-1).U // the last idle mshr should not be allocated for channel A req
+  val mshrFull = DynamicMshrHardware.isFull(pipeReqCount, mshrCount, io.dynMshrs)
+  val a_mshrFull = DynamicMshrHardware.isAFull(pipeReqCount, mshrCount, io.dynMshrs)
   val mshrSelector = Module(new MSHRSelector())
   val selectedMSHROH = mshrSelector.io.out.bits
 
@@ -115,7 +118,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
       m.io.status.bits.reqSource === MemReqSource.CPUStoreData.id.U
     )
   }).orR
-  mshrSelector.io.idle := mshrs.map(m => !m.io.status.valid)
+  mshrSelector.io.idle := VecInit(DynamicMshrHardware.limitIdle(mshrs.map(m => !m.io.status.valid), io.dynMshrs))
   io.toMainPipe.mshr_alloc_ptr := OHToUInt(selectedMSHROH)
 
   /* SinkC(release) search MSHR with PA */
@@ -257,4 +260,3 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
   )
   generatePerfEvent()
 }
-

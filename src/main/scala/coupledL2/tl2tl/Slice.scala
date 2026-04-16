@@ -82,6 +82,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   reqArb.io.msInfo := mshrCtl.io.msInfo
 
   mshrCtl.io.fromReqArb.status_s1 := reqArb.io.status_s1
+  mshrCtl.io.dynMshrs := io.dynMshrs
   mshrCtl.io.resps.sinkC := sinkC.io.resp
   mshrCtl.io.resps.sinkD := refillUnit.io.resp
   mshrCtl.io.resps.sourceC := sourceC.io.resp

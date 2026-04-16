@@ -130,6 +130,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   // mainPipe.io.globalCounter := grantBuf.io.globalCounter
 
   mshrCtl.io.fromReqArb.status_s1 := reqArb.io.status_s1
+  mshrCtl.io.dynMshrs := io.dynMshrs
   mshrCtl.io.fromMainPipe <> mainPipe.io.toMSHRCtl
   mshrCtl.io.fromMainPipe.mshr_alloc_s3 := mainPipe.io.toMSHRCtl.mshr_alloc_s3
   mshrCtl.io.grantStatus := grantBuf.io.grantStatus

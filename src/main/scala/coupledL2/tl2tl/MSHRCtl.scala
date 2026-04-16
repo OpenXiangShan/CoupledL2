@@ -93,6 +93,9 @@ class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
     /* for TopDown */
     val l2Miss = Output(Bool())
+
+    /* Dynamic MSHR limiting from DSE */
+    val dynMshrs = Input(UInt(64.W))
   })
 
   val mshrs = Seq.fill(mshrsAll) { Module(new MSHR()) }
@@ -100,10 +103,10 @@ class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
   val pipeReqCount = PopCount(Cat(io.pipeStatusVec.map(_.valid))) // TODO: consider add !mshrTask to optimize
   val mshrCount = PopCount(Cat(mshrs.map(_.io.status.valid)))
-  val mshrFull = pipeReqCount + mshrCount >= mshrsAll.U
-  val a_mshrFull = pipeReqCount + mshrCount >= (mshrsAll-1).U // the last idle mshr should not be allocated for channel A req
+  val mshrFull = DynamicMshrHardware.isFull(pipeReqCount, mshrCount, io.dynMshrs)
+  val a_mshrFull = DynamicMshrHardware.isAFull(pipeReqCount, mshrCount, io.dynMshrs)
   val mshrSelector = Module(new MSHRSelector())
-  mshrSelector.io.idle := mshrs.map(m => !m.io.status.valid)
+  mshrSelector.io.idle := VecInit(DynamicMshrHardware.limitIdle(mshrs.map(m => !m.io.status.valid), io.dynMshrs))
   val selectedMSHROH = mshrSelector.io.out.bits
   io.toMainPipe.mshr_alloc_ptr := OHToUInt(selectedMSHROH)
   io.l2Miss := Cat(mshrs.map { m =>
