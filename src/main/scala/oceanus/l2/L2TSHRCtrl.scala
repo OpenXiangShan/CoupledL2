@@ -13,6 +13,7 @@ import oceanus.l2.tshr._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.util.SeqBoolBitwiseOps
 import freechips.rocketchip.util.SeqToAugmentedSeq
+import oceanus.compactchi.CCHIOpcode._
 
 
 class L2TSHRTarget extends Bundle {
@@ -166,7 +167,7 @@ class L2TSHRAlloc(val config: L2TSHRAllocConfig)(implicit val p: Parameters) ext
   }}
 
   val postcluster_isL1EVT = postcluster.map(p => p.bits.target.EVT)
-  val postcluster_isL2EVT = postcluster.map(p => p.bits.target.REQ && p.bits.opcode === 0.U) // TODO: replace with actual opcode check for L2EVT
+  val postcluster_isL2EVT = postcluster.map(p => p.bits.target.REQ && p.bits.opcode === EvictBack.U)
   val postcluster_isL3SNP = postcluster.map(p => p.bits.target.SNP)
 
   val postcluster_paddr_match_mat = Wire(Vec(clusterCount, Vec(clusterCount, Bool())))
