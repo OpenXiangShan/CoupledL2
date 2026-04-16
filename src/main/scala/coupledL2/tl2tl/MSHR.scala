@@ -372,15 +372,14 @@ class MSHR(implicit p: Parameters) extends L2Module {
     mp_grant.corrupt := corrupt
 
     // Add merge grant task for Acquire and late Prefetch
-    mp_grant.mergeA := mergeA || io.aMergeTask.valid
-    val merge_task_r = RegEnable(io.aMergeTask.bits, 0.U.asTypeOf(new TaskBundle), io.aMergeTask.valid)
-    val merge_task = merge_task_r
-    val merge_task_isKeyword = merge_task_r.isKeyword.getOrElse(false.B)
+    mp_grant.mergeA := mergeA
+
+    val merge_task = RegEnable(io.aMergeTask.bits, 0.U.asTypeOf(new TaskBundle), io.aMergeTask.valid)
 
     mp_grant.aMergeTask.off := merge_task.off
     mp_grant.aMergeTask.alias.foreach(_ := merge_task.alias.getOrElse(0.U))
     mp_grant.aMergeTask.vaddr.foreach(_ := merge_task.vaddr.getOrElse(0.U))
-    mp_grant.aMergeTask.isKeyword.foreach(_ := merge_task_isKeyword)
+    mp_grant.aMergeTask.isKeyword.foreach(_ := merge_task.isKeyword.getOrElse(false.B))
     mp_grant.aMergeTask.opcode := odOpGen(merge_task.opcode)
     mp_grant.aMergeTask.param := MuxLookup( // Acquire -> Grant
       merge_task.param,
@@ -572,6 +571,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
   io.msInfo.bits.mergeA := mergeA
   io.msInfo.bits.w_grantfirst := state.w_grantfirst
   io.msInfo.bits.w_grantlast := state.w_grantlast
+  io.msInfo.bits.w_grant := state.w_grant
   io.msInfo.bits.s_refill := state.s_refill
   io.msInfo.bits.s_release := state.s_release
   io.msInfo.bits.s_cmoresp := true.B
