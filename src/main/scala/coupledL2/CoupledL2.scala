@@ -138,6 +138,7 @@ trait HasCoupledL2Parameters {
   // width params without bank idx (used in slice)
   def addressBits = fullAddressBits - bankBits
   def tagBits = fullTagBits - bankBits
+  def extTagBits = tagBits + setBits
 
   def outerSinkBits = edgeOut.bundle.sinkBits
 
@@ -244,6 +245,57 @@ trait HasCoupledL2Parameters {
   }
 }
 
+object DynamicSetMath {
+  def isPow2(value: Int): Boolean = value > 0 && (value & (value - 1)) == 0
+
+  def dynSetBits(runtimeSets: Int): Int = {
+    require(isPow2(runtimeSets), s"runtimeSets must be power-of-two, got $runtimeSets")
+    var bits = 0
+    var value = runtimeSets
+    while (value > 1) {
+      value = value >> 1
+      bits += 1
+    }
+    bits
+  }
+
+  def maskedSet(set: BigInt, runtimeSets: Int): BigInt = {
+    val mask = (BigInt(1) << dynSetBits(runtimeSets)) - 1
+    set & mask
+  }
+
+  def extendedTag(tag: BigInt, set: BigInt, runtimeSets: Int, staticSetBits: Int): BigInt = {
+    val shift = dynSetBits(runtimeSets)
+    require(
+      staticSetBits >= shift,
+      s"staticSetBits ($staticSetBits) must cover runtimeSets ($runtimeSets)"
+    )
+    val highSet = set >> shift
+    (tag << (staticSetBits - shift)) | highSet
+  }
+}
+
+object DynamicSetHardware {
+  def dynSetBits(runtimeSets: UInt): UInt = Log2(runtimeSets)
+
+  def dynSetMask(set: UInt, dynSetBits: UInt): UInt = {
+    val setWidth = set.getWidth
+    val fullMask = ((BigInt(1) << setWidth) - 1).U(setWidth.W)
+    Mux(dynSetBits === 0.U, 0.U(setWidth.W), set & (fullMask >> (setWidth.U - dynSetBits)))
+  }
+
+  def extendTag(tag: UInt, set: UInt, dynSetBits: UInt): UInt = {
+    Cat(tag, set >> dynSetBits)
+  }
+
+  def reconstructSet(storedExtTag: UInt, maskedSet: UInt, dynSetBits: UInt, staticSetBits: Int): UInt = {
+    val fullSet = Wire(UInt(staticSetBits.W))
+    val storedSetFrag = storedExtTag(staticSetBits - 1, 0)
+    fullSet := ((storedSetFrag << dynSetBits) | maskedSet)(staticSetBits - 1, 0)
+    fullSet
+  }
+}
+
 abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with HasCoupledL2Parameters {
 
   val xfer = TransferSizes(blockBytes, blockBytes)
@@ -320,6 +372,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
 
     val io = IO(new Bundle {
       val hartId = Input(UInt(hartIdLen.W))
+      val sets = Input(UInt(64.W))
       val pfCtrlFromCore = Input(new PrefetchCtrlFromCore)
     //  val l2_hint = Valid(UInt(32.W))
       val l2_hint = ValidIO(new L2ToL1Hint())
@@ -451,6 +504,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         }
         in.b.bits.address := restoreAddress(slice.io.in.b.bits.address, i)
         slice.io.sliceId := i.U
+        slice.io.dynSets := io.sets
 
         slice.io.error.ready := enableECC.asBool // TODO: fix the datapath as optional
 

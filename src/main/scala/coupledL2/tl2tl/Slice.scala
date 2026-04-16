@@ -93,11 +93,13 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   directory.io.resp.bits <> mainPipe.io.dirResp_s3
   directory.io.metaWReq <> mainPipe.io.metaWReq
   directory.io.tagWReq <> mainPipe.io.tagWReq
+  directory.io.dynSets := io.dynSets
   directory.io.msInfo <> mshrCtl.io.msInfo
 
   dataStorage.io.en := mainPipe.io.toDS.en_s3
   dataStorage.io.req <> mainPipe.io.toDS.req_s3
   dataStorage.io.wdata := mainPipe.io.toDS.wdata_s3
+  dataStorage.io.dynSets := io.dynSets
 
   mainPipe.io.toMSHRCtl <> mshrCtl.io.fromMainPipe
   mainPipe.io.fromMSHRCtl <> mshrCtl.io.toMainPipe

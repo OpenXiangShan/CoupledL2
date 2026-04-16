@@ -52,6 +52,7 @@ class DataStorage(implicit p: Parameters) extends L2Module {
     // en is the actual r/w valid from mainpipe (last for one cycle)
     // en is used to generate gated_clock for SRAM
     val en = Input(Bool())
+    val dynSets = Input(UInt(64.W))
 
     // ECC error
     val error = Output(Bool())
@@ -80,7 +81,9 @@ class DataStorage(implicit p: Parameters) extends L2Module {
   array.io_en := io.en
   private val mbistPl = MbistPipeline.PlaceMbistPipeline(1, "L2DataStorage", p(L2ParamKey).hasMbist)
 
-  val arrayIdx = Cat(io.req.bits.way, io.req.bits.set)
+  val dynSetBits = DynamicSetHardware.dynSetBits(io.dynSets)
+  val maskedSet = DynamicSetHardware.dynSetMask(io.req.bits.set, dynSetBits)
+  val arrayIdx = Cat(io.req.bits.way, maskedSet)
   val wen = io.req.valid && io.req.bits.wen
   val ren = io.req.valid && !io.req.bits.wen
 
@@ -125,6 +128,9 @@ class DataStorage(implicit p: Parameters) extends L2Module {
 
   assert(!(RegNext(io.en) && (io.req.asUInt =/= RegNext(io.req.asUInt))),
     s"DataStorage req fails to hold for 2 cycles!")
+
+  assert(!(RegNext(io.en) && (arrayIdx.asUInt =/= RegNext(arrayIdx.asUInt))),
+    s"DataStorage array index fails to hold for 2 cycles!")
 
   assert(!(RegNext(io.en && io.req.bits.wen) && (io.wdata.asUInt =/= RegNext(io.wdata.asUInt))),
     s"DataStorage wdata fails to hold for 2 cycles!")

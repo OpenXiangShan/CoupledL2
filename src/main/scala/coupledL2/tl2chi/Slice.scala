@@ -84,11 +84,13 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   directory.io.read <> reqArb.io.dirRead_s1
   directory.io.metaWReq := mainPipe.io.metaWReq
   directory.io.tagWReq := mainPipe.io.tagWReq
+  directory.io.dynSets := io.dynSets
   directory.io.msInfo := mshrCtl.io.msInfo
 
   dataStorage.io.en := mainPipe.io.toDS.en_s3
   dataStorage.io.req := mainPipe.io.toDS.req_s3
   dataStorage.io.wdata := mainPipe.io.toDS.wdata_s3
+  dataStorage.io.dynSets := io.dynSets
 
   reqArb.io.ATag := reqBuf.io.ATag
   reqArb.io.ASet := reqBuf.io.ASet

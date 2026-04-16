@@ -30,6 +30,7 @@ abstract class BaseSliceIO[T_OUT <: BaseOuterBundle](implicit p: Parameters) ext
   val in = Flipped(TLBundle(edgeIn.bundle))
   val out: T_OUT
   val sliceId = Input(UInt(bankBits.W))
+  val dynSets = Input(UInt(64.W))
   val l1Hint = DecoupledIO(new L2ToL1Hint())
   val prefetch = prefetchOpt.map(_ => Flipped(new PrefetchIO))
   // val msStatus = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRStatus)))
