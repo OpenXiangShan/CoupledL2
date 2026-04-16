@@ -90,11 +90,11 @@ class TwoLevelRRArbiter[T <: Data](gen: T, n: Int) extends L2FastArbiterBase[T](
   val mid = n / 2
   val rest = n - mid
 
-  val chosenOHLow = Wire(UInt(mid.W))
-  val chosenOHHigh = Wire(UInt(rest.W))
+  val chosenOHLow =  Wire(if (mid != 0) UInt(mid.W) else 0.U(0.W))
+  val chosenOHHigh = Wire(if (rest != 0) UInt(rest.W) else 0.U(0.W))
   val valids = VecInit(io.in.map(_.valid)).asUInt
-  val validsLow = valids(mid - 1, 0)
-  val validsHigh = valids(n - 1, mid)
+  val validsLow = if (mid != 0) valids(mid - 1, 0) else 0.U(0.W)
+  val validsHigh = if (rest != 0) valids(n - 1, mid) else 0.U(0.W)
   val fireLow, fireHigh = WireDefault(false.B)
 
   val selLow = RegInit(false.B)
@@ -119,21 +119,21 @@ class TwoLevelRRArbiter[T <: Data](gen: T, n: Int) extends L2FastArbiterBase[T](
     0.U(rest.W),
     fireHigh
   )
-  val rrGrantMaskLow = RegEnable(VecInit((0 until mid) map { i =>
+  val rrGrantMaskLow = if (mid != 0) RegEnable(VecInit((0 until mid) map { i =>
     if(i == 0) false.B else chosenOHLow(i - 1, 0).orR
-  }).asUInt, 0.U(mid.W), fireLow)
-  val rrGrantMaskHigh = RegEnable(VecInit((0 until rest) map { i =>
+  }).asUInt, 0.U(mid.W), fireLow) else RegInit(0.U(0.W))
+  val rrGrantMaskHigh = if (rest != 0) RegEnable(VecInit((0 until rest) map { i =>
     if(i == 0) false.B else chosenOHHigh(i - 1, 0).orR
-  }).asUInt, 0.U(rest.W), fireHigh)
-  val rrSelOHLow = VecInit(maskToOH((rrGrantMaskLow & pendingMaskLow).asBools)).asUInt & Cat(Seq.fill(mid)(selLow))
-  val rrSelOHHigh = VecInit(maskToOH((rrGrantMaskHigh & pendingMaskHigh).asBools)).asUInt & Cat(Seq.fill(rest)(!selLow))
+  }).asUInt, 0.U(rest.W), fireHigh) else RegInit(0.U(0.W))
+  val rrSelOHLow = if (mid != 0) VecInit(maskToOH((rrGrantMaskLow & pendingMaskLow).asBools)).asUInt & Cat(Seq.fill(mid)(selLow)) else 0.U(0.W)
+  val rrSelOHHigh = if (rest != 0) VecInit(maskToOH((rrGrantMaskHigh & pendingMaskHigh).asBools)).asUInt & Cat(Seq.fill(rest)(!selLow)) else 0.U(0.W)
   val rrSelOH = Cat(rrSelOHHigh, rrSelOHLow)
   assert(PopCount(rrSelOH) <= 1.U)
   val rrValid = (rrSelOH & valids).orR
-  val firstOneOH = VecInit(maskToOH(valids.asBools)).asUInt
+  val firstOneOH = if (n != 0) VecInit(maskToOH(valids.asBools)).asUInt else 0.U(0.W)
   val chosenOH = Mux(rrValid, rrSelOH, firstOneOH)
-  chosenOHLow := chosenOH(mid - 1, 0)
-  chosenOHHigh := chosenOH(n - 1, mid)
+  chosenOHLow := {if (mid != 0) chosenOH(mid - 1, 0) else 0.U(0.W)}
+  chosenOHHigh := {if (rest != 0) chosenOH(n - 1, mid) else 0.U(0.W)}
   assert(PopCount(chosenOH) <= 1.U)
   fireLow := (chosenOHLow & validsLow).orR
   fireHigh := (chosenOHHigh & validsHigh).orR
