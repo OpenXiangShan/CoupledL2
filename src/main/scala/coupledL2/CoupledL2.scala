@@ -217,7 +217,7 @@ trait HasCoupledL2Parameters {
   }
 
   def fastArb[T <: Bundle](in: Seq[DecoupledIO[T]], out: DecoupledIO[T], name: Option[String] = None)(implicit p: Parameters): Unit = {
-    val arb = Module(new HalfFastArbiter[T](chiselTypeOf(out.bits), in.size))
+    val arb = Module(new TwoLevelRRArbiter[T](chiselTypeOf(out.bits), in.size))
     if (name.nonEmpty) { arb.suggestName(s"${name.get}_arb") }
     for ((a, req) <- arb.io.in.zip(in)) { a <> req }
     out <> arb.io.out

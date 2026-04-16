@@ -419,8 +419,8 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
   val valids = Seq.fill(REQ_FILTER_SIZE)(RegInit(false.B))
   val entries = Seq.fill(REQ_FILTER_SIZE)(Reg(new BopReqBufferEntry))
   //val replacement = ReplacementPolicy.fromString("plru", REQ_FILTER_SIZE)
-  val tlb_req_arb = Module(new HalfFastArbiter(new L2TlbReq, REQ_FILTER_SIZE))
-  val pf_req_arb = Module(new HalfFastArbiter(new PrefetchReq, REQ_FILTER_SIZE))
+  val tlb_req_arb = Module(new TwoLevelRRArbiter(new L2TlbReq, REQ_FILTER_SIZE))
+  val pf_req_arb = Module(new TwoLevelRRArbiter(new PrefetchReq, REQ_FILTER_SIZE))
   ArbPerf(tlb_req_arb, "bop_tlb_req_arb")
   ArbPerf(pf_req_arb, "bop_pf_req_arb")
 
