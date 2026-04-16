@@ -26,7 +26,7 @@ case class CDPParameters(
   VpnResetPeriod:       Int = 128,    // Every $VpnResetPeriod visits, VPN entries will be reset
   EntryBits:            Int = 20,     // Every SubEntry maintain for 2^20 Bits = 1M space
 
-  Degree:   Int = 3,      // issue how many prefetch req?
+  Degree:   Int = 1,      // issue how many prefetch req?
 
   debug: Boolean = false
 
@@ -968,7 +968,7 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
   // Train Req
   val train_trig_queue = Module(new Queue(new CDPTrainTrigger, 8))
   train_trig_queue.io.enq.valid := train.valid && enable
-  train_trig_queue.io.enq.bits.vaddr := train.bits.vaddr.getOrElse(0.U)
+  train_trig_queue.io.enq.bits.vaddr := train.bits.vaddr.getOrElse(0.U) << log2Ceil(blockBytes)   // get fullVaddr!
   train.ready := train_trig_queue.io.enq.ready
   //assert(!train_trig_queue.io.enq.valid | train_trig_queue.io.enq.ready, "l1_demand_hit_train_trigger should always be ready to accept new trigger!")
 
