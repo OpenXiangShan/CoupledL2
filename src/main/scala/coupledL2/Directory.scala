@@ -137,7 +137,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     val msInfo = Vec(mshrsAll, Flipped(ValidIO(new MSHRInfo)))
   })
 
-  def invalid_way_sel(metaVec: Seq[MetaEntry], repl: UInt) = {
+  def invalid_way_sel(metaVec: Seq[MetaEntry]) = {
     val invalid_vec = metaVec.map(_.state === MetaData.INVALID)
     val has_invalid_way = Cat(invalid_vec).orR
     val way = ParallelPriorityMux(invalid_vec.zipWithIndex.map(x => x._1 -> x._2.U(wayBits.W)))
@@ -277,11 +277,11 @@ class Directory(implicit p: Parameters) extends L2Module {
   )).reduceTree(_ | _)
 
   val freeWayMask_s3 = RegEnable(~occWayMask_s2, refillReqValid_s2)
-  val refillRetry = !(freeWayMask_s3.orR)
+  val refillRetry = RegEnable(occWayMask_s2.andR, refillReqValid_s2)
 
   val hitWay = OHToUInt(hitVec)
   val replaceWay = WireInit(UInt(wayBits.W), 0.U)
-  val (inv, invalidWay) = invalid_way_sel(metaAll_s3, replaceWay)
+  val (inv, invalidWay) = invalid_way_sel(metaAll_s3)
   val chosenWay = Mux(inv, invalidWay, replaceWay)
   // if chosenWay not in wayMask, then choose a way in wayMask
   // for retry bug fixing: if the chosenway cause retry last time, choose another way
