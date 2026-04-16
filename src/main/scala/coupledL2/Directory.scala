@@ -383,7 +383,9 @@ class Directory(implicit p: Parameters) extends L2Module {
   // [0]: 0-not-refill, 1-refill
   rrip_req_type := Cat(OHMux(hitOH, origin_bits_hold),
     req_s3.replacerInfo.channel(2),
-    (!refillReqValid_s3 && req_s3.replacerInfo.channel(0) && req_s3.replacerInfo.opcode === Hint) || (req_s3.replacerInfo.channel(2) && OHMux(wayOH_s3, metaAll_s3).prefetch.getOrElse(false.B)) || (refillReqValid_s3 && req_s3.replacerInfo.refill_prefetch),
+    (!refillReqValid_s3 && req_s3.replacerInfo.channel(0) && req_s3.replacerInfo.opcode === Hint) ||
+      (req_s3.replacerInfo.channel(2) && OHMux(wayOH_s3, metaAll_s3).prefetch.getOrElse(false.B)) ||
+      (refillReqValid_s3 && req_s3.replacerInfo.refill_prefetch),
     req_s3.refill
   )
   private val mbistPl = MbistPipeline.PlaceMbistPipeline(1, "L2Directory", mbist)
