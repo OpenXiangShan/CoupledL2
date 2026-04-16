@@ -276,7 +276,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     */
   // whether L2 should do forwarding or not
   val expectFwd = isSnpXFwd(req_s3.chiOpcode.get)
-  val canFwd = nestable_dirResult_s3.hit && !(Mux(req_s3.snpHitRelease, req_s3.snpHitReleaseMeta.tagErr, io.metaOnHit_s3.tagErr) || io.errOnSnp_s3)
+  val canFwd = nestable_dirResult_s3.hit &&
+    !(Mux(req_s3.snpHitRelease, req_s3.snpHitReleaseMeta.tagErr, io.metaOnHit_s3.tagErr) || io.errOnSnp_s3)
   val doFwd = expectFwd && canFwd
   val need_pprobe_s3_b_snpStable = req_s3.fromB && (
     isSnpOnceX(req_s3.chiOpcode.get) || isSnpQuery(req_s3.chiOpcode.get) || isSnpStashX(req_s3.chiOpcode.get)
@@ -291,7 +292,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     isSnpMakeInvalidX(req_s3.chiOpcode.get)
   ) && dirResult_s3.hit && metaOnHit_has_clients_s3
   val need_pprobe_s3_b_snpNDERR = req_s3.fromB && (io.errOnSnp_s3 || io.metaOnHit_s3.tagErr) && dirResult_s3.hit
-  val need_pprobe_s3_b = need_pprobe_s3_b_snpStable || need_pprobe_s3_b_snpToB || need_pprobe_s3_b_snpToN || need_pprobe_s3_b_snpNDERR
+  val need_pprobe_s3_b = need_pprobe_s3_b_snpStable || need_pprobe_s3_b_snpToB ||
+    need_pprobe_s3_b_snpToN || need_pprobe_s3_b_snpNDERR
   val need_dct_s3_b = doFwd // DCT
   val need_mshr_s3_b = need_pprobe_s3_b || need_dct_s3_b
 
