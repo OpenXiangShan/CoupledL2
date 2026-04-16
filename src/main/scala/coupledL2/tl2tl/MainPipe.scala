@@ -404,7 +404,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
   io.tagWReq.valid     := task_s3.valid && req_s3.tagWen && mshr_refill_s3 && !retry
   io.tagWReq.bits.set  := req_s3.set
-  io.tagWReq.bits.way  := Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.way, req_s3.way)
+  io.tagWReq.bits.wayOH  := UIntToOH(Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.way, req_s3.way))
   io.tagWReq.bits.wtag := req_s3.tag
 
   /* ======== Interact with Channels (C & D) ======== */
