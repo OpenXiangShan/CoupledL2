@@ -34,6 +34,9 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   val io = IO(new Bundle() {
     /* receive task from arbiter at stage 2 */
     val taskFromArb_s2 = Flipped(ValidIO(new TaskBundle()))
+    /* receive s1 info for Hint */
+    val mshrHintQInfo = Flipped(ValidIO(new TaskBundle))
+    val sinkCHintQInfo = Flipped(ValidIO(new TaskBundle))
 
     /* handle set conflict in req arb */
     val fromReqArb = Input(new Bundle() {
@@ -97,8 +100,6 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
     /* send Hint to L1 */
     val l1Hint = DecoupledIO(new L2ToL1Hint())
-    /* receive s1 info for Hint */
-    val taskInfo_s1 = Flipped(ValidIO(new TaskBundle()))
 
     /* send prefetchTrain to Prefetch to trigger a prefetch req */
     val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain))
@@ -544,7 +545,8 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
   val customL1Hint = Module(new CustomL1Hint)
 
-  customL1Hint.io.s1 := io.taskInfo_s1
+  customL1Hint.io.mshrHintQInfo := io.mshrHintQInfo
+  customL1Hint.io.sinkCHintQInfo := io.sinkCHintQInfo
   
   customL1Hint.io.s3.task      := task_s3
   // overwrite opcode: if sinkReq can respond, use sink_resp_s3.bits.opcode = Grant/GrantData
