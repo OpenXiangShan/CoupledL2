@@ -683,6 +683,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_probeack.cmoTask := cmo_cbo
     mp_probeack.mergeA := false.B
     mp_probeack.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+    mp_probeack.denied := denied
+    mp_probeack.corrupt := corrupt
 
     // CHI
     mp_probeack.tgtID.get := req.srcID.get
