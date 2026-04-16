@@ -69,11 +69,15 @@ test-top-chi-quadcore-0ul:
 test-top-chi-quadcore-2ul:
 	$(MAKE) gen-test-top-chi SYSTEM=CHIL2 $(CHI_PASS_ARGS) NUM_CORE=4 NUM_TL_UL=2
 
-ut-oceanus-L2TSHRAlloc:
+ut-sv-oceanus-L2TSHRAlloc:
 	mill -i CoupledL2.test.runMain oceanus.TestTop_L2TSHRAlloc -td $(BUILD_DIR) --target systemverilog --split-verilog
+
+ut-cc-oceanus-L2TSHRAlloc: ut-sv-oceanus-L2TSHRAlloc
+	verilator ./build/*.*v --Mdir ./verilated --cc --top TestTop_L2TSHRAlloc
 
 clean:
 	rm -rf ./build
+	rm -rf ./verilated
 
 bsp:
 	mill -i mill.bsp.BSP/install

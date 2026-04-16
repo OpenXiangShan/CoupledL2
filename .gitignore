@@ -7,3 +7,4 @@ build/
 .bloop/
 .metals/
 .vscode/
+verilated/
