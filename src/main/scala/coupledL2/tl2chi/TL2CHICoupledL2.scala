@@ -129,7 +129,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
     slices match {
       case slices: Seq[Slice] =>
         // TXREQ
-        val txreq_arb = Module(new HalfFastArbiter(new CHIREQ, slices.size + 1)) // plus 1 for MMIO
+        val txreq_arb = Module(new TwoLevelRRArbiter(new CHIREQ, slices.size + 1)) // plus 1 for MMIO
         ArbPerf(txreq_arb, "txreq_arb")
         val txreq = Wire(DecoupledIO(new CHIREQ))
         slices.zip(txreq_arb.io.in.init).foreach { case (s, in) => in <> s.io.out.tx.req }

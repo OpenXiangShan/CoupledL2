@@ -382,7 +382,7 @@ class MMIOBridgeImp(outer: MMIOBridge) extends LazyModuleImp(outer)
     entry.io.id := i.U
   }
 
-  val txreqArb = Module(new HalfFastArbiter(chiselTypeOf(io.tx.req.bits), mmioBridgeSize))
+  val txreqArb = Module(new TwoLevelRRArbiter(chiselTypeOf(io.tx.req.bits), mmioBridgeSize))
   ArbPerf(txreqArb, "mmio_txreq_arb")
   for ((a, entry) <- txreqArb.io.in.zip(entries)) {
     val req = entry.io.chi.tx.req
