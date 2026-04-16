@@ -14,10 +14,10 @@ class TestTop_L2TSHRAlloc()(implicit val p: Parameters) extends Module with HasL
 
   val io = IO(new Bundle {
 
-    val fromTSHR = Flipped(Vec(paramL2.mshrSize, Valid(new PathFromTSHR)))
-    val toTSHR = Output(Vec(paramL2.mshrSize, new PathToTSHR))
+    val fromTSHR = Flipped(Vec(paramL2.mshrSize, Valid(new L2TSHRAlloc.PathFromTSHR)))
+    val toTSHR = Output(Vec(paramL2.mshrSize, new L2TSHRAlloc.PathToTSHR))
 
-    val fromTSHRCtrl = new PathFromTSHRCtrl
+    val fromTSHRCtrl = new L2TSHRAlloc.PathFromTSHRCtrl
   })
 
   val config = new L2TSHRAllocConfig(
@@ -41,7 +41,8 @@ object TestTopFirtoolOptions {
     FirtoolOption("--disable-annotation-unknown"),
     FirtoolOption("--repl-seq-mem"),
     FirtoolOption("--repl-seq-mem-file=TestTop.sv.conf"),
-    FirtoolOption("--lowering-options=explicitBitcast")
+    FirtoolOption("--lowering-options=explicitBitcast"),
+    FirtoolOption("--default-layer-specialization=enable")
   )
 }
 
@@ -50,7 +51,7 @@ object TestTop_L2TSHRAlloc extends App {
   val config = new Config((_, _, _) => {
     case L2ParamsKey => L2Params (
       physicalAddrWidth = 48,
-      mshrSize = 32
+      mshrSize = 16
     )
     case CHIParametersKey => CHIParameters (
       issue = EnumCHIIssue.E,

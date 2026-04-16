@@ -73,21 +73,24 @@ class L2TSHRAllocConfig(val cluster: Seq[Seq[L2TSHRAllocTarget]], val resv: Seq[
   resv.map(_._1).foreach(i => require(i < paramL2.mshrSize, s"Reservation target index out of bounds (mshrSize = ${paramL2.mshrSize}), current: ${resv}"))
 }
 
-class PathFromTSHR(implicit val p: Parameters) extends Bundle with HasL2Params {
-  val paddr = UInt(paramL2.physicalAddrWidth.W)
-  val busy = new L2TSHRTarget
-}
+object L2TSHRAlloc {
 
-class PathToTSHR(implicit val p: Parameters) extends Bundle with HasL2Params {
-  val paddr = UInt(paramL2.physicalAddrWidth.W)
-  val alloc = new L2TSHRTarget
-  val reuse = new L2TSHRTarget
-}
+  class PathFromTSHR(implicit val p: Parameters) extends Bundle with HasL2Params {
+    val paddr = UInt(paramL2.physicalAddrWidth.W)
+    val busy = new L2TSHRTarget
+  }
 
-class PathFromTSHRCtrl(implicit val p: Parameters) extends Bundle with HasL2Params {
-  val RXEVT = Flipped(Decoupled(new FlitEVT))
-  val RXSNP = Flipped(Decoupled(new CHIBundleSNP))
-  val RXREQ = Flipped(Decoupled(new FlitREQ))
+  class PathToTSHR(implicit val p: Parameters) extends Bundle with HasL2Params {
+    val paddr = UInt(paramL2.physicalAddrWidth.W)
+    val alloc = new L2TSHRTarget
+    val reuse = new L2TSHRTarget
+  }
+
+  class PathFromTSHRCtrl(implicit val p: Parameters) extends Bundle with HasL2Params {
+    val RXEVT = Flipped(Decoupled(new FlitEVT))
+    val RXSNP = Flipped(Decoupled(new CHIBundleSNP))
+    val RXREQ = Flipped(Decoupled(new FlitREQ))
+  }
 }
 
 class L2TSHRAlloc(val config: L2TSHRAllocConfig)(implicit val p: Parameters) extends Module with HasL2Params {
@@ -105,10 +108,10 @@ class L2TSHRAlloc(val config: L2TSHRAllocConfig)(implicit val p: Parameters) ext
 
   val io = IO(new Bundle {
 
-    val fromTSHR = Flipped(Vec(paramL2.mshrSize, Valid(new PathFromTSHR)))
-    val toTSHR = Output(Vec(paramL2.mshrSize, new PathToTSHR))
+    val fromTSHR = Flipped(Vec(paramL2.mshrSize, Valid(new L2TSHRAlloc.PathFromTSHR)))
+    val toTSHR = Output(Vec(paramL2.mshrSize, new L2TSHRAlloc.PathToTSHR))
 
-    val fromTSHRCtrl = new PathFromTSHRCtrl
+    val fromTSHRCtrl = new L2TSHRAlloc.PathFromTSHRCtrl
   })
 
   class ClusterBundle extends Bundle {
@@ -175,7 +178,7 @@ class L2TSHRAlloc(val config: L2TSHRAllocConfig)(implicit val p: Parameters) ext
         else true.B
   }))
 
-  val paddr_hit_vec = postcluster.map(p => io.fromTSHR.map(t => t.valid && (t.bits.paddr >> 6) === (p.bits.paddr >> 6)))
+  val paddr_hit_vec = postcluster.map(p => io.fromTSHR.map(t => t.valid && p.valid && (t.bits.paddr >> 6) === (p.bits.paddr >> 6)))
   val paddr_hit_any = paddr_hit_vec.map(ParallelOR(_))
 
   paddr_hit_vec.zipWithIndex.foreach { case (hit, idx) =>
@@ -227,16 +230,22 @@ class L2TSHRAlloc(val config: L2TSHRAllocConfig)(implicit val p: Parameters) ext
 
   alloc_vec.zipWithIndex.foreach { case (alloc_vec, cIdx) =>
     alloc_vec.zipWithIndex.foreach { case (alloc, tIdx) =>
-      alloc := can_alloc_vec(cIdx)(tIdx) && !alloc_vec_mask(cIdx)(tIdx) && !can_reuse_any(cIdx)
-  }}
+      alloc := can_alloc_vec(cIdx)(tIdx) && !alloc_vec_mask(cIdx)(tIdx) && !can_reuse_any(cIdx) && postcluster(cIdx).valid }
+    assert(PopCount(alloc_vec) <= 1.U, s"Multiple TSHR allocation on ${clusterName(cIdx)}")
+  }
 
   reuse_vec.zipWithIndex.foreach { case (reuse_vec, cIdx) =>
     reuse_vec.zipWithIndex.foreach { case (reuse, tIdx) => 
-      reuse := can_reuse_vec(cIdx)(tIdx) && !reuse_vec_mask(cIdx)(tIdx)
-  }}
+      reuse := can_reuse_vec(cIdx)(tIdx) && !reuse_vec_mask(cIdx)(tIdx) }
+    assert(PopCount(reuse_vec) <= 1.U, s"Multiple TSHR reuse on ${clusterName(cIdx)}")
+  }
 
   val alloc_any = alloc_vec.map(_.asUInt.orR)
   val reuse_any = reuse_vec.map(_.asUInt.orR)
+
+  alloc_any.zip(reuse_any).zipWithIndex.foreach { case ((a, r), cIdx) =>
+    assert(!a || !r, s"Both allocating and reusing TSHRs on ${clusterName(cIdx)}")
+  }
 
   postcluster.zipWithIndex.foreach { case (p, cIdx) => p.ready := alloc_any(cIdx) || reuse_any(cIdx) }
 
@@ -257,9 +266,17 @@ class L2TSHRAlloc(val config: L2TSHRAllocConfig)(implicit val p: Parameters) ext
       case _ => {}
   }}}}
 
+  assert((PopCount(io.toTSHR.map(_.alloc).asUInt) + PopCount(io.toTSHR.map(_.reuse).asUInt)) <= clusterCount.U, 
+    "Allocated and reused TSHRs more than cluster count")
+
   io.toTSHR.zipWithIndex.foreach { case (t, tIdx) =>
-    t.paddr := ParallelMux(alloc_vec.map(_(tIdx)).zip(reuse_vec.map(_(tIdx))).zipWithIndex.map 
-      { case ((alloc, reuse), cIdx) => (alloc, postcluster(cIdx).bits.paddr) /*'paddr' output valid only on allocation*/ }
+    t.paddr := ParallelMux(alloc_vec.map(_(tIdx)).zip(reuse_vec.map(_(tIdx))).zipWithIndex.map { 
+      case ((alloc, reuse), cIdx) => {
+        (alloc, postcluster(cIdx).bits.paddr, cIdx) /*'paddr' output valid only on allocation*/ 
+    }}.map { case (en, paddr, cIdx) => {
+      assert(!en || paddr === t.paddr, s"Disrupted PA output to TSHR ${tIdx} on ${clusterName(cIdx)}")
+      (en, paddr)
+    }}
   )}
 }
 
