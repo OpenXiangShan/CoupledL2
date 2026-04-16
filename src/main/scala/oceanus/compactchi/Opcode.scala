@@ -24,6 +24,7 @@ class CCHIOpcode(val channel : CCHIChannelType,
   * @return Literal UInt instance of opcode
   */
   def asUInt: UInt = opcode.U(channel.maxOpcodeWidth.W)
+  def U = asUInt
 
   /*
   * Software pre-elaboration time comparsion of opcode. 
