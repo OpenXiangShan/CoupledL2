@@ -280,7 +280,8 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     vbop.get.io.resp <> io.resp
     vbop.get.io.resp.valid := io.resp.valid && io.resp.bits.isBOP
     vbop.get.io.tlb_req <> io.tlb_req
-    vbop.get.io.pbopCrossPage := true.B // pbop.io.pbopCrossPage // let vbop have noting to do with pbop
+    vbop.get.io.pbopIssueActive := pbop.get.io.issueActive
+    vbop.get.io.pbopIssueOffset := pbop.get.io.issueOffset.pad(vbop.get.offsetWidth)
 
     pbop.get.io.enable := pbop_en
     pbop.get.io.pfCtrlOfDelayLatency := delay_latency
