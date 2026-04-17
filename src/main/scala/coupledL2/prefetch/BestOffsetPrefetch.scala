@@ -1212,14 +1212,18 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     val enable = Input(Bool())
     val pfCtrlOfDelayLatency = Input(UInt(10.W))
     val train = Flipped(DecoupledIO(new PrefetchTrain))
-    val pbopCrossPage = Input(Bool())
+    val pbopIssueActive = Input(Bool())
+    val pbopIssueOffset = Input(SInt(offsetWidth.W))
     val tlb_req = new L2ToL1TlbIO(nRespDups= 1)
     val req = DecoupledIO(new PrefetchReq)
     val resp = Flipped(DecoupledIO(new PrefetchResp))
   })
   // 0 / 1: whether to enable
   private val cstEnable = Constantin.createRecord("vbop_enable"+cacheParams.hartId.toString, initValue = 1)
+  private val cstAvoidPbopOverlap =
+    Constantin.createRecord("vbop_avoid_pbop_overlap"+cacheParams.hartId.toString, initValue = 1)
   val enable = io.enable && cstEnable.orR
+  val avoidPbopOverlap = cstAvoidPbopOverlap.orR
 
   val delayQueue = Module(new DelayQueue("vbop"))
   val rrTable = Module(new RecentRequestTable("vbop"))
@@ -1227,7 +1231,6 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   val student = if (enableStudentCover) Some(Module(new StudentCoverageLearner("vbop"))) else None
   val studentTrainReady = student.map(_.io.trainReady).getOrElse(true.B)
 
-  val s0_fire = scoreTable.io.req.fire && io.pbopCrossPage
   val s1_fire = WireInit(false.B)
   val s0_ready, s1_ready = WireInit(false.B)
 
@@ -1245,6 +1248,14 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   val s0_newFullAddr = s0_oldFullAddr + signedExtend((issueOffset << offsetBits), fullAddrBits)
   val s0_newPaddr = io.train.bits.addr + signedExtend((issueOffset << offsetBits), fullAddressBits)
   val s0_crossPage = getPPN(s0_newFullAddr) =/= getPPN(s0_oldFullAddr) // unequal tags
+  val vbopAvoidedByPbop =
+    avoidPbopOverlap &&
+    enable &&
+    issueEnable &&
+    !s0_crossPage &&
+    io.pbopIssueActive &&
+    io.pbopIssueOffset === issueOffset.asSInt
+  val s0_fire = scoreTable.io.req.fire && !vbopAvoidedByPbop
 
   rrTable.io.r <> scoreTable.io.test
   rrTable.io.w <> delayQueue.io.out
@@ -1356,6 +1367,7 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   }else{
     XSPerfAccumulate("bop_cross_page", scoreTable.io.req.fire && s0_crossPage)
   }
+  XSPerfAccumulate("bop_drop_for_pbop_overlap", scoreTable.io.req.fire && vbopAvoidedByPbop)
   XSPerfAccumulate("bop_drop_for_disable", scoreTable.io.req.fire && prefetchDisable)
   XSPerfAccumulate("bop_student_takeover", scoreTable.io.req.fire && studentSelectedEnable)
 }
@@ -1365,7 +1377,8 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     val enable = Input(Bool())
     val pfCtrlOfDelayLatency = Input(UInt(10.W))
     val train = Flipped(DecoupledIO(new PrefetchTrain))
-    val pbopCrossPage = Output(Bool())
+    val issueActive = Output(Bool())
+    val issueOffset = Output(SInt(offsetWidth.W))
     val req = DecoupledIO(new PrefetchReq)
     val resp = Flipped(DecoupledIO(new PrefetchResp))
   })
@@ -1422,7 +1435,8 @@ class PBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
     req_valid := !crossPageReq && issueEnable // stop prefetch when prefetch req crosses pages
   }
 
-  io.pbopCrossPage := crossPageReq
+  io.issueActive := enable && issueEnable
+  io.issueOffset := issueOffset.asSInt
   io.req.valid := enable && req_valid
   io.req.bits := req
   io.req.bits.pfSource := MemReqSource.Prefetch2L2PBOP.id.U
