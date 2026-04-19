@@ -328,6 +328,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       val pfCtrlFromCore = Input(new PrefetchCtrlFromCore)
     //  val l2_hint = Valid(UInt(32.W))
       val l2_hint = ValidIO(new L2ToL1Hint())
+      val matrixDataOut = Vec(banks, DecoupledIO(new MatrixDataBundle()))
       val l2_tlb_req = new L2ToL1TlbIO(nRespDups = 1)(l2TlbParams)
       val debugTopDown = new Bundle {
         val robTrueCommit = Input(UInt(64.W))
@@ -433,7 +434,6 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
             }))
           } else {
             Module(new tl2tl.Slice()(p.alterPartial {
-              case EdgeInKey => edgeIn
               case EdgeOutKey => edgeOut
               case BankBitsKey => bankBits
               case SliceIdKey => i
@@ -456,6 +456,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         }
         in.b.bits.address := restoreAddress(slice.io.in.b.bits.address, i)
         slice.io.sliceId := i.U
+        io.matrixDataOut(i) <> slice.io.matrixDataOut
 
         slice.io.error.ready := enableECC.asBool // TODO: fix the datapath as optional
 

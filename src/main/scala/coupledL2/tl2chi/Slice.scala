@@ -63,6 +63,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   sinkC.io.msInfo := mshrCtl.io.msInfo
 
   grantBuf.io.d_task <> mainPipe.io.toSourceD
+  io.matrixDataOut <> grantBuf.io.matrixDataOut
   grantBuf.io.fromReqArb.status_s1 := reqArb.io.status_s1
   grantBuf.io.pipeStatusVec := reqArb.io.status_vec ++ mainPipe.io.status_vec_toD
 

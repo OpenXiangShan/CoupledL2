@@ -29,6 +29,7 @@ trait BaseOuterBundle
 abstract class BaseSliceIO[T_OUT <: BaseOuterBundle](implicit p: Parameters) extends L2Bundle {
   val in = Flipped(TLBundle(edgeIn.bundle))
   val out: T_OUT
+  val matrixDataOut = DecoupledIO(new MatrixDataBundle())
   val sliceId = Input(UInt(bankBits.W))
   val l1Hint = DecoupledIO(new L2ToL1Hint())
   val prefetch = prefetchOpt.map(_ => Flipped(new PrefetchIO))
