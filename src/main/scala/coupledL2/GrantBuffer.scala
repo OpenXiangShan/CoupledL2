@@ -65,6 +65,9 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     val d = DecoupledIO(new TLBundleD(edgeIn.bundle))
     val e = Flipped(DecoupledIO(new TLBundleE(edgeIn.bundle)))
 
+    // response to Matrix Unit
+    val matrixDataOut = DecoupledIO(new MatrixDataBundle())
+
     // for MainPipe entrance blocking
     val fromReqArb = Input(new Bundle() {
       val status_s1 = new PipeEntranceStatus
@@ -186,38 +189,56 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   val deqId   = grantQueue.io.deq.bits.grantid
   val deqData = VecInit(Seq(grantQueueData0.io.deq.bits.data, grantQueueData1.io.deq.bits.data))
 
-  // grantBuf: to keep the remaining unsent beat of GrantData
-  val grantBufValid = RegInit(false.B)
-  val grantBuf =  RegInit(0.U.asTypeOf(new Bundle() {
-    val task = new TaskBundle()
-    val data = new DSBeat()
-    val grantid = UInt(mshrBits.W)
-  }))
+  val toMatrix = deqTask.matrixTask && deqTask.opcode === AccessAckData
 
-  grantQueue.io.deq.ready := io.d.ready && !grantBufValid
-  grantQueueData0.io.deq.ready := grantQueue.io.deq.ready
-  grantQueueData1.io.deq.ready := grantQueue.io.deq.ready
+  when (toMatrix) {
+    grantQueue.io.deq.ready := io.matrixDataOut.ready
+    grantQueueData0.io.deq.ready := io.matrixDataOut.ready
+    grantQueueData1.io.deq.ready := io.matrixDataOut.ready
 
-  // if deqTask has data, send the first beat directly and save the remaining beat in grantBuf
-  when(deqValid && io.d.ready && !grantBufValid && deqTask.opcode(0)) {
-    grantBufValid := true.B
-    grantBuf.task := deqTask
-    grantBuf.task.isKeyword.foreach(_ := deqTask.isKeyword.getOrElse(false.B))
-   // grantBuf.data := deqData(1)
-   grantBuf.data := Mux(deqTask.isKeyword.getOrElse(false.B),deqData(0),deqData(1))
-    grantBuf.grantid := deqId
+    io.d.valid := false.B
+    io.d.bits := DontCare
+    io.matrixDataOut.valid := deqValid
+    io.matrixDataOut.bits.sourceId := deqTask.ameIndex
+    io.matrixDataOut.bits.channel := deqTask.ameChannel
+    io.matrixDataOut.bits.data := deqData.asTypeOf(new DSBlock)
+  }.otherwise {
+    // grantBuf: to keep the remaining unsent beat of GrantData
+    val grantBufValid = RegInit(false.B)
+    val grantBuf =  RegInit(0.U.asTypeOf(new Bundle() {
+      val task = new TaskBundle()
+      val data = new DSBeat()
+      val grantid = UInt(mshrBits.W)
+    }))
+
+    grantQueue.io.deq.ready := io.d.ready && !grantBufValid
+    grantQueueData0.io.deq.ready := grantQueue.io.deq.ready
+    grantQueueData1.io.deq.ready := grantQueue.io.deq.ready
+
+    // if deqTask has data, send the first beat directly and save the remaining beat in grantBuf
+    when(deqValid && io.d.ready && !grantBufValid && deqTask.opcode(0)) {
+      grantBufValid := true.B
+      grantBuf.task := deqTask
+      grantBuf.task.isKeyword.foreach(_ := deqTask.isKeyword.getOrElse(false.B))
+     // grantBuf.data := deqData(1)
+     grantBuf.data := Mux(deqTask.isKeyword.getOrElse(false.B),deqData(0),deqData(1))
+      grantBuf.grantid := deqId
+    }
+    when(grantBufValid && io.d.ready) {
+      grantBufValid := false.B
+    }
+
+    io.d.valid := grantBufValid || deqValid
+    io.d.bits := Mux(
+      grantBufValid,
+      toTLBundleD(grantBuf.task, grantBuf.data.data, grantBuf.grantid),
+     // toTLBundleD(deqTask, deqData(0).data, deqId)
+      toTLBundleD(deqTask, Mux(deqTask.isKeyword.getOrElse(false.B),deqData(1).data,deqData(0).data), deqId)
+    )
+
+    io.matrixDataOut.valid := false.B
+    io.matrixDataOut.bits := DontCare
   }
-  when(grantBufValid && io.d.ready) {
-    grantBufValid := false.B
-  }
-
-  io.d.valid := grantBufValid || deqValid
-  io.d.bits := Mux(
-    grantBufValid,
-    toTLBundleD(grantBuf.task, grantBuf.data.data, grantBuf.grantid),
-   // toTLBundleD(deqTask, deqData(0).data, deqId)
-    toTLBundleD(deqTask, Mux(deqTask.isKeyword.getOrElse(false.B),deqData(1).data,deqData(0).data), deqId)
-  )
 
 
   XSPerfAccumulate("toTLBundleD_valid", deqValid)

@@ -72,6 +72,12 @@ class MergeTaskBundle(implicit p: Parameters) extends L2Bundle {
   val pc = pcBitOpt.map(_ => UInt(pcBitOpt.get.W))    // pc of demand req 
 }
 
+class MatrixDataBundle(implicit p: Parameters) extends L2Bundle {
+  val sourceId = UInt(7.W)
+  val data = new DSBlock()
+  val channel = UInt(3.W)
+}
+
 // We generate a Task for every TL request
 // this is the info that flows in Mainpipe
 class TaskBundle(implicit p: Parameters) extends L2Bundle

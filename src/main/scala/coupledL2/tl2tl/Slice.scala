@@ -133,6 +133,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   mshrCtl.io.grantStatus := grantBuf.io.grantStatus
 
   grantBuf.io.d_task <> mainPipe.io.toSourceD
+  io.matrixDataOut <> grantBuf.io.matrixDataOut
   grantBuf.io.fromReqArb.status_s1 := reqArb.io.status_s1
   grantBuf.io.pipeStatusVec := reqArb.io.status_vec ++ mainPipe.io.status_vec_toD
   mshrCtl.io.pipeStatusVec(0) := (reqArb.io.status_vec)(1) // s2 status
