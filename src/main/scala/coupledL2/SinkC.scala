@@ -65,9 +65,11 @@ class SinkC(implicit p: Parameters) extends L2Module {
   val nextPtrReg = RegEnable(nextPtr, 0.U.asTypeOf(nextPtr), io.c.fire && isRelease && first && hasData)
 
   def toTaskBundle(c: TLBundleC): TaskBundle = {
+    val matrixKey = c.user.lift(MatrixKey).getOrElse(0.U)
+    val isMatrix = MatrixInfo.isMatrix(matrixKey)
     val task = Wire(new TaskBundle)
     task := 0.U.asTypeOf(new TaskBundle)
-    task.channel := "b100".U
+    task.channel := Mux(isMatrix, "b001".U, "b100".U)
     task.txChannel := 0.U
     task.tag := parseAddress(c.address)._1
     task.set := parseAddress(c.address)._2
@@ -75,7 +77,7 @@ class SinkC(implicit p: Parameters) extends L2Module {
     task.alias.foreach(_ := 0.U)
     task.vaddr.foreach(_ := 0.U)
     task.isKeyword.foreach(_ := false.B)
-    task.opcode := c.opcode
+    task.opcode := Mux(isMatrix, PutFullData, c.opcode)
     task.param := c.param
     task.size := c.size
     task.sourceId := c.source
@@ -101,8 +103,13 @@ class SinkC(implicit p: Parameters) extends L2Module {
     task.replTask := false.B
     task.mergeA := false.B
     task.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+    task.matrixTask := isMatrix
+    task.ameChannel := c.user.lift(AmeChannelKey).getOrElse(0.U)
+    task.ameIndex := c.user.lift(AmeIndexKey).getOrElse(0.U)
     task
   }
+
+  assert(!(io.c.valid && io.c.bits.opcode === PutPartialData), "PutPartialData is not supported in SinkC path")
 
   when (io.c.fire && isRelease) {
     when (hasData) {

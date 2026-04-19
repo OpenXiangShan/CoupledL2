@@ -153,6 +153,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   val req_acquireBlock_s3   = sinkA_req_s3 && req_s3.opcode === AcquireBlock
   val req_prefetch_s3       = sinkA_req_s3 && req_s3.opcode === Hint
   val req_get_s3            = sinkA_req_s3 && req_s3.opcode === Get
+  val req_put_s3            = sinkA_req_s3 && req_s3.opcode === PutFullData && req_s3.matrixTask
 
   val mshr_grant_s3         = mshr_req_s3 && req_s3.fromA && (req_s3.opcode === Grant || req_s3.opcode === GrantData) // Grant or GrantData from mshr
   val mshr_grantdata_s3     = mshr_req_s3 && req_s3.fromA && req_s3.opcode === GrantData
@@ -179,12 +180,15 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   val acquire_on_miss_s3  = req_acquire_s3 || req_prefetch_s3 || req_get_s3 // TODO: remove this cause always acquire on miss?
   val acquire_on_hit_s3   = meta_s3.state === BRANCH && req_needT_s3 && !req_prefetch_s3
   // For channel A reqs, alloc mshr when: acquire downwards is needed || alias
-  val need_acquire_s3_a   = req_s3.fromA && Mux(
+  val need_acquire_s3_a   = req_s3.fromA && !req_put_s3 && Mux(
     dirResult_s3.hit,
     acquire_on_hit_s3,
     acquire_on_miss_s3
   )
-  val need_probe_s3_a = req_get_s3 && dirResult_s3.hit && meta_s3.state === TRUNK
+  val need_probe_s3_a = dirResult_s3.hit && meta_has_clients_s3 && (
+    req_get_s3 && meta_s3.state === TRUNK ||
+    req_put_s3
+  )
 
   val need_mshr_s3_a = need_acquire_s3_a || need_probe_s3_a || cache_alias
   // For channel B reqs, alloc mshr when Probe hits in both self and client dir
@@ -251,6 +255,8 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   /* ======== Resps to SinkA/B/C Reqs ======== */
   val sink_resp_s3 = WireInit(0.U.asTypeOf(Valid(new TaskBundle))) // resp for sinkA/B/C request that does not need to alloc mshr
   val sink_resp_s3_a_promoteT = dirResult_s3.hit && isT(meta_s3.state)
+  val put_hit_need_probe_s3 = req_put_s3 && dirResult_s3.hit && meta_has_clients_s3
+  val put_miss_todo_s3 = req_put_s3 && !dirResult_s3.hit
 
   sink_resp_s3.valid := task_s3.valid && !mshr_req_s3 && !need_mshr_s3
   sink_resp_s3.bits := task_s3.bits
@@ -297,11 +303,12 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   val ren                 = need_data_a || need_data_b || need_data_mshr_repl
 
   val wen_c = sinkC_req_s3 && isParamFromT(req_s3.param) && req_s3.opcode(0) && dirResult_s3.hit
+  val wen_put = req_put_s3 && dirResult_s3.hit
   val wen_mshr = req_s3.dsWen && (
     mshr_probeack_s3 || mshr_release_s3 ||
     mshr_refill_s3 && !need_repl && !retry
   )
-  val wen   = wen_c || wen_mshr
+  val wen   = wen_c || wen_put || wen_mshr
 
   // This is to let io.toDS.req_s3.valid hold for 2 cycles (see DataStorage for details)
   val task_s3_valid_hold2 = RegInit(0.U(2.W))
@@ -342,6 +349,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
   /* ======== Write Directory ======== */
   val metaW_valid_s3_a    = sinkA_req_s3 && !need_mshr_s3_a && !req_get_s3 && !req_prefetch_s3 // get & prefetch that hit will not write meta
+  val metaW_valid_s3_put  = req_put_s3 && dirResult_s3.hit && !put_hit_need_probe_s3 && !meta_s3.dirty
   val metaW_valid_s3_b    = sinkB_req_s3 && !need_mshr_s3_b && dirResult_s3.hit && (meta_s3.state === TIP || meta_s3.state === BRANCH && req_s3.param === toN)
   val metaW_valid_s3_c    = sinkC_req_s3 && dirResult_s3.hit
   val metaW_valid_s3_mshr = mshr_req_s3 && req_s3.metaWen && !(mshr_refill_s3 && retry)
@@ -358,6 +366,15 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
     state = Mux(req_needT_s3 || sink_resp_s3_a_promoteT, TRUNK, meta_s3.state),
     clients = Fill(clientBits, true.B),
     alias = Some(metaW_s3_a_alias),
+    accessed = true.B,
+    tagErr = meta_s3.tagErr,
+    dataErr = meta_s3.dataErr
+  )
+  val metaW_s3_put = MetaEntry(
+    dirty = true.B,
+    state = TIP,
+    clients = Fill(clientBits, false.B),
+    alias = meta_s3.alias,
     accessed = true.B,
     tagErr = meta_s3.tagErr,
     dataErr = meta_s3.dataErr
@@ -390,14 +407,14 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   val metaW_way = Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.way, // grant always use replResp way
     Mux(mshr_req_s3, req_s3.way, dirResult_s3.way))
 
-  io.metaWReq.valid      := !resetFinish || task_s3.valid && (metaW_valid_s3_a || metaW_valid_s3_b || metaW_valid_s3_c || metaW_valid_s3_mshr)
+  io.metaWReq.valid      := !resetFinish || task_s3.valid && (metaW_valid_s3_a || metaW_valid_s3_put || metaW_valid_s3_b || metaW_valid_s3_c || metaW_valid_s3_mshr)
   io.metaWReq.bits.set   := Mux(resetFinish, req_s3.set, resetIdx)
   io.metaWReq.bits.wayOH := Mux(resetFinish, UIntToOH(metaW_way), Fill(cacheParams.ways, true.B))
   io.metaWReq.bits.wmeta := Mux(
     resetFinish,
     ParallelPriorityMux(
-      Seq(metaW_valid_s3_a, metaW_valid_s3_b, metaW_valid_s3_c, metaW_valid_s3_mshr),
-      Seq(metaW_s3_a, metaW_s3_b, metaW_s3_c, metaW_s3_mshr)
+      Seq(metaW_valid_s3_a, metaW_valid_s3_put, metaW_valid_s3_b, metaW_valid_s3_c, metaW_valid_s3_mshr),
+      Seq(metaW_s3_a, metaW_s3_put, metaW_s3_b, metaW_s3_c, metaW_s3_mshr)
     ),
     MetaEntry()
   )
@@ -406,6 +423,8 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   io.tagWReq.bits.set  := req_s3.set
   io.tagWReq.bits.way  := Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.way, req_s3.way)
   io.tagWReq.bits.wtag := req_s3.tag
+
+  assert(!(task_s3.valid && put_miss_todo_s3), "Matrix Put miss is TODO and not supported yet")
 
   /* ======== Interact with Channels (C & D) ======== */
   // do not need s4 & s5
@@ -700,15 +719,20 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   XSPerfAccumulate("acquire_hit", hit_s3 && req_s3.fromA &&
     (req_s3.opcode === AcquireBlock || req_s3.opcode === AcquirePerm))
   XSPerfAccumulate("get_hit", hit_s3 && req_s3.fromA && req_s3.opcode === Get)
+  XSPerfAccumulate("put_hit", hit_s3 && req_put_s3)
   XSPerfAccumulate("retry", mshr_refill_s3 && retry)
 
   XSPerfAccumulate("a_req_miss", miss_s3 && req_s3.fromA)
   XSPerfAccumulate("acquire_miss", miss_s3 && req_s3.fromA &&
     (req_s3.opcode === AcquireBlock || req_s3.opcode === AcquirePerm))
   XSPerfAccumulate("get_miss", miss_s3 && req_s3.fromA && req_s3.opcode === Get)
+  XSPerfAccumulate("put_miss", miss_s3 && req_put_s3)
 
   XSPerfAccumulate("b_req_hit", hit_s3 && req_s3.fromB)
   XSPerfAccumulate("b_req_miss", miss_s3 && req_s3.fromB)
+
+  XSPerfAccumulate("get_need_probe", task_s3.valid && need_probe_s3_a && req_get_s3)
+  XSPerfAccumulate("put_need_probe", task_s3.valid && need_probe_s3_a && req_put_s3)
 
   XSPerfHistogram("a_req_access_way", perfCnt = dirResult_s3.way,
     enable = task_s3.valid && !mshr_req_s3 && req_s3.fromA, start = 0, stop = cacheParams.ways, step = 1)

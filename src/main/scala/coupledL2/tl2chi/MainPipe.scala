@@ -161,6 +161,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val req_acquireBlock_s3       = sinkA_req_s3 && req_s3.opcode === AcquireBlock
   val req_prefetch_s3           = sinkA_req_s3 && req_s3.opcode === Hint
   val req_get_s3                = sinkA_req_s3 && req_s3.opcode === Get
+  val req_put_s3                = sinkA_req_s3 && req_s3.opcode === PutFullData && req_s3.matrixTask
   val req_cbo_clean_s3          = sinkA_req_s3 && req_s3.opcode === CBOClean
   val req_cbo_flush_s3          = sinkA_req_s3 && req_s3.opcode === CBOFlush && !cmoHitInvalid
   val req_cbo_inval_s3          = sinkA_req_s3 && req_s3.opcode === CBOInval
@@ -192,6 +193,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   val meta_has_clients_s3       = meta_s3.clients.orR
   val req_needT_s3              = needT(req_s3.opcode, req_s3.param)
+  val put_hit_need_probe_s3     = req_put_s3 && dirResult_s3.hit && meta_has_clients_s3
+  val put_miss_todo_s3          = req_put_s3 && !dirResult_s3.hit
 
   val cmo_cbo_retention_s3      = req_cbo_clean_s3 || req_cbo_flush_s3
   val cmo_cbo_s3                = req_cbo_clean_s3 || req_cbo_flush_s3 || req_cbo_inval_s3
@@ -230,13 +233,14 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   //          'nestable_*' must not be used here.
   val acquire_on_miss_s3 = req_acquire_s3 || req_prefetch_s3 || req_get_s3
   val acquire_on_hit_s3 = meta_s3.state === BRANCH && req_needT_s3 && !req_prefetch_s3
-  val need_acquire_s3_a = req_s3.fromA && (Mux(
+  val need_acquire_s3_a = req_s3.fromA && !req_put_s3 && (Mux(
     dirResult_s3.hit,
     acquire_on_hit_s3,
     acquire_on_miss_s3
   ) || cmo_cbo_s3)
   val need_probe_s3_a = dirResult_s3.hit && meta_has_clients_s3 && (
     req_get_s3 && (meta_s3.state === TRUNK) ||
+    req_put_s3 ||
     req_cbo_clean_s3 && (meta_s3.state === TRUNK) ||
     req_cbo_flush_s3 ||
     req_cbo_inval_s3
@@ -473,13 +477,14 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val ren = need_data_a || need_data_b || need_data_mshr_repl || need_data_cmo
 
   val wen_c = sinkC_req_s3 && isParamFromT(req_s3.param) && req_s3.opcode(0) && dirResult_s3.hit
+  val wen_put = req_put_s3 && dirResult_s3.hit
   val wen_mshr = req_s3.dsWen && (
     mshr_snpRespX_s3 || mshr_snpRespDataX_s3 ||
     mshr_writeCleanFull_s3 || mshr_writeBackFull_s3 || 
     mshr_writeEvictFull_s3 || mshr_writeEvictOrEvict_s3 || mshr_evict_s3 ||
     mshr_refill_s3 && !need_repl && !retry
   )
-  val wen = wen_c || wen_mshr
+  val wen = wen_c || wen_put || wen_mshr
 
   // This is to let io.toDS.req_s3.valid hold for 2 cycles (see DataStorage for details)
   val task_s3_valid_hold2 = RegInit(0.U(2.W))
@@ -525,7 +530,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   /* ======== Write Directory ======== */
   // B, C: Requests from Channel B (RXSNP) and Channel C would only downgrade permission,
   //       so there is no need to use 'nestable_*'.
-  val metaW_valid_s3_a = sinkA_req_s3 && !need_mshr_s3_a && !req_get_s3 && !req_prefetch_s3 && !cmo_cbo_s3 // get & prefetch that hit will not write meta
+  val metaW_valid_s3_a = sinkA_req_s3 && !need_mshr_s3_a && !req_get_s3 && !req_put_s3 && !req_prefetch_s3 && !cmo_cbo_s3 // get/prefetch/put use dedicated paths
+  val metaW_valid_s3_put = req_put_s3 && dirResult_s3.hit && !put_hit_need_probe_s3 && !meta_s3.dirty
   // Also write directory on:
   //  1. SnpOnce nesting WriteCleanFull under UD (SnpOnceFwd always needs MSHR) for UD -> SC
   val metaW_valid_s3_b = sinkB_req_s3 && !need_mshr_s3_b && dirResult_s3.hit &&
@@ -572,6 +578,15 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     tagErr = Mux(wen_c, req_s3.denied, meta_s3.tagErr),
     dataErr = Mux(wen_c, req_s3.corrupt, meta_s3.dataErr) // update error when write DS
   )
+  val metaW_s3_put = MetaEntry(
+    dirty = true.B,
+    state = TIP,
+    clients = Fill(clientBits, false.B),
+    alias = meta_s3.alias,
+    accessed = true.B,
+    tagErr = meta_s3.tagErr,
+    dataErr = meta_s3.dataErr
+  )
   // use merge_meta if mergeA
   val metaW_s3_mshr = WireInit(Mux(req_s3.mergeA, req_s3.aMergeTask.meta, req_s3.meta))
   metaW_s3_mshr.tagErr := req_s3.denied
@@ -585,15 +600,15 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   )
 
   io.metaWReq.valid := !resetFinish || task_s3.valid && (
-    metaW_valid_s3_a || metaW_valid_s3_b || metaW_valid_s3_c || metaW_valid_s3_mshr || metaW_valid_s3_cmo
+    metaW_valid_s3_a || metaW_valid_s3_b || metaW_valid_s3_c || metaW_valid_s3_mshr || metaW_valid_s3_cmo || metaW_valid_s3_put
   )
   io.metaWReq.bits.set := Mux(resetFinish, req_s3.set, resetIdx)
   io.metaWReq.bits.wayOH := Mux(resetFinish, UIntToOH(metaW_way), Fill(cacheParams.ways, true.B))
   io.metaWReq.bits.wmeta := Mux(
     resetFinish,
     ParallelPriorityMux(
-      Seq(metaW_valid_s3_a, metaW_valid_s3_b, metaW_valid_s3_c, metaW_valid_s3_mshr, metaW_valid_s3_cmo),
-      Seq(metaW_s3_a, metaW_s3_b, metaW_s3_c, metaW_s3_mshr, metaW_s3_cmo)
+      Seq(metaW_valid_s3_a, metaW_valid_s3_b, metaW_valid_s3_c, metaW_valid_s3_mshr, metaW_valid_s3_cmo, metaW_valid_s3_put),
+      Seq(metaW_s3_a, metaW_s3_b, metaW_s3_c, metaW_s3_mshr, metaW_s3_cmo, metaW_s3_put)
     ),
     MetaEntry()
   )
@@ -605,6 +620,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   sink_resp_s3_b_metaWen := metaW_valid_s3_b
   sink_resp_s3_b_meta := metaW_s3_b
+
+  assert(!(task_s3.valid && put_miss_todo_s3), "Matrix Put miss is TODO and not supported yet")
 
   /* ======== Interact with Channels (SourceD/TXREQ/TXRSP/TXDAT) ======== */
   val chnl_fire_s3 = d_s3.fire || txreq_s3.fire || txrsp_s3.fire || txdat_s3.fire
