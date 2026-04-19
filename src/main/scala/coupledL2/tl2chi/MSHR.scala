@@ -164,6 +164,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   val req_acquire = req.opcode === AcquireBlock && req.fromA || req.opcode === AcquirePerm // AcquireBlock and Probe share the same opcode
   val req_acquirePerm = req.opcode === AcquirePerm
   val req_get = req.opcode === Get
+  val req_put = req.opcode === PutFullData
   val req_prefetch = req.opcode === Hint
 
   val req_mayRepl = req_acquire || req_get || req_prefetch
@@ -769,30 +770,41 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_grant.readProbeDataDown := false.B
     mp_grant.dirty := false.B
 
-    mp_grant.meta := MetaEntry(
-      dirty = gotDirty || dirResult.hit && meta.dirty,
-      state = Mux(
-        req_get,
-        Mux( // Get
-          dirResult.hit,
-          Mux(isT(meta.state), TIP, BRANCH),
-          Mux(req_promoteT, TIP, BRANCH)
+    mp_grant.meta := Mux(req_put,
+      MetaEntry(
+        dirty = true.B,
+        state = TIP,
+        clients = Fill(clientBits, false.B),
+        alias = meta.alias,
+        accessed = true.B,
+        tagErr = meta.tagErr,
+        dataErr = meta.dataErr
+      ),
+      MetaEntry(
+        dirty = gotDirty || dirResult.hit && meta.dirty,
+        state = Mux(
+          req_get,
+          Mux( // Get
+            dirResult.hit,
+            Mux(isT(meta.state), TIP, BRANCH),
+            Mux(req_promoteT, TIP, BRANCH)
+          ),
+          Mux( // Acquire
+            req_promoteT || req_needT,
+            Mux(req_prefetch, TIP, TRUNK),
+            BRANCH
+          )
         ),
-        Mux( // Acquire
-          req_promoteT || req_needT,
-          Mux(req_prefetch, TIP, TRUNK),
-          BRANCH
-        )
-      ),
-      clients = Mux(
-        req_prefetch,
-        Mux(dirResult.hit, meta.clients, Fill(clientBits, false.B)),
-        Fill(clientBits, !(req_get && (!dirResult.hit || meta_no_client)))
-      ),
-      alias = Some(aliasFinal),
-      prefetch = req_prefetch || dirResult.hit && meta_pft,
-      pfsrc = PfSource.fromMemReqSource(req.reqSource),
-      accessed = req_acquire || req_get
+        clients = Mux(
+          req_prefetch,
+          Mux(dirResult.hit, meta.clients, Fill(clientBits, false.B)),
+          Fill(clientBits, !(req_get && (!dirResult.hit || meta_no_client)))
+        ),
+        alias = Some(aliasFinal),
+        prefetch = req_prefetch || dirResult.hit && meta_pft,
+        pfsrc = PfSource.fromMemReqSource(req.reqSource),
+        accessed = req_acquire || req_get
+      )
     )
     mp_grant.metaWen := !cmo_cbo && !denied
     mp_grant.tagWen := !cmo_cbo && !dirResult.hit && !denied

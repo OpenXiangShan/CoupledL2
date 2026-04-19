@@ -138,7 +138,8 @@ class RequestArb(implicit p: Parameters) extends L2Module
     (if (io.fromSourceC.isDefined) io.fromSourceC.get.blockSinkBReqEntrance else false.B) ||
     (if (io.fromTXDAT.isDefined) io.fromTXDAT.get.blockSinkBReqEntrance else false.B) ||
     (if (io.fromTXRSP.isDefined) io.fromTXRSP.get.blockSinkBReqEntrance else false.B)
-  val block_C = io.fromMSHRCtl.blockC_s1 || io.fromMainPipe.blockC_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockC_s1
+  val block_C_put = io.fromMSHRCtl.blockC_s1 && io.sinkC.bits.fromA
+  val block_C = block_C_put || io.fromMainPipe.blockC_s1 || io.fromGrantBuffer.blockSinkReqEntrance.blockC_s1
 
 //  val noFreeWay = Wire(Bool())
 

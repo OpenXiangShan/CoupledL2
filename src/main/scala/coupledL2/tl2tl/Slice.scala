@@ -46,6 +46,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   val sinkA = Module(new SinkA)
   val sinkB = Module(new SinkB)
   val sinkC = Module(new SinkC)
+  val sinkMX = Module(new SinkMX)
   val sourceC = Module(new SourceC)
   val grantBuf = Module(new GrantBuffer)
   val refillBuf = Module(new MSHRBuffer(wPorts = 2))
@@ -156,9 +157,11 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   val outBuf = cacheParams.outerBuf
 
   /* connect upward channels */
-  sinkA.io.a <> inBuf.a(io.in.a)
+  sinkMX.io.a <> inBuf.a(io.in.a)
+  sinkMX.io.c <> inBuf.c(io.in.c)
+  sinkA.io.a <> sinkMX.io.out_a
   io.in.b <> inBuf.b(mshrCtl.io.sourceB)
-  sinkC.io.c <> inBuf.c(io.in.c)
+  sinkC.io.c <> sinkMX.io.out_c
   io.in.d <> inBuf.d(grantBuf.io.d)
   grantBuf.io.e <> inBuf.e(io.in.e)
   io.error.valid := RegNext(mainPipe.io.error.valid, false.B)
