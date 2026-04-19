@@ -63,6 +63,17 @@ case class VaddrField(width: Int) extends BundleField[UInt](VaddrKey, Output(UIn
 case object IsKeywordKey extends ControlKey[Bool]("isKeyword")
 case class IsKeywordField() extends BundleField[Bool](IsKeywordKey, Output(Bool()), _ := false.B)
 
+// Pass matrix metadata from upper level cache
+case object MatrixKey extends ControlKey[UInt]("matrix")
+case class MatrixField(width: Int) extends BundleField[UInt](MatrixKey, Output(UInt(width.W)), _ := 0.U(width.W))
+
+// Pass AME metadata from upper level cache
+case object AmeChannelKey extends ControlKey[UInt](name = "AmeChannel")
+case class AmeChannelField() extends BundleField[UInt](AmeChannelKey, Output(UInt(4.W)), _ := 0.U(4.W))
+
+case object AmeIndexKey extends ControlKey[UInt](name = "AmeIndex")
+case class AmeIndexField() extends BundleField[UInt](AmeIndexKey, Output(UInt(7.W)), _ := 0.U(7.W))
+
 //memblock pass pc of load_miss to l2
 case object PCKey extends ControlKey[UInt]("pc")
 case class PCField(width: Int) extends BundleField[UInt](PCKey, Output(UInt(width.W)), _ := 0.U(width.W))
@@ -89,7 +100,7 @@ case class L2Param(
   echoField: Seq[BundleFieldBase] = Nil,
   reqField: Seq[BundleFieldBase] = Nil,
   respKey: Seq[BundleKeyBase] = Seq(IsHitKey),
-  reqKey: Seq[BundleKeyBase] = Seq(AliasKey, VaddrKey, PrefetchKey, ReqSourceKey, PCKey),
+  reqKey: Seq[BundleKeyBase] = Seq(AliasKey, VaddrKey, PrefetchKey, ReqSourceKey, PCKey, MatrixKey, AmeChannelKey, AmeIndexKey),
   respField: Seq[BundleFieldBase] = Nil,
 
   innerBuf: TLBufferParams = TLBufferParams(),

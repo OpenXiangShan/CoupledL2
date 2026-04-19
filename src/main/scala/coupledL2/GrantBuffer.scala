@@ -153,6 +153,9 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   mergeAtask.wayMask := io.d_task.bits.task.wayMask
   mergeAtask.replTask := io.d_task.bits.task.replTask
   mergeAtask.reqSource := io.d_task.bits.task.reqSource
+  mergeAtask.ameChannel := io.d_task.bits.task.ameChannel
+  mergeAtask.ameIndex := io.d_task.bits.task.ameIndex
+  mergeAtask.matrixTask := io.d_task.bits.task.matrixTask
   mergeAtask.mergeA := false.B
   mergeAtask.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
   val inflight_insertIdx = PriorityEncoder(inflightGrant.map(!_.valid))
