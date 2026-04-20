@@ -147,8 +147,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
 
     pcrdtype := 0.U
     tagErr := io.alloc.bits.dirResult.hit && (io.alloc.bits.dirResult.meta.tagErr || io.alloc.bits.dirResult.error)
-    denied := false.B
-    corrupt := false.B
+    denied := io.alloc.bits.task.denied
+    corrupt := io.alloc.bits.task.corrupt
     cbWrDataTraceTag := false.B
 
     retryTimes := 0.U
