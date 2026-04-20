@@ -86,7 +86,7 @@ object L2TSHR {
   }
 }
 
-class L2TSHR(id: Int)(implicit val p: Parameters) extends Module {
+class L2TSHR(id: Int)(implicit val p: Parameters) extends Module with HasL2Params {
 
   val io = IO(new Bundle {
 
@@ -96,9 +96,12 @@ class L2TSHR(id: Int)(implicit val p: Parameters) extends Module {
     val toDS = Output(new L2DataStorage.PathTSHRToDataStorage)
     val fromDS = Output(new L2DataStorage.PathDataStorageToTSHR)
 
-    val RXEVT = Flipped(Decoupled(new FlitEVT))       // L1 EVT
-    val RXSNP = Flipped(Decoupled(new CHIBundleSNP))  // HN SNP
-    val RXREQ = Flipped(Decoupled(new FlitREQ))       // L1/L2 REQ
+    val toAlloc = Output(new L2TSHRAlloc.PathFromTSHR)
+    val fromAlloc = Input(new L2TSHRAlloc.PathToTSHR)
+
+    val RXEVT = Input(new FlitEVT)                    // L1 EVT
+    val RXSNP = Input(new CHIBundleSNP)               // HN SNP
+    val RXREQ = Input(new FlitREQ)                    // L1/L2 REQ
 
     val UpRXRSP = Flipped(Valid(new FlitUpRSP))       // RSP from L1
     val UpRXDAT = Flipped(Valid(new FlitUpDAT))       // DAT from L1
@@ -106,7 +109,6 @@ class L2TSHR(id: Int)(implicit val p: Parameters) extends Module {
     val DnRXRSP = Flipped(Valid(new CHIBundleRSP))    // RSP from HN
     val DnRXDAT = Flipped(Valid(new CHIBundleDAT))    // DAT from HN
 
-    val alloc = Input(Bool())
     val valid = Output(Bool())
   })
 
@@ -122,10 +124,23 @@ class L2TSHR(id: Int)(implicit val p: Parameters) extends Module {
   val ds_read_rbe_en = Wire(Bool()) // TODO: Data Storage Read on requests passed RBE with valid meta
 
 
+  // TSHR payloads
+  val tshr_paddr = Reg(UInt(paramL2.physicalAddrWidth.W))
+
+  when (tshr_alloc) {
+    tshr_paddr := io.fromAlloc.paddr
+  }
+  io.toAlloc.paddr := tshr_paddr
+
+
   // TSHR valid
-  val tshr_enter = io.RXEVT.fire || io.RXSNP.fire || io.RXREQ.fire
-  val tshr_alloc = io.alloc
-  val tshr_reuse = tshr_enter && !tshr_alloc
+  val tshr_alloc = io.fromAlloc.alloc.asUInt.orR
+  val tshr_reuse = io.fromAlloc.reuse.asUInt.orR
+  val tshr_enter = tshr_alloc || tshr_reuse
+
+  val tshr_enter_EVT = io.fromAlloc.alloc.EVT || io.fromAlloc.reuse.EVT
+  val tshr_enter_SNP = io.fromAlloc.alloc.SNP || io.fromAlloc.reuse.SNP
+  val tshr_enter_REQ = io.fromAlloc.alloc.REQ || io.fromAlloc.reuse.REQ
 
   val tshr_inactive_rbe = Wire(Bool())
   val tshr_inactive_vpipe = Wire(Bool())
@@ -186,9 +201,17 @@ class L2TSHR(id: Int)(implicit val p: Parameters) extends Module {
   val rbeSNP = Module(new L2RBE(new CHIBundleSNP /*TODO: strip PA here*/))
   val rbeREQ = Module(new L2RBE(new FlitREQ /*TODO: strip PA here*/))
 
-  io.RXEVT <> rbeEVT.io.in
-  io.RXSNP <> rbeSNP.io.in
-  io.RXREQ <> rbeREQ.io.in
+  io.toAlloc.busy.EVT := !rbeEVT.io.in.ready
+  io.toAlloc.busy.SNP := !rbeSNP.io.in.ready
+  io.toAlloc.busy.REQ := !rbeREQ.io.in.ready
+
+  rbeEVT.io.in.bits := io.RXEVT
+  rbeSNP.io.in.bits := io.RXSNP
+  rbeREQ.io.in.bits := io.RXREQ
+
+  rbeEVT.io.in.valid := tshr_enter_EVT
+  rbeSNP.io.in.valid := tshr_enter_SNP
+  rbeREQ.io.in.valid := tshr_enter_REQ
 
   rbeEVT.io.directoryReadNeed := true.B // TODO: Some specific EVT requests do not require Directory Read under Inclusive
   rbeSNP.io.directoryReadNeed := true.B
