@@ -282,6 +282,8 @@ class L2TSHRAlloc(val config: L2TSHRAllocConfig)(implicit val p: Parameters) ext
 }
 
 
-class L2TSHRCtrl(implicit val p: Parameters) extends Module {
+class L2TSHRCtrl(implicit val p: Parameters) extends Module with HasL2Params {
+
+  val tshrs = Seq.tabulate(paramL2.mshrSize)(i => Module(new L2TSHR(i)))
 
 }
