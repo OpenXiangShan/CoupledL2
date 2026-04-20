@@ -270,6 +270,13 @@ class L2TSHRAlloc(val config: L2TSHRAllocConfig)(implicit val p: Parameters) ext
   assert((PopCount(io.toTSHR.map(_.alloc).asUInt) + PopCount(io.toTSHR.map(_.reuse).asUInt)) <= clusterCount.U, 
     "Allocated and reused TSHRs more than cluster count")
 
+  assert(PopCount(io.toTSHR.map(_.alloc.EVT).asUInt) <= 1.U, "Multiple TSHR allocated for EVT within 1 cycle")
+  assert(PopCount(io.toTSHR.map(_.alloc.SNP).asUInt) <= 1.U, "Multiple TSHR allocated for SNP within 1 cycle")
+  assert(PopCount(io.toTSHR.map(_.alloc.REQ).asUInt) <= 1.U, "Multiple TSHR allocated for REQ within 1 cycle")
+  assert(PopCount(io.toTSHR.map(_.reuse.EVT).asUInt) <= 1.U, "Multiple TSHR reused for EVT within 1 cycle")
+  assert(PopCount(io.toTSHR.map(_.reuse.SNP).asUInt) <= 1.U, "Multiple TSHR reused for SNP within 1 cycle")
+  assert(PopCount(io.toTSHR.map(_.reuse.REQ).asUInt) <= 1.U, "Multiple TSHR reused for REQ within 1 cycle")
+
   io.toTSHR.zipWithIndex.foreach { case (t, tIdx) =>
     t.paddr := ParallelMux(alloc_vec.map(_(tIdx)).zip(reuse_vec.map(_(tIdx))).zipWithIndex.map { 
       case ((alloc, reuse), cIdx) => {
@@ -279,6 +286,43 @@ class L2TSHRAlloc(val config: L2TSHRAllocConfig)(implicit val p: Parameters) ext
       (en, paddr)
     }}
   )}
+
+  
+  // performance counters
+  val perf_stallCycleCnt_EVT = RegInit(0.U(32.W))
+  val perf_stallCycleCnt_SNP = RegInit(0.U(32.W))
+  val perf_stallCycleCnt_REQ = RegInit(0.U(32.W))
+  when (io.fromTSHRCtrl.RXEVT.fire) {
+    perf_stallCycleCnt_EVT := 0.U
+  }.elsewhen (io.fromTSHRCtrl.RXEVT.valid && !io.fromTSHRCtrl.RXEVT.ready) {
+    perf_stallCycleCnt_EVT := perf_stallCycleCnt_EVT + 1.U
+  }
+  when (io.fromTSHRCtrl.RXSNP.fire) {
+    perf_stallCycleCnt_SNP := 0.U
+  }.elsewhen (io.fromTSHRCtrl.RXSNP.valid && !io.fromTSHRCtrl.RXSNP.ready) {
+    perf_stallCycleCnt_SNP := perf_stallCycleCnt_SNP + 1.U
+  }
+  when (io.fromTSHRCtrl.RXREQ.fire) {
+    perf_stallCycleCnt_REQ := 0.U
+  }.elsewhen (io.fromTSHRCtrl.RXREQ.valid && !io.fromTSHRCtrl.RXREQ.ready) {
+    perf_stallCycleCnt_REQ := perf_stallCycleCnt_REQ + 1.U
+  }
+
+  XSPerfAccumulate("L2TSHRAlloc_alloc_EVT", io.toTSHR.map(_.alloc.EVT).asUInt.orR)
+  XSPerfAccumulate("L2TSHRAlloc_alloc_SNP", io.toTSHR.map(_.alloc.SNP).asUInt.orR)
+  XSPerfAccumulate("L2TSHRAlloc_alloc_REQ", io.toTSHR.map(_.alloc.REQ).asUInt.orR)
+  XSPerfAccumulate("L2TSHRAlloc_reuse_EVT", io.toTSHR.map(_.reuse.EVT).asUInt.orR)
+  XSPerfAccumulate("L2TSHRAlloc_reuse_SNP", io.toTSHR.map(_.reuse.SNP).asUInt.orR)
+  XSPerfAccumulate("L2TSHRAlloc_reuse_REQ", io.toTSHR.map(_.reuse.REQ).asUInt.orR)
+  XSPerfAccumulate("L2TSHRAlloc_stallCycleCnt_EVT_total", io.fromTSHRCtrl.RXEVT.valid && !io.fromTSHRCtrl.RXEVT.ready)
+  XSPerfAccumulate("L2TSHRAlloc_stallCycleCnt_SNP_total", io.fromTSHRCtrl.RXSNP.valid && !io.fromTSHRCtrl.RXSNP.ready)
+  XSPerfAccumulate("L2TSHRAlloc_stallCycleCnt_REQ_total", io.fromTSHRCtrl.RXREQ.valid && !io.fromTSHRCtrl.RXREQ.ready)
+  XSPerfHistogram("L2TSHRAlloc_stallCycleCnt_EVT", perf_stallCycleCnt_EVT, io.fromTSHRCtrl.RXEVT.fire, 0, 40, 2, right_strict = true)
+  XSPerfHistogram("L2TSHRAlloc_stallCycleCnt_EVT", perf_stallCycleCnt_EVT, io.fromTSHRCtrl.RXEVT.fire, 40, 800, 40, left_strict = true)
+  XSPerfHistogram("L2TSHRAlloc_stallCycleCnt_SNP", perf_stallCycleCnt_SNP, io.fromTSHRCtrl.RXSNP.fire, 0, 40, 2, right_strict = true)
+  XSPerfHistogram("L2TSHRAlloc_stallCycleCnt_SNP", perf_stallCycleCnt_SNP, io.fromTSHRCtrl.RXSNP.fire, 40, 800, 40, left_strict = true)
+  XSPerfHistogram("L2TSHRAlloc_stallCycleCnt_REQ", perf_stallCycleCnt_REQ, io.fromTSHRCtrl.RXREQ.fire, 0, 40, 2, right_strict = true)
+  XSPerfHistogram("L2TSHRAlloc_stallCycleCnt_REQ", perf_stallCycleCnt_REQ, io.fromTSHRCtrl.RXREQ.fire, 40, 800, 40, left_strict = true)
 }
 
 
