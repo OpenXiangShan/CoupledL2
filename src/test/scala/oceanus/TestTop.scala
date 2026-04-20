@@ -22,11 +22,10 @@ class TestTop_L2TSHRAlloc()(implicit val p: Parameters) extends Module with HasL
 
   val config = new L2TSHRAllocConfig(
     cluster = Seq(Seq(L2TSHRAllocTarget.EVT), Seq(L2TSHRAllocTarget.SNP, L2TSHRAllocTarget.REQ)),
-    resv = Seq()
+    resv = Seq((15, L2TSHRResvTarget.L2EVT), (14, L2TSHRResvTarget.L1EVT), (13, L2TSHRResvTarget.L3SNP))
   )
 
   println(s"${config.cluster}")
-  println(s"${config.cluster(0)}")
 
   val module = Module(new L2TSHRAlloc(config))
 
