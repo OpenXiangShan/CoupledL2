@@ -95,6 +95,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     /* read DS and write data into ReleaseBuf when the task needs to replace */
     val releaseBufWrite = ValidIO(new MSHRBufWrite())
 
+    /* resp data error to NSHR */
+    val dsResp = ValidIO(new DSInfoBundle)
+
     /* nested writeback */
     val nestedwb = Output(new NestedWriteback())
     val nestedwbData = Output(new DSBlock())
@@ -854,6 +857,10 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   io.releaseBufWrite.bits.id := task_s5.bits.mshrId
   io.releaseBufWrite.bits.data.data := rdata_s5
   io.releaseBufWrite.bits.beatMask := Fill(beatSize, true.B)
+
+  io.dsResp.valid := task_s5.valid && need_write_releaseBuf_s5
+  io.dsResp.bits.mshrId := task_s5.bits.mshrId
+  io.dsResp.bits.dataError := io.toDS.error_s5
 
   val chnl_valid_s5 = task_s5.valid && !RegNext(chnl_fire_s4, false.B) && !RegNextN(chnl_fire_s3, 2, Some(false.B))
   val chnl_denied_s5 = Mux(task_s5.bits.mshrTask || task_s5.bits.snpHitReleaseWithData, task_s5.bits.denied,

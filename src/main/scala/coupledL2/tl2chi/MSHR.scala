@@ -62,6 +62,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     val aMergeTask = Flipped(ValidIO(new TaskBundle))
     val replResp = Flipped(ValidIO(new ReplacerResult))
     val pCrd = new PCrdQueryBundle
+    val dsResp = Flipped(ValidIO(new DSInfoBundle))
   })
 
   require (chiOpt.isDefined)
@@ -1113,8 +1114,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     when (TLPermissions.isReport(c_resp.bits.param)) {
       meta.tagErr := c_resp.bits.denied
       meta.dataErr := c_resp.bits.corrupt
-      denied := denied || c_resp.bits.denied
-      corrupt := corrupt || c_resp.bits.corrupt
+      denied := c_resp.bits.denied
+      corrupt := c_resp.bits.corrupt
     }
 
     // CMO update release on ProbeAck/ProbeAckData
@@ -1243,6 +1244,11 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
   when (io.pCrd.grant) {
     state.s_reissue.get := false.B
     gotPCrdGrant := true.B
+  }
+
+  // when write releaseBuf
+  when (io.dsResp.valid) {
+    corrupt := corrupt || io.dsResp.bits.dataError
   }
 
   // replay

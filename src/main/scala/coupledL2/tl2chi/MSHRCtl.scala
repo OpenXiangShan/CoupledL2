@@ -67,6 +67,8 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
 
     val releaseBufWriteId = Output(UInt(mshrBits.W))
 
+    val dsResp = Flipped(ValidIO(new DSInfoBundle))
+
     /* nested writeback */
     val nestedwb = Input(new NestedWriteback)
     val nestedwbDataId = Output(ValidIO(UInt(mshrBits.W)))
@@ -142,6 +144,9 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
 
       m.io.resps.rxrsp.valid := m.io.status.valid && io.resps.rxrsp.valid/* && !isPCrdGrant*/ && (io.resps.rxrsp.mshrId === i.U)
       m.io.resps.rxrsp.bits := io.resps.rxrsp.respInfo
+
+      m.io.dsResp.valid := io.dsResp.valid && io.dsResp.bits.mshrId === i.U
+      m.io.dsResp.bits := io.dsResp.bits
 
       m.io.replResp.valid := io.replResp.valid && io.replResp.bits.mshrId === i.U
       m.io.replResp.bits := io.replResp.bits
