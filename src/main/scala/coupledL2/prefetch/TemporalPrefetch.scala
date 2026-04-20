@@ -1371,7 +1371,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   trainPt.prefetched := train_s2.prefetched
   trainPt.pfsource := train_s2.pfsource
   trainPt.metahit := hit_s2
-  trainPt.pc := train_s2.pc
+  trainPt.pc := hashPC(train_s2.pc)
 
   val sendDB = ChiselDB.createTable("tpsend", new sendBundle(), basicDB = true)
   val sendPt = Wire(new sendBundle())
