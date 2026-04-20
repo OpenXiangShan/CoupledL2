@@ -683,6 +683,10 @@ class PrefetchFilterEntry(implicit p: Parameters) extends CDPBundle {
   val pTag  = UInt(ReqFilterTagBits.W)
   val vTag  = UInt(ReqFilterTagBits.W)
   val pfDepth = UInt(4.W)
+
+  // for TLB retry
+  val retry_en    = Bool()
+  val retry_timer = UInt(4.W)
   
   // Only for monitor
   val pfSource = UInt(PfSource.pfSourceBits.W)
@@ -779,8 +783,10 @@ class PrefetchFilter(implicit p: Parameters) extends CDPModule {
     val entry = entries(i)
     val entry_tlb_req = tlb_req_arb.io.in(i)
 
+    val entry_timer_ok = !entry.retry_en || entry.retry_timer >= 10.U
+
     // req tlb
-    entry_tlb_req.valid := valids(i) && !entry.paddr_valid && !tlb_s1_fire_vec(i) && !tlb_s2_fire_vec(i)
+    entry_tlb_req.valid := valids(i) && !entry.paddr_valid && !tlb_s1_fire_vec(i) && !tlb_s2_fire_vec(i) && entry_timer_ok
     entry_tlb_req.bits  := DontCare
     entry_tlb_req.bits.vaddr  := Cat(entry.vTag, 0.U(log2Ceil(blockBytes).W))
     entry_tlb_req.bits.cmd    := TlbCmd.read
@@ -818,6 +824,21 @@ class PrefetchFilter(implicit p: Parameters) extends CDPModule {
     }
   }
 
+  when (tlb_s2_rsp_valid && tlb_s2_rsp_bits.miss && has_fire) {
+    when (!entries(fire_idx).retry_en) {
+      entries(fire_idx).retry_en := true.B    // first miss, enable timer
+    }.otherwise {
+      valids(fire_idx)  := false.B            // second miss, drop the req
+    }
+  }
+
+  // timer
+  for (i <- 0 until ReqFilterEntryNum) {
+    when (entries(i).retry_en && entries(i).retry_timer < 10.U) {   // TODO: parameterize the interval value
+      entries(i).retry_timer := entries(i).retry_timer + 1.U
+    }
+  }
+
   // Arbiter pf_reqs
   for (i <- 0 until ReqFilterEntryNum) {
     val entry = entries(i)
@@ -838,9 +859,12 @@ class PrefetchFilter(implicit p: Parameters) extends CDPModule {
 
   // drop by entry tlb check
   XSPerfAccumulate("in_detect_trig_drop_by_filterTlbChk", tlb_s2_rsp_valid && has_fire && need_drop && !tlb_s2_rsp_bits.miss)
+  XSPerfAccumulate("in_detect_trig_drop_by_filterTlbMiss", tlb_s2_rsp_valid && has_fire && tlb_s2_rsp_bits.miss && entries(fire_idx).retry_en)
 
-  // tlb_req block
+  // tlb_req data
   XSPerfAccumulate("tlb_req_block", tlb_req.valid && !tlb_req.ready)
+  XSPerfAccumulate("tlb_rsp_first_miss", tlb_s2_rsp_valid && has_fire && tlb_s2_rsp_bits.miss && !entries(fire_idx).retry_en)
+  XSPerfAccumulate("tlb_rsp_second_miss", tlb_s2_rsp_valid && has_fire && tlb_s2_rsp_bits.miss && entries(fire_idx).retry_en)
 
   // pfSrc distribution
   val selected_entry = entries(pf_req_arb.io.chosen)
