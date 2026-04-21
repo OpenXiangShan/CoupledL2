@@ -297,10 +297,8 @@ class Directory(implicit p: Parameters) extends L2Module {
   )*/
   // for retry bug fixing: if the chosenway not in freewaymask, choose another way
   // TODO: req_s3.wayMask not take into consideration
-  val finalReplOH = MuxCase(MaskToOH(freeWayMask_s3), Seq (
-    inv -> invOH,
-    OHMux(replaceOH, freeWayMask_s3) -> replaceOH
-  ))
+  val chosenOH = Mux(inv, invOH, replaceOH)
+  val finalReplOH = Mux(OHMux(chosenOH, freeWayMask_s3), chosenOH, MaskToOH(freeWayMask_s3))
   val hit_s3 = Cat(hitVec).orR || req_s3.cmoAll
   val wayOH_s3 = Mux(req_s3.cmoAll, cmoWayOH_s3, Mux(hit_s3, hitOH, finalReplOH))
   val way_s3 = OHToUInt(wayOH_s3)
