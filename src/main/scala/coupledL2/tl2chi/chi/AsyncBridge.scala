@@ -381,20 +381,14 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
   val txState = RegInit(LinkStates.STOP)
   val rxState = RegInit(LinkStates.STOP)
 
-  val txreq_lcrdvReady = Wire(Bool())
-  val txrsp_lcrdvReady = Wire(Bool())
-  val txdat_lcrdvReady = Wire(Bool())
-
-//  io.deq.tx.req <> FromAsyncBundle.channel(io.async.tx.req.flit, params, Some("txreq_flit"), Some(txreq_lcrdvReady))
-//  io.deq.tx.rsp <> FromAsyncBundle.channel(io.async.tx.rsp.flit, params, Some("txrsp_flit"), Some(txrsp_lcrdvReady))
-//  io.deq.tx.dat <> FromAsyncBundle.channel(io.async.tx.dat.flit, params, Some("txdat_flit"), Some(txdat_lcrdvReady))
-
   val txreq = FromAsyncBundleWithLCredit.channel(io.async.tx.req.flit, params, Some("txreq_flit"), Some(LinkState(txState)), true).asInstanceOf[ChannelWithActive[UInt]]
   val txrsp = FromAsyncBundleWithLCredit.channel(io.async.tx.rsp.flit, params, Some("txrsp_flit"), Some(LinkState(txState)), true).asInstanceOf[ChannelWithActive[UInt]]
   val txdat = FromAsyncBundleWithLCredit.channel(io.async.tx.dat.flit, params, Some("txdat_flit"), Some(LinkState(txState)), true).asInstanceOf[ChannelWithActive[UInt]]
+
   io.deq.tx.req <> txreq.channel
   io.deq.tx.rsp <> txrsp.channel
   io.deq.tx.dat <> txdat.channel
+
   // Add handshake to confirm Sink Tx Queue is completely drained
   val txActive = txreq.active || txrsp.active || txdat.active
   io.powerAck.QACTIVE := txActive
