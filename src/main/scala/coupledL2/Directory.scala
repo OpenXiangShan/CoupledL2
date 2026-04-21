@@ -21,7 +21,7 @@ import chisel3._
 import chisel3.util._
 import utility.mbist.MbistPipeline
 import coupledL2.utils._
-import utility.{ChiselDB,  Code, MemReqSource, ParallelPriorityMux, RegNextN, XSPerfAccumulate}
+import utility.{ParallelPriorityMux, RegNextN, XSPerfAccumulate, Code}
 import utility.sram.SRAMTemplate
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.prefetch.PfSource
@@ -112,17 +112,6 @@ class TagWrite(implicit p: Parameters) extends L2Bundle {
   val set = UInt(setBits.W)
   val wayOH = UInt(cacheParams.ways.W)
   val wtag = UInt(tagBits.W)
-}
-
-// DB entry for prefetch lifecycle tracking (arrival, access, eviction)
-class PrefetchDbEntry(implicit p: Parameters) extends L2Bundle {
-  val setIdx = UInt(setBits.W)
-  val isPrefetch = Bool()
-  val isHit = Bool()
-  val tag = UInt(tagBits.W)
-  val way = UInt(wayBits.W)
-  val metaSource = UInt(PfSource.pfSourceBits.W)
-  val reqSource = UInt(MemReqSource.reqSourceBits.W)
 }
 
 
@@ -444,60 +433,5 @@ class Directory(implicit p: Parameters) extends L2Module {
   /* ====== Reset ====== */
 
   XSPerfAccumulate("dirRead_cnt", io.read.fire)
-  XSPerfAccumulate("choose_busy_way", reqValid_s3 && !req_s3.wayMask(replaceWay))
-
-  /* ====== ChiselDB logging for  prefetcher lifecycle ====== */
-  if (cacheParams.enableMonitor && !cacheParams.FPGAPlatform) {
-    val defaultPfSrc = PfSource.NoWhere.id.U
-    val hartId = cacheParams.hartId
-    val pfReqWriteTable = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Write_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = false)
-    val pfReqReadTable = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Read_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = false)
-    val pfReqEvictTable = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Evict_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = false)
-    
-    // Write: meta write that marks a block as prefetched
-    val wmeta = io.metaWReq.bits.wmeta
-    val pfReqWriteEn = io.metaWReq.valid && wmeta.prefetch.getOrElse(false.B) 
-    val pfReqWrite = Wire(new PrefetchDbEntry)
-    val writeHasTag = io.tagWReq.valid && (io.tagWReq.bits.set === io.metaWReq.bits.set) &&
-      (io.metaWReq.bits.wayOH === io.tagWReq.bits.wayOH) // try to attach tag when tagWReq coincides with metaWReq
-
-    pfReqWrite.isHit := false.B //useless for write req, just set it to false.B
-    pfReqWrite.setIdx := io.metaWReq.bits.set // when meta write, the set idx to be written
-    pfReqWrite.way := OHToUInt(io.metaWReq.bits.wayOH) // when meta write, way to be written
-    pfReqWrite.tag := Mux(writeHasTag, io.tagWReq.bits.wtag, 0.U)
-    pfReqWrite.isPrefetch := wmeta.prefetch.getOrElse(false.B) // write data is for a prefetched block or not
-    pfReqWrite.metaSource := wmeta.prefetchSrc.getOrElse(defaultPfSrc) // source of the block that writed
-    pfReqWrite.reqSource := wmeta.prefetchSrc.getOrElse(defaultPfSrc) // The source of the request that causes this meta write
-    pfReqWriteTable.log(pfReqWrite, pfReqWriteEn, s"L2${hartId}_${p(SliceIdKey)}", clock, reset)
-
-    // Read: when a read hits a prefetched block
-    val pfReqReadEn = io.resp.valid && io.resp.bits.hit && io.resp.bits.meta.prefetch.getOrElse(false.B) 
-    val pfReqRead = Wire(new PrefetchDbEntry)
-    pfReqRead.isHit := io.resp.bits.hit // read req hit or not
-    pfReqRead.setIdx := io.resp.bits.set
-    pfReqRead.tag := io.resp.bits.tag // read req accsess a prefetched block with which tag
-    pfReqRead.isPrefetch := io.resp.bits.meta.prefetch.getOrElse(false.B) // read req accsess a prefetched block
-    pfReqRead.way := io.resp.bits.way // read req accsess a prefetched block in which way
-    pfReqRead.metaSource := io.resp.bits.meta.prefetchSrc.getOrElse(defaultPfSrc) // source of the block that read req accessed
-    pfReqRead.reqSource := io.resp.bits.replacerInfo.reqSource // The source of the read request (eg:bop,tp,prefetcher, etc.)
-    pfReqReadTable.log(pfReqRead, pfReqReadEn, s"L2${hartId}_${p(SliceIdKey)}", clock, reset)
-
-    // Eviction: when Directory issues a replacement for a prefetched block
-    val evictBlockEn = io.replResp.valid && !io.replResp.bits.retry
-    val evictBlockMeta = OHMux(finalReplOH, metaAll_s3) // meta of the block to be evicted 
-    val pfReqEvictEn = evictBlockEn && evictBlockMeta.prefetch.getOrElse(false.B)
-    val pfReqEvict = Wire(new PrefetchDbEntry)
-
-    // read request info that causes eviction
-    pfReqEvict.isHit := io.resp.bits.hit // read request :read hit 
-    pfReqEvict.reqSource := req_s3.replacerInfo.reqSource // The source of the read request that caused this Eviction
-    
-    // evict block info
-    pfReqEvict.setIdx := io.replResp.bits.set //set idx of evict block 
-    pfReqEvict.tag := io.replResp.bits.tag //tag of evict block 
-    pfReqEvict.isPrefetch := io.replResp.bits.meta.prefetch.getOrElse(false.B)
-    pfReqEvict.way := io.replResp.bits.way // way of evict block
-    pfReqEvict.metaSource := io.replResp.bits.meta.prefetchSrc.getOrElse(defaultPfSrc) // source of the block that evicted
-    pfReqEvictTable.log(pfReqEvict, pfReqEvictEn, s"L2${hartId}_${p(SliceIdKey)}", clock, reset)
-  }
+  // XSPerfAccumulate("choose_busy_way", reqValid_s3 && !req_s3.wayMask(chosenWay))
 }
