@@ -224,7 +224,9 @@ class Directory(implicit p: Parameters) extends L2Module {
     io.tagWReq.bits.wtag
   }
   val tagRead = tagArray.io.r(io.read.fire, io.read.bits.set).resp.data
-  assert(PopCount(io.tagWReq.bits.wayOH) <= 1.U, "Tag write should be one-hot")
+  when (io.tagWReq.valid) {
+    assert(PopCount(io.tagWReq.bits.wayOH) === 1.U, "Tag write should be one-hot")
+  }
   tagArray.io.w(
     tagWen,
     tagWrite,
