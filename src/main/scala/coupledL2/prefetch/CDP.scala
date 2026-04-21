@@ -10,6 +10,10 @@ import coupledL2._
 case class CDPParameters(
   UseFilteredDetect:  Boolean = true,
 
+  // PLRU Train Control
+  PLRU_TRAIN:     Int = 0,    // Only use train trigger to update plru
+  PLRU_PARTIAL:   Int = 1,    // Use train trigger and hit & hot detect trigger to update plru
+
   DetectPipeNum: Int = 4,
 
   ReqFilterEntryNum: Int = 16,   // how many entries in the prefetch req filter?
@@ -45,6 +49,11 @@ trait HasCDPParams extends HasPrefetcherHelper with HasCoupledL2Parameters {
   val debug = cdpParams.debug
 
   val UseFilteredDetect = cdpParams.UseFilteredDetect
+
+  val PLRU_TRAIN    = cdpParams.PLRU_TRAIN
+  val PLRU_PARTIAL  = cdpParams.PLRU_PARTIAL
+
+  val plru_mode     = PLRU_TRAIN
 
   // helper function
   def get_folded_hash(origin_val: UInt, resultBitWidth: Int): UInt = {    // fold $origin_val length value into $resultBitWidth
@@ -596,7 +605,13 @@ class DetectPipeline(name:String)(implicit p: Parameters) extends CDPModule {
   val s3_addr = s3_req.bits.vaddr
 
   // Update PLRU
-  io.replace_upt.valid  := s3_req.valid && s3_vt_hit
+  if (plru_mode == PLRU_PARTIAL){
+    io.replace_upt.valid  := s3_req.valid && s3_vt_hit
+  }
+  else {
+    io.replace_upt.valid  := false.B
+  }
+
   io.replace_upt.bits.set :=get_main_idx(s3_addr)
   io.replace_upt.bits.way := s3_vt_hit_idx
 
@@ -901,6 +916,17 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
     // prefetch req?
     val pft_req = DecoupledIO(new PrefetchReq)
   })
+
+  println(s"====== CDP Prefetcher Config (hart ${cacheParams.hartId}) ======")
+  println(s"UseFilteredDetect:  $UseFilteredDetect")
+  println(s"Degree:             $Degree")
+  println(s"PLRU mode:          ${if (plru_mode == PLRU_PARTIAL) "both" else "only train"}")
+  println(s"VpnTableTagBits:    $vpnTabTagBits")
+  println(s"EntryBits:          $EntryBits")
+  println(s"VpnResetPeriod:     $VpnResetPeriod")
+  println(s"debug mode:         $debug")
+  println(s"============================================")
+
 
   private val cstEnable = Constantin.createRecord("cdp_enable"+cacheParams.hartId.toString, initValue = 1)
 
