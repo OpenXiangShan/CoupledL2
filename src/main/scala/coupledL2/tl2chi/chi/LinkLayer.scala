@@ -23,6 +23,7 @@ import org.chipsalliance.cde.config.Parameters
 import utility._
 import coupledL2.L2Module
 import coupledL2.HasCoupledL2Parameters
+import coupledL2.tl2chi.LCrdyIn
 
 class ChannelIO[+T <: Data](gen: T) extends Bundle {
   // Flit Pending. Early indication that a flit might be transmitted in the following cycle
@@ -254,12 +255,7 @@ object LCredit2Decoupled {
     reclaimLCredit := mod.io.reclaimLCredit
   }
 }
-
-class Decoupled2LCredit[T <: Bundle](
-  gen: T,
-  overlcreditNum: Option[Int] = None,
-  withBuf: Boolean = false
-)(implicit val p: Parameters) extends Module with HasCoupledL2Parameters {
+class Decoupled2LCredit[T <: Bundle](gen: T) extends Module {
   val io = IO(new Bundle() {
     val in = Flipped(DecoupledIO(gen.cloneType))
     val out = ChannelIO(gen.cloneType)
@@ -275,48 +271,15 @@ class Decoupled2LCredit[T <: Bundle](
 
   // The maximum number of L-Credits that a receiver can provide is 15.
   val lcreditsMax = 15
-  val enableCHIAsync = cacheParams.enableCHIAsyncBridge
-  val overlcreditVal = if(enableCHIAsync) overlcreditNum.getOrElse(0) else 0
-  val lcreditsMaxAll = lcreditsMax + overlcreditVal
-  val lcreditPool = RegInit(overlcreditVal.U(log2Up(lcreditsMaxAll+1).W))
-  //  val lcreditPool = RegInit(8.U(log2Up(lcreditsMaxAll+1).W))
-  val flitv = WireInit(false.B)
-  val returnLCreditValid = WireInit(false.B)
+  val lcreditPool = RegInit(0.U(log2Up(lcreditsMax).W))
 
-  println(s"=== Decoupled2LCredit ===")
-  println(s"cacheParams.enableCHIAsyncBridge = ${cacheParams.enableCHIAsyncBridge}")
-  println(s"  withBuf: $withBuf")
-  println(s"  enableCHIAsync: $enableCHIAsync")
-  println(s"  overlcreditNum: $overlcreditNum")
+  val returnLCreditValid = !io.in.valid && state === LinkStates.DEACTIVATE && lcreditPool =/= 0.U
+  val flitv = io.in.fire || returnLCreditValid
 
-  if(withBuf &&  enableCHIAsync) {
-    /* Shadow Buffer (depth=32, flow mode for low latency)*/
-    val shadow_buffer = Module(new Queue(gen, 32, flow = true, pipe = false))
-    shadow_buffer.io.enq <> io.in
-
-    val returnLCreditValid = !shadow_buffer.io.deq.valid && !io.in.valid && state === LinkStates.DEACTIVATE && lcreditPool =/= overlcreditVal.U
-    val can_issue_flit = shadow_buffer.io.deq.valid && lcreditPool=/=0.U && !disableFlit
-    shadow_buffer.io.deq.ready := can_issue_flit
-
-    flitv := can_issue_flit || returnLCreditValid
-
-    out.flitv := RegNext(flitv, init = false.B)
-    out.flit := RegEnable(Mux(shadow_buffer.io.deq.valid, Cat(shadow_buffer.io.deq.bits.getElements.map(_.asUInt)), 0.U /* LCrdReturn */), flitv)
-
-  } else {
-    val returnLCreditValid = !io.in.valid && state === LinkStates.DEACTIVATE && lcreditPool =/= overlcreditVal.U
-    io.in.ready := lcreditPool =/= 0.U && !disableFlit
-    flitv := io.in.fire || returnLCreditValid
-
-    out.flitv := RegNext(flitv, init = false.B)
-    out.flit := RegEnable(Mux(io.in.valid, Cat(io.in.bits.getElements.map(_.asUInt)), 0.U /* LCrdReturn */), flitv)
-  }
-
-  //only when has lcredit 
   when (acceptLCredit) {
     when (!flitv) {
       lcreditPool := lcreditPool + 1.U
-      assert(lcreditPool < lcreditsMaxAll.U, "L-Credit pool overflow")
+      assert(lcreditPool + 1.U =/= 0.U, "L-Credit pool overflow")
     }
   }.otherwise {
     when (flitv) {
@@ -324,15 +287,12 @@ class Decoupled2LCredit[T <: Bundle](
     }
   }
 
+  io.in.ready := lcreditPool =/= 0.U && !disableFlit
+
   io.out <> out
   out.flitpend := RegNext(true.B, init = false.B) // TODO
-//  out.flitv := RegNext(flitv, init = false.B)
-//  out.flit := RegEnable(Mux(shadow_buffer.io.deq.valid, Cat(shadow_buffer.io.deq.bits.getElements.map(_.asUInt)), 0.U /* LCrdReturn */), flitv)
-
-  /**
-    * performance counters
-    */
-  XSPerfAccumulate("lcrd_received", acceptLCredit)
+  out.flitv := RegNext(flitv, init = false.B)
+  out.flit := RegEnable(Mux(io.in.valid, Cat(io.in.bits.getElements.map(_.asUInt)), 0.U /* LCrdReturn */), flitv)
 }
 
 object Decoupled2LCredit {
@@ -340,16 +300,58 @@ object Decoupled2LCredit {
     left: DecoupledIO[T],
     right: ChannelIO[T],
     state: LinkState,
-    suggestName: Option[String] = None,
-    overlcreditNum: Option[Int] = None,
-    withBuf: Boolean = false
-  )(implicit p: Parameters): Unit = {
-    val mod = Module(new Decoupled2LCredit(left.bits.cloneType, overlcreditNum, withBuf))
+    suggestName: Option[String] = None
+  ): Unit = {
+    val mod = Module(new Decoupled2LCredit(left.bits.cloneType))
     suggestName.foreach(name => mod.suggestName(s"Decoupled2LCredit_${name}"))
     
     mod.io.in <> left
     right <> mod.io.out
     mod.io.state := state
+  }
+}
+
+class Decoupled2Source[T <: Bundle](gen: T) extends Module {
+  val io = IO(new Bundle() {
+    val in = Flipped(DecoupledIO(gen.cloneType))
+    val out = ChannelIO(gen.cloneType)
+    val state = Input(new LinkState())
+    val sourceReady = Input(Bool())
+  })
+
+  val out = Wire(io.out.cloneType)
+
+  val state = io.state.state
+  val disableFlit = state === LinkStates.STOP || state === LinkStates.ACTIVATE
+
+  val flitv = WireInit(false.B)
+  val sourceReady_r = RegNext(io.sourceReady, init = true.B) //add register to safe timing
+  flitv := io.in.valid && sourceReady_r && !disableFlit
+
+  io.in.ready := sourceReady_r && !disableFlit
+
+  io.out <> out
+  out.flitpend := RegNext(true.B, init = false.B) // TODO
+  out.flitv := RegNext(flitv, init = false.B)
+  out.flit := RegEnable(Cat(io.in.bits.getElements.map(_.asUInt)), flitv)
+
+}
+
+object Decoupled2Source {
+  def apply[T <: Bundle](
+    left: DecoupledIO[T],
+    right: ChannelIO[T],
+    state: LinkState,
+    sourceReady: Bool,
+    suggestName: Option[String] = None
+  )(implicit p: Parameters): Unit = {
+    val mod = Module(new Decoupled2Source(left.bits.cloneType))
+    suggestName.foreach(name => mod.suggestName(s"Decoupled2Source_${name}"))
+    
+    mod.io.in <> left
+    right <> mod.io.out
+    mod.io.state := state
+    mod.io.sourceReady := sourceReady
   }
 }
 
@@ -360,9 +362,11 @@ class LinkMonitor(implicit p: Parameters) extends L2Module with HasCHIOpcodes {
     val nodeID = Input(UInt(NODEID_WIDTH.W))
     val coEnable = Output(Bool())
     val exitco = Option.when(cacheParams.enableL2Flush) (Input(Bool()))
+    val lcrdy = new LCrdyIn
   })
   // val s_stop :: s_activate :: s_run :: s_deactivate :: Nil = Enum(4)
 
+  dontTouch(io.lcrdy)
   val txState = RegInit(LinkStates.STOP)
   val rxState = RegInit(LinkStates.STOP)
 
@@ -378,9 +382,17 @@ class LinkMonitor(implicit p: Parameters) extends L2Module with HasCHIOpcodes {
   /* IO assignment */
   val rxsnpDeact, rxrspDeact, rxdatDeact = Wire(Bool())
   val rxDeact = rxsnpDeact && rxrspDeact && rxdatDeact
-  Decoupled2LCredit(setSrcID(io.in.tx.req, io.nodeID), io.out.tx.req, LinkState(txState), Some("txreqLink"), Some(8), true)
-  Decoupled2LCredit(setSrcID(io.in.tx.rsp, io.nodeID), io.out.tx.rsp, LinkState(txState), Some("txrspLink"), Some(8), true)
-  Decoupled2LCredit(setSrcID(io.in.tx.dat, io.nodeID), io.out.tx.dat, LinkState(txState), Some("txdatLink"), Some(8), true)
+  val enableCHIAsync = cacheParams.enableCHIAsyncBridge
+  if(enableCHIAsync) {
+    Decoupled2Source(setSrcID(io.in.tx.req, io.nodeID), io.out.tx.req, LinkState(txState), io.lcrdy.req.rdy, Some("txreqLink"))
+    Decoupled2Source(setSrcID(io.in.tx.rsp, io.nodeID), io.out.tx.rsp, LinkState(txState), io.lcrdy.rsp.rdy, Some("txrspLink"))
+    Decoupled2Source(setSrcID(io.in.tx.dat, io.nodeID), io.out.tx.dat, LinkState(txState), io.lcrdy.dat.rdy, Some("txdatLink"))
+  } else {
+    Decoupled2LCredit(setSrcID(io.in.tx.req, io.nodeID), io.out.tx.req, LinkState(txState), Some("txreqLink"))
+    Decoupled2LCredit(setSrcID(io.in.tx.rsp, io.nodeID), io.out.tx.rsp, LinkState(txState), Some("txrspLink"))
+    Decoupled2LCredit(setSrcID(io.in.tx.dat, io.nodeID), io.out.tx.dat, LinkState(txState), Some("txdatLink"))
+  }
+
   LCredit2Decoupled(io.out.rx.snp, io.in.rx.snp, LinkState(rxState), rxsnpDeact, Some("rxsnp"))
   LCredit2Decoupled(io.out.rx.rsp, io.in.rx.rsp, LinkState(rxState), rxrspDeact, Some("rxrsp"), 15, false)
   LCredit2Decoupled(io.out.rx.dat, io.in.rx.dat, LinkState(rxState), rxdatDeact, Some("rxdat"), 15, false)
