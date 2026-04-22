@@ -362,11 +362,10 @@ class LinkMonitor(implicit p: Parameters) extends L2Module with HasCHIOpcodes {
     val nodeID = Input(UInt(NODEID_WIDTH.W))
     val coEnable = Output(Bool())
     val exitco = Option.when(cacheParams.enableL2Flush) (Input(Bool()))
-    val lcrdy = new LCrdyIn
+    val lcrdy = Option.when(cacheParams.txSourceReady) (Input(new LCrdyIn))
   })
   // val s_stop :: s_activate :: s_run :: s_deactivate :: Nil = Enum(4)
 
-  dontTouch(io.lcrdy)
   val txState = RegInit(LinkStates.STOP)
   val rxState = RegInit(LinkStates.STOP)
 
@@ -382,11 +381,14 @@ class LinkMonitor(implicit p: Parameters) extends L2Module with HasCHIOpcodes {
   /* IO assignment */
   val rxsnpDeact, rxrspDeact, rxdatDeact = Wire(Bool())
   val rxDeact = rxsnpDeact && rxrspDeact && rxdatDeact
-  val enableCHIAsync = cacheParams.enableCHIAsyncBridge
-  if(enableCHIAsync) {
-    Decoupled2Source(setSrcID(io.in.tx.req, io.nodeID), io.out.tx.req, LinkState(txState), io.lcrdy.req.rdy, Some("txreqLink"))
-    Decoupled2Source(setSrcID(io.in.tx.rsp, io.nodeID), io.out.tx.rsp, LinkState(txState), io.lcrdy.rsp.rdy, Some("txrspLink"))
-    Decoupled2Source(setSrcID(io.in.tx.dat, io.nodeID), io.out.tx.dat, LinkState(txState), io.lcrdy.dat.rdy, Some("txdatLink"))
+  val txSourceReady = cacheParams.txSourceReady
+  val ioTXREQReady = io.lcrdy.map(_.req.rdy).getOrElse(true.B)
+  val ioTXRSPReady = io.lcrdy.map(_.rsp.rdy).getOrElse(true.B)
+  val ioTXDATReady = io.lcrdy.map(_.dat.rdy).getOrElse(true.B)
+  if(txSourceReady) {
+    Decoupled2Source(setSrcID(io.in.tx.req, io.nodeID), io.out.tx.req, LinkState(txState), ioTXREQReady, Some("txreqLink"))
+    Decoupled2Source(setSrcID(io.in.tx.rsp, io.nodeID), io.out.tx.rsp, LinkState(txState), ioTXRSPReady, Some("txrspLink"))
+    Decoupled2Source(setSrcID(io.in.tx.dat, io.nodeID), io.out.tx.dat, LinkState(txState), ioTXDATReady, Some("txdatLink"))
   } else {
     Decoupled2LCredit(setSrcID(io.in.tx.req, io.nodeID), io.out.tx.req, LinkState(txState), Some("txreqLink"))
     Decoupled2LCredit(setSrcID(io.in.tx.rsp, io.nodeID), io.out.tx.rsp, LinkState(txState), Some("txrspLink"))

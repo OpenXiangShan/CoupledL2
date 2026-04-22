@@ -21,6 +21,7 @@ import chisel3.util._
 import freechips.rocketchip.util.{AsyncQueueParams, AsyncBundle, AsyncQueueSource, AsyncQueueSink}
 import freechips.rocketchip.util.AsyncResetSynchronizerShiftReg
 import org.chipsalliance.cde.config.Parameters
+import coupledL2.L2ParamKey
 
 class AsyncChannelIO[+T <: Data](gen: T, params: AsyncQueueParams = AsyncQueueParams()) extends Bundle {
   val flitpend = Output(Bool())
@@ -377,7 +378,7 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
       val QREQ = Input(Bool())
     }
   })
-
+//  val txSourceReady = cacheParams.txSourceReady
   val txState = RegInit(LinkStates.STOP)
   val rxState = RegInit(LinkStates.STOP)
 
