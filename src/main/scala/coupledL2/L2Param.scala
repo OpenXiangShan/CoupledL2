@@ -103,7 +103,7 @@ case class L2Param(
   // L2 Flush
   enableL2Flush: Boolean = false,
   // AsyncBridge
-  txSourceReady: Boolean = true,
+  txSourceReady: Boolean = false,
   // Performance analysis
   enablePerf: Boolean = true,
   // RollingDB
