@@ -41,9 +41,11 @@ case class TPParameters(
   tpTableAssoc: Int = 16,
   // vaddrBits: Int = 50, sv48x4, no longer used(use fullVaddrBits)
   blockOffBits: Int = 6,
+  tpTrainQueueDepth: Int = 8,
   dataReadQueueDepth: Int = 8,
   dataWriteQueueDepth: Int = 4,
   tpDataQueueDepth: Int = 8,
+  tpMetaWQueueDepth: Int = 8,
   tpMetaResetQueueDepth: Int = 8, // extreme condition: use 9
   throttleCycles: Int = 4,  // unused yet
   replacementPolicy: String = "plru",
@@ -95,9 +97,11 @@ trait HasTPParams extends HasCoupledL2Parameters {
   def debug = tpParams.debug
   def vaddrBits = fullVAddrBits
   def blockOffBits = tpParams.blockOffBits
+  def tpTrainQueueDepth = tpParams.tpTrainQueueDepth
   def dataReadQueueDepth = tpParams.dataReadQueueDepth
   def dataWriteQueueDepth = tpParams.dataWriteQueueDepth
   def tpDataQueueDepth = tpParams.tpDataQueueDepth
+  def tpMetaWQueueDepth = tpParams.tpMetaWQueueDepth
   def tpMetaResetQueueDepth = tpParams.tpMetaResetQueueDepth
   def metaDataLength = fullAddressBits - offsetBits
 
@@ -209,7 +213,6 @@ class filteredEntry(implicit p: Parameters) extends TPBundle {
   val pc = UInt(pcHashWidth.W)
   val lastAddr = UInt(metaDataLength.W)
   val currAddr = UInt(metaDataLength.W)
-  val tpTableWay = UInt(log2Ceil(tpTableAssoc).W)
   val cnt = UInt(filteredCntWidth.W)
 }
 
@@ -238,7 +241,6 @@ class trainEntry(implicit p: Parameters) extends TPBundle {
 class SamplerFilter(implicit p: Parameters) extends TPModule {
   val io = IO(new Bundle() {
     val train = Flipped(ValidIO(new PrefetchTrain()))
-    val tpTableWay_s2 = Flipped(ValidIO(UInt(log2Ceil(tpTableAssoc).W)))
     val trained = ValidIO(new filteredEntry())
   })
 
@@ -362,7 +364,6 @@ class SamplerFilter(implicit p: Parameters) extends TPModule {
   io.trained.bits.lastAddr := lastAddr_s2
   io.trained.bits.currAddr := currAddr_s2
   io.trained.bits.cnt := cnt_s2
-  io.trained.bits.tpTableWay := io.tpTableWay_s2.bits
 
   // assert(io.trained.valid === io.tpTableWay_s2.valid) TODO
   assert(!(filterTable.io.r.req.valid && filterTable.io.w.req.valid))
@@ -382,7 +383,6 @@ class trainedPair(implicit p: Parameters) extends TPBundle {
   val pc = UInt(pcHashWidth.W)
   val addr1 = UInt(metaDataLength.W)
   val addr2 = UInt(metaDataLength.W)
-  val tpTableWay = UInt(log2Ceil(tpTableAssoc).W)
 }
 
 class samplerTableEntry(implicit p: Parameters) extends TPBundle {
@@ -449,7 +449,6 @@ class SamplerTable(implicit p: Parameters) extends TPModule {
   val targetAddr_s0 = Mux(pendingValid_s0, trainPending.currAddr, io.train.bits.currAddr)
   val pc_s0 = Mux(pendingValid_s0, trainPending.pc, io.train.bits.pc)
   val cnt_s0 = Mux(pendingValid_s0, trainPending.cnt, io.train.bits.cnt)
-  val tpTableWay_s0 = Mux(pendingValid_s0, trainPending.tpTableWay, io.train.bits.tpTableWay)
 
   val samplerTableRValid = s0_valid
   val (baseTag_s0, baseSet_s0) = parsePaddr(baseAddr_s0)
@@ -462,7 +461,6 @@ class SamplerTable(implicit p: Parameters) extends TPModule {
   val targetAddr_s1 = RegEnable(targetAddr_s0, s0_valid)
   val pc_s1 = RegEnable(pc_s0, s0_valid)
   val cnt_s1 = RegEnable(cnt_s0, s0_valid)
-  val tpTableWay_s1 = RegEnable(tpTableWay_s0, s0_valid)
 
   val (baseTag_s1, baseSet_s1) = parsePaddr(baseAddr_s1)
   val tagMatchVec_s1 = pairs_s1.map(_.baseTag === baseTag_s1)
@@ -492,7 +490,6 @@ class SamplerTable(implicit p: Parameters) extends TPModule {
   val targetAddr_s2 = RegEnable(targetAddr_s1, s1_valid)
   val pc_s2 = RegEnable(pc_s1, s1_valid)
   val cnt_s2 = RegEnable(cnt_s1, s1_valid)
-  val tpTableWay_s2 = RegEnable(tpTableWay_s1, s1_valid)
   val hit_s2 = RegEnable(hit_s1, s1_valid)
   val way_s2 = RegEnable(way_s1, s1_valid)
   val lastPair_s2 = RegEnable(lastPair_s1, s1_valid)
@@ -532,7 +529,6 @@ class SamplerTable(implicit p: Parameters) extends TPModule {
   io.trained.bits.pc := pc_s2
   io.trained.bits.addr1 := baseAddr_s2
   io.trained.bits.addr2 := targetAddr_s2
-  io.trained.bits.tpTableWay := tpTableWay_s2
 
 
   XSPerfAccumulate("tp_sampler_table_trained_valid", io.trained.valid)
@@ -554,7 +550,6 @@ class trainedRecord(implicit p: Parameters) extends TPBundle {
   val pc = UInt(pcHashWidth.W)
   val data = Vec(tpEntryMaxLen, UInt(metaDataLength.W))
   val length = UInt(log2Ceil(tpEntryMaxLen).W)
-  val tpTableWay = UInt(log2Ceil(tpTableAssoc).W)
   val trigger = UInt(metaDataLength.W)
 }
 
@@ -563,17 +558,17 @@ class recorderTableEntry(implicit p: Parameters) extends TPBundle {
   val pcTag = UInt((pcHashWidth - recorderTableSetBits).W)
   val data = Vec(tpEntryMaxLen, UInt(metaDataLength.W))
   val index = UInt(log2Ceil(tpEntryMaxLen).W)
-  val tpTableWay = UInt(log2Ceil(tpTableAssoc).W)
   val trigger = UInt(metaDataLength.W)
+  val padding = UInt(log2Ceil(tpTableAssoc).W)
 
-  def apply(valid: Bool, tag: UInt, data: Vec[UInt], index: UInt, way: UInt, trigger: UInt) = {
+  def apply(valid: Bool, tag: UInt, data: Vec[UInt], index: UInt, trigger: UInt, pad: UInt) = {
     val entry = Wire(new recorderTableEntry)
     entry.valid := valid
     entry.pcTag := tag
     entry.data := data
     entry.index := index
-    entry.tpTableWay := way
     entry.trigger := trigger
+    entry.padding := pad
     entry
   }
 }
@@ -591,7 +586,7 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
   val recordThres = tpEntryMaxLen.U
   val recordFinish = RegInit(false.B)
 
-  val recorderTable = Module(
+  val recorderTable = Module( // change splitted or more sram
     new SRAMTemplate(
       new recorderTableEntry(),
       set = recorderTableNrSet,
@@ -626,7 +621,6 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
   val addr1_s0 = Mux(pendingValid_s0, pairPending.addr1, io.pair.bits.addr1)
   val addr2_s0 = Mux(pendingValid_s0, pairPending.addr2, io.pair.bits.addr2)
   val pc_s0 = Mux(pendingValid_s0, pairPending.pc, io.pair.bits.pc)
-  val tpTableWay_s0 = Mux(pendingValid_s0, pairPending.tpTableWay, io.pair.bits.tpTableWay)
 
   val recorderTableRValid = s0_valid
   val (pcTag_s0, pcSet_s0) = parsePaddr(pc_s0)
@@ -638,7 +632,6 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
   val addr1_s1 = RegEnable(addr1_s0, s0_valid)
   val addr2_s1 = RegEnable(addr2_s0, s0_valid)
   val pc_s1 = RegEnable(pc_s0, s0_valid)
-  val tpTableWay_s1 = RegEnable(tpTableWay_s0, s0_valid)
 
   val (pcTag_s1, pcSet_s1) = parsePaddr(pc_s1)
   val tagMatchVec_s1 = recorders_s1.map(_.pcTag === pcTag_s1)
@@ -665,7 +658,6 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
   val addr1_s2 = RegEnable(addr1_s1, s1_valid)
   val addr2_s2 = RegEnable(addr2_s1, s1_valid)
   val pc_s2 = RegEnable(pc_s1, s1_valid)
-  val tpTableWay_s2 = RegEnable(tpTableWay_s1, s1_valid)
   val hit_s2 = RegEnable(hit_s1, s1_valid)
   val way_s2 = RegEnable(way_s1, s1_valid)
   val recorder_s2 = RegEnable(recorder_s1, s1_valid)
@@ -678,7 +670,6 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
   val recorderTrigger_s3 = RegInit(0.U(metaDataLength.W))
 
   val recordData_s2 = recorder_s2.data
-  val recordTpTableWay_s2 = recorder_s2.tpTableWay
   val recordAddr1HitVec = recordData_s2.map(_ === addr1_s2)
   val recordAddr2HitVec = recordData_s2.map(_ === addr2_s2)
   val addr1Unique_s2 = !Cat(recordAddr1HitVec).orR
@@ -723,8 +714,6 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
   val addr1_s3 = RegEnable(addr1_s2, s2_valid)
   val addr2_s3 = RegEnable(addr2_s2, s2_valid)
   val pc_s3 = RegEnable(pc_s2, s2_valid)
-  val tpTableWay_s3 = RegEnable(tpTableWay_s2, s2_valid)
-  val recordTpTableWay_s3 = RegEnable(recordTpTableWay_s2, s2_valid)
   val recorderValid_s3 = RegEnable(recorderValid_s2, s2_valid)
   val hit_s3 = RegEnable(hit_s2, s2_valid)
   val way_s3 = RegEnable(way_s2, s2_valid)
@@ -740,8 +729,8 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
   // replEntryData_s3(1) := addr2_s3
   val resetEntryData_s3 = WireInit(VecInit(Seq.fill(tpEntryMaxLen)(0.U(metaDataLength.W))))
 
-  val updateEntry = WireInit(new recorderTableEntry().apply(true.B, pcTag_s3, recorderData_s3, recorderIdx_s3, tpTableWay_s3, recorderTrigger_s3))
-  val replEntry = WireInit(new recorderTableEntry().apply(true.B, pcTag_s3, replEntryData_s3, 1.U, tpTableWay_s3, addr1_s3))
+  val updateEntry = WireInit(new recorderTableEntry().apply(true.B, pcTag_s3, recorderData_s3, recorderIdx_s3, recorderTrigger_s3, 0.U))
+  val replEntry = WireInit(new recorderTableEntry().apply(true.B, pcTag_s3, replEntryData_s3, 1.U, addr1_s3, 0.U))
   val resetEntry = WireInit(new recorderTableEntry().apply(false.B, 0.U, resetEntryData_s3, 0.U, 0.U, 0.U))
 
   val recorderTableWValid_s3 = s3_valid || !resetFinish
@@ -758,13 +747,10 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
     waymask = recorderTableWWayOH_s3
   )
 
-  val tpTableWay = Mux(hit_s3, tpTableWay_s3, recordTpTableWay_s3) //TODO: way selection needs better
-
   io.record.valid := recordValid_s3
   io.record.bits.pc := pc_s2
   io.record.bits.data := recorderData_s3
   io.record.bits.length := recorderIdx_s3
-  io.record.bits.tpTableWay := tpTableWay
   io.record.bits.trigger := recorderTrigger_s3
 
   assert(!(io.record.valid && io.record.bits.length === 0.U))
@@ -786,7 +772,6 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
 class Sampler(implicit p: Parameters) extends TPModule {
   val io = IO(new Bundle() {
     val train = Flipped(ValidIO(new PrefetchTrain()))
-    val tpTableWay_s2 = Flipped(ValidIO(UInt(log2Ceil(tpTableAssoc).W)))
     val trained = ValidIO(new trainedRecord())
   })
 
@@ -795,7 +780,6 @@ class Sampler(implicit p: Parameters) extends TPModule {
   val recorderTable = Module(new RecorderTable())
 
   filterTable.io.train := io.train
-  filterTable.io.tpTableWay_s2 := io.tpTableWay_s2
   samplerTable.io.train := filterTable.io.trained
   // recorderTable.io.pair := samplerTable.io.trained
   io.trained := recorderTable.io.record
@@ -804,7 +788,6 @@ class Sampler(implicit p: Parameters) extends TPModule {
   recorderTable.io.pair.bits.pc := filterTable.io.trained.bits.pc
   recorderTable.io.pair.bits.addr1 := filterTable.io.trained.bits.lastAddr
   recorderTable.io.pair.bits.addr2 := filterTable.io.trained.bits.currAddr
-  recorderTable.io.pair.bits.tpTableWay := filterTable.io.trained.bits.tpTableWay
 
 }
 
@@ -879,7 +862,7 @@ class confTable(implicit p:Parameters) extends TPModule {
 
   reqQueue.io.enq.valid := io.req.valid
   reqQueue.io.enq.bits := io.req.bits
-  reqQueue.io.deq.ready := confTable.io.w.req.fire // W first
+  reqQueue.io.deq.ready := !confTable.io.w.req.fire // W first
 
   /* ------- stage 0 ------- */
   // query confTable
@@ -1054,9 +1037,11 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val globalConfidence = RegInit(VecInit(Seq.fill(1 << hitCountWidth)(globalHitCountConfidenceInitVal.U(globalHitCountConfidenceWidth.W))))
   val sampler = Module(new Sampler())
   val confTable = Module(new confTable())
+  val trainQueue = Module(new Queue(new PrefetchTrain(), tpTrainQueueDepth, pipe = false, flow = false))
   val dataReadQueue = Module(new Queue(new TPmetaReq(), dataReadQueueDepth, pipe = false, flow = false))
   val dataWriteQueue = Module(new Queue(new TPmetaReq(), dataWriteQueueDepth, pipe = false, flow = false))
   val tpDataQueue = Module(new Queue(new tpDataEntry(), tpDataQueueDepth + 1, pipe = false, flow = false))
+  val metaWQueue = Module(new Queue(new trainedRecord(), tpMetaWQueueDepth, pipe = false, flow = false))
   val tpMetaResetQueue = Module(new Queue(new tpMetaResetEntry(), tpMetaResetQueueDepth, pipe = false, flow = false))
   val confRespQueue = Module(new Queue(new confResp(), confReqQueueDepth + 1, pipe = false, flow = false))
 
@@ -1091,23 +1076,16 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     assert(!trainOnVaddr)
   }
 
-  val pending_valid = Wire(Bool())
-  val tpTable_w_valid = Wire(Bool())
-  val train_pending = RegEnable(io.train.bits, pending_valid)
-  val pending_valid_s0 = RegNext(pending_valid, false.B)
-  pending_valid := io.train.fire && io.train.bits.pc.orR && // not trainOnL1PF
-    Mux(trainOnVaddr.orR, io.train.bits.vaddr.getOrElse(0.U) =/= 0.U, true.B) &&
-    Mux(trainOnL1PF.orR, true.B, io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U) &&
-    (tpTable_w_valid || pending_valid_s0)
-  // TODO: change to queue
+  trainQueue.io.enq.valid := io.train.fire
+  trainQueue.io.enq.bits := io.train.bits
+  trainQueue.io.deq.ready := !tpMetaTable.io.w.req.fire // meta table W first
 
   /* Stage 0: query tpMetaTable */
 
-  val s0_valid = (io.train.fire && io.train.bits.pc.orR && // not trainOnL1PF
-    Mux(trainOnVaddr.orR, io.train.bits.vaddr.getOrElse(0.U) =/= 0.U, true.B) &&
-    Mux(trainOnL1PF.orR, true.B, io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U) && !tpTable_w_valid) ||
-    pending_valid_s0
-  val train_s0 = Mux(pending_valid_s0, train_pending, io.train.bits)
+  val train_s0 = trainQueue.io.deq.bits
+  val s0_valid = trainQueue.io.deq.fire && train_s0.pc.orR && // not trainOnL1PF
+    Mux(trainOnVaddr.orR, train_s0.vaddr.getOrElse(0.U) =/= 0.U, true.B) &&
+    Mux(trainOnL1PF.orR, true.B, train_s0.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
   val trainVaddr = train_s0.vaddr.getOrElse(0.U)
   val trainPaddr = train_s0.addr
   val trainMeta = trainPaddr >> offsetBits
@@ -1123,7 +1101,6 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     Mux(trainOnVaddr.orR, io.train.bits.vaddr.getOrElse(0.U) =/= 0.U, true.B) &&
     Mux(trainOnL1PF.orR, true.B, io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
   sampler.io.train.bits := io.train.bits
-
 
 
   /* Stage 1: parse tpMeta to judge hit or miss, choose the victim */
@@ -1143,17 +1120,22 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   val hitVec = tagMatchVec.zip(metaValidVec).map(x => x._1 && x._2)
   val hitWay = OHToUInt(hitVec)
-  val victimWay = repl.way
 
   val hit_s1 = Cat(hitVec).orR
-  val way_s1 = Mux(hit_s1, hitWay, victimWay)
+  val way_s1 = hitWay
   val hitCount_s1 = hitCount(set_s1)(way_s1).hitCount
+  assert(PopCount(hitVec) <= 1.U)
 
   when(hit_s1) {
     repl.access(hitWay)
-  }.otherwise {
+  }.elsewhen(metaWQueue.io.deq.fire) {
     repl.miss
   }
+
+  // from sampler
+  metaWQueue.io.enq.valid := sampler.io.trained.valid
+  metaWQueue.io.enq.bits := sampler.io.trained.bits
+  metaWQueue.io.deq.ready := !(hit_s1 && s1_valid) // when hit, update repl state first
 
   // meta reset queue
   // now use to upadte hitCount
@@ -1173,10 +1155,6 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val tag_s2 = RegEnable(tag_s1, s1_valid)
   val train_s2 = RegEnable(train_s1, s1_valid)
   val hitCount_s2 = RegEnable(hitCount_s1, s1_valid)
-
-  // to sampler(record trigger's way)
-  sampler.io.tpTableWay_s2.valid := s2_valid
-  sampler.io.tpTableWay_s2.bits := way_s2
 
   // dataReadQueue enqueue
   dataReadQueue.io.enq.valid := s2_valid && hit_s2
@@ -1216,35 +1194,36 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   tpMetaResetQueue.io.deq.ready := !(sampler.io.trained.valid || !resetFinish)
   assert(tpMetaResetQueue.io.enq.ready === true.B)
 
-  tpTable_w_valid := sampler.io.trained.valid || !resetFinish
-  val write_record_index = sampler.io.trained.bits.pc.pad(pcAddrHashWidth) ^ sampler.io.trained.bits.trigger.pad(pcAddrHashWidth)
-  val (write_record_tag, write_record_set) = parsePaddr(write_record_index)
-  val tpMeta_w_bits = Wire(new tpMetaEntry())
-  tpMeta_w_bits.valid := true.B
-  tpMeta_w_bits.tag := write_record_tag
+  val tpTableWValid = metaWQueue.io.deq.fire || !resetFinish
+  val metaWRecord = metaWQueue.io.deq.bits
+  val metaWRecordAddr = metaWRecord.pc.pad(pcAddrHashWidth) ^ metaWRecord.trigger.pad(pcAddrHashWidth)
+  val (metaWRecordTag, metaWRecordSet) = parsePaddr(metaWRecordAddr)
+  val metaWEntry = Wire(new tpMetaEntry())
+  metaWEntry.valid := true.B
+  metaWEntry.tag := metaWRecordTag
   when(!resetFinish) {
-    tpMeta_w_bits.valid := false.B
-    tpMeta_w_bits.tag := 0.U
+    metaWEntry.valid := false.B
+    metaWEntry.tag := 0.U
   }
-  val tpTable_w_length = sampler.io.trained.bits.length
-  val tpTable_w_set = Mux(resetFinish, write_record_set, resetIdx)
-  val tpTable_w_way = sampler.io.trained.bits.tpTableWay
-  val tpTable_w_wayOH = Mux(resetFinish, UIntToOH(tpTable_w_way), Fill(tpTableAssoc, true.B))
+  val tpTableWLength = metaWRecord.length
+  val tpTableWSet = Mux(resetFinish, metaWRecordSet, resetIdx)
+  val tpTableWWay = repl.way
+  val tpTableWWayOH = Mux(resetFinish, UIntToOH(tpTableWWay), Fill(tpTableAssoc, true.B))
 
-  tpMetaTable.io.w.apply(tpTable_w_valid || !resetFinish, tpMeta_w_bits, tpTable_w_set, tpTable_w_wayOH)
+  tpMetaTable.io.w.apply(tpTableWValid || !resetFinish, metaWEntry, tpTableWSet, tpTableWWayOH)
 
-  when(sampler.io.trained.valid) {
-    hitCount(write_record_set)(sampler.io.trained.bits.tpTableWay).hitCount := 0.U
+  when(metaWQueue.io.deq.fire) {
+    hitCount(metaWRecordSet)(repl.way).hitCount := 0.U
   }.elsewhen(tpMetaResetQueue.io.deq.valid) {
     hitCount(tpMetaResetQueue.io.deq.bits.set)(tpMetaResetQueue.io.deq.bits.way).hitCount := tpMetaResetQueue.io.deq.bits.hitCount
   }
 
-  dataWriteQueue.io.enq.valid := tpTable_w_valid
+  dataWriteQueue.io.enq.valid := tpTableWValid
   dataWriteQueue.io.enq.bits.wmode := true.B
-  dataWriteQueue.io.enq.bits.rawData.zip(sampler.io.trained.bits.data).foreach(x => x._1 := x._2(metaDataLength - 1, 0))
-  dataWriteQueue.io.enq.bits.length := tpTable_w_length
-  dataWriteQueue.io.enq.bits.set := tpTable_w_set
-  dataWriteQueue.io.enq.bits.way := tpTable_w_way
+  dataWriteQueue.io.enq.bits.rawData.zip(metaWRecord.data).foreach(x => x._1 := x._2(metaDataLength - 1, 0))
+  dataWriteQueue.io.enq.bits.length := tpTableWLength
+  dataWriteQueue.io.enq.bits.set := tpTableWSet
+  dataWriteQueue.io.enq.bits.way := tpTableWWay
   dataWriteQueue.io.enq.bits.hartid := io.hartid
   dataWriteQueue.io.enq.bits.hitCount := 0.U // DontCare
   assert(dataWriteQueue.io.enq.ready === true.B) // TODO: support back-pressure
@@ -1340,9 +1319,9 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val pfLate = io.feedBack.bits.hit && io.feedBack.bits.reqsource =/= MemReqSource.Prefetch2L2TP.id.U
   val pfMiss = false.B // TODO
   val pfIssue = s2_valid && hit_s2
-  val newMeta = sampler.io.trained.valid
+  val newMeta = metaWQueue.io.deq.fire
   confTable.io.req.valid := io.feedBack.valid || pfIssue || newMeta
-  confTable.io.req.bits.pc := Mux(pfIssue, hashPC(train_s2.pc), Mux(io.feedBack.valid, io.feedBack.bits.pc, sampler.io.trained.bits.pc)) //TODO:add queue?
+  confTable.io.req.bits.pc := Mux(pfIssue, hashPC(train_s2.pc), Mux(io.feedBack.valid, io.feedBack.bits.pc, metaWRecord.pc)) //TODO:add queue?
   confTable.io.req.bits.pfHit := pfHit
   confTable.io.req.bits.pfLate := pfLate
   confTable.io.req.bits.pfMiss := pfMiss
