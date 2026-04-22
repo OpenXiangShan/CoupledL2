@@ -14,6 +14,8 @@ case class CDPParameters(
   PLRU_TRAIN:     Int = 0,    // Only use train trigger to update plru
   PLRU_PARTIAL:   Int = 1,    // Use train trigger and hit & hot detect trigger to update plru
 
+  HotThreshold:   Int = 2,
+
   DetectPipeNum: Int = 4,
 
   ReqFilterEntryNum: Int = 16,   // how many entries in the prefetch req filter?
@@ -52,8 +54,9 @@ trait HasCDPParams extends HasPrefetcherHelper with HasCoupledL2Parameters {
 
   val PLRU_TRAIN    = cdpParams.PLRU_TRAIN
   val PLRU_PARTIAL  = cdpParams.PLRU_PARTIAL
-
   val plru_mode     = PLRU_TRAIN
+
+  val hot_threshold = cdpParams.HotThreshold
 
   // helper function
   def get_folded_hash(origin_val: UInt, resultBitWidth: Int): UInt = {    // fold $origin_val length value into $resultBitWidth
@@ -297,14 +300,14 @@ class VpnTable(implicit p: Parameters) extends CDPModule {
            * Update Entry:
            *  prevRefCnt -> 0.8 * refCnt + 0.2 * prevRefCnt
            *  refCnt  -> 0
-           *  hot -> prevRefCnt > 0 ? 1 : 0
+           *  hot -> prevRefCnt > hot_threshold ? 1 : 0
            * */
           // TODO: For better timing, maybe we should pipeline this.
           val nxt_prevRefCnt = ((entry.refCnt * 13.U) + (entry.prevRefCnt * 3.U)) >> 4.U
 
           entry.refCnt      := 0.U
           entry.prevRefCnt  := nxt_prevRefCnt
-          entry.hot         := Mux(nxt_prevRefCnt > 0.U, true.B, false.B)
+          entry.hot         := Mux(nxt_prevRefCnt > hot_threshold.U, true.B, false.B)
         }
       }
     }
@@ -924,6 +927,7 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
   println(s"VpnTableTagBits:    $vpnTabTagBits")
   println(s"EntryBits:          $EntryBits")
   println(s"VpnResetPeriod:     $VpnResetPeriod")
+  println(s"HotThreshold:       $hot_threshold")
   println(s"debug mode:         $debug")
   println(s"============================================")
 
