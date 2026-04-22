@@ -1114,8 +1114,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     when (TLPermissions.isReport(c_resp.bits.param)) {
       meta.tagErr := c_resp.bits.denied
       meta.dataErr := c_resp.bits.corrupt
-      denied := c_resp.bits.denied
-      corrupt := c_resp.bits.corrupt
+      denied := denied || c_resp.bits.denied
+      corrupt := corrupt || c_resp.bits.corrupt
     }
 
     // CMO update release on ProbeAck/ProbeAckData
