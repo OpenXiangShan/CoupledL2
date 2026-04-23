@@ -231,7 +231,7 @@ class L2TSHRAlloc(val config: L2TSHRAllocConfig)(implicit val p: Parameters) ext
 
   alloc_vec.zipWithIndex.foreach { case (alloc_vec, cIdx) =>
     alloc_vec.zipWithIndex.foreach { case (alloc, tIdx) =>
-      alloc := can_alloc_vec(cIdx)(tIdx) && !alloc_vec_mask(cIdx)(tIdx) && !can_reuse_any(cIdx) && postcluster(cIdx).valid }
+      alloc := can_alloc_vec(cIdx)(tIdx) && !alloc_vec_mask(cIdx)(tIdx) && !paddr_hit_any(cIdx) && postcluster(cIdx).valid }
     assert(PopCount(alloc_vec) <= 1.U, s"Multiple TSHR allocation on ${clusterName(cIdx)}")
   }
 
