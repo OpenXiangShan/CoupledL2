@@ -5,6 +5,7 @@ import chisel3.util._
 import utility._
 import oceanus.chi.bundle._
 import oceanus.compactchi._
+import oceanus.compactchi.CCHIOpcode._
 import oceanus.l2._
 import oceanus.l2.L2TSHR._
 import oceanus.l2.L2Directory._
@@ -86,7 +87,7 @@ object L2TSHR {
   }
 }
 
-class L2TSHR(id: Int)(implicit val p: Parameters) extends Module with HasL2Params {
+class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2Params {
 
   val io = IO(new Bundle {
 
@@ -111,18 +112,6 @@ class L2TSHR(id: Int)(implicit val p: Parameters) extends Module with HasL2Param
 
     val valid = Output(Bool())
   })
-
-  // miscs and enchantments
-  val req_need_dirRead = Wire(Bool())
-
-  val ds_resp_hit = Wire(Bool()) // TODO: connect with Data Storage interactions, valid only when DSBufResp
-  val ds_resp_miss = Wire(Bool()) // TODO: connect with Data Storage interactions, valid only when DSBufResp
-
-  val ds_read_ahead_en = Wire(Bool()) // TODO: Data Storage Read Ahead valid on TSHR alloc/reuse
-  val ds_read_ahead_q = RegInit(false.B) // TODO: Data Storage Read Ahead flag bit
-
-  val ds_read_rbe_en = Wire(Bool()) // TODO: Data Storage Read on requests passed RBE with valid meta
-
 
   // TSHR payloads
   val tshr_paddr = Reg(UInt(paramL2.physicalAddrWidth.W))
@@ -166,6 +155,21 @@ class L2TSHR(id: Int)(implicit val p: Parameters) extends Module with HasL2Param
   io.valid := tshr_valid
 
 
+  // miscs and enchantments
+  val req_need_dirRead = Wire(Bool())
+
+  val ds_resp_miss = Wire(Bool()) // TODO: connect with Data Storage interactions, valid only when DSBufResp
+
+  val ds_read_ahead_en = Wire(Bool()) // TODO: Data Storage Read Ahead valid on TSHR alloc/reuse
+  val ds_read_ahead_way = RegInit(0.U(4.W)) // TODO: configure with actual way index
+  val ds_read_ahead_q = RegInit(false.B) // TODO: Data Storage Read Ahead flag bit
+
+  val ds_read_rbe_en = Wire(Bool()) // TODO: Data Storage Read on requests passed RBE with valid meta
+
+  val ds_read_skip_en = Wire(Bool()) // TODO: connect with TSHR Buffer write except from DS
+  val ds_read_skip_q = RegInit(false.B)
+
+
   // meta
   val meta = Reg(Bool()) // TODO: replace with Directory Result type
   val meta_valid = Wire(Bool())
@@ -194,6 +198,7 @@ class L2TSHR(id: Int)(implicit val p: Parameters) extends Module with HasL2Param
   val tshr_buffer_wen_last = Wire(Bool())
 
   // TODO: TSHR Buffer interactions here
+  // FIX THIS FIRST!
 
   
   // RBEs
@@ -213,7 +218,7 @@ class L2TSHR(id: Int)(implicit val p: Parameters) extends Module with HasL2Param
   rbeSNP.io.in.valid := tshr_enter_SNP
   rbeREQ.io.in.valid := tshr_enter_REQ
 
-  rbeEVT.io.directoryReadNeed := true.B // TODO: Some specific EVT requests do not require Directory Read under Inclusive
+  rbeEVT.io.directoryReadNeed := !(rbeEVT.io.out.bits.Opcode === EvictBack.U && rbeEVT.io.out.bits.WayValid)
   rbeSNP.io.directoryReadNeed := true.B
   rbeREQ.io.directoryReadNeed := true.B
 
@@ -317,7 +322,7 @@ class L2TSHR(id: Int)(implicit val p: Parameters) extends Module with HasL2Param
       state_dsRead.PostArb := false.B
       state_dsRead.PreArb := state_dirRead.Done
     }
-    when (ds_resp_hit) {
+    when (io.fromDS.DSBufRdResp) {
       state_dsRead.PostArb := false.B
       state_dsRead.Done := true.B
     }
