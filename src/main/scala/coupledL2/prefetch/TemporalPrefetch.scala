@@ -44,7 +44,7 @@ case class TPParameters(
   tpTrainQueueDepth: Int = 8,
   dataReadQueueDepth: Int = 8,
   dataWriteQueueDepth: Int = 4,
-  tpDataQueueDepth: Int = 8,
+  tpDataQueueDepth: Int = 16,
   tpMetaWQueueDepth: Int = 8,
   tpMetaResetQueueDepth: Int = 8, // extreme condition: use 9
   throttleCycles: Int = 4,  // unused yet
@@ -71,7 +71,7 @@ case class TPParameters(
   confTableEntries: Int = 512,
   confTableAssoc: Int = 8,
   confTableReplacementPolicy: String = "plru",
-  confReqQueueDepth: Int = 8,
+  confReqQueueDepth: Int = 16,
 
   globalHitCountConfidenceWidth: Int = 5,
   globalHitCountConfidenceInitVal: Int = 21,
@@ -1078,12 +1078,17 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   trainQueue.io.enq.valid := io.train.fire
   trainQueue.io.enq.bits := io.train.bits
-  trainQueue.io.deq.ready := !tpMetaTable.io.w.req.fire // meta table W first
+  trainQueue.io.deq.ready := !(tpMetaTable.io.w.req.fire || metaWQueue.io.deq.fire) // metaW first
+
+  // from sampler
+  metaWQueue.io.enq.valid := sampler.io.trained.valid
+  metaWQueue.io.enq.bits := sampler.io.trained.bits
+  metaWQueue.io.deq.ready := !tpMetaTable.io.w.req.fire // meta table W first
 
   /* Stage 0: query tpMetaTable */
 
   val train_s0 = trainQueue.io.deq.bits
-  val s0_valid = trainQueue.io.deq.fire && train_s0.pc.orR && // not trainOnL1PF
+  val trainValid_s0 = trainQueue.io.deq.fire && train_s0.pc.orR && // not trainOnL1PF
     Mux(trainOnVaddr.orR, train_s0.vaddr.getOrElse(0.U) =/= 0.U, true.B) &&
     Mux(trainOnL1PF.orR, true.B, train_s0.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
   val trainVaddr = train_s0.vaddr.getOrElse(0.U)
@@ -1092,7 +1097,14 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val trainPC = hashPC(train_s0.pc)
   val trainIndex = trainMeta.asUInt.pad(pcAddrHashWidth) ^ trainPC.pad(pcAddrHashWidth)
   // val (vtag_s0, vset_s0) = if (vaddrBitsOpt.nonEmpty) parseVaddr(trainVaddr) else (0.U, 0.U)
-  val (tag_s0, set_s0) = parsePaddr(trainIndex)
+
+  val metaWValid_s0 = metaWQueue.io.deq.fire
+  val metaWRecord_s0 = metaWQueue.io.deq.bits
+  val metaWRecordIndex = metaWRecord_s0.pc.pad(pcAddrHashWidth) ^ metaWRecord_s0.trigger.pad(pcAddrHashWidth)
+
+  val s0_valid = trainValid_s0 || metaWValid_s0
+  val index = Mux(metaWValid_s0, metaWRecordIndex, trainIndex)
+  val (tag_s0, set_s0) = parsePaddr(index)
   // val metas = tpMetaTable.io.r(s0_valid, Mux(trainOnVaddr.orR, vset_s0, pset_s0)).resp.data
   val metas = tpMetaTable.io.r(s0_valid, set_s0).resp.data // get in s1
 
@@ -1106,13 +1118,16 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   /* Stage 1: parse tpMeta to judge hit or miss, choose the victim */
 
   val s1_valid = RegNext(s0_valid, false.B)
+  val tag_s1 = RegEnable(tag_s0, s0_valid)
+  val set_s1 = RegEnable(set_s0, s0_valid)
   val train_s1 = RegEnable(train_s0, s0_valid)
+  val metaWValid_s1 = RegEnable(metaWValid_s0, s0_valid)
+  val metaWRecord_s1 = RegEnable(metaWRecord_s0, s0_valid)
   val trainVaddr_s1 = train_s1.vaddr.getOrElse(0.U)
   val trainPaddr_s1 = train_s1.addr
   val trainPC_s1 = hashPC(train_s1.pc)
   val trainIndex_s1 = RegEnable(trainIndex, s0_valid)
   // val (vtag_s1, vset_s1) = if (vaddrBitsOpt.nonEmpty) parseVaddr(trainVaddr_s1) else (0.U, 0.U)
-  val (tag_s1, set_s1) = parsePaddr(trainIndex_s1)
 
   // val tagMatchVec = metas.map(_.triggerTag === Mux(trainOnVaddr.orR, vtag_s1, ptag_s1))
   val tagMatchVec = metas.map(_.tag === tag_s1)
@@ -1122,20 +1137,47 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val hitWay = OHToUInt(hitVec)
 
   val hit_s1 = Cat(hitVec).orR
-  val way_s1 = hitWay
+  val way_s1 = Mux(hit_s1, hitWay, repl.way)
   val hitCount_s1 = hitCount(set_s1)(way_s1).hitCount
   assert(PopCount(hitVec) <= 1.U)
 
   when(hit_s1) {
     repl.access(hitWay)
-  }.elsewhen(metaWQueue.io.deq.fire) {
+  }.elsewhen(s1_valid && metaWValid_s1) {
     repl.miss
   }
 
-  // from sampler
-  metaWQueue.io.enq.valid := sampler.io.trained.valid
-  metaWQueue.io.enq.bits := sampler.io.trained.bits
-  metaWQueue.io.deq.ready := !(hit_s1 && s1_valid) // when hit, update repl state first
+  // update tpmeta
+  val tpTableWValid = s1_valid && metaWValid_s1
+  val metaWEntry = Wire(new tpMetaEntry())
+  metaWEntry.valid := true.B
+  metaWEntry.tag := tag_s1
+  when(!resetFinish) {
+    metaWEntry.valid := false.B
+    metaWEntry.tag := 0.U
+  }
+  val tpTableWLength = metaWRecord_s1.length
+  val tpTableWSet = Mux(resetFinish, set_s1, resetIdx)
+  val tpTableWWay = way_s1
+  val tpTableWWayOH = Mux(resetFinish, UIntToOH(tpTableWWay), Fill(tpTableAssoc, true.B))
+
+  tpMetaTable.io.w.apply(tpTableWValid || !resetFinish, metaWEntry, tpTableWSet, tpTableWWayOH)
+
+  when(metaWQueue.io.deq.fire) {
+    hitCount(set_s1)(way_s1).hitCount := 0.U
+  }.elsewhen(tpMetaResetQueue.io.deq.valid) {
+    hitCount(tpMetaResetQueue.io.deq.bits.set)(tpMetaResetQueue.io.deq.bits.way).hitCount := tpMetaResetQueue.io.deq.bits.hitCount
+  }
+
+  dataWriteQueue.io.enq.valid := tpTableWValid
+  dataWriteQueue.io.enq.bits.wmode := true.B
+  dataWriteQueue.io.enq.bits.rawData.zip(metaWRecord_s1.data).foreach(x => x._1 := x._2(metaDataLength - 1, 0))
+  dataWriteQueue.io.enq.bits.length := tpTableWLength
+  dataWriteQueue.io.enq.bits.set := tpTableWSet
+  dataWriteQueue.io.enq.bits.way := tpTableWWay
+  dataWriteQueue.io.enq.bits.hartid := io.hartid
+  dataWriteQueue.io.enq.bits.hitCount := 0.U // DontCare
+  assert(dataWriteQueue.io.enq.ready === true.B) // TODO: support back-pressure
 
   // meta reset queue
   // now use to upadte hitCount
@@ -1191,42 +1233,8 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   tpDataQueue.io.enq.bits.hitCount := tpmeta.io.resp.bits.hitCount
   assert(tpDataQueue.io.enq.ready === true.B) // tpDataQueue is never full
 
-  tpMetaResetQueue.io.deq.ready := !(sampler.io.trained.valid || !resetFinish)
+  tpMetaResetQueue.io.deq.ready := !(metaWQueue.io.deq.fire || !resetFinish)
   assert(tpMetaResetQueue.io.enq.ready === true.B)
-
-  val tpTableWValid = metaWQueue.io.deq.fire || !resetFinish
-  val metaWRecord = metaWQueue.io.deq.bits
-  val metaWRecordAddr = metaWRecord.pc.pad(pcAddrHashWidth) ^ metaWRecord.trigger.pad(pcAddrHashWidth)
-  val (metaWRecordTag, metaWRecordSet) = parsePaddr(metaWRecordAddr)
-  val metaWEntry = Wire(new tpMetaEntry())
-  metaWEntry.valid := true.B
-  metaWEntry.tag := metaWRecordTag
-  when(!resetFinish) {
-    metaWEntry.valid := false.B
-    metaWEntry.tag := 0.U
-  }
-  val tpTableWLength = metaWRecord.length
-  val tpTableWSet = Mux(resetFinish, metaWRecordSet, resetIdx)
-  val tpTableWWay = repl.way
-  val tpTableWWayOH = Mux(resetFinish, UIntToOH(tpTableWWay), Fill(tpTableAssoc, true.B))
-
-  tpMetaTable.io.w.apply(tpTableWValid || !resetFinish, metaWEntry, tpTableWSet, tpTableWWayOH)
-
-  when(metaWQueue.io.deq.fire) {
-    hitCount(metaWRecordSet)(repl.way).hitCount := 0.U
-  }.elsewhen(tpMetaResetQueue.io.deq.valid) {
-    hitCount(tpMetaResetQueue.io.deq.bits.set)(tpMetaResetQueue.io.deq.bits.way).hitCount := tpMetaResetQueue.io.deq.bits.hitCount
-  }
-
-  dataWriteQueue.io.enq.valid := tpTableWValid
-  dataWriteQueue.io.enq.bits.wmode := true.B
-  dataWriteQueue.io.enq.bits.rawData.zip(metaWRecord.data).foreach(x => x._1 := x._2(metaDataLength - 1, 0))
-  dataWriteQueue.io.enq.bits.length := tpTableWLength
-  dataWriteQueue.io.enq.bits.set := tpTableWSet
-  dataWriteQueue.io.enq.bits.way := tpTableWWay
-  dataWriteQueue.io.enq.bits.hartid := io.hartid
-  dataWriteQueue.io.enq.bits.hitCount := 0.U // DontCare
-  assert(dataWriteQueue.io.enq.ready === true.B) // TODO: support back-pressure
 
   when(resetIdx === 0.U) {
     resetFinish := true.B
@@ -1318,10 +1326,10 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     io.feedBack.bits.pfsource === PfSource.TP.id.U
   val pfLate = io.feedBack.bits.hit && io.feedBack.bits.reqsource =/= MemReqSource.Prefetch2L2TP.id.U
   val pfMiss = false.B // TODO
-  val pfIssue = s2_valid && hit_s2
+  val pfIssue = s1_valid && hit_s1 && !metaWValid_s1
   val newMeta = metaWQueue.io.deq.fire
   confTable.io.req.valid := io.feedBack.valid || pfIssue || newMeta
-  confTable.io.req.bits.pc := Mux(pfIssue, hashPC(train_s2.pc), Mux(io.feedBack.valid, io.feedBack.bits.pc, metaWRecord.pc)) //TODO:add queue?
+  confTable.io.req.bits.pc := Mux(pfIssue, hashPC(train_s1.pc), Mux(io.feedBack.valid, io.feedBack.bits.pc, metaWRecord_s0.pc)) //TODO:add queue?
   confTable.io.req.bits.pfHit := pfHit
   confTable.io.req.bits.pfLate := pfLate
   confTable.io.req.bits.pfMiss := pfMiss
