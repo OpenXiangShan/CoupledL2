@@ -9,6 +9,8 @@ BY_ETIME ?= 1
 BY_VTIME ?= 0
 FPGA ?= 0
 
+TEST_CCFG ?= 0
+
 init:
 	git submodule update --init
 	cd rocket-chip && git submodule update --init hardfloat cde
@@ -30,6 +32,8 @@ BUILD_DIR = ./build
 TOP_V = $(BUILD_DIR)/$(TOP).sv
 MEM_GEN = ./scripts/vlsi_mem_gen
 MEM_GEN_SEP = ./scripts/gen_sep_mem.sh
+
+TEST_L2TSHRAlloc_TOP_ARGS = --ccfg $(TEST_CCFG)
 
 gen-test-top:
 	mill -i CoupledL2.test.runMain coupledL2.$(TOP)_$(SYSTEM) -td $(BUILD_DIR) --target systemverilog --split-verilog
@@ -70,10 +74,15 @@ test-top-chi-quadcore-2ul:
 	$(MAKE) gen-test-top-chi SYSTEM=CHIL2 $(CHI_PASS_ARGS) NUM_CORE=4 NUM_TL_UL=2
 
 ut-sv-oceanus-L2TSHRAlloc:
-	mill -i CoupledL2.test.runMain oceanus.TestTop_L2TSHRAlloc -td $(BUILD_DIR) --target systemverilog --split-verilog
+	mill -i CoupledL2.test.runMain oceanus.TestTop_L2TSHRAlloc -td $(BUILD_DIR) $(TEST_L2TSHRAlloc_TOP_ARGS) --target systemverilog --split-verilog
 
 ut-cc-oceanus-L2TSHRAlloc: ut-sv-oceanus-L2TSHRAlloc
-	verilator ./build/*.*v --Mdir ./verilated --cc --top TestTop_L2TSHRAlloc
+	verilator ./build/*.*v --Mdir ./verilated --cc --top TestTop_L2TSHRAlloc --trace-vcd
+
+ut-exe-oceanus-L2TSHRAlloc: ut-sv-oceanus-L2TSHRAlloc
+	verilator ./build/*.*v --Mdir ./verilated --cc --top TestTop_L2TSHRAlloc --trace-vcd --build --exe \
+		src/test/cpp/L2TSHRAlloc_v3main.cpp -I./build -I./src/test/cpp -o vt_L2TSHRAlloc -j `nproc` -CFLAGS "-g -O0"
+
 
 clean:
 	rm -rf ./build

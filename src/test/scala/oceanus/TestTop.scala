@@ -8,9 +8,11 @@ import chisel3.stage.ChiselGeneratorAnnotation
 import utility._
 import oceanus.l2._
 import oceanus.chi._
+import svsim.CommonCompilationSettings.Timescale.Unit.s
+import scala.collection.mutable.ArrayBuffer
 
 
-class TestTop_L2TSHRAlloc()(implicit val p: Parameters) extends Module with HasL2Params {
+class TestTop_L2TSHRAlloc(val ccfg: Int)(implicit val p: Parameters) extends Module with HasL2Params {
 
   val log = IO(new Bundle {
     val dump = Input(Bool())
@@ -25,8 +27,16 @@ class TestTop_L2TSHRAlloc()(implicit val p: Parameters) extends Module with HasL
     val fromTSHRCtrl = new L2TSHRAlloc.PathFromTSHRCtrl
   })
 
+  val clusterConfigs = Seq(
+    Seq(Seq(L2TSHRAllocTarget.EVT, L2TSHRAllocTarget.SNP, L2TSHRAllocTarget.REQ)),
+    Seq(Seq(L2TSHRAllocTarget.EVT), Seq(L2TSHRAllocTarget.SNP, L2TSHRAllocTarget.REQ)),
+    Seq(Seq(L2TSHRAllocTarget.EVT, L2TSHRAllocTarget.SNP), Seq(L2TSHRAllocTarget.REQ)),
+    Seq(Seq(L2TSHRAllocTarget.SNP), Seq(L2TSHRAllocTarget.EVT, L2TSHRAllocTarget.REQ)),
+    Seq(Seq(L2TSHRAllocTarget.EVT), Seq(L2TSHRAllocTarget.SNP), Seq(L2TSHRAllocTarget.REQ))
+  )
+
   val config = new L2TSHRAllocConfig(
-    cluster = Seq(Seq(L2TSHRAllocTarget.EVT), Seq(L2TSHRAllocTarget.SNP, L2TSHRAllocTarget.REQ)),
+    cluster = clusterConfigs(ccfg),
     resv = Seq(
       (paramL2.mshrSize - 1, L2TSHRResvTarget.L2EVT),
       (paramL2.mshrSize - 2, L2TSHRResvTarget.L1EVT),
@@ -34,6 +44,7 @@ class TestTop_L2TSHRAlloc()(implicit val p: Parameters) extends Module with HasL
   )
 
   println(s"${config.cluster}")
+  println(s"${config.resv}")
 
   val timer = WireDefault(0.U(64.W))
   val logEnable = WireDefault(false.B)
@@ -73,6 +84,39 @@ object TestTopFirtoolOptions {
 
 object TestTop_L2TSHRAlloc extends App {
 
+  val usage = """
+Usage: TestTop_CHIL2 [<--option> <values>]
+
+      --ccfg <ccfg_index>       specify clustering config index, 0 by default
+        clustering config list:
+          0   ((EVT, SNP, REQ))
+          1   ((EVT), (SNP, REQ))
+          2   ((EVT, SNP), (REQ))
+          3   ((SNP), (EVT, REQ))
+          4   ((EVT), (SNP), (REQ))
+  """
+
+  if (args.contains("--help"))
+  {
+    println(usage)
+    System.exit(0)
+  }
+
+  var varArgs = ArrayBuffer(args.toIndexedSeq:_*)
+  var varArgsDropped = 0
+
+  var ccfg = 0
+
+  val varArgsToDrop = args.sliding(2, 1).zipWithIndex.collect {
+    case (Array("--ccfg", value), i) => (ccfg = value.toInt, i)
+  }
+
+  varArgsToDrop.map(_._2).foreach(i => {
+    varArgs.remove(i - varArgsDropped, 2)
+    varArgsDropped = varArgsDropped + 2
+  })
+  varArgs.trimToSize()
+
   val config = new Config((_, _, _) => {
     case L2ParamsKey => L2Params (
       physicalAddrWidth = 48,
@@ -97,6 +141,6 @@ object TestTop_L2TSHRAlloc extends App {
     )
   })
 
-  (new ChiselStage).execute(args,
-    ChiselGeneratorAnnotation(() => new TestTop_L2TSHRAlloc()(config)) +: TestTopFirtoolOptions())
+  (new ChiselStage).execute(varArgs.toArray,
+    ChiselGeneratorAnnotation(() => new TestTop_L2TSHRAlloc(ccfg)(config)) +: TestTopFirtoolOptions())
 }
