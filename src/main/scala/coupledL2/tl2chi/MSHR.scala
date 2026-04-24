@@ -20,7 +20,7 @@ package coupledL2.tl2chi
 import chisel3._
 import chisel3.util._
 import coupledL2.MetaData._
-import utility.{MemReqSource, ParallelLookUp, ParallelMux, ParallelPriorityMux}
+import utility.{MemReqSource, ParallelLookUp, ParallelMux, ParallelPriorityMux, XSPerfAccumulate}
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
@@ -1385,6 +1385,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       probeDirty := false.B
     }
   }
+  XSPerfAccumulate("cmo_nested_RXSNP_inv_dirty", req_valid && nestedwb_match && io.nestedwb.b_inv_dirty && req.fromA && cmo_cbo)
   when (nestedwb_hit_match) {
     when (io.nestedwb.b_toClean.get && req.fromA) {
       meta.dirty := false.B
@@ -1401,6 +1402,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       req.aliasTask.foreach(_ := false.B)
     }
   }
+  XSPerfAccumulate("cmo_nested_RXSNP_toClean", req_valid && nestedwb_hit_match && io.nestedwb.b_toClean.get && req.fromA && cmo_cbo)
+  XSPerfAccumulate("cmo_nested_RXSNP_toB", req_valid && nestedwb_hit_match && io.nestedwb.b_toB.get && req.fromA && cmo_cbo)
+  XSPerfAccumulate("cmo_nested_RXSNP_toN", req_valid && nestedwb_hit_match && io.nestedwb.b_toN.get && req.fromA && cmo_cbo)
   // let nested C write ReleaseData to the MSHRBuffer entry of this MSHR id
   // This is the VALID signal for releaseBuf.io.w(2)
   io.nestedwbData := nestedwb_match && io.nestedwb.c_set_dirty
