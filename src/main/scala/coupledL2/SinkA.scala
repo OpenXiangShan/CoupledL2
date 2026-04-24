@@ -144,6 +144,32 @@ class SinkA(implicit p: Parameters) extends L2Module {
     io.a.ready := io.task.ready && !cmoAllBlock
   }
 
+  /* Block cmo flush all into pipeline when any snoop is in-flight.
+   A flush (set+way) and a snoop targeting the same address must not
+   proceed concurrently. The hazard window spans the full snoop
+   lifetime: rxsnp queue → S1 → S2 → S3 → MSHR valid → done.
+   
+   We cannot do address matching at flush S1 because tag is not yet known,
+   so we use a conservative existence check: if any snoop exists anywhere
+   in its lifetime, stall the flush at S1.
+   
+   Each term covers one segment of the snoop lifetime:
+   rxsnp_queue_not_empty : snoop waiting in rxsnp queue, not yet in pipeline
+   snoop_s1/s2/s3_valid  : snoop in-flight in mainpipe, MSHR not yet allocated
+   (s1/s2 protected by index match, s3 by index+tag)
+   snoop_mshr_valid      : snoop has allocated MSHR, still processing
+
+   Snoop has higher priority than flush. When flush and snoop arrive at S1
+   in the same cycle, snoop proceeds and flush is stalled. This is safe
+   because snoops are externally-initiated with timeout pressure, while
+   flush is a background operation that can retry without consequence.
+
+   signal mapping as below
+   snpBlockcmo(0): rxsnp_queue_not_empty + snoop_s1
+   snpBlockcmo(1): s2/s3_valid
+   */
+  val snpBlockcmo = io.cmoAll.map(_.snpBlockcmo).getOrElse(0.U(2.W))
+
   /*
    Flush L2 All means search all L2$ VALID cacheLine and RELEASE to Downwords memory:
    -------------------------------------------------------------------------------------------------------
@@ -178,7 +204,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
       }.otherwise {
         way.foreach { _ := wayVal + 1.U }
       }
-      when (mshrValid) {
+      when (!mshrValid || snpBlockcmo === 0.U) {
         state.foreach { _ := sCMOREQ }
       }.otherwise {
         state.foreach { _ := sWAITMSHR }
