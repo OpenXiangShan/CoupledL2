@@ -98,6 +98,7 @@ class ReplacerResult(implicit p: Parameters) extends L2Bundle {
   val meta = new MetaEntry()
   val mshrId = UInt(mshrBits.W)
   val retry = Bool()
+  val error = Bool()
 }
 
 class MetaWrite(implicit p: Parameters) extends L2Bundle {
@@ -333,6 +334,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   io.replResp.bits.meta := metaAll_s3(finalWay)
   io.replResp.bits.mshrId := req_s3.mshrId
   io.replResp.bits.retry := refillRetry
+  io.replResp.bits.error := error_s3
 
   /* ====== Update ====== */
   // PLRU: update replacer only when A hit or refill, at stage 3

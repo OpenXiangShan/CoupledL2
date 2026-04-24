@@ -1060,7 +1060,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       req_released_chiOpcode := mp_release.chiOpcode.get
       req_released_likelyShared := mp_release.likelyshared.get
       state.s_release := true.B
-      state.s_cbwrdata.get := isEvict
+      state.s_cbwrdata.get := isEvict || meta.tagErr // not repl, when tag error
       when (isEvict) {
         meta.state := INVALID
         meta.dirty := false.B
@@ -1267,24 +1267,29 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     state.w_replResp := true.B
 
     // update meta (no need to update hit/set/error/replacerInfo of dirResult)
+    // when tag error, cacnel repl; use meta.tagErr to pass info in mp_release
     dirResult.tag := replResp.tag
     dirResult.way := replResp.way
     dirResult.meta := replResp.meta
+    dirResult.meta.tagErr := replResp.error || replResp.meta.tagErr
 
     // replacer choosing:
     // 1. an invalid way, release no longer needed
     // 2. the same way, just release as normal (only now we set s_release)
     // 3. differet way, we need to update meta and release that way
     // if meta has client, rprobe client
+    // if tag error, not evict to L3
     when (replResp.meta.state =/= INVALID) {
       // set release flags
       state.s_release := false.B
-      state.w_releaseack := false.B
-      // rprobe clients if any
-      when (replResp.meta.clients.orR) {
-        state.s_rprobe := false.B
-        state.w_rprobeackfirst := false.B
-        state.w_rprobeacklast := false.B
+      when (!(replResp.error || replResp.meta.tagErr)) {
+        state.w_releaseack := false.B
+        // rprobe clients if any
+        when(replResp.meta.clients.orR) {
+          state.s_rprobe := false.B
+          state.w_rprobeackfirst := false.B
+          state.w_rprobeacklast := false.B
+        }
       }
     }
   }
