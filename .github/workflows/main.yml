@@ -32,6 +32,60 @@ jobs:
       - name: check utility
         run: cd utility && git fetch --all && git merge-base --is-ancestor `git rev-parse HEAD` origin/master
 
+  setup-verilator:
+    strategy:
+      matrix:
+        os: [ubuntu-22.04]
+        compiler:
+          - { cc: clang-17, cxx: clang++-17 }
+    runs-on: ${{ matrix.os }}
+    name: Verilator | ${{ matrix.os }} | ${{ matrix.compiler.cc }}
+    env:
+      CI_BUILD_STAGE_NAME: build
+      CI_RUNS_ON: ${{ matrix.os }}
+      CC: ${{ matrix.compiler.cc }}
+      CXX: ${{ matrix.compiler.cxx }}
+      VERILATOR_ARCHIVE: verilator-${{ matrix.os }}-${{ matrix.compiler.cc }}.tar.gz
+    steps:
+
+    - name: Cache Verilator
+      id: cache
+      uses: actions/cache@v4
+      env:
+        cache-name: verilator-cache-${{ matrix.os }}-${{ matrix.compiler.cc }}
+      with:
+        path: ${{ github.workspace }}/${{ env.VERILATOR_ARCHIVE }}
+        key: verilator-cache-${{ matrix.os }}-${{ matrix.compiler.cc }}
+
+    - name: Setup Clang 17
+      if: steps.cache.outputs.cache-hit != 'true' && matrix.compiler.cc == 'clang-17'
+      working-directory: ${{ github.workspace }}
+      run: |
+        wget https://apt.llvm.org/llvm.sh
+        chmod u+x llvm.sh
+        sudo ./llvm.sh 17
+
+    - name: Build Verilator
+      if: steps.cache.outputs.cache-hit != 'true'
+      working-directory: ${{ github.workspace }}
+      run: |
+        sudo apt-get install -y git help2man perl python3 make autoconf g++ flex bison clang
+        sudo apt-get install -y libfl2  # Ubuntu only (ignore if gives error)
+        sudo apt-get install -y libfl-dev  # Ubuntu only (ignore if gives error)
+        sudo apt-get install -y zlib1g zlib1g-dev  # Ubuntu only (ignore if gives error)
+        git clone https://github.com/verilator/verilator
+        unset VERILATOR_ROOT
+        cd verilator
+        git checkout v5.020
+        autoconf
+        ./configure CC=${{ matrix.compiler.cc }} CXX=${{ matrix.compiler.cxx }} LINK=${{ matrix.compiler.cxx }}
+        make -j4
+
+    - name: Tar-up Verilator
+      if: steps.cache.outputs.cache-hit != 'true'
+      working-directory: ${{ github.workspace }}
+      run: tar -zcf ${{ env.VERILATOR_ARCHIVE }} verilator
+
   # This workflow contains a single job called "build"
   tl-test_L2:
     # The type of runner that the job will run on
@@ -42,6 +96,7 @@ jobs:
       RUN_ARCHIVE: coupledL2-tl-test-new-run-${{ github.sha }}
       RUN_ARCHIVE_TL: coupledL2-tl-test-new-run-${{ github.sha }}-tilelink.tar.gz
       RUN_ARCHIVE_CHI: coupledL2-tl-test-new-run-${{ github.sha }}-chi.tar.gz
+      VERILATOR_ARCHIVE: verilator-ubuntu-22.04-clang-17.tar.gz
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
@@ -56,15 +111,22 @@ jobs:
           chmod u+x llvm.sh
           sudo ./llvm.sh 17
 
-      - name: Setup Verilator
+      - name: Fetch cached Verilator
+        uses: actions/cache/restore@v4
+        env:
+          cache-name: verilator-cache-ubuntu-22.04-clang-17
+        with:
+          path: ${{ github.workspace }}/${{ env.VERILATOR_ARCHIVE }}
+          key: verilator-cache-ubuntu-22.04-clang-17
+          fail-on-cache-miss: true
+
+      - name: Install Verilator
+        working-directory: ${{ github.workspace }}
         run: |
-          wget https://raw.githubusercontent.com/OpenXiangShan/xs-env/master/install-verilator.sh
-          chmod u+x install-verilator.sh
-          sed -i 's/CC=clang/CC=clang-17/g' install-verilator.sh
-          sed -i 's/CXX=clang++/CXX=clang++-17/g' install-verilator.sh
-          sed -i 's/LINK=clang++/LINK=clang++-17/g' install-verilator.sh
-          sed -i 's/make -j8/make -j4/g' install-verilator.sh
-          sudo bash install-verilator.sh
+          tar -zxf ${{ env.VERILATOR_ARCHIVE }}
+          cd verilator
+          sudo make install
+          verilator --version
 
       - name: Setup Scala
         uses: olafurpg/setup-scala@v11
@@ -81,6 +143,27 @@ jobs:
         
       - name: Compile
         run: make compile
+
+      - name: Get tl-test-new version
+        run: |
+          test -f ".tl-test-new-version" || (echo "Error: .tl-test-new-version file not found" && exit 1)
+          echo "TL_TEST_NEW_COMMIT=$(cat .tl-test-new-version)" >> $GITHUB_ENV
+
+      - name: Check tl-test-new version
+        run: |
+          if [ -z "${{ env.TL_TEST_NEW_COMMIT }}" ]; then
+            echo "Error: TL_TEST_NEW_COMMIT environment variable is not set"
+            exit 1
+          fi
+          rm -rf tl-test-new
+          git clone https://github.com/OpenXiangShan/tl-test-new
+          cd ./tl-test-new
+          if git rev-parse --verify ${{ env.TL_TEST_NEW_COMMIT }} >/dev/null 2>&1; then
+            echo "Info: tl-test-new version TL_TEST_NEW_COMMIT is valid: ${{ env.TL_TEST_NEW_COMMIT }}"
+          else
+            echo "Error: tl-test-new version TL_TEST_NEW_COMMIT is not a valid commit hash in the current repository"
+            exit 1
+          fi
       
       # Clean artifacts folder (./tl-test-new/run) after successful run
       - name: Unit test for CHI version
@@ -88,6 +171,7 @@ jobs:
             rm -rf tl-test-new
             git clone https://github.com/OpenXiangShan/tl-test-new
             cd ./tl-test-new
+            git checkout ${{ env.TL_TEST_NEW_COMMIT }}
             sed -i 's/ari.target.*/ari.target = 240/g' ./configs/user.tltest.ini
             sed -i 's/cmo.enable .*=.*/cmo.enable = 1/g' ./configs/user.tltest.ini
             sed -i 's/cmo.enable.cbo.clean.*=.*/cmo.enable.cbo.clean = 1/g' ./configs/user.tltest.ini
@@ -114,6 +198,7 @@ jobs:
             rm -rf tl-test-new
             git clone https://github.com/OpenXiangShan/tl-test-new
             cd ./tl-test-new
+            git checkout ${{ env.TL_TEST_NEW_COMMIT }}
             sed -i 's/ari.target.*/ari.target = 240/g' ./configs/user.tltest.ini
             rm -rf ./dut/CoupledL2 && ln -s ../.. ./dut/CoupledL2
             make coupledL2-test-l2l3l2 run THREADS_BUILD=4 CXX_COMPILER=clang++-17
