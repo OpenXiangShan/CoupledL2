@@ -15,6 +15,7 @@ case class CDPParameters(
   PLRU_PARTIAL:   Int = 1,    // Use train trigger and hit & hot detect trigger to update plru
 
   HotThreshold:   Int = 2,
+  DepthThreshold: Int = 1,
 
   DetectPipeNum: Int = 4,
 
@@ -56,7 +57,8 @@ trait HasCDPParams extends HasPrefetcherHelper with HasCoupledL2Parameters {
   val PLRU_PARTIAL  = cdpParams.PLRU_PARTIAL
   val plru_mode     = PLRU_TRAIN
 
-  val hot_threshold = cdpParams.HotThreshold
+  val hot_threshold   = cdpParams.HotThreshold
+  val depth_threshold = cdpParams.DepthThreshold
 
   // helper function
   def get_folded_hash(origin_val: UInt, resultBitWidth: Int): UInt = {    // fold $origin_val length value into $resultBitWidth
@@ -588,8 +590,8 @@ class DetectPipeline(name:String)(implicit p: Parameters) extends CDPModule {
   val s2_high_bit_is_zero = s2_high_bit === 0.U
 
   // TODO: maybe we should move depth control totally to the entrance?
-  val s2_is_hit_can_pft     = s2_high_bit_is_zero && s2_low_bit_is_zero && s2_vpn0_is_nzero && s2_vt_hit && s2_vt_hit_hot   // depth == 2 || 4 is restricted when entering
-  val s2_non_hit_can_pft    = s2_high_bit_is_zero && s2_low_bit_is_zero && s2_vpn0_is_nzero && s2_vt_hit && s2_vt_hit_hot && s2_depth < 3.U
+  val s2_is_hit_can_pft     = s2_high_bit_is_zero && s2_low_bit_is_zero && s2_vpn0_is_nzero && s2_vt_hit && s2_vt_hit_hot   // depth == 1 || 4 is restricted when entering
+  val s2_non_hit_can_pft    = s2_high_bit_is_zero && s2_low_bit_is_zero && s2_vpn0_is_nzero && s2_vt_hit && s2_vt_hit_hot && s2_depth < depth_threshold.U
   val s2_can_pft  = Mux(s2_is_hit, s2_is_hit_can_pft, s2_non_hit_can_pft)
 
   // ------------------ s3 ------------------
@@ -601,7 +603,7 @@ class DetectPipeline(name:String)(implicit p: Parameters) extends CDPModule {
   val s3_can_pft    = RegNext(s2_can_pft)
   val s3_depth      = RegNext(Mux(
     s2_is_hit,
-    1.U,      // hit a CDP prefetched block, depth == 2 or 4, reinforce
+    1.U,      // hit a CDP prefetched block, depth == 1 or 4
     Mux(s2_depth === 0.U, 4.U, s2_depth + 1.U)
   ))
 
@@ -928,6 +930,7 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
   println(s"EntryBits:          $EntryBits")
   println(s"VpnResetPeriod:     $VpnResetPeriod")
   println(s"HotThreshold:       $hot_threshold")
+  println(s"DepthThreshold:     $depth_threshold")
   println(s"debug mode:         $debug")
   println(s"============================================")
 
@@ -955,6 +958,7 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
     val detect_trig = l2_triggers(i)
 
     /**
+      * (ABANDONED)
       * Check : Detection Condition
       * Hit Trigger:
           a) Hit a CDP prefetched block, pfDepth == 2 or 4
@@ -965,6 +969,22 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
           b) Refill a CDP required block
           c) Refill other prefetcher's block.
     */
+    /**
+      * GEM5 Edition
+      * Check : Detection Condition
+      * Hit Trigger:
+        a) Hit a CDP prefetched block, pfDepth == 1 or 4
+        b) Hit a SMS/BOP prefetched block
+        Can only issue pft req at depth 1.
+
+      * Refill Trigger:
+        a) Refill a true demanded block
+        b) Refill a CDP required block
+        c) Refill other prefetcher's block'
+
+        When depth = 0, generate pft req at depth 4. When depth >= $depth_threshold, will not issue pft req.
+        In gem5, depth_threshold is 1.
+      */
     val detect_trig_fromCDP = detect_trig.bits.pfSource === PfSource.CDP.id.U
     val detect_trig_fromSMS = detect_trig.bits.pfSource === PfSource.SMS.id.U
     val detect_trig_fromBOP = detect_trig.bits.pfSource === PfSource.BOP.id.U || detect_trig.bits.pfSource === PfSource.PBOP.id.U
@@ -975,10 +995,10 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
     val hit_trigger       = detect_trig.bits.is_hit  &&
       (
         if (UseFilteredDetect) {
-          detect_trig_fromCDP && (detect_trig.bits.pfDepth === 2.U || detect_trig.bits.pfDepth === 4.U) || detect_trig_fromSMS || detect_trig_fromBOP
+          detect_trig_fromCDP && (detect_trig.bits.pfDepth === 1.U || detect_trig.bits.pfDepth === 4.U) || detect_trig_fromSMS || detect_trig_fromBOP
         }
         else {
-          detect_trig_fromCDP && (detect_trig.bits.pfDepth === 2.U || detect_trig.bits.pfDepth === 4.U)
+          detect_trig_fromCDP && (detect_trig.bits.pfDepth === 1.U || detect_trig.bits.pfDepth === 4.U)
         }
       )
     val refill_trigger    = !detect_trig.bits.is_hit && 
