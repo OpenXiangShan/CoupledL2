@@ -71,6 +71,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
     val io_chi = IO(new PortIO)
     val io_nodeID = IO(Input(UInt()))
     val io_cpu_halt = Option.when(cacheParams.enableL2Flush) (IO(Input(Bool())))
+    val io_lcrdy = Option.when(cacheParams.txSourceReady) (IO(Input(new LCrdyIn)))
 
     // Check port width
     require(io_chi.tx.rsp.getWidth == io_chi.rx.rsp.getWidth);
@@ -125,6 +126,9 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
       )
     }
 
+    //Coherency enable from Link Layer: when 1 cacheable request can be sent; otherwise they are gated
+    val coEnable = WireInit(false.B)
+
     slices match {
       case slices: Seq[Slice] =>
         // TXREQ
@@ -132,7 +136,12 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         val txreq = Wire(DecoupledIO(new CHIREQ))
         slices.zip(txreq_arb.io.in.init).foreach { case (s, in) => in <> s.io.out.tx.req }
         txreq_arb.io.in.last <> mmio.io.tx.req
-        txreq <> txreq_arb.io.out
+        //Coherency Gating cacheable request, mmio always pass
+        val is_mmio = txreq_arb.io.chosen === slices.size.U
+        val req_pass = coEnable || is_mmio
+        txreq.valid := txreq_arb.io.out.valid && req_pass
+        txreq.bits := txreq_arb.io.out.bits
+        txreq_arb.io.out.ready := txreq.ready && req_pass
         txreq.bits.txnID := setSliceID(txreq_arb.io.out.bits.txnID, txreq_arb.io.chosen, mmio.io.tx.req.fire)
 
         // TXRSP
@@ -267,7 +276,8 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         linkMonitor.io.exitco.foreach { _ :=
           Cat(slices.zipWithIndex.map { case (s, i) => s.io.l2FlushDone.getOrElse(false.B)}).andR && io_cpu_halt.getOrElse(false.B)
         }
-
+        coEnable := linkMonitor.io.coEnable
+        (io_lcrdy, linkMonitor.io.lcrdy).zipped.foreach { case (in, out) => out := in }
         /**
           * performance counters
           */
