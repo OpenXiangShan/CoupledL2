@@ -111,7 +111,7 @@ object ToAsyncBundleWithBuf {
     if (name.isDefined) { source.suggestName("asyncQSource_" + name.get) }
     source.io.enq <> shadow_buffer.io.deq
 
-    val empty = shadow_buffer.io.count === 0.U
+    val empty = shadow_buffer.io.count === 0.U && source.io.async.widx === source.io.async.ridx
 
     (source.io.async, hasSpace, empty)
   }
@@ -379,6 +379,7 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
     }
   })
 //  val txSourceReady = cacheParams.txSourceReady
+
   val txState = RegInit(LinkStates.STOP)
   val rxState = RegInit(LinkStates.STOP)
 
