@@ -52,7 +52,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     val status_vec_toTX = Vec(3, ValidIO(new PipeStatusWithCHI))
 
     /* get dir result at stage 3 */
-    val dirResp_s3 = Input(new DirResult())
+    val dirResp_s3 = Flipped(ValidIO(new DirResult))
     val replResp = Flipped(ValidIO(new ReplacerResult()))
 
     /* send task to MSHRCtl at stage 3 */
@@ -149,7 +149,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   }
 
   /* ======== Enchantment ======== */
-  val dirResult_s3    = io.dirResp_s3
+  val dirResult_s3    = io.dirResp_s3.bits
   val meta_s3         = dirResult_s3.meta
   val req_s3          = task_s3.bits
   val cmoHitInvalid   = io.cmoAllBlock.getOrElse(false.B) && (meta_s3.state === INVALID)
@@ -217,9 +217,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     nestable_dirResult_s3.tag   := req_s3.tag
   }
 
-  val tagError_s3               = (io.dirResp_s3.error || meta_s3.tagErr) && dirResult_s3.hit
-  val dataError_s3              = meta_s3.dataErr && dirResult_s3.hit
-  val l2Error_s3                = io.dirResp_s3.error && dirResult_s3.hit
+  val tagError_s3               = (dirResult_s3.error || meta_s3.tagErr) && io.dirResp_s3.valid
+  val dataError_s3              = meta_s3.dataErr && io.dirResp_s3.valid
+  val l2Error_s3                = dirResult_s3.error && io.dirResp_s3.valid
 
   val mshr_refill_s3 = mshr_accessackdata_s3 || mshr_hintack_s3 || mshr_grant_s3 // needs refill to L2 DS
   val replResp_valid_s3 = io.replResp.valid
