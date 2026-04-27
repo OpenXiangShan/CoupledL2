@@ -114,7 +114,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   mainPipe.io.taskInfo_s1 := reqArb.io.taskInfo_s1
   mainPipe.io.fromReqArb.status_s1 := reqArb.io.status_s1
   mainPipe.io.bufResp := sinkC.io.bufResp
-  mainPipe.io.dirResp_s3 := directory.io.resp.bits
+  mainPipe.io.dirResp_s3 := directory.io.resp
   mainPipe.io.replResp := directory.io.replResp
   mainPipe.io.fromMSHRCtl <> mshrCtl.io.toMainPipe
   mainPipe.io.bufResp := sinkC.io.bufResp
@@ -134,6 +134,7 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   mshrCtl.io.resps.sinkC := sinkC.io.resp
   mshrCtl.io.resps.rxrsp := rxrsp.io.in
   mshrCtl.io.resps.rxdat := rxdat.io.in
+  mshrCtl.io.dsResp := mainPipe.io.dsResp
   mshrCtl.io.nestedwb := mainPipe.io.nestedwb
   mshrCtl.io.replResp := directory.io.replResp
   mshrCtl.io.aMergeTask := reqBuf.io.aMergeTask

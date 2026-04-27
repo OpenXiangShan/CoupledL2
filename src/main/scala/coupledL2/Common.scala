@@ -304,6 +304,11 @@ class RespBundle(implicit p: Parameters) extends L2Bundle {
   val respInfo = new RespInfoBundle
 }
 
+class DSInfoBundle(implicit p: Parameters) extends L2Bundle {
+  val mshrId = UInt(mshrBits.W)
+  val dataError = Bool()
+}
+
 class FSMState(implicit p: Parameters) extends L2Bundle {
   // schedule
   val s_acquire = Bool()  // acquire downwards

@@ -62,6 +62,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     val aMergeTask = Flipped(ValidIO(new TaskBundle))
     val replResp = Flipped(ValidIO(new ReplacerResult))
     val pCrd = new PCrdQueryBundle
+    val dsResp = Flipped(ValidIO(new DSInfoBundle))
   })
 
   require (chiOpt.isDefined)
@@ -147,8 +148,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
 
     pcrdtype := 0.U
     tagErr := io.alloc.bits.dirResult.hit && (io.alloc.bits.dirResult.meta.tagErr || io.alloc.bits.dirResult.error)
-    denied := false.B
-    corrupt := false.B
+    denied := io.alloc.bits.task.denied
+    corrupt := io.alloc.bits.task.corrupt
     cbWrDataTraceTag := false.B
 
     retryTimes := 0.U
@@ -670,7 +671,9 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       clients = meta.clients & Fill(clientBits, !snpToN),
       alias = meta.alias, //[Alias] Keep alias bits unchanged
       prefetch = !snpToN && meta_pft,
-      accessed = !snpToN && meta.accessed
+      accessed = !snpToN && meta.accessed,
+      tagErr = denied,
+      dataErr = corrupt
     )
     mp_probeack.metaWen := !req.snpHitReleaseToInval
     mp_probeack.tagWen := false.B
@@ -681,6 +684,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     mp_probeack.cmoTask := cmo_cbo
     mp_probeack.mergeA := false.B
     mp_probeack.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+    mp_probeack.denied := denied
+    mp_probeack.corrupt := corrupt
 
     // CHI
     mp_probeack.tgtID.get := req.srcID.get
@@ -1055,7 +1060,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       req_released_chiOpcode := mp_release.chiOpcode.get
       req_released_likelyShared := mp_release.likelyshared.get
       state.s_release := true.B
-      state.s_cbwrdata.get := isEvict
+      state.s_cbwrdata.get := isEvict || meta.tagErr // not repl, when tag error
       when (isEvict) {
         meta.state := INVALID
         meta.dirty := false.B
@@ -1106,7 +1111,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     when (isToB(c_resp.bits.param)) {
       meta.state := Mux(isT(meta.state), TIP, meta.state)
     }
-    when (isParamFromT(c_resp.bits.param)) {
+    when (TLPermissions.isReport(c_resp.bits.param)) {
       meta.tagErr := c_resp.bits.denied
       meta.dataErr := c_resp.bits.corrupt
       denied := denied || c_resp.bits.denied
@@ -1198,6 +1203,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         state.w_grantfirst := true.B
         state.w_grantlast := true.B
         state.w_grant := true.B
+        state.w_replResp := state.w_replResp || nderr
         gotT := rxrspIsU
         gotDirty := false.B
         denied := denied || nderr
@@ -1241,6 +1247,11 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     gotPCrdGrant := true.B
   }
 
+  // when write releaseBuf
+  when (io.dsResp.valid) {
+    corrupt := corrupt || io.dsResp.bits.dataError
+  }
+
   // replay
   val replResp = io.replResp.bits
   when (io.replResp.valid && replResp.retry) {
@@ -1256,24 +1267,30 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
     state.w_replResp := true.B
 
     // update meta (no need to update hit/set/error/replacerInfo of dirResult)
+    // when tag error, cacnel repl; use meta.tagErr to pass info in mp_release
     dirResult.tag := replResp.tag
     dirResult.way := replResp.way
     dirResult.meta := replResp.meta
+    dirResult.meta.tagErr := replResp.error || replResp.meta.tagErr
 
     // replacer choosing:
     // 1. an invalid way, release no longer needed
     // 2. the same way, just release as normal (only now we set s_release)
     // 3. differet way, we need to update meta and release that way
     // if meta has client, rprobe client
+    // if tag error, not evict to L3
     when (replResp.meta.state =/= INVALID) {
       // set release flags
       state.s_release := false.B
-      state.w_releaseack := false.B
-      // rprobe clients if any
-      when (replResp.meta.clients.orR) {
-        state.s_rprobe := false.B
-        state.w_rprobeackfirst := false.B
-        state.w_rprobeacklast := false.B
+      when (!(replResp.error || replResp.meta.tagErr)) {
+        state.w_releaseack := false.B
+        // TODO: if tagErr, consistency problem occurs(L1 Evict)
+        // rprobe clients if any
+        when(replResp.meta.clients.orR) {
+          state.s_rprobe := false.B
+          state.w_rprobeackfirst := false.B
+          state.w_rprobeacklast := false.B
+        }
       }
     }
   }
@@ -1398,7 +1415,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       meta.state := INVALID
       dirResult.hit := false.B
       meta.clients := Fill(clientBits, false.B)
-      state.w_replResp := cmo_cbo // never query replacer on CMO
+      state.w_replResp := cmo_cbo || denied // never query replacer on CMO
       req.aliasTask.foreach(_ := false.B)
     }
   }
