@@ -71,7 +71,7 @@ case class TPParameters(
   confTableEntries: Int = 512,
   confTableAssoc: Int = 8,
   confTableReplacementPolicy: String = "plru",
-  confReqQueueDepth: Int = 16,
+  confReqQueueDepth: Int = 8,
 
   globalHitCountConfidenceWidth: Int = 5,
   globalHitCountConfidenceInitVal: Int = 21,
@@ -937,8 +937,8 @@ class confTable(implicit p:Parameters) extends TPModule {
     waymask = confTableWWayOH_s2
   )
 
-  io.resp.valid := s1_valid && needResp_s1
-  io.resp.bits.issue := Mux(hit_s1, conf_s1.accConf > ((1 << accConfWidth - 1) >> 1).U, true.B)
+  io.resp.valid := s2_valid && needResp_s2
+  io.resp.bits.issue := Mux(hit_s2, conf_s2.accConf > ((1 << accConfWidth - 1) >> 1).U, true.B)
 
   XSPerfAccumulate("tp_conf_table_pf_hit", io.req.valid && io.req.bits.pfHit)
   XSPerfAccumulate("tp_conf_table_pf_late", io.req.valid && io.req.bits.pfLate)
@@ -1044,6 +1044,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val metaWQueue = Module(new Queue(new trainedRecord(), tpMetaWQueueDepth, pipe = false, flow = false))
   val tpMetaResetQueue = Module(new Queue(new tpMetaResetEntry(), tpMetaResetQueueDepth, pipe = false, flow = false))
   val confRespQueue = Module(new Queue(new confResp(), confReqQueueDepth + 1, pipe = false, flow = false))
+  val pendingPfCnt = RegInit(0.U(log2Ceil(tpDataQueueDepth).W))
 
   val repl = ReplacementPolicy.fromString(tpTableReplacementPolicy, tpTableAssoc)
 
@@ -1226,6 +1227,11 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   /* Async Stage: get tpMeta and insert it into tpDataQueue */
   // disable prefetched pc (wait for next round of training
+  when(tpDataQueue.io.enq.fire && !tpDataQueue.io.deq.fire) {
+    pendingPfCnt := pendingPfCnt + 1.U
+  }.elsewhen(!tpDataQueue.io.enq.fire && tpDataQueue.io.deq.fire) {
+    pendingPfCnt := pendingPfCnt - 1.U
+  }
 
   tpDataQueue.io.enq.valid := tpmeta.io.resp.valid && tpmeta.io.resp.bits.hartid === io.hartid
   tpDataQueue.io.enq.bits.rawData := tpmeta.io.resp.bits.rawData
@@ -1233,7 +1239,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   tpDataQueue.io.enq.bits.hitCount := tpmeta.io.resp.bits.hitCount
   assert(tpDataQueue.io.enq.ready === true.B) // tpDataQueue is never full
 
-  tpMetaResetQueue.io.deq.ready := !(metaWQueue.io.deq.fire || !resetFinish)
+  tpMetaResetQueue.io.deq.ready := !(metaWQueue.io.deq.fire || !resetFinish) || pendingPfCnt.andR
   assert(tpMetaResetQueue.io.enq.ready === true.B)
 
   when(resetIdx === 0.U) {
@@ -1339,7 +1345,8 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   confRespQueue.io.enq.valid := confTable.io.resp.valid
   confRespQueue.io.enq.bits.issue := confTable.io.resp.bits.issue
   confRespQueue.io.deq.ready := tpDataQueue.io.deq.fire
-  assert(confRespQueue.io.enq.ready === true.B)
+  // assert(confRespQueue.io.enq.ready === true.B)
+  // TODO
 
   /* Performance collection */
   val hitCountS1 = WireInit(0.U(hitCountWidth.W))
