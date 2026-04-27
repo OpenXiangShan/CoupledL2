@@ -583,12 +583,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     dataErr = Mux(wen_c, req_s3.corrupt, meta_s3.dataErr), // update error when write DS
     pfDepth = meta_s3.pfDepth
   )
-  if (hasCDP) {
-    // clean the depth and src if demand hit from L1
-    val need_clean= req_acquireBlock_s3 && dirResult_s3.hit && MemReqSource.isCPUReq(req_s3.reqSource)
-    metaW_s3_a.pfDepth := Mux(need_clean, 0.U, meta_s3.pfDepth)
-    metaW_s3_a.prefetchSrc.get := Mux(need_clean, PfSource.NoWhere.id.U, meta_s3.prefetchSrc.get)
-  }
 
   // use merge_meta if mergeA
   val metaW_s3_mshr = WireInit(Mux(req_s3.mergeA, req_s3.aMergeTask.meta, req_s3.meta))
@@ -722,12 +716,27 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   /* ======== prefetch ======== */
   io.prefetchTrain.foreach {
     train =>
+      // --------------------- CDP ---------------------
+      // for VpnTable, we train on both hit & miss
+      train.bits.trigger_valid := task_s3.valid && ((req_acquire_s3 || req_get_s3) && req_s3.needHint.getOrElse(false.B) || req_s3.mergeA)
+      train.bits.cdp_vpn_train_valid  := task_s3.valid && ((req_acquire_s3 || req_get_s3) && req_s3.needHint.getOrElse(false.B) || req_s3.mergeA)
+      
+      // for FilterTable, we train on hit & evict
+      // TODO: narrow this down to train on hitting a CDP prefetched block
+      // Hit a block
+      train.bits.cdp_filter_train_hit   := task_s3.valid && ((req_acquire_s3 || req_get_s3) && req_s3.needHint.getOrElse(false.B) &&
+        (dirResult_s3.hit) || req_s3.mergeA)
+
+      // Evict a unused CDP prefetched block
+      train.bits.cdp_filter_train_evict := task_s3.valid && mshr_refill_s3 && req_s3.replTask &&
+        !io.replResp.bits.meta.accessed && io.replResp.bits.meta.prefetch.getOrElse(false.B) && io.replResp.bits.meta.prefetchSrc.getOrElse(false.B) === PfSource.CDP.id.U
+
       // train on request(with needHint flag) miss or hit on prefetched block
       // trigger train also in a_merge here
       train.valid := task_s3.valid && ((req_acquire_s3 || req_get_s3) && req_s3.needHint.getOrElse(false.B) &&
         (!dirResult_s3.hit || meta_s3.prefetch.get) || req_s3.mergeA)
-      train.bits.tag := req_s3.tag
-      train.bits.set := req_s3.set
+      train.bits.tag := Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.tag, req_s3.tag)
+      train.bits.set := Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.set, req_s3.set)
       train.bits.needT := Mux(
         req_s3.mergeA,
         needT(req_s3.aMergeTask.opcode, req_s3.aMergeTask.param),
@@ -742,10 +751,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       train.bits.prefetched := Mux(req_s3.mergeA, true.B, meta_s3.prefetch.getOrElse(false.B))
       train.bits.pfsource := meta_s3.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) // TODO
       train.bits.reqsource := req_s3.reqSource
-
-      // for CDP, we train on both hit & miss
-      train.bits.trigger_valid := task_s3.valid && ((req_acquire_s3 || req_get_s3) && req_s3.needHint.getOrElse(false.B) || req_s3.mergeA)
-      
   }
 
   /* ======== Stage 4 ======== */
@@ -892,10 +897,12 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val is_hit_trigger_s5     = task_s5.valid && dirResult_s5_hit && req_s5_acquire_block &&
     (dirResult_s5_fromCDP || dirResult_s5_fromSMS || dirResult_s5_fromBOP || dirResult_s5_fromPBOP)
   val hit_trigger_data_s5   = out_data_s5
-  val hit_trigger_depth_s5  = RegNext(RegNext(dirResult_s3.meta.pfDepth))
-  val hit_trigger_pfsrc_s5  = RegNext(RegNext(dirResult_s3.meta.prefetchSrc.get))
+  val hit_trigger_depth_s3  = Mux(dirResult_s3.meta.accessed, 0.U, dirResult_s3.meta.pfDepth)
+  val hit_trigger_pfSrc_s3  = Mux(dirResult_s3.meta.accessed, PfSource.NoWhere.id.U, dirResult_s3.meta.prefetchSrc.get)
+  val hit_trigger_depth_s5  = RegNext(RegNext(hit_trigger_depth_s3))
+  val hit_trigger_pfsrc_s5  = RegNext(RegNext(hit_trigger_pfSrc_s3))
 
-  val is_refill_trigger_s3 = task_s3.valid && (mshr_grantdata_s3 || mshr_hintack_s3)    // TODO: filter other prefetcher's request
+  val is_refill_trigger_s3 = task_s3.valid && (mshr_grantdata_s3 || mshr_hintack_s3)
   val is_refill_trigger_s5 = RegNext(RegNext(is_refill_trigger_s3))
   val refill_trigger_data_s3  = Mux(req_s3.useProbeData, io.releaseBufResp_s3.bits.data, io.refillBufResp_s3.bits.data)
   val refill_trigger_data_s5  = RegNext(RegNext(refill_trigger_data_s3))

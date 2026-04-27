@@ -176,6 +176,12 @@ class PrefetchTrain(implicit p: Parameters) extends PrefetchBundle {
   val reqsource = UInt(MemReqSource.reqSourceBits.W)
 
   // this is for CDP: train CDP when valid address req comes to MainPipe
+  val cdp_vpn_train_valid     = Bool()
+
+  val cdp_filter_train_hit    = Bool()
+  val cdp_filter_train_evict  = Bool()
+
+
   val trigger_valid = Bool()
 
   def addr: UInt = Cat(tag, set, 0.U(offsetBits.W))
@@ -405,9 +411,12 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     cdp.get.io.enable := true.B
 
     // Train
-    cdp.get.io.train <> io.train
-    cdp.get.io.train.valid := io.train.bits.trigger_valid && (io.train.bits.reqsource === MemReqSource.CPULoadData.id.U || io.train.bits.reqsource === MemReqSource.CPUStoreData.id.U)
-    
+    cdp.get.io.vpn_train.valid  := io.train.bits.cdp_vpn_train_valid && (MemReqSource.isCPUReq(io.train.bits.reqsource))
+    cdp.get.io.vpn_train.bits   := io.train.bits
+
+    cdp.get.io.filter_train.valid := (io.train.bits.cdp_filter_train_hit || io.train.bits.cdp_filter_train_evict) && (MemReqSource.isCPUReq(io.train.bits.reqsource))
+    cdp.get.io.filter_train.bits  := io.train.bits
+
     // Trigger
     cdp.get.io.l2_detect_triggers <> cdpio.cdp_trigger.get
 
