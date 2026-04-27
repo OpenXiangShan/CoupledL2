@@ -173,9 +173,9 @@ class PrefetchTrain(implicit p: Parameters) extends PrefetchBundle {
   val cdp_filter_train_hit    = Bool()
   val cdp_filter_train_evict  = Bool()
 
-
-  val trigger_valid = Bool()
-
+  val is_cdp_train    = Bool()    // for CDP
+  val is_other_train  = Bool()    // for BOP or TP
+  
   def addr: UInt = Cat(tag, set, 0.U(offsetBits.W))
 }
 
@@ -341,7 +341,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     vbop.get.io.pfCtrlOfDelayLatency := delay_latency
     vbop.get.io.req.ready :=  (if(hasReceiver) !pfRcv.get.io.req.valid else true.B)
     vbop.get.io.train <> io.train
-    vbop.get.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
+    vbop.get.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U) && io.train.bits.is_other_train
     vbop.get.io.resp <> io.resp
     vbop.get.io.resp.valid := io.resp.valid && io.resp.bits.isBOP
     vbop.get.io.tlb_req <> bop_tlb_req
@@ -353,7 +353,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       (if(hasReceiver) !pfRcv.get.io.req.valid else true.B) &&
       (if(hasBOP) !vbop.get.io.req.valid else true.B)
     pbop.get.io.train <> io.train
-    pbop.get.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
+    pbop.get.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U) && io.train.bits.is_other_train
     pbop.get.io.resp <> io.resp
     pbop.get.io.resp.valid := io.resp.valid && io.resp.bits.isPBOP
   }
@@ -379,6 +379,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   if (hasTPPrefetcher) {
     tp.get.io.enable := tp_en
     tp.get.io.train <> io.train
+    tp.get.io.train.valid := io.train.bits.is_other_train && io.train.valid
     tp.get.io.resp <> io.resp
     tp.get.io.hartid := hartId
     tp.get.io.req.ready := (if(hasReceiver) !pfRcv.get.io.req.valid else true.B) &&
