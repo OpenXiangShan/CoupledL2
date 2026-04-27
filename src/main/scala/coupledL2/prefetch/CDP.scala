@@ -429,7 +429,7 @@ class FilterTable(implicit p: Parameters) extends CDPModule {
       }
     }.otherwise {
       // only update the sat counter of the target way & offset
-      val offset = get_filter_offset(train_req.bits.tag)
+      val offset = train_req.bits.offset
       val sat_cnt = sat_array(set_idx)(target_way)(offset)
 
       when (train_req.bits.is_used) {
@@ -579,8 +579,9 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   val ft_s2_tag       = RegNext(ft_s1_tag)
   val ft_s2_is_used   = RegNext(ft_s1_is_used)
 
-  val ft_s2_valid_vec  = ft_s1_tab_rsp.valid_vec
-  val ft_s2_tag_vec    = ft_s1_tab_rsp.tag_vec
+  val ft_s2_tab_rsp = RegNext(ft_s1_tab_rsp)
+  val ft_s2_valid_vec  = ft_s2_tab_rsp.valid_vec
+  val ft_s2_tag_vec    = ft_s2_tab_rsp.tag_vec
 
   val ft_s2_hit_vec    = ft_s2_tag_vec.zip(ft_s2_valid_vec).map {
     case (t, v) =>
@@ -637,7 +638,7 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   ft_s3_update_info.is_used  := ft_s3_is_used
   ft_s3_update_info.target_way := Mux(ft_s3_hit, ft_s3_hit_idx, ft_plru_way)
 
-  ft_same_vec(2) := ft_stage_valid(3) && ft_s3_hit && ft_s3_set_idx === ft_s0_set_idx && ft_s3_tag === ft_s0_tag
+  ft_same_vec(2) := ft_stage_valid(3) && ft_s3_set_idx === ft_s0_set_idx && ft_s3_tag === ft_s0_tag
 
   // ----------- s4 -----------
   // VpnTable: update table & plru
@@ -1009,7 +1010,7 @@ class SentUnit(implicit p: Parameters) extends CDPModule {
 
   // --------------- prefetch req pipe ---------------
   val pft_s0_valid = Wire(Bool())
-  val pft_s1_valid = RegNext(pft_s0_valid)
+  val pft_s1_valid = Wire(Bool())
 
   val pft_s0_chosen_idx = Wire(UInt(log2Ceil(ReqFilterEntryNum).W))
   val pft_s1_chosen_idx = RegNext(pft_s0_chosen_idx)
@@ -1039,24 +1040,27 @@ class SentUnit(implicit p: Parameters) extends CDPModule {
   ft_query_req.bits.offset  := get_filter_offset(pft_s0_req.addr)
 
   // --------- req s1: recv filter table rsp ---------
-  val ft_s1_rsp = RegNext(ft_query_rsp)
+  pft_s1_valid  := RegNext(pft_s0_valid)
+
+  val pft_s1_req  = RegNext(pft_s0_req)
+  val ft_s1_rsp   = RegNext(ft_query_rsp)
 
   val valid_vec = ft_s1_rsp.valid_vec
   val tag_vec   = ft_s1_rsp.tag_vec
   val hit_vec   = valid_vec.zip(tag_vec).map{
     case (v, t) =>
-      v && t === get_filter_tag(pft_s0_req.addr)
+      v && t === get_filter_tag(pft_s1_req.addr)
   }
   val hit = hit_vec.reduce(_ || _)
   val hit_idx = PriorityEncoder(hit_vec)
 
   val sat_vec = ft_s1_rsp.sat_vec
-  val can_pft = !hit || sat_vec(hit_idx) === 3.U
+  val can_pft = !hit || sat_vec(hit_idx) =/= 3.U
 
   out.valid := pft_s1_valid && can_pft
-  out.bits := pft_s0_req
+  out.bits  := pft_s1_req
 
-  when (out.fire) {
+  when (out.fire || !can_pft && pft_s1_valid) {
     valids(pft_s1_chosen_idx) := false.B
   }
   

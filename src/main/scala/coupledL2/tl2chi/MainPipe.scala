@@ -557,7 +557,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     accessed = true.B,
     tagErr = meta_s3.tagErr,
     dataErr = meta_s3.dataErr,
-    pfDepth = meta_s3.pfDepth,
+    pfDepth = 0.U,
   )
   val metaW_s3_b = Mux(isSnpToN(req_s3.chiOpcode.get), MetaEntry(),
     MetaEntry(
@@ -715,26 +715,35 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   /* ======== prefetch ======== */
   io.prefetchTrain.foreach {
-    train =>
+    train =>      
       // --------------------- CDP ---------------------
       // for VpnTable, we train on both hit & miss
-      train.bits.trigger_valid := task_s3.valid && ((req_acquire_s3 || req_get_s3) && req_s3.needHint.getOrElse(false.B) || req_s3.mergeA)
-      train.bits.cdp_vpn_train_valid  := task_s3.valid && ((req_acquire_s3 || req_get_s3) && req_s3.needHint.getOrElse(false.B) || req_s3.mergeA)
-      
+      val cdp_vpn_train_valid = task_s3.valid && ((req_acquire_s3 || req_get_s3) && req_s3.needHint.getOrElse(false.B) || req_s3.mergeA)
+
       // for FilterTable, we train on hit & evict
       // TODO: narrow this down to train on hitting a CDP prefetched block
       // Hit a block
-      train.bits.cdp_filter_train_hit   := task_s3.valid && ((req_acquire_s3 || req_get_s3) && req_s3.needHint.getOrElse(false.B) &&
+      val cdp_filter_train_hit = task_s3.valid && ((req_acquire_s3 || req_get_s3) && req_s3.needHint.getOrElse(false.B) &&
         (dirResult_s3.hit) || req_s3.mergeA)
 
       // Evict a unused CDP prefetched block
-      train.bits.cdp_filter_train_evict := task_s3.valid && mshr_refill_s3 && req_s3.replTask &&
+      val cdp_filter_train_evict = task_s3.valid && mshr_refill_s3 && req_s3.replTask &&
         !io.replResp.bits.meta.accessed && io.replResp.bits.meta.prefetch.getOrElse(false.B) && io.replResp.bits.meta.prefetchSrc.getOrElse(false.B) === PfSource.CDP.id.U
 
+      train.bits.cdp_vpn_train_valid    := cdp_vpn_train_valid
+      train.bits.cdp_filter_train_hit   := cdp_filter_train_hit
+      train.bits.cdp_filter_train_evict := cdp_filter_train_evict
+
+      val is_cdp_train  = cdp_vpn_train_valid || cdp_filter_train_hit || cdp_filter_train_evict
+
+      // --------------------- Other Prefetcher ---------------------
       // train on request(with needHint flag) miss or hit on prefetched block
       // trigger train also in a_merge here
-      train.valid := task_s3.valid && ((req_acquire_s3 || req_get_s3) && req_s3.needHint.getOrElse(false.B) &&
+      val is_other_train = task_s3.valid && ((req_acquire_s3 || req_get_s3) && req_s3.needHint.getOrElse(false.B) &&
         (!dirResult_s3.hit || meta_s3.prefetch.get) || req_s3.mergeA)
+      
+      // --------------------- Train Detail ---------------------
+      train.valid := is_cdp_train || is_other_train
       train.bits.tag := Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.tag, req_s3.tag)
       train.bits.set := Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.set, req_s3.set)
       train.bits.needT := Mux(
@@ -751,6 +760,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       train.bits.prefetched := Mux(req_s3.mergeA, true.B, meta_s3.prefetch.getOrElse(false.B))
       train.bits.pfsource := meta_s3.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) // TODO
       train.bits.reqsource := req_s3.reqSource
+      train.bits.is_cdp_train := is_cdp_train
+      train.bits.is_other_train := is_other_train
   }
 
   /* ======== Stage 4 ======== */
@@ -897,7 +908,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val is_hit_trigger_s5     = task_s5.valid && dirResult_s5_hit && req_s5_acquire_block &&
     (dirResult_s5_fromCDP || dirResult_s5_fromSMS || dirResult_s5_fromBOP || dirResult_s5_fromPBOP)
   val hit_trigger_data_s5   = out_data_s5
-  val hit_trigger_depth_s3  = Mux(dirResult_s3.meta.accessed, 0.U, dirResult_s3.meta.pfDepth)
+  val hit_trigger_depth_s3  = dirResult_s3.meta.pfDepth
   val hit_trigger_pfSrc_s3  = Mux(dirResult_s3.meta.accessed, PfSource.NoWhere.id.U, dirResult_s3.meta.prefetchSrc.get)
   val hit_trigger_depth_s5  = RegNext(RegNext(hit_trigger_depth_s3))
   val hit_trigger_pfsrc_s5  = RegNext(RegNext(hit_trigger_pfSrc_s3))
