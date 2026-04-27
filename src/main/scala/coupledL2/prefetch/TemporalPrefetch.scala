@@ -340,7 +340,7 @@ class SamplerFilter(implicit p: Parameters) extends TPModule {
   val (pcTag_s2, pcSet_s2) = parsePaddr(pc_s2)
   val updateCnt = Mux(hit_s2 && !cnt_s2.andR, cnt_s2 + 1.U, cnt_s2)
 
-  val updateEntry = WireInit(new filterTableEntry().apply(false.B, pcTag_s2, currAddr_s2, updateCnt))
+  val updateEntry = WireInit(new filterTableEntry().apply(true.B, pcTag_s2, currAddr_s2, updateCnt))
   val replEntry = WireInit(new filterTableEntry().apply(true.B, pcTag_s2, currAddr_s2, 0.U))
   val resetEntry = WireInit(new filterTableEntry().apply(false.B, 0.U, 0.U, 0.U))
 
