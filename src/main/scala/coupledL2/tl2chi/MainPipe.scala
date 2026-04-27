@@ -95,7 +95,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     /* read DS and write data into ReleaseBuf when the task needs to replace */
     val releaseBufWrite = ValidIO(new MSHRBufWrite())
 
-    /* resp data error to NSHR */
+    /* resp data error to MSHR */
     val dsResp = ValidIO(new DSInfoBundle)
 
     /* nested writeback */
