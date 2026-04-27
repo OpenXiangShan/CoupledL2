@@ -33,7 +33,7 @@ import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import utility.{ChiselDB, Constantin, MemReqSource, SRAMTemplate, XSPerfAccumulate, XSPerfHistogram}
 import coupledL2.HasCoupledL2Parameters
-import coupledL2.utils.ReplacementPolicy
+import coupledL2.utils.{ReplacementPolicy, SetAssocReplacer}
 import coupledL2.{TPmetaReq, TPmetaResp}
 
 case class TPParameters(
@@ -268,7 +268,7 @@ class SamplerFilter(implicit p: Parameters) extends TPModule {
       singlePort = true
     )
   )
-  val repl = ReplacementPolicy.fromString(samplerFilterReplacementPolicy, samplerFilterAssoc)
+  val repl = new SetAssocReplacer(samplerFilterNrSet, samplerFilterAssoc, samplerFilterReplacementPolicy)
 
   val resetFinish = RegInit(false.B)
   val resetIdx = RegInit((samplerFilterNrSet - 1).U)
@@ -317,15 +317,13 @@ class SamplerFilter(implicit p: Parameters) extends TPModule {
   val hit_s1 = Cat(hitVec_s1).orR
 
   val hitWay_s1 = OHToUInt(hitVec_s1)
-  val victimWay_s1 = repl.way
+  val victimWay_s1 = repl.way(pcSet_s1)
   val way_s1 = Mux(hit_s1, hitWay_s1, victimWay_s1)
   val lastAddr_s1 = filterRecord_s1(way_s1).lastAddr
   val cnt_s1 = filterRecord_s1(way_s1).cnt
 
-  when(hit_s1) {
-    repl.access(hitWay_s1)
-  }.otherwise {
-    repl.miss
+  when(s1_valid) {
+    repl.access(pcSet_s1, way_s1)
   }
 
   /* ------- stage 2 ------- */
@@ -422,7 +420,7 @@ class SamplerTable(implicit p: Parameters) extends TPModule {
       singlePort = true
     )
   )
-  val repl = ReplacementPolicy.fromString(samplerTableReplacementPolicy, samplerTableAssoc)
+  val repl = new SetAssocReplacer(samplerTableNrSet, samplerTableAssoc, samplerTableReplacementPolicy)
 
   val resetFinish = RegInit(false.B)
   val resetIdx = RegInit((samplerTableNrSet - 1).U)
@@ -469,14 +467,12 @@ class SamplerTable(implicit p: Parameters) extends TPModule {
   val hit_s1 = Cat(hitVec_s1).orR
 
   val hitWay_s1 = OHToUInt(hitVec_s1)
-  val victimWay_s1 = repl.way
+  val victimWay_s1 = repl.way(baseSet_s1)
   val way_s1 = Mux(hit_s1, hitWay_s1, victimWay_s1)
   val lastPair_s1 = pairs_s1(way_s1)
 
-  when(hit_s1) {
-    repl.access(hitWay_s1)
-  }.otherwise {
-    repl.miss
+  when(s1_valid) {
+    repl.access(baseSet_s1, way_s1)
   }
 
   /* ------- stage 2 ------- */
@@ -595,7 +591,7 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
       singlePort = true
     )
   )
-  val repl = ReplacementPolicy.fromString(recorderTableReplacementPolicy, recorderTableAssoc)
+  val repl =  new SetAssocReplacer(recorderTableNrSet, recorderTableAssoc, recorderTableReplacementPolicy)
 
   val resetFinish = RegInit(false.B)
   val resetIdx = RegInit((recorderTableNrSet - 1).U)
@@ -640,14 +636,12 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
   val hit_s1 = Cat(hitVec_s1).orR
 
   val hitWay_s1 = OHToUInt(hitVec_s1)
-  val victimWay_s1 = repl.way
+  val victimWay_s1 = repl.way(pcSet_s1)
   val way_s1 = Mux(hit_s1, hitWay_s1, victimWay_s1)
   val recorder_s1 = recorders_s1(way_s1)
 
-  when(hit_s1) {
-    repl.access(hitWay_s1)
-  }.otherwise {
-    repl.miss
+  when(s1_valid) {
+    repl.access(pcSet_s1, way_s1)
   }
 
   /* ------- stage 2 ------- */
@@ -838,7 +832,7 @@ class confTable(implicit p:Parameters) extends TPModule {
       singlePort = true
     )
   )
-  val repl = ReplacementPolicy.fromString(confTableReplacementPolicy, confTableAssoc)
+  val repl = new SetAssocReplacer(confTableNrSet, confTableAssoc, confTableReplacementPolicy)
 
   val reqQueue = Module(new Queue(new confReq(), confReqQueueDepth, pipe = false, flow = false))
 
@@ -891,14 +885,12 @@ class confTable(implicit p:Parameters) extends TPModule {
   val hit_s1 = Cat(hitVec_s1).orR
 
   val hitWay_s1 = OHToUInt(hitVec_s1)
-  val victimWay_s1 = repl.way
+  val victimWay_s1 = repl.way(set_s1)
   val way_s1 = Mux(hit_s1, hitWay_s1, victimWay_s1)
   val conf_s1 = confs(way_s1)
 
-  when(hit_s1) {
-    repl.access(hitWay_s1)
-  }.otherwise {
-    repl.miss
+  when(s1_valid) {
+    repl.access(set_s1, way_s1)
   }
 
   /* ------- stage 2 ------- */
@@ -1046,7 +1038,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val confRespQueue = Module(new Queue(new confResp(), confReqQueueDepth + 1, pipe = false, flow = false))
   val pendingPfCnt = RegInit(0.U(log2Ceil(tpDataQueueDepth).W))
 
-  val repl = ReplacementPolicy.fromString(tpTableReplacementPolicy, tpTableAssoc)
+  val repl = new SetAssocReplacer(tpTableNrSet, tpTableAssoc, tpTableReplacementPolicy)
 
   val resetFinish = RegInit(false.B)
   val resetIdx = RegInit((tpTableNrSet - 1).U)
@@ -1138,14 +1130,14 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val hitWay = OHToUInt(hitVec)
 
   val hit_s1 = Cat(hitVec).orR
-  val way_s1 = Mux(hit_s1, hitWay, repl.way)
+  val way_s1 = Mux(hit_s1, hitWay, repl.way(set_s1))
   val hitCount_s1 = hitCount(set_s1)(way_s1).hitCount
   assert(PopCount(hitVec) <= 1.U)
 
   when(hit_s1) {
-    repl.access(hitWay)
+    repl.access(set_s1, way_s1)
   }.elsewhen(s1_valid && metaWValid_s1) {
-    repl.miss
+    repl.access(set_s1, way_s1)
   }
 
   // update tpmeta
