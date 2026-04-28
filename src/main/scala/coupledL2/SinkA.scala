@@ -204,7 +204,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
       }.otherwise {
         way.foreach { _ := wayVal + 1.U }
       }
-      when (!mshrValid || snpBlockcmo === 0.U) {
+      when (!mshrValid && snpBlockcmo === 0.U) {
         state.foreach { _ := sCMOREQ }
       }.otherwise {
         state.foreach { _ := sWAITMSHR }
