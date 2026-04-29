@@ -53,6 +53,10 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
     /* get dir result at stage 3 */
     val dirResp_s3 = Input(new DirResult())
+    val metaOnHit_s3 = Input(new MetaEntry())
+    val errOnSnp_s3 = Input(Bool())
+    val dirWayOH_s3 = Input(UInt(cacheParams.ways.W))
+    val dirReplWayOH_s3 = Input(UInt(cacheParams.ways.W))
     val replResp = Flipped(ValidIO(new ReplacerResult()))
 
     /* send task to MSHRCtl at stage 3 */
@@ -137,6 +141,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   /* ======== Stage 2 ======== */
   val task_s2 = io.taskFromArb_s2
+  val reqWayOH_s2 = UIntToOH(task_s2.bits.way)
 
   /* ======== Stage 3 ======== */
   val task_s3 = RegInit(0.U.asTypeOf(Valid(new TaskBundle)))
@@ -144,11 +149,12 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   when (task_s2.valid) {
     task_s3.bits := task_s2.bits
   }
+  val reqWayOH_s3 = RegEnable(reqWayOH_s2, task_s2.valid)
 
   /* ======== Enchantment ======== */
   val dirResult_s3    = io.dirResp_s3
   val meta_s3         = dirResult_s3.meta
-  val metaOnHit_s3    = dirResult_s3.metaOnHit
+  val metaOnHit_s3    = io.metaOnHit_s3
   val req_s3          = task_s3.bits
   val cmoHitInvalid   = io.cmoAllBlock.getOrElse(false.B) && (meta_s3.state === INVALID)
 
@@ -212,7 +218,6 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     // was always non-hit on cache replacement subsequent release.
     nestable_dirResult_s3.hit   := req_s3.snpHitReleaseMeta.state =/= INVALID
     nestable_dirResult_s3.meta  := req_s3.snpHitReleaseMeta
-    nestable_dirResult_s3.metaOnHit := req_s3.snpHitReleaseMeta
     nestable_dirResult_s3.set   := req_s3.set
     nestable_dirResult_s3.tag   := req_s3.tag
   }
@@ -268,7 +273,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     */
   // whether L2 should do forwarding or not
   val expectFwd = isSnpXFwd(req_s3.chiOpcode.get)
-  val canFwd = nestable_dirResult_s3.hit && !(nestable_dirResult_s3.metaOnHit.tagErr || nestable_dirResult_s3.errOnSnp)
+  val canFwd = nestable_dirResult_s3.hit && !(Mux(req_s3.snpHitRelease, req_s3.snpHitReleaseMeta.tagErr, io.metaOnHit_s3.tagErr) || io.errOnSnp_s3)
   val doFwd = expectFwd && canFwd
   val need_pprobe_s3_b_snpStable = req_s3.fromB && (
     isSnpOnceX(req_s3.chiOpcode.get) || isSnpQuery(req_s3.chiOpcode.get) || isSnpStashX(req_s3.chiOpcode.get)
@@ -282,7 +287,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     req_s3.chiOpcode.get === SnpCleanInvalid ||
     isSnpMakeInvalidX(req_s3.chiOpcode.get)
   ) && dirResult_s3.hit && metaOnHit_has_clients_s3
-  val need_pprobe_s3_b_snpNDERR = req_s3.fromB && (io.dirResp_s3.errOnSnp || io.dirResp_s3.metaOnHit.tagErr) && dirResult_s3.hit
+  val need_pprobe_s3_b_snpNDERR = req_s3.fromB && (io.errOnSnp_s3 || io.metaOnHit_s3.tagErr) && dirResult_s3.hit
   val need_pprobe_s3_b = need_pprobe_s3_b_snpStable || need_pprobe_s3_b_snpToB || need_pprobe_s3_b_snpToN || need_pprobe_s3_b_snpNDERR
   val need_dct_s3_b = doFwd // DCT
   val need_mshr_s3_b = need_pprobe_s3_b || need_dct_s3_b
@@ -576,17 +581,17 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   metaW_s3_mshr.dataErr := req_s3.corrupt
   val metaW_s3_cmo  = MetaEntry()   // invalid the block
 
-  val metaW_way = Mux(
+  val metaW_wayOH = Mux(
     mshr_refill_s3 && req_s3.replTask,
-    io.replResp.bits.way, // grant always use replResp way
-    Mux(mshr_req_s3, req_s3.way, dirResult_s3.way)
+    io.dirReplWayOH_s3, // grant always use replResp way
+    Mux(mshr_req_s3, reqWayOH_s3, io.dirWayOH_s3)
   )
 
   io.metaWReq.valid := !resetFinish || task_s3.valid && (
     metaW_valid_s3_a || metaW_valid_s3_b || metaW_valid_s3_c || metaW_valid_s3_mshr || metaW_valid_s3_cmo
   )
   io.metaWReq.bits.set := Mux(resetFinish, req_s3.set, resetIdx)
-  io.metaWReq.bits.wayOH := Mux(resetFinish, UIntToOH(metaW_way), Fill(cacheParams.ways, true.B))
+  io.metaWReq.bits.wayOH := Mux(resetFinish, metaW_wayOH, Fill(cacheParams.ways, true.B))
   io.metaWReq.bits.wmeta := Mux(
     resetFinish,
     ParallelPriorityMux(
@@ -598,7 +603,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   io.tagWReq.valid := task_s3.valid && req_s3.tagWen && mshr_refill_s3 && !retry
   io.tagWReq.bits.set := req_s3.set
-  io.tagWReq.bits.way := Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.way, req_s3.way)
+  io.tagWReq.bits.wayOH := Mux(mshr_refill_s3 && req_s3.replTask, io.dirReplWayOH_s3, reqWayOH_s3)
   io.tagWReq.bits.wtag := req_s3.tag
 
   sink_resp_s3_b_metaWen := metaW_valid_s3_b
