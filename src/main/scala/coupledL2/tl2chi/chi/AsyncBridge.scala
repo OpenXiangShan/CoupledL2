@@ -124,7 +124,9 @@ object ToAsyncBundleWithBuf {
     /*
      1. Shadow Buffer (depth=16, flow mode for low latency)
      */
-    val shadow_buffer = Module(new Queue(Bool(), 16, flow = true, pipe = false))
+    class EmptyBundle extends Bundle {}
+    val shadow_buffer = Module(new Queue(new EmptyBundle, 16, flow = true, pipe = false))
+//    val shadow_buffer = Module(new Queue(UInt(0.W), 16, flow = true, pipe = false))
     if (name.isDefined) { shadow_buffer.suggestName("lcrdvShadowBuffer_" + name.get) }
     shadow_buffer.io.enq.valid := bit
     shadow_buffer.io.enq.bits  := DontCare
@@ -139,7 +141,6 @@ object ToAsyncBundleWithBuf {
     shadow_buffer.io.deq.ready := source.io.enq.ready
 
     source.io.async
-
   }
 
 }
