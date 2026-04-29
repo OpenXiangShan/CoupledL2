@@ -119,6 +119,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     /* l2 flush (CMO All) */
     val cmoAllBlock = Option.when(cacheParams.enableL2Flush) (Input(Bool()))
     val cmoLineDone = Option.when(cacheParams.enableL2Flush) (Output(Bool()))
+    val snpBlockcmo = Option.when(cacheParams.enableL2Flush) (Output(Bool()))
   })
 
   require(chiOpt.isDefined)
@@ -299,6 +300,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   io.toMSHRCtl.mshr_alloc_s3.bits.state := alloc_state
   io.toMSHRCtl.mshr_alloc_s3.bits.task match { case task =>
     task := req_s3
+    task.tag := Mux(io.cmoAllBlock.getOrElse(false.B), dirResult_s3.tag, req_s3.tag)
     task.bufIdx := 0.U(bufIdxBits.W)
     task.mshrTask := false.B
     task.aliasTask.foreach(_ := cache_alias)
@@ -1018,6 +1020,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val cmoLineDrop = task_s3.valid && sinkA_req_s3 && req_s3.opcode === CBOFlush && cmoHitInvalid
   val cmoLineDone = io.cmoAllBlock.getOrElse(false.B) && task_s3.valid && mshr_cmoresp_s3
   io.cmoLineDone.foreach { _ := RegNextN(cmoLineDone || cmoLineDrop, 2, Some(false.B)) }
+  val snpInFlight = task_s3.valid && req_s3.fromB || task_s2.valid && task_s2.bits.fromB
+  io.snpBlockcmo.foreach { _ := snpInFlight }
 
   /* ===== Performance counters ===== */
   // SinkA requests

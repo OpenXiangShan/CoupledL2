@@ -515,4 +515,5 @@ class IOCMOAll(implicit p: Parameters) extends Bundle {
   val cmoLineDone = Input(Bool())  // during process of cmo flush all, flush 1 CacheLine is done 
   val mshrValid = Input(Bool())    // 1: mshr has entry valid  0: no mshr entry valid
   val cmoAllBlock = Output(Bool()) // 1: in process of cmo flush all  0: not in process of cmo flush all
+  val snpBlockcmo = Input(UInt(2.W)) 
 }

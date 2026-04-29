@@ -136,7 +136,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         val txreq = Wire(DecoupledIO(new CHIREQ))
         slices.zip(txreq_arb.io.in.init).foreach { case (s, in) => in <> s.io.out.tx.req }
         txreq_arb.io.in.last <> mmio.io.tx.req
-        /* when coEnable is NOT ready: 
+       /* coEnable Gating cacheable request, mmio always pass, when coEnable is 0: 
          1. cancel txreq.valid (mmio always pass)
          2. disable Arbiter out ready to keep the request
          */
