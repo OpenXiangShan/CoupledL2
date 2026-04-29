@@ -634,7 +634,7 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   ft_s3_update_info.set_idx := ft_s3_set_idx
   ft_s3_update_info.offset  := ft_s3_offset
   ft_s3_update_info.tag     := ft_s3_tag
-  ft_s3_update_info.alloc    := !ft_s3_hit
+  ft_s3_update_info.alloc    := !ft_s3_hit && !ft_s3_is_used    // only alloc when input is a negative trigger
   ft_s3_update_info.is_used  := ft_s3_is_used
   ft_s3_update_info.target_way := Mux(ft_s3_hit, ft_s3_hit_idx, ft_plru_way)
 
