@@ -71,6 +71,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
     val io_chi = IO(new PortIO)
     val io_nodeID = IO(Input(UInt()))
     val io_cpu_halt = Option.when(cacheParams.enableL2Flush) (IO(Input(Bool())))
+    val io_lcrdy = Option.when(cacheParams.txSourceReady) (IO(Input(new LCrdyIn)))
 
     // Check port width
     require(io_chi.tx.rsp.getWidth == io_chi.rx.rsp.getWidth);
@@ -279,7 +280,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
           Cat(slices.zipWithIndex.map { case (s, i) => s.io.l2FlushDone.getOrElse(false.B)}).andR && io_cpu_halt.getOrElse(false.B)
         }
         coEnable := linkMonitor.io.out.syscoreq && linkMonitor.io.out.syscoack
-
+        (io_lcrdy, linkMonitor.io.lcrdy).zipped.foreach { case (in, out) => out := in }
         /**
           * performance counters
           */
