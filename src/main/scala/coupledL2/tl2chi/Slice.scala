@@ -219,9 +219,13 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   sinkA.io.cmoAll.foreach {cmoAll => cmoAll.mshrValid := VecInit(mshrCtl.io.msInfo.map(m => m.valid)).reduce(_|_)}
   sinkA.io.cmoAll.foreach {cmoAll => cmoAll.l2Flush := io.l2Flush.getOrElse(false.B)}
   mainPipe.io.cmoAllBlock.foreach {_ := sinkA.io.cmoAll.map(_.cmoAllBlock).getOrElse(false.B)}
-
   io.l2FlushDone.foreach {_ := RegNext(sinkA.io.cmoAll.map(_.l2FlushDone).getOrElse(false.B))}
 
+  sinkA.io.cmoAll.foreach {cmoAll =>
+    cmoAll.snpBlockcmo := Cat(
+      mainPipe.io.snpBlockcmo.getOrElse(false.B),    //@ mainpipe s2 + s3
+      rxsnp.io.task.valid)                           //@ rxsnp queue + s1
+  }
   /* ===== Hardware Performance Monitor ===== */
   val perfEvents = Seq(mshrCtl, mainPipe).flatMap(_.getPerfEvents)
   generatePerfEvent()
