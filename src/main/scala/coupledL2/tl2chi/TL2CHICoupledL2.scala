@@ -279,7 +279,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         linkMonitor.io.exitco.foreach { _ :=
           Cat(slices.zipWithIndex.map { case (s, i) => s.io.l2FlushDone.getOrElse(false.B)}).andR && io_cpu_halt.getOrElse(false.B)
         }
-        coEnable := linkMonitor.io.coEnable
+        coEnable := linkMonitor.io.out.syscoreq && linkMonitor.io.out.syscoack
         (io_lcrdy, linkMonitor.io.lcrdy).zipped.foreach { case (in, out) => out := in }
         /**
           * performance counters
