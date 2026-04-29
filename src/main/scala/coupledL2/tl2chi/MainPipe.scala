@@ -99,8 +99,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     val nestedwb = Output(new NestedWriteback())
     val nestedwbData = Output(new DSBlock())
 
-    /* l2 refill hint */
-    val l1Hint = DecoupledIO(new L2ToL1Hint())
+    /* shadow D tokens for top-level hint/gating */
+    val l1Hint = DecoupledIO(new L2HintShadowToken())
     // val grantBufferHint = Flipped(ValidIO(new L2ToL1Hint()))
     // val globalCounter = Input(UInt((log2Ceil(mshrsAll) + 1).W))
 

@@ -396,6 +396,14 @@ class PrefetchRecv extends Bundle {
   val l2_pf_en = Bool()
 }
 
+class L2HintShadowToken(implicit p: Parameters) extends L2Bundle {
+  val sourceId = UInt(sourceIdBits.W) // global inner TL source id
+  val opcode = UInt(4.W)
+  val isKeyword = Bool()
+  val firstBeat = Bool()
+  val beats1 = UInt(scala.math.max(1, log2Ceil(beatSize)).W)
+}
+
 // custom l2 - l1 interface
 class L2ToL1Hint(implicit p: Parameters) extends Bundle {
   val sourceId = UInt(32.W)    // tilelink sourceID
