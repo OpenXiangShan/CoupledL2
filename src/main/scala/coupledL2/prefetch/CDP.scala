@@ -656,7 +656,7 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   vt_same_vec(3) := vt_stage_valid(4) && vt_s4_update_info.main_idx === vt_s0_main_idx && vt_s4_update_info.tag === vt_s0_tag
 
   // FilterTable: update table & plru
-  ft_stage_valid(4) := RegNext(ft_stage_valid(3))
+  ft_stage_valid(4) := RegNext(ft_stage_valid(3) && (ft_s3_hit || !ft_s3_hit && !ft_s3_is_used))
 
   val ft_s4_update_info = RegNext(ft_s3_update_info)
 
