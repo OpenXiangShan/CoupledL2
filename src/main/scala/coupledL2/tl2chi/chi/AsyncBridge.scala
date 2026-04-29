@@ -126,7 +126,6 @@ object ToAsyncBundleWithBuf {
      */
     class EmptyBundle extends Bundle {}
     val shadow_buffer = Module(new Queue(new EmptyBundle, 16, flow = true, pipe = false))
-//    val shadow_buffer = Module(new Queue(UInt(0.W), 16, flow = true, pipe = false))
     if (name.isDefined) { shadow_buffer.suggestName("lcrdvShadowBuffer_" + name.get) }
     shadow_buffer.io.enq.valid := bit
     shadow_buffer.io.enq.bits  := DontCare
