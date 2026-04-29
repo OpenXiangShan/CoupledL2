@@ -649,7 +649,9 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   vt_train_req.valid  := vt_stage_valid(4)
   vt_train_req.bits   := vt_s4_update_info
 
-  vt_replacer.access(vt_s4_update_info.main_idx, vt_s4_update_info.target_way)
+  when (vt_stage_valid(4)) {
+    vt_replacer.access(vt_s4_update_info.main_idx, vt_s4_update_info.target_way)
+  }
 
   vt_same_vec(3) := vt_stage_valid(4) && vt_s4_update_info.main_idx === vt_s0_main_idx && vt_s4_update_info.tag === vt_s0_tag
 
@@ -661,8 +663,10 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   ft_train_req.valid := ft_stage_valid(4)
   ft_train_req.bits  := ft_s4_update_info
 
-  ft_replacer.access(ft_s4_update_info.set_idx, ft_s4_update_info.target_way)
-
+  when (ft_stage_valid(4)){
+    ft_replacer.access(ft_s4_update_info.set_idx, ft_s4_update_info.target_way)
+  }
+  
   ft_same_vec(3) := ft_stage_valid(4) && ft_s4_update_info.set_idx === ft_s0_set_idx && ft_s4_update_info.tag === ft_s0_tag
 
   // ----------- ChiselDB -----------
