@@ -135,7 +135,7 @@ class PrefetchReq(implicit p: Parameters) extends PrefetchBundle {
       pfSource === MemReqSource.Prefetch2L2PBOP.id.U ||
       pfSource === MemReqSource.Prefetch2L2SMS.id.U ||
       pfSource === MemReqSource.Prefetch2L2TP.id.U  ||
-      pfSource === MemReqSource.Prefetch2L2NL.id.U 
+      pfSource === MemReqSource.Prefetch2L2NL.id.U  ||
       pfSource === MemReqSource.Prefetch2L2TP.id.U ||
       pfSource === MemReqSource.Prefetch2L2CDP.id.U
 }
@@ -158,7 +158,7 @@ class PrefetchResp(implicit p: Parameters) extends PrefetchBundle {
       pfSource === MemReqSource.Prefetch2L2PBOP.id.U ||
       pfSource === MemReqSource.Prefetch2L2SMS.id.U ||
       pfSource === MemReqSource.Prefetch2L2TP.id.U  ||
-      pfSource === MemReqSource.Prefetch2L2NL.id.U 
+      pfSource === MemReqSource.Prefetch2L2NL.id.U  ||
       pfSource === MemReqSource.Prefetch2L2TP.id.U ||
       pfSource === MemReqSource.Prefetch2L2CDP.id.U
 }
