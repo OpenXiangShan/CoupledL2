@@ -272,7 +272,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
         if (hasCDP) {
           slices.zipWithIndex.map{
             case (s, i) =>
-              s.io_cdp_triggers <> prefetcher.get.cdpio.cdp_trigger.get(i)
+              s.io_cdp_triggers.get <> prefetcher.get.cdpio.cdp_trigger.get(i)
           }
         }
 

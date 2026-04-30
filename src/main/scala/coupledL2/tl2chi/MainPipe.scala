@@ -29,6 +29,7 @@ import coupledL2.prefetch.{PrefetchTrain, PfSource}
 import coupledL2.tl2chi.CHICohStates._
 import coupledL2.MetaData._
 import coupledL2.prefetch.CDPDetectTrigger
+import coupledL2.prefetch.CDPParameters
 
 class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes with HasPerfEvents {
   val io = IO(new Bundle() {
@@ -119,7 +120,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
     val cmoLineDone = Option.when(cacheParams.enableL2Flush) (Output(Bool()))
 
     /* to CDP for detection */
-    val cdp_trigger = ValidIO(new CDPDetectTrigger)
+    val cdp_trigger = Option.when(prefetchers.exists(_.isInstanceOf[CDPParameters])) (ValidIO(new CDPDetectTrigger))
   })
 
   require(chiOpt.isDefined)
@@ -920,11 +921,14 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val refill_trigger_depth_s5 = RegNext(RegNext(metaW_s3_mshr.pfDepth))
   val refill_trigger_pfsrc_s5 = RegNext(RegNext(metaW_s3_mshr.prefetchSrc.get))
 
-  io.cdp_trigger.valid := is_hit_trigger_s5 || is_refill_trigger_s5
-  io.cdp_trigger.bits.cacheblock  := Mux(is_hit_trigger_s5, hit_trigger_data_s5, refill_trigger_data_s5)
-  io.cdp_trigger.bits.pfDepth     := Mux(is_hit_trigger_s5, hit_trigger_depth_s5, refill_trigger_depth_s5)
-  io.cdp_trigger.bits.pfSource    := Mux(is_hit_trigger_s5, hit_trigger_pfsrc_s5, refill_trigger_pfsrc_s5)
-  io.cdp_trigger.bits.is_hit      := is_hit_trigger_s5
+  if (hasCDP) {
+    val cdp_trigger = io.cdp_trigger.get
+    cdp_trigger.valid := is_hit_trigger_s5 || is_refill_trigger_s5
+    cdp_trigger.bits.cacheblock  := Mux(is_hit_trigger_s5, hit_trigger_data_s5, refill_trigger_data_s5)
+    cdp_trigger.bits.pfDepth     := Mux(is_hit_trigger_s5, hit_trigger_depth_s5, refill_trigger_depth_s5)
+    cdp_trigger.bits.pfSource    := Mux(is_hit_trigger_s5, hit_trigger_pfsrc_s5, refill_trigger_pfsrc_s5)
+    cdp_trigger.bits.is_hit      := is_hit_trigger_s5
+  }
 
   /* ======== BlockInfo ======== */
   // if s2/s3 might write Dir, we must block s1 sink entrance
