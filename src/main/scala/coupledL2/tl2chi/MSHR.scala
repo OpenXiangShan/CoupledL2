@@ -1115,7 +1115,8 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
       meta.tagErr := c_resp.bits.denied
       meta.dataErr := c_resp.bits.corrupt
       denied := denied || c_resp.bits.denied
-      corrupt := Mux(c_resp.bits.opcode === ProbeAckData, c_resp.bits.corrupt, corrupt || c_resp.bits.corrupt)
+      corrupt := Mux(c_resp.bits.opcode === ProbeAckData || c_resp.bits.opcode === ReleaseData, c_resp.bits.corrupt,
+        corrupt || c_resp.bits.corrupt)
     }
 
     // CMO update release on ProbeAck/ProbeAckData
