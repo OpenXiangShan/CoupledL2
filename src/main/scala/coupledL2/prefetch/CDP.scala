@@ -508,7 +508,7 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   ft_stage_valid(0) := ft_train_trigger.valid && !ft_same_addr
   ft_train_trigger.ready := reset.asBool || !ft_same_addr
 
-  val ft_train_paddr  = ft_train_trigger.bits.addr
+  val ft_train_paddr  = ft_train_trigger.bits.addr << 2.U
   val ft_s0_set_idx   = get_filter_set(ft_train_paddr)
   val ft_s0_offset    = get_filter_offset(ft_train_paddr)
   val ft_s0_tag       = get_filter_tag(ft_train_paddr)
@@ -1071,6 +1071,9 @@ class SentUnit(implicit p: Parameters) extends CDPModule {
   when (pft_s1_valid) {
     req_inflight(pft_s1_chosen_idx) := false.B
   }
+
+  // ----------------- Perf Counter -----------------
+  XSPerfAccumulate("pf_req_drop_by_filter", pft_s1_valid && !can_pft)
 }
 
 class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
