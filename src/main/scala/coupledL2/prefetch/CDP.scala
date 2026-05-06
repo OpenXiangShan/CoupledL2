@@ -508,7 +508,7 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   ft_stage_valid(0) := ft_train_trigger.valid && !ft_same_addr
   ft_train_trigger.ready := reset.asBool || !ft_same_addr
 
-  val ft_train_paddr  = ft_train_trigger.bits.addr << 2.U
+  val ft_train_paddr  = ft_train_trigger.bits.addr
   val ft_s0_set_idx   = get_filter_set(ft_train_paddr)
   val ft_s0_offset    = get_filter_offset(ft_train_paddr)
   val ft_s0_tag       = get_filter_tag(ft_train_paddr)
@@ -882,6 +882,9 @@ class SentUnit(implicit p: Parameters) extends CDPModule {
   io.tlb_req.req_kill := false.B
   tlb_rsp.ready := true.B
 
+  val degree_buf = Module(new MIMOQueue(new PrefetchReq, 8, Degree, 1))
+  degree_buf.io.flush := reset.asBool
+
   // check same cacheline
   def block_addr(addr: UInt) = {
     addr(fullAddressBits - 1, log2Ceil(blockBytes))
@@ -897,7 +900,6 @@ class SentUnit(implicit p: Parameters) extends CDPModule {
   val tlb_arb = Module(new RRArbiterInit(new L2TlbReq, ReqFilterEntryNum))
   val pft_arb = Module(new RRArbiterInit(new PrefetchReq, ReqFilterEntryNum))
   tlb_arb.io.out <> tlb_req
-  pft_arb.io.out <> out
 
   // enq buf logic
   in.ready := true.B  // TODO: backpressure when buffer full
@@ -1061,19 +1063,43 @@ class SentUnit(implicit p: Parameters) extends CDPModule {
   val sat_vec = ft_s1_rsp.sat_vec
   val can_pft = !hit || sat_vec(hit_idx) =/= 3.U
 
-  out.valid := pft_s1_valid && can_pft
-  out.bits  := pft_s1_req
-
-  when (out.fire || !can_pft && pft_s1_valid) {
+  when (degree_buf.io.enq(0).fire || pft_s1_valid && !can_pft) {
     valids(pft_s1_chosen_idx) := false.B
   }
-  
+
   when (pft_s1_valid) {
     req_inflight(pft_s1_chosen_idx) := false.B
   }
 
+  // --------- degree buffer ---------
+  val base_addr = pft_s1_req.addr
+  def same_page(addr1: UInt, addr2: UInt): Bool = {
+    addr1(fullAddressBits - 1, 12) === addr2(fullAddressBits - 1, 12)
+  }
+
+  for (i <- 0 until Degree) {
+    val req = degree_buf.io.enq(i)
+    if (i == 0) {
+      req.valid := pft_s1_valid && can_pft
+      req.bits := pft_s1_req
+    }
+    else {
+      val new_addr = base_addr + (i * blockBytes).U
+
+      req.valid := pft_s1_valid && can_pft && same_page(base_addr, new_addr)
+      req.bits := pft_s1_req
+      req.bits.tag  := parseFullAddress(new_addr)._1
+      req.bits.set  := parseFullAddress(new_addr)._2
+    }
+  }
+
+  out <> degree_buf.io.deq(0)
+
   // ----------------- Perf Counter -----------------
   XSPerfAccumulate("pf_req_drop_by_filter", pft_s1_valid && !can_pft)
+
+  XSPerfAccumulate("filter_hit", pft_s1_valid && hit)
+  XSPerfAccumulate("filter_miss", pft_s1_valid && !hit) 
 }
 
 class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
