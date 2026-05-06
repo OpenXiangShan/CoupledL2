@@ -8,7 +8,7 @@ import utility._
 import coupledL2._
 
 case class CDPParameters(
-  UseFilteredDetect:  Boolean = true,
+  UseFilteredDetect:  Boolean = false,
 
   HotThreshold:   Int = 2,
 
@@ -26,7 +26,7 @@ case class CDPParameters(
   VpnTableTagBits:      Int = 10,     // should be a val within (0, 18 - log2(VpnTableSubEntryNum)]
   CounterBits:          Int = 10,
   VpnResetPeriod:       Int = 128,    // Every $VpnResetPeriod visits, VPN entries will be reset
-  EntryBits:            Int = 20,     // Every SubEntry maintain for 2^20 Bits = 1M space
+  EntryBits:            Int = 21,     // Every SubEntry maintain for 2^21 Bits
 
   // FilterTable Params
   FilterTableSetNum:  Int = 64,
@@ -34,7 +34,7 @@ case class CDPParameters(
   FilterEntryBlks:  Int = 64,         // 64 slots per entry
   FilterEntryGranularity: Int = 4096, // 4KB per slot
 
-  Degree:   Int = 1,      // issue how many prefetch req?
+  Degree:   Int = 3,      // issue how many prefetch req?
 
   debug: Boolean = false
 
