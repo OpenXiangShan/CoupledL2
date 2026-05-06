@@ -11,6 +11,7 @@ case class CDPParameters(
   UseFilteredDetect:  Boolean = false,
 
   HotThreshold:   Int = 2,
+  DepthThreshold: Int = 1,
 
   DetectPipeNum: Int = 4,
 
@@ -54,7 +55,8 @@ trait HasCDPParams extends HasPrefetcherHelper with HasCoupledL2Parameters {
 
   val UseFilteredDetect = cdpParams.UseFilteredDetect
 
-  val hot_threshold = cdpParams.HotThreshold
+  val hot_threshold   = cdpParams.HotThreshold
+  val depth_threshold = cdpParams.DepthThreshold
 
   // helper function
   def get_folded_hash(origin_val: UInt, resultBitWidth: Int): UInt = {    // fold $origin_val length value into $resultBitWidth
@@ -183,10 +185,6 @@ class CDPDetectEntry(implicit p: Parameters) extends CDPBundle {
   val is_hit  = Bool()
 }
 
-class CDPTrainTrigger(implicit p: Parameters) extends CDPBundle {
-  val vaddr = UInt(fullAddressBits.W)
-}
-
 class VpnTableMetaInfo(implicit p: Parameters) extends CDPBundle {
   val valid = Bool()
   val hot   = Bool()    // indicate whether this 1MB page is frequently visited in the past period
@@ -215,6 +213,8 @@ class vtTrainReq(implicit p: Parameters) extends CDPBundle {
   val sub_idx     = UInt(subEntryBits.W)
 
   val tag         = UInt(vpnTabTagBits.W)
+
+  val is_hit_cdp  = Bool()  // train trigger from hitting a CDP prefetched block?
 }
 
 class VpnTable(implicit p: Parameters) extends CDPModule {
@@ -272,6 +272,8 @@ class VpnTable(implicit p: Parameters) extends CDPModule {
 
     assert(!(alloc_main && alloc_sub), "TrainReq can't allocate both main entry and sub entry!")
 
+    val incr_num  = Mux(train_req.bits.is_hit_cdp, 4.U, 1.U)
+
     when (alloc_main) {
       // use target_way for replacement
       val replace_way = target_way
@@ -287,7 +289,7 @@ class VpnTable(implicit p: Parameters) extends CDPModule {
         when (i.U === sub_idx) {
           meta_array(main_idx)(replace_way)(i)  := 0.U.asTypeOf(new VpnTableMetaInfo)
           meta_array(main_idx)(replace_way)(i).valid  := true.B
-          meta_array(main_idx)(replace_way)(i).refCnt := 1.U
+          meta_array(main_idx)(replace_way)(i).refCnt := incr_num
         }.otherwise {
           meta_array(main_idx)(replace_way)(i)  := 0.U.asTypeOf(new VpnTableMetaInfo)
         }
@@ -297,12 +299,12 @@ class VpnTable(implicit p: Parameters) extends CDPModule {
     when (alloc_sub) {
       // only update the meta of the target sub entry
       meta_array(main_idx)(target_way)(sub_idx).valid := true.B
-      meta_array(main_idx)(target_way)(sub_idx).refCnt := 1.U
+      meta_array(main_idx)(target_way)(sub_idx).refCnt := incr_num
     }
 
     when (no_alloc) {
       // only update the refCnt of the target sub entry
-      meta_array(main_idx)(target_way)(sub_idx).refCnt := meta_array(main_idx)(target_way)(sub_idx).refCnt + 1.U
+      meta_array(main_idx)(target_way)(sub_idx).refCnt := meta_array(main_idx)(target_way)(sub_idx).refCnt + incr_num
     }
   }
 
@@ -504,6 +506,8 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   val vt_s0_sub_idx  = get_sub_idx(vt_train_vaddr)
   val vt_s0_tag      = get_vpntab_tag(vt_train_vaddr)
 
+  val vt_s0_is_hit_cdp  = vt_train_trigger.bits.hit && vt_train_trigger.bits.pfsource === PfSource.CDP.id.U
+
   // FilterTable
   ft_stage_valid(0) := ft_train_trigger.valid && !ft_same_addr
   ft_train_trigger.ready := reset.asBool || !ft_same_addr
@@ -522,6 +526,8 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   val vt_s1_sub_idx   = RegNext(vt_s0_sub_idx)
   val vt_s1_tag       = RegNext(vt_s0_tag)
   val vt_s1_tab_rsp   = vt_query_rsp.bits
+
+  val vt_s1_is_hit_cdp  = RegNext(vt_s0_is_hit_cdp)
 
   vt_query_req.valid := vt_stage_valid(1)
   vt_query_req.bits.main_idx := vt_s1_main_idx
@@ -551,6 +557,8 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   val vt_s2_sub_idx  = RegNext(vt_s1_sub_idx)
   val vt_s2_tag      = RegNext(vt_s1_tag)
   val vt_s2_tab_rsp  = RegNext(vt_s1_tab_rsp)
+
+  val vt_s2_is_hit_cdp  = RegNext(vt_s1_is_hit_cdp)
 
   val vt_s2_tag_vec    = vt_s2_tab_rsp.tag_vec
   val vt_s2_meta_vec   = vt_s2_tab_rsp.meta_vec
@@ -605,6 +613,8 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   val vt_s3_hit_sub      = RegNext(vt_s2_hit_sub)
   val vt_s3_hit_main_idx = RegNext(vt_s2_hit_main_idx)
 
+  val vt_s3_is_hit_cdp  = RegNext(vt_s2_is_hit_cdp)
+
   val vt_s3_update_info = WireInit(0.U.asTypeOf(new vtTrainReq))
 
   val plru_way = vt_replacer.way(vt_s3_main_idx)
@@ -616,6 +626,8 @@ class TrainPipeline(implicit p: Parameters) extends CDPModule {
   vt_s3_update_info.alloc_main := !vt_s3_hit_main
   vt_s3_update_info.alloc_sub  := vt_s3_hit_main && !vt_s3_hit_sub
   vt_s3_update_info.target_way := Mux(vt_s3_hit_main, vt_s3_hit_main_idx, plru_way)
+
+  vt_s3_update_info.is_hit_cdp := vt_s3_is_hit_cdp
 
   vt_same_vec(2) := vt_stage_valid(3)  && vt_s3_main_idx === vt_s0_main_idx && vt_s3_tag === vt_s0_tag
 
@@ -767,8 +779,8 @@ class DetectPipeline(name:String)(implicit p: Parameters) extends CDPModule {
   val s2_high_bit_is_zero = s2_high_bit === 0.U
 
   // TODO: maybe we should move depth control totally to the entrance?
-  val s2_is_hit_can_pft     = s2_high_bit_is_zero && s2_low_bit_is_zero && s2_vpn0_is_nzero && s2_vt_hit && s2_vt_hit_hot   // depth == 2 || 4 is restricted when entering
-  val s2_non_hit_can_pft    = s2_high_bit_is_zero && s2_low_bit_is_zero && s2_vpn0_is_nzero && s2_vt_hit && s2_vt_hit_hot && s2_depth < 3.U
+  val s2_is_hit_can_pft     = s2_high_bit_is_zero && s2_low_bit_is_zero && s2_vpn0_is_nzero && s2_vt_hit && s2_vt_hit_hot   // depth == 1 || 4 is restricted when entering
+  val s2_non_hit_can_pft    = s2_high_bit_is_zero && s2_low_bit_is_zero && s2_vpn0_is_nzero && s2_vt_hit && s2_vt_hit_hot && s2_depth < depth_threshold.U
   val s2_can_pft  = Mux(s2_is_hit, s2_is_hit_can_pft, s2_non_hit_can_pft)
 
   // ------------------ s3 ------------------
@@ -1176,10 +1188,10 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
     val hit_trigger       = detect_trig.bits.is_hit  &&
       (
         if (UseFilteredDetect) {
-          detect_trig_fromCDP && (detect_trig.bits.pfDepth === 2.U || detect_trig.bits.pfDepth === 4.U) || detect_trig_fromSMS || detect_trig_fromBOP
+          detect_trig_fromCDP && (detect_trig.bits.pfDepth === 1.U || detect_trig.bits.pfDepth === 4.U) || detect_trig_fromSMS || detect_trig_fromBOP
         }
         else {
-          detect_trig_fromCDP && (detect_trig.bits.pfDepth === 2.U || detect_trig.bits.pfDepth === 4.U)
+          detect_trig_fromCDP && (detect_trig.bits.pfDepth === 1.U || detect_trig.bits.pfDepth === 4.U)
         }
       )
     val refill_trigger    = !detect_trig.bits.is_hit && 
