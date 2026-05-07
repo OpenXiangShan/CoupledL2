@@ -47,9 +47,7 @@ class SourceB(implicit p: Parameters) extends L2Module {
     val grantStatus = Input(Vec(grantBufInflightSize, new GrantStatus))
   })
 
-  val dcacheSourceIdStart = edgeIn.client.clients
-    .filter(_.supports.probe)
-    .map(c => c.sourceId.start.U).head
+  val dcacheSourceIdStart = probeClients.map(_.sourceId.start.U).head
 
   def toTLBundleB(task: SourceBReq) = {
     val b = Wire(new TLBundleB(edgeIn.bundle))

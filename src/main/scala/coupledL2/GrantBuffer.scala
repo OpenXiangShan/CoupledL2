@@ -30,6 +30,9 @@ import coupledL2.prefetch.PrefetchResp
 class InflightGrantEntry(implicit p: Parameters) extends L2Bundle {
   val set   = UInt(setBits.W)
   val tag   = UInt(tagBits.W)
+  val sourceId = UInt(sourceIdBits.W)
+  val opcode = UInt(4.W)
+  val channel = UInt(3.W)
 }
 
 class TaskWithData(implicit p: Parameters) extends L2Bundle {
@@ -156,6 +159,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   mergeAtask.mergeA := false.B
   mergeAtask.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
   val inflight_insertIdx = PriorityEncoder(inflightGrant.map(!_.valid))
+  val inflightTask = Mux(io.d_task.bits.task.mergeA, mergeAtask, io.d_task.bits.task)
   val grantQueue_enq_isKeyword = Mux(io.d_task.bits.task.mergeA, mergeAtask.isKeyword.getOrElse(false.B), io.d_task.bits.task.isKeyword.getOrElse(false.B))
   // The following is organized in the order of data flow
   // =========== save d_task in queue[FIFO] ===========
@@ -227,8 +231,8 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     deqTask.isKeyword
   )*/
   io.d.bits.echo.lift(IsKeywordKey).foreach(_ := Mux(
-    grantBufValid, 
-    grantBuf.task.isKeyword.getOrElse(false.B), 
+    grantBufValid,
+    grantBuf.task.isKeyword.getOrElse(false.B),
     deqTask.isKeyword.getOrElse(false.B)))
 
   // =========== send response to prefetcher ===========
@@ -268,8 +272,11 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     // choose an empty entry
     val entry = inflightGrant(inflight_insertIdx)
     entry.valid := true.B
-    entry.bits.set    := io.d_task.bits.task.set
-    entry.bits.tag    := io.d_task.bits.task.tag
+    entry.bits.set    := inflightTask.set
+    entry.bits.tag    := inflightTask.tag
+    entry.bits.sourceId := inflightTask.sourceId
+    entry.bits.opcode := inflightTask.opcode
+    entry.bits.channel := inflightTask.channel
   }
   val inflight_full = Cat(inflightGrant.map(_.valid)).andR
   assert(!(inflight_full & (io.d_task.fire && (dtaskOpcode === Grant || dtaskOpcode === GrantData || io.d_task.bits.task.mergeA))), "inflightGrant entries overflow")
@@ -284,6 +291,8 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
 
   when (io.e.fire) {
     assert(io.e.bits.sink < grantBufInflightSize.U, "GrantBuf: e.sink overflow inflightGrant size")
+    assert(inflightGrant(io.e.bits.sink).valid,
+      "GrantBuf: received GrantAck for empty slot sink=%d", io.e.bits.sink)
     inflightGrant(io.e.bits.sink).valid := false.B
   }
 
@@ -328,11 +337,15 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   // =========== XSPerf ===========
   if (cacheParams.enablePerf) {
     val timers = RegInit(VecInit(Seq.fill(grantBufInflightSize){0.U(64.W)}))
-    inflightGrant zip timers map {
-      case (e, t) =>
+    inflightGrant.zip(timers).zipWithIndex.map {
+      case ((e, t), i) =>
         when(e.valid) { t := t + 1.U }
         when(RegNext(e.valid) && !e.valid) { t := 0.U }
-        assert(t < 10000.U, "Inflight Grant Leak")
+        assert(
+          t < 10000.U,
+          "Inflight Grant Leak idx=%d source=%d opcode=%d channel=0b%b set=0x%x tag=0x%x",
+          i.U, e.bits.sourceId, e.bits.opcode, e.bits.channel, e.bits.set, e.bits.tag
+        )
 
         val enable = RegNext(e.valid) && !e.valid
         XSPerfHistogram("grant_grantack_period", t, enable, 0, 12, 1)

@@ -350,8 +350,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
       ),
       clients = Mux(
         req_prefetch,
-        Mux(dirResult.hit, meta.clients, Fill(clientBits, false.B)),
-        Fill(clientBits, !(req_get && (!dirResult.hit || meta_no_client || probeGotN)))
+        Mux(dirResult.hit, meta.clients, 0.U(clientBits.W)),
+        Mux(req_get, Mux(dirResult.hit, meta.clients, 0.U(clientBits.W)), getClientBitOH(req.sourceId))
       ),
       alias = Some(aliasFinal),
       prefetch = req_prefetch || dirResult.hit && meta_pft,
@@ -398,7 +398,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
         TRUNK,
         BRANCH
       ),
-      clients = Fill(clientBits, true.B),
+      clients = getClientBitOH(merge_task.sourceId),
       alias = Some(merge_task.alias.getOrElse(0.U)),
       prefetch = false.B,
       accessed = true.B

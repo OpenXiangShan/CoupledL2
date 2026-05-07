@@ -545,7 +545,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   val metaW_s3_a = MetaEntry(
     dirty = meta_s3.dirty,
     state = Mux(req_needT_s3 || sink_resp_s3_a_promoteT, TRUNK, meta_s3.state),
-    clients = Fill(clientBits, Mux(l2TagError_s3, false.B, true.B)),
+    clients = Mux(l2TagError_s3, 0.U(clientBits.W), getClientBitOH(req_s3.sourceId)),
     alias = Some(metaW_s3_a_alias),
     accessed = true.B,
     tagErr = meta_s3.tagErr,

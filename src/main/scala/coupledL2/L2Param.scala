@@ -69,6 +69,9 @@ case class L2Param(
   pageBytes: Int = 4096,
   channelBytes: TLChannelBeatBytes = TLChannelBeatBytes(32),
   clientCaches: Seq[L1Param] = Nil,
+  // Optional static mapping from slice id to the coherent client index visible to that slice.
+  // This is used by the shared-single-node dual-dcache experiment to keep clientBits == 1.
+  sliceCoherentClientMap: Option[Seq[Int]] = None,
   replacement: String = "drrip",
   mshrs: Int = 16,
   releaseData: Int = 3,

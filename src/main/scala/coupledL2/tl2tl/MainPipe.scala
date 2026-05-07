@@ -356,7 +356,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   val metaW_s3_a = MetaEntry(
     dirty = meta_s3.dirty,
     state = Mux(req_needT_s3 || sink_resp_s3_a_promoteT, TRUNK, meta_s3.state),
-    clients = Fill(clientBits, true.B),
+    clients = getClientBitOH(req_s3.sourceId),
     alias = Some(metaW_s3_a_alias),
     accessed = true.B,
     tagErr = meta_s3.tagErr,
