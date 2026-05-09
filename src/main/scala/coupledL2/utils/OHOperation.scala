@@ -12,7 +12,7 @@ object MaskToOH {
       if (i == 0) {
         oh(i) := mask(i)
       } else {
-        oh(i) := mask(i) && !mask(i-1, 0).orR
+        oh(i) := mask(i) && !ParallelOR(mask(i-1, 0).asBools)
       }
     }
     assert(oh.asUInt === PriorityEncoderOH(mask), "MaskToOH should give the same result as PriorityEncoderOH")
