@@ -175,6 +175,9 @@ class PrefetchTrain(implicit p: Parameters) extends PrefetchBundle {
   val pfsource = UInt(PfSource.pfSourceBits.W)
   val reqsource = UInt(MemReqSource.reqSourceBits.W)
 
+  val evict_tag = UInt(fullTagBits.W)
+  val evict_set = UInt(setBits.W)
+
   // this is for CDP: train CDP when valid address req comes to MainPipe
   val cdp_vpn_train_valid     = Bool()
 
@@ -185,6 +188,7 @@ class PrefetchTrain(implicit p: Parameters) extends PrefetchBundle {
   val is_other_train  = Bool()    // for BOP or TP
   
   def addr: UInt = Cat(tag, set, 0.U(offsetBits.W))
+  def evict_addr: UInt = Cat(evict_tag, evict_set, 0.U(offsetBits.W))
 }
 
 class PrefetchIO(implicit p: Parameters) extends PrefetchBundle {

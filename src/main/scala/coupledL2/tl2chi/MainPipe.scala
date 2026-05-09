@@ -724,8 +724,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       // for FilterTable, we train on hit & evict
       // TODO: narrow this down to train on hitting a CDP prefetched block
       // Hit a block
-      val cdp_filter_train_hit = task_s3.valid && ((req_acquire_s3 || req_get_s3) && req_s3.needHint.getOrElse(false.B) &&
-        (dirResult_s3.hit) || req_s3.mergeA)
+      val cdp_filter_train_hit = task_s3.valid && ((req_acquire_s3 || req_get_s3) && req_s3.needHint.getOrElse(false.B) && dirResult_s3.hit || req_s3.mergeA)
 
       // Evict a unused CDP prefetched block
       val cdp_filter_train_evict = task_s3.valid && mshr_refill_s3 && req_s3.replTask &&
@@ -740,13 +739,16 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       // --------------------- Other Prefetcher ---------------------
       // train on request(with needHint flag) miss or hit on prefetched block
       // trigger train also in a_merge here
-      val is_other_train = task_s3.valid && ((req_acquire_s3 || req_get_s3) && req_s3.needHint.getOrElse(false.B) &&
-        (!dirResult_s3.hit || meta_s3.prefetch.get) || req_s3.mergeA)
+      val is_other_train = task_s3.valid && 
+        (
+          (req_acquire_s3 || req_get_s3) && req_s3.needHint.getOrElse(false.B) && (!dirResult_s3.hit || meta_s3.prefetch.get) 
+          || req_s3.mergeA
+        )
       
       // --------------------- Train Detail ---------------------
       train.valid := is_cdp_train || is_other_train
-      train.bits.tag := Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.tag, req_s3.tag)
-      train.bits.set := Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.set, req_s3.set)
+      train.bits.tag := req_s3.tag
+      train.bits.set := req_s3.set
       train.bits.needT := Mux(
         req_s3.mergeA,
         needT(req_s3.aMergeTask.opcode, req_s3.aMergeTask.param),
@@ -763,6 +765,9 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       train.bits.reqsource := req_s3.reqSource
       train.bits.is_cdp_train := is_cdp_train
       train.bits.is_other_train := is_other_train
+
+      train.bits.evict_tag := io.replResp.bits.tag
+      train.bits.evict_set := io.replResp.bits.set
   }
 
   /* ======== Stage 4 ======== */
