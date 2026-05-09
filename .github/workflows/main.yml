@@ -142,7 +142,7 @@ jobs:
       #   run: make checkformat
         
       - name: Compile
-        run: make compile-coupledl2
+        run: make compile
 
       - name: Get tl-test-new version
         run: |
