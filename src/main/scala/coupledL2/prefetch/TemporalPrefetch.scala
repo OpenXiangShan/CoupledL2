@@ -1359,12 +1359,13 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   trainPt.metahit := hit_s2
   trainPt.pc := hashPC(train_s2.pc)
 
-  val sendDB = ChiselDB.createTable("tpsend", new sendBundle(), basicDB = true)
-  val sendPt = Wire(new sendBundle())
-  sendPt.paddr := current_sending_data
-  sendPt.vaddr := 0.U
+  val sendDB = ChiselDB.createTable("tpsend", new tpDataEntry(), basicDB = true)
+  val sendPt = Wire(new tpDataEntry())
+  sendPt.rawData := tpDataQueue.io.deq.bits.rawData
+  sendPt.length := tpDataQueue.io.deq.bits.length
+  sendPt.hitCount := tpDataQueue.io.deq.bits.hitCount
 
   //  triggerDB.log(triggerPt, tpTable_w_valid, "", clock, reset)
   trainDB.log(trainPt, s2_valid, "", clock, reset)
-  sendDB.log(sendPt, io.req.fire, "", clock, reset)
+  sendDB.log(sendPt, tpDataQueue.io.deq.fire, "", clock, reset)
 }
