@@ -22,7 +22,7 @@ import chisel3.util._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import org.chipsalliance.cde.config.Parameters
-import utility.{MemReqSource, XSPerfAccumulate}
+import utility.{MemReqSource, XSPerfAccumulate, TwoLevelRRArbiter, ArbPerf}
 import coupledL2.utils._
 
 class PipeBufferResp(implicit p: Parameters) extends L2Bundle {

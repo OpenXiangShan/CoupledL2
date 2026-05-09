@@ -26,7 +26,7 @@
 
 package coupledL2.prefetch
 
-import utility.{ChiselDB, Constantin, MemReqSource, ParallelPriorityMux, XSPerfAccumulate}
+import utility.{ChiselDB, Constantin, MemReqSource, ParallelPriorityMux, XSPerfAccumulate, TwoLevelRRArbiter, ArbPerf}
 import utility.sram.SRAMTemplate
 import org.chipsalliance.cde.config.Parameters
 import chisel3.DontCare.:=

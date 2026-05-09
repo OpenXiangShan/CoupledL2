@@ -162,20 +162,20 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
   io.toReqArb.blockG_s1 := false.B
 
    /* Acquire downwards to TXREQ*/
-  fastArb(mshrs.map(_.io.tasks.txreq), io.toTXREQ, Some("txreq"))
+  ArbPerf(twoLevelArb(mshrs.map(_.io.tasks.txreq), io.toTXREQ, Some("txreq")), "txreq_arb")
 
   /* Response downwards to TXRSP*/
-  fastArb(mshrs.map(_.io.tasks.txrsp), io.toTXRSP, Some("txrsp"))
+  ArbPerf(twoLevelArb(mshrs.map(_.io.tasks.txrsp), io.toTXRSP, Some("txrsp")), "txrsp_arb")
 
   /* Probe upwards */
   val sourceB = Module(new SourceB())
-  fastArb(mshrs.map(_.io.tasks.source_b), sourceB.io.task, Some("source_b"))
+  ArbPerf(twoLevelArb(mshrs.map(_.io.tasks.source_b), sourceB.io.task, Some("source_b")), "source_b_arb")
   sourceB.io.grantStatus := io.grantStatus
   io.toSourceB <> sourceB.io.sourceB
 
   /* Arbitrate MSHR task to RequestArbiter */
   val mshrTask = Wire(Decoupled(new TaskBundle()))
-  fastArb(mshrs.map(_.io.tasks.mainpipe), mshrTask, Some("mshr_task"))
+  ArbPerf(twoLevelArb(mshrs.map(_.io.tasks.mainpipe), mshrTask, Some("mshr_task")), "mshr_task_arb")
   io.mshrTask <> mshrTask
   io.mshrTask.bits.mshrId := OHToUInt(mshrs.map(_.io.tasks.mainpipe.fire))
   assert(Mux(io.mshrTask.fire, io.mshrTask.bits.mshrId === mshrTask.bits.mshrId, true.B), "mshrId should be consistent")

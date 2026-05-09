@@ -30,6 +30,7 @@ package coupledL2.utils
 import chisel3._
 import chisel3.util._
 import chisel3.util.random.LFSR
+import utility.MaskToOH
 import freechips.rocketchip.util.{Random, UIntToAugmentedUInt}
 import freechips.rocketchip.util.property.cover
 

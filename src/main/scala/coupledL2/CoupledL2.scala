@@ -212,19 +212,28 @@ trait HasCoupledL2Parameters {
     x(x.getWidth - 1, pageOffsetBits)
   }
 
-  def arb[T <: Bundle](in: Seq[DecoupledIO[T]], out: DecoupledIO[T], name: Option[String] = None): Unit = {
+  def arb[T <: Bundle](in: Seq[DecoupledIO[T]], out: DecoupledIO[T], name: Option[String] = None) = {
     val arb = Module(new Arbiter[T](chiselTypeOf(out.bits), in.size))
     if (name.nonEmpty) { arb.suggestName(s"${name.get}_arb") }
     for ((a, req) <- arb.io.in.zip(in)) { a <> req }
     out <> arb.io.out
+    arb
   }
 
-  def fastArb[T <: Bundle](in: Seq[DecoupledIO[T]], out: DecoupledIO[T], name: Option[String] = None)(implicit p: Parameters): Unit = {
-    val arb = Module(new TwoLevelRRArbiter[T](chiselTypeOf(out.bits), in.size))
+  def fastArb[T <: Bundle](in: Seq[DecoupledIO[T]], out: DecoupledIO[T], name: Option[String] = None) = {
+    val arb = Module(new FastArbiter[T](chiselTypeOf(out.bits), in.size))
     if (name.nonEmpty) { arb.suggestName(s"${name.get}_arb") }
     for ((a, req) <- arb.io.in.zip(in)) { a <> req }
     out <> arb.io.out
-    ArbPerf(arb, name.getOrElse("fastArb"))
+    arb
+  }
+
+  def twoLevelArb[T <: Bundle](in: Seq[DecoupledIO[T]], out: DecoupledIO[T], name: Option[String] = None) = {
+    val arb = Module(new TwoLevelRRArbiter(chiselTypeOf(out.bits), in.size))
+    if (name.nonEmpty) { arb.suggestName(s"${name.get}_arb") }
+    for ((a, req) <- arb.io.in.zip(in)) { a <> req }
+    out <> arb.io.out
+    arb
   }
 
   def odOpGen(r: UInt) = {

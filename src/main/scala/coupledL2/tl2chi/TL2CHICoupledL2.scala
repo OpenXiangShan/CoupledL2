@@ -19,7 +19,7 @@ package coupledL2.tl2chi
 
 import chisel3._
 import chisel3.util._
-import utility.{Pipeline, ParallelPriorityMux, RegNextN, XSPerfAccumulate}
+import utility.{Pipeline, ParallelPriorityMux, RegNextN, XSPerfAccumulate, TwoLevelRRArbiter, ArbPerf}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
@@ -202,7 +202,7 @@ class TL2CHICoupledL2(implicit p: Parameters) extends CoupledL2Base {
           arbPort
         }
 
-        fastArb(mshrPCrdArbIn, mshrPCrdArbOut, Some("pcrdgrant"))
+        ArbPerf(twoLevelArb(mshrPCrdArbIn, mshrPCrdArbOut, Some("pcrdgrant")), "pcrdgrant_arb")
 
         mshrPCrdGrants.zip(mshrPCrdArbGrants).foreach { case (grant, arb) => grant := arb }
 

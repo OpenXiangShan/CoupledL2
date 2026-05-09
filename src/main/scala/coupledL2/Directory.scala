@@ -21,7 +21,7 @@ import chisel3._
 import chisel3.util._
 import utility.mbist.MbistPipeline
 import coupledL2.utils._
-import utility.{ChiselDB,  Code, MemReqSource, ParallelPriorityMux, RegNextN, XSPerfAccumulate}
+import utility.{ChiselDB, Code, MemReqSource, ParallelPriorityMux, RegNextN, XSPerfAccumulate, MaskToOH}
 import utility.sram.SRAMTemplate
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.prefetch.PfSource
