@@ -779,12 +779,10 @@ class DetectPipeline(name:String)(implicit p: Parameters) extends CDPModule {
   val s2_high_bit_is_zero = s2_high_bit === 0.U
 
   // TODO: maybe we should move depth control totally to the entrance?
-  val s2_is_hit_can_pft     = s2_high_bit_is_zero && s2_low_bit_is_zero && s2_vpn0_is_nzero && s2_vt_hit && s2_vt_hit_hot   // depth == 1 || 4 is restricted when entering
-  val s2_non_hit_can_pft    = s2_high_bit_is_zero && s2_low_bit_is_zero && s2_vpn0_is_nzero && s2_vt_hit && s2_vt_hit_hot && s2_depth < depth_threshold.U
-  val s2_can_pft  = Mux(s2_is_hit, s2_is_hit_can_pft, s2_non_hit_can_pft)
+  val s2_can_pft  = s2_high_bit_is_zero && s2_low_bit_is_zero && s2_vpn0_is_nzero && s2_vt_hit && s2_vt_hit_hot
 
   // ------------------ s3 ------------------
-  s3_req.valid  := RegNext(s2_req.valid)
+  s3_req.valid  := RegNext(s2_req.valid && s2_can_pft)
   s3_req.bits   := RegNext(s2_req.bits)
 
   val s3_vt_hit     = RegNext(s2_vt_hit)
@@ -792,24 +790,17 @@ class DetectPipeline(name:String)(implicit p: Parameters) extends CDPModule {
   val s3_can_pft    = RegNext(s2_can_pft)
   val s3_depth      = RegNext(Mux(
     s2_is_hit,
-    1.U,      // hit a CDP prefetched block, depth == 2 or 4, reinforce
+    1.U,      // hit a CDP prefetched block, reinforce
     Mux(s2_depth === 0.U, 4.U, s2_depth + 1.U)
   ))
 
   val s3_addr = s3_req.bits.vaddr
 
-  // ------------------ s4 ------------------
-  s4_req.valid  := RegNext(s3_req.valid && s3_can_pft)
-  s4_req.bits   := RegNext(s3_req.bits)
-
-  val s4_addr   = s4_req.bits.vaddr
-  val s4_depth  = RegNext(s3_depth)
-
-  pft_req.valid := s4_req.valid
-  pft_req.bits.pfAddr   := s4_addr
-  pft_req.bits.pfDepth  := s4_depth
-  pft_req.bits.pfSource := s4_req.bits.pfSource
-  pft_req.bits.is_hit   := s4_req.bits.is_hit
+  pft_req.valid := s3_req.valid
+  pft_req.bits.pfAddr   := s3_addr
+  pft_req.bits.pfDepth  := s3_depth
+  pft_req.bits.pfSource := s3_req.bits.pfSource
+  pft_req.bits.is_hit   := s3_req.bits.is_hit
 
   // ------------------ Performance Counter ------------------
   // Valid VpnTable hit/miss and distribution
@@ -1185,6 +1176,7 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
     val detect_trig_fromStride  = detect_trig.bits.pfSource === PfSource.Stride.id.U
     val detect_trig_fromCPU     = detect_trig.bits.pfSource === PfSource.NoWhere.id.U
 
+    // TODO: move depth check to MainPipe?
     val hit_trigger       = detect_trig.bits.is_hit  &&
       (
         if (UseFilteredDetect) {
@@ -1194,7 +1186,7 @@ class CDPPrefetcher(implicit p: Parameters) extends CDPModule {
           detect_trig_fromCDP && (detect_trig.bits.pfDepth === 1.U || detect_trig.bits.pfDepth === 4.U)
         }
       )
-    val refill_trigger    = !detect_trig.bits.is_hit && 
+    val refill_trigger    = !detect_trig.bits.is_hit && detect_trig.bits.pfDepth < depth_threshold.U &&
       (
         if (UseFilteredDetect) {
           detect_trig_fromCPU || detect_trig_fromCDP || detect_trig_fromStride || detect_trig_fromStream
