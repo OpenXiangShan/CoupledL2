@@ -27,6 +27,7 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.HasCoupledL2Parameters
 import coupledL2.{MemBackTypeMM, MemPageTypeNC}
+import coupledL2.utils._
 
 class MMIOBridge()(implicit p: Parameters) extends LazyModule
   with HasCoupledL2Parameters
@@ -89,6 +90,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
     val id = Input(UInt())
     val pCrd = new PCrdQueryBundle
     val waitOnReadReceipt = Option.when(needRR)(Output(Bool()))
+    val isRead = Output(Bool()) // only for better timing
   })
 
   val s_txreq = RegInit(true.B)
@@ -115,7 +117,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   val denied = Reg(Bool())
   val corrupt = Reg(Bool())
   val traceTag = Reg(Bool())
-  val isRead = req.opcode === Get
+  val isRead = RegEnable(io.req.bits.opcode === Get, false.B, io.req.fire)
   val isBackTypeMM = req.user.lift(MemBackTypeMM).getOrElse(false.B)
   val isPageTypeNC = req.user.lift(MemPageTypeNC).getOrElse(false.B)
 
@@ -228,11 +230,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   txreq.bits.qos := Fill(QOS_WIDTH, 1.U(1.W)) - 1.U
   txreq.bits.tgtID := SAM(sam).lookup(txreq.bits.addr)
   txreq.bits.txnID := io.id
-  txreq.bits.opcode := ParallelLookUp(req.opcode, Seq(
-    Get -> ReadNoSnp,
-    PutFullData -> WriteNoSnpPtl,
-    PutPartialData -> WriteNoSnpPtl
-  ))
+  txreq.bits.opcode := Mux(isRead, ReadNoSnp, WriteNoSnpPtl)
   txreq.bits.size := req.size
   txreq.bits.addr := req.address
   txreq.bits.ns := enableNS.B
@@ -325,6 +323,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   io.pCrd.query.bits.srcID := srcID
 
   io.waitOnReadReceipt.foreach(_ := !w_readreceipt.get && s_txreq)
+  io.isRead := isRead
 
   /**
     * performance counters
@@ -383,13 +382,16 @@ class MMIOBridgeImp(outer: MMIOBridge) extends LazyModuleImp(outer)
     entry.io.id := i.U
   }
 
-  val txreqArb = Module(new RRArbiterInit(chiselTypeOf(io.tx.req.bits), mmioBridgeSize))
-  for ((a, req) <- txreqArb.io.in.zip(entries.map(_.io.chi.tx.req))) {
-    a <> req
-    val isReadNoSnp = req.bits.opcode === ReadNoSnp
-    val block = isReadNoSnp && waitOnReadReceipt
+  val txreqArb = Module(new TwoLevelRRArbiter(chiselTypeOf(io.tx.req.bits), mmioBridgeSize))
+  ArbPerf(txreqArb, "mmio_txreq_arb")
+  for ((a, entry) <- txreqArb.io.in.zip(entries)) {
+    val req = entry.io.chi.tx.req
+    val isRead = entry.io.isRead
+    val block = isRead && waitOnReadReceipt
+    assert(!req.valid || !isRead || req.bits.opcode === ReadNoSnp)
     req.ready := a.ready && !block
     a.valid := req.valid && !block
+    a.bits := req.bits
   }
   io.tx.req <> txreqArb.io.out
   // arb(entries.map(_.io.chi.tx.req), io.tx.req, Some("mmio_txreq"))

@@ -138,7 +138,7 @@ class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
       io.msInfo(i) := m.io.msInfo
       m.io.nestedwb := io.nestedwb
-      m.io.aMergeTask.valid := io.aMergeTask.valid && io.aMergeTask.bits.id === i.U
+      m.io.aMergeTask.valid := io.aMergeTask.valid && io.aMergeTask.bits.idOH(i)
       m.io.aMergeTask.bits := io.aMergeTask.bits.task
   }
 
@@ -149,17 +149,17 @@ class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
   /* Acquire downwards */
   val acquireUnit = Module(new AcquireUnit())
-  fastArb(mshrs.map(_.io.tasks.source_a), acquireUnit.io.task, Some("source_a"))
+  ArbPerf(twoLevelArb(mshrs.map(_.io.tasks.source_a), acquireUnit.io.task, Some("source_a")), "source_a_arb")
   io.sourceA <> acquireUnit.io.sourceA
 
   /* Probe upwards */
   val sourceB = Module(new SourceB())
-  fastArb(mshrs.map(_.io.tasks.source_b), sourceB.io.task, Some("source_b"))
+  ArbPerf(twoLevelArb(mshrs.map(_.io.tasks.source_b), sourceB.io.task, Some("source_b")), "source_b_arb")
   sourceB.io.grantStatus := io.grantStatus
   io.sourceB <> sourceB.io.sourceB
 
   /* Arbitrate MSHR task to RequestArbiter */
-  fastArb(mshrs.map(_.io.tasks.mainpipe), io.mshrTask, Some("mshr_task"))
+  ArbPerf(twoLevelArb(mshrs.map(_.io.tasks.mainpipe), io.mshrTask, Some("mshr_task")), "mshr_task_arb")
 
   /* Arbitrate prefetchTrains to Prefetcher */
   // prefetchOpt.foreach {

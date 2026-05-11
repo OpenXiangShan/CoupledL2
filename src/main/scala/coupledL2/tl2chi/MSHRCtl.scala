@@ -26,6 +26,7 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.prefetch.PrefetchTrain
 import coupledL2._
+import coupledL2.utils._
 
 class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes with HasPerfEvents {
   val io = IO(new Bundle() {
@@ -148,7 +149,7 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
 
       io.msInfo(i) := m.io.msInfo
       m.io.nestedwb := io.nestedwb
-      m.io.aMergeTask.valid := io.aMergeTask.valid && io.aMergeTask.bits.id === i.U
+      m.io.aMergeTask.valid := io.aMergeTask.valid && io.aMergeTask.bits.idOH(i)
       m.io.aMergeTask.bits := io.aMergeTask.bits.task
 
       io.pCrd(i) <> m.io.pCrd
@@ -161,19 +162,23 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
   io.toReqArb.blockG_s1 := false.B
 
    /* Acquire downwards to TXREQ*/
-  fastArb(mshrs.map(_.io.tasks.txreq), io.toTXREQ, Some("txreq"))
+  ArbPerf(twoLevelArb(mshrs.map(_.io.tasks.txreq), io.toTXREQ, Some("txreq")), "txreq_arb")
 
   /* Response downwards to TXRSP*/
-  fastArb(mshrs.map(_.io.tasks.txrsp), io.toTXRSP, Some("txrsp"))
+  ArbPerf(twoLevelArb(mshrs.map(_.io.tasks.txrsp), io.toTXRSP, Some("txrsp")), "txrsp_arb")
 
   /* Probe upwards */
   val sourceB = Module(new SourceB())
-  fastArb(mshrs.map(_.io.tasks.source_b), sourceB.io.task, Some("source_b"))
+  ArbPerf(twoLevelArb(mshrs.map(_.io.tasks.source_b), sourceB.io.task, Some("source_b")), "source_b_arb")
   sourceB.io.grantStatus := io.grantStatus
   io.toSourceB <> sourceB.io.sourceB
 
   /* Arbitrate MSHR task to RequestArbiter */
-  fastArb(mshrs.map(_.io.tasks.mainpipe), io.mshrTask, Some("mshr_task"))
+  val mshrTask = Wire(Decoupled(new TaskBundle()))
+  ArbPerf(twoLevelArb(mshrs.map(_.io.tasks.mainpipe), mshrTask, Some("mshr_task")), "mshr_task_arb")
+  io.mshrTask <> mshrTask
+  io.mshrTask.bits.mshrId := OHToUInt(mshrs.map(_.io.tasks.mainpipe.fire))
+  assert(Mux(io.mshrTask.fire, io.mshrTask.bits.mshrId === mshrTask.bits.mshrId, true.B), "mshrId should be consistent")
 
   /* releaseBuf link to MSHR id */ 
   io.releaseBufWriteId := ParallelPriorityMux(resp_sinkC_match_vec, (0 until mshrsAll).map(i => i.U))

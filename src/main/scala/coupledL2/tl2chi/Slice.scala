@@ -111,11 +111,17 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   reqBuf.io.taskFromArb_s2 := reqArb.io.taskToPipe_s2
 
   mainPipe.io.taskFromArb_s2 := reqArb.io.taskToPipe_s2
-  mainPipe.io.taskInfo_s1 := reqArb.io.taskInfo_s1
+  mainPipe.io.mshrHintQInfo := reqArb.io.mshrHintQInfo
+  mainPipe.io.sinkCHintQInfo := reqArb.io.sinkCHintQInfo
   mainPipe.io.fromReqArb.status_s1 := reqArb.io.status_s1
   mainPipe.io.bufResp := sinkC.io.bufResp
   mainPipe.io.dirResp_s3 := directory.io.resp.bits
   mainPipe.io.replResp := directory.io.replResp
+  mainPipe.io.metaOnHit_s3 := directory.io.metaOnHit
+  mainPipe.io.errOnSnp_s3 := directory.io.errOnSnp
+  mainPipe.io.dirWayOH_s3 := directory.io.wayOH
+  mainPipe.io.dirReplWayOH_s3 := directory.io.replWayOH
+  mainPipe.io.cmoHitInvalid := directory.io.cmoHitInvalid
   mainPipe.io.fromMSHRCtl <> mshrCtl.io.toMainPipe
   mainPipe.io.bufResp := sinkC.io.bufResp
   mainPipe.io.refillBufResp_s3.valid := RegNext(refillBuf.io.r.valid, false.B)

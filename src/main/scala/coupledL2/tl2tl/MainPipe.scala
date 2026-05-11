@@ -34,6 +34,9 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   val io = IO(new Bundle() {
     /* receive task from arbiter at stage 2 */
     val taskFromArb_s2 = Flipped(ValidIO(new TaskBundle()))
+    /* receive s1 info for Hint */
+    val mshrHintQInfo = Flipped(ValidIO(new TaskBundle))
+    val sinkCHintQInfo = Flipped(ValidIO(new TaskBundle))
 
     /* handle set conflict in req arb */
     val fromReqArb = Input(new Bundle() {
@@ -97,8 +100,6 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
     /* send Hint to L1 */
     val l1Hint = DecoupledIO(new L2ToL1Hint())
-    /* receive s1 info for Hint */
-    val taskInfo_s1 = Flipped(ValidIO(new TaskBundle()))
 
     /* send prefetchTrain to Prefetch to trigger a prefetch req */
     val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain))
@@ -304,19 +305,16 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   val wen   = wen_c || wen_mshr
 
   // This is to let io.toDS.req_s3.valid hold for 2 cycles (see DataStorage for details)
-  val task_s3_valid_hold2 = RegInit(0.U(2.W))
-  when(task_s2.valid) {
-    task_s3_valid_hold2 := "b11".U
-  }.otherwise {
-    task_s3_valid_hold2 := task_s3_valid_hold2 >> 1.U
-  }
+  val task_s3_valid_hold2 = RegEnable(task_s2.valid, false.B, !RegNext(task_s2.valid))
 
-  io.toDS.en_s3           := task_s3.valid && (ren || wen)
-  io.toDS.req_s3.valid    := task_s3_valid_hold2(0) && (ren || wen)
+  io.toDS.en_s3 := task_s3.valid
+  io.toDS.req_s3.valid := task_s3_valid_hold2
   io.toDS.req_s3.bits.way := Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.way,
     Mux(mshr_req_s3, req_s3.way, dirResult_s3.way))
-  io.toDS.req_s3.bits.set := Mux(mshr_req_s3, req_s3.set, dirResult_s3.set)
+  // io.toDS.req_s3.bits.set := Mux(mshr_req_s3, req_s3.set, dirResult_s3.set)
+  io.toDS.req_s3.bits.set := req_s3.set
   io.toDS.req_s3.bits.wen := wen
+  io.toDS.req_s3.bits.ren := ren
   io.toDS.wdata_s3.data := Mux(
     !mshr_req_s3,
     c_releaseData_s3, // Among all sinkTasks, only C-Release writes DS
@@ -404,7 +402,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
   io.tagWReq.valid     := task_s3.valid && req_s3.tagWen && mshr_refill_s3 && !retry
   io.tagWReq.bits.set  := req_s3.set
-  io.tagWReq.bits.way  := Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.way, req_s3.way)
+  io.tagWReq.bits.wayOH  := UIntToOH(Mux(mshr_refill_s3 && req_s3.replTask, io.replResp.bits.way, req_s3.way))
   io.tagWReq.bits.wtag := req_s3.tag
 
   /* ======== Interact with Channels (C & D) ======== */
@@ -547,7 +545,8 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
   val customL1Hint = Module(new CustomL1Hint)
 
-  customL1Hint.io.s1 := io.taskInfo_s1
+  customL1Hint.io.mshrHintQInfo := io.mshrHintQInfo
+  customL1Hint.io.sinkCHintQInfo := io.sinkCHintQInfo
   
   customL1Hint.io.s3.task      := task_s3
   // overwrite opcode: if sinkReq can respond, use sink_resp_s3.bits.opcode = Grant/GrantData

@@ -27,6 +27,7 @@ class DSRequest(implicit p: Parameters) extends L2Bundle {
   val way = UInt(wayBits.W)
   val set = UInt(setBits.W)
   val wen = Bool()
+  val ren = Bool()
 }
 
 // mask not used
@@ -78,12 +79,12 @@ class DataStorage(implicit p: Parameters) extends L2Module {
     extraHold = true,
     withClockGate = true
   ))
-  array.io_en := io.en
+  array.io_en := io.en && (io.req.bits.ren || io.req.bits.wen)
   private val mbistPl = MbistPipeline.PlaceMbistPipeline(1, "L2DataStorage", p(L2ParamKey).hasMbist)
 
   val arrayIdx = Cat(io.req.bits.way, io.req.bits.set)
   val wen = io.req.valid && io.req.bits.wen
-  val ren = io.req.valid && !io.req.bits.wen
+  val ren = io.req.valid && !io.req.bits.wen && io.req.bits.ren
 
   val arrayWrite = Wire(new DSECCBankBlock)
   val arrayWriteData = if (enableDataECC) {
@@ -121,12 +122,12 @@ class DataStorage(implicit p: Parameters) extends L2Module {
   io.rdata := dataRead
   io.error := error
 
-  assert(!io.en || !RegNext(io.en, false.B),
+  assert(!array.io_en || !RegNext(array.io_en, false.B),
     "Continuous SRAM req prohibited under MCP2!")
 
-  assert(!(RegNext(io.en) && (io.req.asUInt =/= RegNext(io.req.asUInt))),
+  assert(!(RegNext(array.io_en) && (io.req.asUInt =/= RegNext(io.req.asUInt))),
     s"DataStorage req fails to hold for 2 cycles!")
 
-  assert(!(RegNext(io.en && io.req.bits.wen) && (io.wdata.asUInt =/= RegNext(io.wdata.asUInt))),
+  assert(!(RegNext(array.io_en && io.req.bits.wen) && (io.wdata.asUInt =/= RegNext(io.wdata.asUInt))),
     s"DataStorage wdata fails to hold for 2 cycles!")
 }
