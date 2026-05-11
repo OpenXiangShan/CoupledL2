@@ -25,6 +25,7 @@ import freechips.rocketchip.tilelink.TLMessages._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2tl._
 import coupledL2.tl2chi._
+import coupledL2.MetaData.isParamFromT
 
 class RequestArb(implicit p: Parameters) extends L2Module
   with HasCHIOpcodes {
@@ -197,9 +198,32 @@ class RequestArb(implicit p: Parameters) extends L2Module
   )
 
   /* ========  Stage 2 ======== */
-  val s1_AHint_fire = io.sinkA.fire && io.sinkA.bits.opcode === Hint
-  // any req except AHint might access DS, and continuous DS accesses are prohibited
-  val ds_mcp2_stall = RegNext(s1_fire && !s1_AHint_fire)
+  val s1_task_mshrRefillLike = task_s1.bits.fromA && (
+    task_s1.bits.opcode === Grant ||
+    task_s1.bits.opcode === GrantData ||
+    task_s1.bits.opcode === AccessAckData ||
+    task_s1.bits.opcode === HintAck
+  )
+  val s1_sinkA_mayTouchDS =
+    !task_s1.bits.mshrTask && task_s1.bits.fromA &&
+    task_s1.bits.opcode =/= Hint &&
+    task_s1.bits.opcode =/= AcquirePerm
+  val s1_sinkB_mayTouchDS =
+    !task_s1.bits.mshrTask && task_s1.bits.fromB
+  val s1_sinkC_mayTouchDS =
+    !task_s1.bits.mshrTask && task_s1.bits.fromC &&
+    task_s1.bits.opcode(0) && isParamFromT(task_s1.bits.param)
+  val s1_mshr_mayTouchDS =
+    task_s1.bits.mshrTask &&
+    (task_s1.bits.dsWen || s1_task_mshrRefillLike && task_s1.bits.replTask)
+  val s1_mayTouchDS =
+    s1_sinkA_mayTouchDS ||
+    s1_sinkB_mayTouchDS ||
+    s1_sinkC_mayTouchDS ||
+    s1_mshr_mayTouchDS
+
+  // DataStorage MCP2 prohibits continuous DS accesses. Only tasks that may touch DS need the bubble.
+  val ds_mcp2_stall = RegNext(s1_fire && s1_mayTouchDS)
 
   s2_ready  := !ds_mcp2_stall
 
