@@ -177,12 +177,7 @@ jobs:
             sed -i 's/cmo.enable.cbo.clean.*=.*/cmo.enable.cbo.clean = 1/g' ./configs/user.tltest.ini
             sed -i 's/cmo.enable.cbo.flush.*=.*/cmo.enable.cbo.flush = 1/g' ./configs/user.tltest.ini
             sed -i 's/cmo.enable.cbo.inval.*=.*/cmo.enable.cbo.inval = 1/g' ./configs/user.tltest.ini
-            cd ./dut
-            git clone https://github.com/OpenXiangShan/OpenLLC
-            cd OpenLLC && make init
-            rm -rf ./coupledL2 && ln -s ../../.. ./coupledL2
-            rm -rf ./utility && ln -s ../../../utility ./utility
-            cd ../..
+            rm -rf ./dut/CoupledL2 && ln -s ../.. ./dut/CoupledL2
             make openLLC-test-l2l3l2 run THREADS_BUILD=4 CXX_COMPILER=clang++-17
             rm -rf run/*.vcd run/*.fst run/*.log run/*.db
             

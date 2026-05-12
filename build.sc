@@ -88,7 +88,12 @@ object huancun extends HasChisel {
   )
 }
 
-object CoupledL2 extends HasChisel with $file.common.CoupledL2Module {
+object openNCB extends HasChisel {
+  override def millSourcePath = pwd / "OpenNCB"
+  override def moduleDeps = super.moduleDeps ++ Seq(rocketchip)
+}
+
+object XSCache extends HasChisel with $file.common.XSCacheModule {
 
   override def millSourcePath = millOuterCtx.millSourcePath
 
@@ -97,6 +102,8 @@ object CoupledL2 extends HasChisel with $file.common.CoupledL2Module {
   def utilityModule: ScalaModule = utility
 
   def huancunModule: ScalaModule = huancun
+
+  def openNCBModule: ScalaModule = openNCB
 
   object test extends SbtTests with TestModule.ScalaTest
 

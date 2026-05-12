@@ -7,3 +7,6 @@
 [submodule "HuanCun"]
 	path = HuanCun
 	url = https://github.com/OpenXiangShan/HuanCun.git
+[submodule "OpenNCB"]
+	path = OpenNCB
+	url = https://github.com/OpenXiangShan/OpenNCB.git
