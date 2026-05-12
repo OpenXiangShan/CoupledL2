@@ -264,7 +264,7 @@ class Directory(implicit p: Parameters) extends L2Module {
     )
   )).reduceTree(_ | _)
 
-  val freeWayMask_s3 = RegEnable(~occWayMask_s2, refillReqValid_s2)
+  val freeWayMask_s3 = RegEnable(~occWayMask_s2, 0.U(ways.W), refillReqValid_s2)
   val refillRetry = !(freeWayMask_s3.orR)
 
   val hitWay = OHToUInt(hitVec)
