@@ -91,6 +91,8 @@ trait HasCoupledL2Parameters {
   def enableTagSRAMSplit = encTagBankBits % (tagSRAMSplit / tagBankSplit) == 0
   def eccTagBankBits = encTagBankBits - tagBankBits
   def enableDataECC = cacheParams.enableDataECC
+  def dataSetSplit = cacheParams.dataSetSplit
+  def dataSetBankBits = log2Ceil(dataSetSplit)
   def dataBankSplit = 4
   def dataSRAMSplit = 4
   def wordBits = 64
@@ -244,6 +246,14 @@ trait HasCoupledL2Parameters {
 
   def bank_eq(set: UInt, bankId: Int, bankBits: Int): Bool = {
     if(bankBits == 0) true.B else set(bankBits - 1, 0) === bankId.U
+  }
+
+  def data_bank_eq(lhs: UInt, rhs: UInt): Bool = {
+    if (dataSetSplit == 1) true.B else lhs(dataSetBankBits - 1, 0) === rhs(dataSetBankBits - 1, 0)
+  }
+
+  def get_data_bank(set: UInt): UInt = {
+    if (dataSetSplit == 1) 0.U else set(dataSetBankBits - 1, 0)
   }
 }
 

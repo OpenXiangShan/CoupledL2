@@ -124,6 +124,7 @@ case class L2Param(
   enableTagECC: Boolean = false,
   enableDataECC: Boolean = false,
   dirSetSplit: Int = 2,
+  dataSetSplit: Int = 2,
   // DataCheck
   dataCheck: Option[String] = Some("oddparity"),
   enablePoison: Boolean = true,

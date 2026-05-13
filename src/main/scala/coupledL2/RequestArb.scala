@@ -30,6 +30,9 @@ import coupledL2.MetaData.isParamFromT
 class RequestArb(implicit p: Parameters) extends L2Module
   with HasCHIOpcodes {
 
+  require(dataSetSplit >= 1, s"DataStorage set bank split ($dataSetSplit) must be at least 1")
+  require(isPow2(dataSetSplit), s"DataStorage set bank split ($dataSetSplit) must be a power of two")
+
   val io = IO(new Bundle() {
     /* receive incoming tasks */
     val sinkA    = Flipped(DecoupledIO(new TaskBundle))
@@ -222,8 +225,13 @@ class RequestArb(implicit p: Parameters) extends L2Module
     s1_sinkC_mayTouchDS ||
     s1_mshr_mayTouchDS
 
-  // DataStorage MCP2 prohibits continuous DS accesses. Only tasks that may touch DS need the bubble.
-  val ds_mcp2_stall = RegNext(s1_fire && s1_mayTouchDS)
+  val s1_dataBank = get_data_bank(task_s1.bits.set)
+  val prev_s1_mayTouchDS = RegNext(s1_fire && s1_mayTouchDS, false.B)
+  val prev_s1_dataBank = RegEnable(s1_dataBank, s1_fire)
+
+  // DataStorage MCP2 only requires a bubble when two consecutive accesses hit the same data bank.
+  val ds_mcp2_stall = task_s1.valid && s1_mayTouchDS &&
+    prev_s1_mayTouchDS && s1_dataBank === prev_s1_dataBank
 
   s2_ready  := !ds_mcp2_stall
 

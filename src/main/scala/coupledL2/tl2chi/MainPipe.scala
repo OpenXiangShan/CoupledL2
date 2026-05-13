@@ -481,16 +481,8 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   )
   val wen = wen_c || wen_mshr
 
-  // This is to let io.toDS.req_s3.valid hold for 2 cycles (see DataStorage for details)
-  val task_s3_valid_hold2 = RegInit(0.U(2.W))
-  when(task_s2.valid) {
-    task_s3_valid_hold2 := "b11".U
-  }.otherwise {
-    task_s3_valid_hold2 := task_s3_valid_hold2 >> 1.U
-  }
-
   io.toDS.en_s3 := task_s3.valid && (ren || wen)
-  io.toDS.req_s3.valid := task_s3_valid_hold2(0) && (ren || wen)
+  io.toDS.req_s3.valid := io.toDS.en_s3
   io.toDS.req_s3.bits.way := Mux(
     mshr_refill_s3 && req_s3.replTask,
     io.replResp.bits.way,
