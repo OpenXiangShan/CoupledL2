@@ -250,6 +250,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   val tagMatchVec = tagAll_s3.map(_ (tagBits - 1, 0) === req_s3.tag)
   val metaValidVec = metaAll_s3.map(_.state =/= MetaData.INVALID)
   val hitVec = tagMatchVec.zip(metaValidVec).map(x => x._1 && x._2)
+  val errorVec = errorAll_s3.zip(metaValidVec).map(x => x._1 && x._2)
 
   /* ====== refill retry ====== */
   // when refill, ways that have not finished writing its refillData back to DS (in MSHR Release),
@@ -291,11 +292,17 @@ class Directory(implicit p: Parameters) extends L2Module {
   val tag_s3 = tagAll_s3(way_s3)
   val set_s3 = req_s3.set
   val replacerInfo_s3 = req_s3.replacerInfo
-  val error_s3 = if (enableTagECC) {
+  val errorHit_s3 = if (enableTagECC) {
     errorAll_s3(way_s3) && reqValid_s3 && !req_s3.cmoAll && meta_s3.state =/= MetaData.INVALID
   } else {
     false.B
   }
+  val errorMiss_s3 =  if (enableTagECC) {
+    errorVec.reduce(_ | _)
+  } else {
+    false.B
+  }
+  val error_s3 = Mux(hit_s3, errorHit_s3, errorMiss_s3)
 
   io.resp.valid      := reqValid_s3
   io.resp.bits.hit   := hit_s3
@@ -303,7 +310,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   io.resp.bits.meta  := meta_s3
   io.resp.bits.tag   := tag_s3
   io.resp.bits.set   := set_s3
-  io.resp.bits.error := error_s3  // depends on ECC
+  io.resp.bits.error := error_s3 // depends on ECC
   io.resp.bits.replacerInfo := replacerInfo_s3
 
   dontTouch(io)
