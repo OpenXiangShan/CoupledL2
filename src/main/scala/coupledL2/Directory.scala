@@ -302,6 +302,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   } else {
     false.B
   }
+  val error_s3 = Mux(hit_s3, errorHit_s3, errorMiss_s3)
 
   io.resp.valid      := reqValid_s3
   io.resp.bits.hit   := hit_s3
@@ -309,7 +310,7 @@ class Directory(implicit p: Parameters) extends L2Module {
   io.resp.bits.meta  := meta_s3
   io.resp.bits.tag   := tag_s3
   io.resp.bits.set   := set_s3
-  io.resp.bits.error := Mux(hit_s3, errorHit_s3, errorMiss_s3)  // depends on ECC
+  io.resp.bits.error := error_s3 // depends on ECC
   io.resp.bits.replacerInfo := replacerInfo_s3
 
   dontTouch(io)
