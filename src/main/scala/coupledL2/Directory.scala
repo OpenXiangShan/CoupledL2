@@ -22,7 +22,6 @@ import chisel3.util._
 import utility.mbist.MbistPipeline
 import coupledL2.utils._
 import utility.{ParallelPriorityMux, RegNextN, XSPerfAccumulate, Code}
-import utility.sram.SRAMTemplate
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.prefetch.PfSource
 import freechips.rocketchip.tilelink.TLMessages._
@@ -134,6 +133,16 @@ class Directory(implicit p: Parameters) extends L2Module {
 
   val sets = cacheParams.sets
   val ways = cacheParams.ways
+  val dirSetSplit = p(L2ParamKey).dirSetSplit
+  require(dirSetSplit >= 1, s"Directory set bank split ($dirSetSplit) must be at least 1")
+  val dirSetBankBits = log2Ceil(dirSetSplit)
+
+  require(sets % dirSetSplit == 0, s"Directory set bank split ($dirSetSplit) must divide sets ($sets)")
+  require(isPow2(dirSetSplit), s"Directory set bank split ($dirSetSplit) must be a power of two")
+
+  private def sameDirSetBank(lhs: UInt, rhs: UInt): Bool = {
+    if (dirSetSplit == 1) true.B else lhs(dirSetBankBits - 1, 0) === rhs(dirSetBankBits - 1, 0)
+  }
 
   val tagWen  = io.tagWReq.valid
   val metaWen = io.metaWReq.valid
@@ -147,6 +156,7 @@ class Directory(implicit p: Parameters) extends L2Module {
       gen = UInt((tagBankSplit * encTagBankBits).W),
       set = sets,
       way = ways,
+      setSplit = dirSetSplit,
       waySplit = 2,
       dataSplit = if (enableTagSRAMSplit) {
         tagSRAMSplit
@@ -163,6 +173,7 @@ class Directory(implicit p: Parameters) extends L2Module {
       gen = UInt(tagBits.W),
       set = sets,
       way = ways,
+      setSplit = dirSetSplit,
       waySplit = 2,
       singlePort = true,
       readMCP2 = false,
@@ -171,7 +182,16 @@ class Directory(implicit p: Parameters) extends L2Module {
     ))
   }
 
-  val metaArray = Module(new SRAMTemplate(new MetaEntry, sets, ways, singlePort = true, hasMbist = mbist, hasSramCtl = hasSramCtl))
+  val metaArray = Module(new SplittedSRAM(
+    gen = new MetaEntry,
+    set = sets,
+    way = ways,
+    setSplit = dirSetSplit,
+    singlePort = true,
+    readMCP2 = false,
+    hasMbist = mbist,
+    hasSramCtl = hasSramCtl
+  ))
 
   val tagRead_s3 = Wire(Vec(ways, UInt(tagBits.W)))
   val metaRead = Wire(Vec(ways, new MetaEntry()))
@@ -184,7 +204,17 @@ class Directory(implicit p: Parameters) extends L2Module {
   val repl = ReplacementPolicy.fromString(cacheParams.replacement, ways)
   val random_repl = cacheParams.replacement == "random"
   val replacer_sram_opt = if(random_repl) None else
-    Some(Module(new SRAMTemplate(UInt(repl.nBits.W), sets, 1, singlePort = true, shouldReset = true, hasMbist = mbist, hasSramCtl = hasSramCtl)))
+    Some(Module(new SplittedSRAM(
+      gen = UInt(repl.nBits.W),
+      set = sets,
+      way = 1,
+      setSplit = dirSetSplit,
+      singlePort = true,
+      shouldReset = true,
+      readMCP2 = false,
+      hasMbist = mbist,
+      hasSramCtl = hasSramCtl
+    )))
 
   /* ====== Generate response signals ====== */
   // hit/way calculation in stage 3, Cuz SRAM latency is high under high frequency
@@ -309,7 +339,13 @@ class Directory(implicit p: Parameters) extends L2Module {
   dontTouch(metaArray.io)
   dontTouch(tagArray.io)
 
-  io.read.ready := !io.metaWReq.valid && !io.tagWReq.valid && !replacerWen
+  val replacerWriteSet = Mux(resetFinish, req_s3.set, resetIdx)
+  val replacerWriteValid = if (random_repl) false.B else !resetFinish || replacerWen
+  val readBlockedByMetaWrite = metaWen && sameDirSetBank(io.read.bits.set, io.metaWReq.bits.set)
+  val readBlockedByTagWrite = tagWen && sameDirSetBank(io.read.bits.set, io.tagWReq.bits.set)
+  val readBlockedByReplacerWrite = replacerWriteValid && sameDirSetBank(io.read.bits.set, replacerWriteSet)
+
+  io.read.ready := !readBlockedByMetaWrite && !readBlockedByTagWrite && !readBlockedByReplacerWrite
 
   /* ======!! Replacement logic !!====== */
   /* ====== Read, choose replaceWay ====== */
@@ -352,14 +388,24 @@ class Directory(implicit p: Parameters) extends L2Module {
   // hit-Promotion, miss-Insertion for RRIP
   // origin-bit marks whether the data_block is reused
   val origin_bit_opt = if(random_repl) None else
-    Some(Module(new SRAMTemplate(Bool(), sets, ways, singlePort = true, shouldReset = true, hasMbist = mbist, hasSramCtl = hasSramCtl)))
+    Some(Module(new SplittedSRAM(
+      gen = Bool(),
+      set = sets,
+      way = ways,
+      setSplit = dirSetSplit,
+      singlePort = true,
+      shouldReset = true,
+      readMCP2 = false,
+      hasMbist = mbist,
+      hasSramCtl = hasSramCtl
+    )))
   val origin_bits_r = origin_bit_opt.get.io.r(io.read.fire, io.read.bits.set).resp.data
   val origin_bits_hold = Wire(Vec(ways, Bool()))
   origin_bits_hold := HoldUnless(origin_bits_r, RegNext(io.read.fire, false.B))
   origin_bit_opt.get.io.w(
-      !resetFinish || replacerWen,
+      replacerWriteValid,
       Mux(resetFinish, hit_s3, false.B),
-      Mux(resetFinish, req_s3.set, resetIdx),
+      replacerWriteSet,
       UIntToOH(way_s3)
   )
   val rrip_req_type = WireInit(0.U(4.W))
@@ -378,9 +424,9 @@ class Directory(implicit p: Parameters) extends L2Module {
     val repl_init = Wire(Vec(ways, UInt(2.W)))
     repl_init.foreach(_ := 2.U(2.W))
     replacer_sram_opt.get.io.w(
-      !resetFinish || replacerWen,
+      replacerWriteValid,
       Mux(resetFinish, next_state_s3, repl_init.asUInt),
-      Mux(resetFinish, set_s3, resetIdx),
+      replacerWriteSet,
       1.U
     )
 
@@ -412,17 +458,17 @@ class Directory(implicit p: Parameters) extends L2Module {
     val repl_init = Wire(Vec(ways, UInt(2.W)))
     repl_init.foreach(_ := 2.U(2.W))
     replacer_sram_opt.get.io.w(
-      !resetFinish || replacerWen,
+      replacerWriteValid,
       Mux(resetFinish, next_state_s3, repl_init.asUInt),
-      Mux(resetFinish, set_s3, resetIdx),
+      replacerWriteSet,
       1.U
     )
   } else {
     val next_state_s3 = repl.get_next_state(repl_state_s3, way_s3)
     replacer_sram_opt.get.io.w(
-      !resetFinish || replacerWen,
+      replacerWriteValid,
       Mux(resetFinish, next_state_s3, 0.U),
-      Mux(resetFinish, set_s3, resetIdx),
+      replacerWriteSet,
       1.U
     )
   }
