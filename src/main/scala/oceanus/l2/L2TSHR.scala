@@ -576,6 +576,8 @@ class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Mo
     }
   }
 
+  assert(!(io.fromDir.DirRdResp && io.meta_valid), "DirRdResp on local meta valid, multiple Directory read might be happened")
+
   XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPreArb_S1_cnt", state_dsRead.AheadPreArb_S1)
   XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPreArb_S2_cnt", state_dsRead.AheadPreArb_S2)
   XSPerfAccumulate(s"L2TSHR_DSReadFSM_PreArb_cnt", state_dsRead.PreArb)
@@ -593,11 +595,27 @@ class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Mo
   XSPerfAccumulate(s"L2TSHR_DSReadFSM_Done", state_dsRead.Done)
 
   XSPerfAccumulate(s"L2TSHR_DSReadFSM_NotYet_dirRdResp_read", io.fromDir.DirRdResp && state_dsRead.NotYet && state_dsRead_next.PreArb)
+  XSPerfAccumulate(s"L2TSHR_DSReadFSM_NotYet_metaValid_read", io.meta_valid && state_dsRead.NotYet && state_dsRead_next.PreArb)
   XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPreArb_S1_dirRdResp_read", io.fromDir.DirRdResp && state_dsRead.AheadPreArb_S1 && state_dsRead_next.PreArb)
   XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPreArb_S1_dirRdResp_noRead", io.fromDir.DirRdResp && state_dsRead.AheadPreArb_S1 && state_dsRead_next.NotYet)
-  
-
-  // TODO
+  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPreArb_S1_metaValid_read", io.meta_valid && state_dsRead.AheadPreArb_S1 && state_dsRead_next.PreArb)
+  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPreArb_S1_metaValid_noRead", io.meta_valid && state_dsRead.AheadPreArb_S1 && state_dsRead_next.NotYet)
+  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPreArb_S2_dirRdResp_read", io.fromDir.DirRdResp && state_dsRead.AheadPreArb_S2 && state_dsRead_next.PreArb)
+//XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPreArb_S2_dirRdResp_noRead")
+  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPreArb_S2_metaValid_read", io.meta_valid && state_dsRead.AheadPreArb_S2 && state_dsRead_next.PreArb)
+//XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPreArb_S2_metaValid_noRead")
+  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPostArb_dirRdResp_hit", io.fromDir.DirRdResp && state_dsRead.AheadPostArb && state_dsRead_next.Done)
+  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPostArb_dirRdResp_miss_read", io.fromDir.DirRdResp && state_dsRead.AheadPostArb && state_dsRead_next.PreArb)
+  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPostArb_dirRdResp_miss_noRead", io.fromDir.DirRdResp && state_dsRead.AheadPostArb && state_dsRead_next.NotYet)
+  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPostArb_metaValid_hit", io.meta_valid && state_dsRead.AheadPostArb && state_dsRead_next.Done)
+  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPostArb_metaValid_miss_read", io.meta_valid && state_dsRead.AheadPostArb && state_dsRead_next.PreArb)
+  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPostArb_metaValid_miss_noRead", io.meta_valid && state_dsRead.AheadPostArb && state_dsRead_next.NotYet)
+  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadDone_dirRdResp_hit", io.fromDir.DirRdResp && state_dsRead.AheadDone && state_dsRead_next.Done)
+  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadDone_dirRdResp_miss_read", io.fromDir.DirRdResp && state_dsRead.AheadDone && state_dsRead_next.PreArb)
+  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadDone_dirRdResp_miss_noRead", io.fromDir.DirRdResp && state_dsRead.AheadDone && state_dsRead_next.NotYet)
+  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadDone_metaValid_hit", io.meta_valid && state_dsRead.AheadDone && state_dsRead_next.Done)
+  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadDone_metaValid_miss_read", io.meta_valid && state_dsRead.AheadDone && state_dsRead_next.PreArb)
+  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadDone_metaValid_miss_noRead", io.meta_valid && state_dsRead.AheadDone && state_dsRead_next.NotYet)
 
   // Data Storage write states
   /*
