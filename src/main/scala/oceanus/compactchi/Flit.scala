@@ -71,6 +71,7 @@ class FlitDnDATWithoutData extends Bundle {
   val Opcode = UInt(1.W)
   val RespErr = UInt(2.W)
   val Resp = UInt(3.W)
+  val DataID = UInt(2.W)
   val DataSource = UInt(5.W)
   val CBusy = UInt(3.W)
   val WayValid = Bool()
@@ -87,6 +88,7 @@ class FlitUpDATWithoutData extends Bundle {
   val Opcode = UInt(2.W)
   val RespErr = UInt(2.W)
   val Resp = UInt(3.W)
+  val DataID = UInt(2.W)
   val TraceTag = UInt(1.W)
 }
 
