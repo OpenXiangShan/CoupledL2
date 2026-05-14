@@ -9,26 +9,30 @@ import org.chipsalliance.cde.config.Parameters
 
 object L2DataStorage {
 
-    class PathTSHRToDataStorage(implicit val p: Parameters) extends Bundle with HasL2Params {
+  class PathTSHRToDataStorage(implicit val p: Parameters) extends Bundle with HasL2Params {
 
-        val TSHRADDR = UInt(mshrIndexWidth.W)
-        val WAY = UInt(32.W) // TODO: replace with actual way index width
-        val SET = UInt(32.W) // TODO: replace with actual set index width
-        val DATA = UInt(512.W)
+    val TSHRADDR = UInt(mshrIndexWidth.W)
+    val WAY = UInt(32.W) // TODO: replace with actual way index width
+    val SET = UInt(32.W) // TODO: replace with actual set index width
+    val DATA = UInt(512.W)
 
-    //  val DSTXDATUpRd = Bool()
-        val DSBufRd = Bool()
-        val DSBufWb = Bool()
-    }
+    val DSBufAheadRd = Bool()
+//  val DSTXDATUpRd = Bool()
+    val DSBufRd = Bool()
+    val DSBufWb = Bool()
+  }
 
-    class PathDataStorageToTSHR(implicit val p: Parameters) extends Bundle with HasL2Params {
+  class PathDataStorageToTSHR(implicit val p: Parameters) extends Bundle with HasL2Params {
 
-        val TSHRADDR = UInt(mshrIndexWidth.W)
-        val DATA = UInt(512.W)
+    val TSHRADDR = UInt(mshrIndexWidth.W)
+    val DATA = UInt(512.W)
+    val WAY = UInt(4.W) // TODO: parameterize with L2 way count
 
-        val DSBufRdArbComp = Bool()
-        val DSBufRdResp = Bool()
-        val DSBufWbArbComp = Bool()
-        val DSBufWbComp = Bool()
-    }
+    val DSBufAheadRdArbComp = Bool()
+    val DSBufAheadRdResp = Bool()
+    val DSBufRdArbComp = Bool()
+    val DSBufRdResp = Bool()
+    val DSBufWbArbComp = Bool()
+    val DSBufWbComp = Bool()
+  }
 }
