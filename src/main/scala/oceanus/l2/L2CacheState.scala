@@ -19,11 +19,11 @@ trait L2CacheStateTrait {
     def satS = norm >= L2CacheStates.S
     def satI = norm >= L2CacheStates.I
 
-    def is(state: UInt) = norm == state
-    def is(state: L2CacheStateTrait) = norm == state.norm
-    def isU = norm == L2CacheStates.U
-    def isS = norm == L2CacheStates.S
-    def isI = norm == L2CacheStates.I
+    def is(state: UInt) = norm === state
+    def is(state: L2CacheStateTrait) = norm === state.norm
+    def isU = norm === L2CacheStates.U
+    def isS = norm === L2CacheStates.S
+    def isI = norm === L2CacheStates.I
 
     def notI = norm =/= L2CacheStates.I
 
@@ -32,17 +32,17 @@ trait L2CacheStateTrait {
 }
 
 class L2CacheLocalState extends Bundle with L2CacheStateTrait {
-    val state = UInt(2.W)
+    val bits = UInt(2.W)
 
-    def norm = state
+    def norm = bits
 }
 
 class L2CacheClientState(val client: CCHIComponent) extends Bundle with L2CacheStateTrait {
     require(client.componentType.coherent, "Non-coherent component boasts no client state")
-    val state = if (client.componentType.coherentUnique) UInt(2.W) else UInt(1.W)
+    val bits = if (client.componentType.coherentUnique) UInt(2.W) else UInt(1.W)
 
     def hasUnique = client.componentType.coherentUnique
-    def norm = if (hasUnique) state else Cat(0.U(1.W), state)
+    def norm = if (hasUnique) bits else Cat(0.U(1.W), bits)
 }
 
 class L2CacheState(val clientComponents: Seq[CCHIComponent]) extends Bundle {
