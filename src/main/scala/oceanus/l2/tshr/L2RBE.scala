@@ -61,7 +61,7 @@ class L2RBE[T <: Bundle](
     io.out.valid := queue.io.deq.fire
 
     // misc output
-    io.valid := queue.io.count =/= 0.U
+    io.valid := queue.io.deq.valid
 
     //
     _is_stalling := queue.io.deq.valid && !queue.io.deq.ready
@@ -73,7 +73,7 @@ class L2RBE[T <: Bundle](
 
     io.in.ready := !block
 
-    io.valid := false.B
+    io.valid := io.in.valid
 
     //
     _is_stalling := io.in.valid && !io.in.ready
