@@ -252,7 +252,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
         virtualTrain = false,
         badScore = 1,
         crossPage = false,
-        enableStudentCover = true,
+        enableStudentCover = false,
         studentTeacherTopN = 1,
         studentPoolSize = 8,
         studentConfAlphaPct = 0,
@@ -278,7 +278,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       case L2ParamKey => p(L2ParamKey).copy(prefetch = Seq(BOPParameters(
         badScore = 2,
         crossPage = true,
-        enableStudentCover = true,
+        enableStudentCover = false,
         studentTeacherTopN = 1,
         studentPoolSize = 4,
         studentConfAlphaPct = 0,
