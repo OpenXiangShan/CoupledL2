@@ -597,6 +597,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
   when (nestedwb_match) {
     when (io.nestedwb.c_set_dirty) {
       meta.dirty := true.B
+      denied := denied || io.nestedwb.denied
+      corrupt := io.nestedwb.corrupt
     }
   }
   // let nested C write ReleaseData to the MSHRBuffer entry of this MSHR id
