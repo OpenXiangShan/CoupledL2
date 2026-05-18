@@ -435,6 +435,8 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
   /* ======== nested & prefetch ======== */
   io.nestedwb.set := req_s3.set
   io.nestedwb.tag := req_s3.tag
+  io.nestedwb.denied := req_s3.denied
+  io.nestedwb.corrupt := req_s3.corrupt
   // This serves as VALID signal
   // c_set_dirty is true iff Release has Data
   io.nestedwb.c_set_dirty := task_s3.valid && task_s3.bits.fromC && task_s3.bits.opcode === ReleaseData
