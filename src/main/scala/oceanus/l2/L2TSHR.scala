@@ -51,7 +51,7 @@ class L2TSHRDirectoryProxy(val id: Int)(implicit val p: Parameters) extends Modu
   val io = IO(new Bundle {
 
     val toDir = Output(new L2Directory.PathToDirectory)
-    val fromDir = Output(new L2Directory.PathFromDirectory)
+    val fromDir = Input(new L2Directory.PathFromDirectory)
 
     val tshr_paddr = Input(UInt(paramL2.physicalAddrWidth.W))
 
@@ -191,17 +191,10 @@ class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Mo
   class DSWriteFSM extends Bundle {
     val PreArb = Bool()     // sending Write Request to Data Storage, waiting for Arbiter completion
     val PostArb = Bool()    // Write Request has been accepted by Data Storage 
+    val PreArb_PostArb = Bool()
     val Done = Bool()       // Write Request has been completed and observable to later requests
     def NotYet =            // haven't sent Write Request to Data Storage
-      !PreArb && !PostArb && !Done
-
-    // All possible combinations of state bits
-    def DSWrite_NotYet          = !PreArb && !PostArb && !Done
-    def DSWrite_PreArb          =  PreArb && !PostArb && !Done
-    def DSWrite_PostArb         = !PreArb &&  PostArb && !Done
-    def DSWrite_PostArb_PreArb  =  PreArb &&  PostArb && !Done
-    def DSWrite_Done            = !PreArb && !PostArb &&  Done
-    def DSWrite = DSWrite_NotYet || DSWrite_PreArb || DSWrite_PostArb || DSWrite_PostArb_PreArb || DSWrite_Done
+      !PreArb && !PostArb && !PreArb_PostArb && !Done
   }
 
   object DSWriteFSM {
@@ -214,18 +207,27 @@ class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Mo
 
   val io = IO(new Bundle {
 
-    val fromDir = Output(new L2Directory.PathFromDirectory)
+    val fromDir = Input(new L2Directory.PathFromDirectory)
 
     val toDS = Output(new L2DataStorage.PathTSHRToDataStorage)
     val fromDS = Input(new L2DataStorage.PathDataStorageToTSHR)
 
+    val p_paddr = Input(UInt(48.W)) // TODO: parameterize with L2 physical address width
+
     val meta_valid = Input(Bool())
     val meta_way = Input(UInt(4.W)) // TODO: parameterize with L2 way count
     val meta_state = Input(L2Directory.MetaState())
+    
+    val tshr_buffer_wen_last = Input(Bool())
+    val tshr_buffer_modified = Input(Bool())
+    val tshr_buffer_0 = Input(UInt(256.W))
+    val tshr_buffer_2 = Input(UInt(256.W))
 
+    val tshr_inactivate = Input(Bool())
     val tshr_dealloc = Input(Bool())
 
     val ds_read_ahead_en = Input(Bool())
+    val ds_read_ahead_way = Input(UInt(4.W)) // TODO: parameterize with L2 way count
     val ds_read_ahead_arbed = Input(Bool())
 
     val ds_read_rbeEVT_valid = Input(Bool())
@@ -242,6 +244,7 @@ class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Mo
 
     val ds_read_aux_en = Input(Bool()) // aux DS read enable that overrides all other conditions
 
+    val wb_done = Output(Bool())
 
     val RXDAT_fire = Input(Bool()) // io.UpRXDAT.fire || io.DnRXDAT.fire
   })
@@ -297,17 +300,17 @@ class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Mo
   val hit_on_fromDS_dirRdResp = io.fromDir.DirRdResp && (io.fromDir.META.state =/= MetaState.I && io.fromDir.META.way === io.fromDS.WAY)
   val hit_on_fromDS_metaValid = io.meta_valid && (io.meta_state =/= MetaState.I && io.meta_way === io.fromDS.WAY)
 
-  val ds_ahead_read_way_q = RegInit(0.U(4.W)) // TODO: parameterize with L2 way count
+  val ds_read_ahead_way_q = RegInit(0.U(4.W)) // TODO: parameterize with L2 way count
 
-  when (io.toDS.DSBufAheadRd && io.fromDS.DSBufAheadRdArbComp) {
-    ds_ahead_read_way_q := io.toDS.WAY
+  when (io.ds_read_ahead_en) {
+    ds_read_ahead_way_q := io.ds_read_ahead_way
   }
 
-  val miss_after_fromDS_dirRdResp = io.fromDir.DirRdResp && (io.fromDir.META.state === MetaState.I || io.fromDir.META.way =/= ds_ahead_read_way_q)
-  val miss_after_fromDS_metaValid = io.meta_valid && (io.meta_state === MetaState.I || io.meta_way =/= ds_ahead_read_way_q)
+  val miss_after_fromDS_dirRdResp = io.fromDir.DirRdResp && (io.fromDir.META.state === MetaState.I || io.fromDir.META.way =/= ds_read_ahead_way_q)
+  val miss_after_fromDS_metaValid = io.meta_valid && (io.meta_state === MetaState.I || io.meta_way =/= ds_read_ahead_way_q)
 
-  val hit_after_fromDS_dirRdResp = io.fromDir.DirRdResp && (io.fromDir.META.state =/= MetaState.I && io.fromDir.META.way === ds_ahead_read_way_q)
-  val hit_after_fromDS_metaValid = io.meta_valid && (io.meta_state =/= MetaState.I && io.meta_way === ds_ahead_read_way_q)
+  val hit_after_fromDS_dirRdResp = io.fromDir.DirRdResp && (io.fromDir.META.state =/= MetaState.I && io.fromDir.META.way === ds_read_ahead_way_q)
+  val hit_after_fromDS_metaValid = io.meta_valid && (io.meta_state =/= MetaState.I && io.meta_way === ds_read_ahead_way_q)
   
 
   // Data Storage read states
@@ -528,6 +531,17 @@ class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Mo
     state_dsRead_next := DSReadFSM.init
   }
 
+  io.toDS.TSHRADDR := id.U
+  // *NOTICE: The AheadPreArb_S1 and AheadPreArb_S2 state should never overlap with any DSWrite states.
+  //          It is assumed that no Data could be fast enough to be returned to TSHR Buffer in S0, S1, S2 from L1 and L3,
+  //          otherwise consider clear all AheadPreArb on any RXDAT fire.
+  io.toDS.WAY := Mux(state_dsRead.AheadPreArb_S1 || state_dsRead.AheadPreArb_S2, ds_read_ahead_way_q, io.meta_way) // TODO: meta assertions on PreArb, PostArb, Done
+  io.toDS.SET := L2Address.set(io.p_paddr)
+  io.toDS.DATA := Cat(io.tshr_buffer_2, io.tshr_buffer_0)
+
+  io.toDS.DSBufRd := state_dsRead.PreArb
+  io.toDS.DSBufAheadRd := state_dsRead.AheadPreArb_S1 || state_dsRead.AheadPreArb_S2
+
   assert(PopCount(state_dsRead.asUInt) <= 1.U, "multiple active state in DSReadFSM")
 
   assert(!(io.fromDS.DSBufAheadRdArbComp && !state_dsRead.AheadPreArb_S1 && !state_dsRead.AheadPreArb_S2),
@@ -538,6 +552,10 @@ class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Mo
     "unexpected DSBufRdArbComp from Data Storage on non-PreArb state")
   assert(!(io.fromDS.DSBufRdResp && !state_dsRead.PostArb),
     "unexpected DSBufRdResp from Data Storage on non-PostArb state")
+
+  assert(!(state_dsRead.PreArb && !io.meta_valid), "meta not valid on DSReadFSM state PreArb")
+  assert(!(state_dsRead.PostArb && !io.meta_valid), "meta not valid on DSReadFSM state PostArb")
+  assert(!(state_dsRead.Done && !io.meta_valid), "meta not valid on DSReadFSM state Done")
 
   val perf_PreArb_cycleCnt = RegInit(0.U(32.W))
   val perf_PostArb_cycleCnt = RegInit(0.U(32.W))
@@ -618,87 +636,126 @@ class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Mo
   XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadDone_metaValid_miss_noRead", io.meta_valid && state_dsRead.AheadDone && state_dsRead_next.NotYet)
 
   // Data Storage write states
-  /*
   val state_dsWrite = RegInit(new DSWriteFSM, DSWriteFSM.init)
+  val state_dsWrite_next = WireInit(state_dsWrite)
 
-  when (!state_dsWrite.PreArb) {
-    when (tshr_buffer_wen_last) {
-      state_dsWrite.PreArb := true.B
-    }
-  }.otherwise {
-    when (io.fromDS.DSBufWbArbComp && !tshr_buffer_wen_last) {
-      state_dsWrite.PreArb := false.B
-    }
-  }
+  state_dsWrite := state_dsWrite_next
 
-  when (!state_dsWrite.PostArb) {
-    when (io.fromDS.DSBufWbArbComp && !io.fromDS.DSBufWbComp) {
-      state_dsWrite.PostArb := true.B
-    }
-  }.otherwise {
-    when (io.fromDS.DSBufWbComp) {
-      state_dsWrite.PostArb := false.B
+  when (state_dsWrite.NotYet) {
+
+    /*
+    1.
+    */
+    when (io.tshr_buffer_wen_last) {
+      // 1. [] -> DSWrite_PreArb
+      state_dsWrite_next.PreArb := true.B
+    }.elsewhen (io.tshr_inactivate && !io.tshr_buffer_modified) {
+      // 2. [] -> DSWrite_Done
+      state_dsWrite_next.Done := true.B
     }
   }
 
-  when (!state_dsWrite.Done) {
-    when ((tshr_inactivate && !tshr_buffer_modified) || (!tshr_buffer_wen_last && io.fromDS.DSBufWbComp && !state_dsWrite.PreArb)) {
-      state_dsWrite.Done := true.B
+  when (state_dsWrite.PreArb) {
 
-      tshr_buffer_modified_0_q := false.B
-      tshr_buffer_modified_2_q := false.B
+    /*
+    1. 
+    */
+    when (io.tshr_buffer_wen_last) {
+      when (io.fromDS.DSBufWbArbComp && io.fromDS.DSBufWbComp) {
+        // 1.1. DSWrite_PreArb -> DSWrite_PreArb
+      }.elsewhen (io.fromDS.DSBufWbArbComp) {
+        // 2. DSWrite_PreArb -> DSWrite_PreArb_PostArb
+        state_dsWrite_next.PreArb := false.B
+        state_dsWrite_next.PreArb_PostArb := true.B
+      }.otherwise {
+        // 1.2. DSWrite_PreArb -> DSWrite_PreArb
+      }
+    }.elsewhen (io.fromDS.DSBufWbArbComp && io.fromDS.DSBufWbComp) {
+      // 3. DSWrite_PreArb -> DSWrite_Done
+      state_dsWrite_next.PreArb := false.B
+      state_dsWrite_next.Done := true.B
+    }.elsewhen (io.fromDS.DSBufWbArbComp) {
+      // 4. DSWrite_PreArb -> DSWrite_PostArb
+      state_dsWrite_next.PreArb := false.B
+      state_dsWrite_next.PostArb := true.B
     }
-  }.otherwise {
-    when (tshr_buffer_wen_last) {
-      state_dsWrite.Done := false.B
+  }
+
+  when (state_dsWrite.PostArb) {
+
+    /*
+    1. 
+    */
+    when (io.tshr_buffer_wen_last) {
+      when (io.fromDS.DSBufWbComp) {
+        // 1. DSWrite_PostArb -> DSWrite_PreArb
+        state_dsWrite_next.PostArb := false.B
+        state_dsWrite_next.PreArb := true.B
+      }.otherwise {
+        // 2. DSWrite_PostArb -> DSWrite_PreArb_PostArb
+        state_dsWrite_next.PostArb := false.B
+        state_dsWrite_next.PreArb_PostArb := true.B
+      }
+    }.elsewhen (io.fromDS.DSBufWbComp) {
+      // 3. DSWrite_PostArb -> DSWrite_Done
+      state_dsWrite_next.PostArb := false.B
+      state_dsWrite_next.Done := true.B
     }
   }
 
-  when (tshr_dealloc) {
-    state_dsWrite := DSWriteFSM.init
+  when (state_dsWrite.PreArb_PostArb) {
+
+    /*
+    1.
+    */
+    when (io.fromDS.DSBufWbArbComp && io.fromDS.DSBufWbComp) {
+      // 1. DSWrite_PreArb_PostArb -> DSWrite_PostArb
+      state_dsWrite_next.PreArb_PostArb := false.B
+      state_dsWrite_next.PostArb := true.B
+    }.elsewhen (io.fromDS.DSBufWbComp) {
+      // 2. DSWrite_PreArb_PostArb -> DSWrite_PreArb
+      state_dsWrite_next.PreArb_PostArb := false.B
+      state_dsWrite_next.PreArb := true.B
+    }.elsewhen (io.tshr_buffer_wen_last) {
+      // 3. DSWrite_PreArb_PostArb -> DSWrite_PreArb_PostArb
+    }
   }
 
-  tshr_wb_done_ds := state_dsWrite.Done
+  when (state_dsWrite.Done) {
 
-  assert(state_dsWrite.DSWrite, "Illegal combination of DSWrite FSM bits")
-
-  Seq((state_dsWrite, tshr_buffer_wen_last, io.fromDS.DSBufWbArbComp, io.fromDS.DSBufWbComp)).foreach { case (s, bufWr, wbArbComp, wbComp) =>
-    assert(!(s.DSWrite_NotYet && !bufWr && !wbArbComp &&  wbComp), "Illegal transition #1 under DSWrite_NotYet")
-    assert(!(s.DSWrite_NotYet && !bufWr &&  wbArbComp && !wbComp), "Illegal transition #2 under DSWrite_NotYet")
-    assert(!(s.DSWrite_NotYet && !bufWr &&  wbArbComp &&  wbComp), "Illegal transition #3 under DSWrite_NotYet")
-    assert(!(s.DSWrite_NotYet &&  bufWr && !wbArbComp &&  wbComp), "Illegal transition #5 under DSWrite_NotYet")
-    assert(!(s.DSWrite_NotYet &&  bufWr &&  wbArbComp && !wbComp), "Illegal transition #6 under DSWrite_NotYet")
-    assert(!(s.DSWrite_NotYet &&  bufWr &&  wbArbComp &&  wbComp), "Illegal transition #7 under DSWrite_NotYet")
-
-    assert(!(s.DSWrite_PreArb && !bufWr && !wbArbComp &&  wbComp), "Illegal transition #1 under DSWrite_PreArb")
-    assert(!(s.DSWrite_PreArb &&  bufWr && !wbArbComp &&  wbComp), "Illegal transition #5 under DSWrite_PreArb")
-
-    assert(!(s.DSWrite_PostArb && !bufWr &&  wbArbComp && !wbComp), "Illegal transition #2 under DSWrite_PostArb")
-    assert(!(s.DSWrite_PostArb && !bufWr &&  wbArbComp &&  wbComp), "Illegal transition #3 under DSWrite_PostArb")
-    assert(!(s.DSWrite_PostArb &&  bufWr &&  wbArbComp && !wbComp), "Illegal transition #6 under DSWrite_PostArb")
-    assert(!(s.DSWrite_PostArb &&  bufWr &&  wbArbComp &&  wbComp), "Illegal transition #7 under DSWrite_PostArb")
-
-    assert(!(s.DSWrite_PostArb_PreArb && !bufWr &&  wbArbComp && !wbComp), "Illegal transition #2 under DSWrite_PostArb_PreArb")
-    assert(!(s.DSWrite_PostArb_PreArb && !bufWr &&  wbArbComp &&  wbComp), "Illegal transition #3 under DSWrite_PostArb_PreArb")
-    assert(!(s.DSWrite_PostArb_PreArb &&  bufWr &&  wbArbComp && !wbComp), "Illegal transition #6 under DSWrite_PostArb_PreArb")
-    assert(!(s.DSWrite_PostArb_PreArb &&  bufWr &&  wbArbComp &&  wbComp), "Illegal transition #7 under DSWrite_PostArb_PreArb")
-
-    assert(!(s.DSWrite_Done && !bufWr && !wbArbComp &&  wbComp), "Illegal transition #1 under DSWrite_Done")
-    assert(!(s.DSWrite_Done && !bufWr &&  wbArbComp && !wbComp), "Illegal transition #2 under DSWrite_Done")
-    assert(!(s.DSWrite_Done && !bufWr &&  wbArbComp &&  wbComp), "Illegal transition #3 under DSWrite_Done")
-    assert(!(s.DSWrite_Done &&  bufWr && !wbArbComp &&  wbComp), "Illegal transition #5 under DSWrite_Done")
-    assert(!(s.DSWrite_Done &&  bufWr &&  wbArbComp && !wbComp), "Illegal transition #6 under DSWrite_Done")
-    assert(!(s.DSWrite_Done &&  bufWr &&  wbArbComp &&  wbComp), "Illegal transition #7 under DSWrite_Done")
+    /*
+    1.
+    */
+    when (io.tshr_buffer_wen_last) {
+      // . DSWrite_Done -> DSWrite_PreArb
+      state_dsWrite_next.Done := false.B
+      state_dsWrite_next.PreArb := true.B
+    }
   }
 
-  XSPerfAccumulate(s"L2TSHR_${id}_DSWrite_PreArb_cycleCnt", state_dsWrite.DSWrite_PreArb)
-  XSPerfAccumulate(s"L2TSHR_${id}_DSWrite_PostArb_cycleCnt", state_dsWrite.DSWrite_PostArb)
-  XSPerfAccumulate(s"L2TSHR_${id}_DSWrite_PostArb_PreArb_cycleCnt", state_dsWrite.DSWrite_PostArb_PreArb)
-  XSPerfAccumulate(s"L2TSHR_${id}_DSWrite_Done_cycleCnt", state_dsWrite.DSWrite_Done)
-  */
+  when (io.tshr_dealloc) {
+    state_dsWrite_next := DSWriteFSM.init
+  }
 
+  io.toDS.DSBufWb := state_dsWrite.PreArb || state_dsWrite.PreArb_PostArb
+  io.wb_done := state_dsWrite.Done
 
-  // TODO
+  assert(PopCount(state_dsWrite.asUInt) <= 1.U, "multiple active state in DSWriteFSM")
+
+  assert(!(io.fromDS.DSBufWbArbComp && !state_dsWrite.PreArb && !state_dsWrite.PreArb_PostArb),
+    "unexpected DSBufWbArbComp from Data Storage on non-PreArb state")
+  assert(!(io.fromDS.DSBufWbComp && !state_dsWrite.PreArb && !state_dsWrite.PostArb && !state_dsWrite.PreArb_PostArb),
+    "unexpected DSBufWbComp from Data Storage on non-PreArb/PostArb state")
+
+  assert(!(state_dsWrite.PreArb && state_dsRead.AheadPreArb_S1), "DSWrite.PreArb not exclusive with DSRead.AheadPreArb_S1")
+  assert(!(state_dsWrite.PreArb && state_dsRead.AheadPreArb_S2), "DSWrite.PreArb not exclusive with DSRead.AheadPreArb_S2")
+  assert(!(state_dsWrite.PreArb_PostArb && state_dsRead.AheadPreArb_S1), "DSWrite.PreArb_PostArb not exclusive with DSRead.AheadPreArb_S1")
+  assert(!(state_dsWrite.PreArb_PostArb && state_dsRead.AheadPreArb_S2), "DSWrite.PreArb_PostArb not exclusive with DSRead.AheadPreArb_S2")
+
+  XSPerfAccumulate(s"L2TSHR_${id}_DSWrite_PreArb_cycleCnt", state_dsWrite.PreArb)
+  XSPerfAccumulate(s"L2TSHR_${id}_DSWrite_PostArb_cycleCnt", state_dsWrite.PostArb)
+  XSPerfAccumulate(s"L2TSHR_${id}_DSWrite_PostArb_PreArb_cycleCnt", state_dsWrite.PreArb_PostArb)
+  XSPerfAccumulate(s"L2TSHR_${id}_DSWrite_Done_cycleCnt", state_dsWrite.Done)
 }
 
 object L2TSHR {
