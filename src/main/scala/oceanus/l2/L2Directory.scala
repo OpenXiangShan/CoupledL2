@@ -48,29 +48,30 @@ object L2Directory {
   class Tag extends Bundle {
 
   }
-  class PathToDirectory(implicit val p: Parameters) extends Bundle with HasL2Params {
 
-    val TSHRADDR = UInt(mshrIndexWidth.W)
-    val PADDR = UInt(paramL2.physicalAddrWidth.W)
-    val META = Bool() // TODO: replace with meta bundle
-
+  class PathToDirectoryUOPs extends Bundle {
     val DirRd = Bool()
     val DirWb = Bool()
     val ReplRd = Bool()
   }
 
-  class PathFromDirectory(implicit val p: Parameters) extends Bundle with HasL2Params {
-
+  class PathToDirectory(implicit val p: Parameters) extends PathToDirectoryUOPs with HasL2Params {
     val TSHRADDR = UInt(mshrIndexWidth.W)
-    val META = new L2Directory.Meta // TODO: replace with meta bundle
+    val PADDR = UInt(paramL2.physicalAddrWidth.W)
+    val META = Bool() // TODO: replace with meta bundle
+  }
 
+  class PathFromDirectoryUOPs extends Bundle {
     val DirRdArbComp = Bool()
     val DirRdResp = Bool()
-
     val DirWbArbComp = Bool()
-
     val ReplRdArbComp = Bool()
     val ReplRdResp = Bool()
     val ReplRdRetryAck = Bool()
+  }
+
+  class PathFromDirectory(implicit val p: Parameters) extends PathFromDirectoryUOPs with HasL2Params {
+    val TSHRADDR = UInt(mshrIndexWidth.W)
+    val META = new L2Directory.Meta // TODO: replace with meta bundle
   }
 }
