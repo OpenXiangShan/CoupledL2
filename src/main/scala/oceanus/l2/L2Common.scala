@@ -3,6 +3,11 @@ package oceanus.l2
 import chisel3._
 import chisel3.util._
 import oceanus.compactchi.CCHIComponent
+import org.chipsalliance.cde.config.Parameters
+
+object L2Address {
+    def set(pa: UInt)(implicit p: Parameters): UInt = pa // TODO: extract real set index from PA
+}
 
 class L2DSReadMask extends Bundle {
     val S = Bool()
