@@ -408,7 +408,7 @@ class BopReqBufferEntry(implicit p: Parameters) extends BOPBundle {
 
 class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends BOPModule{
   val io = IO(new Bundle() {
-    val in_req = Flipped(ValidIO(new BopReqBundle))
+    val in_req = Flipped(DecoupledIO(new BopReqBundle))
     val tlb_req = new L2ToL1TlbIO(nRespDups = 1)
     val out_req = DecoupledIO(new PrefetchReq)
   })
@@ -456,6 +456,7 @@ class PrefetchReqBuffer(name: String = "vbop")(implicit p: Parameters) extends B
    */
 
   // add a cycle for timing
+  io.in_req.ready := true.B
   tlb_req_arb.io.out.ready := true.B
   io.tlb_req.req.valid := RegNext(tlb_req_arb.io.out.valid)
   io.tlb_req.req.bits := RegEnable(tlb_req_arb.io.out.bits, tlb_req_arb.io.out.valid)
@@ -691,10 +692,12 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   val delayQueue = Module(new DelayQueue("vbop"))
   val rrTable = Module(new RecentRequestTable("vbop"))
   val scoreTable = Module(new OffsetScoreTable("vbop"))
+  val reqFilter = Module(new PrefetchReqBuffer)
 
-  val s0_fire = scoreTable.io.req.fire && io.pbopCrossPage
-  val s1_fire = WireInit(false.B)
+  val s1_req_valid = RegInit(false.B)
   val s0_ready, s1_ready = WireInit(false.B)
+  val s0_fire = s0_ready && io.train.valid
+  val s1_fire = s1_ready && s1_req_valid
 
   /* s0 train */
   val prefetchOffset = scoreTable.io.prefetchOffset
@@ -717,7 +720,6 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   scoreTable.io.req.bits := s0_oldFullAddr
 
   /* s1 get or send req */
-  val s1_req_valid = RegInit(false.B)
   val s1_needT = RegEnable(io.train.bits.needT, s0_fire)
   val s1_source = RegEnable(io.train.bits.source, s0_fire)
   val s1_newFullAddr = RegEnable(s0_newFullAddr, s0_fire)
@@ -727,32 +729,27 @@ class VBestOffsetPrefetch(implicit p: Parameters) extends BOPModule {
   // val out_drop_req = WireInit(false.B)
 
   // pipeline control signal
+  if (virtualTrain) {
+    s0_ready := delayQueue.io.in.ready && scoreTable.io.req.ready && s1_ready
+    s1_ready := reqFilter.io.in_req.ready || !s1_req_valid
+  } else {
+    s0_ready := s1_ready
+    s1_ready := io.req.ready || !s1_req_valid
+  }
   when(s0_fire) {
-    if(virtualTrain) s1_req_valid := true.B
-    else s1_req_valid := !s0_crossPage // stop prefetch when prefetch req crosses pages
+    if(virtualTrain) s1_req_valid := !prefetchDisable && io.pbopCrossPage // now pbopCrossPage is true.B by default
+    else s1_req_valid := !prefetchDisable && !s0_crossPage // stop prefetch when prefetch req crosses pages
   }.elsewhen(s1_fire){
     s1_req_valid := false.B
   }
 
-  if (virtualTrain) {
-    // FIXME lyq: it it not correct
-    s0_ready := io.tlb_req.req.ready && s1_ready || !s1_req_valid
-    s1_ready := io.req.ready || !io.req.valid
-    s1_fire := s1_ready && s1_req_valid
-  } else {
-    s0_ready := io.req.ready || !io.req.valid
-    s1_ready := io.req.ready
-    s1_fire := io.req.fire
-  }
-
   // out value
-  io.train.ready := delayQueue.io.in.ready && scoreTable.io.req.ready && s0_ready
+  io.train.ready := s0_ready
   io.resp.ready := rrTable.io.w.ready
   io.tlb_req.resp.ready := true.B
 
   // different situation
-  val reqFilter = Module(new PrefetchReqBuffer)
-  when(prefetchDisable || !virtualTrain.B){
+  when(!virtualTrain.B){
     reqFilter.io.in_req.valid := false.B
     reqFilter.io.in_req.bits := DontCare
   }.otherwise{
