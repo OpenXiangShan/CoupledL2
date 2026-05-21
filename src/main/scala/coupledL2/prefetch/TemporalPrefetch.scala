@@ -775,13 +775,13 @@ class Sampler(implicit p: Parameters) extends TPModule {
 
   filterTable.io.train := io.train
   samplerTable.io.train := filterTable.io.trained
-  // recorderTable.io.pair := samplerTable.io.trained
+  recorderTable.io.pair := samplerTable.io.trained
   io.trained := recorderTable.io.record
 
-  recorderTable.io.pair.valid := filterTable.io.trained.valid
-  recorderTable.io.pair.bits.pc := filterTable.io.trained.bits.pc
-  recorderTable.io.pair.bits.addr1 := filterTable.io.trained.bits.lastAddr
-  recorderTable.io.pair.bits.addr2 := filterTable.io.trained.bits.currAddr
+//  recorderTable.io.pair.valid := filterTable.io.trained.valid
+//  recorderTable.io.pair.bits.pc := filterTable.io.trained.bits.pc
+//  recorderTable.io.pair.bits.addr1 := filterTable.io.trained.bits.lastAddr
+//  recorderTable.io.pair.bits.addr2 := filterTable.io.trained.bits.currAddr
 
 }
 
@@ -1083,7 +1083,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val train_s0 = trainQueue.io.deq.bits
   val trainValid_s0 = trainQueue.io.deq.fire && train_s0.pc.orR && // not trainOnL1PF
     Mux(trainOnVaddr.orR, train_s0.vaddr.getOrElse(0.U) =/= 0.U, true.B) &&
-    Mux(trainOnL1PF.orR, true.B, train_s0.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
+    Mux(trainOnL1PF.orR, true.B, train_s0.reqsource =/= MemReqSource.L1DataPrefetch.id.U && train_s0.reqsource =/= MemReqSource.Prefetch2L2TP.id.U)
   val trainVaddr = train_s0.vaddr.getOrElse(0.U)
   val trainPaddr = train_s0.addr
   val trainMeta = trainPaddr >> offsetBits
