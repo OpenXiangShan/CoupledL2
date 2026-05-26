@@ -64,14 +64,16 @@ class L2TSHRDirectoryProxy(val id: Int)(implicit val p: Parameters) extends Modu
     val read_en = Input(Bool())
     val repl_en = Input(Bool())
 
-    val modify = Input(Bool())
-    val modified = Input(Bool())
+    val meta_modified = Input(Bool())
 
     val wb_locked = Input(Bool())
+    val wb_accept = Output(Bool())
 
     val rd_done = Output(Bool())
     val wb_done = Output(Bool())
   })
+
+  val configAggressiveWrite = true
 
   val tshr_enter = io.tshr_alloc || io.tshr_reuse
 
@@ -121,30 +123,88 @@ class L2TSHRDirectoryProxy(val id: Int)(implicit val p: Parameters) extends Modu
   // Directory write states
   val state_dirWrite = RegInit(new DirWriteFSM, DirWriteFSM.init)
 
-  when (io.tshr_inactive && state_dirWrite.NotYet) {
-    when (io.modified) {
-      // [] -> DirWrite_PreArb
-      state_dirWrite.PreArb := true.B
-    }.otherwise {
-      // [] -> DirWrite_Done
-      state_dirWrite.Done := true.B
+  if (configAggressiveWrite) {
+
+    when (state_dirWrite.NotYet) {
+
+      /*
+      1.
+      */
+      when (io.meta_modified) {
+        // 1. [] -> DirWrite_PreArb
+        state_dirWrite.PreArb := true.B
+      }.elsewhen (io.tshr_inactive) {
+        // 2. [] -> DirWrite_Done
+        state_dirWrite.Done := true.B
+      }
     }
-  }
 
-  when (io.tshr_reuse && state_dirWrite.PreArb) {
-    // DirWrite_PreArb -> []
-    state_dirWrite.PreArb := false.B
-  }
+    when (state_dirWrite.PreArb) {
 
-  when (fromDir_DirWbArbComp) {
-    // DirWrite_PreArb -> DirWrite_Done
-    state_dirWrite.PreArb := false.B
-    state_dirWrite.Done := true.B
-  }
+      /*
+      1. 
+      */
+      when (io.fromDir.DirWbArbComp) {
+        // 1. DirWrite_PreArb -> DirWrite_Done
+        state_dirWrite.PreArb := false.B
+        state_dirWrite.Done := true.B
+      }
+    }
 
-  when (io.modify && state_dirWrite.Done) {
-    // DirWrite_Done -> []
-    state_dirWrite.Done := false.B
+    when (state_dirWrite.Done) {
+
+      /*
+      1. 
+      */
+      when (io.meta_modified) {
+        // 1. DirWrite_Done -> DirWrite_PreArb
+        state_dirWrite.Done := false.B
+        state_dirWrite.PreArb := true.B
+      }
+    }
+  } else {
+
+    when (state_dirWrite.NotYet) {
+
+      /* 
+      1.  
+      */
+      when (io.tshr_inactive) {
+        when (io.meta_modified) {
+        // 1. [] -> DirWrite_PreArb
+        state_dirWrite.PreArb := true.B
+        }.otherwise {
+          // 2. [] -> DirWrite_Done
+          state_dirWrite.Done := true.B
+        }
+      }
+    }
+
+    when (state_dirWrite.PreArb) {
+
+      /*
+      1.
+      */
+      when (io.tshr_reuse) {
+        // 1. DirWrite_PreArb -> []
+        state_dirWrite.PreArb := false.B
+      }.elsewhen (io.fromDir.DirWbArbComp) {
+        // 2. DirWrite_PreArb -> DirWrite_Done
+        state_dirWrite.PreArb := false.B
+        state_dirWrite.Done := true.B
+      }
+    }
+
+    when (state_dirWrite.Done) {
+
+      /*
+      1.
+      */
+      when (io.meta_modified) {
+        // 1. DirWrite_Done -> []
+        state_dirWrite.Done := false.B
+      }
+    }
   }
 
   when (io.tshr_dealloc) {
