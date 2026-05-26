@@ -67,8 +67,10 @@ class L2TSHRDirectoryProxy(val id: Int)(implicit val p: Parameters) extends Modu
     val modify = Input(Bool())
     val modified = Input(Bool())
 
-    val read_done = Output(Bool())
-    val write_done = Output(Bool())
+    val wb_locked = Input(Bool())
+
+    val rd_done = Output(Bool())
+    val wb_done = Output(Bool())
   })
 
   val tshr_enter = io.tshr_alloc || io.tshr_reuse
@@ -108,7 +110,7 @@ class L2TSHRDirectoryProxy(val id: Int)(implicit val p: Parameters) extends Modu
     state_dirRead := DirReadFSM.init
   }
 
-  io.read_done := state_dirRead.Done
+  io.rd_done := state_dirRead.Done
 
   assert(!io.read_en || !io.read_arbed, "asserting both TSHR read and TSHRCtrl read")
 
@@ -149,7 +151,7 @@ class L2TSHRDirectoryProxy(val id: Int)(implicit val p: Parameters) extends Modu
     state_dirWrite := DirWriteFSM.init
   }
 
-  io.write_done := state_dirWrite.Done
+  io.wb_done := state_dirWrite.Done
 
   assert(!(fromDir_DirWbArbComp && !state_dirWrite.PreArb), "receiving DirWbArbComp on unexpected state (expecting PreArb)")
   assert(PopCount(state_dirWrite.asUInt) <= 1.U, "multiple active states in DirWriteFSM")
@@ -159,7 +161,7 @@ class L2TSHRDirectoryProxy(val id: Int)(implicit val p: Parameters) extends Modu
   io.toDir.PADDR := io.tshr_paddr
   io.toDir.META := false.B // TODO: meta
   io.toDir.DirRd := state_dirRead.PreArb
-  io.toDir.DirWb := state_dirWrite.PreArb
+  io.toDir.DirWb := state_dirWrite.PreArb && !io.wb_locked
   io.toDir.ReplRd := io.repl_en
 
   assert(PopCount(Seq(io.toDir.DirRd, io.toDir.DirWb, io.toDir.ReplRd)) <= 1.U,
@@ -243,6 +245,8 @@ class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Mo
     val ds_read_rbeREQ_aux = Input(Bool())
 
     val ds_read_aux_en = Input(Bool()) // aux DS read enable that overrides all other conditions
+
+    val wb_locked = Input(Bool())
 
     val wb_done = Output(Bool())
 
@@ -531,17 +535,6 @@ class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Mo
     state_dsRead_next := DSReadFSM.init
   }
 
-  io.toDS.TSHRADDR := id.U
-  // *NOTICE: The AheadPreArb_S1 and AheadPreArb_S2 state should never overlap with any DSWrite states.
-  //          It is assumed that no Data could be fast enough to be returned to TSHR Buffer in S0, S1, S2 from L1 and L3,
-  //          otherwise consider clear all AheadPreArb on any RXDAT fire.
-  io.toDS.WAY := Mux(state_dsRead.AheadPreArb_S1 || state_dsRead.AheadPreArb_S2, ds_read_ahead_way_q, io.meta_way) // TODO: meta assertions on PreArb, PostArb, Done
-  io.toDS.SET := L2Address.set(io.p_paddr)
-  io.toDS.DATA := Cat(io.tshr_buffer_2, io.tshr_buffer_0)
-
-  io.toDS.DSBufRd := state_dsRead.PreArb
-  io.toDS.DSBufAheadRd := state_dsRead.AheadPreArb_S1 || state_dsRead.AheadPreArb_S2
-
   assert(PopCount(state_dsRead.asUInt) <= 1.U, "multiple active state in DSReadFSM")
 
   assert(!(io.fromDS.DSBufAheadRdArbComp && !state_dsRead.AheadPreArb_S1 && !state_dsRead.AheadPreArb_S2),
@@ -737,7 +730,6 @@ class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Mo
     state_dsWrite_next := DSWriteFSM.init
   }
 
-  io.toDS.DSBufWb := state_dsWrite.PreArb || state_dsWrite.PreArb_PostArb
   io.wb_done := state_dsWrite.Done
 
   assert(PopCount(state_dsWrite.asUInt) <= 1.U, "multiple active state in DSWriteFSM")
@@ -756,6 +748,19 @@ class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Mo
   XSPerfAccumulate(s"L2TSHR_${id}_DSWrite_PostArb_cycleCnt", state_dsWrite.PostArb)
   XSPerfAccumulate(s"L2TSHR_${id}_DSWrite_PostArb_PreArb_cycleCnt", state_dsWrite.PreArb_PostArb)
   XSPerfAccumulate(s"L2TSHR_${id}_DSWrite_Done_cycleCnt", state_dsWrite.Done)
+
+  // interactions with Data Storage
+  io.toDS.TSHRADDR := id.U
+  // *NOTICE: The AheadPreArb_S1 and AheadPreArb_S2 state should never overlap with any DSWrite states.
+  //          It is assumed that no Data could be fast enough to be returned to TSHR Buffer in S0, S1, S2 from L1 and L3,
+  //          otherwise consider clear all AheadPreArb on any RXDAT fire.
+  io.toDS.WAY := Mux(state_dsRead.AheadPreArb_S1 || state_dsRead.AheadPreArb_S2, ds_read_ahead_way_q, io.meta_way) // TODO: meta assertions on PreArb, PostArb, Done
+  io.toDS.SET := L2Address.set(io.p_paddr)
+  io.toDS.DATA := Cat(io.tshr_buffer_2, io.tshr_buffer_0)
+
+  io.toDS.DSBufRd := state_dsRead.PreArb
+  io.toDS.DSBufAheadRd := state_dsRead.AheadPreArb_S1 || state_dsRead.AheadPreArb_S2
+  io.toDS.DSBufWb := (state_dsWrite.PreArb || state_dsWrite.PreArb_PostArb) && !io.wb_locked
 }
 
 object L2TSHR {
