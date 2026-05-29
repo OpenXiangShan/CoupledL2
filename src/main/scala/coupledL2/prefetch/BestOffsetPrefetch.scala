@@ -45,7 +45,7 @@ case class BOPParameters(
   roundMax:       Int = 50,
   badScore:       Int = 2,
   tlbReplayCnt:   Int = 10,
-  dQEntries: Int = 16,
+  dQEntries: Int = 64,
   dQLatency: Int = 300,
   dQMaxLatency: Int = 1024,
   offsetList: Seq[Int] = Seq(
