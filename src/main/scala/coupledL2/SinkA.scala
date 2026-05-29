@@ -211,8 +211,13 @@ class SinkA(implicit p: Parameters) extends L2Module {
       }
     }
   }
-  when (stateVal === sWAITMSHR && !mshrValid) {
+  when (stateVal === sWAITMSHR && !mshrValid && snpBlockcmo === 0.U) {
     state.foreach { _ := sCMOREQ }
+  }
+  when (stateVal === sDONE && !l2Flush) {
+    state.foreach { _ := sIDLE }
+    set.foreach { _ := 0.U }
+    way.foreach { _ := 0.U }
   }
 
   // Performance counters
