@@ -6,7 +6,6 @@ import utility._
 import oceanus.chi.bundle._
 import oceanus.compactchi._
 import oceanus.l2._
-import oceanus.l2.L2TSHR._
 import oceanus.l2.L2Directory._
 import oceanus.l2.L2DataStorage._
 import oceanus.l2.tshr._
@@ -340,6 +339,8 @@ class L2TSHRCtrl(implicit val p: Parameters) extends Module with HasL2Params {
     val DnRXDAT = Flipped(Valid(new CHIBundleDAT))
   })
 
+  def getTSHRIdFromTxnID(txnId: UInt) = txnId
+
   //
   val tshrs = Seq.tabulate(paramL2.mshrSize)(i => Module(new L2TSHR(i)))
 
@@ -348,16 +349,16 @@ class L2TSHRCtrl(implicit val p: Parameters) extends Module with HasL2Params {
     t.io.RXSNP := io.RXSNP.bits
     t.io.RXREQ := io.RXREQ.bits
 
-    t.io.UpRXRSP.valid := io.UpRXRSP.valid && io.UpRXRSP.bits.TxnID === t.id.U // TODO: consider slice ID and others
+    t.io.UpRXRSP.valid := io.UpRXRSP.valid && getTSHRIdFromTxnID(io.UpRXRSP.bits.TxnID) === t.id.U 
     t.io.UpRXRSP.bits := io.UpRXRSP.bits
 
-    t.io.UpRXDAT.valid := io.UpRXDAT.valid && io.UpRXDAT.bits.TxnID === t.id.U // TODO: consider slice ID and others
+    t.io.UpRXDAT.valid := io.UpRXDAT.valid && getTSHRIdFromTxnID(io.UpRXDAT.bits.TxnID) === t.id.U
     t.io.UpRXDAT.bits := io.UpRXDAT.bits
 
-    t.io.DnRXRSP.valid := io.DnRXRSP.valid && io.DnRXRSP.bits.TxnID.get === t.id.U // TODO: consider slice ID and others
+    t.io.DnRXRSP.valid := io.DnRXRSP.valid && getTSHRIdFromTxnID(io.DnRXRSP.bits.TxnID.get) === t.id.U
     t.io.DnRXRSP.bits := io.DnRXRSP.bits
 
-    t.io.DnRXDAT.valid := io.DnRXDAT.valid && io.DnRXDAT.bits.TxnID.get === t.id.U // TODO: consider slice ID and others
+    t.io.DnRXDAT.valid := io.DnRXDAT.valid && getTSHRIdFromTxnID(io.DnRXDAT.bits.TxnID.get) === t.id.U
     t.io.DnRXDAT.bits := io.DnRXDAT.bits
   }
 
