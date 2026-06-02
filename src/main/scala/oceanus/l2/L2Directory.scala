@@ -39,14 +39,51 @@ object L2Directory {
   }
 
   class Meta(implicit val p: Parameters) extends Bundle with HasL2Params {
-    val way = UInt(4.W) // TODO: parameterize with l2 way count
     val state = MetaState()
     val dirty = Bool()
-    val clients = UInt(1.W) // TODO: parameterize with coherent l2 client count
+    val clients = Vec(1, Bool()) // TODO: parameterize with coherent l2 client count
   }
 
-  class Tag extends Bundle {
+  class Tag(implicit val p: Parameters) extends Bundle with HasL2Params {
+    
+  }
 
+  class ReadResult(implicit override val p: Parameters) extends Meta with HasL2Params {
+    val way = UInt(4.W) // TODO: parameterize with l2 way count
+    val hit = Bool()
+  }
+
+  class MetaWriteMask(implicit val p: Parameters) extends Bundle with HasL2Params {
+    val state = Bool()
+    val dirty = Bool()
+    val clients = Vec(1, Bool()) // TODO: parameterize with coherent l2 client count
+
+    def maskAndWrite(dst: Meta, src: Meta): Unit = {
+      when (state) { dst.state := src.state }
+      when (dirty) { dst.dirty := src.dirty }
+      clients.zip(dst.clients.zip(src.clients)).foreach { case (mask, (dst, src)) => when (mask) { dst := src } }
+    }
+
+    def maskAndWrite(dst: Meta, dstFlag: MetaWriteMask, src: Meta): Unit = {
+      maskAndWrite(dst, src)
+      when (state) { dstFlag.state := true.B }
+      when (dirty) { dstFlag.dirty := true.B }
+      clients.zip(dstFlag.clients).foreach { case (mask, dst) => when (mask) { dst := true.B } }
+    }
+
+    def unmaskAndWrite(dst: Meta, src: Meta): Unit = {
+      when (!state) { dst.state := src.state }
+      when (!dirty) { dst.dirty := src.dirty }
+      clients.zip(dst.clients.zip(src.clients)).foreach { case (mask, (dst, src)) => when (!mask) { dst := src } }
+    }
+  }
+
+  object MetaWriteMask {
+    def empty(implicit p: Parameters): MetaWriteMask = {
+      val zero = new MetaWriteMask
+      zero.elements.foreach(_._2 := 0.U)
+      zero
+    }
   }
 
   class PathToDirectoryUOPs extends Bundle {
@@ -72,6 +109,6 @@ object L2Directory {
 
   class PathFromDirectory(implicit val p: Parameters) extends PathFromDirectoryUOPs with HasL2Params {
     val TSHRADDR = UInt(mshrIndexWidth.W)
-    val META = new L2Directory.Meta // TODO: replace with meta bundle
+    val META = new L2Directory.ReadResult // TODO: replace with meta bundle
   }
 }
