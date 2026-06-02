@@ -758,24 +758,31 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   task_s4.valid := task_s3.valid && !req_drop_s3
 
-  when (task_s3.valid && !req_drop_s3) {
-    task_s4.bits := source_req_s3
-
-    when (!task_s3.bits.mshrTask && need_mshr_s3) {
-      task_s4.bits.mshrId := io.fromMSHRCtl.mshr_alloc_ptr
-    }
-
-    data_unready_s4 := data_unready_s3
-    data_s4 := data_s3
-    ren_s4 := ren
-    need_write_releaseBuf_s4 := need_write_releaseBuf
-    isD_s4 := isD_s3
-    isTXREQ_s4 := isTXREQ_s3
-    isTXRSP_s4 := isTXRSP_s3
-    isTXDAT_s4 := isTXDAT_s3
-    tagError_s4 := tagError_s3
-    dataError_s4 := dataError_s3
+  when (task_s3.valid) {
     l2Error_s4 := l2Error_s3
+
+    when (!req_drop_s3) {
+      task_s4.bits := source_req_s3
+
+      when (!task_s3.bits.mshrTask && need_mshr_s3) {
+        task_s4.bits.mshrId := io.fromMSHRCtl.mshr_alloc_ptr
+      }
+
+      data_unready_s4 := data_unready_s3
+      data_s4 := data_s3
+      ren_s4 := ren
+      need_write_releaseBuf_s4 := need_write_releaseBuf
+      isD_s4 := isD_s3
+      isTXREQ_s4 := isTXREQ_s3
+      isTXRSP_s4 := isTXRSP_s3
+      isTXDAT_s4 := isTXDAT_s3
+      tagError_s4 := tagError_s3
+      dataError_s4 := dataError_s3
+    }.otherwise {
+      task_s4.bits.tag := source_req_s3.tag
+      task_s4.bits.set := source_req_s3.set
+      task_s4.bits.off := source_req_s3.off
+    }
   }
 
   // for reqs that CANNOT give response in MainPipe, but needs to write releaseBuf/refillBuf
@@ -815,18 +822,25 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
 
   task_s5.valid := task_s4.valid && !req_drop_s4
 
-  when (task_s4.valid && !req_drop_s4) {
-    task_s5.bits := task_s4.bits
-    ren_s5 := ren_s4
-    data_s5 := data_s4
-    need_write_releaseBuf_s5 := need_write_releaseBuf_s4
-    isD_s5 := isD_s4 || pendingD_s4
-    isTXREQ_s5 := isTXREQ_s4
-    isTXRSP_s5 := isTXRSP_s4
-    isTXDAT_s5 := isTXDAT_s4 || pendingTXDAT_s4
-    tagError_s5 := tagError_s4
-    dataMetaError_s5 := dataError_s4
+  when (task_s4.valid) {
     l2TagError_s5 := l2Error_s4
+
+    when (!req_drop_s4) {
+      task_s5.bits := task_s4.bits
+      ren_s5 := ren_s4
+      data_s5 := data_s4
+      need_write_releaseBuf_s5 := need_write_releaseBuf_s4
+      isD_s5 := isD_s4 || pendingD_s4
+      isTXREQ_s5 := isTXREQ_s4
+      isTXRSP_s5 := isTXRSP_s4
+      isTXDAT_s5 := isTXDAT_s4 || pendingTXDAT_s4
+      tagError_s5 := tagError_s4
+      dataMetaError_s5 := dataError_s4
+    }.otherwise {
+      task_s5.bits.tag := task_s4.bits.tag
+      task_s5.bits.set := task_s4.bits.set
+      task_s5.bits.off := task_s4.bits.off
+    }
   }
   val rdata_s5 = io.toDS.rdata_s5.data
   val dataError_s5 = io.toDS.error_s5 || dataMetaError_s5
@@ -1011,8 +1025,10 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   arb(txrsp, io.toTXRSP, Some("toTXRSP"))
   arb(txdat, io.toTXDAT, Some("toTXDAT"))
 
-  io.error.valid := task_s5.valid
-  io.error.bits.valid := l2Error_s5 // if not enableECC, should be false
+  val reqDropped_s5 =  RegEnable(req_drop_s4, task_s4.valid) ||
+    RegEnable(RegEnable(req_drop_s3, task_s3.valid), RegNext(task_s3.valid))
+  io.error.valid := task_s5.valid || reqDropped_s5
+  io.error.bits.valid := Mux(reqDropped_s5, l2TagError_s5, l2Error_s5) // if not enableECC, should be false
   io.error.bits.address := Cat(task_s5.bits.tag, task_s5.bits.set, task_s5.bits.off)
 
   /* CMO All Flush cacheline done if:
