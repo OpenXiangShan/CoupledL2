@@ -973,6 +973,7 @@ class trainBundle(implicit p: Parameters) extends TPBundle { //db
   val hit = Bool()
   val prefetched = Bool()
   val pfsource = UInt(PfSource.pfSourceBits.W)
+  val reqSource = UInt(MemReqSource.reqSourceBits.W)
   val metahit = Bool()
   val pc = UInt(pcHashWidth.W)
 }
@@ -1264,11 +1265,12 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     sending_hitCount := tpDataQueue.io.deq.bits.hitCount
     // sending_data_debug := tpDataQueue.io.deq.bits.rawData_debug
     sending_idx := 0.U
-    do_sending := globalConfidence(tpDataQueue.io.deq.bits.hitCount) >= globalHitCountConfidenceThrottle.asUInt
+    do_sending := globalConfidence(tpDataQueue.io.deq.bits.hitCount) >= globalHitCountConfidenceThrottle.asUInt && tpDataQueue.io.deq.bits.hitCount <= 5.U
   }
   when(((do_sending && !tpDataQFull) || sending_throttle =/= 0.U) && (sending_throttle =/= tpThrottleCycles)) {
     sending_throttle := sending_throttle + 1.U
   }
+
   when(io.req.fire) {
     sending_idx := sending_idx + 1.U
     sending_throttle := 0.U
@@ -1356,6 +1358,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   trainPt.hit := train_s2.hit
   trainPt.prefetched := train_s2.prefetched
   trainPt.pfsource := train_s2.pfsource
+  trainPt.reqSource := train_s2.reqsource
   trainPt.metahit := hit_s2
   trainPt.pc := hashPC(train_s2.pc)
 
