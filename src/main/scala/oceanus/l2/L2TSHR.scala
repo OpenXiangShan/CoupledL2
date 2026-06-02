@@ -7,13 +7,13 @@ import oceanus.chi.bundle._
 import oceanus.compactchi._
 import oceanus.compactchi.CCHIOpcode._
 import oceanus.l2._
-import oceanus.l2.L2TSHR._
 import oceanus.l2.L2Directory._
 import oceanus.l2.L2DataStorage._
 import oceanus.l2.tshr._
 import org.chipsalliance.cde.config.Parameters
 import chisel3.simulator.PeekPokeAPI.TestableData
 import freechips.rocketchip.util.RotateVector.left
+import freechips.rocketchip.util.SeqToAugmentedSeq
 
 class L2TSHRDirectoryProxy(val id: Int)(implicit val p: Parameters) extends Module with HasL2Params {
 
@@ -69,6 +69,7 @@ class L2TSHRDirectoryProxy(val id: Int)(implicit val p: Parameters) extends Modu
     val wb_locked = Input(Bool())
     val wb_accept = Output(Bool())
 
+    val rd_idle = Output(Bool())
     val rd_done = Output(Bool())
     val wb_done = Output(Bool())
   })
@@ -112,6 +113,7 @@ class L2TSHRDirectoryProxy(val id: Int)(implicit val p: Parameters) extends Modu
     state_dirRead := DirReadFSM.init
   }
 
+  io.rd_idle := state_dirRead.NotYet
   io.rd_done := state_dirRead.Done
 
   assert(!io.read_en || !io.read_arbed, "asserting both TSHR read and TSHRCtrl read")
@@ -211,6 +213,7 @@ class L2TSHRDirectoryProxy(val id: Int)(implicit val p: Parameters) extends Modu
     state_dirWrite := DirWriteFSM.init
   }
 
+  io.wb_accept := io.toDir.DirWb && io.fromDir.DirWbArbComp
   io.wb_done := state_dirWrite.Done
 
   assert(!(fromDir_DirWbArbComp && !state_dirWrite.PreArb), "receiving DirWbArbComp on unexpected state (expecting PreArb)")
@@ -307,7 +310,10 @@ class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Mo
     val ds_read_aux_en = Input(Bool()) // aux DS read enable that overrides all other conditions
 
     val wb_locked = Input(Bool())
+    val wb_accept = Output(Bool())
 
+    val rd_idle = Output(Bool())
+    val rd_done = Output(Bool())
     val wb_done = Output(Bool())
 
     val RXDAT_fire = Input(Bool()) // io.UpRXDAT.fire || io.DnRXDAT.fire
@@ -595,6 +601,9 @@ class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Mo
     state_dsRead_next := DSReadFSM.init
   }
 
+  io.rd_idle := state_dsRead.NotYet
+  io.rd_done := state_dsRead.Done
+
   assert(PopCount(state_dsRead.asUInt) <= 1.U, "multiple active state in DSReadFSM")
 
   assert(!(io.fromDS.DSBufAheadRdArbComp && !state_dsRead.AheadPreArb_S1 && !state_dsRead.AheadPreArb_S2),
@@ -790,6 +799,7 @@ class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Mo
     state_dsWrite_next := DSWriteFSM.init
   }
 
+  io.wb_accept := io.toDS.DSBufWb && io.fromDS.DSBufWbArbComp
   io.wb_done := state_dsWrite.Done
 
   assert(PopCount(state_dsWrite.asUInt) <= 1.U, "multiple active state in DSWriteFSM")
@@ -823,79 +833,6 @@ class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Mo
   io.toDS.DSBufWb := (state_dsWrite.PreArb || state_dsWrite.PreArb_PostArb) && !io.wb_locked
 }
 
-object L2TSHR {
-
-  class DirReadFSM extends Bundle {
-    val PreArb = Bool()     // sending Read Request to Directory, waiting for Arbiter completion
-    val PostArb = Bool()    // Read Request has been accepted by Directory
-    val Done = Bool()       // Read Response has been received from Directory
-    def NotYet =            // haven't sent Read Request to Directory
-      !PreArb && !PostArb && !Done                
-  }
-
-  object DirReadFSM {
-    def init = {
-      val initState = Wire(new DirReadFSM)
-      initState.elements.foreach(_._2 := false.B)
-      initState
-    }
-  }
-
-  class DirWriteFSM extends Bundle {
-    val PreArb = Bool()     // sending Write Request to Directory, waiting for Arbiter completion
-    val Done = Bool()       // Write Request has been accepted by Directory and observable to later requests
-    def NotYet =            // haven't sent Write Request to Directory
-      !PreArb && !Done
-  }
-
-  object DirWriteFSM {
-    def init = {
-      val initState = Wire(new DirWriteFSM)
-      initState.elements.foreach(_._2 := false.B)
-      initState
-    }
-  }
-
-  class DSReadFSM extends Bundle {
-    val PreArb = Bool()     // sending Read Request to Data Storage, waiting for Arbiter completion
-    val PostArb = Bool()    // Read Request has been accepted by Data Storage
-    val Done = Bool()       // Read Response has been received from Data Storage
-    def NotYet =            // haven't sent Read Request to Data Storage
-      !PreArb && !PostArb
-  }
-
-  object DSReadFSM {
-    def init = {
-      val initState = Wire(new DSReadFSM)
-      initState.elements.foreach(_._2 := false.B)
-      initState
-    }
-  }
-
-  class DSWriteFSM extends Bundle {
-    val PreArb = Bool()     // sending Write Request to Data Storage, waiting for Arbiter completion
-    val PostArb = Bool()    // Write Request has been accepted by Data Storage 
-    val Done = Bool()       // Write Request has been completed and observable to later requests
-    def NotYet =            // haven't sent Write Request to Data Storage
-      !PreArb && !PostArb && !Done
-
-    // All possible combinations of state bits
-    def DSWrite_NotYet          = !PreArb && !PostArb && !Done
-    def DSWrite_PreArb          =  PreArb && !PostArb && !Done
-    def DSWrite_PostArb         = !PreArb &&  PostArb && !Done
-    def DSWrite_PostArb_PreArb  =  PreArb &&  PostArb && !Done
-    def DSWrite_Done            = !PreArb && !PostArb &&  Done
-    def DSWrite = DSWrite_NotYet || DSWrite_PreArb || DSWrite_PostArb || DSWrite_PostArb_PreArb || DSWrite_Done
-  }
-
-  object DSWriteFSM {
-    def init = {
-      val initState = Wire(new DSWriteFSM)
-      initState.elements.foreach(_._2 := false.B)
-      initState
-    }
-  }
-}
 
 class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2Params {
 
@@ -941,6 +878,12 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
   val tshr_enter_SNP = io.fromAlloc.alloc.SNP || io.fromAlloc.reuse.SNP
   val tshr_enter_REQ = io.fromAlloc.alloc.REQ || io.fromAlloc.reuse.REQ
 
+  val tshr_enter_EVT_WayValid_Evict = tshr_enter_EVT && io.RXEVT.WayValid && io.RXEVT.Opcode === Evict.U
+  val tshr_enter_EVT_WayValid_WriteBackFull = tshr_enter_EVT && io.RXEVT.WayValid && io.RXEVT.Opcode === WriteBackFull.U
+
+  val tshr_enter_dirRead = !tshr_enter_EVT_WayValid_Evict &&
+                           !tshr_enter_EVT_WayValid_WriteBackFull
+
   val tshr_inactive_rbe = Wire(Bool())
   val tshr_inactive_vpipe = Wire(Bool())
   val tshr_inactive = tshr_inactive_rbe && tshr_inactive_vpipe
@@ -948,7 +891,7 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
   val tshr_inactivate = Wire(Bool()) // TODO: connect with vPipes and RBEs, act as instant 'willFree'
 
   val tshr_wb_done_dir = Wire(Bool())
-  val tshr_wb_done_ds = Wire(Bool()) // TODO: connect with DSWriteFSM
+  val tshr_wb_done_ds = Wire(Bool())
 
   val tshr_dealloc = tshr_inactive && tshr_wb_done_dir && tshr_wb_done_ds && !tshr_enter
 
@@ -966,29 +909,57 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
 
 
   // miscs and enchantments
-  val req_need_dirRead = Wire(Bool())
-
-  val ds_resp_miss = Wire(Bool()) // TODO: connect with Data Storage interactions, valid only when DSBufResp
-
-  val ds_read_ahead_en = Wire(Bool()) // TODO: Data Storage Read Ahead valid on TSHR alloc/reuse
-  val ds_read_ahead_way = RegInit(0.U(4.W)) // TODO: configure with actual way index
-  val ds_read_ahead_q = RegInit(false.B) // TODO: Data Storage Read Ahead flag bit
-
-  val ds_read_rbe_en = Wire(Bool()) // TODO: Data Storage Read on requests passed RBE with valid meta
-
-  val ds_read_skip_en = Wire(Bool()) // TODO: connect with TSHR Buffer write except from DS
-  val ds_read_skip_q = RegInit(false.B)
 
 
   // meta
-  val meta = Reg(Bool()) // TODO: replace with Directory Result type
+  val dirResult = Reg(new L2Directory.ReadResult)
+
+  /* NOTICE: For current design, any partial write to meta would never assert 'meta_valid'.
+             Any later read request on full meta line would result in a Directory Read if no any read done yet.
+             Because it was extremely rare that partial meta write could be merged into a full meta line.
+             And the later result from Directory Read would not override modified fields except 'way' and 'hit' fields,
+             which were only possible to be accurate after a Directory Read. */
+  val meta = dirResult
   val meta_valid = Wire(Bool())
-  val meta_modified = RegInit(false.B)
+  val meta_modified = RegInit(L2Directory.MetaWriteMask.empty)
+  val tag_modified = RegInit(false.B)
 
-  val metaWrite = Wire(Bool()) // TODO: replace with Directory Result type or something or write masks
-  val metaWrite_valid = Wire(Bool()) // TODO: write masks might be needed
+  val meta_write_EVT_meta = Wire(new L2Directory.Meta)
+  val meta_write_EVT_mask = Wire(new L2Directory.MetaWriteMask)
 
-  // TODO: TSHR local meta interactions here
+  val meta_write_SNP_meta = Wire(new L2Directory.Meta)
+  val meta_write_SNP_mask = Wire(new L2Directory.MetaWriteMask)
+
+  val meta_write_REQ_meta = Wire(new L2Directory.Meta)
+  val meta_write_REQ_mask = Wire(new L2Directory.MetaWriteMask)
+  val tag_write_REQ_mask = Wire(Bool())
+
+  val meta_commit_valid = Wire(Bool())
+
+  when (meta_commit_valid) {
+    meta_modified := L2Directory.MetaWriteMask.empty
+  }
+
+  when (io.fromDir.DirRdResp) {
+    meta_modified.unmaskAndWrite(meta, io.fromDir.META)
+    meta.way := io.fromDir.META.way
+    meta.hit := io.fromDir.META.hit
+  }
+
+  meta_write_EVT_mask.maskAndWrite(meta, meta_modified, meta_write_EVT_meta)
+  meta_write_SNP_mask.maskAndWrite(meta, meta_modified, meta_write_SNP_meta)
+  meta_write_REQ_mask.maskAndWrite(meta, meta_modified, meta_write_REQ_meta)
+
+  assert(PopCount(Seq(meta_write_EVT_mask, meta_write_SNP_mask, meta_write_REQ_mask).map(_.state)) <= 1.U, 
+    s"TSHR #${id} multiple active write on meta.state")
+  assert(PopCount(Seq(meta_write_EVT_mask, meta_write_SNP_mask, meta_write_REQ_mask).map(_.dirty)) <= 1.U, 
+    s"TSHR #${id} multiple active write on meta.dirty")
+  assert(PopCount(Seq(meta_write_EVT_mask, meta_write_SNP_mask, meta_write_REQ_mask).map(_.clients.asUInt.orR)) <= 1.U, 
+    s"TSHR #${id} multiple active write on meta.clients")
+  assert(PopCount(Seq(meta_write_EVT_mask, meta_write_SNP_mask, meta_write_REQ_mask).map(_.asUInt.orR)) <= 1.U, 
+    s"TSHR #${id} multiple active write on meta")
+
+  assert(!(tshr_dealloc && meta_modified.asUInt.orR), s"TSHR #${id} deallocated with un-committed modified meta")
 
   
   // TSHR Buffer
@@ -1004,15 +975,16 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
   val tshr_buffer_wen_RXDAT_0 = tshr_buffer_wen_UpRXDAT_0 || tshr_buffer_wen_DnRXDAT_0
   val tshr_buffer_wen_RXDAT_2 = tshr_buffer_wen_UpRXDAT_2 || tshr_buffer_wen_DnRXDAT_2
 
-  val tshr_buffer_modified_0_q = RegInit(false.B)
-  val tshr_buffer_modified_2_q = RegInit(false.B)
-
-  val tshr_buffer_modified = tshr_buffer_modified_0_q || tshr_buffer_modified_2_q
-
-  val tshr_buffer_wen_DS = io.fromDS.DSBufRdResp && !tshr_buffer_modified
+  val tshr_buffer_commit = WireInit(false.B)
 
   val tshr_buffer_halfWritten_0_q = RegInit(false.B)
   val tshr_buffer_halfWritten_2_q = RegInit(false.B)
+
+  val tshr_buffer_fullModified_q = RegInit(false.B)
+  val tshr_buffer_halfModified = tshr_buffer_halfWritten_0_q || tshr_buffer_halfWritten_2_q
+  val tshr_buffer_modified = tshr_buffer_fullModified_q || tshr_buffer_halfModified
+
+  val tshr_buffer_wen_DS = io.fromDS.DSBufRdResp && !tshr_buffer_modified
 
   val tshr_buffer_wen_last = WireInit(false.B)
 
@@ -1021,34 +993,110 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
     tshr_buffer_2 := io.fromDS.DATA(256, 511)
   }
 
+  assert(!(tshr_dealloc && tshr_buffer_modified), s"TSHR #${id} deallocated with un-committed modified data")
+
   when (tshr_buffer_wen_UpRXDAT_0) { tshr_buffer_0 := io.UpRXDAT.bits.Data }
   when (tshr_buffer_wen_UpRXDAT_2) { tshr_buffer_2 := io.UpRXDAT.bits.Data }
 
   when (tshr_buffer_wen_DnRXDAT_0) { tshr_buffer_0 := io.DnRXDAT.bits.Data.get }
   when (tshr_buffer_wen_DnRXDAT_2) { tshr_buffer_2 := io.DnRXDAT.bits.Data.get }
 
+  /*
+  tshr_buffer_halfWritten_x_q: Indicating that the TSHR Buffer was partially/halfy written.
+
+  tshr_buffer_fullModified_q: Indicating that there were dirty data in the TSHR Buffer, but not asserted 
+                              on TSHR Buffer was partially/halfly written, preventing writing to Data Storage
+                              too early.
+
+  tshr_buffer_wen_last: Indicating that the whole line TSHR Buffer is getting ready, and going to be no more
+                        partially/halfly written.
+  */
+
   when (tshr_buffer_wen_RXDAT_0) {
     when (tshr_buffer_halfWritten_2_q) {
       tshr_buffer_halfWritten_2_q := false.B
+      tshr_buffer_fullModified_q := true.B
       tshr_buffer_wen_last := true.B
     }.otherwise {
       tshr_buffer_halfWritten_0_q := true.B
+      tshr_buffer_fullModified_q := false.B // TODO: Add comments here
     }
   }
 
   when (tshr_buffer_wen_RXDAT_2) {
     when (tshr_buffer_halfWritten_0_q) {
       tshr_buffer_halfWritten_0_q := false.B
+      tshr_buffer_fullModified_q := true.B
       tshr_buffer_wen_last := true.B
     }.otherwise {
       tshr_buffer_halfWritten_2_q := true.B
+      tshr_buffer_fullModified_q := false.B
     }
   }
 
+  when (tshr_buffer_commit) {
+    tshr_buffer_fullModified_q := false.B
+  }
+
+  /*
+  *NOTICE: Multiple write on a partial/half entry of TSHR Buffer is not supported for now, while this could be
+           easy to implement with seperate counters.
+           Consider this support on future changes or assertions.
+  */
   assert(!(tshr_buffer_halfWritten_0_q && tshr_buffer_wen_RXDAT_0), "double write on buffer DataID 0 from RXDAT")
   assert(!(tshr_buffer_halfWritten_2_q && tshr_buffer_wen_RXDAT_2), "double write on buffer DataID 2 from RXDAT")
 
+  /*
+  *NOTICE: Multiple source concurrent write on TSHR Buffer is not supported for now. 
+  */
+  private val tshr_buffer_halfWritten_UpRXDAT_0_q = RegInit(false.B) // Debug only for now
+  private val tshr_buffer_halfWritten_UpRXDAT_2_q = RegInit(false.B) // Debug only for now
+  private val tshr_buffer_halfWritten_DnRXDAT_0_q = RegInit(false.B) // Debug only for now
+  private val tshr_buffer_halfWritten_DnRXDAT_2_q = RegInit(false.B) // Debug only for now
+
+  when (tshr_buffer_wen_UpRXDAT_0) {
+    when (tshr_buffer_halfWritten_UpRXDAT_2_q) {
+      tshr_buffer_halfWritten_UpRXDAT_2_q := false.B
+    }.otherwise {
+      tshr_buffer_halfWritten_UpRXDAT_0_q := true.B
+    }
+  }
+  when (tshr_buffer_wen_UpRXDAT_2) {
+    when (tshr_buffer_halfWritten_UpRXDAT_0_q) {
+      tshr_buffer_halfWritten_UpRXDAT_0_q := false.B
+    }.otherwise {
+      tshr_buffer_halfWritten_UpRXDAT_2_q := true.B
+    }
+  }
+  when (tshr_buffer_wen_DnRXDAT_0) {
+    when (tshr_buffer_halfWritten_DnRXDAT_2_q) {
+      tshr_buffer_halfWritten_DnRXDAT_2_q := false.B
+    }.otherwise {
+      tshr_buffer_halfWritten_DnRXDAT_0_q := true.B
+    }
+  }
+  when (tshr_buffer_wen_DnRXDAT_2) {
+    when (tshr_buffer_halfWritten_DnRXDAT_0_q) {
+      tshr_buffer_halfWritten_DnRXDAT_0_q := false.B
+    }.otherwise {
+      tshr_buffer_halfWritten_DnRXDAT_2_q := true.B
+    }
+  }
+
+  assert(!(tshr_buffer_wen_UpRXDAT_0 && tshr_buffer_halfWritten_UpRXDAT_0_q), "double write on buffer from UpRXDAT (0, 0)")
+  assert(!(tshr_buffer_wen_UpRXDAT_0 && tshr_buffer_halfWritten_DnRXDAT_0_q), "multiple source write on buffer from DnRXDAT then UpRXDAT (0, 0)")
+  assert(!(tshr_buffer_wen_UpRXDAT_0 && tshr_buffer_halfWritten_DnRXDAT_2_q), "multiple source write on buffer from DnRXDAT then UpRXDAT (2, 0)")
+  assert(!(tshr_buffer_wen_UpRXDAT_2 && tshr_buffer_halfWritten_UpRXDAT_2_q), "double write on buffer from UpRXDAT (2, 2)")
+  assert(!(tshr_buffer_wen_UpRXDAT_2 && tshr_buffer_halfWritten_DnRXDAT_0_q), "multiple source write on buffer from DnRXDAT then UpRXDAT (0, 2)")
+  assert(!(tshr_buffer_wen_UpRXDAT_2 && tshr_buffer_halfWritten_DnRXDAT_2_q), "multiple source write on buffer from DnRXDAT then UpRXDAT (2, 2)")
+  assert(!(tshr_buffer_wen_DnRXDAT_0 && tshr_buffer_halfWritten_DnRXDAT_0_q), "double write on buffer from DnRXDAT (0, 0)")
+  assert(!(tshr_buffer_wen_DnRXDAT_0 && tshr_buffer_halfWritten_UpRXDAT_0_q), "multiple source write on buffer from UpRXDAT then DnRXDAT (0, 0)")
+  assert(!(tshr_buffer_wen_DnRXDAT_0 && tshr_buffer_halfWritten_UpRXDAT_2_q), "multiple source write on buffer from UpRXDAT then DnRXDAT (2, 0)")
+  assert(!(tshr_buffer_wen_DnRXDAT_2 && tshr_buffer_halfWritten_DnRXDAT_2_q), "double write on buffer from DnRXDAT (2, 2)")
+  assert(!(tshr_buffer_wen_DnRXDAT_2 && tshr_buffer_halfWritten_UpRXDAT_0_q), "multiple source write on buffer from UpRXDAT then DnRXDAT (0, 2)")
+  assert(!(tshr_buffer_wen_DnRXDAT_2 && tshr_buffer_halfWritten_UpRXDAT_2_q), "multiple source write on buffer from UpRXDAT then DnRXDAT (2, 2)")
   
+
   // RBEs
   val rbeEVT = Module(new L2RBE(new FlitEVT /*TODO: strip PA here*/))
   val rbeSNP = Module(new L2RBE(new CHIBundleSNP /*TODO: strip PA here*/))
@@ -1066,7 +1114,7 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
   rbeSNP.io.in.valid := tshr_enter_SNP
   rbeREQ.io.in.valid := tshr_enter_REQ
 
-  rbeEVT.io.directoryReadNeed := !(rbeEVT.io.out.bits.Opcode === EvictBack.U && rbeEVT.io.out.bits.WayValid)
+  rbeEVT.io.directoryReadNeed := !((rbeEVT.io.out.bits.Opcode === Evict.U || rbeEVT.io.out.bits.Opcode === WriteBackFull.U) && rbeEVT.io.out.bits.WayValid)
   rbeSNP.io.directoryReadNeed := true.B
   rbeREQ.io.directoryReadNeed := true.B
 
@@ -1074,206 +1122,90 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
 
 
   // vPipes
+  val vPipeEVT = Module(new L2VPipeEVT(Seq(/*TODO: client devices*/)))
+  val vPipeSNP = Module(new L2VPipeSNP(Seq(/*TODO: client devices*/)))
+  val vPipeREQ = Module(new L2VPipeREQ(Seq(/*TODO: client devices*/), id, 0))
+
   // TODO
 
+  // Directory Proxy
+  val proxyDir = Module(new L2TSHRDirectoryProxy(id))
 
-  // Directory read states
-  val state_dirRead = RegInit(new DirReadFSM, DirReadFSM.init)
+  io.toDir := proxyDir.io.toDir
+  proxyDir.io.fromDir := io.fromDir
 
-  when (tshr_enter && req_need_dirRead && state_dirRead.NotYet) {
-    // [] -> DirRead_PreArb
-    state_dirRead.PreArb := true.B
-  }
+  proxyDir.io.tshr_paddr := tshr_paddr
 
-  when (io.fromDir.DirRdArbComp) {
-    // DirRead_PreArb -> DirRead_PostArb
-    state_dirRead.PreArb := false.B
-    state_dirRead.PostArb := true.B
-  }
+  proxyDir.io.tshr_alloc := tshr_alloc
+  proxyDir.io.tshr_reuse := tshr_reuse
+  proxyDir.io.tshr_inactive := tshr_inactive || tshr_inactivate /* immediate inactivate if timing allows */
+  proxyDir.io.tshr_dealloc := tshr_dealloc
 
-  when (io.fromDir.DirRdResp) {
-    // DirRead_PostArb -> DirRead_Done
-    state_dirRead.PostArb := false.B
-    state_dirRead.Done := true.B
-  }
+  proxyDir.io.read_arbed := false.B // TODO: S0 Directory Arbitration from L2TSHRCtrl
+  proxyDir.io.read_en := tshr_enter_dirRead
+  proxyDir.io.repl_en := false.B // TODO: Replacement Read
 
-  when (tshr_dealloc) {
-    state_dirRead := DirReadFSM.init
-  }
+  //proxyDir.io.meta_modified := meta_modified || tag_modified
 
-  meta_valid := state_dirRead.Done
+  meta_commit_valid := proxyDir.io.wb_accept
 
-  assert(!(io.fromDir.DirRdArbComp && !state_dirRead.PreArb), "receiving DirRdArbComp on unexpected state (expecting PreArb)")
-  assert(!(io.fromDir.DirRdResp && !state_dirRead.PostArb), "receiving DirRdResp on unexpected state (expecting PostArb)")
-  assert(PopCount(state_dirRead.asUInt) <= 1.U, "multiple active states in DirReadFSM")
+  meta_valid := proxyDir.io.rd_done
+  tshr_wb_done_dir := proxyDir.io.wb_done
 
-  // TODO: Delete these FSMs here, these will be all moved to *Proxy module.
-  // Directory write states
-  val state_dirWrite = RegInit(new DirWriteFSM, DirWriteFSM.init)
+  // Data Storage Proxy
+  val proxyDS = Module(new L2TSHRDataStorageProxy(id))
 
-  when (tshr_inactive && state_dirWrite.NotYet) {
-    when (meta_modified) {
-      // [] -> DirWrite_PreArb
-      state_dirWrite.PreArb := true.B
-    }.otherwise {
-      // [] -> DirWrite_Done
-      state_dirWrite.Done := true.B
-    }
-  }
+  proxyDS.io.fromDir := io.fromDir
 
-  when (tshr_reuse && state_dirWrite.PreArb) {
-    // DirWrite_PreArb -> []
-    state_dirWrite.PreArb := false.B
-  }
+  io.toDS := proxyDS.io.toDS
+  proxyDS.io.fromDS := io.fromDS
 
-  when (io.fromDir.DirWbArbComp) {
-    // DirWrite_PreArb -> DirWrite_Done
-    state_dirWrite.PreArb := false.B
-    state_dirWrite.Done := true.B
-  }
+  proxyDS.io.p_paddr := tshr_paddr
 
-  when (metaWrite_valid && state_dirWrite.Done) {
-    // DirWrite_Done -> []
-    state_dirWrite.Done := false.B
-  }
+  proxyDS.io.meta_valid := meta_valid
+  proxyDS.io.meta_way := meta.way
+  proxyDS.io.meta_state := meta.state
 
-  when (tshr_dealloc) {
-    state_dirWrite := DirWriteFSM.init
-  }
+  proxyDS.io.tshr_buffer_wen_last := tshr_buffer_wen_last
+  proxyDS.io.tshr_buffer_modified := tshr_buffer_fullModified_q
+  proxyDS.io.tshr_buffer_0 := tshr_buffer_0
+  proxyDS.io.tshr_buffer_2 := tshr_buffer_2
 
-  tshr_wb_done_dir := state_dirWrite.Done
+  proxyDS.io.tshr_inactivate := tshr_inactivate
+  proxyDS.io.tshr_dealloc := tshr_dealloc
 
-  assert(!(io.fromDir.DirWbArbComp && !state_dirWrite.PreArb), "receiving DirWbArbComp on unexpected state (expecting PreArb)")
-  assert(PopCount(state_dirWrite.asUInt) <= 1.U, "multiple active states in DirWriteFSM")
+  proxyDS.io.ds_read_ahead_en := false.B // TODO: S0 Data Storage Ahead Read from TSHRCtrl
+  proxyDS.io.ds_read_ahead_way := 0.U // TODO: S0 Data Storage Ahead Read from TSHRCtrl
+  proxyDS.io.ds_read_ahead_arbed := false.B // TODO: S0 Data Storage Ahead Read from TSHRCtrl
 
+  proxyDS.io.ds_read_rbeEVT_valid := rbeEVT.io.out.fire
+  proxyDS.io.ds_read_rbeEVT_mask := L2DSReadMask.never // TODO: Decoded from Opcode before or after RBE
+  proxyDS.io.ds_read_rbeEVT_aux := false.B
 
-  // Data Storage read states
-  val state_dsRead = RegInit(new DSReadFSM, DSReadFSM.init)
+  proxyDS.io.ds_read_rbeSNP_valid := rbeSNP.io.out.fire
+  proxyDS.io.ds_read_rbeSNP_mask := L2DSReadMask.never // TODO: Decoded from Opcode before or after RBE
+  proxyDS.io.ds_read_rbeSNP_aux := false.B
 
-  when (state_dsRead.NotYet) {
-    when (ds_read_ahead_en || ds_read_rbe_en) {
-      state_dsRead.PreArb := true.B
-    }
-  }
+  proxyDS.io.ds_read_rbeREQ_valid := rbeREQ.io.out.fire
+  proxyDS.io.ds_read_rbeREQ_mask := L2DSReadMask.never // TODO: Decoded from Opcode before or after RBE
+  proxyDS.io.ds_read_rbeREQ_aux := false.B
 
-  when (state_dsRead.PreArb) {
-    when (io.UpRXDAT.fire || io.DnRXDAT.fire || ds_read_ahead_q) {
-      state_dsRead.PreArb := false.B
-    }
-    when (io.fromDS.DSBufRdArbComp) {
-      state_dsRead.PreArb := false.B
-      state_dsRead.PostArb := true.B
-    }
-  }
+  proxyDS.io.ds_read_aux_en := false.B
 
-  when (state_dsRead.PostArb) {
-    when (ds_resp_miss) {
-      state_dsRead.PostArb := false.B
-      state_dsRead.PreArb := state_dirRead.Done
-    }
-    when (io.fromDS.DSBufRdResp) {
-      state_dsRead.PostArb := false.B
-      state_dsRead.Done := true.B
-    }
-  }
+  tshr_buffer_commit := proxyDS.io.wb_accept
 
-  when (tshr_dealloc) {
-    state_dsRead := DSReadFSM.init
-  }
+  tshr_wb_done_ds := proxyDS.io.wb_done
 
-  assert(!(io.fromDS.DSBufRdArbComp && !state_dsRead.PreArb), "receiving DSBufRdArbComp on unexpected state (expecting PreArb)")
-  assert(!(io.fromDS.DSBufRdResp && !state_dsRead.PostArb), "receiving DSBufRdResp on unexpected state (expecting PostArb)")
-  assert(PopCount(state_dsRead.asUInt) <= 1.U, "multiple active states in DSReadFSM")
-  
-  // Data Storage write states
-  val state_dsWrite = RegInit(new DSWriteFSM, DSWriteFSM.init)
-
-  when (!state_dsWrite.PreArb) {
-    when (tshr_buffer_wen_last) {
-      state_dsWrite.PreArb := true.B
-    }
-  }.otherwise {
-    when (io.fromDS.DSBufWbArbComp && !tshr_buffer_wen_last) {
-      state_dsWrite.PreArb := false.B
-    }
-  }
-
-  when (!state_dsWrite.PostArb) {
-    when (io.fromDS.DSBufWbArbComp && !io.fromDS.DSBufWbComp) {
-      state_dsWrite.PostArb := true.B
-    }
-  }.otherwise {
-    when (io.fromDS.DSBufWbComp) {
-      state_dsWrite.PostArb := false.B
-    }
-  }
-
-  when (!state_dsWrite.Done) {
-    when ((tshr_inactivate && !tshr_buffer_modified) || (!tshr_buffer_wen_last && io.fromDS.DSBufWbComp && !state_dsWrite.PreArb)) {
-      state_dsWrite.Done := true.B
-
-      tshr_buffer_modified_0_q := false.B
-      tshr_buffer_modified_2_q := false.B
-    }
-  }.otherwise {
-    when (tshr_buffer_wen_last) {
-      state_dsWrite.Done := false.B
-    }
-  }
-
-  when (tshr_dealloc) {
-    state_dsWrite := DSWriteFSM.init
-  }
-
-  tshr_wb_done_ds := state_dsWrite.Done
-
-  assert(state_dsWrite.DSWrite, "Illegal combination of DSWrite FSM bits")
-
-  Seq((state_dsWrite, tshr_buffer_wen_last, io.fromDS.DSBufWbArbComp, io.fromDS.DSBufWbComp)).foreach { case (s, bufWr, wbArbComp, wbComp) =>
-    assert(!(s.DSWrite_NotYet && !bufWr && !wbArbComp &&  wbComp), "Illegal transition #1 under DSWrite_NotYet")
-    assert(!(s.DSWrite_NotYet && !bufWr &&  wbArbComp && !wbComp), "Illegal transition #2 under DSWrite_NotYet")
-    assert(!(s.DSWrite_NotYet && !bufWr &&  wbArbComp &&  wbComp), "Illegal transition #3 under DSWrite_NotYet")
-    assert(!(s.DSWrite_NotYet &&  bufWr && !wbArbComp &&  wbComp), "Illegal transition #5 under DSWrite_NotYet")
-    assert(!(s.DSWrite_NotYet &&  bufWr &&  wbArbComp && !wbComp), "Illegal transition #6 under DSWrite_NotYet")
-    assert(!(s.DSWrite_NotYet &&  bufWr &&  wbArbComp &&  wbComp), "Illegal transition #7 under DSWrite_NotYet")
-
-    assert(!(s.DSWrite_PreArb && !bufWr && !wbArbComp &&  wbComp), "Illegal transition #1 under DSWrite_PreArb")
-    assert(!(s.DSWrite_PreArb &&  bufWr && !wbArbComp &&  wbComp), "Illegal transition #5 under DSWrite_PreArb")
-
-    assert(!(s.DSWrite_PostArb && !bufWr &&  wbArbComp && !wbComp), "Illegal transition #2 under DSWrite_PostArb")
-    assert(!(s.DSWrite_PostArb && !bufWr &&  wbArbComp &&  wbComp), "Illegal transition #3 under DSWrite_PostArb")
-    assert(!(s.DSWrite_PostArb &&  bufWr &&  wbArbComp && !wbComp), "Illegal transition #6 under DSWrite_PostArb")
-    assert(!(s.DSWrite_PostArb &&  bufWr &&  wbArbComp &&  wbComp), "Illegal transition #7 under DSWrite_PostArb")
-
-    assert(!(s.DSWrite_PostArb_PreArb && !bufWr &&  wbArbComp && !wbComp), "Illegal transition #2 under DSWrite_PostArb_PreArb")
-    assert(!(s.DSWrite_PostArb_PreArb && !bufWr &&  wbArbComp &&  wbComp), "Illegal transition #3 under DSWrite_PostArb_PreArb")
-    assert(!(s.DSWrite_PostArb_PreArb &&  bufWr &&  wbArbComp && !wbComp), "Illegal transition #6 under DSWrite_PostArb_PreArb")
-    assert(!(s.DSWrite_PostArb_PreArb &&  bufWr &&  wbArbComp &&  wbComp), "Illegal transition #7 under DSWrite_PostArb_PreArb")
-
-    assert(!(s.DSWrite_Done && !bufWr && !wbArbComp &&  wbComp), "Illegal transition #1 under DSWrite_Done")
-    assert(!(s.DSWrite_Done && !bufWr &&  wbArbComp && !wbComp), "Illegal transition #2 under DSWrite_Done")
-    assert(!(s.DSWrite_Done && !bufWr &&  wbArbComp &&  wbComp), "Illegal transition #3 under DSWrite_Done")
-    assert(!(s.DSWrite_Done &&  bufWr && !wbArbComp &&  wbComp), "Illegal transition #5 under DSWrite_Done")
-    assert(!(s.DSWrite_Done &&  bufWr &&  wbArbComp && !wbComp), "Illegal transition #6 under DSWrite_Done")
-    assert(!(s.DSWrite_Done &&  bufWr &&  wbArbComp &&  wbComp), "Illegal transition #7 under DSWrite_Done")
-  }
-
-  XSPerfAccumulate(s"L2TSHR_${id}_DSWrite_PreArb_cycleCnt", state_dsWrite.DSWrite_PreArb)
-  XSPerfAccumulate(s"L2TSHR_${id}_DSWrite_PostArb_cycleCnt", state_dsWrite.DSWrite_PostArb)
-  XSPerfAccumulate(s"L2TSHR_${id}_DSWrite_PostArb_PreArb_cycleCnt", state_dsWrite.DSWrite_PostArb_PreArb)
-  XSPerfAccumulate(s"L2TSHR_${id}_DSWrite_Done_cycleCnt", state_dsWrite.DSWrite_Done)
+  proxyDS.io.RXDAT_fire := io.UpRXDAT.fire || io.DnRXDAT.fire
 
 
-  // interactions with Directory
-  io.toDir.DirRd := state_dirRead.PreArb
-  io.toDir.DirWb := state_dirWrite.PreArb
+  // wb-locking refuses Directory Write & Data Storage Write on write-ready state
+  proxyDir.io.wb_locked := vPipeEVT.io.dir_wb_locked || vPipeSNP.io.dir_wb_locked || vPipeREQ.io.dir_wb_locked
+  proxyDS.io.wb_locked := vPipeEVT.io.ds_wb_locked || vPipeSNP.io.ds_wb_locked || vPipeREQ.io.ds_wb_locked
 
-  // interactions with Data Storage
-  io.toDS.DSBufRd := state_dsRead.PreArb
-  io.toDS.DSBufWb := state_dsWrite.PreArb
 
   // interactions between Directory read states and RBEs
-  rbeEVT.io.directoryReadDone := state_dirRead.Done
-  rbeSNP.io.directoryReadDone := state_dirRead.Done
-  rbeREQ.io.directoryReadDone := state_dirRead.Done
+  rbeEVT.io.directoryReadDone := proxyDir.io.rd_done
+  rbeSNP.io.directoryReadDone := proxyDir.io.rd_done
+  rbeREQ.io.directoryReadDone := proxyDir.io.rd_done
 }
