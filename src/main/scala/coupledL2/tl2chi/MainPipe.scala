@@ -1025,8 +1025,7 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
   arb(txrsp, io.toTXRSP, Some("toTXRSP"))
   arb(txdat, io.toTXDAT, Some("toTXDAT"))
 
-  val reqDropped_s5 =  RegEnable(req_drop_s4, task_s4.valid) ||
-    RegEnable(RegEnable(req_drop_s3, task_s3.valid), RegNext(task_s3.valid))
+  val reqDropped_s5 = RegNext(RegNext(req_drop_s3 && task_s3.valid)) || RegNext(req_drop_s4 && task_s4.valid)
   io.error.valid := task_s5.valid || reqDropped_s5
   io.error.bits.valid := Mux(reqDropped_s5, l2TagError_s5, l2Error_s5) // if not enableECC, should be false
   io.error.bits.address := Cat(task_s5.bits.tag, task_s5.bits.set, task_s5.bits.off)
