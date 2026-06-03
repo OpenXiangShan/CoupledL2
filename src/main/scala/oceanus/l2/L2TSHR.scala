@@ -295,17 +295,13 @@ class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Mo
     val ds_read_ahead_way = Input(UInt(4.W)) // TODO: parameterize with L2 way count
     val ds_read_ahead_arbed = Input(Bool())
 
-    val ds_read_rbeEVT_valid = Input(Bool())
-    val ds_read_rbeEVT_mask = Input(new L2DSReadMask)
-    val ds_read_rbeEVT_aux = Input(Bool())
+    val ds_read_rbeEVT_en = Input(Bool())
+    val ds_read_rbeSNP_en = Input(Bool())
+    val ds_read_rbeREQ_en = Input(Bool())
 
-    val ds_read_rbeSNP_valid = Input(Bool())
-    val ds_read_rbeSNP_mask = Input(new L2DSReadMask)
-    val ds_read_rbeSNP_aux = Input(Bool())
-
-    val ds_read_rbeREQ_valid = Input(Bool())
-    val ds_read_rbeREQ_mask = Input(new L2DSReadMask)
-    val ds_read_rbeREQ_aux = Input(Bool())
+    val ds_read_vPipeEVT_en = Input(Bool())
+    val ds_read_vPipeSNP_en = Input(Bool())
+    val ds_read_vPipeREQ_en = Input(Bool())
 
     val ds_read_aux_en = Input(Bool()) // aux DS read enable that overrides all other conditions
 
@@ -331,37 +327,22 @@ class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Mo
   val configS2DirResp = true
 
   //
-  val ds_read_rbe_en_metaValid = io.meta_valid && (
-    io.ds_read_rbeEVT_valid && io.ds_read_rbeEVT_mask.testDirMeta(io.meta_state) ||
-    io.ds_read_rbeSNP_valid && io.ds_read_rbeSNP_mask.testDirMeta(io.meta_state) ||
-    io.ds_read_rbeREQ_valid && io.ds_read_rbeREQ_mask.testDirMeta(io.meta_state))
+  val ds_read_rbe_en = io.ds_read_rbeEVT_en || io.ds_read_rbeSNP_en || io.ds_read_rbeREQ_en
+  val ds_read_vPipe_en = io.ds_read_vPipeEVT_en || io.ds_read_vPipeSNP_en || io.ds_read_vPipeREQ_en
 
-  val ds_read_rbe_en_dirRdResp = if (!configFlowDirRdResp) false.B else io.fromDir.DirRdResp && (
-    io.ds_read_rbeEVT_valid && io.ds_read_rbeEVT_mask.testDirMeta(io.fromDir.META.state) ||
-    io.ds_read_rbeSNP_valid && io.ds_read_rbeSNP_mask.testDirMeta(io.fromDir.META.state) ||
-    io.ds_read_rbeREQ_valid && io.ds_read_rbeREQ_mask.testDirMeta(io.fromDir.META.state))
+  val ds_read_postRBE_en = ds_read_rbe_en || ds_read_vPipe_en
 
-  val ds_read_rbe_en_aux =
-    io.ds_read_rbeEVT_valid && io.ds_read_rbeEVT_aux ||
-    io.ds_read_rbeSNP_valid && io.ds_read_rbeSNP_aux ||
-    io.ds_read_rbeREQ_valid && io.ds_read_rbeREQ_aux
+  val ds_read_postRBE_en_q = RegInit(false.B)
 
-  val ds_read_rbe_en = ds_read_rbe_en_metaValid || ds_read_rbe_en_dirRdResp || ds_read_rbe_en_aux
-
-  //
-  val ds_read_mask_q = RegInit(L2DSReadMask.never)
-
-  ds_read_mask_q := ParallelOR(Seq(ds_read_mask_q,
-    Mux(io.ds_read_rbeEVT_valid, io.ds_read_rbeEVT_mask, L2DSReadMask.never),
-    Mux(io.ds_read_rbeSNP_valid, io.ds_read_rbeSNP_mask, L2DSReadMask.never),
-    Mux(io.ds_read_rbeREQ_valid, io.ds_read_rbeREQ_mask, L2DSReadMask.never)))
-
-  when (io.tshr_dealloc) {
-    ds_read_mask_q := L2DSReadMask.never
+  when (ds_read_postRBE_en) {
+    ds_read_postRBE_en_q := true.B
   }
 
-  val ds_read_tshr_en_metaValid = io.meta_valid && ds_read_mask_q.testDirMeta(io.meta_state)
-  val ds_read_tshr_en_dirRdResp = io.fromDir.DirRdResp && ds_read_mask_q.testDirMeta(io.fromDir.META.state)
+  when (io.tshr_dealloc) {
+    ds_read_postRBE_en_q := false.B
+  }
+
+  val ds_read_nonAhead_en = ds_read_postRBE_en || ds_read_postRBE_en_q || io.ds_read_aux_en
 
   //
   val miss_on_fromDS_dirRdResp = io.fromDir.DirRdResp && (io.fromDir.META.state === MetaState.I || io.fromDir.META.way =/= io.fromDS.WAY)
@@ -394,7 +375,7 @@ class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Mo
     /*
     1.  
     */
-    when (ds_read_rbe_en || io.ds_read_aux_en) {
+    when (ds_read_nonAhead_en) {
       // 1. [] -> DSRead_PreArb
       state_dsRead_next.PreArb := true.B
     }.elsewhen (io.ds_read_ahead_en) {
@@ -443,28 +424,10 @@ class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Mo
       // 1. DSRead_AheadPreArb_S1 -> DSRead_AheadPostArb
       state_dsRead_next.AheadPreArb_S1 := false.B
       state_dsRead_next.AheadPostArb := true.B
-    }.elsewhen (ds_read_rbe_en_aux || io.ds_read_aux_en) {
+    }.elsewhen (ds_read_nonAhead_en) {
       // 2.1. DSRead_AheadPreArb_S1 -> DSRead_PreArb
       state_dsRead_next.AheadPreArb_S1 := false.B
       state_dsRead_next.PreArb := true.B
-    }.elsewhenOpt (configS0DirResp)(io.meta_valid) {
-      when (ds_read_rbe_en_metaValid || ds_read_tshr_en_metaValid) {
-        // 2.2. DSRead_AheadPreArb_S1 -> DSRead_PreArb
-        state_dsRead_next.AheadPreArb_S1 := false.B
-        state_dsRead_next.PreArb := true.B
-      }.otherwise {
-        // . DSRead_AheadPreArb_S1 -> []
-        state_dsRead_next.AheadPreArb_S1 := false.B
-      }
-    }.elsewhenOpt (configS1DirResp)(io.fromDir.DirRdResp) {
-      when (ds_read_rbe_en_dirRdResp || ds_read_tshr_en_dirRdResp) {
-        // 2.3. DSRead_AheadPreArb_S1 -> DSRead_PreArb
-        state_dsRead_next.AheadPreArb_S1 := false.B
-        state_dsRead_next.PreArb := true.B
-      }.otherwise {
-        // . DSRead_AheadPreArb_S1 -> []
-        state_dsRead_next.AheadPreArb_S1 := false.B
-      }
     }.otherwise {
       if (configS2ReadAhead) {
         // 3. DSRead_AheadPreArb_S1 -> DSRead_AheadPreArb_S2
@@ -486,28 +449,10 @@ class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Mo
       // 1. DSRead_AheadPreArb_S2 -> DSRead_AheadPostArb
       state_dsRead_next.AheadPreArb_S2 := false.B
       state_dsRead_next.AheadPostArb := true.B
-    }.elsewhen (ds_read_rbe_en_aux || io.ds_read_aux_en) {
+    }.elsewhen (ds_read_nonAhead_en) {
       // 2.3. DSRead_AheadPreArb_S2 -> DSRead_PreArb
       state_dsRead_next.AheadPreArb_S2 := false.B
       state_dsRead_next.PreArb := true.B
-    }.elsewhenOpt (configS1DirResp)(io.meta_valid) {
-      when (ds_read_rbe_en_metaValid || ds_read_tshr_en_metaValid) {
-        // 2.1. DSRead_AheadPreArb_S2 -> DSRead_PreArb
-        state_dsRead_next.AheadPreArb_S2 := false.B
-        state_dsRead_next.PreArb := true.B
-      }.otherwise {
-        // . DSRead_AheadPreArb_S2 -> []
-        state_dsRead_next.AheadPreArb_S2 := false.B
-      }
-    }.elsewhenOpt (configS2DirResp)(io.fromDir.DirRdResp) {
-      when (ds_read_rbe_en_dirRdResp || ds_read_tshr_en_dirRdResp) {
-        // 2.2. DSRead_AheadPreArb_S2 -> DSRead_PreArb
-        state_dsRead_next.AheadPreArb_S2 := false.B
-        state_dsRead_next.PreArb := true.B
-      }.otherwise {
-        // . DSRead_AheadPreArb_S2 -> []
-        state_dsRead_next.AheadPreArb_S2 := false.B
-      }
     }.otherwise {
       // . DSRead_AheadPreArb_S2 -> []
       state_dsRead_next.AheadPreArb_S2 := false.B
@@ -529,7 +474,7 @@ class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Mo
         state_dsRead_next.AheadPostArb := false.B
         state_dsRead_next.Done := true.B
       }.elsewhenOpt (configFlowAheadRdResp)(miss_on_fromDS_metaValid) {
-        when (ds_read_rbe_en_aux || ds_read_rbe_en_metaValid || ds_read_tshr_en_metaValid) {
+        when (ds_read_nonAhead_en) {
           // 2.1. DSRead_AheadPostArb -> DSRead_PreArb
           state_dsRead_next.AheadPostArb := false.B
           state_dsRead_next.PreArb := true.B
@@ -538,7 +483,7 @@ class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Mo
           state_dsRead_next.AheadPostArb := false.B
         }
       }.elsewhenOpt (configFlowAheadRdResp && configFlowDirRdResp)(miss_on_fromDS_dirRdResp) {
-        when (ds_read_rbe_en_aux || ds_read_rbe_en_dirRdResp || ds_read_tshr_en_dirRdResp) {
+        when (ds_read_nonAhead_en) {
           // 2.2. DSRead_AheadPostArb -> DSRead_PreArb
           state_dsRead_next.AheadPostArb := false.B
           state_dsRead_next.PreArb := true.B
@@ -568,7 +513,7 @@ class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Mo
       state_dsRead_next.AheadDone := false.B
       state_dsRead_next.Done := true.B
     }.elsewhen (miss_after_fromDS_metaValid) {
-      when (ds_read_rbe_en_aux || ds_read_rbe_en_metaValid || ds_read_tshr_en_metaValid) {
+      when (ds_read_nonAhead_en) {
         // 2.1. DSRead_AheadDone -> DSRead_PreArb
         state_dsRead_next.AheadDone := false.B
         state_dsRead_next.PreArb := true.B
@@ -577,7 +522,7 @@ class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Mo
         state_dsRead_next.AheadDone := false.B
       }
     }.elsewhenOpt (configFlowDirRdResp)(miss_after_fromDS_dirRdResp) {
-      when (ds_read_rbe_en_aux || ds_read_rbe_en_dirRdResp || ds_read_tshr_en_dirRdResp) {
+      when (ds_read_nonAhead_en) {
         // 2.2. DSRead_AheadDone -> DSRead_PreArb
         state_dsRead_next.AheadDone := false.B
         state_dsRead_next.PreArb := true.B
@@ -1121,6 +1066,16 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
   tshr_inactive_rbe := !rbeEVT.io.valid && !rbeSNP.io.valid && !rbeREQ.io.valid
 
 
+  // Post RBE Data Storage Read Decision
+  val ds_read_rbeEVT_en = Wire(Bool())
+  val ds_read_rbeSNP_en = Wire(Bool())
+  val ds_read_rbeREQ_en = Wire(Bool())
+
+  ds_read_rbeEVT_en := false.B
+  
+  // TODO
+
+
   // vPipes
   val vPipeEVT = Module(new L2VPipeEVT(Seq(/*TODO: client devices*/)))
   val vPipeSNP = Module(new L2VPipeSNP(Seq(/*TODO: client devices*/)))
@@ -1145,7 +1100,7 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
   proxyDir.io.read_en := tshr_enter_dirRead
   proxyDir.io.repl_en := false.B // TODO: Replacement Read
 
-  //proxyDir.io.meta_modified := meta_modified || tag_modified
+  proxyDir.io.meta_modified := meta_modified.asUInt.orR || tag_modified
 
   meta_commit_valid := proxyDir.io.wb_accept
 
@@ -1178,17 +1133,13 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
   proxyDS.io.ds_read_ahead_way := 0.U // TODO: S0 Data Storage Ahead Read from TSHRCtrl
   proxyDS.io.ds_read_ahead_arbed := false.B // TODO: S0 Data Storage Ahead Read from TSHRCtrl
 
-  proxyDS.io.ds_read_rbeEVT_valid := rbeEVT.io.out.fire
-  proxyDS.io.ds_read_rbeEVT_mask := L2DSReadMask.never // TODO: Decoded from Opcode before or after RBE
-  proxyDS.io.ds_read_rbeEVT_aux := false.B
+  proxyDS.io.ds_read_rbeEVT_en := false.B // TODO: Decode and decide with DirResult in L2TSHR/L2RBEDSRead
+  proxyDS.io.ds_read_rbeSNP_en := false.B // TODO: Decode and decide with DirResult in L2TSHR/L2RBEDSRead
+  proxyDS.io.ds_read_rbeREQ_en := false.B // TODO: Decode and decide with DirResult in L2TSHR/L2RBEDSRead
 
-  proxyDS.io.ds_read_rbeSNP_valid := rbeSNP.io.out.fire
-  proxyDS.io.ds_read_rbeSNP_mask := L2DSReadMask.never // TODO: Decoded from Opcode before or after RBE
-  proxyDS.io.ds_read_rbeSNP_aux := false.B
-
-  proxyDS.io.ds_read_rbeREQ_valid := rbeREQ.io.out.fire
-  proxyDS.io.ds_read_rbeREQ_mask := L2DSReadMask.never // TODO: Decoded from Opcode before or after RBE
-  proxyDS.io.ds_read_rbeREQ_aux := false.B
+  proxyDS.io.ds_read_vPipeEVT_en := false.B // TODO: connect EVT vPipe
+  proxyDS.io.ds_read_vPipeSNP_en := false.B // TODO: connect SNP vPipe
+  proxyDS.io.ds_read_vPipeREQ_en := false.B // TODO: connect REQ vPipe
 
   proxyDS.io.ds_read_aux_en := false.B
 
