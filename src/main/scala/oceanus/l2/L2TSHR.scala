@@ -78,7 +78,7 @@ class L2TSHRDirectoryProxy(val id: Int)(implicit val p: Parameters) extends Modu
 
   val tshr_enter = io.tshr_alloc || io.tshr_reuse
 
-  val fromDir_en = io.fromDir.TSHRADDR === id.U
+  val fromDir_en = io.fromDir.TSHRID === id.U
   val fromDir_DirRdArbComp = fromDir_en && io.fromDir.DirRdArbComp
   val fromDir_DirRdResp = fromDir_en && io.fromDir.DirRdResp
   val fromDir_DirWbArbComp = fromDir_en && io.fromDir.DirWbArbComp
@@ -220,7 +220,7 @@ class L2TSHRDirectoryProxy(val id: Int)(implicit val p: Parameters) extends Modu
   assert(PopCount(state_dirWrite.asUInt) <= 1.U, "multiple active states in DirWriteFSM")
 
   // interactions with Directory
-  io.toDir.TSHRADDR := id.U
+  io.toDir.TSHRID := id.U
   io.toDir.PADDR := io.tshr_paddr
   io.toDir.META := false.B // TODO: meta
   io.toDir.DirRd := state_dirRead.PreArb
@@ -857,7 +857,7 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
 
 
   // meta
-  val dirResult = Reg(new L2Directory.ReadResult)
+  val dirResult = Reg(new L2Directory.MetaReadResult)
 
   /* NOTICE: For current design, any partial write to meta would never assert 'meta_valid'.
              Any later read request on full meta line would result in a Directory Read if no any read done yet.
