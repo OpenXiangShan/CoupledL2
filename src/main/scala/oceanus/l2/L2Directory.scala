@@ -42,13 +42,14 @@ object L2Directory {
     val state = MetaState()
     val dirty = Bool()
     val clients = Vec(1, Bool()) // TODO: parameterize with coherent l2 client count
+    val alias = UInt(2.W) // TODO: parameterize with L2 alias width
   }
 
   class Tag(implicit val p: Parameters) extends Bundle with HasL2Params {
     
   }
 
-  class ReadResult(implicit override val p: Parameters) extends Meta with HasL2Params {
+  class MetaReadResult(implicit override val p: Parameters) extends Meta with HasL2Params {
     val way = UInt(4.W) // TODO: parameterize with l2 way count
     val hit = Bool()
   }
@@ -86,6 +87,10 @@ object L2Directory {
     }
   }
 
+  class ReplReadResult(implicit override val p: Parameters) extends Tag with HasL2Params {
+
+  }
+
   class PathToDirectoryUOPs extends Bundle {
     val DirRd = Bool()
     val DirWb = Bool()
@@ -93,9 +98,12 @@ object L2Directory {
   }
 
   class PathToDirectory(implicit val p: Parameters) extends PathToDirectoryUOPs with HasL2Params {
-    val TSHRADDR = UInt(mshrIndexWidth.W)
+    val TSHRID = UInt(mshrIndexWidth.W)
     val PADDR = UInt(paramL2.physicalAddrWidth.W)
-    val META = Bool() // TODO: replace with meta bundle
+    val WAY = UInt(4.W) // TODO: parameterize with l2 way count // only applicable for DirWb
+    val META = new L2Directory.Meta // only applicable for DirWb
+    val META_WEN = new L2Directory.MetaWriteMask // only applicable for DirWb
+    val TAG_WEN = Bool()
   }
 
   class PathFromDirectoryUOPs extends Bundle {
@@ -108,7 +116,8 @@ object L2Directory {
   }
 
   class PathFromDirectory(implicit val p: Parameters) extends PathFromDirectoryUOPs with HasL2Params {
-    val TSHRADDR = UInt(mshrIndexWidth.W)
-    val META = new L2Directory.ReadResult // TODO: replace with meta bundle
+    val TSHRID = UInt(mshrIndexWidth.W)
+    val META = new L2Directory.MetaReadResult
+    val REPL = new L2Directory.ReplReadResult // only applicable for ReplRd
   }
 }
