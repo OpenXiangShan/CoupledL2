@@ -841,6 +841,11 @@ class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes
       task_s5.bits.set := task_s4.bits.set
       task_s5.bits.off := task_s4.bits.off
     }
+  }.elsewhen (RegNext(task_s3.valid && req_drop_s3)) {
+    l2TagError_s5 := l2Error_s4
+    task_s5.bits.tag := task_s4.bits.tag
+    task_s5.bits.set := task_s4.bits.set
+    task_s5.bits.off := task_s4.bits.off
   }
   val rdata_s5 = io.toDS.rdata_s5.data
   val dataError_s5 = io.toDS.error_s5 || dataMetaError_s5
