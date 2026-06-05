@@ -1001,6 +1001,10 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     (x(x.getWidth-1, tpTableSetBits+blockOffBits), x(tpTableSetBits+blockOffBits-1, blockOffBits))
   }
 
+  def parseIndex(x: UInt): (UInt, UInt) = {
+    (x(x.getWidth-1, tpTableSetBits), x(tpTableSetBits-1, 0))
+  }
+
   def recoverVaddr(x: UInt): UInt = {
     (x << offsetBits.U).asUInt
   }
@@ -1098,7 +1102,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   val s0_valid = trainValid_s0 || metaWValid_s0
   val index = Mux(metaWValid_s0, metaWRecordIndex, trainIndex)
-  val (tag_s0, set_s0) = parsePaddr(index)
+  val (tag_s0, set_s0) = parseIndex(index)
   // val metas = tpMetaTable.io.r(s0_valid, Mux(trainOnVaddr.orR, vset_s0, pset_s0)).resp.data
   val metas = tpMetaTable.io.r(s0_valid, set_s0).resp.data // get in s1
 
@@ -1184,7 +1188,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   /* Stage 2: access tpData on meta hit, record it on meta miss */
 
   val s2_valid = RegNext(s1_valid, false.B)
-  val hit_s2 = RegEnable(hit_s1, false.B, s1_valid)
+  val hit_s2 = RegEnable(hit_s1 && !metaWValid_s1, false.B, s1_valid) // metaW should be miss
   val way_s2 = RegEnable(way_s1, s1_valid)
   // val vset_s2 = RegEnable(vset_s1, s1_valid)
   val set_s2 = RegEnable(set_s1, s1_valid)
@@ -1265,7 +1269,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     sending_hitCount := tpDataQueue.io.deq.bits.hitCount
     // sending_data_debug := tpDataQueue.io.deq.bits.rawData_debug
     sending_idx := 0.U
-    do_sending := globalConfidence(tpDataQueue.io.deq.bits.hitCount) >= globalHitCountConfidenceThrottle.asUInt && tpDataQueue.io.deq.bits.hitCount <= 5.U
+    do_sending := globalConfidence(tpDataQueue.io.deq.bits.hitCount) >= globalHitCountConfidenceThrottle.asUInt
   }
   when(((do_sending && !tpDataQFull) || sending_throttle =/= 0.U) && (sending_throttle =/= tpThrottleCycles)) {
     sending_throttle := sending_throttle + 1.U
