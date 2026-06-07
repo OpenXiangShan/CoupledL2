@@ -62,7 +62,7 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
   // control engine: ratio of last latency or other constant
   // 1<tlow<10: use default tlow
   // 10<tlow: absoluteValue, such as 0.5*300=150, 0.75*300=225, 1*300=300, 1.25*300=375, 1.5*300=450, 2*300=600
-  val tlow = Constantin.createRecord(s"l2pf_tlow$hartId", initValue = 0)
+  val tlow = Constantin.createRecord(s"l2pf_tlow$hartId", initValue = 1)
   private def latencyDownThreshold(x: UInt): UInt = Mux(tlow < 10.U, x >> tlow, x >> 1)
 
   // pe calculation: >> weightLog
