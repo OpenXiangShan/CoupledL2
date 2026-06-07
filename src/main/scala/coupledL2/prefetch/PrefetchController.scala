@@ -59,6 +59,17 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
   private val Seq(none, ipop, default, defaultLate, defaultUseless, ipopNewctrl, ipopNewctrlHitfine) = Seq(0, 1, 2, 3, 4, 5, 6)
   val controlMode = Constantin.createRecord(s"l2pf_controlMode$hartId", initValue = none)
 
+  // control engine: ratio of last latency or other constant
+  // 1<tlow<10: use default tlow
+  // 10<tlow: absoluteValue, such as 0.5*300=150, 0.75*300=225, 1*300=300, 1.25*300=375, 1.5*300=450, 2*300=600
+  val tlow = Constantin.createRecord(s"l2pf_tlow$hartId", initValue = 0)
+  private def latencyDownThreshold(x: UInt): UInt = Mux(tlow < 10.U, x >> tlow, x >> 1)
+
+  // pe calculation: >> weightLog
+  val peHoldWeightLog = Constantin.createRecord(s"l2pf_peHoldWeightLog$hartId", initValue = 3) // 1/8
+  val peL1PfCacheHitWeightLog = Constantin.createRecord(s"l2pf_peL1PfCacheHitWeightLog$hartId", initValue = 2) // 1/4
+
+
   // prefetch number
   private val PF_STREAM = 0
   private val PF_STRIDE = 1
@@ -208,9 +219,6 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
   }
 
   // ========== PE calculation ==========
-  // at least ratio=1/MultipeLog useful
-  private val prefetchYieldMultipeLog = log2Ceil(8)
-  private val l1PrefetchCacheHitMultipeLog = log2Ceil(4)
 
   def isPfLateInCache(r: ValidIO[DirResult], i: Int): Bool = {
     r.valid && r.bits.replacerInfo.channel === 1.U &&
@@ -298,7 +306,7 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
       )
       deltaL1PrefetchCacheHitVec(i)(s) := Mux(
         statL1PrefetchCacheHitVec(i)(s),
-        _zeroExtend(latencyAvg >> l1PrefetchCacheHitMultipeLog, peBits),
+        _zeroExtend(latencyAvg >> peL1PfCacheHitWeightLog, peBits),
         0.S(peBits.W)
       )
       deltaPollutionHoldVec(i)(s) := Mux(
@@ -309,13 +317,13 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
       )
       deltaPfMshrHoldVec(i)(s) := Mux(
         statPfMshrHoldVec(i)(s),
-        // _zeroExtend(dataRefill(s).bits.latency, peBits) >> prefetchYieldMultipeLog,
-        _zeroExtend(latencyAvg >> prefetchYieldMultipeLog, peBits), // to avoid long latency because of ddr flush 
+        // _zeroExtend(dataRefill(s).bits.latency, peBits) >> peHoldWeightLog,
+        _zeroExtend(latencyAvg >> peHoldWeightLog, peBits), // to avoid long latency because of ddr flush 
         0.S(peBits.W)
       )
       deltaPfReqBufferHoldVec(i)(s) := Mux(
         statPfReqBufferHoldVec(i)(s),
-        _zeroExtend(pfStatInMSHR(s).reqBufferHoldLatency >> prefetchYieldMultipeLog, peBits) + 1.S, // to avoid 0
+        _zeroExtend(pfStatInMSHR(s).reqBufferHoldLatency >> peHoldWeightLog, peBits) + 1.S, // to avoid 0
         0.S(peBits.W)
       )
       deltaPfLateInMshrVec(i)(s) := Mux(
@@ -433,7 +441,6 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
   // becase ddr flush may cause long latency, so epochEdge can not be too large.
   private val epochEdge = 256
   private val epochBits = log2Ceil(epochEdge)
-  private def latencyDownThreshold(x: UInt): UInt = x >> 1 // ratio of last latency or other constant
   private def maxDegree = (1 << degreeBits) - 1
 
   val activeVec = RegInit(VecInit(Seq.fill(PF_NUM)(true.B)))
@@ -454,8 +461,11 @@ class PrefetchController(implicit p: Parameters) extends PrefetchModule {
     demandCnt := demandCnt + 1.U
   }
 
-  val latencyDown = latencyAvg < latencyLastEpoch && 
-    ((latencyLastEpoch - latencyAvg) > latencyDownThreshold(latencyLastEpoch))
+  val latencyDown = Mux(
+    tlow < 10.U,
+    latencyAvg < latencyLastEpoch && ((latencyLastEpoch - latencyAvg) > latencyDownThreshold(latencyLastEpoch)),
+    latencyAvg < tlow
+  )
   val statPfHitLagActiveVec = WireInit(VecInit(Seq.fill(PF_NUM)(false.B)))
   val statLatencyDownActiveVec = WireInit(VecInit(Seq.fill(PF_NUM)(false.B)))
 
