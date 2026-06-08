@@ -393,8 +393,8 @@ class CHIAsyncBridgeSink(params: AsyncQueueParams = AsyncQueueParams())(implicit
 
   // Add handshake to confirm Sink Tx Queue is completely drained
   val txActive = txreq.active || txrsp.active || txdat.active
-  io.powerAck.QACTIVE := txActive
-  io.powerAck.QACCEPTn := !(io.powerAck.QREQ && !txActive && txState === LinkStates.STOP)
+  io.powerAck.QACTIVE := RegNext(txActive, init = false.B)
+  io.powerAck.QACCEPTn := RegNext(!(io.powerAck.QREQ && !txActive && txState === LinkStates.STOP), init = true.B)
 
   io.async.tx.req.lcrdv <> ToAsyncBundleWithBuf.bitPulse(io.deq.tx.req.lcrdv, params, Some("txreq_lcrdv"))
   io.async.tx.rsp.lcrdv <> ToAsyncBundleWithBuf.bitPulse(io.deq.tx.rsp.lcrdv, params, Some("txrsp_lcrdv"))
