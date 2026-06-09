@@ -64,8 +64,8 @@ case class TPParameters(
   samplerTableMatchCntWidth: Int = 3,
   samplerTableReplacementPolicy: String = "plru",
   // recorder table parameters
-  recorderTableEntries: Int = 512,
-  recorderTableAssoc: Int = 2,
+  recorderTableEntries: Int = 1024,
+  recorderTableAssoc: Int = 8,
   recorderTableReplacementPolicy: String = "plru",
   // confidence table parameters
   confTableEntries: Int = 512,
@@ -126,10 +126,10 @@ trait HasTPParams extends HasCoupledL2Parameters {
   def samplerTableMatchCntWidth = tpParams.samplerTableMatchCntWidth
   def samplerTableReplacementPolicy = tpParams.samplerTableReplacementPolicy
   // recorder table parameters
-  def recorderTableAssoc = tpParams.samplerTableAssoc
-  def recorderTableNrSet = tpParams.samplerTableEntries / samplerTableAssoc
-  def recorderTableSetBits = log2Ceil(samplerTableNrSet)
-  def recorderTableReplacementPolicy = tpParams.samplerTableReplacementPolicy
+  def recorderTableAssoc = tpParams.recorderTableAssoc
+  def recorderTableNrSet = tpParams.recorderTableEntries / recorderTableAssoc
+  def recorderTableSetBits = log2Ceil(recorderTableNrSet)
+  def recorderTableReplacementPolicy = tpParams.recorderTableReplacementPolicy
   // confidence table parameters
   def confTableAssoc = tpParams.confTableAssoc
   def confTableNrSet = tpParams.confTableEntries / confTableAssoc
@@ -555,7 +555,24 @@ class recorderTableEntry(implicit p: Parameters) extends TPBundle {
   val data = Vec(tpEntryMaxLen, UInt(metaDataLength.W))
   val index = UInt(log2Ceil(tpEntryMaxLen).W)
   val trigger = UInt(metaDataLength.W)
-  val padding = UInt(log2Ceil(tpTableAssoc).W)
+
+  private val payloadWidth =
+    1 +
+      (pcHashWidth - recorderTableSetBits) +
+      tpEntryMaxLen * metaDataLength +
+      log2Ceil(tpEntryMaxLen) +
+      metaDataLength
+
+  val padding = UInt(sramPaddingWidth(payloadWidth, recorderTableAssoc).W)
+
+  def sramPaddingWidth(dataWidth: Int, way: Int): Int = {
+    def ok(w: Int): Boolean = {
+      val maskSegments = utility.sram.SramInfo(w, way, bist = false).sramMaskBits
+      (w * way) % maskSegments == 0
+    }
+
+    Iterator.from(0).find(pad => ok(dataWidth + pad)).get
+  }
 
   def apply(valid: Bool, tag: UInt, data: Vec[UInt], index: UInt, trigger: UInt, pad: UInt) = {
     val entry = Wire(new recorderTableEntry)
@@ -711,8 +728,10 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
   val recorderValid_s3 = RegEnable(recorderValid_s2, s2_valid)
   val hit_s3 = RegEnable(hit_s2, s2_valid)
   val way_s3 = RegEnable(way_s2, s2_valid)
+  val recorderPcTag_s3 = RegEnable(recorder_s2.pcTag, s2_valid)
 
   val (pcTag_s3, pcSet_s3) = parsePaddr(pc_s3)
+  val victimPC_s3 = Cat(recorderPcTag_s3, pcSet_s3)
   val full_s3 = recorderIdx_s3 === recordThres
   val recordValid_s3 = s3_valid && (full_s3 && hit_s3 || !hit_s3 && recorderValid_s3)
   val recordFull_s3 = s3_valid && full_s3 && hit_s3
@@ -729,7 +748,7 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
 
   val recorderTableWValid_s3 = s3_valid || !resetFinish
   val recorderTableWSet_s3 = Mux(resetFinish, pcSet_s3, resetIdx)
-  val recorderTableWWayOH_s3 = Mux(resetFinish, UIntToOH(way_s2), Fill(recorderTableAssoc, true.B))
+  val recorderTableWWayOH_s3 = Mux(resetFinish, UIntToOH(way_s3), Fill(recorderTableAssoc, true.B))
   val recorderTableWEntry_s3 = Mux(resetFinish && !recordFull_s3, Mux(hit_s3, updateEntry, replEntry), resetEntry)
 
   recorderTableWValid := recorderTableWValid_s3
@@ -742,7 +761,7 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
   )
 
   io.record.valid := recordValid_s3
-  io.record.bits.pc := pc_s2
+  io.record.bits.pc := Mux(recordFull_s3, pc_s3, victimPC_s3)
   io.record.bits.data := recorderData_s3
   io.record.bits.length := recorderIdx_s3
   io.record.bits.trigger := recorderTrigger_s3
@@ -1161,9 +1180,9 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   tpMetaTable.io.w.apply(tpTableWValid || !resetFinish, metaWEntry, tpTableWSet, tpTableWWayOH)
 
-  when(metaWQueue.io.deq.fire) {
+  when(RegNext(metaWQueue.io.deq.fire)) {
     hitCount(set_s1)(way_s1).hitCount := 0.U
-  }.elsewhen(tpMetaResetQueue.io.deq.valid) {
+  }.elsewhen(tpMetaResetQueue.io.deq.fire) {
     hitCount(tpMetaResetQueue.io.deq.bits.set)(tpMetaResetQueue.io.deq.bits.way).hitCount := tpMetaResetQueue.io.deq.bits.hitCount
   }
 
@@ -1269,7 +1288,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     sending_hitCount := tpDataQueue.io.deq.bits.hitCount
     // sending_data_debug := tpDataQueue.io.deq.bits.rawData_debug
     sending_idx := 0.U
-    do_sending := globalConfidence(tpDataQueue.io.deq.bits.hitCount) >= globalHitCountConfidenceThrottle.asUInt
+    do_sending := true.B//globalConfidence(tpDataQueue.io.deq.bits.hitCount) >= globalHitCountConfidenceThrottle.asUInt
   }
   when(((do_sending && !tpDataQFull) || sending_throttle =/= 0.U) && (sending_throttle =/= tpThrottleCycles)) {
     sending_throttle := sending_throttle + 1.U
