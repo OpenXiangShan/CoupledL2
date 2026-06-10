@@ -1096,7 +1096,6 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val metaRetain = RegInit(VecInit(Seq.fill(tpTableNrSet)(
     VecInit(Seq.fill(tpTableAssoc)(0.U(2.W)))
   )))
-  val globalConfidence = RegInit(VecInit(Seq.fill(1 << hitCountWidth)(globalHitCountConfidenceInitVal.U(globalHitCountConfidenceWidth.W))))
   val sampler = Module(new Sampler())
   val confTable = Module(new confTable())
   val trainQueue = Module(new Queue(new PrefetchTrain(), tpTrainQueueDepth, pipe = false, flow = false))
@@ -1361,7 +1360,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     sending_hitCount := tpDataQueue.io.deq.bits.hitCount
     // sending_data_debug := tpDataQueue.io.deq.bits.rawData_debug
     sending_idx := 0.U
-    do_sending := true.B//globalConfidence(tpDataQueue.io.deq.bits.hitCount) >= globalHitCountConfidenceThrottle.asUInt
+    do_sending := true.B
   }
   when(((do_sending && !tpDataQFull) || sending_throttle =/= 0.U) && (sending_throttle =/= tpThrottleCycles)) {
     sending_throttle := sending_throttle + 1.U
@@ -1391,31 +1390,6 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   io.resp.ready := true.B
   io.train.ready := resetFinish
   io.feedBack.ready := resetFinish
-
-  // global confidence
-  val globalConfidenceReset = RegInit(1.U(10.W))
-  val globalConfidenceInc = io.train.fire && io.train.bits.hit
-  val globalConfideceIncIndex = io.train.bits.hitCount
-  val globalConfidenceIncFull = globalConfidence(globalConfideceIncIndex).andR
-  val globalConfidenceDec = tpDataQueue.io.deq.fire && (tpDataQueue.io.deq.bits.length =/= 0.U)
-  val globalConfidenceDecIndex = tpDataQueue.io.deq.bits.hitCount
-  val globalConfidenceDecEmpty = !globalConfidence(globalConfidenceDecIndex).orR
-  val globalConfidenceRemain = (!globalConfidenceInc && !globalConfidenceDec) ||
-    (globalConfidenceInc && globalConfidenceDec && (globalConfideceIncIndex === globalConfidenceDecIndex)) ||
-    globalConfidenceInc && globalConfidenceIncFull ||
-    globalConfidenceDec && globalConfidenceDecEmpty
-  when(globalConfidenceInc || globalConfidenceDec) {
-    globalConfidenceReset := globalConfidenceReset + 1.U
-  }.elsewhen(globalConfidenceReset.andR || !globalConfidenceReset.orR) {
-    globalConfidenceReset := 1.U
-  }
-  when(globalConfidenceReset === 1.U) {
-    globalConfidence.foreach(x => x := globalHitCountConfidenceInitVal.asUInt)
-  }.elsewhen(globalConfidenceInc && !globalConfidenceRemain) {
-    globalConfidence(globalConfideceIncIndex) := globalConfidence(globalConfideceIncIndex) + 1.U
-  }.elsewhen(globalConfidenceDec && !globalConfidenceRemain) {
-    globalConfidence(globalConfidenceDecIndex) := globalConfidence(globalConfidenceDecIndex) - 1.U
-  }
 
   // confidence table
   val pfHit = io.feedBack.bits.hit && MemReqSource.isCPUReq(io.feedBack.bits.reqsource) &&
