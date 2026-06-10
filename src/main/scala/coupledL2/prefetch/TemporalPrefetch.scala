@@ -1060,6 +1060,19 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     Cat(reservedTail, hashMid, reservedHead)
   }
 
+  def mixTPMetaIndex(pc: UInt, trigger: UInt): UInt = {
+    val pcPadded = pc.pad(pcAddrHashWidth)
+    val triggerPadded = trigger.pad(pcAddrHashWidth)
+    val pcRot = Cat(pcPadded(pcAddrHashWidth - 6, 0), pcPadded(pcAddrHashWidth - 1, pcAddrHashWidth - 5))
+
+    (triggerPadded ^
+      (triggerPadded >> tpTableSetBits).pad(pcAddrHashWidth) ^
+      (triggerPadded >> (2 * tpTableSetBits)).pad(pcAddrHashWidth) ^
+      (triggerPadded >> (3 * tpTableSetBits)).pad(pcAddrHashWidth) ^
+      pcRot ^
+      (pcPadded >> 6).pad(pcAddrHashWidth))(pcAddrHashWidth - 1, 0)
+  }
+
   val metaRetainBits = 2
   val metaRetainMax = ((1 << metaRetainBits) - 1).U(metaRetainBits.W)
   val metaRetainFullInit = 2.U(metaRetainBits.W)
@@ -1145,12 +1158,12 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val trainPaddr = train_s0.addr
   val trainMeta = trainPaddr >> offsetBits
   val trainPC = hashPC(train_s0.pc)
-  val trainIndex = trainMeta.asUInt.pad(pcAddrHashWidth) ^ trainPC.pad(pcAddrHashWidth)
+  val trainIndex = mixTPMetaIndex(trainPC, trainMeta.asUInt)
   // val (vtag_s0, vset_s0) = if (vaddrBitsOpt.nonEmpty) parseVaddr(trainVaddr) else (0.U, 0.U)
 
   val metaWValid_s0 = metaWQueue.io.deq.fire
   val metaWRecord_s0 = metaWQueue.io.deq.bits
-  val metaWRecordIndex = metaWRecord_s0.pc.pad(pcAddrHashWidth) ^ metaWRecord_s0.trigger.pad(pcAddrHashWidth)
+  val metaWRecordIndex = mixTPMetaIndex(metaWRecord_s0.pc, metaWRecord_s0.trigger)
 
   val s0_valid = trainValid_s0 || metaWValid_s0
   val index = Mux(metaWValid_s0, metaWRecordIndex, trainIndex)
