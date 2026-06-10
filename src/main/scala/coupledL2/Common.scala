@@ -524,13 +524,13 @@ class TPmetaReq(implicit p: Parameters) extends L2Bundle {
   val way = UInt(4.W)
   val wmode = Bool()
   val rawData = Vec(512 / (fullAddressBits - offsetBits), UInt((fullAddressBits - offsetBits).W))
-  val length = UInt(log2Ceil(512 / (fullAddressBits - offsetBits)).W)
+  val length = UInt(log2Ceil(512 / (fullAddressBits - offsetBits) + 1).W)
   val hitCount = UInt(hitCountWidth.W)
 }
 
 class TPmetaResp(implicit p: Parameters) extends L2Bundle {
   val hartid = UInt(hartIdLen.W)
   val rawData = Vec(512 / (fullAddressBits - offsetBits), UInt((fullAddressBits - offsetBits).W))
-  val length = UInt(log2Ceil(512 / (fullAddressBits - offsetBits)).W)
+  val length = UInt(log2Ceil(512 / (fullAddressBits - offsetBits) + 1).W)
   val hitCount = UInt(hitCountWidth.W)
 }

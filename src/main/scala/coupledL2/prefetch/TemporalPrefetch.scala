@@ -93,6 +93,7 @@ trait HasTPParams extends HasCoupledL2Parameters {
   def tpTableNrSet = tpParams.tpTableEntries / tpTableAssoc
   def tpTableSetBits = log2Ceil(tpTableNrSet)
   def tpEntryMaxLen = 512 / (fullAddressBits - offsetBits)
+  def tpEntryLenBits = log2Ceil(tpEntryMaxLen + 1)
   def tpTableReplacementPolicy = tpParams.replacementPolicy
   def debug = tpParams.debug
   def vaddrBits = fullVAddrBits
@@ -160,7 +161,7 @@ class TPmetaIO(implicit p: Parameters) extends TPmetaBundle {
 
 class metaEntry(implicit p:Parameters) extends TPmetaBundle {
   val rawData = Vec(512 / (fullAddressBits - offsetBits), UInt((fullAddressBits - offsetBits).W))
-  val length = UInt(log2Ceil(tpEntryMaxLen).W)
+  val length = UInt(tpEntryLenBits.W)
   // val hartid = UInt(hartIdLen.W)
 }
 
@@ -545,7 +546,7 @@ class SamplerTable(implicit p: Parameters) extends TPModule {
 class trainedRecord(implicit p: Parameters) extends TPBundle {
   val pc = UInt(pcHashWidth.W)
   val data = Vec(tpEntryMaxLen, UInt(metaDataLength.W))
-  val length = UInt(log2Ceil(tpEntryMaxLen).W)
+  val length = UInt(tpEntryLenBits.W)
   val trigger = UInt(metaDataLength.W)
 }
 
@@ -553,14 +554,14 @@ class recorderTableEntry(implicit p: Parameters) extends TPBundle {
   val valid = Bool()
   val pcTag = UInt((pcHashWidth - recorderTableSetBits).W)
   val data = Vec(tpEntryMaxLen, UInt(metaDataLength.W))
-  val index = UInt(log2Ceil(tpEntryMaxLen).W)
+  val index = UInt(tpEntryLenBits.W)
   val trigger = UInt(metaDataLength.W)
 
   private val payloadWidth =
     1 +
       (pcHashWidth - recorderTableSetBits) +
       tpEntryMaxLen * metaDataLength +
-      log2Ceil(tpEntryMaxLen) +
+      tpEntryLenBits +
       metaDataLength
 
   val padding = UInt(sramPaddingWidth(payloadWidth, recorderTableAssoc).W)
@@ -676,7 +677,7 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
   val recorderData_s2 = RegEnable(recorder_s1.data, s1_valid)
   val recorderValid_s2 = RegEnable(recorder_s1.valid, s1_valid)
 
-  val recorderIdx_s3 = RegInit(0.U(log2Ceil(tpEntryMaxLen).W))
+  val recorderIdx_s3 = RegInit(0.U(tpEntryLenBits.W))
   val recorderData_s3 = RegInit(VecInit(Seq.fill(tpEntryMaxLen)(0.U(metaDataLength.W))))
   val recorderTrigger_s3 = RegInit(0.U(metaDataLength.W))
 
@@ -969,7 +970,7 @@ class tpMetaEntry(implicit p:Parameters) extends TPBundle {
 
 class tpDataEntry(implicit p:Parameters) extends TPBundle {
   val rawData = Vec(tpEntryMaxLen, UInt((fullAddressBits - offsetBits).W))
-  val length = UInt(log2Ceil(tpEntryMaxLen).W)
+  val length = UInt(tpEntryLenBits.W)
   val hitCount = UInt(hitCountWidth.W)
   // val rawData_debug = Vec(tpEntryMaxLen, UInt(vaddrBits.W))
   // TODO: val compressedData = UInt(512.W)
@@ -1028,6 +1029,28 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     (x << offsetBits.U).asUInt
   }
 
+  def pickVictimWay(validVec: Seq[Bool], retainVec: Seq[UInt], baseWay: UInt): UInt = {
+    val invalidVec = validVec.map(v => !v)
+    val hasInvalid = Cat(invalidVec.reverse).orR
+
+    val retainMin = retainVec.reduce((a, b) => Mux(a < b, a, b))
+    val lowRetainVec = retainVec.map(_ === retainMin)
+
+    val candVec = Wire(Vec(tpTableAssoc, Bool()))
+    for (i <- 0 until tpTableAssoc) {
+      candVec(i) := Mux(hasInvalid, invalidVec(i), lowRetainVec(i))
+    }
+
+    val offsetOH = Wire(Vec(tpTableAssoc, Bool()))
+    for (i <- 0 until tpTableAssoc) {
+      val idx = (baseWay + i.U)(log2Ceil(tpTableAssoc) - 1, 0)
+      offsetOH(i) := candVec(idx)
+    }
+
+    val pickedOffset = PriorityEncoder(offsetOH.asUInt)
+    (baseWay + pickedOffset)(log2Ceil(tpTableAssoc) - 1, 0)
+  }
+
   def hashPC(pc: UInt) = {
     val reservedHead = pc(pc.getWidth - 1, pc.getWidth - pcHashHeadReservedWidth)
     val reservedTail = pc(pcHashTailReservedWidth - 1, 0)
@@ -1036,6 +1059,13 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
       mid(pcHashMidWidth * 3 - 1, pcHashMidWidth * 2)
     Cat(reservedTail, hashMid, reservedHead)
   }
+
+  val metaRetainBits = 2
+  val metaRetainMax = ((1 << metaRetainBits) - 1).U(metaRetainBits.W)
+  val metaRetainFullInit = 2.U(metaRetainBits.W)
+
+  def retainDec(x: UInt): UInt = Mux(x === 0.U, 0.U, x - 1.U)
+  def retainInc(x: UInt): UInt = Mux(x === metaRetainMax, metaRetainMax, x + 1.U)
 
   val tpmeta = Module(new TPmeta())
   val tpMetaTable = Module(
@@ -1050,6 +1080,9 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     )
   )
   val hitCount = RegInit(VecInit(Seq.fill(tpTableNrSet)(VecInit(Seq.fill(tpTableAssoc)(0.U.asTypeOf(new tpMetaHitCountEntry))))))
+  val metaRetain = RegInit(VecInit(Seq.fill(tpTableNrSet)(
+    VecInit(Seq.fill(tpTableAssoc)(0.U(2.W)))
+  )))
   val globalConfidence = RegInit(VecInit(Seq.fill(1 << hitCountWidth)(globalHitCountConfidenceInitVal.U(globalHitCountConfidenceWidth.W))))
   val sampler = Module(new Sampler())
   val confTable = Module(new confTable())
@@ -1154,7 +1187,9 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val hitWay = OHToUInt(hitVec)
 
   val hit_s1 = Cat(hitVec).orR
-  val way_s1 = Mux(hit_s1, hitWay, repl.way(set_s1))
+  val baseVictimWay_s1 = repl.way(set_s1)
+  val retainVec_s1 = metaRetain(set_s1)
+  val way_s1 = Mux(hit_s1, hitWay, pickVictimWay(metaValidVec, retainVec_s1, baseVictimWay_s1))
   val hitCount_s1 = hitCount(set_s1)(way_s1).hitCount
   assert(PopCount(hitVec) <= 1.U)
 
@@ -1180,6 +1215,31 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   tpMetaTable.io.w.apply(tpTableWValid || !resetFinish, metaWEntry, tpTableWSet, tpTableWWayOH)
 
+  val installRetain = Mux(tpTableWLength >= recordThres, metaRetainFullInit, 0.U(metaRetainBits.W))
+  val installFire = tpTableWValid
+
+  val promoteFire = tpMetaResetQueue.io.deq.fire
+  val promoteSet = tpMetaResetQueue.io.deq.bits.set
+  val promoteWay = tpMetaResetQueue.io.deq.bits.way
+
+  when(installFire) {
+    for (w <- 0 until tpTableAssoc) {
+      val old = metaRetain(set_s1)(w)
+      val afterInstall = Mux(w.U === tpTableWWay, installRetain, retainDec(old))
+      val sameSetPromote =
+        promoteFire &&
+          promoteSet === set_s1 &&
+          promoteWay === w.U &&
+          w.U =/= tpTableWWay
+
+      metaRetain(set_s1)(w) := Mux(sameSetPromote, retainInc(afterInstall), afterInstall)
+    }
+  }
+
+  when(promoteFire && !(installFire && promoteSet === set_s1)) {
+    metaRetain(promoteSet)(promoteWay) := retainInc(metaRetain(promoteSet)(promoteWay))
+  }
+
   when(RegNext(metaWQueue.io.deq.fire)) {
     hitCount(set_s1)(way_s1).hitCount := 0.U
   }.elsewhen(tpMetaResetQueue.io.deq.fire) {
@@ -1198,7 +1258,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   // meta reset queue
   // now use to upadte hitCount
-  tpMetaResetQueue.io.enq.valid := s1_valid && hit_s1
+  tpMetaResetQueue.io.enq.valid := s1_valid && hit_s1 && !metaWValid_s1
   tpMetaResetQueue.io.enq.bits.set := set_s1
   tpMetaResetQueue.io.enq.bits.way := way_s1
   tpMetaResetQueue.io.enq.bits.tag := tag_s1
@@ -1271,7 +1331,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val do_sending = RegInit(false.B)
   val sending_idx = RegInit(0.U(offsetBits.W))
   val sending_data = Reg(Vec(tpEntryMaxLen, UInt((fullAddressBits - offsetBits).W)))
-  val sending_length = RegInit(0.U(log2Ceil(tpEntryMaxLen).W))
+  val sending_length = RegInit(0.U(tpEntryLenBits.W))
   val sending_hitCount = RegInit(0.U(hitCountWidth.W))
   // val sending_data_debug = Reg(Vec(tpEntryMaxLen, UInt(vaddrBits.W)))
   val sending_throttle = RegInit(0.U(4.W))
@@ -1373,6 +1433,20 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   XSPerfHistogram("tp_pf_hit_count", perfCnt = io.train.bits.hitCount, enable = io.train.bits.hit, start = 0, stop = 1 << hitCountWidth, step = 1)
   XSPerfHistogram("tp_pf_count", perfCnt = io.req.bits.hitCount, enable = io.req.valid, start = 0, stop = 1 << hitCountWidth, step = 1)
+
+  XSPerfAccumulate("tp_meta_retain_install", installFire)
+  XSPerfAccumulate("tp_meta_retain_install_full", installFire && installRetain === metaRetainFullInit)
+  XSPerfAccumulate("tp_meta_retain_promote", promoteFire)
+  val victimRetain = WireInit(0.U(metaRetainBits.W))
+  victimRetain := metaRetain(set_s1)(way_s1)
+  XSPerfHistogram(
+    "tp_meta_victim_retain",
+    perfCnt = victimRetain,
+    enable = tpTableWValid && !hit_s1,
+    start = 0,
+    stop = 4,
+    step = 1
+  )
 
   val trainDB = ChiselDB.createTable("tptrain", new trainBundle(), basicDB = true)
   val trainPt = Wire(new trainBundle())
