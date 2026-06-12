@@ -289,7 +289,7 @@ class SamplerFilter(implicit p: Parameters) extends TPModule {
   trainQueue.io.enq.bits.valid := io.train.valid
   trainQueue.io.enq.bits.pc := hashPC(io.train.bits.pc)
   trainQueue.io.enq.bits.addr := io.train.bits.addr >> offsetBits
-  trainQueue.io.deq.ready := !filterTableWValid && !RegNext(trainQueue.io.deq.fire) //TODO: acatually should be same-set block
+  val queuedFilterSet = parsePaddr(trainQueue.io.deq.bits.pc)._2
 
   /* ------- stage 0 ------- */
   // use hash pc query filter table
@@ -316,6 +316,10 @@ class SamplerFilter(implicit p: Parameters) extends TPModule {
   val validVec_s1 = filterRecord_s1.map(_.valid)
   val hitVec_s1 = tagMatchVec_s1.zip(validVec_s1).map(x => x._1 && x._2)
   val hit_s1 = Cat(hitVec_s1).orR
+
+  when(s1_valid) {
+    assert(PopCount(hitVec_s1) <= 1.U)
+  }
 
   val hitWay_s1 = OHToUInt(hitVec_s1)
   val victimWay_s1 = repl.way(pcSet_s1)
@@ -350,6 +354,8 @@ class SamplerFilter(implicit p: Parameters) extends TPModule {
   val filterTableWWayOH_s2 = Mux(resetFinish, UIntToOH(way_s2), Fill(samplerFilterAssoc, true.B))
   val filterTableWEntry_s2 = Mux(resetFinish, Mux(hit_s2, updateEntry, replEntry), resetEntry)
   filterTableWValid := filterTableWValid_s2
+  val filterTableSameSetBlocked = s1_valid && queuedFilterSet === pcSet_s1 || s2_valid && queuedFilterSet === pcSet_s2
+  trainQueue.io.deq.ready := !filterTableWValid && !filterTableSameSetBlocked
 
   filterTable.io.w.apply(
     valid = filterTableWValid_s2,
@@ -434,20 +440,24 @@ class SamplerTable(implicit p: Parameters) extends TPModule {
   }
 
   /* ------- stage pre ------- */
-  // handle SRAM RW conflict
-  val samplerTableRPendingValid = Wire(Bool())
+  // Queue inputs while the single-port sampler table is occupied by writes.
   val samplerTableWValid = Wire(Bool())
-  val trainPending = RegEnable(io.train.bits, samplerTableRPendingValid)
-  val pendingValid_s0 = RegNext(samplerTableRPendingValid, false.B)
-  samplerTableRPendingValid := io.train.valid && (samplerTableWValid || pendingValid_s0)
+  val trainQueue = Module(new Queue(new filteredEntry(), trainQueueDepth + 1, pipe = false, flow = false))
+  trainQueue.io.enq.valid := io.train.valid
+  trainQueue.io.enq.bits := io.train.bits
+  val queuedSamplerSet = parsePaddr(trainQueue.io.deq.bits.lastAddr)._2
+
+  when(resetFinish && io.train.valid) {
+    assert(trainQueue.io.enq.ready)
+  }
 
   /* ------- stage 0 ------- */
   // query samplerTable
-  val s0_valid = io.train.valid && !samplerTableWValid || pendingValid_s0
-  val baseAddr_s0 = Mux(pendingValid_s0, trainPending.lastAddr, io.train.bits.lastAddr)
-  val targetAddr_s0 = Mux(pendingValid_s0, trainPending.currAddr, io.train.bits.currAddr)
-  val pc_s0 = Mux(pendingValid_s0, trainPending.pc, io.train.bits.pc)
-  val cnt_s0 = Mux(pendingValid_s0, trainPending.cnt, io.train.bits.cnt)
+  val s0_valid = trainQueue.io.deq.fire
+  val baseAddr_s0 = trainQueue.io.deq.bits.lastAddr
+  val targetAddr_s0 = trainQueue.io.deq.bits.currAddr
+  val pc_s0 = trainQueue.io.deq.bits.pc
+  val cnt_s0 = trainQueue.io.deq.bits.cnt
 
   val samplerTableRValid = s0_valid
   val (baseTag_s0, baseSet_s0) = parsePaddr(baseAddr_s0)
@@ -466,6 +476,10 @@ class SamplerTable(implicit p: Parameters) extends TPModule {
   val validVec_s1 = pairs_s1.map(_.valid)
   val hitVec_s1 = tagMatchVec_s1.zip(validVec_s1).map(x => x._1 && x._2)
   val hit_s1 = Cat(hitVec_s1).orR
+
+  when(s1_valid) {
+    assert(PopCount(hitVec_s1) <= 1.U)
+  }
 
   val hitWay_s1 = OHToUInt(hitVec_s1)
   val victimWay_s1 = repl.way(baseSet_s1)
@@ -514,6 +528,8 @@ class SamplerTable(implicit p: Parameters) extends TPModule {
   val samplerTableWEntry_s2 = Mux(resetFinish, Mux(hit_s2, updateEntry, replEntry), resetEntry)
 
   samplerTableWValid := samplerTableWValid_s2
+  val samplerTableSameSetBlocked = s1_valid && queuedSamplerSet === baseSet_s1 || s2_valid && queuedSamplerSet === baseSet_s2
+  trainQueue.io.deq.ready := !samplerTableWValid && !samplerTableSameSetBlocked
 
   samplerTable.io.w.apply(
     valid = samplerTableWValid_s2,
@@ -598,7 +614,6 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
   }
 
   val recordThres = tpEntryMaxLen.U
-  val recordFinish = RegInit(false.B)
 
   val recorderTable = Module( // change splitted or more sram
     new SRAMTemplate(
@@ -622,19 +637,24 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
   }
 
   /* ------- stage pre ------- */
-  // handle SRAM RW conflict
-  val recorderTableRPendingValid = Wire(Bool())
+  // Queue inputs while the single-port recorder table is occupied by writes.
   val recorderTableWValid = Wire(Bool())
-  val pairPending = RegEnable(io.pair.bits, recorderTableRPendingValid)
-  val pendingValid_s0 = RegNext(recorderTableRPendingValid, false.B)
-  recorderTableRPendingValid := io.pair.valid && (recorderTableWValid || pendingValid_s0)
+  val pairQueue = Module(new Queue(new trainedPair(), trainQueueDepth + 1, pipe = false, flow = false))
+  pairQueue.io.enq.valid := io.pair.valid && io.pair.bits.addr1 =/= 0.U && io.pair.bits.addr2 =/= 0.U // TODO: check earlier
+  XSPerfAccumulate("tp_recorder_input_addr_zero", io.pair.valid && (io.pair.bits.addr1 === 0.U || io.pair.bits.addr2 === 0.U))
+  pairQueue.io.enq.bits := io.pair.bits
+  val queuedRecorderSet = parsePaddr(pairQueue.io.deq.bits.pc)._2
+
+  when(resetFinish && io.pair.valid) {
+    assert(pairQueue.io.enq.ready)
+  }
 
   /* ------- stage 0 ------- */
   // query recorderTable
-  val s0_valid = io.pair.valid && !recorderTableWValid || pendingValid_s0
-  val addr1_s0 = Mux(pendingValid_s0, pairPending.addr1, io.pair.bits.addr1)
-  val addr2_s0 = Mux(pendingValid_s0, pairPending.addr2, io.pair.bits.addr2)
-  val pc_s0 = Mux(pendingValid_s0, pairPending.pc, io.pair.bits.pc)
+  val s0_valid = pairQueue.io.deq.fire
+  val addr1_s0 = pairQueue.io.deq.bits.addr1
+  val addr2_s0 = pairQueue.io.deq.bits.addr2
+  val pc_s0 = pairQueue.io.deq.bits.pc
 
   val recorderTableRValid = s0_valid
   val (pcTag_s0, pcSet_s0) = parsePaddr(pc_s0)
@@ -653,6 +673,10 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
   val hitVec_s1 = tagMatchVec_s1.zip(validVec_s1).map(x => x._1 && x._2)
   val hit_s1 = Cat(hitVec_s1).orR
 
+  when(s1_valid) {
+    assert(PopCount(hitVec_s1) <= 1.U)
+  }
+
   val hitWay_s1 = OHToUInt(hitVec_s1)
   val victimWay_s1 = repl.way(pcSet_s1)
   val way_s1 = Mux(hit_s1, hitWay_s1, victimWay_s1)
@@ -670,7 +694,8 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
   val addr1_s2 = RegEnable(addr1_s1, s1_valid)
   val addr2_s2 = RegEnable(addr2_s1, s1_valid)
   val pc_s2 = RegEnable(pc_s1, s1_valid)
-  val hit_s2 = RegEnable(hit_s1, s1_valid)
+  val hit_s2 = RegEnable(hit_s1 && recorder_s1.trigger =/= 0.U, s1_valid) // TODO:
+  assert(!(s1_valid && hit_s1 && recorder_s1.trigger === 0.U))
   val way_s2 = RegEnable(way_s1, s1_valid)
   val recorder_s2 = RegEnable(recorder_s1, s1_valid)
   val recorderIdx_s2 = RegEnable(recorder_s1.index, s1_valid)
@@ -680,6 +705,7 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
   val recorderIdx_s3 = RegInit(0.U(tpEntryLenBits.W))
   val recorderData_s3 = RegInit(VecInit(Seq.fill(tpEntryMaxLen)(0.U(metaDataLength.W))))
   val recorderTrigger_s3 = RegInit(0.U(metaDataLength.W))
+  val recorderChain_s3 = RegInit(false.B)
 
   val recordData_s2 = recorder_s2.data
   val recordAddr1HitVec = recordData_s2.map(_ === addr1_s2)
@@ -690,12 +716,12 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
   when(s2_valid && hit_s2) {
     recorderData_s3 := recorderData_s2
     recorderTrigger_s3 := recorder_s2.trigger
+    recorderChain_s3 := false.B
 
     when(addr1Unique_s2 ^ addr2Unique_s2) {
       recorderData_s3(recorderIdx_s2) := Mux(addr1Unique_s2, addr1_s2, addr2_s2)
       when(recorderIdx_s2 === (recordThres - 1.U)) {
         recorderIdx_s3 := recordThres
-        recordFinish := true.B
       }.otherwise {
         recorderIdx_s3 := recorderIdx_s2 + 1.U
       }
@@ -703,11 +729,10 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
       recorderData_s3(recorderIdx_s2) := addr1_s2
       when(recorderIdx_s2 === (recordThres - 1.U)) {
         recorderIdx_s3 := recordThres
-        recordFinish := true.B
+        recorderChain_s3 := true.B
       }.elsewhen(recorderIdx_s2 === (recordThres - 2.U)) {
         recorderData_s3(recorderIdx_s2 + 1.U) := addr2_s2
         recorderIdx_s3 := recordThres
-        recordFinish := true.B
       }.otherwise {
         recorderData_s3(recorderIdx_s2 + 1.U) := addr2_s2
         recorderIdx_s3 := recorderIdx_s2 + 2.U
@@ -719,6 +744,7 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
     recorderIdx_s3 := recorderIdx_s2
     recorderData_s3 := recorderData_s2
     recorderTrigger_s3 := recorder_s2.trigger
+    recorderChain_s3 := false.B
   }
 
   /* ------- stage 3 ------- */
@@ -734,7 +760,7 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
   val (pcTag_s3, pcSet_s3) = parsePaddr(pc_s3)
   val victimPC_s3 = Cat(recorderPcTag_s3, pcSet_s3)
   val full_s3 = recorderIdx_s3 === recordThres
-  val recordValid_s3 = s3_valid && (full_s3 && hit_s3 || !hit_s3 && recorderValid_s3)
+  val recordValid_s3 = s3_valid && (full_s3 && hit_s3 || !hit_s3 && recorderValid_s3 && recorderIdx_s3 > 0.U)
   val recordFull_s3 = s3_valid && full_s3 && hit_s3
 
   val replEntryData_s3 = WireInit(VecInit(Seq.fill(tpEntryMaxLen)(0.U(metaDataLength.W))))
@@ -750,9 +776,17 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
   val recorderTableWValid_s3 = s3_valid || !resetFinish
   val recorderTableWSet_s3 = Mux(resetFinish, pcSet_s3, resetIdx)
   val recorderTableWWayOH_s3 = Mux(resetFinish, UIntToOH(way_s3), Fill(recorderTableAssoc, true.B))
-  val recorderTableWEntry_s3 = Mux(resetFinish && !recordFull_s3, Mux(hit_s3, updateEntry, replEntry), resetEntry)
+  val chainFull_s3 = recorderChain_s3 && recordFull_s3
+  val keepEntry_s3 = !recordFull_s3 || chainFull_s3
+  val writeEntry_s3 = Mux(hit_s3 && !chainFull_s3, updateEntry, replEntry)
+  val recorderTableWEntry_s3 = Mux(resetFinish && keepEntry_s3, writeEntry_s3, resetEntry)
+  assert(!(recorderTableWValid_s3 && recorderTableWEntry_s3.valid && recorderTableWEntry_s3.trigger === 0.U))
 
   recorderTableWValid := recorderTableWValid_s3
+  val recorderTableSameSetBlocked = s1_valid && queuedRecorderSet === pcSet_s1 ||
+    s2_valid && queuedRecorderSet === parsePaddr(pc_s2)._2 ||
+    s3_valid && queuedRecorderSet === pcSet_s3
+  pairQueue.io.deq.ready := !recorderTableWValid && !recorderTableSameSetBlocked
 
   recorderTable.io.w.apply(
     valid = recorderTableWValid_s3,
@@ -767,9 +801,16 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
   io.record.bits.length := recorderIdx_s3
   io.record.bits.trigger := recorderTrigger_s3
 
-  assert(!(io.record.valid && io.record.bits.length === 0.U))
   assert(!(recorderTableWValid_s3 && recorderTableWEntry_s3.valid && (recorderTableWEntry_s3.index >= recordThres)))
-  assert(recorderIdx_s3 < (recordThres + 1.U))
+
+  when(io.record.valid) {
+    assert(io.record.bits.trigger =/= 0.U)
+    assert(io.record.bits.length =/= 0.U)
+  }
+
+  when(s3_valid) {
+    assert(recorderIdx_s3 < (recordThres + 1.U))
+  }
 
   XSPerfAccumulate("tp_recorder_valid", io.record.valid)
   XSPerfAccumulate("tp_recorder_addr1_unique", s2_valid && addr1Unique_s2)
