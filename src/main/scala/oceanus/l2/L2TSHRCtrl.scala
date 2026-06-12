@@ -46,6 +46,8 @@ object L2TSHRTarget {
   }
 }
 
+// -- Allocation target channel types, with parameterized preferring priority.
+//    The greater value, the higher priority.
 case class L2TSHRAllocTarget(val name: String, val priority: Int) // Allocation Target
 
 object L2TSHRAllocTarget {
@@ -53,7 +55,9 @@ object L2TSHRAllocTarget {
   val SNP = L2TSHRAllocTarget("SNP", 1)
   val REQ = L2TSHRAllocTarget("REQ", 0)
 }
+// ----------------------------------------------------------------
 
+// --- Reservation target operation types
 case class L2TSHRResvTarget(val name: String) // Reservation Target
 
 object L2TSHRResvTarget {
@@ -61,10 +65,15 @@ object L2TSHRResvTarget {
   val L2EVT = L2TSHRResvTarget("L2EVT")
   val L3SNP = L2TSHRResvTarget("L3SNP")
 }
+// ----------------------------------------------------------------
 
-class L2TSHRAllocConfig(val cluster: Seq[Seq[L2TSHRAllocTarget]], val resv: Seq[(Int, L2TSHRResvTarget)])(implicit val p: Parameters) extends HasL2Params {
+class L2TSHRAllocConfig(val cluster: Seq[Seq[L2TSHRAllocTarget]], 
+                        val resv: Seq[(Int, L2TSHRResvTarget)],
+                        val clusterRRArb: Boolean = false)
+(implicit val p: Parameters) extends HasL2Params {
   // cluster: allocation clusters, each entry is a sequence of allocation targets that belong to the same cluster
   // resv: reservation configuration, each entry is a tuple of (target index, reservation target)
+  // clusterRRArb: whether use the RR Arbiter or Fixed Priority Aribter inner an allocation cluster
   require(cluster.nonEmpty, "Cluster config should not be empty")
   cluster.foreach(c => require(c.nonEmpty, s"Each cluster should have at least one allocation target, current: ${cluster}"))
   require(cluster.flatten.size == cluster.flatten.toSet.size, s"Allocation Targets should be unique, current: ${cluster}")
@@ -103,6 +112,14 @@ class L2TSHRAlloc(val config: L2TSHRAllocConfig)(implicit val p: Parameters) ext
     out <> arb.io.out
   }
 
+  // TODO: move this into common utilities
+  def fastArb[T <: Bundle](in: Seq[DecoupledIO[T]], out: DecoupledIO[T], name: Option[String] = None): Unit = {
+    val arb = Module(new FastArbiter[T](chiselTypeOf(out.bits), in.size))
+    if (name.nonEmpty) { arb.suggestName(s"${name.get}_arb") }
+    for ((a, req) <- arb.io.in.zip(in)) { a <> req }
+    out <> arb.io.out
+  }
+
   val clusterCount = config.cluster.size
   val clusterName = config.cluster.zipWithIndex.map { case (cluster, idx) => s"cluster_${idx}_${cluster.map(_.name).mkString("_")}" }
 
@@ -114,12 +131,15 @@ class L2TSHRAlloc(val config: L2TSHRAllocConfig)(implicit val p: Parameters) ext
     val fromTSHRCtrl = new L2TSHRAlloc.PathFromTSHRCtrl
   })
 
+  // -- The unified cluster bundle type to connect different channels into the same target Arbiter
   class ClusterBundle extends Bundle {
     val paddr = UInt((paramL2.physicalAddrWidth).W)
     val opcode = UInt(Seq(io.fromTSHRCtrl.RXEVT.bits.Opcode.getWidth, io.fromTSHRCtrl.RXSNP.bits.Opcode.get.getWidth, io.fromTSHRCtrl.RXREQ.bits.Opcode.getWidth).max.W)
     val target = new L2TSHRTarget
   }
+  // ----------------------------------------------------------------
 
+  // -- ClusterBundle wire instances that connect the actual channel input
   val preclusterRXEVT = Wire(Decoupled(new ClusterBundle))
   preclusterRXEVT.valid := io.fromTSHRCtrl.RXEVT.valid
   preclusterRXEVT.bits.paddr := io.fromTSHRCtrl.RXEVT.bits.Addr
@@ -140,6 +160,7 @@ class L2TSHRAlloc(val config: L2TSHRAllocConfig)(implicit val p: Parameters) ext
   preclusterRXREQ.bits.opcode := io.fromTSHRCtrl.RXREQ.bits.Opcode
   preclusterRXREQ.bits.target := L2TSHRTarget.asREQ
   io.fromTSHRCtrl.RXREQ.ready := preclusterRXREQ.ready
+  // ----------------------------------------------------------------
 
   val postcluster = Wire(Vec(clusterCount, Decoupled(new ClusterBundle)))
 
@@ -155,11 +176,14 @@ class L2TSHRAlloc(val config: L2TSHRAllocConfig)(implicit val p: Parameters) ext
       }
     }}
 
-    if (cluster.size > 1)
-      arb(clustered, postcluster(idx), Some(s"${clusterName(idx)}"))
-    else if (cluster.size == 1)
+    if (cluster.size > 1) {
+      if (config.clusterRRArb)
+        fastArb(clustered, postcluster(idx), Some(s"${clusterName(idx)}"))
+      else
+        arb(clustered, postcluster(idx), Some(s"${clusterName(idx)}"))
+    } else if (cluster.size == 1) {
       postcluster(idx) <> clustered.head
-    else {
+    } else {
       postcluster(idx).valid := false.B
       postcluster(idx).bits := 0.U.asTypeOf(postcluster(idx).bits)
     }
@@ -185,9 +209,14 @@ class L2TSHRAlloc(val config: L2TSHRAllocConfig)(implicit val p: Parameters) ext
     assert(PopCount(hit) <= 1.U, s"Multiple TSHRs hit the same post-cluster PA at ${clusterName(idx)}")
   }
 
+  // -- Allocation and Reuse vector generations
   val alloc_vec = Wire(Vec(clusterCount, Vec(io.fromTSHR.length, Bool())))
   val reuse_vec = Wire(Vec(clusterCount, Vec(io.fromTSHR.length, Bool())))
 
+  // Allocation candidate vector conditions:
+  //  - TSHR non-active
+  //  - Request type matches on reservation TSHR
+  //  - No previous cluster allocating on candidate TSHR with different PA in current cycle (see 'conflict mask')
   val can_alloc_vec = (0 until clusterCount).map(cIdx => io.fromTSHR.zipWithIndex.map { case (t, tIdx) => 
     !t.valid && (config.resv.find(_._1 == tIdx) match {
       case Some((_, L2TSHRResvTarget.L1EVT)) => postcluster_isL1EVT(cIdx)
@@ -213,6 +242,9 @@ class L2TSHRAlloc(val config: L2TSHRAllocConfig)(implicit val p: Parameters) ext
     mask.zipWithIndex.tail.foreach { case (m, tIdx) => m := mask(tIdx - 1) || can_alloc_vec(cIdx)(tIdx - 1) }
   }
 
+  // Reuse candidate vector conditions:
+  //  - PA hit on the active TSHR
+  //  - Channel receivable (non-busy) by the active TSHR
   val can_reuse_vec = (0 until clusterCount).map(cIdx => io.fromTSHR.zipWithIndex.map { case (t, tIdx) => 
     paddr_hit_vec(cIdx)(tIdx) && (
       !t.bits.busy.EVT && postcluster(cIdx).bits.target.EVT ||
@@ -228,12 +260,19 @@ class L2TSHRAlloc(val config: L2TSHRAllocConfig)(implicit val p: Parameters) ext
     mask.zipWithIndex.tail.foreach { case (m, tIdx) => m := mask(tIdx - 1) || can_reuse_vec(cIdx)(tIdx - 1) }
   }
 
+  // Allocation vector conditions:
+  //  - The TSHR was the candidate
+  //  - Not masked by other better allocation candidate
+  //  - No any PA hit on active TSHR (might be the reuse candidate)
   alloc_vec.zipWithIndex.foreach { case (alloc_vec, cIdx) =>
     alloc_vec.zipWithIndex.foreach { case (alloc, tIdx) =>
       alloc := can_alloc_vec(cIdx)(tIdx) && !alloc_vec_mask(cIdx)(tIdx) && !paddr_hit_any(cIdx) && postcluster(cIdx).valid }
     assert(PopCount(alloc_vec) <= 1.U, s"Multiple TSHR allocation on ${clusterName(cIdx)}")
   }
 
+  // Reuse vector conditions:
+  //  - The TSHR was the candidate
+  //  - Not masked by other better reuse candidate
   reuse_vec.zipWithIndex.foreach { case (reuse_vec, cIdx) =>
     reuse_vec.zipWithIndex.foreach { case (reuse, tIdx) => 
       reuse := can_reuse_vec(cIdx)(tIdx) && !reuse_vec_mask(cIdx)(tIdx) }
@@ -246,6 +285,7 @@ class L2TSHRAlloc(val config: L2TSHRAllocConfig)(implicit val p: Parameters) ext
   alloc_any.zip(reuse_any).zipWithIndex.foreach { case ((a, r), cIdx) =>
     assert(!a || !r, s"Both allocating and reusing TSHRs on ${clusterName(cIdx)}")
   }
+  // ----------------------------------------------------------------
 
   postcluster.zipWithIndex.foreach { case (p, cIdx) => p.ready := alloc_any(cIdx) || reuse_any(cIdx) }
 
@@ -287,7 +327,7 @@ class L2TSHRAlloc(val config: L2TSHRAllocConfig)(implicit val p: Parameters) ext
   )}
 
   
-  // performance counters
+  // -- Performance counters
   val perf_stallCycleCnt_EVT = RegInit(0.U(32.W))
   val perf_stallCycleCnt_SNP = RegInit(0.U(32.W))
   val perf_stallCycleCnt_REQ = RegInit(0.U(32.W))
@@ -322,6 +362,18 @@ class L2TSHRAlloc(val config: L2TSHRAllocConfig)(implicit val p: Parameters) ext
   XSPerfHistogram("L2TSHRAlloc_stallCycleCnt_SNP", perf_stallCycleCnt_SNP, io.fromTSHRCtrl.RXSNP.fire, 40, 800, 40, left_strict = true)
   XSPerfHistogram("L2TSHRAlloc_stallCycleCnt_REQ", perf_stallCycleCnt_REQ, io.fromTSHRCtrl.RXREQ.fire, 0, 40, 2, right_strict = true)
   XSPerfHistogram("L2TSHRAlloc_stallCycleCnt_REQ", perf_stallCycleCnt_REQ, io.fromTSHRCtrl.RXREQ.fire, 40, 800, 40, left_strict = true)
+
+  io.toTSHR.zipWithIndex.foreach { case (t, i) => {
+    XSPerfAccumulate(s"L2TSHRAlloc_alloc_${i}_EVT", t.alloc.EVT)
+    XSPerfAccumulate(s"L2TSHRAlloc_alloc_${i}_SNP", t.alloc.SNP)
+    XSPerfAccumulate(s"L2TSHRAlloc_alloc_${i}_REQ", t.alloc.REQ)
+    XSPerfAccumulate(s"L2TSHRAlloc_alloc_${i}", t.alloc.asUInt.orR)
+    XSPerfAccumulate(s"L2TSHRAlloc_reuse_${i}_EVT", t.reuse.EVT)
+    XSPerfAccumulate(s"L2TSHRAlloc_reuse_${i}_SNP", t.reuse.SNP)
+    XSPerfAccumulate(s"L2TSHRAlloc_reuse_${i}_REQ", t.reuse.REQ)
+    XSPerfAccumulate(s"L2TSHRAlloc_reuse_${i}", t.reuse.asUInt.orR)
+  }}
+  // ----------------------------------------------------------------
 }
 
 
