@@ -59,6 +59,8 @@ object L2Directory {
     val dirty = Bool()
     val clients = Vec(1, Bool()) // TODO: parameterize with coherent l2 client count
 
+    def any = this.asUInt.orR
+
     def maskAndWrite(dst: Meta, src: Meta): Unit = {
       when (state) { dst.state := src.state }
       when (dirty) { dst.dirty := src.dirty }
