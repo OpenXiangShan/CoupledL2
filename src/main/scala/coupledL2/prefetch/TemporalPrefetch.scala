@@ -51,7 +51,7 @@ case class TPParameters(
   replacementPolicy: String = "plru",
 
   // sampler filter parameters
-  samplerFileterEntries: Int = 1024 * 4,
+  samplerFileterEntries: Int = 256,
   samplerFilterAssoc: Int = 4 * 2,
   samplerFilterReplacememntPolicy: String = "plru",
   pcHashHeadReservedWidth: Int = 2,
@@ -760,7 +760,9 @@ class RecorderTable(implicit p: Parameters) extends TPModule {
   val (pcTag_s3, pcSet_s3) = parsePaddr(pc_s3)
   val victimPC_s3 = Cat(recorderPcTag_s3, pcSet_s3)
   val full_s3 = recorderIdx_s3 === recordThres
-  val recordValid_s3 = s3_valid && (full_s3 && hit_s3 || !hit_s3 && recorderValid_s3 && recorderIdx_s3 > 0.U)
+  val fullValid_s3 = full_s3 && hit_s3
+  val replValid_s3 = !hit_s3 && recorderValid_s3 && recorderIdx_s3 > 8.U
+  val recordValid_s3 = s3_valid && (fullValid_s3 || replValid_s3)
   val recordFull_s3 = s3_valid && full_s3 && hit_s3
 
   val replEntryData_s3 = WireInit(VecInit(Seq.fill(tpEntryMaxLen)(0.U(metaDataLength.W))))
@@ -1070,28 +1072,6 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     (x << offsetBits.U).asUInt
   }
 
-  def pickVictimWay(validVec: Seq[Bool], retainVec: Seq[UInt], baseWay: UInt): UInt = {
-    val invalidVec = validVec.map(v => !v)
-    val hasInvalid = Cat(invalidVec.reverse).orR
-
-    val retainMin = retainVec.reduce((a, b) => Mux(a < b, a, b))
-    val lowRetainVec = retainVec.map(_ === retainMin)
-
-    val candVec = Wire(Vec(tpTableAssoc, Bool()))
-    for (i <- 0 until tpTableAssoc) {
-      candVec(i) := Mux(hasInvalid, invalidVec(i), lowRetainVec(i))
-    }
-
-    val offsetOH = Wire(Vec(tpTableAssoc, Bool()))
-    for (i <- 0 until tpTableAssoc) {
-      val idx = (baseWay + i.U)(log2Ceil(tpTableAssoc) - 1, 0)
-      offsetOH(i) := candVec(idx)
-    }
-
-    val pickedOffset = PriorityEncoder(offsetOH.asUInt)
-    (baseWay + pickedOffset)(log2Ceil(tpTableAssoc) - 1, 0)
-  }
-
   def hashPC(pc: UInt) = {
     val reservedHead = pc(pc.getWidth - 1, pc.getWidth - pcHashHeadReservedWidth)
     val reservedTail = pc(pcHashTailReservedWidth - 1, 0)
@@ -1114,13 +1094,6 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
       (pcPadded >> 6).pad(pcAddrHashWidth))(pcAddrHashWidth - 1, 0)
   }
 
-  val metaRetainBits = 2
-  val metaRetainMax = ((1 << metaRetainBits) - 1).U(metaRetainBits.W)
-  val metaRetainFullInit = 2.U(metaRetainBits.W)
-
-  def retainDec(x: UInt): UInt = Mux(x === 0.U, 0.U, x - 1.U)
-  def retainInc(x: UInt): UInt = Mux(x === metaRetainMax, metaRetainMax, x + 1.U)
-
   val tpmeta = Module(new TPmeta())
   val tpMetaTable = Module(
     new SRAMTemplate(
@@ -1134,9 +1107,6 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     )
   )
   val hitCount = RegInit(VecInit(Seq.fill(tpTableNrSet)(VecInit(Seq.fill(tpTableAssoc)(0.U.asTypeOf(new tpMetaHitCountEntry))))))
-  val metaRetain = RegInit(VecInit(Seq.fill(tpTableNrSet)(
-    VecInit(Seq.fill(tpTableAssoc)(0.U(2.W)))
-  )))
   val sampler = Module(new Sampler())
   val confTable = Module(new confTable())
   val trainQueue = Module(new Queue(new PrefetchTrain(), tpTrainQueueDepth, pipe = false, flow = false))
@@ -1241,8 +1211,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   val hit_s1 = Cat(hitVec).orR
   val baseVictimWay_s1 = repl.way(set_s1)
-  val retainVec_s1 = metaRetain(set_s1)
-  val way_s1 = Mux(hit_s1, hitWay, pickVictimWay(metaValidVec, retainVec_s1, baseVictimWay_s1))
+  val way_s1 = Mux(hit_s1, hitWay, baseVictimWay_s1)
   val hitCount_s1 = hitCount(set_s1)(way_s1).hitCount
   assert(PopCount(hitVec) <= 1.U)
 
@@ -1267,31 +1236,6 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val tpTableWWayOH = Mux(resetFinish, UIntToOH(tpTableWWay), Fill(tpTableAssoc, true.B))
 
   tpMetaTable.io.w.apply(tpTableWValid || !resetFinish, metaWEntry, tpTableWSet, tpTableWWayOH)
-
-  val installRetain = Mux(tpTableWLength >= recordThres, metaRetainFullInit, 0.U(metaRetainBits.W))
-  val installFire = tpTableWValid
-
-  val promoteFire = tpMetaResetQueue.io.deq.fire
-  val promoteSet = tpMetaResetQueue.io.deq.bits.set
-  val promoteWay = tpMetaResetQueue.io.deq.bits.way
-
-  when(installFire) {
-    for (w <- 0 until tpTableAssoc) {
-      val old = metaRetain(set_s1)(w)
-      val afterInstall = Mux(w.U === tpTableWWay, installRetain, retainDec(old))
-      val sameSetPromote =
-        promoteFire &&
-          promoteSet === set_s1 &&
-          promoteWay === w.U &&
-          w.U =/= tpTableWWay
-
-      metaRetain(set_s1)(w) := Mux(sameSetPromote, retainInc(afterInstall), afterInstall)
-    }
-  }
-
-  when(promoteFire && !(installFire && promoteSet === set_s1)) {
-    metaRetain(promoteSet)(promoteWay) := retainInc(metaRetain(promoteSet)(promoteWay))
-  }
 
   when(RegNext(metaWQueue.io.deq.fire)) {
     hitCount(set_s1)(way_s1).hitCount := 0.U
@@ -1461,20 +1405,6 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   XSPerfHistogram("tp_pf_hit_count", perfCnt = io.train.bits.hitCount, enable = io.train.bits.hit, start = 0, stop = 1 << hitCountWidth, step = 1)
   XSPerfHistogram("tp_pf_count", perfCnt = io.req.bits.hitCount, enable = io.req.valid, start = 0, stop = 1 << hitCountWidth, step = 1)
-
-  XSPerfAccumulate("tp_meta_retain_install", installFire)
-  XSPerfAccumulate("tp_meta_retain_install_full", installFire && installRetain === metaRetainFullInit)
-  XSPerfAccumulate("tp_meta_retain_promote", promoteFire)
-  val victimRetain = WireInit(0.U(metaRetainBits.W))
-  victimRetain := metaRetain(set_s1)(way_s1)
-  XSPerfHistogram(
-    "tp_meta_victim_retain",
-    perfCnt = victimRetain,
-    enable = tpTableWValid && !hit_s1,
-    start = 0,
-    stop = 4,
-    step = 1
-  )
 
   val trainDB = ChiselDB.createTable("tptrain", new trainBundle(), basicDB = true)
   val trainPt = Wire(new trainBundle())
