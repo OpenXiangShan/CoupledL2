@@ -118,8 +118,8 @@ trait HasTPParams extends HasCoupledL2Parameters {
   def samplerFilterSetBits = log2Ceil(samplerFilterNrSet)
   def samplerFilterReplacementPolicy = tpParams.samplerFilterReplacememntPolicy
   def trainQueueDepth = tpParams.trainQueueDepth
-  def filteredCntWidth = 5
-  def filteredCntThrottle = 20
+  def filteredCntWidth = 6
+  def filteredCntThrottle = 31
   // sampler table parameters
   def samplerTableAssoc = tpParams.samplerTableAssoc
   def samplerTableNrSet = tpParams.samplerTableEntries / samplerTableAssoc
@@ -522,7 +522,7 @@ class SamplerTable(implicit p: Parameters) extends TPModule {
   val replEntry = WireInit(new samplerTableEntry().apply(true.B, baseTag_s2, targetAddr_s2, pc_s2, 0.U))
   val resetEntry = WireInit(new samplerTableEntry().apply(false.B, 0.U, 0.U, 0.U, 0.U))
 
-  val samplerTableWValid_s2 = recordValid_s2 || !hit_s2 && s2_valid || !resetFinish
+  val samplerTableWValid_s2 = recordValid_s2 || cntValid_s2 || !hit_s2 && s2_valid || !resetFinish
   val samplerTableWSet_s2 = Mux(resetFinish, baseSet_s2, resetIdx)
   val samplerTableWWayOH_s2 = Mux(resetFinish, UIntToOH(way_s2), Fill(samplerTableAssoc, true.B))
   val samplerTableWEntry_s2 = Mux(resetFinish, Mux(hit_s2, updateEntry, replEntry), resetEntry)
@@ -1116,7 +1116,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val metaWQueue = Module(new Queue(new trainedRecord(), tpMetaWQueueDepth, pipe = false, flow = false))
   val tpMetaResetQueue = Module(new Queue(new tpMetaResetEntry(), tpMetaResetQueueDepth, pipe = false, flow = false))
   val confRespQueue = Module(new Queue(new confResp(), confReqQueueDepth + 1, pipe = false, flow = false))
-  val pendingPfCnt = RegInit(0.U(log2Ceil(tpDataQueueDepth).W))
+  val pendingPfCnt = RegInit(0.U(log2Ceil(tpDataQueueDepth + 2).W))
 
   val repl = new SetAssocReplacer(tpTableNrSet, tpTableAssoc, tpTableReplacementPolicy)
 
@@ -1151,7 +1151,8 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   trainQueue.io.enq.valid := io.train.fire
   trainQueue.io.enq.bits := io.train.bits
-  trainQueue.io.deq.ready := !(tpMetaTable.io.w.req.fire || metaWQueue.io.deq.fire) // metaW first
+  val dataReadQueueHasCredit = dataReadQueue.io.count < (dataReadQueueDepth - 2).U
+  trainQueue.io.deq.ready := !(tpMetaTable.io.w.req.fire || metaWQueue.io.deq.fire) && dataReadQueueHasCredit // metaW first
 
   // from sampler
   metaWQueue.io.enq.valid := sampler.io.trained.valid
@@ -1184,7 +1185,9 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   // to sampler
   sampler.io.train.valid := io.train.fire && io.train.bits.pc.orR && // not trainOnL1PF
     Mux(trainOnVaddr.orR, io.train.bits.vaddr.getOrElse(0.U) =/= 0.U, true.B) &&
-    Mux(trainOnL1PF.orR, true.B, io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
+    Mux(trainOnL1PF.orR, true.B,
+      io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U &&
+        io.train.bits.reqsource =/= MemReqSource.Prefetch2L2TP.id.U)
   sampler.io.train.bits := io.train.bits
 
 
@@ -1282,6 +1285,9 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   dataReadQueue.io.enq.bits.length := 0.U //DontCare
   dataReadQueue.io.enq.bits.hartid := io.hartid
   dataReadQueue.io.enq.bits.hitCount := hitCount_s2
+  when(s2_valid && hit_s2) {
+    assert(dataReadQueue.io.enq.ready)
+  }
 
 
   /* Async Stage: try to fetch or write tpData */
@@ -1373,7 +1379,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   io.req.bits.hitCount := sending_hitCount
 
   io.resp.ready := true.B
-  io.train.ready := resetFinish
+  io.train.ready := resetFinish && trainQueue.io.enq.ready
   io.feedBack.ready := resetFinish
 
   // confidence table
