@@ -862,23 +862,46 @@ class confTableEntry(implicit p: Parameters) extends TPBundle {
   }
 }
 
+object ConfReqType {
+  def width = 2
+  def newMeta = 0.U(width.W)
+  def issue = 1.U(width.W)
+  def feedback = 2.U(width.W)
+}
+
+object ConfUpdateCond {
+  def width = 3
+  def newMeta = 0.U(width.W)
+  def alloc = 1.U(width.W)
+  def missPenalty = 2.U(width.W)
+  def reward = 3.U(width.W)
+  def noEffect = 4.U(width.W)
+}
+
 class confReq(implicit p: Parameters) extends TPBundle {
   val pc = UInt(pcHashWidth.W)
-  val newMeta = Bool()
-  val pfIssue = Bool()
+  val reqType = UInt(ConfReqType.width.W)
   val pfHit = Bool()
   val pfLate = Bool()
   val pfMiss = Bool()
+  val pfCnt = UInt(accConfWidth.W)
 }
 
 class confResp(implicit  p: Parameters) extends TPBundle {
   val issue = Bool()
+  val reqType = UInt(ConfReqType.width.W)
   // TODO: issue length
+}
+
+class confDBEntry(implicit p: Parameters) extends TPBundle {
+  val pc = UInt(pcHashWidth.W)
+  val updateCond = UInt(ConfUpdateCond.width.W)
+  val accConf = UInt(accConfWidth.W)
 }
 
 class confTable(implicit p:Parameters) extends TPModule {
   val io = IO(new Bundle() {
-    val req = Flipped(ValidIO(new confReq()))
+    val req = Flipped(DecoupledIO(new confReq()))
     val resp = ValidIO(new confResp())
   })
 
@@ -913,12 +936,11 @@ class confTable(implicit p:Parameters) extends TPModule {
     resetCnt := 100000.U
     resetIdx := (confTableNrSet - 1).U
     resetFinish := false.B
-  }.elsewhen(io.req.valid && io.req.bits.newMeta) {
+  }.elsewhen(io.req.fire && (io.req.bits.reqType === ConfReqType.newMeta)) {
     resetCnt := resetCnt - 1.U
   }
 
-  reqQueue.io.enq.valid := io.req.valid
-  reqQueue.io.enq.bits := io.req.bits
+  reqQueue.io.enq <> io.req
   reqQueue.io.deq.ready := !confTable.io.w.req.fire // W first
 
   /* ------- stage 0 ------- */
@@ -926,26 +948,35 @@ class confTable(implicit p:Parameters) extends TPModule {
   val s0_valid = reqQueue.io.deq.fire
   val req_s0 = reqQueue.io.deq.bits
   val (tag_s0, set_s0) = parsePC(req_s0.pc)
-  val newMeta_s0 = req_s0.newMeta
+  val reqType_s0 = req_s0.reqType
+  val newMeta_s0 = reqType_s0 === ConfReqType.newMeta
   val pfHit_s0 = req_s0.pfHit
-  val pfIssue_s0 = req_s0.pfIssue
+  val pfLate_s0 = req_s0.pfLate
+  val pfMiss_s0 = req_s0.pfMiss
+  val pfCnt_s0 = req_s0.pfCnt
 
-  val confs = confTable.io.r(s0_valid && !newMeta_s0, set_s0).resp.data
+  val confs = confTable.io.r(s0_valid, set_s0).resp.data
 
   /* ------- stage 1 ------- */
   // parse pc to judge whether hit; choose victim way
   val s1_valid = RegNext(s0_valid, false.B)
   val tag_s1 = RegEnable(tag_s0, s0_valid)
   val set_s1 = RegEnable(set_s0, s0_valid)
+  val reqType_s1 = RegEnable(reqType_s0, s0_valid)
   val newMeta_s1 = RegEnable(newMeta_s0, s0_valid)
   val pfHit_s1 = RegEnable(pfHit_s0, s0_valid)
-  val pfIssue_s1 = RegEnable(pfIssue_s0, s0_valid)
-  val needResp_s1 = RegEnable(req_s0.pfIssue, s0_valid)
+  val pfLate_s1 = RegEnable(pfLate_s0, s0_valid)
+  val pfMiss_s1 = RegEnable(pfMiss_s0, s0_valid)
+  val pfCnt_s1 = RegEnable(pfCnt_s0, s0_valid)
+  val needResp_s1 = RegEnable(reqType_s0 === ConfReqType.issue || reqType_s0 === ConfReqType.newMeta, s0_valid)
 
   val tagMatchVec_s1 = confs.map(_.tag === tag_s1)
   val validVec_s1 = confs.map(_.valid)
   val hitVec_s1 = tagMatchVec_s1.zip(validVec_s1).map(x => x._1 && x._2)
   val hit_s1 = Cat(hitVec_s1).orR
+  when(s1_valid) {
+    assert(PopCount(hitVec_s1) <= 1.U)
+  }
 
   val hitWay_s1 = OHToUInt(hitVec_s1)
   val victimWay_s1 = repl.way(set_s1)
@@ -965,25 +996,62 @@ class confTable(implicit p:Parameters) extends TPModule {
   val way_s2 = RegEnable(way_s1, s1_valid)
   val conf_s2 = RegEnable(conf_s1, s1_valid)
   val hit_s2 = RegEnable(hit_s1, s1_valid)
+  val reqType_s2 = RegEnable(reqType_s1, s1_valid)
   val newMeta_s2 = RegEnable(newMeta_s1, s1_valid)
   val pfHit_s2 = RegEnable(pfHit_s1, s1_valid)
-  val pfIssue_s2 = RegEnable(pfIssue_s1, s1_valid)
+  val pfLate_s2 = RegEnable(pfLate_s1, s1_valid)
+  val pfMiss_s2 = RegEnable(pfMiss_s1, s1_valid)
+  val pfCnt_s2 = RegEnable(pfCnt_s1, s1_valid)
   val needResp_s2 = RegEnable(needResp_s1, s1_valid)
 
-  val accUpper = conf_s2.accConf === (1 << accConfWidth - 1).U && pfHit_s2 && !pfIssue_s2
-  val accLower = conf_s2.accConf < 10.U && pfIssue_s2 && !pfHit_s2 || conf_s2.accConf < 9.U && pfIssue_s2 && pfHit_s2
-  val accUpdate = Mux(accUpper, conf_s2.accConf, Mux(accLower, 0.U,
-    Mux(pfHit_s2 && !pfIssue_s2, conf_s2.accConf + 1.U,
-      Mux(pfHit_s2 && pfIssue_s2, conf_s2.accConf - 9.U,
-        Mux(!pfHit_s2 && pfIssue_s0, conf_s2.accConf - 10.U, conf_s2.accConf)))))
-  val updateEntry = WireInit(new confTableEntry().apply(true.B, tag_s2, conf_s2.accConf + accUpdate))
-  val replEntry = WireInit(new confTableEntry().apply(true.B, tag_s2, (1 << accConfWidth - 1).U))
+  val isNewMeta_s2 = reqType_s2 === ConfReqType.newMeta
+  val isFeedback_s2 = reqType_s2 === ConfReqType.feedback
+  val initConf = (1 << (accConfWidth - 1)).U(accConfWidth.W)
+  val maxConf = ((1 << accConfWidth) - 1).U(accConfWidth.W)
+  val targetAccuracyPercent = 50
+  val issueThreshold = (((1 << accConfWidth) * targetAccuracyPercent + 99) / 100).U(accConfWidth.W)
+  val feedbackReward = 4.U(accConfWidth.W)
+  def satInc(x: UInt, step: UInt): UInt = Mux(x > maxConf - step, maxConf, x + step)
+  def satDec(x: UInt, step: UInt): UInt = Mux(x < step, 0.U, x - step)
+
+  val nextConf = WireDefault(conf_s2.accConf)
+  when(isFeedback_s2) {
+    when(pfMiss_s2) {
+      nextConf := satDec(conf_s2.accConf, pfCnt_s2)
+    }.elsewhen(pfHit_s2 || pfLate_s2) {
+      nextConf := satInc(conf_s2.accConf, feedbackReward)
+    }
+  }
+
+  val feedbackMissInit = satDec(initConf, pfCnt_s2)
+  val feedbackHitInit = satInc(initConf, feedbackReward)
+  val missInitConf = Mux(
+    isFeedback_s2 && pfMiss_s2,
+    feedbackMissInit,
+    Mux(isFeedback_s2 && (pfHit_s2 || pfLate_s2), feedbackHitInit, initConf)
+  )
+  val updateEntry = WireInit(new confTableEntry().apply(true.B, tag_s2, nextConf))
+  val replEntry = WireInit(new confTableEntry().apply(true.B, tag_s2, missInitConf))
   val resetEntry = WireInit(new confTableEntry().apply(false.B, 0.U, 0.U))
 
-  val confTableWValid_s2 = s2_valid || !resetFinish
+  val confTableWValid_s2 = s2_valid && (isFeedback_s2 || !hit_s2) || !resetFinish
   val confTableWSet_s2 = Mux(resetFinish, set_s2, resetIdx)
   val confTableWWayOH_s2 = Mux(resetFinish, UIntToOH(way_s2), Fill(confTableAssoc, true.B))
   val confTableWEntry_s2 = Mux(resetFinish, Mux(hit_s2, updateEntry, replEntry), resetEntry)
+
+  val confEntryAlloc_s2 = resetFinish && s2_valid && !hit_s2
+  val confEntryUpdate_s2 = resetFinish && s2_valid && hit_s2 &&
+    isFeedback_s2 && (pfMiss_s2 || pfHit_s2 || pfLate_s2)
+  val confUpdateCond_s2 = WireDefault(ConfUpdateCond.noEffect)
+  when(isNewMeta_s2) {
+    confUpdateCond_s2 := ConfUpdateCond.newMeta
+  }.elsewhen(isFeedback_s2 && pfMiss_s2) {
+    confUpdateCond_s2 := ConfUpdateCond.missPenalty
+  }.elsewhen(isFeedback_s2 && (pfHit_s2 || pfLate_s2)) {
+    confUpdateCond_s2 := ConfUpdateCond.reward
+  }.elsewhen(!hit_s2) {
+    confUpdateCond_s2 := ConfUpdateCond.alloc
+  }
 
   confTable.io.w.apply(
     valid = confTableWValid_s2,
@@ -993,15 +1061,23 @@ class confTable(implicit p:Parameters) extends TPModule {
   )
 
   io.resp.valid := s2_valid && needResp_s2
-  io.resp.bits.issue := Mux(hit_s2, conf_s2.accConf > ((1 << accConfWidth - 1) >> 1).U, true.B)
+  io.resp.bits.issue := Mux(hit_s2, conf_s2.accConf >= issueThreshold, true.B)
+  io.resp.bits.reqType := reqType_s2
 
-  XSPerfAccumulate("tp_conf_table_pf_hit", io.req.valid && io.req.bits.pfHit)
-  XSPerfAccumulate("tp_conf_table_pf_late", io.req.valid && io.req.bits.pfLate)
-  XSPerfAccumulate("tp_conf_table_pf_miss", io.req.valid && io.req.bits.pfMiss)
-  XSPerfAccumulate("tp_conf_table_pf_issue", io.req.valid && io.req.bits.pfIssue)
-  XSPerfAccumulate("tp_conf_table_new_meta", io.req.valid && io.req.bits.newMeta)
+  XSPerfAccumulate("tp_conf_table_pf_hit", io.req.fire && io.req.bits.pfHit)
+  XSPerfAccumulate("tp_conf_table_pf_late", io.req.fire && io.req.bits.pfLate)
+  XSPerfAccumulate("tp_conf_table_pf_miss", io.req.fire && io.req.bits.pfMiss)
+  XSPerfAccumulate("tp_conf_table_pf_issue", io.req.fire && (io.req.bits.reqType === ConfReqType.issue))
+  XSPerfAccumulate("tp_conf_table_new_meta", io.req.fire && (io.req.bits.reqType === ConfReqType.newMeta))
   XSPerfAccumulate("tp_conf_table_resp", io.resp.valid)
   XSPerfAccumulate("tp_conf_table_resp_issue", io.resp.bits.issue && io.resp.valid)
+
+  val confDB = ChiselDB.createTable("tpconf", new confDBEntry(), basicDB = true)
+  val confPt = Wire(new confDBEntry())
+  confPt.pc := Cat(tag_s2, set_s2)
+  confPt.updateCond := confUpdateCond_s2
+  confPt.accConf := confTableWEntry_s2.accConf
+  confDB.log(confPt, confEntryAlloc_s2 || confEntryUpdate_s2, "", clock, reset)
 }
 
 class tpMetaEntry(implicit p:Parameters) extends TPBundle {
@@ -1113,10 +1189,29 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val dataReadQueue = Module(new Queue(new TPmetaReq(), dataReadQueueDepth, pipe = false, flow = false))
   val dataWriteQueue = Module(new Queue(new TPmetaReq(), dataWriteQueueDepth, pipe = false, flow = false))
   val tpDataQueue = Module(new Queue(new tpDataEntry(), tpDataQueueDepth + 1, pipe = false, flow = false))
+  // Carries the hashed PC for each accepted tpData read request.
+  val dataReadPCQueue = Module(new Queue(UInt(pcHashWidth.W), dataReadQueueDepth, pipe = false, flow = false))
+  // Holds PC sideband entries for tpData SRAM reads whose responses have not returned yet.
+  val tpDataPCPendingQueue = Module(new Queue(UInt(pcHashWidth.W), dataReadQueueDepth, pipe = false, flow = false))
+  // Aligns returned tpData entries with their source PC until the send/drop decision is made.
+  val tpDataPCQueue = Module(new Queue(UInt(pcHashWidth.W), tpDataQueueDepth + 1, pipe = false, flow = false))
   val metaWQueue = Module(new Queue(new trainedRecord(), tpMetaWQueueDepth, pipe = false, flow = false))
   val tpMetaResetQueue = Module(new Queue(new tpMetaResetEntry(), tpMetaResetQueueDepth, pipe = false, flow = false))
+  // Stores issue decisions from confTable; entries are consumed in lockstep with tpDataQueue.
   val confRespQueue = Module(new Queue(new confResp(), confReqQueueDepth + 1, pipe = false, flow = false))
+  // Buffers confidence initialization requests generated when new tpMeta records are installed.
+  val confNewMetaQueue = Module(new Queue(new confReq(), confReqQueueDepth, pipe = false, flow = false))
+  // Buffers confidence lookup requests for meta-hit tpData reads.
+  val confIssueQueue = Module(new Queue(new confReq(), confReqQueueDepth, pipe = false, flow = false))
+  // Buffers synthetic miss penalties charged when a prefetch group is actually issued.
+  val confIssueMissQueue = Module(new Queue(new confReq(), confReqQueueDepth, pipe = false, flow = false))
+  // Buffers real cache feedback rewards for TP prefetch hits or late hits.
+  val confFeedbackQueue = Module(new Queue(new confReq(), confReqQueueDepth, pipe = false, flow = false))
+  val confFeedbackArb = Module(new Arbiter(new confReq(), 2))
+  val confReqArb = Module(new Arbiter(new confReq(), 3))
   val pendingPfCnt = RegInit(0.U(log2Ceil(tpDataQueueDepth + 2).W))
+  // Tracks outstanding issue lookups so confRespQueue space is reserved before reads are launched.
+  val pendingConfRespCnt = RegInit(0.U(log2Ceil(confReqQueueDepth + 2).W))
 
   val repl = new SetAssocReplacer(tpTableNrSet, tpTableAssoc, tpTableReplacementPolicy)
 
@@ -1152,12 +1247,24 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   trainQueue.io.enq.valid := io.train.fire
   trainQueue.io.enq.bits := io.train.bits
   val dataReadQueueHasCredit = dataReadQueue.io.count < (dataReadQueueDepth - 2).U
-  trainQueue.io.deq.ready := !(tpMetaTable.io.w.req.fire || metaWQueue.io.deq.fire) && dataReadQueueHasCredit // metaW first
+  val dataReadPCQueueHasCredit = dataReadPCQueue.io.count < (dataReadQueueDepth - 2).U
+  val confIssueQueueHasCredit = confIssueQueue.io.count < (confReqQueueDepth - 2).U
+  val confRespQueueHasCredit = pendingConfRespCnt < (confReqQueueDepth + 1).U
+  trainQueue.io.deq.ready := !(tpMetaTable.io.w.req.fire || metaWQueue.io.deq.fire) &&
+    dataReadQueueHasCredit && dataReadPCQueueHasCredit && confIssueQueueHasCredit &&
+    confRespQueueHasCredit // metaW first
 
   // from sampler
   metaWQueue.io.enq.valid := sampler.io.trained.valid
   metaWQueue.io.enq.bits := sampler.io.trained.bits
-  metaWQueue.io.deq.ready := !tpMetaTable.io.w.req.fire // meta table W first
+  metaWQueue.io.deq.ready := !tpMetaTable.io.w.req.fire && confNewMetaQueue.io.enq.ready // meta table W first
+
+  confReqArb.io.in(0) <> confNewMetaQueue.io.deq
+  confReqArb.io.in(1) <> confIssueQueue.io.deq
+  confFeedbackArb.io.in(0) <> confIssueMissQueue.io.deq
+  confFeedbackArb.io.in(1) <> confFeedbackQueue.io.deq
+  confReqArb.io.in(2) <> confFeedbackArb.io.out
+  confTable.io.req <> confReqArb.io.out
 
   /* Stage 0: query tpMetaTable */
 
@@ -1256,9 +1363,11 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   dataWriteQueue.io.enq.bits.hitCount := 0.U // DontCare
   assert(dataWriteQueue.io.enq.ready === true.B) // TODO: support back-pressure
 
+  val pfIssue = s1_valid && hit_s1 && !metaWValid_s1
+
   // meta reset queue
   // now use to upadte hitCount
-  tpMetaResetQueue.io.enq.valid := s1_valid && hit_s1 && !metaWValid_s1
+  tpMetaResetQueue.io.enq.valid := pfIssue
   tpMetaResetQueue.io.enq.bits.set := set_s1
   tpMetaResetQueue.io.enq.bits.way := way_s1
   tpMetaResetQueue.io.enq.bits.tag := tag_s1
@@ -1276,7 +1385,9 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val hitCount_s2 = RegEnable(hitCount_s1, s1_valid)
 
   // dataReadQueue enqueue
-  dataReadQueue.io.enq.valid := s2_valid && hit_s2
+  val canAllocConfResp = pendingConfRespCnt < (confReqQueueDepth + 1).U
+  dataReadQueue.io.enq.valid := s2_valid && hit_s2 && dataReadPCQueue.io.enq.ready &&
+    confIssueQueue.io.enq.ready && canAllocConfResp
   // dataReadQueue.io.enq.bits.set := Mux(trainOnVaddr.orR, vset_s2, pset_s2)
   dataReadQueue.io.enq.bits.set := set_s2
   dataReadQueue.io.enq.bits.way := way_s2
@@ -1285,21 +1396,27 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   dataReadQueue.io.enq.bits.length := 0.U //DontCare
   dataReadQueue.io.enq.bits.hartid := io.hartid
   dataReadQueue.io.enq.bits.hitCount := hitCount_s2
-  when(s2_valid && hit_s2) {
-    assert(dataReadQueue.io.enq.ready)
-  }
+  dataReadPCQueue.io.enq.valid := dataReadQueue.io.enq.fire
+  dataReadPCQueue.io.enq.bits := hashPC(train_s2.pc)
+  assert(dataReadPCQueue.io.enq.ready || !dataReadQueue.io.enq.fire)
 
 
   /* Async Stage: try to fetch or write tpData */
 
   // dataReadQueue/dataWriteQueue dequeue
   val pendingRead = RegInit(0.U)  // TODO: monitor pending read request and throttle it
-  dataReadQueue.io.deq.ready := tpmeta.io.req.ready && !dataWriteQueue.io.deq.valid
+  val readSidebandReady = dataReadPCQueue.io.deq.valid && tpDataPCPendingQueue.io.enq.ready
+  val readReqValid = dataReadQueue.io.deq.valid && readSidebandReady
+  val writeReqValid = dataWriteQueue.io.deq.valid
+  dataReadQueue.io.deq.ready := tpmeta.io.req.ready && !writeReqValid && readSidebandReady
   dataWriteQueue.io.deq.ready := tpmeta.io.req.ready
+  dataReadPCQueue.io.deq.ready := dataReadQueue.io.deq.fire
+  tpDataPCPendingQueue.io.enq.valid := dataReadQueue.io.deq.fire
+  tpDataPCPendingQueue.io.enq.bits := dataReadPCQueue.io.deq.bits
+  assert(dataReadPCQueue.io.deq.valid || !dataReadQueue.io.deq.fire)
+  assert(tpDataPCPendingQueue.io.enq.ready || !tpDataPCPendingQueue.io.enq.valid)
 
   // tpmeta_port req assignment, priority: write > read
-  val readReqValid = dataReadQueue.io.deq.valid
-  val writeReqValid = dataWriteQueue.io.deq.valid
   tpmeta.io.req.valid := readReqValid || writeReqValid
   tpmeta.io.req.bits := Mux(writeReqValid, dataWriteQueue.io.deq.bits, dataReadQueue.io.deq.bits)
 
@@ -1312,11 +1429,17 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     pendingPfCnt := pendingPfCnt - 1.U
   }
 
-  tpDataQueue.io.enq.valid := tpmeta.io.resp.valid && tpmeta.io.resp.bits.hartid === io.hartid
+  val tpDataRespValid = tpmeta.io.resp.valid && tpmeta.io.resp.bits.hartid === io.hartid
+  tpDataQueue.io.enq.valid := tpDataRespValid && tpDataPCPendingQueue.io.deq.valid && tpDataPCQueue.io.enq.ready
   tpDataQueue.io.enq.bits.rawData := tpmeta.io.resp.bits.rawData
   tpDataQueue.io.enq.bits.length := tpmeta.io.resp.bits.length
   tpDataQueue.io.enq.bits.hitCount := tpmeta.io.resp.bits.hitCount
+  tpDataPCQueue.io.enq.valid := tpDataQueue.io.enq.fire
+  tpDataPCQueue.io.enq.bits := tpDataPCPendingQueue.io.deq.bits
+  tpDataPCPendingQueue.io.deq.ready := tpDataQueue.io.enq.fire
   assert(tpDataQueue.io.enq.ready === true.B) // tpDataQueue is never full
+  assert(tpDataPCPendingQueue.io.deq.valid || !tpDataRespValid)
+  assert(tpDataPCQueue.io.enq.ready || !tpDataRespValid)
 
   tpMetaResetQueue.io.deq.ready := !(metaWQueue.io.deq.fire || !resetFinish) || pendingPfCnt.andR
   assert(tpMetaResetQueue.io.enq.ready === true.B)
@@ -1338,14 +1461,23 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val sending_hitCount = RegInit(0.U(hitCountWidth.W))
   // val sending_data_debug = Reg(Vec(tpEntryMaxLen, UInt(vaddrBits.W)))
   val sending_throttle = RegInit(0.U(4.W))
-  val tpDataQFull = tpDataQueue.io.count === tpDataQueueDepth.U
+  val tpDataQueueFull = tpDataQueue.io.count === tpDataQueueDepth.U
 
-  val sending_valid = do_sending && !tpDataQFull && sending_throttle === tpThrottleCycles
+  val sending_valid = do_sending && !tpDataQueueFull && sending_throttle === tpThrottleCycles
   val current_sending_data = Cat(sending_data(sending_idx), 0.U(offsetBits.W))
   val (sendingTag, sendingSet, _) = parseFullAddress(current_sending_data)
 
-  tpDataQueue.io.deq.ready := tpDataQFull || !do_sending
-  when(tpDataQueue.io.deq.fire && (tpDataQueue.io.deq.bits.length =/= 0.U)) {
+  val tpDataSidebandValid = confRespQueue.io.deq.valid && tpDataPCQueue.io.deq.valid
+  val tpDataIssueAllowed = confRespQueue.io.deq.bits.issue
+  val tpDataNeedIssueMiss = tpDataQueue.io.deq.valid && tpDataSidebandValid &&
+    tpDataIssueAllowed && tpDataQueue.io.deq.bits.length =/= 0.U
+  tpDataQueue.io.deq.ready := (tpDataQueueFull || !do_sending) && tpDataSidebandValid &&
+    (!tpDataNeedIssueMiss || confIssueMissQueue.io.enq.ready)
+  confRespQueue.io.deq.ready := tpDataQueue.io.deq.fire
+  tpDataPCQueue.io.deq.ready := tpDataQueue.io.deq.fire
+  val tpDataIssueFire = tpDataQueue.io.deq.fire && (tpDataQueue.io.deq.bits.length =/= 0.U) && tpDataIssueAllowed
+
+  when(tpDataIssueFire) {
     sending_data := tpDataQueue.io.deq.bits.rawData
     sending_length := tpDataQueue.io.deq.bits.length
     sending_hitCount := tpDataQueue.io.deq.bits.hitCount
@@ -1353,7 +1485,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     sending_idx := 0.U
     do_sending := true.B
   }
-  when(((do_sending && !tpDataQFull) || sending_throttle =/= 0.U) && (sending_throttle =/= tpThrottleCycles)) {
+  when(((do_sending && !tpDataQueueFull) || sending_throttle =/= 0.U) && (sending_throttle =/= tpThrottleCycles)) {
     sending_throttle := sending_throttle + 1.U
   }
 
@@ -1380,28 +1512,56 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   io.resp.ready := true.B
   io.train.ready := resetFinish && trainQueue.io.enq.ready
-  io.feedBack.ready := resetFinish
+  io.feedBack.ready := resetFinish && confFeedbackQueue.io.enq.ready
 
   // confidence table
   val pfHit = io.feedBack.bits.hit && MemReqSource.isCPUReq(io.feedBack.bits.reqsource) &&
     io.feedBack.bits.pfsource === PfSource.TP.id.U
-  val pfLate = io.feedBack.bits.hit && io.feedBack.bits.reqsource =/= MemReqSource.Prefetch2L2TP.id.U
-  val pfMiss = false.B // TODO
-  val pfIssue = s1_valid && hit_s1 && !metaWValid_s1
+  val pfLate = io.feedBack.bits.hit && io.feedBack.bits.pfsource === PfSource.TP.id.U &&
+    io.feedBack.bits.reqsource =/= MemReqSource.Prefetch2L2TP.id.U
+  val pfMiss = false.B // pfMiss is charged on issue via confIssueMissQueue.
   val newMeta = metaWQueue.io.deq.fire
-  confTable.io.req.valid := io.feedBack.valid || pfIssue || newMeta
-  confTable.io.req.bits.pc := Mux(pfIssue, hashPC(train_s1.pc), Mux(io.feedBack.valid, io.feedBack.bits.pc, metaWRecord_s0.pc)) //TODO:add queue?
-  confTable.io.req.bits.pfHit := pfHit
-  confTable.io.req.bits.pfLate := pfLate
-  confTable.io.req.bits.pfMiss := pfMiss
-  confTable.io.req.bits.pfIssue := pfIssue
-  confTable.io.req.bits.newMeta := newMeta
+
+  confNewMetaQueue.io.enq.valid := newMeta
+  confNewMetaQueue.io.enq.bits.pc := metaWRecord_s0.pc
+  confNewMetaQueue.io.enq.bits.reqType := ConfReqType.newMeta
+  confNewMetaQueue.io.enq.bits.pfHit := false.B
+  confNewMetaQueue.io.enq.bits.pfLate := false.B
+  confNewMetaQueue.io.enq.bits.pfMiss := false.B
+  confNewMetaQueue.io.enq.bits.pfCnt := 0.U
+
+  confIssueQueue.io.enq.valid := dataReadQueue.io.enq.fire
+  confIssueQueue.io.enq.bits.pc := hashPC(train_s2.pc)
+  confIssueQueue.io.enq.bits.reqType := ConfReqType.issue
+  confIssueQueue.io.enq.bits.pfHit := false.B
+  confIssueQueue.io.enq.bits.pfLate := false.B
+  confIssueQueue.io.enq.bits.pfMiss := false.B
+  confIssueQueue.io.enq.bits.pfCnt := 0.U
+
+  confIssueMissQueue.io.enq.valid := tpDataIssueFire
+  confIssueMissQueue.io.enq.bits.pc := tpDataPCQueue.io.deq.bits
+  confIssueMissQueue.io.enq.bits.reqType := ConfReqType.feedback
+  confIssueMissQueue.io.enq.bits.pfHit := false.B
+  confIssueMissQueue.io.enq.bits.pfLate := false.B
+  confIssueMissQueue.io.enq.bits.pfMiss := true.B
+  confIssueMissQueue.io.enq.bits.pfCnt := tpDataQueue.io.deq.bits.length.pad(accConfWidth)
+
+  confFeedbackQueue.io.enq.valid := io.feedBack.fire
+  confFeedbackQueue.io.enq.bits.pc := hashPC(io.feedBack.bits.pc)
+  confFeedbackQueue.io.enq.bits.reqType := ConfReqType.feedback
+  confFeedbackQueue.io.enq.bits.pfHit := pfHit
+  confFeedbackQueue.io.enq.bits.pfLate := pfLate
+  confFeedbackQueue.io.enq.bits.pfMiss := pfMiss
+  confFeedbackQueue.io.enq.bits.pfCnt := 1.U
 
   confRespQueue.io.enq.valid := confTable.io.resp.valid
   confRespQueue.io.enq.bits.issue := confTable.io.resp.bits.issue
-  confRespQueue.io.deq.ready := tpDataQueue.io.deq.fire
-  // assert(confRespQueue.io.enq.ready === true.B)
-  // TODO
+  when(confIssueQueue.io.enq.fire && !confRespQueue.io.deq.fire) {
+    pendingConfRespCnt := pendingConfRespCnt + 1.U
+  }.elsewhen(!confIssueQueue.io.enq.fire && confRespQueue.io.deq.fire) {
+    pendingConfRespCnt := pendingConfRespCnt - 1.U
+  }
+  assert(confRespQueue.io.enq.ready || !confTable.io.resp.valid)
 
   /* Performance collection */
   val hitCountS1 = WireInit(0.U(hitCountWidth.W))
@@ -1431,5 +1591,5 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
 
   //  triggerDB.log(triggerPt, tpTable_w_valid, "", clock, reset)
   trainDB.log(trainPt, s2_valid, "", clock, reset)
-  sendDB.log(sendPt, tpDataQueue.io.deq.fire, "", clock, reset)
+  sendDB.log(sendPt, tpDataIssueFire, "", clock, reset)
 }
