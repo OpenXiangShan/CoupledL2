@@ -3,6 +3,7 @@ package oceanus.l2
 import chisel3._
 import chisel3.util._
 import utility._
+import utility.sram.SRAMTemplate
 import oceanus.l2._
 import oceanus.compactchi._
 import org.chipsalliance.cde.config.Parameters
@@ -122,7 +123,7 @@ object L2Directory {
 
   // Internal SRAM entry: tag + meta together
   class DirEntry(implicit val p: Parameters) extends Bundle with HasL2Params {
-    val tag  = UInt(paramL2.tagWidth.W)
+    val tag  = UInt(tagWidth.W)
     val meta = new L2Directory.Meta
   }
 }
@@ -140,7 +141,8 @@ object PLRU4 {
     way
   }
   def getNextState(state: UInt, touchWay: UInt): UInt = {
-    val next = WireInit(VecInit(state.asBools))
+    val next = Wire(Vec(nBits, Bool()))
+    next := state.asTypeOf(Vec(nBits, Bool()))
     val inLeft = touchWay(1) === 0.U
     val first  = touchWay(0) === 0.U
     next(0) := Mux(inLeft, true.B, false.B)
@@ -169,22 +171,37 @@ object PLRU4 {
 //   grants, closing the PLRU register S3-write/S1-read RAW window.
 // dirInFlight: a same-set DirRd in flight drives ReplRdRetryAck.
 
-class Directory(implicit p: Parameters) extends Module with HasL2Params {
-
-  val nMSHR   = paramL2.nMSHR
+class Directory(implicit val p: Parameters) extends Module with HasL2Params {
   val MAX_AGE = 15.U(4.W)
   val idxW    = log2Ceil(nMSHR)
 
   val io = IO(new Bundle {
     val toDir   = Flipped(Vec(nMSHR, new L2Directory.PathToDirectory))
     val fromDir = Vec(nMSHR, new L2Directory.PathFromDirectory)
+    val debugStateWrite = if (p(L2SliceDirStateProbeEnableKey)) {
+      Some(Output(new Bundle {
+        val valid = Bool()
+        val set = UInt(setBits.W)
+        val way = UInt(wayBits.W)
+        val state = L2Directory.MetaState()
+      }))
+    } else {
+      None
+    }
+    val debugPlru = if (p(L2SliceDirPlruProbeEnableKey)) {
+      Some(Output(new Bundle {
+        val valid = Bool()
+        val set = UInt(setBits.W)
+        val state = UInt(PLRU4.nBits.W)
+      }))
+    } else {
+      None
+    }
   })
 
   val sets = paramL2.sets
   val ways = paramL2.ways
   require(ways == 4, "Directory uses PLRU4 hardwired for 4 ways")
-  val offsetBits = paramL2.offsetBits
-  val setBits    = paramL2.setBits
 
   // ── SRAM + PLRU ───────────────────────────────────────────────────
   val dirArray = Module(new SRAMTemplate(
@@ -192,6 +209,30 @@ class Directory(implicit p: Parameters) extends Module with HasL2Params {
     singlePort = true, useBitmask = true, hasMbist = paramL2.hasMbist
   ))
   val plruRegs = RegInit(VecInit(Seq.fill(sets)(0.U(PLRU4.nBits.W))))
+  val initActive = RegInit(true.B)
+  val initSet = RegInit(0.U(setBits.W))
+  val initMeta = Wire(new L2Directory.Meta)
+  initMeta.state := L2Directory.MetaState.I
+  initMeta.dirty := false.B
+  initMeta.alias := 0.U
+  initMeta.clients.foreach(_ := false.B)
+  val initEntry = Wire(new L2Directory.DirEntry)
+  initEntry.tag := 0.U
+  initEntry.meta := initMeta
+  val initMask = Wire(new L2Directory.DirEntry)
+  initMask.tag := Fill(tagWidth, true.B)
+  initMask.meta.state := Fill(2, true.B)
+  initMask.meta.dirty := true.B
+  initMask.meta.alias := Fill(2, true.B)
+  initMask.meta.clients.foreach(_ := true.B)
+  val initWayMask = Fill(ways, true.B)
+  when(initActive) {
+    when(initSet === (sets - 1).U) {
+      initActive := false.B
+    }.otherwise {
+      initSet := initSet + 1.U
+    }
+  }
 
   // ══════════════════════════════════════════════════════════════════
   // Internal arbiter
@@ -200,9 +241,12 @@ class Directory(implicit p: Parameters) extends Module with HasL2Params {
   val dirWbVec  = VecInit(io.toDir.map(_.DirWb))
   val dirRdVec  = VecInit(io.toDir.map(_.DirRd))
 
-  val anyReplRd = replRdVec.asUInt.orR
-  val anyDirWb  = dirWbVec.asUInt.orR
-  val anyDirRd  = dirRdVec.asUInt.orR
+  val rawAnyReplRd = replRdVec.asUInt.orR
+  val rawAnyDirWb  = dirWbVec.asUInt.orR
+  val rawAnyDirRd  = dirRdVec.asUInt.orR
+  val anyReplRd = rawAnyReplRd && !initActive
+  val anyDirWb  = rawAnyDirWb && !initActive
+  val anyDirRd  = rawAnyDirRd && !initActive
   val anyLevel2 = anyDirWb || anyDirRd
 
   // replStall (declared as wire; driven after S2/S3 regs exist)
@@ -302,19 +346,38 @@ class Directory(implicit p: Parameters) extends Module with HasL2Params {
   wbEntry.meta := winReq.META
 
   val wbMask = Wire(new L2Directory.DirEntry)
-  wbMask.tag        := Fill(paramL2.tagWidth, winReq.TAG_WEN)
+  wbMask.tag        := Fill(tagWidth, winReq.TAG_WEN)
   wbMask.meta.state := Fill(2, winReq.META_WEN.state)
   wbMask.meta.dirty := winReq.META_WEN.dirty
   wbMask.meta.alias := Fill(2, winReq.META_WEN.alias)
   wbMask.meta.clients.zip(winReq.META_WEN.clients).foreach { case (m, w) => m := w }
 
+  val dirWriteValid = initActive || isDirWb
+  val dirWriteEntry = Mux(initActive, initEntry, wbEntry)
+  val dirWriteSet = Mux(initActive, initSet, reqSet)
+  val dirWriteWayMask = Mux(initActive, initWayMask, UIntToOH(winReq.WAY(wayBits - 1, 0), ways))
+  val dirWriteBitMask = Mux(initActive, initMask.asUInt, wbMask.asUInt)
+
   dirArray.io.w(
-    valid   = isDirWb,
-    data    = wbEntry,
-    setIdx  = reqSet,
-    waymask = UIntToOH(winReq.WAY),
-    bitmask = wbMask.asUInt
+    valid   = dirWriteValid,
+    data    = dirWriteEntry,
+    setIdx  = dirWriteSet,
+    waymask = dirWriteWayMask,
+    bitmask = dirWriteBitMask
   )
+
+  if (p(L2SliceDirStateProbeEnableKey)) {
+    // This probe reflects the actual directory write request that is committed at the Directory write port,
+    // not the originating FSM's in-flight request fields on a later cycle.
+    io.debugStateWrite.get.valid := isDirWb
+    io.debugStateWrite.get.set := reqSet
+    io.debugStateWrite.get.way := winReq.WAY(wayBits - 1, 0)
+    io.debugStateWrite.get.state := winReq.META.state
+    dontTouch(io.debugStateWrite.get.valid)
+    dontTouch(io.debugStateWrite.get.set)
+    dontTouch(io.debugStateWrite.get.way)
+    dontTouch(io.debugStateWrite.get.state)
+  }
 
   // ══════════════════════════════════════════════════════════════════
   // S3: hit detect, way select, PLRU update
@@ -348,6 +411,17 @@ class Directory(implicit p: Parameters) extends Module with HasL2Params {
                 (s3_valid && s3_isRepl  && !replRetry)
   when(plruWen) {
     plruRegs(s3_set) := PLRU4.getNextState(s3_plru, way_s3)
+  }
+
+  if (p(L2SliceDirPlruProbeEnableKey)) {
+    io.debugPlru.get.valid := plruWen
+    io.debugPlru.get.set := s3_set
+    // This probe is for model-vs-DUT PLRU state validation only.
+    // It must never be fed back into model victim prediction.
+    io.debugPlru.get.state := Mux(plruWen, PLRU4.getNextState(s3_plru, way_s3), s3_plru)
+    dontTouch(io.debugPlru.get.valid)
+    dontTouch(io.debugPlru.get.set)
+    dontTouch(io.debugPlru.get.state)
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -407,6 +481,10 @@ class Directory(implicit p: Parameters) extends Module with HasL2Params {
     "Directory: multiple grants in one cycle")
   assert(!(grantReplRd && replStall),
     "Directory: ReplRd granted while replStall (PLRU hazard)")
+  when(initActive) {
+    assert(!rawAnyReplRd && !rawAnyDirWb && !rawAnyDirRd,
+      "Directory: functional traffic must be blocked while directory init is in progress")
+  }
   when(s3_valid && s3_isDirRd) {
     assert(PopCount(hitVec) <= 1.U,
       "Directory: multiple ways hit (tag uniqueness)")
@@ -423,6 +501,7 @@ class Directory(implicit p: Parameters) extends Module with HasL2Params {
   XSPerfAccumulate("dirRd_hit",     s3_valid && s3_isDirRd && hit_s3)
   XSPerfAccumulate("dirRd_miss",    s3_valid && s3_isDirRd && !hit_s3)
   XSPerfAccumulate("plru_upd",      plruWen)
+  XSPerfAccumulate("dir_init_active", initActive)
   XSPerfAccumulate("starve_wb",     wbStarved)
   XSPerfAccumulate("starve_rd",     rdStarved)
 }
