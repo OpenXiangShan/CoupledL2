@@ -222,13 +222,15 @@ class filterTableEntry(implicit p: Parameters) extends TPBundle {
   val pcTag = UInt((pcHashWidth - samplerFilterSetBits).W)
   val lastAddr = UInt(metaDataLength.W)
   val cnt = UInt(filteredCntWidth.W)
+  val epoch = UInt(4.W)
 
-  def apply(valid: Bool, tag: UInt, addr: UInt, cnt: UInt) = {
+  def apply(valid: Bool, tag: UInt, addr: UInt, cnt: UInt, epoch: UInt) = {
     val entry = Wire(new filterTableEntry)
     entry.valid := valid
     entry.pcTag := tag
     entry.lastAddr := addr
     entry.cnt := cnt
+    entry.epoch := epoch
     entry
   }
 }
@@ -273,12 +275,23 @@ class SamplerFilter(implicit p: Parameters) extends TPModule {
 
   val resetFinish = RegInit(false.B)
   val resetIdx = RegInit((samplerFilterNrSet - 1).U)
+  val filterEpoch = RegInit(0.U(4.W))
+  val filterEpochCnt = RegInit(0.U(15.W))
+  val filterEpochPeriodMinusOne = 32767.U(15.W)
 
   when(resetIdx === 0.U) {
     resetFinish := true.B
   }
   when(!resetFinish) {
     resetIdx := resetIdx - 1.U
+  }
+  when(resetFinish && io.train.valid) {
+    when(filterEpochCnt === filterEpochPeriodMinusOne) {
+      filterEpochCnt := 0.U
+      filterEpoch := filterEpoch + 1.U
+    }.otherwise {
+      filterEpochCnt := filterEpochCnt + 1.U
+    }
   }
 
 
@@ -325,7 +338,10 @@ class SamplerFilter(implicit p: Parameters) extends TPModule {
   val victimWay_s1 = repl.way(pcSet_s1)
   val way_s1 = Mux(hit_s1, hitWay_s1, victimWay_s1)
   val lastAddr_s1 = filterRecord_s1(way_s1).lastAddr
-  val cnt_s1 = filterRecord_s1(way_s1).cnt
+  val epochMatch_s1 = filterRecord_s1(way_s1).epoch === filterEpoch
+  val decayedCnt_s1 = Mux(epochMatch_s1, filterRecord_s1(way_s1).cnt, filterRecord_s1(way_s1).cnt >> 1)
+  val cnt_s1 = Mux(hit_s1, decayedCnt_s1, 0.U)
+  val epoch_s1 = filterEpoch
 
   when(s1_valid) {
     repl.access(pcSet_s1, way_s1)
@@ -342,12 +358,13 @@ class SamplerFilter(implicit p: Parameters) extends TPModule {
   val cnt_s2 = RegEnable(cnt_s1, s1_valid)
   val hit_s2 = RegEnable(hit_s1, s1_valid)
   val way_s2 = RegEnable(way_s1, s1_valid)
+  val epoch_s2 = RegEnable(epoch_s1, s1_valid)
   val (pcTag_s2, pcSet_s2) = parsePaddr(pc_s2)
   val updateCnt = Mux(hit_s2 && !cnt_s2.andR, cnt_s2 + 1.U, cnt_s2)
 
-  val updateEntry = WireInit(new filterTableEntry().apply(true.B, pcTag_s2, currAddr_s2, updateCnt))
-  val replEntry = WireInit(new filterTableEntry().apply(true.B, pcTag_s2, currAddr_s2, 0.U))
-  val resetEntry = WireInit(new filterTableEntry().apply(false.B, 0.U, 0.U, 0.U))
+  val updateEntry = WireInit(new filterTableEntry().apply(true.B, pcTag_s2, currAddr_s2, updateCnt, epoch_s2))
+  val replEntry = WireInit(new filterTableEntry().apply(true.B, pcTag_s2, currAddr_s2, 0.U, epoch_s2))
+  val resetEntry = WireInit(new filterTableEntry().apply(false.B, 0.U, 0.U, 0.U, 0.U))
 
   val filterTableWValid_s2 =  s2_valid || !resetFinish
   val filterTableWSet_s2 = Mux(resetFinish, pcSet_s2, resetIdx)
@@ -1021,13 +1038,16 @@ class confTable(implicit p:Parameters) extends TPModule {
   val issueThreshold = (((1 << accConfWidth) * issueAccuracyPercent + 99) / 100).U(accConfWidth.W)
   val metaThreshold = (((1 << accConfWidth) * metaAccuracyPercent + 99) / 100).U(accConfWidth.W)
   val feedbackReward = 4.U(accConfWidth.W)
+  val metaFeedbackReward = 1.U(accConfWidth.W)
   val maxIssuePenalty = 8.U(accConfWidth.W)
-  val metaIssuePenalty = 1.U(accConfWidth.W)
   def satInc(x: UInt, step: UInt): UInt = Mux(x > maxConf - step, maxConf, x + step)
   def satDec(x: UInt, step: UInt): UInt = Mux(x < step, 0.U, x - step)
 
   val issueMissPenalty = Mux(pfCnt_s2 > maxIssuePenalty, maxIssuePenalty, pfCnt_s2)
-  val metaMissPenalty = Mux(pfCnt_s2.orR, metaIssuePenalty, 0.U)
+  val metaMissPenaltyTable = VecInit((0 until (1 << accConfWidth)).map { cnt =>
+    ((cnt * metaAccuracyPercent + 99) / 100).U(accConfWidth.W)
+  })
+  val metaMissPenalty = metaMissPenaltyTable(pfCnt_s2)
   val nextIssueConf = WireDefault(conf_s2.issueConf)
   val nextMetaConf = WireDefault(conf_s2.metaConf)
   when(isFeedback_s2) {
@@ -1036,7 +1056,9 @@ class confTable(implicit p:Parameters) extends TPModule {
       nextMetaConf := satDec(conf_s2.metaConf, metaMissPenalty)
     }.elsewhen(pfHit_s2 || pfLate_s2) {
       nextIssueConf := satInc(conf_s2.issueConf, feedbackReward)
-      nextMetaConf := satInc(conf_s2.metaConf, feedbackReward)
+      when(pfHit_s2) {
+        nextMetaConf := satInc(conf_s2.metaConf, metaFeedbackReward)
+      }
     }
   }
 
@@ -1051,8 +1073,8 @@ class confTable(implicit p:Parameters) extends TPModule {
     isFeedback_s2 && pfMiss_s2,
     satDec(initConf, metaMissPenalty),
     Mux(
-      isFeedback_s2 && (pfHit_s2 || pfLate_s2),
-      feedbackHitInit,
+      isFeedback_s2 && pfHit_s2,
+      satInc(initConf, metaFeedbackReward),
       initConf
     )
   )
