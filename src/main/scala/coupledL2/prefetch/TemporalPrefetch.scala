@@ -965,6 +965,9 @@ class confTable(implicit p:Parameters) extends TPModule {
 
   /* ------- stage 0 ------- */
   // query confTable
+  val reqQueueDeqValid = reqQueue.io.deq.valid
+  val reqQueueDeqBits = reqQueue.io.deq.bits
+  val (_, queuedSet_s0) = parsePC(reqQueueDeqBits.pc)
   val s0_valid = reqQueue.io.deq.fire
   val req_s0 = reqQueue.io.deq.bits
   val (tag_s0, set_s0) = parsePC(req_s0.pc)
@@ -1002,10 +1005,8 @@ class confTable(implicit p:Parameters) extends TPModule {
   val victimWay_s1 = repl.way(set_s1)
   val way_s1 = Mux(hit_s1, hitWay_s1, victimWay_s1)
   val conf_s1 = confs(way_s1)
-  val sameSetWriteHazard_s1 = resetFinish && s1_valid && set_s1 === set_s0 &&
+  val sameSetWriteHazard_s1 = resetFinish && reqQueueDeqValid && s1_valid && set_s1 === queuedSet_s0 &&
     (reqType_s1 === ConfReqType.feedback || !hit_s1)
-  // A same-set read must wait for in-flight writes to commit, otherwise back-to-back misses can allocate duplicate tags.
-  reqQueue.io.deq.ready := !confTable.io.w.req.fire && !sameSetWriteHazard_s1 // W first
 
   when(s1_valid) {
     repl.access(set_s1, way_s1)
@@ -1083,6 +1084,9 @@ class confTable(implicit p:Parameters) extends TPModule {
   val resetEntry = WireInit(new confTableEntry().apply(false.B, 0.U, 0.U, 0.U))
 
   val confTableWValid_s2 = s2_valid && (isFeedback_s2 || !hit_s2) || !resetFinish
+  // A read must wait while the single-port table is writing. Same-set reads also wait for the
+  // in-flight stage-1 update decision to prevent duplicate tag allocations on back-to-back misses.
+  reqQueue.io.deq.ready := !confTableWValid_s2 && !sameSetWriteHazard_s1
   val confTableWSet_s2 = Mux(resetFinish, set_s2, resetIdx)
   val confTableWWayOH_s2 = Mux(resetFinish, UIntToOH(way_s2), Fill(confTableAssoc, true.B))
   val confTableWEntry_s2 = Mux(resetFinish, Mux(hit_s2, updateEntry, replEntry), resetEntry)
@@ -1307,7 +1311,8 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val dataReadPCQueueHasCredit = dataReadPCQueue.io.count < (dataReadQueueDepth - 2).U
   val confIssueQueueHasCredit = confIssueQueue.io.count < (confReqQueueDepth - 2).U
   val confRespQueueHasCredit = pendingConfRespCnt < (confReqQueueDepth + 1).U
-  trainQueue.io.deq.ready := !(tpMetaTable.io.w.req.fire || metaInstallQueue.io.deq.fire) &&
+  val tpMetaWriteValid = Wire(Bool())
+  trainQueue.io.deq.ready := !(tpMetaWriteValid || metaInstallQueue.io.deq.valid) &&
     dataReadQueueHasCredit && dataReadPCQueueHasCredit && confIssueQueueHasCredit &&
     confRespQueueHasCredit // metaW first
 
@@ -1321,7 +1326,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   metaConfPendingQueue.io.enq.valid := metaWQueue.io.deq.fire
   metaConfPendingQueue.io.enq.bits := metaWQueue.io.deq.bits
   assert(metaConfPendingQueue.io.enq.ready || !metaWQueue.io.deq.fire)
-  metaInstallQueue.io.deq.ready := !tpMetaTable.io.w.req.fire
+  metaInstallQueue.io.deq.ready := !tpMetaWriteValid
 
   confReqArb.io.in(0) <> confNewMetaQueue.io.deq
   confReqArb.io.in(1) <> confIssueQueue.io.deq
@@ -1409,9 +1414,11 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val tpTableWWay = way_s1
   val tpTableWWayOH = Mux(resetFinish, UIntToOH(tpTableWWay), Fill(tpTableAssoc, true.B))
 
-  tpMetaTable.io.w.apply(tpTableWValid || !resetFinish, metaWEntry, tpTableWSet, tpTableWWayOH)
+  tpMetaWriteValid := tpTableWValid || !resetFinish
+  tpMetaTable.io.w.apply(tpMetaWriteValid, metaWEntry, tpTableWSet, tpTableWWayOH)
 
-  when(RegNext(metaInstallQueue.io.deq.fire)) {
+  val metaInstallHitCountWrite = RegNext(metaInstallQueue.io.deq.fire, false.B)
+  when(metaInstallHitCountWrite) {
     hitCount(set_s1)(way_s1).hitCount := 0.U
   }.elsewhen(tpMetaResetQueue.io.deq.fire) {
     hitCount(tpMetaResetQueue.io.deq.bits.set)(tpMetaResetQueue.io.deq.bits.way).hitCount := tpMetaResetQueue.io.deq.bits.hitCount
@@ -1505,7 +1512,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   assert(tpDataPCPendingQueue.io.deq.valid || !tpDataRespValid)
   assert(tpDataPCQueue.io.enq.ready || !tpDataRespValid)
 
-  tpMetaResetQueue.io.deq.ready := !(metaInstallQueue.io.deq.fire || !resetFinish) || pendingPfCnt.andR
+  tpMetaResetQueue.io.deq.ready := !metaInstallHitCountWrite && (resetFinish || pendingPfCnt.andR)
   assert(tpMetaResetQueue.io.enq.ready === true.B)
 
   when(resetIdx === 0.U) {
