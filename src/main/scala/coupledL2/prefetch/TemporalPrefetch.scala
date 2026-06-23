@@ -946,6 +946,10 @@ class confTable(implicit p:Parameters) extends TPModule {
   val resetFinish = RegInit(false.B)
   val resetIdx = RegInit((confTableNrSet - 1).U)
   val resetCnt = RegInit(100000.U)
+  // Global sparse probes keep low-confidence PCs recoverable after phase changes.
+  val confProbePeriod = 64
+  val issueProbeCnt = RegInit(0.U(log2Ceil(confProbePeriod).W))
+  val metaProbeCnt = RegInit(0.U(log2Ceil(confProbePeriod).W))
 
   when(resetIdx === 0.U) {
     resetFinish := true.B
@@ -1033,21 +1037,23 @@ class confTable(implicit p:Parameters) extends TPModule {
   val isFeedback_s2 = reqType_s2 === ConfReqType.feedback
   val initConf = (1 << (accConfWidth - 1)).U(accConfWidth.W)
   val maxConf = ((1 << accConfWidth) - 1).U(accConfWidth.W)
-  val issueAccuracyPercent = 20
-  // Bad PCs in result/oracleLimited show about 8%-12% useful/send; meta installation keeps a stricter gate.
-  val metaAccuracyPercent = 50
-  val issueThreshold = (((1 << accConfWidth) * issueAccuracyPercent + 99) / 100).U(accConfWidth.W)
-  val metaThreshold = (((1 << accConfWidth) * metaAccuracyPercent + 99) / 100).U(accConfWidth.W)
-  val feedbackReward = 4.U(accConfWidth.W)
+  val issueAccuracyPercent = 25
+  val metaAccuracyPercent = 40
+  val issueThreshold = initConf
+  val metaThreshold = initConf
+  val feedbackReward = 1.U(accConfWidth.W)
   val metaFeedbackReward = 1.U(accConfWidth.W)
-  val maxIssuePenalty = 8.U(accConfWidth.W)
   def satInc(x: UInt, step: UInt): UInt = Mux(x > maxConf - step, maxConf, x + step)
   def satDec(x: UInt, step: UInt): UInt = Mux(x < step, 0.U, x - step)
 
-  val issueMissPenalty = Mux(pfCnt_s2 > maxIssuePenalty, maxIssuePenalty, pfCnt_s2)
+  // Charge confidence by the target useful-prefetch ratio of one issued group.
+  val issueMissPenaltyTable = VecInit((0 until (1 << accConfWidth)).map { cnt =>
+    ((cnt * issueAccuracyPercent + 99) / 100).U(accConfWidth.W)
+  })
   val metaMissPenaltyTable = VecInit((0 until (1 << accConfWidth)).map { cnt =>
     ((cnt * metaAccuracyPercent + 99) / 100).U(accConfWidth.W)
   })
+  val issueMissPenalty = issueMissPenaltyTable(pfCnt_s2)
   val metaMissPenalty = metaMissPenaltyTable(pfCnt_s2)
   val nextIssueConf = WireDefault(conf_s2.issueConf)
   val nextMetaConf = WireDefault(conf_s2.metaConf)
@@ -1112,9 +1118,21 @@ class confTable(implicit p:Parameters) extends TPModule {
     waymask = confTableWWayOH_s2
   )
 
+  val issueConfPass = hit_s2 && conf_s2.issueConf >= issueThreshold
+  val metaConfPass = hit_s2 && conf_s2.metaConf >= metaThreshold
+  val issueProbeFire = s2_valid && reqType_s2 === ConfReqType.issue && hit_s2 && !issueConfPass && issueProbeCnt.andR
+  val metaProbeFire = s2_valid && reqType_s2 === ConfReqType.newMeta && hit_s2 && !metaConfPass && metaProbeCnt.andR
+  when(s2_valid && reqType_s2 === ConfReqType.issue && hit_s2 && !issueConfPass) {
+    issueProbeCnt := issueProbeCnt + 1.U
+  }
+  when(s2_valid && reqType_s2 === ConfReqType.newMeta && hit_s2 && !metaConfPass) {
+    metaProbeCnt := metaProbeCnt + 1.U
+  }
+
   io.resp.valid := s2_valid && needResp_s2
-  io.resp.bits.issue := Mux(hit_s2, conf_s2.issueConf >= issueThreshold, true.B)
-  io.resp.bits.metaUpdate := Mux(hit_s2, conf_s2.metaConf >= metaThreshold, true.B)
+  io.resp.bits.issue := Mux(hit_s2, issueConfPass || issueProbeFire, true.B)
+  // Cold misses still install the first meta; low-confidence hits get sparse probes for recovery.
+  io.resp.bits.metaUpdate := Mux(hit_s2, metaConfPass || metaProbeFire, true.B)
   io.resp.bits.reqType := reqType_s2
 
   XSPerfAccumulate("tp_conf_table_pf_hit", io.req.fire && io.req.bits.pfHit)
@@ -1125,6 +1143,8 @@ class confTable(implicit p:Parameters) extends TPModule {
   XSPerfAccumulate("tp_conf_table_resp", io.resp.valid)
   XSPerfAccumulate("tp_conf_table_resp_issue", io.resp.valid && io.resp.bits.reqType === ConfReqType.issue && io.resp.bits.issue)
   XSPerfAccumulate("tp_conf_table_resp_meta_update", io.resp.valid && io.resp.bits.reqType === ConfReqType.newMeta && io.resp.bits.metaUpdate)
+  XSPerfAccumulate("tp_conf_table_issue_probe", issueProbeFire)
+  XSPerfAccumulate("tp_conf_table_meta_probe", metaProbeFire)
 
   val confDB = ChiselDB.createTable("tpconf", new confDBEntry(), basicDB = true)
   val confPt = Wire(new confDBEntry())
