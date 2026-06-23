@@ -286,21 +286,21 @@ class Directory(implicit p: Parameters) extends L2Module {
     chosenWay,
     PriorityEncoder(freeWayMask_s3)
   )
-  val hit_s3 = Cat(hitVec).orR || (req_s3.cmoAll && VecInit(metaAll_s3.map(_.state =/= MetaData.INVALID))(req_s3.cmoWay))
+  val multiHit = PopCount(hitVec) > 1.U
+  val hit_s3 = Cat(hitVec).orR && !multiHit ||
+    (req_s3.cmoAll && VecInit(metaAll_s3.map(_.state =/= MetaData.INVALID))(req_s3.cmoWay))
   val way_s3 = Mux(req_s3.cmoAll, req_s3.cmoWay, Mux(hit_s3, hitWay, finalWay))
   val meta_s3 = metaAll_s3(way_s3)
   val tag_s3 = tagAll_s3(way_s3)
   val set_s3 = req_s3.set
   val replacerInfo_s3 = req_s3.replacerInfo
-  val multiHit = PopCount(hitVec) > 1.U
   val errorHit_s3 = if (enableTagECC) {
-    errorAll_s3(way_s3) && reqValid_s3 && !req_s3.cmoAll && meta_s3.state =/= MetaData.INVALID ||
-    multiHit
+    errorAll_s3(way_s3) && reqValid_s3 && !req_s3.cmoAll && meta_s3.state =/= MetaData.INVALID
   } else {
     false.B
   }
   val errorMiss_s3 =  if (enableTagECC) {
-    errorVec.reduce(_ | _)
+    errorVec.reduce(_ | _) || multiHit
   } else {
     false.B
   }
