@@ -1009,8 +1009,13 @@ class confTable(implicit p:Parameters) extends TPModule {
   val victimWay_s1 = repl.way(set_s1)
   val way_s1 = Mux(hit_s1, hitWay_s1, victimWay_s1)
   val conf_s1 = confs(way_s1)
+  // Keep reqQueue ready independent of SRAM read data. Any s1 request may write in s2:
+  // feedback always writes, while issue/newMeta write on miss.
+  val s1MayWriteConf = reqType_s1 === ConfReqType.feedback ||
+    reqType_s1 === ConfReqType.issue ||
+    reqType_s1 === ConfReqType.newMeta
   val sameSetWriteHazard_s1 = resetFinish && reqQueueDeqValid && s1_valid && set_s1 === queuedSet_s0 &&
-    (reqType_s1 === ConfReqType.feedback || !hit_s1)
+    s1MayWriteConf
 
   when(s1_valid) {
     repl.access(set_s1, way_s1)
@@ -1332,7 +1337,9 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val confIssueQueueHasCredit = confIssueQueue.io.count < (confReqQueueDepth - 2).U
   val confRespQueueHasCredit = pendingConfRespCnt < (confReqQueueDepth + 1).U
   val tpMetaWriteValid = Wire(Bool())
-  trainQueue.io.deq.ready := !(tpMetaWriteValid || metaInstallQueue.io.deq.valid) &&
+  val tpMetaTrainSameSetBlocked = Wire(Bool())
+  val tpMetaInstallSameSetBlocked = Wire(Bool())
+  trainQueue.io.deq.ready := !(tpMetaWriteValid || tpMetaTrainSameSetBlocked || metaInstallQueue.io.deq.valid) &&
     dataReadQueueHasCredit && dataReadPCQueueHasCredit && confIssueQueueHasCredit &&
     confRespQueueHasCredit // metaW first
 
@@ -1346,7 +1353,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   metaConfPendingQueue.io.enq.valid := metaWQueue.io.deq.fire
   metaConfPendingQueue.io.enq.bits := metaWQueue.io.deq.bits
   assert(metaConfPendingQueue.io.enq.ready || !metaWQueue.io.deq.fire)
-  metaInstallQueue.io.deq.ready := !tpMetaWriteValid
+  metaInstallQueue.io.deq.ready := !tpMetaWriteValid && !tpMetaInstallSameSetBlocked
 
   confReqArb.io.in(0) <> confNewMetaQueue.io.deq
   confReqArb.io.in(1) <> confIssueQueue.io.deq
@@ -1366,11 +1373,13 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val trainMeta = trainPaddr >> offsetBits
   val trainPC = hashPC(train_s0.pc)
   val trainIndex = mixTPMetaIndex(trainPC, trainMeta.asUInt)
+  val queuedTrainSet = parseIndex(trainIndex)._2
   // val (vtag_s0, vset_s0) = if (vaddrBitsOpt.nonEmpty) parseVaddr(trainVaddr) else (0.U, 0.U)
 
   val metaWValid_s0 = metaInstallQueue.io.deq.fire
   val metaWRecord_s0 = metaInstallQueue.io.deq.bits
   val metaWRecordIndex = mixTPMetaIndex(metaWRecord_s0.pc, metaWRecord_s0.trigger)
+  val queuedMetaInstallSet = parseIndex(metaWRecordIndex)._2
 
   val s0_valid = trainValid_s0 || metaWValid_s0
   val index = Mux(metaWValid_s0, metaWRecordIndex, trainIndex)
@@ -1420,40 +1429,6 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
     repl.access(set_s1, way_s1)
   }
 
-  // update tpmeta
-  val tpTableWValid = s1_valid && metaWValid_s1
-  val metaWEntry = Wire(new tpMetaEntry())
-  metaWEntry.valid := true.B
-  metaWEntry.tag := tag_s1
-  when(!resetFinish) {
-    metaWEntry.valid := false.B
-    metaWEntry.tag := 0.U
-  }
-  val tpTableWLength = metaWRecord_s1.length
-  val tpTableWSet = Mux(resetFinish, set_s1, resetIdx)
-  val tpTableWWay = way_s1
-  val tpTableWWayOH = Mux(resetFinish, UIntToOH(tpTableWWay), Fill(tpTableAssoc, true.B))
-
-  tpMetaWriteValid := tpTableWValid || !resetFinish
-  tpMetaTable.io.w.apply(tpMetaWriteValid, metaWEntry, tpTableWSet, tpTableWWayOH)
-
-  val metaInstallHitCountWrite = RegNext(metaInstallQueue.io.deq.fire, false.B)
-  when(metaInstallHitCountWrite) {
-    hitCount(set_s1)(way_s1).hitCount := 0.U
-  }.elsewhen(tpMetaResetQueue.io.deq.fire) {
-    hitCount(tpMetaResetQueue.io.deq.bits.set)(tpMetaResetQueue.io.deq.bits.way).hitCount := tpMetaResetQueue.io.deq.bits.hitCount
-  }
-
-  dataWriteQueue.io.enq.valid := tpTableWValid
-  dataWriteQueue.io.enq.bits.wmode := true.B
-  dataWriteQueue.io.enq.bits.rawData.zip(metaWRecord_s1.data).foreach(x => x._1 := x._2(metaDataLength - 1, 0))
-  dataWriteQueue.io.enq.bits.length := tpTableWLength
-  dataWriteQueue.io.enq.bits.set := tpTableWSet
-  dataWriteQueue.io.enq.bits.way := tpTableWWay
-  dataWriteQueue.io.enq.bits.hartid := io.hartid
-  dataWriteQueue.io.enq.bits.hitCount := 0.U // DontCare
-  assert(dataWriteQueue.io.enq.ready === true.B) // TODO: support back-pressure
-
   val pfIssue = s1_valid && hit_s1 && !metaWValid_s1
 
   // meta reset queue
@@ -1474,6 +1449,51 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   val tag_s2 = RegEnable(tag_s1, s1_valid)
   val train_s2 = RegEnable(train_s1, s1_valid)
   val hitCount_s2 = RegEnable(hitCount_s1, s1_valid)
+  val metaWValid_s2 = RegEnable(metaWValid_s1, false.B, s1_valid)
+  val metaWRecord_s2 = RegEnable(metaWRecord_s1, s1_valid)
+
+  // Delay tpMeta installation writeback to s2, matching samplerTable/recorderTable style:
+  // s1 consumes SRAM read data to pick the way, while s2 drives the single-port write.
+  val tpTableWValid = s2_valid && metaWValid_s2
+  val metaWEntry = Wire(new tpMetaEntry())
+  metaWEntry.valid := true.B
+  metaWEntry.tag := tag_s2
+  when(!resetFinish) {
+    metaWEntry.valid := false.B
+    metaWEntry.tag := 0.U
+  }
+  val tpTableWLength = metaWRecord_s2.length
+  val tpTableWSet = Mux(resetFinish, set_s2, resetIdx)
+  val tpTableWWay = way_s2
+  val tpTableWWayOH = Mux(resetFinish, UIntToOH(tpTableWWay), Fill(tpTableAssoc, true.B))
+
+  tpMetaWriteValid := tpTableWValid || !resetFinish
+  tpMetaTable.io.w.apply(tpMetaWriteValid, metaWEntry, tpTableWSet, tpTableWWayOH)
+
+  val metaInstallHitCountWrite = tpTableWValid
+  when(metaInstallHitCountWrite) {
+    hitCount(set_s2)(way_s2).hitCount := 0.U
+  }.elsewhen(tpMetaResetQueue.io.deq.fire) {
+    hitCount(tpMetaResetQueue.io.deq.bits.set)(tpMetaResetQueue.io.deq.bits.way).hitCount := tpMetaResetQueue.io.deq.bits.hitCount
+  }
+
+  dataWriteQueue.io.enq.valid := tpTableWValid
+  dataWriteQueue.io.enq.bits.wmode := true.B
+  dataWriteQueue.io.enq.bits.rawData.zip(metaWRecord_s2.data).foreach(x => x._1 := x._2(metaDataLength - 1, 0))
+  dataWriteQueue.io.enq.bits.length := tpTableWLength
+  dataWriteQueue.io.enq.bits.set := tpTableWSet
+  dataWriteQueue.io.enq.bits.way := tpTableWWay
+  dataWriteQueue.io.enq.bits.hartid := io.hartid
+  dataWriteQueue.io.enq.bits.hitCount := 0.U // DontCare
+  assert(dataWriteQueue.io.enq.ready === true.B) // TODO: support back-pressure
+
+  // Same-set reads are held only for older meta-install accesses that will write in s2.
+  tpMetaTrainSameSetBlocked := resetFinish &&
+    (s1_valid && metaWValid_s1 && queuedTrainSet === set_s1 ||
+      s2_valid && metaWValid_s2 && queuedTrainSet === set_s2)
+  tpMetaInstallSameSetBlocked := resetFinish &&
+    (s1_valid && metaWValid_s1 && queuedMetaInstallSet === set_s1 ||
+      s2_valid && metaWValid_s2 && queuedMetaInstallSet === set_s2)
 
   // dataReadQueue enqueue
   val canAllocConfResp = pendingConfRespCnt < (confReqQueueDepth + 1).U
@@ -1546,7 +1566,7 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   /* Send prefetch request */
 
   val do_sending = RegInit(false.B)
-  val sending_idx = RegInit(0.U(offsetBits.W))
+  val sending_idx = RegInit(0.U(tpEntryLenBits.W))
   val sending_data = Reg(Vec(tpEntryMaxLen, UInt((fullAddressBits - offsetBits).W)))
   val sending_length = RegInit(0.U(tpEntryLenBits.W))
   val sending_hitCount = RegInit(0.U(hitCountWidth.W))
