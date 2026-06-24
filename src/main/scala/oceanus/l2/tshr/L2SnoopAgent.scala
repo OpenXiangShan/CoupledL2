@@ -7,34 +7,26 @@ import oceanus.l2.L2CacheClientState
 
 object L2SnoopAgent {
 
-  class PathTSHRSnp(client: CCHIComponent) extends Bundle {
+  class PathToSnoopAgentUOPs extends Bundle {
+    val SnpMakeInvalid = Bool()
+    val SnpToInvalid = Bool()
+    val SnpToShared = Bool()
+    val SnpToClean = Bool()
 
-    // operands
-    val RESP = Output(new L2CacheClientState(client))
-
-    // uOPs
-    val SnpMakeInvalid = Input(Bool())
-    val SnpToInvalid = Input(Bool())
-    val SnpToShared = Input(Bool())
-    val SnpToClean = Input(Bool())
-
-    val SnpResp = Output(Bool())
-    val SnpRespData0Ptl = Output(Bool())
-    val SnpRespData2Ptl = Output(Bool())
+    val SnpCompAck = Bool()
   }
 
-  class PathTSHR(clients: Seq[CCHIComponent]) extends Bundle {
-
-    val REQ = clients.map(new PathTSHRSnp(_))
-    val REQSnpToUniqueCompAck = Input(Bool())
-
-    val SNP = clients.map(new PathTSHRSnp(_))
-    val SNPSnpToUniqueCompAck = Input(Bool())
+  class PathFromSnoopAgentUOPs extends Bundle {
+    val SnpResp = Bool()
+    val SnpRespData0 = Bool()
+    val SnpRespData2 = Bool()
   }
+
+  class PathToSnoopAgent extends PathToSnoopAgentUOPs
+
+  class PathFromSnoopAgent extends PathFromSnoopAgentUOPs
 }
 
 class L2SnoopAgent {
 
-  
 }
-
