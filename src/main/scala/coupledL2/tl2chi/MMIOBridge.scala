@@ -161,25 +161,6 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   when (rxdat.fire) {
     w_compdata := true.B
     rdata := rxdat.bits.data
-    val nderr = rxdat.bits.respErr === RespErrEncodings.NDERR
-    val derr = rxdat.bits.respErr === RespErrEncodings.DERR
-    val dataCheck = if (enableDataCheck) {
-      dataCheckMethod match {
-        case 1 => (0 until DATACHECK_WIDTH).map(i =>
-          rxdat.bits.dataCheck.get(i) ^ rxdat.bits.data(8 * (i + 1) - 1, 8 * i).xorR ^ true.B).reduce(_ | _)
-        case 2 =>
-          val code = new SECDEDCode
-          (0 until DATACHECK_WIDTH).map(i =>
-            code.decode(Cat(rxdat.bits.dataCheck.get(i) ^ rxdat.bits.data(8 * (i + 1) - 1, 8 * i))).error).reduce(_ | _)
-        case _ => false.B
-      }
-    } else {
-      false.B
-    }
-    val poison = rxdat.bits.poison.getOrElse(false.B).orR
-    assert(!dataCheck, "UC should not have DataCheck error")
-    denied := denied || nderr
-    corrupt := corrupt || derr || nderr || dataCheck || poison
   }
   when (io.resp.fire) {
     s_resp := true.B
@@ -197,10 +178,6 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
       dbID := rxrsp.bits.dbID
       traceTag := rxrsp.bits.traceTag
     }
-    when (rxrsp.bits.opcode === CompDBIDResp || rxrsp.bits.opcode === Comp) {
-      denied := denied || rxrsp.bits.respErr === RespErrEncodings.NDERR || rxrsp.bits.respErr === RespErrEncodings.DERR
-      // TODO: d_corrupt is reserved and must be 0 in TileLink
-    }
     when (rxrsp.bits.opcode === RetryAck) {
       s_txreq := false.B
       w_pcrdgrant := false.B
@@ -217,6 +194,32 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends TL2CHIL2Mo
   }
   when (io.pCrd.grant) {
     w_pcrdgrant := true.B
+  }
+
+  val rxdatErrValid = rxdat.fire
+  val rxdatNderr = rxdat.bits.respErr === RespErrEncodings.NDERR
+  val rxdatDerr = rxdat.bits.respErr === RespErrEncodings.DERR
+  val rxdatDataCheck = if (enableDataCheck) {
+    dataCheckMethod match {
+      case 1 => (0 until DATACHECK_WIDTH).map(i =>
+        rxdat.bits.dataCheck.get(i) ^ rxdat.bits.data(8 * (i + 1) - 1, 8 * i).xorR ^ true.B).reduce(_ | _)
+      case 2 =>
+        val code = new SECDEDCode
+        (0 until DATACHECK_WIDTH).map(i =>
+          code.decode(Cat(rxdat.bits.dataCheck.get(i) ^ rxdat.bits.data(8 * (i + 1) - 1, 8 * i))).error).reduce(_ | _)
+      case _ => false.B
+    }
+  } else {
+    false.B
+  }
+  assert(!(rxdatDataCheck && rxdatErrValid), "UC should not have DataCheck error")
+  val rxdatPoison = rxdat.bits.poison.getOrElse(false.B).orR
+  val rxrspErrValid = rxrsp.fire && (rxrsp.bits.opcode === CompDBIDResp || rxrsp.bits.opcode === Comp)
+  val rxrspNderr = rxrsp.bits.respErr === RespErrEncodings.NDERR || rxrsp.bits.respErr === RespErrEncodings.DERR
+  when (rxdatErrValid || rxrspErrValid) {
+    // d_corrupt is reserved and must be 0 in TileLink
+    denied := denied || rxdatErrValid && rxdatNderr || rxrspErrValid && rxrspNderr
+    corrupt := corrupt || rxdatErrValid && (rxdatDerr || rxdatNderr || rxdatDataCheck || rxdatPoison)
   }
 
   /**
