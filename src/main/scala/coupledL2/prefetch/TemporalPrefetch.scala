@@ -248,12 +248,15 @@ class SamplerFilter(implicit p: Parameters) extends TPModule {
   })
 
   def hashPC(pc: UInt) = {
-    val reservedHead = pc(pc.getWidth - 1, pc.getWidth - pcHashHeadReservedWidth)
-    val reservedTail = pc(pcHashTailReservedWidth - 1, 0)
-    val mid = pc(pc.getWidth - pcHashHeadReservedWidth - 1, pcHashTailReservedWidth)
-    val hashMid = mid(pcHashMidWidth - 1, 0) ^ mid(pcHashMidWidth * 2 - 1, pcHashMidWidth) ^
-      mid(pcHashMidWidth * 3 - 1, pcHashMidWidth * 2)
-    Cat(reservedTail, hashMid, reservedHead)
+    // Drop the always-zero instruction alignment bits, then fold and lightly mix the PC.
+    val shifted = pc(pc.getWidth - 1, 2)
+    val lo = shifted(pcHashWidth - 1, 0)
+    val mid = shifted(2 * pcHashWidth - 1, pcHashWidth)
+    val hi = shifted(shifted.getWidth - 1, 2 * pcHashWidth).pad(pcHashWidth)(pcHashWidth - 1, 0)
+    val folded = lo ^ mid ^ hi
+    val postMix = folded ^ (folded >> 11).pad(pcHashWidth) ^
+      Cat(folded(8, 0), 0.U(13.W)) ^ (folded >> 5).pad(pcHashWidth)
+    postMix(pcHashWidth - 1, 0)
   }
 
   def parsePaddr(x: UInt): (UInt, UInt) = {
@@ -1229,12 +1232,15 @@ class TemporalPrefetch(implicit p: Parameters) extends TPModule {
   }
 
   def hashPC(pc: UInt) = {
-    val reservedHead = pc(pc.getWidth - 1, pc.getWidth - pcHashHeadReservedWidth)
-    val reservedTail = pc(pcHashTailReservedWidth - 1, 0)
-    val mid = pc(pc.getWidth - pcHashHeadReservedWidth - 1, pcHashTailReservedWidth)
-    val hashMid = mid(pcHashMidWidth - 1, 0) ^ mid(pcHashMidWidth * 2 - 1, pcHashMidWidth) ^
-      mid(pcHashMidWidth * 3 - 1, pcHashMidWidth * 2)
-    Cat(reservedTail, hashMid, reservedHead)
+    // Drop the always-zero instruction alignment bits, then fold and lightly mix the PC.
+    val shifted = pc(pc.getWidth - 1, 2)
+    val lo = shifted(pcHashWidth - 1, 0)
+    val mid = shifted(2 * pcHashWidth - 1, pcHashWidth)
+    val hi = shifted(shifted.getWidth - 1, 2 * pcHashWidth).pad(pcHashWidth)(pcHashWidth - 1, 0)
+    val folded = lo ^ mid ^ hi
+    val postMix = folded ^ (folded >> 11).pad(pcHashWidth) ^
+      Cat(folded(8, 0), 0.U(13.W)) ^ (folded >> 5).pad(pcHashWidth)
+    postMix(pcHashWidth - 1, 0)
   }
 
   def mixTPMetaIndex(pc: UInt, trigger: UInt): UInt = {
