@@ -18,6 +18,9 @@ object L2Directory {
     def S: UInt = 1.U(2.W)
     def I: UInt = 0.U(2.W)
 
+    def atLeastS(state: UInt): Bool = state >= MetaState.S
+    def atLeastU(state: UInt): Bool = state >= MetaState.US
+
     def isClientU(state: UInt, client: Bool) = {
       Mux(state === UU, client, false.B)
     }
