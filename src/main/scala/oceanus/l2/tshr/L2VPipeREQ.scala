@@ -9,328 +9,456 @@ import oceanus.chi.opcode._
 import utility._
 import freechips.rocketchip.util._
 import org.chipsalliance.cde.config.Parameters
+import oceanus.l2.L2Directory.MetaState
+import oceanus.chi.field.CHIFieldSize._
+import oceanus.chi.field.CHIFieldOrder._
+import oceanus.chi.field.CHIFieldMemAttr._
+import coupledL2.tl2chi.MemAttr
 
 object L2VPipeREQ {
 
-  class PathTSHRPayloadRead(clientComponents: Seq[CCHIComponent]) extends Bundle {
-    val p_paddr = UInt(48.W)
-    val p_meta_state = new L2CacheState(clientComponents)
-    val p_buf_data0_valid = Bool()
-    val p_buf_data2_valid = Bool()
-  }
-
-  class PathTSHRPayloadWrite(clientComponents: Seq[CCHIComponent]) extends Bundle {
-    val p_meta_state = new L2CacheState(clientComponents)
-    val p_meta_wen = new Bundle {
-      val local = Bool()
-      val clients = Vec(clientComponents.size, Bool())
-    }
-  }
-
-  class PathVPipeToTSHR(clientComponents: Seq[CCHIComponent]) extends Bundle {
-    val UPTARGET = Output(Vec(clientComponents.size, Bool()))
-
-    val DSRd = Output(Bool())
-    val DSRdTXDATUp = Output(Bool())
-    val DSRdTXDATDn = Output(Bool())
-    val DropDSRd = Output(Bool())
-    val BufWrComp0 = Input(Bool())
-    val BufWrComp2 = Input(Bool())
-    val BufWrTXDATUpComp0 = Input(Bool())
-    val BufWrTXDATUpComp2 = Input(Bool())
-  }
 }
 
 class L2VPipeREQ(clientComponents: Seq[CCHIComponent], tshrId: Int, nodeId: Int)(implicit val p: Parameters) 
     extends Module 
     with CHIRNFOpcodesREQ 
     with CHIRNFOpcodesRSP
-    with CHIRNFOpcodesDAT {
+    with CHIRNFOpcodesDAT
+    with HasL2Params {
 
   val io = IO(new Bundle {
-    val UpRXREQ = Flipped(Valid(new FlitREQ))
-    val UpRXRSP = Flipped(Valid(new FlitUpRSP))
-    val UpRXDAT = Flipped(Valid(new FlitUpDATWithoutData))
-    val UpTXRSP = Flipped(Decoupled(new FlitDnRSP))
-    val UpTXDAT = Flipped(Decoupled(new FlitDnDATWithoutData))
+    val UpRXREQ = Valid(Input(new FlitREQStripped))
+
+    val DnTXREQ = Decoupled(new CHIBundleREQ)
+
     val DnRXRSP = Flipped(Valid(new CHIBundleRSP))
     val DnRXDAT = Flipped(Valid(new CHIBundleDAT))
-    val DnTXRSP = Flipped(Valid(new CHIBundleRSP))
-    val DnTXDAT = Flipped(Valid(new CHIBundleDAT))
-    val reqSource = Input(Vec(clientComponents.size, Bool()))
-    val payloadRead = Input(new L2VPipeREQ.PathTSHRPayloadRead(clientComponents))
-    val payloadWrite = Output(new L2VPipeREQ.PathTSHRPayloadWrite(clientComponents))
+
+    val DnTXRSP = Decoupled(new CHIBundleRSP)
+
+    val tshr_paddr = Input(UInt(paramL2.physicalAddrWidth.W))
+
+    val tshr_dirResult = Input(new L2Directory.MetaReadResult)
+
+    val tshr_tag_write_en = Output(Bool())
+    val tshr_meta_write_en = Output(new L2Directory.MetaWriteMask)
+    val tshr_meta_write_meta = Output(new L2Directory.Meta)
+
+    val toSA = Output(new L2SnoopAgent.PathToSnoopAgent)
+    val fromSA = Input(new L2SnoopAgent.PathFromSnoopAgent)
+
     val blockRBE = Output(new L2RBE.PathVPipeBlock)
-    val l1snp = Flipped(VecInit(clientComponents.map(new L2SnoopAgent.PathTSHRSnp(_))))
     val free = Output(Bool())
-    val tshr = new L2VPipeREQ.PathVPipeToTSHR(clientComponents)
+
+    val dir_wb_locked = Output(Bool())
+    val ds_wb_locked = Output(Bool())
+
+    val toPCreditPool = Output(new L2PCreditPool.PathQuery)
+    val fromPCreditPool = Input(new L2PCreditPool.PathGrant)
+
+    val EVT_active = Input(Bool())
   })
-
-  // === enchantment signals ===
-  val meta_state_rd = io.payloadRead.p_meta_state
-
-  val buf_data0_valid_rd = io.payloadRead.p_buf_data0_valid
-  val buf_data2_valid_rd = io.payloadRead.p_buf_data2_valid
-
-  val buf_data0_valid_next = buf_data0_valid_rd || io.tshr.BufWrComp0
-  val buf_data2_valid_next = buf_data2_valid_rd || io.tshr.BufWrComp2
-
-  // === vPipe payloads ===
-  val p_req_source = Reg(Vec(clientComponents.size, Bool()))
-
-  // === vPipe states ===
-  val s_ds_rd = Reg(Bool())
-  val s_ds_rduptxdat = Reg(Bool())
-  val s_ds_rddntxdat = Reg(Bool())
-
-  val s_dn_txreq = Reg(Bool())
-
-  val s_dn_txdat0 = Reg(Bool())
-  val s_dn_txdat2 = Reg(Bool())
-
-  val w_dn_rxdat0 = Reg(Bool())
-  val w_dn_rxdat2 = Reg(Bool())
-
-  val s_up_txdat0 = Reg(Bool())
-  val s_up_txdat2 = Reg(Bool())
-
-  val w_up_rxdat0 = Reg(Bool())
-  val w_up_rxdat2 = Reg(Bool())
-
-  val w_dn_comp = Reg(Bool())
-  val w_dn_dbid = Reg(Bool())
-  val s_dn_compack = Reg(Bool())
-
-  val w_up_compack = Reg(Bool())
-  val s_up_compdbidresp = Reg(Bool())
-
-  val w_up_snpresp0 = Reg(Vec(clientComponents.size, Bool()))
-  val w_up_snpresp2 = Reg(Vec(clientComponents.size, Bool()))
-
-  val w_buf_data0 = Reg(Bool())
-  val w_buf_data2 = Reg(Bool())
-
-  val w_up_txdat0_buf_data0 = Reg(Bool())
-  val w_up_txdat2_buf_data2 = Reg(Bool())
-
-  val w_up_txdat0_snpresp0 = Reg(Bool())
-  val w_up_txdat2_snpresp2 = Reg(Bool())
-
-  val this_active = ParallelOR(Seq(
-    s_dn_txreq // TODO
-  ))
-
-  io.free := !this_active
-
-  // === vPipe entrance flit opcode decoding ===
-  val reqDecoder = Module(new CCHIREQOpcodeDecoder)
-  reqDecoder.io.valid := io.UpRXREQ.valid
-  reqDecoder.io.opcode := io.UpRXREQ.bits.Opcode
-
-  val req_EvictBack = reqDecoder.is(CCHIOpcode.EvictBack)
-  val req_ReadShared = reqDecoder.is(CCHIOpcode.ReadShared)
-  val req_ReadUnique = reqDecoder.is(CCHIOpcode.ReadUnique)
-
-  // === vPipe entrance REQ path classification (satisfied/unsatisifed) ===
-  val req_satisfied = ParallelOR(Seq(
-    req_ReadShared && meta_state_rd.local.satS,
-    req_ReadUnique && meta_state_rd.local.satU
-  ))
-
-  // === vPipe entrance Snoop Agent interaction
-  val req_l1snp_pending = VecInit(meta_state_rd.clients.map(_.surpass(meta_state_rd.local)))
-
-  val req_l1snp_pending_any = req_l1snp_pending.asUInt.orR
-
-  val req_l1snp_en = VecInit(meta_state_rd.clients.zip(io.reqSource).zip(req_l1snp_pending).map {
-    case ((client, source), l1snp_pending) => ParallelOR(Seq(
-      req_ReadShared && (!source /*|| alias */) && (l1snp_pending || client.satU),
-      req_ReadUnique && (!source /*|| alias */) && (l1snp_pending || client.notI)
-  ))})
-
-  val req_l1snp_en_any = req_l1snp_en.asUInt.orR
-
-  val req_l1snp_any = req_l1snp_pending_any || req_l1snp_en_any
-
-  val req_l1snp_SnpMakeInvalid = false.B
-
-  val req_l1snp_SnpToInvalid = ParallelOR(Seq(
-    /*alias,*/
-    req_ReadUnique
-  ))
-
-  val req_l1snp_SnpToShared = ParallelOR(Seq(
-    req_ReadShared /* && !alias*/
-  ))
-
-  val req_l1snp_SnpToClean = false.B
-
-  // === vPipe entrance payload initialization ===
-  when (io.UpRXREQ.valid) {
-
-    p_req_source := io.reqSource
-  }
-
-  // === vPipe entrance state initialization ===
-  when (io.UpRXREQ.valid) {
-
-    when (req_ReadShared || req_ReadUnique) {
-      // set waiting for TSHR Buffer when pending snoop
-      w_up_txdat0_snpresp0 := req_l1snp_any
-      w_up_txdat2_snpresp2 := req_l1snp_any
-
-      // set sending data to L1 immediately when data valid, no pending snoop and DS not forwarded
-      s_up_txdat0 := buf_data0_valid_next && !req_l1snp_any
-      s_up_txdat2 := buf_data2_valid_next && !req_l1snp_any
-    }
-
-    // when L1 REQ satisfied
-    when (req_satisfied) {
-
-      when (req_ReadShared || req_ReadUnique) {
-        // set waiting for TSHR Buffer when data not available
-        w_up_txdat0_buf_data0 := !buf_data0_valid_next
-        w_up_txdat2_buf_data2 := !buf_data2_valid_next
-
-        // set waiting for L1 CompAck
-        w_up_compack := true.B
-      }
-    }
-
-    // when L1 REQ unsatisfied
-    .otherwise {
-
-      // set scheduling for downstream TXREQ
-      s_dn_txreq := true.B
-
-      when (req_ReadShared || req_ReadUnique) {
-        // set waiting for TSHR Buffer
-        w_up_txdat0_buf_data0 := true.B
-        w_up_txdat2_buf_data2 := true.B
-
-        // set waiting for HN return data
-        w_dn_rxdat0 := true.B
-        w_dn_rxdat2 := true.B
-      }
-
-      // TODO
-    }
-
-    // 
-  }
-
-  req_l1snp_en.zip(w_up_snpresp0.zip(w_up_snpresp2)).foreach { case (en, (w0, w2)) => 
-    when (en) { 
-      w0 := true.B
-      w2 := true.B
-    } 
-  }
-
-  // initiating Data Storage reads by TSHR
-  s_ds_rd := false.B
-  s_ds_rddntxdat := false.B
-  s_ds_rduptxdat := false.B
   
-  when (io.UpRXREQ.valid && !buf_data0_valid_next && !buf_data2_valid_next) {
+  val configEnableMakeReadUnique = true
+  val configInclusiveReadOnce = true
 
-    when (req_ReadShared || req_ReadUnique) {
-      s_ds_rduptxdat := true.B
-    }
+  // Refill locking Directory and Data Storage write if:
+  // 1. A total miss read has not issued any ReplRd
+  // 2. ReplRd returned with a non-Invalid way
+
+
+  // -- Enchantment modules and signals of entrance-time
+  val rxreq_opcode = Module(new CCHIREQOpcodeDecoder)
+  rxreq_opcode.io.valid := io.UpRXREQ.fire
+  rxreq_opcode.io.opcode := io.UpRXREQ.bits.Opcode
+
+  def satisfied(opcode: CCHIOpcode, state: UInt): (Bool, Bool) =
+    (rxreq_opcode.is(opcode) && io.tshr_dirResult.state >= state, rxreq_opcode.is(opcode) && io.tshr_dirResult.state < state)
+
+  val (rxreq_satisfied_stashshared, rxreq_unsatisfied_stashshared) = satisfied(CCHIOpcode.StashShared, MetaState.S)
+  val (rxreq_satisfied_stashunique, rxreq_unsatisfied_stashunique) = satisfied(CCHIOpcode.StashUnique, MetaState.US)
+  val (rxreq_satisfied_readonce, rxreq_unsatisfied_readonce) = satisfied(CCHIOpcode.ReadOnce, MetaState.S)
+  val (rxreq_satisfied_readshared, rxreq_unsatisfied_readshared) = satisfied(CCHIOpcode.ReadShared, MetaState.S)
+  val (rxreq_satisfied_writeuniqueptl, rxreq_unsatisfied_writeuniqueptl) = satisfied(CCHIOpcode.WriteUniquePtl, MetaState.US)
+  val (rxreq_satisfied_writeuniquefull, rxreq_unsatisfied_writeuniquefull) = satisfied(CCHIOpcode.WriteUniqueFull, MetaState.US)
+  val (rxreq_satisfied_readunique, rxreq_unsatisfied_readunique) = satisfied(CCHIOpcode.ReadUnique, MetaState.US)
+  val (rxreq_satisfied_makeunique, rxreq_unsatisfied_makeunique) = satisfied(CCHIOpcode.MakeUnique, MetaState.US)
+  // ----------------------------------------------------------------
+
+  // -- Enchantment modules and signals of downstream RX channels
+  val dn_rxrsp_opcode = Module(new RSPOpcodeDecoder)
+  dn_rxrsp_opcode.io.valid := io.DnRXRSP.fire
+  dn_rxrsp_opcode.io.opcode := io.DnRXRSP.bits.Opcode.get
+
+  val dn_rxdat_opcode = Module(new DATOpcodeDecoder)
+  dn_rxdat_opcode.io.valid := io.DnRXDAT.fire
+  dn_rxdat_opcode.io.opcode := io.DnRXDAT.bits.Opcode.get
+  // ----------------------------------------------------------------
+
+  // -- Private payload registers
+  val p_rxreq = Reg(new FlitREQStripped)
+  val p_rxreq_opcode = p_rxreq.Opcode
+
+  when (io.UpRXREQ.fire) {
+    p_rxreq := io.UpRXREQ.bits
   }
 
-  io.tshr.UPTARGET := io.reqSource
+  val p_txreq_reissue = RegInit(false.B)
+  val p_txreq_issued_opcode = Reg(UInt(paramCHI.reqOpcodeWidth.W))
 
-  io.tshr.DSRd := s_ds_rd
-  io.tshr.DSRdTXDATUp := s_ds_rduptxdat
-  io.tshr.DSRdTXDATDn := s_ds_rddntxdat
+  val p_retryack_pcrdtype = Reg(UInt(paramCHI.rspPCrdTypeWidth.W))
+  val p_retryack_srcid = Reg(UInt(paramCHI.nodeIdWidth.W))
 
-  // === L1 SNP waiting states related ===
-  val clr_w_up_snpresp0 = VecInit(io.l1snp.map(sa => sa.SnpResp || sa.SnpRespData0Ptl))
-  val clr_w_up_snpresp2 = VecInit(io.l1snp.map(sa => sa.SnpResp || sa.SnpRespData2Ptl))
+  // ----------------------------------------------------------------
 
-  val next_w_up_snpresp0 = VecInit(w_up_snpresp0.zip(clr_w_up_snpresp0).map { case (w, clr) => w && !clr })
-  val next_w_up_snpresp2 = VecInit(w_up_snpresp2.zip(clr_w_up_snpresp2).map { case (w, clr) => w && !clr })
+  // -- State bit registers
+  val w_snpresp0 = RegInit(false.B) // Waiting for response from Snoop Agent (DataID = 0)
+  val w_snpresp2 = RegInit(false.B) // Waiting for response from Snoop Agent (DataID = 2)
 
-  val end_w_up_snpresp0 = w_up_snpresp0.orR && !next_w_up_snpresp0.orR
-  val end_w_up_snpresp2 = w_up_snpresp2.orR && !next_w_up_snpresp2.orR
+  val s_snpcompack = RegInit(false.B) // Scheduling SnpCompAck to Snoop Agent
 
-  w_up_snpresp0.zip(clr_w_up_snpresp0).foreach { case (w_up_snpresp0, clr) => when (clr) { w_up_snpresp0 := false.B } }
-  w_up_snpresp2.zip(clr_w_up_snpresp2).foreach { case (w_up_snpresp2, clr) => when (clr) { w_up_snpresp2 := false.B } }
+  val s_dn_txreq = RegInit(false.B) // Scheduling downstream TXREQ
+  val w_dn_pcrdgrant = RegInit(false.B) // Waiting for P-Credit from downstream after receiving downstream RetryAck
 
-  // waiting states before upstream/downstream TXDAT could get valid data
-  // ! TODO: 需要处理所有 L1 Snoop 与 HN Read 数据交织的情况，且他们都有可能不返回数据
-  // ! TODO: 此时需要考虑 L1 EVT 数据未完成的情况（仅对于非一致性读取 ReadOnce，一致读取不应该发生交织）
-  val up_snpresp0_data_any = VecInit(io.l1snp.map(_.SnpRespData0Ptl)).orR
-  val up_snpresp2_data_any = VecInit(io.l1snp.map(_.SnpRespData2Ptl)).orR
+  val s_dn_rd_compack = RegInit(false.B) // Scheduling downstream TXRSP CompAck (from read and normal transactions)
 
-  val clr_w_up_txdat0_buf_data0 = io.tshr.BufWrComp0 || up_snpresp0_data_any && !w_dn_rxdat0
-  val clr_w_up_txdat2_buf_data2 = io.tshr.BufWrComp2 || up_snpresp2_data_any && !w_dn_rxdat2
+  val w_dn_rd_data0 = RegInit(false.B) // Waiting for downstream RXDAT CompData/DataSepResp (DataID = 0)
+  val w_dn_rd_data2 = RegInit(false.B) // Waiting for downstream RXDAT CompData/DataSepResp (DataID = 2)
+  val w_dn_rd_comp = RegInit(false.B) // Waiting for downstream RXRSP CompData/RespSepData
 
-  val next_w_up_txdat0_buf_data0 = w_up_txdat0_buf_data0 && !clr_w_up_txdat0_buf_data0
-  val next_w_up_txdat2_buf_data2 = w_up_txdat2_buf_data2 && !clr_w_up_txdat2_buf_data2
+  // TODO: more state bits here
 
-  val clr_w_up_txdat0_snpresp0 = end_w_up_snpresp0
-  val clr_w_up_txdat2_snpresp2 = end_w_up_snpresp2
+  assert(!(io.UpRXREQ.fire && w_snpresp0), s"RXREQ fired on valid 'w_snpresp0' in TSHR #${tshrId} REQ vPipe")
+  assert(!(io.UpRXREQ.fire && w_snpresp2), s"RXREQ fired on valid 'w_snpresp2' in TSHR #${tshrId} REQ vPipe")
+  assert(!(io.UpRXREQ.fire && s_snpcompack), s"RXREQ fired on valid 's_snpcompack' in TSHR #${tshrId} REQ vPipe")
+  // ----------------------------------------------------------------
 
-  val next_w_up_txdat0_snpresp0 = w_up_txdat0_snpresp0 && !clr_w_up_txdat0_snpresp0
-  val next_w_up_txdat2_snpresp2 = w_up_txdat2_snpresp2 && !clr_w_up_txdat2_snpresp2
+  // -- Interactions with Snoop Agent
+  // decode upstream REQ opcodes to upstream SNP opcodes
+  io.toSA.SnpMakeInvalid := rxreq_opcode.is(
+    CCHIOpcode.MakeInvalid
+  )
 
-  val end_w_up_txdat0 = ParallelOR(Seq(w_up_txdat0_buf_data0, w_up_txdat0_snpresp0)) &&
-    !ParallelOR(Seq(next_w_up_txdat0_buf_data0, next_w_up_txdat0_snpresp0))
+  io.toSA.SnpToInvalid := rxreq_opcode.is(
+    CCHIOpcode.WriteUniquePtl,
+    CCHIOpcode.WriteUniqueFull,
+    CCHIOpcode.CleanInvalid,
+    CCHIOpcode.ReadUnique,
+    CCHIOpcode.MakeUnique,
+    CCHIOpcode.EvictBack
+  )
 
-  val end_w_up_txdat2 = ParallelOR(Seq(w_up_txdat2_buf_data2, w_up_txdat2_snpresp2)) &&
-    !ParallelOR(Seq(next_w_up_txdat2_buf_data2, next_w_up_txdat2_snpresp2))
+  io.toSA.SnpToShared := rxreq_opcode.is(
+    CCHIOpcode.ReadShared
+  )
 
-  when (clr_w_up_txdat0_buf_data0) { w_up_txdat0_buf_data0 := false.B }
-  when (clr_w_up_txdat2_buf_data2) { w_up_txdat2_buf_data2 := false.B }
+  io.toSA.SnpToClean := rxreq_opcode.is(
+    CCHIOpcode.ReadOnce,
+    CCHIOpcode.CleanShared
+  )
 
-  when (clr_w_up_txdat0_snpresp0) { w_up_txdat0_snpresp0 := false.B }
-  when (clr_w_up_txdat2_snpresp2) { w_up_txdat2_snpresp2 := false.B }
-
-  io.tshr.DropDSRd := up_snpresp0_data_any && !w_dn_rxdat0 && w_up_txdat0_buf_data0 ||
-                      up_snpresp2_data_any && !w_dn_rxdat2 && w_up_txdat2_buf_data2
-                      
-  // === Downstream RXDAT ===
-  val dnRXDATDecoder = Module(new DATOpcodeDecoder(Seq(
-    CHI_CompData
-  ), true))
-  dnRXDATDecoder.io.valid := io.DnRXDAT.valid
-  dnRXDATDecoder.io.opcode := io.DnRXDAT.bits.Opcode.get
-
-  // receiving HN CompData from RXDAT
-  val clr_w_dn_rxdat0 = dnRXDATDecoder.is(CHI_CompData) && io.DnRXDAT.bits.DataID.get === 0.U
-  val clr_w_dn_rxdat2 = dnRXDATDecoder.is(CHI_CompData) && io.DnRXDAT.bits.DataID.get === 2.U
-
-  when (clr_w_dn_rxdat0) { w_dn_rxdat0 := false.B }
-  when (clr_w_dn_rxdat2) { w_dn_rxdat2 := false.B }
-
-  val first_dn_rxdat = (w_dn_rxdat0 && w_dn_rxdat2) && (clr_w_dn_rxdat0 || clr_w_dn_rxdat2)
-
-  when (first_dn_rxdat) {
-    w_up_compack := true.B
-    s_dn_compack := true.B
+  // set and unset SnpCompAck scheduling
+  //  - SnpCompAck should be issued with scheduling bit set, and after all data beats to upstream/downstream
+  //    were sent.
+  when (io.toSA.SnpToClean) {
+    s_snpcompack := true.B
   }
-  // ======
 
-  // scheduling upstream TXDAT
-  when (end_w_up_txdat0) { s_up_txdat0 := true.B }
-  when (end_w_up_txdat2) { s_up_txdat2 := true.B }
+  when (io.toSA.SnpCompAck) {
+    s_snpcompack := false.B
+  }
+
+  io.toSA.SnpCompAck := false.B // TODO: interact with upstream data sending
+
+  // waiting state transitions
+  //  - SnpResp/SnpRespData0/SnpRespData2 were all allowed to be received on the same cycle of the issue of
+  //    SnpMakeInvalid/SnpToInvalid/SnpToShared/SnpToClean.
+  when (io.toSA.SnpMakeInvalid || io.toSA.SnpToInvalid || io.toSA.SnpToShared || io.toSA.SnpToClean) {
+    w_snpresp0 := true.B
+    w_snpresp2 := true.B
+  }
+
+  when (io.fromSA.SnpResp || io.fromSA.SnpRespData0) {
+    w_snpresp0 := false.B
+  }
+
+  when (io.fromSA.SnpResp || io.fromSA.SnpRespData2) {
+    w_snpresp2 := false.B
+  }
+  // ----------------------------------------------------------------
+
+  // -- Interactions with downstream TXREQ and downstream Retry Mechanism
+  // TODO: complete other CCHI opcodes
+  val issue_txreq_stashshared = rxreq_unsatisfied_stashshared
+  val issue_txreq_stashunique = rxreq_unsatisfied_stashunique
+  val issue_txreq_readonce = rxreq_unsatisfied_readonce
+  val issue_txreq_readshared = rxreq_unsatisfied_readshared
+  val issue_txreq_readunique = rxreq_unsatisfied_readunique
+  val issue_txreq_makeunique = rxreq_unsatisfied_makeunique
+
+  val issue_txreq = ParallelOR(Seq(
+    issue_txreq_stashshared,
+    issue_txreq_stashunique,
+    issue_txreq_readonce,
+    issue_txreq_readshared,
+    issue_txreq_readunique,
+    issue_txreq_makeunique
+  ))
+
+  val reissue_txreq = io.fromPCreditPool.grant
+
+  when (io.DnTXREQ.fire) {
+    s_dn_txreq := false.B
+    p_txreq_issued_opcode := io.DnTXREQ.bits.Opcode.get
+  }
+
+  when (issue_txreq || reissue_txreq) {
+    s_dn_txreq := true.B
+    p_txreq_reissue := reissue_txreq
+  }
+
+  when (dn_rxrsp_opcode.is(CHI_RetryAck)) {
+    w_dn_pcrdgrant := true.B
+    p_retryack_pcrdtype := io.DnRXRSP.bits.PCrdType.get
+    p_retryack_srcid := io.DnRXRSP.bits.SrcID.get
+  }
+
+  when (io.fromPCreditPool.grant) {
+    w_dn_pcrdgrant := false.B
+  }
+
+  io.toPCreditPool.valid := w_dn_pcrdgrant
+  io.toPCreditPool.pCrdType := p_retryack_pcrdtype
+  io.toPCreditPool.srcId := p_retryack_srcid
+
+  assert(!(io.fromPCreditPool.grant && !w_dn_pcrdgrant), s"P-Credit granted on non-retry state in TSHR #${tshrId} REQ vPipe")
+  // ----------------------------------------------------------------
+  val w_dn_wr_comp = RegInit(false.B) // Waiting for downstream RXRSP Comp/CompDBIDResp
+  val w_dn_wr_dbid = RegInit(false.B) // Waiting for downstream RXRSP DBIDResp/CompDBIDResp
+
+  val s_dn_wr_compack = RegInit(false.B) // Scheduling downstream TXRSP CompAck (from write transactions)
 
   // TODO
 
-  // RBE blockings
-  io.blockRBE.EVT := false.B
-  io.blockRBE.SNP := req_satisfied || w_up_compack
-  io.blockRBE.REQ // TODO
-  
-  // Snoop Agent connections
-  io.l1snp.zip(req_l1snp_en).foreach { case (sa, en) =>
-    sa.SnpMakeInvalid := en && req_l1snp_SnpMakeInvalid
-    sa.SnpToInvalid := en && req_l1snp_SnpToInvalid
-    sa.SnpToShared := en && req_l1snp_SnpToShared
-    sa.SnpToClean := en && req_l1snp_SnpToClean
+  // -- Interactions with downstream CHI TXREQ channel
+  val readonce_txreq_opcode = { if (configInclusiveReadOnce) CHI_ReadNotSharedDirty.U else CHI_ReadOnce.U } // TODO: better policy
+
+  val xunique_txreq_opcode = {
+    if (configEnableMakeReadUnique)
+      Mux(p_txreq_reissue, 
+        p_txreq_issued_opcode,
+        Mux(io.tshr_dirResult.state === MetaState.S, CHI_MakeReadUnique.U, CHI_ReadUnique.U)
+      )
+    else
+      CHI_ReadUnique.U
   }
 
-  // TSHR connections
-  io.tshr.DSRd // TODO
+  val stashunique_txreq_opcode = xunique_txreq_opcode
+  val readunique_txreq_opcode = xunique_txreq_opcode
+
+  val cleanshared_txreq_opcode = 0.U // TODO: switch between WriteCleanFull and CleanShared
+
+  val cleaninvalid_txreq_opcode = 0.U // TODO: switch between WriteBackFull and CleanInvalid
+
+  val makeinvalid_txreq_opcode = CHI_MakeInvalid.U // silent eviction
+
+  val evictback_txreq_opcode = 0.U // TODO: Evict/WriteBackFull
+
+  val txreq_opcode = ParallelMux(Seq(
+    (p_rxreq_opcode === CCHIOpcode.StashShared.U,     CHI_ReadNotSharedDirty.U),
+    (p_rxreq_opcode === CCHIOpcode.StashUnique.U,     stashunique_txreq_opcode),
+    (p_rxreq_opcode === CCHIOpcode.ReadNoSnp.U,       CHI_ReadNoSnp.U),
+    (p_rxreq_opcode === CCHIOpcode.ReadOnce.U,        readonce_txreq_opcode),
+    (p_rxreq_opcode === CCHIOpcode.ReadShared.U,      CHI_ReadNotSharedDirty.U),
+    (p_rxreq_opcode === CCHIOpcode.WriteNoSnpPtl.U,   CHI_WriteNoSnpPtl.U),
+    (p_rxreq_opcode === CCHIOpcode.WriteNoSnpFull.U,  CHI_WriteNoSnpFull.U),
+    (p_rxreq_opcode === CCHIOpcode.WriteUniquePtl.U,  CHI_WriteUniquePtl.U), // TODO: only happens after L1 SA complete
+    (p_rxreq_opcode === CCHIOpcode.WriteUniqueFull.U, CHI_WriteUniqueFull.U), // TODO: only happens after L1 SA complete
+    (p_rxreq_opcode === CCHIOpcode.CleanShared.U,     cleanshared_txreq_opcode),
+    (p_rxreq_opcode === CCHIOpcode.CleanInvalid.U,    cleaninvalid_txreq_opcode),
+    (p_rxreq_opcode === CCHIOpcode.MakeInvalid.U,     makeinvalid_txreq_opcode),
+    (p_rxreq_opcode === CCHIOpcode.ReadUnique.U,      readunique_txreq_opcode),
+    (p_rxreq_opcode === CCHIOpcode.MakeUnique.U,      CHI_MakeUnique.U),
+    (p_rxreq_opcode === CCHIOpcode.EvictBack.U,       evictback_txreq_opcode) // TODO: only happens after L1 SA complete
+  ))
+
+  // Field 'Size':
+  //    [ CCHI Opcode ]     [ CHI Opcode ]        [ Value / Source ]
+  //  -  ReadShared          ReadNotSharedDirty    64B
+  //  -  ReadUnique          ReadUnique            64B
+  //                         MakeReadUnique        64B
+  val txreq_size = Size64B.U // TODO: consider free Size transactions (Partial transactions, ...)
+
+  // Field 'LikelyShared':
+  //    [ CCHI Opcode ]     [ CHI Opcode ]        [ Value / Source ]
+  //  -  ReadShared          ReadNotSharedDirty    0 (1 not utilized for now)
+  //  -  ReadUnique          ReadUnique            0
+  //                         MakeReadUnique        0
+  val txreq_likelyshared = false.B
+
+  // Field 'Order':
+  //    [ CCHI Opcode ]     [ CHI Opcode ]        [ Value / Source ]
+  //  -  ReadShared          ReadNotSharedDirty    0b00 (No Ordering)
+  //  -  ReadUnique          ReadUnique            0b00 (No Ordering)
+  //                         MakeReadUnique        0b00 (No Ordering)
+  val txreq_order = NoOrdering.U
+
+  // Field 'MemAttr':
+  //    [ CCHI Opcode ]     [ CHI Opcode ]        [ Value / Source ]
+  //  -  ReadShared          ReadNotSharedDirty    Cacheable + EWA + Allocate
+  //  -  ReadUnique          ReadUnique            Cacheable + EWA + Allocate
+  //                         MakeReadUnique        Cacheable + EWA + Allocate
+  val txreq_memattr = Cacheable.U | EWA.U | Allocate.U
+
+  // Field 'SnpAttr':
+  //    [ CCHI Opcode ]     [ CHI Opcode ]        [ Value / Source ]
+  //  -  ReadShared          ReadNotSharedDirty    1
+  //  -  ReadUnique          ReadUnique            1
+  //                         MakeReadUnique        1
+  val txreq_snpattr = true.B
+
+  // Field 'ExpCompAck':
+  //    [ CCHI Opcode ]     [ CHI Opcode ]        [ Value / Source ]
+  //  -  ReadShared          ReadNotSharedDirty    1
+  //  -  ReadUnique          ReadUnique            1
+  //                         MakeReadUnique        1
+  val txreq_expcompack = true.B
+
+  io.DnTXREQ.bits.QoS.get := 14.U // Default at 14, (*DOT NOT use 15**, maybe better policy in future
+  io.DnTXREQ.bits.TgtID.get := 0.U // Support E-SAM only currently
+  io.DnTXREQ.bits.SrcID.get := nodeId.U
+  io.DnTXREQ.bits.TxnID.get := 0.U // TODO: TxnID translations
+  io.DnTXREQ.bits.ReturnNID_StashNID_SLCRepHint.get := 0.U // Not providing SLCRepHint/StashNID, default to 0
+  io.DnTXREQ.bits.StashNIDValid_Endian_Deep.get := 0.U
+  io.DnTXREQ.bits.ReturnTxnID_StashLPIDValid_StashLPID.get := 0.U
+  io.DnTXREQ.bits.Opcode.get := txreq_opcode
+  io.DnTXREQ.bits.Size.get := txreq_size
+  io.DnTXREQ.bits.Addr.get := io.tshr_paddr
+  io.DnTXREQ.bits.NS.get := 0.U // TODO: confirm default NS value or NS mechanism
+  io.DnTXREQ.bits.LikelyShared.get := txreq_likelyshared
+  io.DnTXREQ.bits.AllowRetry.get := !p_txreq_reissue
+  io.DnTXREQ.bits.Order.get := txreq_order
+  io.DnTXREQ.bits.PCrdType.get := Mux(!p_txreq_reissue, 0.U, p_retryack_pcrdtype)
+  io.DnTXREQ.bits.MemAttr.get := txreq_memattr
+  io.DnTXREQ.bits.SnpAttr_DoDWT.get := txreq_snpattr
+  io.DnTXREQ.bits.LPID_PGroupID_StashGroupID_TagGroupID.get := 0.U // Not supporting Persistence and MTE
+  io.DnTXREQ.bits.Excl_SnoopMe.get := 0.U
+  io.DnTXREQ.bits.ExpCompAck.get := txreq_expcompack
+  io.DnTXREQ.bits.TagOp.get := 0.U // Not supporting MTE
+  io.DnTXREQ.bits.TraceTag.get := 0.U // TODO: maybe wire with L1-L2 TraceTag
+  io.DnTXREQ.bits.MPAM.foreach(_ := 0.U) // TODO: Not supporting MTE, wire up with NS bit
+  io.DnTXREQ.bits.RSVDC.foreach(_ := 0.U)
+  // ----------------------------------------------------------------
+
+  // -- Interactions with downstream CHI RXRSP, RXDAT channel
+  val dn_rxdat_compdata = dn_rxdat_opcode.is(CHI_CompData)
+  val dn_rxdat_compdata_first = dn_rxdat_compdata && w_dn_rd_data0 && w_dn_rd_data2
+  val dn_rxdat_datasepresp = dn_rxdat_opcode.is(CHI_DataSepResp)
+  val dn_rxdat_datasepresp_first = dn_rxdat_datasepresp && w_dn_rd_data0 && w_dn_rd_data2
+
+  val dn_rxrsp_comp = dn_rxdat_opcode.is(CHI_Comp)
+  val dn_rxrsp_respsepdata = dn_rxdat_opcode.is(CHI_RespSepData)
+
+  val expect_dn_rd_comp_and_data = rxreq_unsatisfied_readshared ||
+                                   rxreq_unsatisfied_readunique
+
+  when (expect_dn_rd_comp_and_data) {
+    w_dn_rd_data0 := true.B
+    w_dn_rd_data2 := true.B
+    w_dn_rd_comp := true.B
+  }
+
+  when (dn_rxrsp_comp) {
+    w_dn_rd_data0 := false.B
+    w_dn_rd_data2 := false.B
+    w_dn_rd_comp := false.B
+  }
+
+  when (dn_rxdat_compdata) { // TODO: maybe clear waiting state of Data Storage
+    w_dn_rd_comp := false.B
+    when (io.DnRXDAT.bits.DataID.get === 0.U) {
+      w_dn_rd_data0 := false.B
+    }.otherwise {
+      w_dn_rd_data2 := false.B
+    }
+  }
+
+  when (dn_rxrsp_respsepdata) { // TODO: maybe clear waiting state of Data Storage
+    w_dn_rd_comp := false.B
+  }
+
+  when (dn_rxdat_datasepresp) {
+    when (io.DnRXDAT.bits.DataID.get === 0.U) {
+      w_dn_rd_data0 := false.B
+    }.otherwise {
+      w_dn_rd_data2 := false.B
+    }
+  }
+  // ----------------------------------------------------------------
+
+  // -- Interactions with downstream CHI TXRSP channel
+  val dn_txrsp_compack = io.DnTXRSP.fire && io.DnTXRSP.bits.Opcode.get === CHI_CompAck.U
+
+  val issue_dn_rd_compack_hn_accepted = dn_rxdat_compdata_first ||
+                                        dn_rxrsp_comp ||
+                                        dn_rxrsp_respsepdata
+
+  val issue_dn_rd_compack = issue_dn_rd_compack_hn_accepted
+
+  when (issue_dn_rd_compack) {
+    s_dn_rd_compack := true.B
+  }
+
+  // CompAck scheduling priority:
+  //  s_dn_rd_compack > s_dn_wr_compack
+  when (dn_txrsp_compack) {
+    when (s_dn_rd_compack) {
+      s_dn_rd_compack := false.B
+    }.otherwise {
+      s_dn_wr_compack := false.B
+    }
+  }
+  // ----------------------------------------------------------------
+
+  // -- Blocking same-PA RXSNP, on waiting of L1 CompAck
+  val up_rxrsp_compack = io.DnRXRSP.fire && io.DnRXRSP.bits.Opcode.get === CHI_CompAck.U
+
+  val expect_up_compack_satisfied = rxreq_satisfied_readshared ||
+                                    rxreq_satisfied_readunique ||
+                                    rxreq_satisfied_makeunique
+
+  val expect_up_compack_hn_accepted = dn_rxdat_compdata_first || 
+                                      dn_rxrsp_comp || 
+                                      dn_rxrsp_respsepdata
+
+  val expect_up_compack = expect_up_compack_satisfied || expect_up_compack_hn_accepted
+
+  when (expect_up_compack) {
+    w_up_compack := true.B
+  }
+
+  when (up_rxrsp_compack) {
+    w_up_compack := false.B
+  }
+
+  io.blockRBE.SNP := w_up_compack
+
+  assert(!(up_rxrsp_compack && !w_up_compack), s"Receiving upstream RXRSP CompAck on non-valid 'w_up_compack' in TSHR #${tshrId} REQ vPipe")
+  // ----------------------------------------------------------------
+
+
+  // TODO list:
+  val w_ds_resp = RegInit(false.B) // Waiting for response from Data Storage
+
+  val w_up_compack = RegInit(false.B) // Waiting for upstream RXRSP CompAck
+
+  val s_up_compdata0 = RegInit(false.B) // Scheduling upstream TXDAT CompData (DataID = 0)
+  val s_up_compdata2 = RegInit(false.B) // Scheduling upstream TXDAT CompData (DataID = 2)
+
+
+  val s_repl = RegInit(false.B) // Scheduling Directory Replacer Read
+  val w_unlock_dir = RegInit(false.B) // Waiting for unlocking Directory Write-Back
+  val w_unlock_ds = RegInit(false.B) // Waiting for unlocking Data Storage Write-Back
+
+  val s_evict = RegInit(false.B) // Scheduling local eviction RXREQ EvictBack
 }
