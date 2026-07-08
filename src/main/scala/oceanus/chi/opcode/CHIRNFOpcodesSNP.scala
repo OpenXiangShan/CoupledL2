@@ -48,7 +48,7 @@ trait CHIRNFOpcodesSNP extends HasCHIParameters {
     class SNPOpcodeDecoder(paramOpcodeSupported          : Seq[CHIOpcode]    = Seq(),
                   paramEnableUnsupportedCheck   : Boolean           = false)
         (implicit p: Parameters)
-        extends CHIOpcodeDecoder(REQ, paramOpcodeSupported, Seq(
+        extends CHIOpcodeDecoder(SNP, paramOpcodeSupported, Seq(
         //  ========================
             CHI_SnpLCrdReturn,
         //  ------------------------
