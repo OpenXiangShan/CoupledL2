@@ -225,7 +225,7 @@ abstract class CCHIOpcodeDecoder(val paramChannel                    : CCHIChann
         // with X-state propagation compatibility
         Mux(io.valid, io.opcode === i.U, dontTouch(WireInit(false.B)))
 
-      assert(!seqLogicDecoded(i), s"Unknown CHI Opcode: 0x${i.toHexString}")
+      assert(!seqLogicDecoded(i), s"Unknown CCHI Opcode: 0x${i.toHexString}")
 
       dontTouch(seqLogicDecoded(i).suggestName(s"decoded_${i.toHexString}_UNKNOWN"))
 
