@@ -5,6 +5,8 @@ import chisel3.util._
 
 class FlitEVTStripped extends Bundle {
   val TxnID = UInt(8.W) // TODO: configured by L1 parameter
+  val SrcID = UInt(8.W) // TODO: configured by UpstreamNodeID_Width
+  val TgtID = UInt(8.W) // TODO: configured by DownstreamNodeID_Width
   val Opcode = UInt(1.W)
   val NS = Bool()
   val WayValid = Bool()
@@ -18,13 +20,16 @@ class FlitEVT extends FlitEVTStripped {
 
 class FlitREQStripped extends Bundle {
   val TxnID = UInt(8.W) // TODO: configured by L1 parameter
+  val SrcID = UInt(8.W) // TODO: configured by UpstreamNodeID_Width
+  val TgtID = UInt(8.W) // TODO: configured by DownstreamNodeID_Width
   val Opcode = UInt(6.W) // TODO: variable width between different types of components
   val Size = UInt(3.W)
   val NS = Bool()
   val Order = UInt(2.W)
   val MemAttr = UInt(4.W)
   val Excl = Bool()
-  def ExpCompStash = Excl
+  val ExpCompData = Bool()
+  def ExpCompStash = ExpCompStash
   val WayValid = Bool()
   val Way = UInt(2.W) // TODO: configured by L2 way count
   val TraceTag = UInt(1.W)
@@ -36,6 +41,8 @@ class FlitREQ extends FlitREQStripped {
 
 class FlitSNPStripped extends Bundle {
   val TxnID = UInt(8.W) // TODO: configured by L2 parameter
+  val SrcID = UInt(8.W) // TODO: configured by DownstreamNodeID_Width
+  val TgtID = UInt(8.W) // TODO: configured by UpstreamNodeID_Width
   val Opcode = UInt(2.W) // TODO: variable width between different types of components
   val NS = Bool()
   val TraceTag = UInt(1.W)
@@ -47,6 +54,8 @@ class FlitSNP extends FlitSNPStripped {
 
 class FlitDnRSP extends Bundle {
   val TxnID = UInt(8.W) // TODO: configured by L1 parameter
+  val SrcID = UInt(8.W) // TODO: configured by DownstreamNodeID_Width
+  val TgtID = UInt(8.W) // TODO: configured by UpstreamNodeID_Width
   val DBID = UInt(8.W) // TODO: configured by L2 parameter
   val Opcode = UInt(3.W) // TODO: variable width between different types of components
   val RespErr = UInt(2.W)
@@ -59,6 +68,8 @@ class FlitDnRSP extends Bundle {
 
 class FlitUpRSP extends Bundle {
   val TxnID = UInt(8.W) // TODO: configured by L2 parameter
+  val SrcID = UInt(8.W) // TODO: configured by UpstreamNodeID_Width
+  val TgtID = UInt(8.W) // TODO: configured by DownstreamNodeID_Width
   val Opcode = UInt(1.W)
   val RespErr = UInt(2.W)
   val Resp = UInt(3.W)
@@ -67,6 +78,8 @@ class FlitUpRSP extends Bundle {
 
 class FlitDnDATWithoutData extends Bundle {
   val TxnID = UInt(8.W) // TODO: configured by L1 parameter
+  val SrcID = UInt(8.W) // TODO: configured by DownstreamNodeID_Width
+  val TgtID = UInt(8.W) // TODO: configured by UpstreamNodeID_Width
   val DBID = UInt(8.W) // TODO: configured by L2 parameter
   val Opcode = UInt(1.W)
   val RespErr = UInt(2.W)
@@ -85,6 +98,8 @@ class FlitDnDAT extends FlitDnDATWithoutData {
 
 class FlitUpDATWithoutData extends Bundle {
   val TxnID = UInt(8.W) // TODO: configured by maximum value of L1 parameter and L2 parameter
+  val SrcID = UInt(8.W) // TODO: configured by UpstreamNodeID_Width
+  val TgtID = UInt(8.W) // TODO: configured by DownstreamNodeID_Width
   val Opcode = UInt(2.W)
   val RespErr = UInt(2.W)
   val Resp = UInt(3.W)
