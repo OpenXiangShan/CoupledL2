@@ -1325,8 +1325,8 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
 
 
   // wb-locking refuses Directory Write & Data Storage Write on write-ready state
-  proxyDir.io.wb_locked := vPipeEVT.io.dir_wb_locked || vPipeSNP.io.dir_wb_locked || vPipeREQ.io.dir_wb_locked
-  proxyDS.io.wb_locked := vPipeEVT.io.ds_wb_locked || vPipeSNP.io.ds_wb_locked || vPipeREQ.io.ds_wb_locked
+  // proxyDir.io.wb_locked := vPipeEVT.io.dir_wb_locked || vPipeSNP.io.dir_wb_locked || vPipeREQ.io.dir_wb_locked
+  // proxyDS.io.wb_locked := vPipeEVT.io.ds_wb_locked || vPipeSNP.io.ds_wb_locked || vPipeREQ.io.ds_wb_locked
 
 
   // interactions between Directory read states and RBEs
