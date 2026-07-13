@@ -15,5 +15,6 @@ object CHICohResps {
     def I_PD    = "b100".U(WIDTH.W) // Invalid, Pass Dirty
     def SC_PD   = "b101".U(WIDTH.W) // Shared Clean, Pass Dirty
     def UC_PD   = "b110".U(WIDTH.W) // Unique Clean, Pass Dirty
+    def UD_PD   = "b110".U(WIDTH.W) // Unique Dirty, Pass Dirty
     def SD_PD   = "b111".U(WIDTH.W) // Shared Dirty, Pass Dirty
 }
