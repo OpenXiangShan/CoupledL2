@@ -22,9 +22,14 @@ object L2SnoopAgent {
     val SnpRespData2 = Bool()
   }
 
-  class PathToSnoopAgent extends PathToSnoopAgentUOPs
+  class PathToSnoopAgent extends PathToSnoopAgentUOPs {
+    val CLIENTS = Vec(1, Bool())  
+    val ALIAS = UInt(2.W)
+  }
 
-  class PathFromSnoopAgent extends PathFromSnoopAgentUOPs
+  class PathFromSnoopAgent extends PathFromSnoopAgentUOPs {
+    val PASSDIRTY = Bool()
+  }
 }
 
 class L2SnoopAgent {
