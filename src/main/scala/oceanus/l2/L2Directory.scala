@@ -48,10 +48,6 @@ object L2Directory {
     val alias = UInt(2.W) // TODO: parameterize with L2 alias width
   }
 
-  class Tag(implicit val p: Parameters) extends Bundle with HasL2Params {
-    
-  }
-
   class MetaReadResult(implicit override val p: Parameters) extends Meta with HasL2Params {
     val way = UInt(4.W) // TODO: parameterize with l2 way count
     val hit = Bool()
@@ -92,8 +88,9 @@ object L2Directory {
     }
   }
 
-  class ReplReadResult(implicit override val p: Parameters) extends Tag with HasL2Params {
-
+  class ReplReadResult(implicit override val p: Parameters) extends Bundle with HasL2Params {
+    val paddr = UInt(paramL2.physicalAddrWidth.W)
+    val way = UInt(4.W) // TODO: parameterize with l2 way count
   }
 
   class PathToDirectoryUOPs extends Bundle {
