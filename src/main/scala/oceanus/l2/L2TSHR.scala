@@ -91,7 +91,7 @@ class L2TSHRDirectoryProxy(val id: Int)(implicit val p: Parameters) extends Modu
   })
 
   // Whether the meta was aggressively immediately trying to be written back on every modification.
-  val configAggressiveWrite = true
+  val configAggressiveWrite = false
 
   // Whether ReplRd only happens after a done DirRd.
   //  - Under most situations, this should always be set to 'true', except debug or feature evaluation,
