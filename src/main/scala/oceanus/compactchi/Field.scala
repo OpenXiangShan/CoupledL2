@@ -3,6 +3,24 @@ package oceanus.compactchi
 import chisel3._
 import chisel3.util._
 
+class CCHISize(val value: Int, val name: String) {
+  def asUInt: UInt = value.U
+  def U = asUInt
+}
+
+object CCHISize {
+
+  val B1      = new CCHISize(0b000, "1 Byte")
+  val B2      = new CCHISize(0b001, "2 Bytes")
+  val B4      = new CCHISize(0b010, "4 Bytes")
+  val B8      = new CCHISize(0b011, "8 Bytes")
+  val B16     = new CCHISize(0b100, "16 Bytes")
+  val B32     = new CCHISize(0b101, "32 Bytes")
+  val B64     = new CCHISize(0b110, "64 Bytes")
+
+  def apply() = UInt(3.W)
+}
+
 class CCHIResp(val value: Int, val name: String) {
   def isPD: Boolean = value & 0b100
   def asUInt: UInt = value.U
