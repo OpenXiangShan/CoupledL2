@@ -43,6 +43,8 @@ class L2VPipeREQ(clientComponents: Seq[CCHIComponent], tshrId: Int, nodeId: Int)
     val UpTXRSP = Decoupled(new FlitDnRSP)
     val UpTXDAT = Decoupled(new FlitDnDATWithoutData)
 
+    val UpTXREQ = Decoupled(new FlitREQ)
+
     val tshr_paddr = Input(UInt(paramL2.physicalAddrWidth.W))
 
     val tshr_dirResult = Input(new L2Directory.MetaReadResult)
@@ -60,6 +62,11 @@ class L2VPipeREQ(clientComponents: Seq[CCHIComponent], tshrId: Int, nodeId: Int)
     val ds_rd_en = Output(Bool())
     val ds_rd_cancel = Output(Bool())
     val ds_rd_done = Input(Bool())
+
+    val repl_en = Output(Bool())
+    val repl_retry = Input(Bool())
+    val repl_done = Input(Bool())
+    val repl_resp = Input(new L2Directory.ReplReadResult)
 
     val dir_wb_locked = Output(Bool())
     val ds_wb_locked = Output(Bool())
@@ -222,7 +229,8 @@ class L2VPipeREQ(clientComponents: Seq[CCHIComponent], tshrId: Int, nodeId: Int)
 
   val w_s_repl = RegInit(false.B)
   val s_repl = RegInit(false.B) // Scheduling Directory Replacer Read
-  val w_repl_resp = RegInit(false.B)
+
+  val s_evict = RegInit(false.B) // Scheduling local eviction RXREQ EvictBack
 
 
   // TODO: more state bits here
@@ -905,18 +913,84 @@ class L2VPipeREQ(clientComponents: Seq[CCHIComponent], tshrId: Int, nodeId: Int)
   io.UpTXDAT.bits.TraceTag := false.B // TODO: TraceTag propagation
   // ----------------------------------------------------------------
 
-  // -- Interactions with replacer and eviction
-  // TODO
+  // -- Interactions with replacer and eviction through loop-back REQ
+  val local_evictback = io.UpTXREQ.fire && io.UpTXREQ.bits.Opcode === CCHIOpcode.EvictBack.U
+
+  val expect_replace = !io.tshr_dirResult.hit && (
+                           rxreq_readunique ||
+                           rxreq_readshared)
+
+  val trigger_replace = w_s_repl &&
+                        (dn_rxdat_compdata_first || dn_rxdat_datasepresp_first)
+
+  when (expect_replace) {
+    w_s_repl := true.B
+  }
+
+  when (trigger_replace) {
+    w_s_repl := false.B
+    s_repl := true.B
+  }
+
+  when (io.repl_done) {
+    s_repl := false.B
+    s_evict := true.B
+  }
+
+  when (local_evictback) {
+    s_evict := false.B
+  }
+
+  val lock_dir = expect_replace
+  val lock_ds = expect_replace
+
+  val unlock_dir = false.B // TODO: connect from other TSHRs, one-hot translated in TSHR top
+  val unlock_ds = false.B // TODO connect from other TSHRs, one-hot translated in TSHR top
+
+  when (lock_dir) {
+    w_unlock_dir := true.B
+  }
+
+  when (lock_ds) {
+    w_unlock_ds := true.B
+  }
+
+  when (unlock_dir) {
+    w_unlock_dir := false.B
+  }
+
+  when (unlock_ds) {
+    w_unlock_ds := false.B
+  }
+
+  io.repl_en := s_repl
+
+  io.dir_wb_locked := w_unlock_dir
+  io.ds_wb_locked := w_unlock_ds
+
+  io.UpTXREQ.valid := s_evict
+  io.UpTXREQ.bits.TxnID := 0.U // TODO: TxnID translations
+  io.UpTXREQ.bits.SrcID := nodeId.U
+  io.UpTXREQ.bits.TgtID := nodeId.U
+  io.UpTXREQ.bits.Opcode := CCHIOpcode.EvictBack.U
+  io.UpTXREQ.bits.Size := CCHISize.B64
+  io.UpTXREQ.bits.Addr := io.repl_resp.paddr
+  io.UpTXREQ.bits.NS := false.B
+  io.UpTXREQ.bits.Order := 0.U
+  io.UpTXREQ.bits.MemAttr := 0.U
+  io.UpTXREQ.bits.Excl := 0.U
+  io.UpTXREQ.bits.ExpCompData := false.B
+  io.UpTXREQ.bits.WayValid := false.B
+  io.UpTXREQ.bits.Way := 0.U
+  io.UpTXREQ.bits.TraceTag := false.B
   // ----------------------------------------------------------------
 
   // -- Blocking same-PA RXSNP, on waiting of L1 CompAck
   io.blockRBE.SNP := w_up_rd_compack
   // ----------------------------------------------------------------
 
-
   // TODO list:
 
-  val s_evict = RegInit(false.B) // Scheduling local eviction RXREQ EvictBack
 
   val w_dn_wr_comp = RegInit(false.B) // Waiting for downstream RXRSP Comp/CompDBIDResp
   val w_dn_wr_dbid = RegInit(false.B) // Waiting for downstream RXRSP DBIDResp/CompDBIDResp
