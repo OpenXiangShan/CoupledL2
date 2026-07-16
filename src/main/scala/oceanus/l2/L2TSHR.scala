@@ -1027,6 +1027,7 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
 
   // meta
   val dirResult = Reg(new L2Directory.MetaReadResult)
+  val replResult = Reg(new L2Directory.ReplReadResult)
 
   /* NOTICE: For current design, any partial write to meta would never assert 'meta_valid'.
              Any later read request on full meta line would result in a Directory Read if no any read done yet.
@@ -1037,6 +1038,8 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
   val meta_valid = Wire(Bool())
   val meta_modified = RegInit(L2Directory.MetaWriteMask.empty)
   val tag_modified = RegInit(false.B)
+
+  val repl = replResult
 
   val meta_write_EVT_meta = Wire(new L2Directory.Meta)
   val meta_write_EVT_mask = Wire(new L2Directory.MetaWriteMask)
@@ -1059,6 +1062,11 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
     meta_modified.unmaskAndWrite(meta, io.fromDir.META)
     meta.way := io.fromDir.META.way
     meta.hit := io.fromDir.META.hit
+  }
+  
+  when (io.fromDir.ReplRdResp && io.fromDir.TSHRID === id.U) {
+    replResult := io.fromDir.REPL
+    meta.way := io.fromDir.REPL.way
   }
 
   meta_write_EVT_mask.maskAndWrite(meta, meta_modified, meta_write_EVT_meta)
