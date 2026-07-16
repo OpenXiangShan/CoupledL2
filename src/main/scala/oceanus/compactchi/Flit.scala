@@ -29,7 +29,7 @@ class FlitREQStripped extends Bundle {
   val MemAttr = UInt(4.W)
   val Excl = Bool()
   val ExpCompData = Bool()
-  def ExpCompStash = ExpCompStash
+  def ExpCompStash = ExpCompData
   val WayValid = Bool()
   val Way = UInt(2.W) // TODO: configured by L2 way count
   val TraceTag = UInt(1.W)
