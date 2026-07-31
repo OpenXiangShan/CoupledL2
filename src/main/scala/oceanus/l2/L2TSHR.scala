@@ -967,6 +967,7 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
 
     val UpRXRSP = Flipped(Valid(new FlitUpRSP))       // RSP from L1
     val UpRXDAT = Flipped(Valid(new FlitUpDAT))       // DAT from L1
+    val txSnp = Decoupled(new FlitSNP)                // SNP to L1
 
     val DnRXRSP = Flipped(Valid(new CHIBundleRSP))    // RSP from HN
     val DnRXDAT = Flipped(Valid(new CHIBundleDAT))    // DAT from HN
@@ -1262,6 +1263,25 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
   val vPipeEVT = Module(new L2VPipeEVT(Seq(/*TODO: client devices*/)))
   val vPipeSNP = Module(new L2VPipeSNP(Seq(/*TODO: client devices*/)))
   val vPipeREQ = Module(new L2VPipeREQ(Seq(/*TODO: client devices*/), id, 0))
+  val snoopAgent = Module(new L2SnoopAgent(id))
+
+  snoopAgent.io.uopFromSNP.valid := vPipeSNP.io.toSA.SnpMakeInvalid ||
+                                    vPipeSNP.io.toSA.SnpToInvalid ||
+                                    vPipeSNP.io.toSA.SnpToShared ||
+                                    vPipeSNP.io.toSA.SnpToClean
+  snoopAgent.io.uopFromSNP.bits := vPipeSNP.io.toSA
+  snoopAgent.io.uopFromREQ.valid := vPipeREQ.io.toSA.SnpMakeInvalid ||
+                                    vPipeREQ.io.toSA.SnpToInvalid ||
+                                    vPipeREQ.io.toSA.SnpToShared ||
+                                    vPipeREQ.io.toSA.SnpToClean
+  snoopAgent.io.uopFromREQ.bits := vPipeREQ.io.toSA
+  snoopAgent.io.tshr_paddr := tshr_paddr
+  snoopAgent.io.tshr_dirResult := meta
+  snoopAgent.io.UpRXRSP := io.UpRXRSP
+  snoopAgent.io.UpRXDAT := io.UpRXDAT
+  io.txSnp <> snoopAgent.io.txSnp
+  vPipeSNP.io.fromSA := snoopAgent.io.fromSA
+  vPipeREQ.io.fromSA := snoopAgent.io.fromSA
 
   // TODO
 
