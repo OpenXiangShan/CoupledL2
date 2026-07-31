@@ -50,6 +50,7 @@ class FlitSNPStripped extends Bundle {
 
 class FlitSNP extends FlitSNPStripped {
   val Addr = UInt((48 - 3).W)
+  val alias = UInt(2.W) // L2->L1 snoop locator; pprobe uses localMeta.alias, rprobe uses req.alias
 }
 
 class FlitDnRSP extends Bundle {
