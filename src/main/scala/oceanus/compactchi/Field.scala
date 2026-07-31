@@ -22,7 +22,7 @@ object CCHISize {
 }
 
 class CCHIResp(val value: Int, val name: String) {
-  def isPD: Boolean = value & 0b100
+  def isPD: Boolean = (value & 0b100) != 0
   def asUInt: UInt = value.U
   def U = asUInt
 }
@@ -36,7 +36,7 @@ object CCHIResp {
   val SC_PD   = new CCHIResp(0b101, "SC_PD")
   val UC_PD   = new CCHIResp(0b110, "UC_PD")
 
-  def isPD(value: UInt): Bool = value & 0b100.U
+  def isPD(value: UInt): Bool = (value & 0b100.U) =/= 0.U
 
   def apply() = UInt(3.W)
 }

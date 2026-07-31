@@ -18,6 +18,9 @@ package object field {
     implicit class fromEnumCHIFieldRespErrToUInt(field: EnumCHIFieldRespErr) {
         def U: UInt = field.value.U
     }
+
+    implicit class fromEnumCHIFieldMemAttrToUInt(field: EnumCHIFieldMemAttr) {
+        def U: UInt = (1 << field.bitIndex).U(4.W)
+    }
     /**/
 }
-
