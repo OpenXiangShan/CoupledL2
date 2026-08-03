@@ -1291,7 +1291,7 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
   vPipeSNP.io.tshr_meta_write_meta := meta_write_SNP_meta
   vPipeREQ.io.tshr_meta_write_en := meta_write_REQ_mask
   vPipeREQ.io.tshr_meta_write_meta := meta_write_REQ_meta
-  tag_write_REQ_mask := vPipeEVT.io.tshr_tag_write_en || vPipeREQ.io.tshr_tag_write_en
+  tag_write_REQ_mask := DontCare
 
   // TODO
 
