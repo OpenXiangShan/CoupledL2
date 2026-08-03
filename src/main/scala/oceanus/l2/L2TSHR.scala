@@ -1078,6 +1078,8 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
     tag_modified := true.B
   }
 
+  assert(PopCount(Seq(meta_write_EVT_mask, meta_write_SNP_mask, meta_write_REQ_mask).map(_.asUInt.orR)) <= 1.U,
+    s"TSHR #${id} multiple active meta writes on one cycle")
   assert(PopCount(Seq(meta_write_EVT_mask, meta_write_SNP_mask, meta_write_REQ_mask).map(_.state)) <= 1.U, 
     s"TSHR #${id} multiple active write on meta.state")
   assert(PopCount(Seq(meta_write_EVT_mask, meta_write_SNP_mask, meta_write_REQ_mask).map(_.dirty)) <= 1.U, 
@@ -1282,6 +1284,14 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
   io.txSnp <> snoopAgent.io.txSnp
   vPipeSNP.io.fromSA := snoopAgent.io.fromSA
   vPipeREQ.io.fromSA := snoopAgent.io.fromSA
+
+  vPipeEVT.io.tshr_meta_write_en := meta_write_EVT_mask
+  vPipeEVT.io.tshr_meta_write_meta := meta_write_EVT_meta
+  vPipeSNP.io.tshr_meta_write_en := meta_write_SNP_mask
+  vPipeSNP.io.tshr_meta_write_meta := meta_write_SNP_meta
+  vPipeREQ.io.tshr_meta_write_en := meta_write_REQ_mask
+  vPipeREQ.io.tshr_meta_write_meta := meta_write_REQ_meta
+  tag_write_REQ_mask := vPipeEVT.io.tshr_tag_write_en || vPipeREQ.io.tshr_tag_write_en
 
   // TODO
 
