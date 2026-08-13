@@ -6,6 +6,7 @@ import utility._
 import oceanus.chi.bundle._
 import oceanus.compactchi._
 import oceanus.l2._
+import oceanus.l2.L2Common._
 import oceanus.l2.L2Directory._
 import oceanus.l2.L2DataStorage._
 import oceanus.l2.tshr._
@@ -103,22 +104,6 @@ object L2TSHRAlloc {
 }
 
 class L2TSHRAlloc(val config: L2TSHRAllocConfig)(implicit val p: Parameters) extends Module with HasL2Params {
-
-  // TODO: move this into common utilities
-  def arb[T <: Bundle](in: Seq[DecoupledIO[T]], out: DecoupledIO[T], name: Option[String] = None): Unit = {
-    val arb = Module(new Arbiter[T](chiselTypeOf(out.bits), in.size))
-    if (name.nonEmpty) { arb.suggestName(s"${name.get}_arb") }
-    for ((a, req) <- arb.io.in.zip(in)) { a <> req }
-    out <> arb.io.out
-  }
-
-  // TODO: move this into common utilities
-  def fastArb[T <: Bundle](in: Seq[DecoupledIO[T]], out: DecoupledIO[T], name: Option[String] = None): Unit = {
-    val arb = Module(new FastArbiter[T](chiselTypeOf(out.bits), in.size))
-    if (name.nonEmpty) { arb.suggestName(s"${name.get}_arb") }
-    for ((a, req) <- arb.io.in.zip(in)) { a <> req }
-    out <> arb.io.out
-  }
 
   val clusterCount = config.cluster.size
   val clusterName = config.cluster.zipWithIndex.map { case (cluster, idx) => s"cluster_${idx}_${cluster.map(_.name).mkString("_")}" }

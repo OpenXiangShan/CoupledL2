@@ -11,6 +11,24 @@ import utility.ParallelMux
 import oceanus.chi.EnumCHIChannel.SNP
 import utility.XSPerfAccumulate
 import utility.XSPerfHistogram
+import utility.FastArbiter
+
+object L2Common {
+
+  def arb[T <: Bundle](in: Seq[DecoupledIO[T]], out: DecoupledIO[T], name: Option[String] = None): Unit = {
+    val arb = Module(new Arbiter[T](chiselTypeOf(out.bits), in.size))
+    if (name.nonEmpty) { arb.suggestName(s"${name.get}_arb") }
+    for ((a, req) <- arb.io.in.zip(in)) { a <> req }
+    out <> arb.io.out
+  }
+
+  def fastArb[T <: Bundle](in: Seq[DecoupledIO[T]], out: DecoupledIO[T], name: Option[String] = None): Unit = {
+    val arb = Module(new FastArbiter[T](chiselTypeOf(out.bits), in.size))
+    if (name.nonEmpty) { arb.suggestName(s"${name.get}_arb") }
+    for ((a, req) <- arb.io.in.zip(in)) { a <> req }
+    out <> arb.io.out
+  }
+}
 
 object L2Address {
   def set(pa: UInt)(implicit p: Parameters): UInt = pa // TODO: extract real set index from PA
