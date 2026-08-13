@@ -7,945 +7,14 @@ import oceanus.chi.bundle._
 import oceanus.compactchi._
 import oceanus.compactchi.CCHIOpcode._
 import oceanus.l2._
+import oceanus.l2.L2Common._
 import oceanus.l2.L2Directory._
 import oceanus.l2.L2DataStorage._
 import oceanus.l2.tshr._
 import org.chipsalliance.cde.config.Parameters
-import chisel3.simulator.PeekPokeAPI.TestableData
 import freechips.rocketchip.util.RotateVector.left
 import freechips.rocketchip.util.SeqToAugmentedSeq
-
-class L2TSHRDirectoryProxy(val id: Int)(implicit val p: Parameters) extends Module with HasL2Params {
-
-  class DirReadFSM extends Bundle {
-    val PreArb = Bool()     // sending Read Request to Directory, waiting for Arbiter completion
-    val PostArb = Bool()    // Read Request has been accepted by Directory
-    val Done = Bool()       // Read Response has been received from Directory
-    val ReplPreArb = Bool() // sending Replacement Read Request to Directory, waiting for Arbiter completion
-    val ReplPostArb = Bool()// Replacement Read Request has been accepted by Directory
-    val ReplDone = Bool()   // Replacement Read Response has been received from Directory
-    val ReplRetry = Bool()  // Replacement Read Retry Ack has been received from Directory
-    def NotYet =            // haven't sent Read Request to Directory
-      !PreArb && !PostArb && !Done && !ReplPreArb && !ReplPostArb && !ReplDone && !ReplRetry
-    def Repl =
-      ReplPreArb || ReplPostArb || ReplDone || ReplRetry
-  }
-
-  object DirReadFSM {
-    def init = {
-      val initState = Wire(new DirReadFSM)
-      initState.elements.foreach(_._2 := false.B)
-      initState
-    }
-  }
-
-  class DirWriteFSM extends Bundle {
-    val PreArb = Bool()     // sending Write Request to Directory, waiting for Arbiter completion
-    val Done = Bool()       // Write Request has been accepted by Directory and observable to later requests
-    def NotYet =            // haven't sent Write Request to Directory
-      !PreArb && !Done
-  }
-
-  object DirWriteFSM {
-    def init = {
-      val initState = Wire(new DirWriteFSM)
-      initState.elements.foreach(_._2 := false.B)
-      initState
-    }
-  }
-
-  val io = IO(new Bundle {
-
-    val toDir = Output(new L2Directory.PathToDirectory)
-    val fromDir = Input(new L2Directory.PathFromDirectory)
-
-    val tshr_paddr = Input(UInt(paramL2.physicalAddrWidth.W))
-
-    val tshr_alloc = Input(Bool())
-    val tshr_reuse = Input(Bool())
-    val tshr_inactive = Input(Bool())
-    val tshr_dealloc = Input(Bool())
-
-    val read_arbed = Input(Bool())
-    val read_en = Input(Bool())
-    val repl_en = Input(Bool())
-
-    val meta = Input(new L2Directory.Meta)
-    val meta_way = Input(UInt(4.W)) // TODO: parameterize with l2 way count
-    val meta_modified = Input(new L2Directory.MetaWriteMask)
-    val tag_modifed = Input(Bool())
-
-    val rd_idle = Output(Bool())
-    val rd_accept = Output(Bool())
-    val rd_done = Output(Bool())
-
-    val repl_idle = Output(Bool())
-    val repl_ready = Output(Bool())
-    val repl_accept = Output(Bool())
-    val repl_done = Output(Bool())
-    val repl_retry = Output(Bool())
-
-    val wb_locked = Input(Bool())
-    val wb_accept = Output(Bool())
-    val wb_done = Output(Bool())
-  })
-
-  // Whether the meta was aggressively immediately trying to be written back on every modification.
-  val configAggressiveWrite = false
-
-  // Whether ReplRd only happens after a done DirRd.
-  //  - Under most situations, this should always be set to 'true', except debug or feature evaluation,
-  //    since we always need hit/miss info (from any done Directory Read) before any replacement action.
-  //  - When set to 'false', the "rd_done" and "repl_ready" signals might not behave as expected.
-  val configReplReadAfterReadOnly = true
-
-  val fromDir_en = io.fromDir.TSHRID === id.U
-
-  val fromDir_DirRdArbComp = fromDir_en && io.fromDir.DirRdArbComp
-  val fromDir_DirRdResp = fromDir_en && io.fromDir.DirRdResp
-  val fromDir_DirWbArbComp = fromDir_en && io.fromDir.DirWbArbComp
-  val fromDir_ReplRdArbComp = fromDir_en && io.fromDir.ReplRdArbComp
-  val fromDir_ReplRdResp = fromDir_en && io.fromDir.ReplRdResp
-  val fromDir_ReplRdRetryAck = fromDir_en && io.fromDir.ReplRdRetryAck
-
-  // Directory read states
-  val state_dirRead = RegInit(new DirReadFSM, DirReadFSM.init)
-  val state_dirRead_next = WireInit(state_dirRead)
-
-  state_dirRead := state_dirRead_next
-
-  when (state_dirRead.NotYet) {
-
-    /*
-    1. 
-    */
-    whenOpt ()(io.read_en) {
-      when (io.read_arbed) {
-        // 1. [] -> DirRead_PostArb
-        state_dirRead_next.PostArb := true.B
-      }.otherwise {
-        // 2. [] -> DirRead_PreArb
-        state_dirRead_next.PreArb := true.B
-      }
-    }.elsewhenOpt (!configReplReadAfterReadOnly)(io.repl_en) {
-      // 3. [] -> DirRead_ReplPreArb
-      state_dirRead_next.ReplPreArb := true.B
-    }
-  }
-
-//when (state_dirRead.PreArb) {
-
-    /*
-    1. 
-
-    *NOTICE: The outer "when" context of DirRead_PreArb state could be omitted, because 
-             DirRdArbComp was always expected to be received only under DirRead_PreArb state.
-             Ensure this always stands when adding state transitions under DirRead_PreArb.
-    */
-    when (fromDir_DirRdArbComp) {
-      // 1. DirRead_PreArb -> DirRead_PostArb
-      state_dirRead_next.PreArb := false.B
-      state_dirRead_next.PostArb := true.B
-    }
-//}
-
-//when (state_dirRead.PostArb) {
-
-    /*
-    1.
-
-    *NOTICE: The outer "when" context of DirRead_PostArb state could be omitted, becasue
-             DirRdResp was always expected to be received only under DirRead_PostArb state.
-             Ensure this always stands when adding state transitions under DirRead_PostArb.
-    */
-    when (fromDir_DirRdResp) {
-      // 1. DirRead_PostArb -> DirRead_Done
-      state_dirRead_next.PostArb := false.B
-      state_dirRead_next.Done := true.B
-    }
-//}
-
-  when (state_dirRead.Done) {
-    
-    /*
-    1.
-    */
-    when (io.repl_en) {
-      // 1. DirRead_Done -> DirRead_ReplPreArb
-      state_dirRead_next.Done := false.B
-      state_dirRead_next.ReplPreArb := true.B
-    }
-  }
-
-//when (state_dirRead.ReplPreArb) {
-
-    /* 
-    1.
-
-    *NOTICE: The outer "when" context of DirRead_ReplPreArb state could be omitted, because
-             ReplRdArbComp was always expected to be received only under DirRead_ReplPreArb state.
-             Ensure this always stands when adding state transitions under DirRead_ReplPreArb.
-    */
-    when (fromDir_ReplRdArbComp) {
-      // 1. DirRead_ReplPreArb -> DirRead_ReplPostArb
-      state_dirRead_next.ReplPreArb := false.B
-      state_dirRead_next.ReplPostArb := true.B
-    }
-//}
-
-//when (state_dirRead.ReplPostArb) {
-
-    /*
-    1.
-
-    *NOTICE: The outer "when" context of DirRead_ReplPostArb state could be omitted, because
-             ReplRdResp and ReplRdRetryAck were always expected to be received only under DirRead_ReplPostArb state.
-             Ensure this always stands when adding state transitions under DirRead_ReplPostArb.
-    */
-    when (fromDir_ReplRdResp) {
-      // 1. DirRead_ReplPostArb -> DirRead_ReplDone
-      state_dirRead_next.ReplPostArb := false.B
-      state_dirRead_next.ReplDone := true.B
-    }
-    when (fromDir_ReplRdRetryAck) {
-      // 2. DirRead_ReplPostArb -> DirRead_ReplRetry
-      state_dirRead_next.ReplPostArb := false.B
-      state_dirRead_next.ReplRetry := true.B
-    }
-//}
-
-  when (state_dirRead.ReplRetry) {
-
-    /*
-    1. 
-    */
-    when (io.repl_en) {
-      // 1. DirRead_ReplRetry -> DirRead_ReplPreArb
-      state_dirRead_next.ReplRetry := false.B
-      state_dirRead_next.ReplPreArb := true.B
-    }
-  }
-
-  when (io.tshr_dealloc) {
-    state_dirRead_next := DirReadFSM.init
-  }
-
-  io.rd_idle := state_dirRead.NotYet
-  io.rd_accept := io.toDir.DirRd && fromDir_DirRdArbComp
-  io.rd_done := state_dirRead.Done || state_dirRead.Repl
-
-  io.repl_idle := !state_dirRead.ReplPreArb && !state_dirRead.ReplPostArb
-  io.repl_ready := state_dirRead.Done || state_dirRead.ReplRetry
-  io.repl_accept := io.toDir.ReplRd && fromDir_ReplRdArbComp
-  io.repl_done := state_dirRead.ReplDone
-  io.repl_retry := state_dirRead.ReplRetry
-
-  assert(!(fromDir_DirRdArbComp && !state_dirRead.PreArb), "receiving DirRdArbComp on unexpected state (expecting PreArb)")
-  assert(!(fromDir_DirRdResp && !state_dirRead.PostArb), "receiving DirRdResp on unexpected state (expecting PostArb)")
-  assert(!(fromDir_ReplRdArbComp && !state_dirRead.ReplPreArb), "receiving ReplRdArbComp on unexpected state (expected ReplPreArb)")
-  assert(!(fromDir_ReplRdResp && !state_dirRead.ReplPostArb), "receiving ReplRdResp on unexpected state (expected ReplPostArb)")
-  assert(!(fromDir_ReplRdRetryAck && !state_dirRead.ReplPostArb), "receiving ReplRdRetryAck on unexpected state (expected ReplPostArb)")
-
-  assert(!(fromDir_ReplRdResp && fromDir_ReplRdRetryAck), "ReplRdResp and ReplRdRetryAck must be exclusive to each other")
-
-  assert(PopCount(state_dirRead.asUInt) <= 1.U, "multiple active states in DirReadFSM")
-
-  FSMPerfHistogram(s"L2TSHR_${id}_DirReadFSM_PreArb", state_dirRead.PreArb, state_dirRead_next.PreArb)
-  FSMPerfHistogram(s"L2TSHR_${id}_DirReadFSM_PostArb", state_dirRead.PostArb, state_dirRead_next.PostArb)
-  FSMPerfHistogram(s"L2TSHR_${id}_DirReadFSM_Done", state_dirRead.Done, state_dirRead_next.Done)
-  FSMPerfHistogram(s"L2TSHR_${id}_DirReadFSM_ReplPreArb", state_dirRead.ReplPreArb, state_dirRead_next.ReplPreArb)
-  FSMPerfHistogram(s"L2TSHR_${id}_DirReadFSM_ReplPostArb", state_dirRead.ReplPostArb, state_dirRead_next.ReplPostArb)
-  FSMPerfHistogram(s"L2TSHR_${id}_DirReadFSM_ReplDone", state_dirRead.ReplDone, state_dirRead_next.ReplDone)
-  FSMPerfHistogram(s"L2TSHR_${id}_DirReadFSM_ReplRetry", state_dirRead.ReplRetry, state_dirRead_next.ReplRetry)
-  FSMPerfHistogram(s"L2TSHR_${id}_DirReadFSM_NotYet", state_dirRead.NotYet, state_dirRead_next.NotYet)
-
-  FSMTransPerfHistogram(s"L2TSHR_${id}_DirReadFSM_Done_to_ReplPreArb", state_dirRead.Done, state_dirRead_next.ReplPreArb)
-  FSMTransPerfHistogram(s"L2TSHR_${id}_DirReadFSM_Done_to_NotYet", state_dirRead.Done, state_dirRead_next.NotYet)
-
-  // Directory write states
-  val state_dirWrite = RegInit(new DirWriteFSM, DirWriteFSM.init)
-  val state_dirWrite_next = WireInit(state_dirWrite)
-
-  state_dirWrite := state_dirWrite_next
-
-  if (configAggressiveWrite) {
-
-    when (state_dirWrite.NotYet) {
-
-      /*
-      1.
-      */
-      when (io.meta_modified.any) {
-        // 1. [] -> DirWrite_PreArb
-        state_dirWrite_next.PreArb := true.B
-      }.elsewhen (io.tshr_inactive) {
-        // 2. [] -> DirWrite_Done
-        state_dirWrite_next.Done := true.B
-      }
-    }
-
-    when (state_dirWrite.PreArb) {
-
-      /*
-      1. 
-      */
-      when (fromDir_DirWbArbComp) {
-        // 1. DirWrite_PreArb -> DirWrite_Done
-        state_dirWrite_next.PreArb := false.B
-        state_dirWrite_next.Done := true.B
-      }
-    }
-
-    when (state_dirWrite.Done) {
-
-      /*
-      1. 
-      */
-      when (io.meta_modified.any) {
-        // 1. DirWrite_Done -> DirWrite_PreArb
-        state_dirWrite_next.Done := false.B
-        state_dirWrite_next.PreArb := true.B
-      }
-    }
-  } else {
-
-    when (state_dirWrite.NotYet) {
-
-      /* 
-      1.  
-      */
-      when (io.tshr_inactive) {
-        when (io.meta_modified.any) {
-        // 1. [] -> DirWrite_PreArb
-        state_dirWrite_next.PreArb := true.B
-        }.otherwise {
-          // 2. [] -> DirWrite_Done
-          state_dirWrite_next.Done := true.B
-        }
-      }
-    }
-
-    when (state_dirWrite.PreArb) {
-
-      /*
-      1.
-      */
-      when (io.tshr_reuse) {
-        // 1. DirWrite_PreArb -> []
-        state_dirWrite_next.PreArb := false.B
-      }.elsewhen (fromDir_DirWbArbComp) {
-        // 2. DirWrite_PreArb -> DirWrite_Done
-        state_dirWrite_next.PreArb := false.B
-        state_dirWrite_next.Done := true.B
-      }
-    }
-
-    when (state_dirWrite.Done) {
-
-      /*
-      1.
-      */
-      when (io.meta_modified.any) {
-        // 1. DirWrite_Done -> []
-        state_dirWrite_next.Done := false.B
-      }
-    }
-  }
-
-  when (io.tshr_dealloc) {
-    state_dirWrite := DirWriteFSM.init
-  }
-
-  io.wb_accept := io.toDir.DirWb && fromDir_DirWbArbComp
-  io.wb_done := state_dirWrite.Done
-
-  assert(!(fromDir_DirWbArbComp && !state_dirWrite.PreArb), "receiving DirWbArbComp on unexpected state (expecting PreArb)")
-  assert(PopCount(state_dirWrite.asUInt) <= 1.U, "multiple active states in DirWriteFSM")
-
-  // interactions with Directory
-  io.toDir.TSHRID := id.U
-  io.toDir.PADDR := io.tshr_paddr
-  io.toDir.WAY := io.meta_way
-  io.toDir.META := io.meta
-  io.toDir.META_WEN := io.meta_modified
-  io.toDir.TAG_WEN := io.tag_modifed
-  io.toDir.DirRd := state_dirRead.PreArb
-  io.toDir.DirWb := state_dirWrite.PreArb && !io.wb_locked
-  io.toDir.ReplRd := state_dirRead.ReplPreArb
-
-  assert(PopCount(Seq(io.toDir.DirRd, io.toDir.DirWb, io.toDir.ReplRd)) <= 1.U,
-    "DirRd, DirWb and ReplRd operations to Directory overlapped")
-
-  FSMPerfHistogram(s"L2TSHR_${id}_DirWriteFSM_PreArb", state_dirWrite.PreArb, state_dirWrite_next.PreArb)
-  FSMPerfHistogram(s"L2TSHR_${id}_DirWriteFSM_Done", state_dirWrite.Done, state_dirWrite_next.Done)
-  FSMPerfHistogram(s"L2TSHR_${id}_DirWriteFSM_NotYet", state_dirWrite.NotYet, state_dirWrite_next.NotYet)
-
-}
-
-class L2TSHRDataStorageProxy(val id: Int)(implicit val p: Parameters) extends Module with HasL2Params {
-
-  class DSReadFSM extends Bundle {
-    val AheadPreArb_S1 = Bool() // sending Ahead Read Request to Data Storage at S1, waiting for Arbiter completion
-    val AheadPreArb_S2 = Bool() // sending Ahead Read Request to Data Storage at S2, waiting for Arbiter completion
-    val AheadPostArb = Bool()   // Ahead Read Request has been accepted by Data Storage
-    val AheadDone = Bool()      // Ahead Read Response has been received from Data Storage, but no verified
-    val PreArb = Bool()         // sending Read Request to Data Storage, waiting for Arbiter completion
-    val PostArb = Bool()        // Read Request has been accepted by Data Storage
-    val Done = Bool()           // Read Response has been received from Data Storage
-    def NotYet =                // haven't sent Read Request to Data Storage
-      !AheadPreArb_S1 && !AheadPreArb_S2 && !AheadPostArb && !AheadDone && !PreArb && !PostArb && !Done
-  }
-
-  object DSReadFSM {
-    def init = {
-      val initState = Wire(new DSReadFSM)
-      initState.elements.foreach(_._2 := false.B)
-      initState
-    }
-  }
-
-  class DSWriteFSM extends Bundle {
-    val PreArb = Bool()     // sending Write Request to Data Storage, waiting for Arbiter completion
-    val PostArb = Bool()    // Write Request has been accepted by Data Storage 
-    val PreArb_PostArb = Bool()
-    val Done = Bool()       // Write Request has been completed and observable to later requests
-    def NotYet =            // haven't sent Write Request to Data Storage
-      !PreArb && !PostArb && !PreArb_PostArb && !Done
-  }
-
-  object DSWriteFSM {
-    def init = {
-      val initState = Wire(new DSWriteFSM)
-      initState.elements.foreach(_._2 := false.B)
-      initState
-    }
-  }
-
-  val io = IO(new Bundle {
-
-    val fromDir = Input(new L2Directory.PathFromDirectory)
-
-    val toDS = Output(new L2DataStorage.PathTSHRToDataStorage)
-    val fromDS = Input(new L2DataStorage.PathDataStorageToTSHR)
-
-    val tshr_paddr = Input(UInt(48.W)) // TODO: parameterize with L2 physical address width
-
-    val meta_valid = Input(Bool())
-    val meta_way = Input(UInt(4.W)) // TODO: parameterize with L2 way count
-    val meta_state = Input(L2Directory.MetaState())
-    
-    val tbuf_wen_last = Input(Bool())
-    val tbuf_modified = Input(Bool())
-    val tbuf_data_0 = Input(UInt(256.W))
-    val tbuf_data_2 = Input(UInt(256.W))
-
-    val tshr_inactivate = Input(Bool())
-    val tshr_inactive = Input(Bool())
-    val tshr_dealloc = Input(Bool())
-
-    val ds_read_ahead_en = Input(Bool())
-    val ds_read_ahead_way = Input(UInt(4.W)) // TODO: parameterize with L2 way count
-    val ds_read_ahead_arbed = Input(Bool())
-
-    val ds_read_rbeEVT_en = Input(Bool())
-    val ds_read_rbeSNP_en = Input(Bool())
-    val ds_read_rbeREQ_en = Input(Bool())
-
-    val ds_read_vPipeEVT_en = Input(Bool())
-    val ds_read_vPipeSNP_en = Input(Bool())
-    val ds_read_vPipeREQ_en = Input(Bool())
-
-    // TODO: support cancel here?
-    val ds_read_EVT_cancel = Input(Bool())
-    val ds_read_SNP_cancel = Input(Bool())
-    val ds_read_REQ_cancel = Input(Bool())
-
-    val ds_read_aux_en = Input(Bool()) // aux DS read enable that overrides all other conditions
-
-    val rd_idle = Output(Bool())
-    val rd_accept = Output(Bool())
-    val rd_done = Output(Bool())
-
-    val wb_locked = Input(Bool())
-    val wb_accept = Output(Bool())
-    val wb_done = Output(Bool())
-
-    val RXDAT_fire = Input(Bool()) // io.UpRXDAT.fire || io.DnRXDAT.fire
-  })
-
-  // configuration parameters
-  val configS1ReadAhead = true
-  val configS2ReadAhead = true
-
-  val configFlowDirRdResp = true
-  val configFlowAheadRdResp = true
-
-  //
-  val ds_read_rbe_en = io.ds_read_rbeEVT_en || io.ds_read_rbeSNP_en || io.ds_read_rbeREQ_en
-  val ds_read_vPipe_en = io.ds_read_vPipeEVT_en || io.ds_read_vPipeSNP_en || io.ds_read_vPipeREQ_en
-
-  val ds_read_postRBE_en = ds_read_rbe_en || ds_read_vPipe_en
-
-  val ds_read_postRBE_en_q = RegInit(false.B)
-
-  when (ds_read_postRBE_en) {
-    ds_read_postRBE_en_q := true.B
-  }
-
-  when (io.tshr_dealloc) {
-    ds_read_postRBE_en_q := false.B
-  }
-
-  val ds_read_nonAhead_en = ds_read_postRBE_en || ds_read_postRBE_en_q || io.ds_read_aux_en
-
-  //
-  val fromDir_en = io.fromDir.TSHRID === id.U
-
-  val fromDir_DirRdResp = fromDir_en && io.fromDir.DirRdResp
-
-  //
-  val fromDS_en = io.fromDS.TSHRID === id.U
-
-  val fromDS_DSBufAheadRdArbComp = fromDS_en && io.fromDS.DSBufAheadRdArbComp
-  val fromDS_DSBufAheadRdResp = fromDS_en && io.fromDS.DSBufAheadRdResp
-  val fromDS_DSBufRdArbComp = fromDS_en && io.fromDS.DSBufRdArbComp
-  val fromDS_DSBufRdResp = fromDS_en && io.fromDS.DSBufRdResp
-  val fromDS_DSBufWbArbComp = fromDS_en && io.fromDS.DSBufWbArbComp
-  val fromDS_DSBufWbComp = fromDS_en && io.fromDS.DSBufWbComp
-
-  //
-  val miss_on_fromDS_dirRdResp = fromDir_DirRdResp && (io.fromDir.META.state === MetaState.I || io.fromDir.META.way =/= io.fromDS.WAY)
-  val miss_on_fromDS_metaValid = io.meta_valid && (io.meta_state === MetaState.I || io.meta_way =/= io.fromDS.WAY)
-
-  val hit_on_fromDS_dirRdResp = fromDir_DirRdResp && (io.fromDir.META.state =/= MetaState.I && io.fromDir.META.way === io.fromDS.WAY)
-  val hit_on_fromDS_metaValid = io.meta_valid && (io.meta_state =/= MetaState.I && io.meta_way === io.fromDS.WAY)
-
-  val ds_read_ahead_way_q = RegInit(0.U(4.W)) // TODO: parameterize with L2 way count
-
-  when (io.ds_read_ahead_en) {
-    ds_read_ahead_way_q := io.ds_read_ahead_way
-  }
-
-  val miss_after_fromDS_dirRdResp = fromDir_DirRdResp && (io.fromDir.META.state === MetaState.I || io.fromDir.META.way =/= ds_read_ahead_way_q)
-  val miss_after_fromDS_metaValid = io.meta_valid && (io.meta_state === MetaState.I || io.meta_way =/= ds_read_ahead_way_q)
-
-  val hit_after_fromDS_dirRdResp = fromDir_DirRdResp && (io.fromDir.META.state =/= MetaState.I && io.fromDir.META.way === ds_read_ahead_way_q)
-  val hit_after_fromDS_metaValid = io.meta_valid && (io.meta_state =/= MetaState.I && io.meta_way === ds_read_ahead_way_q)
-  
-
-  // Data Storage read states
-  val state_dsRead = RegInit(new DSReadFSM, DSReadFSM.init)
-  val state_dsRead_next = WireInit(state_dsRead)
-
-  state_dsRead := state_dsRead_next
-
-  when (state_dsRead.NotYet) {
-
-    /*
-    1.  
-    */
-    when (ds_read_nonAhead_en) {
-      // 1. [] -> DSRead_PreArb
-      state_dsRead_next.PreArb := true.B
-    }.elsewhen (io.ds_read_ahead_en) {
-      when (io.ds_read_ahead_arbed) {
-        // 2. [] -> DSRead_AheadPostArb
-        state_dsRead_next.AheadPostArb := true.B
-      }.otherwise {
-        if (configS1ReadAhead) {
-          // 3. [] -> DSRead_AheadPreArb_S1
-          state_dsRead_next.AheadPreArb_S1 := true.B
-        }
-      }
-    }
-  }
-
-  when (state_dsRead.PreArb) {
-
-    /*
-    1. 
-    */
-    when (fromDS_DSBufRdArbComp) {
-      // 1. DSRead_PreArb -> DSRead_PostArb
-      state_dsRead_next.PreArb := false.B
-      state_dsRead_next.PostArb := true.B
-    }
-  }
-
-  when (state_dsRead.PostArb) {
-    
-    /*
-    1.
-    */
-    when (fromDS_DSBufRdResp) {
-      // 1. DSRead_PostArb -> DSRead_Done
-      state_dsRead_next.PostArb := false.B
-      state_dsRead_next.Done := true.B
-    }
-  }
-
-  when (state_dsRead.AheadPreArb_S1) {
-    
-    /*
-    1. 
-    */
-    whenOpt ()(fromDS_DSBufAheadRdArbComp) {
-      // 1. DSRead_AheadPreArb_S1 -> DSRead_AheadPostArb
-      state_dsRead_next.AheadPreArb_S1 := false.B
-      state_dsRead_next.AheadPostArb := true.B
-    }.elsewhen (ds_read_nonAhead_en) {
-      // 2.1. DSRead_AheadPreArb_S1 -> DSRead_PreArb
-      state_dsRead_next.AheadPreArb_S1 := false.B
-      state_dsRead_next.PreArb := true.B
-    }.otherwise {
-      if (configS2ReadAhead) {
-        // 3. DSRead_AheadPreArb_S1 -> DSRead_AheadPreArb_S2
-        state_dsRead_next.AheadPreArb_S1 := false.B
-        state_dsRead_next.AheadPreArb_S2 := true.B
-      } else {
-        // 4. DSRead_AheadPreArb_S1 -> []
-        state_dsRead_next.AheadPreArb_S1 := false.B
-      }
-    }
-  }
-
-  when (state_dsRead.AheadPreArb_S2) {
-
-    /*
-    1.
-    */
-    whenOpt ()(fromDS_DSBufAheadRdArbComp) {
-      // 1. DSRead_AheadPreArb_S2 -> DSRead_AheadPostArb
-      state_dsRead_next.AheadPreArb_S2 := false.B
-      state_dsRead_next.AheadPostArb := true.B
-    }.elsewhen (ds_read_nonAhead_en) {
-      // 2.3. DSRead_AheadPreArb_S2 -> DSRead_PreArb
-      state_dsRead_next.AheadPreArb_S2 := false.B
-      state_dsRead_next.PreArb := true.B
-    }.otherwise {
-      // . DSRead_AheadPreArb_S2 -> []
-      state_dsRead_next.AheadPreArb_S2 := false.B
-    }
-  }
-
-  when (state_dsRead.AheadPostArb) {
-
-    /*
-    1. 
-    */
-    when (fromDS_DSBufAheadRdResp) {
-      whenOpt (configFlowAheadRdResp)(hit_on_fromDS_metaValid) {
-        // 1.1. DSRead_AheadPostArb -> DSRead_Done
-        state_dsRead_next.AheadPostArb := false.B
-        state_dsRead_next.Done := true.B
-      }.elsewhenOpt (configFlowAheadRdResp && configFlowDirRdResp)(hit_on_fromDS_dirRdResp) {
-        // 1.2. DSRead_AheadPostArb -> DSRead_Done
-        state_dsRead_next.AheadPostArb := false.B
-        state_dsRead_next.Done := true.B
-      }.elsewhenOpt (configFlowAheadRdResp)(miss_on_fromDS_metaValid) {
-        when (ds_read_nonAhead_en) {
-          // 2.1. DSRead_AheadPostArb -> DSRead_PreArb
-          state_dsRead_next.AheadPostArb := false.B
-          state_dsRead_next.PreArb := true.B
-        }.otherwise {
-          // 3.1. DSRead_AheadPostArb -> []
-          state_dsRead_next.AheadPostArb := false.B
-        }
-      }.elsewhenOpt (configFlowAheadRdResp && configFlowDirRdResp)(miss_on_fromDS_dirRdResp) {
-        when (ds_read_nonAhead_en) {
-          // 2.2. DSRead_AheadPostArb -> DSRead_PreArb
-          state_dsRead_next.AheadPostArb := false.B
-          state_dsRead_next.PreArb := true.B
-        }.otherwise {
-          // 3.2. DSRead_AheadPostArb -> []
-          state_dsRead_next.AheadPostArb := false.B
-        }
-      }.otherwise {
-        // 4. DSRead_AheadPostArb -> DSRead_AheadDone
-        state_dsRead_next.AheadPostArb := false.B
-        state_dsRead_next.AheadDone := true.B
-      }
-    }
-  }
-
-  when (state_dsRead.AheadDone) {
-
-    /*
-    1. 
-    */
-    whenOpt (true)(hit_after_fromDS_metaValid) {
-      // 1.1. DSRead_AheadDone -> DSRead_Done
-      state_dsRead_next.AheadDone := false.B
-      state_dsRead_next.Done := true.B
-    }.elsewhenOpt (configFlowDirRdResp)(hit_after_fromDS_dirRdResp) {
-      // 1.2. DSRead_AheadDone -> DSRead_Done
-      state_dsRead_next.AheadDone := false.B
-      state_dsRead_next.Done := true.B
-    }.elsewhen (miss_after_fromDS_metaValid) {
-      when (ds_read_nonAhead_en) {
-        // 2.1. DSRead_AheadDone -> DSRead_PreArb
-        state_dsRead_next.AheadDone := false.B
-        state_dsRead_next.PreArb := true.B
-      }.otherwise {
-        // 3.1. DSRead_AheadDone -> []
-        state_dsRead_next.AheadDone := false.B
-      }
-    }.elsewhenOpt (configFlowDirRdResp)(miss_after_fromDS_dirRdResp) {
-      when (ds_read_nonAhead_en) {
-        // 2.2. DSRead_AheadDone -> DSRead_PreArb
-        state_dsRead_next.AheadDone := false.B
-        state_dsRead_next.PreArb := true.B
-      }.otherwise {
-        // 3.2. DSRead_AheadDone -> []
-        state_dsRead_next.AheadDone := false.B
-      }
-    }
-  }
-
-  when (io.RXDAT_fire) {
-    /*
-
-    */
-    state_dsRead_next.PreArb := false.B
-    state_dsRead_next.AheadPreArb_S1 := false.B
-    state_dsRead_next.AheadPreArb_S2 := false.B
-  }
-
-  when (io.tshr_dealloc) {
-    state_dsRead_next := DSReadFSM.init
-  }
-
-  io.rd_idle := state_dsRead.NotYet
-  io.rd_done := state_dsRead.Done
-
-  assert(PopCount(state_dsRead.asUInt) <= 1.U, "multiple active state in DSReadFSM")
-
-  assert(!(io.fromDS.DSBufAheadRdArbComp && !state_dsRead.AheadPreArb_S1 && !state_dsRead.AheadPreArb_S2),
-    "unexpected DSBufAheadRdArbComp from Data Storage on non-AheadPreArb state")
-  assert(!(io.fromDS.DSBufAheadRdResp && !state_dsRead.AheadPostArb),
-    "unexpected DSBufAheadRdResp from Data Storage on non-AheadPostArb state")
-  assert(!(io.fromDS.DSBufRdArbComp && !state_dsRead.PreArb),
-    "unexpected DSBufRdArbComp from Data Storage on non-PreArb state")
-  assert(!(io.fromDS.DSBufRdResp && !state_dsRead.PostArb),
-    "unexpected DSBufRdResp from Data Storage on non-PostArb state")
-
-  assert(!(state_dsRead.PreArb && !io.meta_valid), "meta not valid on DSReadFSM state PreArb")
-  assert(!(state_dsRead.PostArb && !io.meta_valid), "meta not valid on DSReadFSM state PostArb")
-  assert(!(state_dsRead.Done && !io.meta_valid), "meta not valid on DSReadFSM state Done")
-
-  val perf_PreArb_cycleCnt = RegInit(0.U(32.W))
-  val perf_PostArb_cycleCnt = RegInit(0.U(32.W))
-  val perf_AheadPostArb_cycleCnt = RegInit(0.U(32.W))
-  val perf_AheadDone_cycleCnt = RegInit(0.U(32.W))
-
-  when (state_dsRead.PreArb) {
-    when (!state_dsRead_next.PreArb) {
-      perf_PreArb_cycleCnt := 0.U
-    }.otherwise {
-      perf_PreArb_cycleCnt := perf_PreArb_cycleCnt + 1.U
-    }
-  }
-
-  when (state_dsRead.PostArb) {
-    when (!state_dsRead_next.PostArb) {
-      perf_PostArb_cycleCnt := 0.U
-    }.otherwise {
-      perf_PostArb_cycleCnt := perf_PostArb_cycleCnt + 1.U
-    }
-  }
-
-  when (state_dsRead.AheadPostArb) {
-    when (!state_dsRead_next.AheadPostArb) {
-      perf_AheadPostArb_cycleCnt := 0.U
-    }.otherwise {
-      perf_AheadPostArb_cycleCnt := perf_AheadPostArb_cycleCnt + 1.U
-    }
-  }
-
-  when (state_dsRead.AheadDone) {
-    when (!state_dsRead_next.AheadDone) {
-      perf_AheadDone_cycleCnt := 0.U
-    }.otherwise {
-      perf_AheadDone_cycleCnt := perf_AheadDone_cycleCnt + 1.U
-    }
-  }
-
-  assert(!(io.fromDir.DirRdResp && io.meta_valid), "DirRdResp on local meta valid, multiple Directory read might be happened")
-
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPreArb_S1_cnt", state_dsRead.AheadPreArb_S1)
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPreArb_S2_cnt", state_dsRead.AheadPreArb_S2)
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_PreArb_cnt", state_dsRead.PreArb)
-  XSPerfHistogram(s"L2TSHR_DSReadFSM_PreArb_cnt", perf_PreArb_cycleCnt, state_dsRead.PreArb && !state_dsRead_next.PreArb, 0, 40, 2, right_strict = true)
-  XSPerfHistogram(s"L2TSHR_DSReadFSM_PreArb_cnt", perf_PreArb_cycleCnt, state_dsRead.PreArb && !state_dsRead_next.PreArb, 40, 800, 40, left_strict = true)
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPostArb", state_dsRead.AheadPostArb)
-  XSPerfHistogram(s"L2TSHR_DSReadFSM_AheadPostArb", perf_AheadPostArb_cycleCnt, state_dsRead.AheadPostArb && !state_dsRead_next.AheadPostArb, 0, 40, 2, right_strict = true)
-  XSPerfHistogram(s"L2TSHR_DSReadFSM_AheadPostArb", perf_AheadPostArb_cycleCnt, state_dsRead.AheadPostArb && !state_dsRead_next.AheadPostArb, 40, 800, 40, left_strict = true)
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_PostArb", state_dsRead.PostArb)
-  XSPerfHistogram(s"L2TSHR_DSReadFSM_PostArb", perf_PostArb_cycleCnt, state_dsRead.PostArb && !state_dsRead_next.PostArb, 0, 40, 2, right_strict = true)
-  XSPerfHistogram(s"L2TSHR_DSReadFSM_PostArb", perf_PostArb_cycleCnt, state_dsRead.PostArb && !state_dsRead_next.PostArb, 40, 800, 40, left_strict = true)
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadDone", state_dsRead.AheadDone)
-  XSPerfHistogram(s"L2TSHR_DSReadFSM_AheadDone", perf_AheadDone_cycleCnt, state_dsRead.AheadDone && !state_dsRead_next.AheadDone, 0, 40, 2, right_strict = true)
-  XSPerfHistogram(s"L2TSHR_DSReadFSM_AheadDone", perf_AheadDone_cycleCnt, state_dsRead.AheadDone && !state_dsRead_next.AheadDone, 40, 800, 40, left_strict = true)
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_Done", state_dsRead.Done)
-
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_NotYet_dirRdResp_read", io.fromDir.DirRdResp && state_dsRead.NotYet && state_dsRead_next.PreArb)
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_NotYet_metaValid_read", io.meta_valid && state_dsRead.NotYet && state_dsRead_next.PreArb)
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPreArb_S1_dirRdResp_read", io.fromDir.DirRdResp && state_dsRead.AheadPreArb_S1 && state_dsRead_next.PreArb)
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPreArb_S1_dirRdResp_noRead", io.fromDir.DirRdResp && state_dsRead.AheadPreArb_S1 && state_dsRead_next.NotYet)
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPreArb_S1_metaValid_read", io.meta_valid && state_dsRead.AheadPreArb_S1 && state_dsRead_next.PreArb)
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPreArb_S1_metaValid_noRead", io.meta_valid && state_dsRead.AheadPreArb_S1 && state_dsRead_next.NotYet)
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPreArb_S2_dirRdResp_read", io.fromDir.DirRdResp && state_dsRead.AheadPreArb_S2 && state_dsRead_next.PreArb)
-//XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPreArb_S2_dirRdResp_noRead")
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPreArb_S2_metaValid_read", io.meta_valid && state_dsRead.AheadPreArb_S2 && state_dsRead_next.PreArb)
-//XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPreArb_S2_metaValid_noRead")
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPostArb_dirRdResp_hit", io.fromDir.DirRdResp && state_dsRead.AheadPostArb && state_dsRead_next.Done)
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPostArb_dirRdResp_miss_read", io.fromDir.DirRdResp && state_dsRead.AheadPostArb && state_dsRead_next.PreArb)
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPostArb_dirRdResp_miss_noRead", io.fromDir.DirRdResp && state_dsRead.AheadPostArb && state_dsRead_next.NotYet)
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPostArb_metaValid_hit", io.meta_valid && state_dsRead.AheadPostArb && state_dsRead_next.Done)
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPostArb_metaValid_miss_read", io.meta_valid && state_dsRead.AheadPostArb && state_dsRead_next.PreArb)
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadPostArb_metaValid_miss_noRead", io.meta_valid && state_dsRead.AheadPostArb && state_dsRead_next.NotYet)
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadDone_dirRdResp_hit", io.fromDir.DirRdResp && state_dsRead.AheadDone && state_dsRead_next.Done)
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadDone_dirRdResp_miss_read", io.fromDir.DirRdResp && state_dsRead.AheadDone && state_dsRead_next.PreArb)
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadDone_dirRdResp_miss_noRead", io.fromDir.DirRdResp && state_dsRead.AheadDone && state_dsRead_next.NotYet)
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadDone_metaValid_hit", io.meta_valid && state_dsRead.AheadDone && state_dsRead_next.Done)
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadDone_metaValid_miss_read", io.meta_valid && state_dsRead.AheadDone && state_dsRead_next.PreArb)
-  XSPerfAccumulate(s"L2TSHR_DSReadFSM_AheadDone_metaValid_miss_noRead", io.meta_valid && state_dsRead.AheadDone && state_dsRead_next.NotYet)
-
-  // Data Storage write states
-  val state_dsWrite = RegInit(new DSWriteFSM, DSWriteFSM.init)
-  val state_dsWrite_next = WireInit(state_dsWrite)
-
-  state_dsWrite := state_dsWrite_next
-
-  when (state_dsWrite.NotYet) {
-
-    /*
-    1.
-    */
-    when (io.tbuf_wen_last) {
-      // 1. [] -> DSWrite_PreArb
-      state_dsWrite_next.PreArb := true.B
-    }.elsewhen (io.tshr_inactivate && !io.tbuf_modified) {
-      // 2. [] -> DSWrite_Done
-      state_dsWrite_next.Done := true.B
-    }
-  }
-
-  when (state_dsWrite.PreArb) {
-
-    /*
-    1. 
-    */
-    when (io.tbuf_wen_last) {
-      when (fromDS_DSBufWbArbComp && fromDS_DSBufWbComp) {
-        // 1.1. DSWrite_PreArb -> DSWrite_PreArb
-      }.elsewhen (fromDS_DSBufWbArbComp) {
-        // 2. DSWrite_PreArb -> DSWrite_PreArb_PostArb
-        state_dsWrite_next.PreArb := false.B
-        state_dsWrite_next.PreArb_PostArb := true.B
-      }.otherwise {
-        // 1.2. DSWrite_PreArb -> DSWrite_PreArb
-      }
-    }.elsewhen (fromDS_DSBufWbArbComp && fromDS_DSBufWbComp) {
-      // 3. DSWrite_PreArb -> DSWrite_Done
-      state_dsWrite_next.PreArb := false.B
-      state_dsWrite_next.Done := true.B
-    }.elsewhen (fromDS_DSBufWbArbComp) {
-      // 4. DSWrite_PreArb -> DSWrite_PostArb
-      state_dsWrite_next.PreArb := false.B
-      state_dsWrite_next.PostArb := true.B
-    }
-  }
-
-  when (state_dsWrite.PostArb) {
-
-    /*
-    1. 
-    */
-    when (io.tbuf_wen_last) {
-      when (fromDS_DSBufWbComp) {
-        // 1. DSWrite_PostArb -> DSWrite_PreArb
-        state_dsWrite_next.PostArb := false.B
-        state_dsWrite_next.PreArb := true.B
-      }.otherwise {
-        // 2. DSWrite_PostArb -> DSWrite_PreArb_PostArb
-        state_dsWrite_next.PostArb := false.B
-        state_dsWrite_next.PreArb_PostArb := true.B
-      }
-    }.elsewhen (fromDS_DSBufWbComp) {
-      // 3. DSWrite_PostArb -> DSWrite_Done
-      state_dsWrite_next.PostArb := false.B
-      state_dsWrite_next.Done := true.B
-    }
-  }
-
-  when (state_dsWrite.PreArb_PostArb) {
-
-    /*
-    1.
-    */
-    when (fromDS_DSBufWbArbComp && fromDS_DSBufWbComp) {
-      // 1. DSWrite_PreArb_PostArb -> DSWrite_PostArb
-      state_dsWrite_next.PreArb_PostArb := false.B
-      state_dsWrite_next.PostArb := true.B
-    }.elsewhen (fromDS_DSBufWbComp) {
-      // 2. DSWrite_PreArb_PostArb -> DSWrite_PreArb
-      state_dsWrite_next.PreArb_PostArb := false.B
-      state_dsWrite_next.PreArb := true.B
-    }.elsewhen (io.tbuf_wen_last) {
-      // 3. DSWrite_PreArb_PostArb -> DSWrite_PreArb_PostArb
-    }
-  }
-
-  when (state_dsWrite.Done) {
-
-    /*
-    1.
-    */
-    when (io.tbuf_wen_last) {
-      // . DSWrite_Done -> DSWrite_PreArb
-      state_dsWrite_next.Done := false.B
-      state_dsWrite_next.PreArb := true.B
-    }
-  }
-
-  when (io.tshr_dealloc) {
-    state_dsWrite_next := DSWriteFSM.init
-  }
-
-  io.wb_accept := io.toDS.DSBufWb && fromDS_DSBufWbArbComp
-  io.wb_done := state_dsWrite.Done
-
-  assert(PopCount(state_dsWrite.asUInt) <= 1.U, "multiple active state in DSWriteFSM")
-
-  assert(!(fromDS_DSBufWbArbComp && !state_dsWrite.PreArb && !state_dsWrite.PreArb_PostArb),
-    "unexpected DSBufWbArbComp from Data Storage on non-PreArb state")
-  assert(!(fromDS_DSBufWbComp && !state_dsWrite.PreArb && !state_dsWrite.PostArb && !state_dsWrite.PreArb_PostArb),
-    "unexpected DSBufWbComp from Data Storage on non-PreArb/PostArb state")
-
-  assert(!(state_dsWrite.PreArb && state_dsRead.AheadPreArb_S1), "DSWrite.PreArb not exclusive with DSRead.AheadPreArb_S1")
-  assert(!(state_dsWrite.PreArb && state_dsRead.AheadPreArb_S2), "DSWrite.PreArb not exclusive with DSRead.AheadPreArb_S2")
-  assert(!(state_dsWrite.PreArb_PostArb && state_dsRead.AheadPreArb_S1), "DSWrite.PreArb_PostArb not exclusive with DSRead.AheadPreArb_S1")
-  assert(!(state_dsWrite.PreArb_PostArb && state_dsRead.AheadPreArb_S2), "DSWrite.PreArb_PostArb not exclusive with DSRead.AheadPreArb_S2")
-
-  XSPerfAccumulate(s"L2TSHR_${id}_DSWrite_PreArb_cycleCnt", state_dsWrite.PreArb)
-  XSPerfAccumulate(s"L2TSHR_${id}_DSWrite_PostArb_cycleCnt", state_dsWrite.PostArb)
-  XSPerfAccumulate(s"L2TSHR_${id}_DSWrite_PostArb_PreArb_cycleCnt", state_dsWrite.PreArb_PostArb)
-  XSPerfAccumulate(s"L2TSHR_${id}_DSWrite_Done_cycleCnt", state_dsWrite.Done)
-
-  // interactions with Data Storage
-  io.toDS.TSHRID := id.U
-  // *NOTICE: The AheadPreArb_S1 and AheadPreArb_S2 state should never overlap with any DSWrite states.
-  //          It is assumed that no Data could be fast enough to be returned to TSHR Buffer in S0, S1, S2 from L1 and L3,
-  //          otherwise consider clear all AheadPreArb on any RXDAT fire.
-  io.toDS.WAY := Mux(state_dsRead.AheadPreArb_S1 || state_dsRead.AheadPreArb_S2, ds_read_ahead_way_q, io.meta_way) // TODO: meta assertions on PreArb, PostArb, Done
-  io.toDS.SET := L2Address.set(io.tshr_paddr)
-  io.toDS.DATA := Cat(io.tbuf_data_2, io.tbuf_data_0)
-
-  io.toDS.DSBufRd := state_dsRead.PreArb
-  io.toDS.DSBufAheadRd := state_dsRead.AheadPreArb_S1 || state_dsRead.AheadPreArb_S2
-  io.toDS.DSBufWb := (state_dsWrite.PreArb || state_dsWrite.PreArb_PostArb) && !io.wb_locked
-}
+import oceanus.l2.tshr.L2TSHRDirectoryProxy
 
 
 class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2Params {
@@ -965,12 +34,19 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
     val RXSNP = Input(new CHIBundleSNP)               // HN SNP
     val RXREQ = Input(new FlitREQ)                    // L1/L2 REQ
 
+    val TXREQ = Decoupled(new CHIBundleREQ)           // HN REQ
+
+    val TXSNP = Decoupled(new FlitSNP)                // SNP to L1
+
     val UpRXRSP = Flipped(Valid(new FlitUpRSP))       // RSP from L1
     val UpRXDAT = Flipped(Valid(new FlitUpDAT))       // DAT from L1
-    val txSnp = Decoupled(new FlitSNP)                // SNP to L1
+    val UpTXRSP = Decoupled(new FlitDnRSP)            // RSP to L1
+    val UpTXDAT = Decoupled(new FlitDnDAT)            // DAT to L1
 
     val DnRXRSP = Flipped(Valid(new CHIBundleRSP))    // RSP from HN
     val DnRXDAT = Flipped(Valid(new CHIBundleDAT))    // DAT from HN
+    val DnTXRSP = Decoupled(new CHIBundleRSP)         // RSP to HN
+    val DnTXDAT = Decoupled(new CHIBundleDAT)         // DAT to HN
 
     val valid = Output(Bool())
   })
@@ -981,6 +57,7 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
   when (tshr_alloc) {
     tshr_paddr := io.fromAlloc.paddr
   }
+  
   io.toAlloc.paddr := tshr_paddr
 
 
@@ -1021,9 +98,6 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
   }
 
   io.valid := tshr_valid
-
-
-  // miscs and enchantments
 
 
   // meta
@@ -1230,7 +304,7 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
   // RBEs
   val rbeEVT = Module(new L2RBE(new FlitEVT /*TODO: strip PA here*/))
   val rbeSNP = Module(new L2RBE(new CHIBundleSNP /*TODO: strip PA here*/))
-  val rbeREQ = Module(new L2RBE(new FlitREQ /*TODO: strip PA here*/))
+  val rbeREQ = Module(new L2RBE(new FlitREQStripped))
 
   io.toAlloc.busy.EVT := !rbeEVT.io.in.ready
   io.toAlloc.busy.SNP := !rbeSNP.io.in.ready
@@ -1261,39 +335,113 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
   // TODO
 
 
-  // vPipes
+  // -- vPipes and TSHR local modules
   val vPipeEVT = Module(new L2VPipeEVT(Seq(/*TODO: client devices*/)))
   val vPipeSNP = Module(new L2VPipeSNP(Seq(/*TODO: client devices*/)))
   val vPipeREQ = Module(new L2VPipeREQ(Seq(/*TODO: client devices*/), id, 0))
   val snoopAgent = Module(new L2SnoopAgent(id))
 
+  tshr_inactive_vpipe := vPipeEVT.io.free && vPipeSNP.io.free && vPipeREQ.io.free
+
+  // connections between SNP vPipe and Snoop Agent
   snoopAgent.io.uopFromSNP.valid := vPipeSNP.io.toSA.SnpMakeInvalid ||
                                     vPipeSNP.io.toSA.SnpToInvalid ||
                                     vPipeSNP.io.toSA.SnpToShared ||
                                     vPipeSNP.io.toSA.SnpToClean
   snoopAgent.io.uopFromSNP.bits := vPipeSNP.io.toSA
+  vPipeSNP.io.fromSA := snoopAgent.io.fromSA
+
+  // connections between REQ vPipe and Snoop Agent
   snoopAgent.io.uopFromREQ.valid := vPipeREQ.io.toSA.SnpMakeInvalid ||
                                     vPipeREQ.io.toSA.SnpToInvalid ||
                                     vPipeREQ.io.toSA.SnpToShared ||
                                     vPipeREQ.io.toSA.SnpToClean
   snoopAgent.io.uopFromREQ.bits := vPipeREQ.io.toSA
+  vPipeREQ.io.fromSA := snoopAgent.io.fromSA
+
+  // connections between TSHR local / RX and Snoop Agent
   snoopAgent.io.tshr_paddr := tshr_paddr
   snoopAgent.io.tshr_dirResult := meta
   snoopAgent.io.UpRXRSP := io.UpRXRSP
   snoopAgent.io.UpRXDAT := io.UpRXDAT
-  io.txSnp <> snoopAgent.io.txSnp
-  vPipeSNP.io.fromSA := snoopAgent.io.fromSA
-  vPipeREQ.io.fromSA := snoopAgent.io.fromSA
 
-  vPipeEVT.io.tshr_meta_write_en := meta_write_EVT_mask
-  vPipeEVT.io.tshr_meta_write_meta := meta_write_EVT_meta
-  vPipeSNP.io.tshr_meta_write_en := meta_write_SNP_mask
-  vPipeSNP.io.tshr_meta_write_meta := meta_write_SNP_meta
-  vPipeREQ.io.tshr_meta_write_en := meta_write_REQ_mask
-  vPipeREQ.io.tshr_meta_write_meta := meta_write_REQ_meta
-  tag_write_REQ_mask := DontCare
+  // connections between RBEs / RX and EVT vPipe
+  rbeEVT.io.blockFromVPipe.EVT := vPipeEVT.io.blockRBE.EVT
+  rbeSNP.io.blockFromVPipe.EVT := vPipeEVT.io.blockRBE.SNP
+  rbeREQ.io.blockFromVPipe.EVT := vPipeEVT.io.blockRBE.REQ
+
+  vPipeEVT.io.UpRXEVT := rbeEVT.io.out
+
+  vPipeEVT.io.UpRXDAT := io.UpRXDAT
+
+  // connections between RBEs / RX and SNP vPipe
+  rbeEVT.io.blockFromVPipe.SNP := vPipeSNP.io.blockRBE.EVT
+  rbeSNP.io.blockFromVPipe.SNP := vPipeSNP.io.blockRBE.SNP
+  rbeREQ.io.blockFromVPipe.SNP := vPipeSNP.io.blockRBE.REQ
+
+  vPipeSNP.io.DnRXSNP := rbeSNP.io.out
+
+  // connections between RBEs / RX and REQ vPipe
+  rbeEVT.io.blockFromVPipe.REQ := vPipeREQ.io.blockRBE.EVT
+  rbeSNP.io.blockFromVPipe.REQ := vPipeREQ.io.blockRBE.SNP
+  rbeREQ.io.blockFromVPipe.REQ := vPipeREQ.io.blockRBE.REQ
+
+  vPipeREQ.io.UpRXREQ := rbeREQ.io.out
+
+  vPipeREQ.io.DnRXRSP := io.DnRXRSP
+  vPipeREQ.io.DnRXDAT := io.DnRXDAT
+
+  vPipeREQ.io.UpRXRSP := io.UpRXRSP
+  vPipeREQ.io.UpRXDAT := io.UpRXDAT
+
+  // connections between TSHR local and EVT vPipe
+  meta_write_EVT_mask := vPipeEVT.io.tshr_meta_write_en
+  meta_write_EVT_meta := vPipeEVT.io.tshr_meta_write_meta
 
   // TODO
+
+  // connections between TSHR local and SNP vPipe
+  vPipeSNP.io.tshr_paddr := tshr_paddr
+  vPipeSNP.io.tshr_dirResult := dirResult
+
+  meta_write_SNP_mask := vPipeSNP.io.tshr_meta_write_en
+  meta_write_SNP_meta := vPipeSNP.io.tshr_meta_write_meta
+
+  vPipeSNP.io.EVT_active := vPipeEVT.io.EVT_active
+  vPipeSNP.io.REQ_evict := false.B // TODO: connect with REQ vPipe
+
+  // connections between TSHR local and REQ vPipe
+  vPipeREQ.io.tshr_paddr := tshr_paddr
+  vPipeREQ.io.tshr_dirResult := dirResult
+
+  meta_write_REQ_mask := vPipeREQ.io.tshr_meta_write_en
+  meta_write_REQ_meta := vPipeREQ.io.tshr_meta_write_meta
+  tag_write_REQ_mask := vPipeREQ.io.tshr_tag_write_en
+
+  vPipeREQ.io.toPCreditPool // TODO
+  vPipeREQ.io.fromPCreditPool // TODO
+
+  vPipeREQ.io.toClientTable_srcId // TODO
+  vPipeREQ.io.fromClientTable_clients // TODO
+
+  vPipeREQ.io.L1EVT_active := vPipeEVT.io.EVT_active
+
+  // connections between TX channels and TSHR local modules
+  io.TXREQ := vPipeREQ.io.DnTXREQ
+
+  io.TXSNP <> snoopAgent.io.txSnp
+
+  fastArb(Seq(vPipeEVT.io.UpTXRSP, vPipeREQ.io.UpTXRSP), io.UpTXRSP, Some("UpTXRSP"))
+
+  io.UpTXDAT <> vPipeREQ.io.UpTXDAT
+  io.UpTXDAT.bits.Data := Mux(io.UpTXDAT.bits.DataID === 0.U, tshr_buffer_0, tshr_buffer_2)
+
+  fastArb(Seq(vPipeSNP.io.DnTXRSP, vPipeREQ.io.DnTXRSP), io.DnTXRSP, Some("DnTXRSP"))
+
+  fastArb(Seq(vPipeSNP.io.DnTXDAT, vPipeREQ.io.DnTXDAT), io.DnTXDAT, Some("DnTXDAT"))
+  io.DnTXDAT.bits.Data.get := Mux(io.DnTXDAT.bits.DataID.get === 0.U, tshr_buffer_0, tshr_buffer_2)
+
+  // ----------------------------------------------------------------
 
   // Directory Proxy
   val proxyDir = Module(new L2TSHRDirectoryProxy(id))
@@ -1310,9 +458,19 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
 
   proxyDir.io.read_arbed := false.B // TODO: S0 Directory Arbitration from L2TSHRCtrl
   proxyDir.io.read_en := tshr_enter_dirRead
-  proxyDir.io.repl_en := false.B // TODO: Replacement Read
+  proxyDir.io.repl_en := vPipeREQ.io.repl_en
 
   proxyDir.io.meta_modified := meta_modified.asUInt.orR || tag_modified
+
+  vPipeREQ.io.dir_wb_aux // TODO: wb_aux
+
+  rbeEVT.io.directoryReadDone := proxyDir.io.rd_done
+  rbeSNP.io.directoryReadDone := proxyDir.io.rd_done
+  rbeREQ.io.directoryReadDone := proxyDir.io.rd_done
+
+  vPipeREQ.io.repl_retry := proxyDir.io.repl_retry
+  vPipeREQ.io.repl_done := proxyDir.io.repl_done
+  vPipeREQ.io.repl_resp := replResult
 
   meta_commit_valid := proxyDir.io.wb_accept
 
@@ -1350,10 +508,16 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
   proxyDS.io.ds_read_rbeREQ_en := false.B // TODO: Decode and decide with DirResult in L2TSHR/L2RBEDSRead
 
   proxyDS.io.ds_read_vPipeEVT_en := false.B // TODO: connect EVT vPipe
-  proxyDS.io.ds_read_vPipeSNP_en := false.B // TODO: connect SNP vPipe
-  proxyDS.io.ds_read_vPipeREQ_en := false.B // TODO: connect REQ vPipe
-
+  proxyDS.io.ds_read_vPipeSNP_en := vPipeSNP.io.ds_read_en
+  proxyDS.io.ds_read_vPipeREQ_en := vPipeREQ.io.ds_rd_en
   proxyDS.io.ds_read_aux_en := false.B
+
+  proxyDS.io.ds_read_EVT_cancel := false.B
+  proxyDS.io.ds_read_SNP_cancel := false.B
+  proxyDS.io.ds_read_REQ_cancel := vPipeREQ.io.ds_rd_cancel
+
+  vPipeSNP.io.ds_read_done := proxyDS.io.rd_done
+  vPipeREQ.io.ds_rd_done := proxyDS.io.rd_done
 
   tshr_buffer_commit := proxyDS.io.wb_accept
 
@@ -1363,12 +527,8 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
 
 
   // wb-locking refuses Directory Write & Data Storage Write on write-ready state
-  // proxyDir.io.wb_locked := vPipeEVT.io.dir_wb_locked || vPipeSNP.io.dir_wb_locked || vPipeREQ.io.dir_wb_locked
-  // proxyDS.io.wb_locked := vPipeEVT.io.ds_wb_locked || vPipeSNP.io.ds_wb_locked || vPipeREQ.io.ds_wb_locked
+  // TODO: check EVT wb lock / clear
+  proxyDir.io.wb_locked := /*vPipeEVT.io.dir_wb_locked || vPipeSNP.io.dir_wb_locked ||*/ vPipeREQ.io.dir_wb_locked
+  proxyDS.io.wb_locked := /*vPipeEVT.io.ds_wb_locked || vPipeSNP.io.ds_wb_locked ||*/ vPipeREQ.io.ds_wb_locked
 
-
-  // interactions between Directory read states and RBEs
-  rbeEVT.io.directoryReadDone := proxyDir.io.rd_done
-  rbeSNP.io.directoryReadDone := proxyDir.io.rd_done
-  rbeREQ.io.directoryReadDone := proxyDir.io.rd_done
 }
