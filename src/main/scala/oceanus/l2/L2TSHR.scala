@@ -48,6 +48,21 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
     val DnTXRSP = Decoupled(new CHIBundleRSP)         // RSP to HN
     val DnTXDAT = Decoupled(new CHIBundleDAT)         // DAT to HN
 
+    val toPCreditPool = Valid(new L2PCreditPool.Entry)
+    val fromPCreditPool = Input(Bool())
+
+    val toClientTableREQ = Output(UInt(8.W)) // TODO: configurable with upstream nodeId width
+    val fromClientTableREQ = Input(Vec(1, Bool())) // TODO: parameterize with coherent l2 client count
+
+    val toClientTableEVT = Output(UInt(8.W)) // TODO: configurable with upstream nodeId width
+    val fromClientTableEVT = Input(Vec(1, Bool())) // TODO: parameterize with coherent l2 client count
+
+    val peer_unlock_dir = Output(Vec(paramL2.mshrSize, Bool()))
+    val peer_unlock_ds = Output(Vec(paramL2.mshrSize, Bool()))
+
+    val self_unlock_dir = Input(Bool())
+    val self_unlock_ds = Input(Bool())
+
     val valid = Output(Bool())
   })
 
@@ -398,6 +413,8 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
   meta_write_EVT_mask := vPipeEVT.io.tshr_meta_write_en
   meta_write_EVT_meta := vPipeEVT.io.tshr_meta_write_meta
 
+  io.toClientTableEVT := 0.U // connect this when supports multiple coherent upstreams
+
   // TODO
 
   // connections between TSHR local and SNP vPipe
@@ -418,11 +435,17 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
   meta_write_REQ_meta := vPipeREQ.io.tshr_meta_write_meta
   tag_write_REQ_mask := vPipeREQ.io.tshr_tag_write_en
 
-  vPipeREQ.io.toPCreditPool // TODO
-  vPipeREQ.io.fromPCreditPool // TODO
+  io.toPCreditPool := vPipeREQ.io.toPCreditPool
+  vPipeREQ.io.fromPCreditPool := io.fromPCreditPool
 
-  vPipeREQ.io.toClientTable_srcId // TODO
-  vPipeREQ.io.fromClientTable_clients // TODO
+  io.toClientTableREQ := vPipeREQ.io.toClientTable
+  vPipeREQ.io.fromClientTable := io.fromClientTableREQ
+
+  io.peer_unlock_dir := vPipeREQ.io.peer_unlock_dir
+  io.peer_unlock_ds := vPipeREQ.io.peer_unlock_ds
+
+  vPipeREQ.io.self_unlock_dir := io.self_unlock_dir
+  vPipeREQ.io.self_unlock_ds := io.self_unlock_ds
 
   vPipeREQ.io.L1EVT_active := vPipeEVT.io.EVT_active
 
