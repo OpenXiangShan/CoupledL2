@@ -36,6 +36,7 @@ class L2VPipeEVT(
     val EVT_active = Output(Bool())
     val evtDataReadyOut = Output(Bool())
 
+    val blockRBE = Output(new L2RBE.PathVPipeBlock)
     val free = Output(Bool())
   })
 
@@ -67,6 +68,10 @@ class L2VPipeEVT(
     io.UpRXDAT.bits.DataID.get === 2.U, false.B)
 
   io.free := state === sIdle
+
+  io.blockRBE.EVT := !io.free
+  io.blockRBE.SNP := io.EVT_active
+  io.blockRBE.REQ := io.EVT_active
 
   val dirResult = io.tshr_dirResult
 
