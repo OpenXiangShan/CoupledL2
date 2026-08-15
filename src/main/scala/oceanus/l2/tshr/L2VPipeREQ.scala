@@ -77,8 +77,8 @@ class L2VPipeREQ(clientComponents: Seq[CCHIComponent], tshrId: Int, nodeId: Int)
     val toPCreditPool = Valid(new L2PCreditPool.Entry)
     val fromPCreditPool = Input(Bool())
 
-    val toClientTable_srcId = Output(UInt(8.W)) // TODO: configurable with upstream nodeId width
-    val fromClientTable_clients = Input(Vec(1, Bool())) // TODO: parameterize with coherent l2 client count
+    val toClientTable = Output(UInt(8.W)) // TODO: configurable with upstream nodeId width
+    val fromClientTable = Input(Vec(1, Bool())) // TODO: parameterize with coherent l2 client count
 
     val peer_unlock_dir = Output(Vec(paramL2.mshrSize, Bool()))
     val peer_unlock_ds = Output(Vec(paramL2.mshrSize, Bool()))
@@ -212,10 +212,10 @@ class L2VPipeREQ(clientComponents: Seq[CCHIComponent], tshrId: Int, nodeId: Int)
   // ----------------------------------------------------------------
 
   // -- Interaction with Client Table
-  io.toClientTable_srcId := Mux(rxreq_fire, rxreq.SrcID, p_rxreq.SrcID)
+  io.toClientTable := Mux(rxreq_fire, rxreq.SrcID, p_rxreq.SrcID)
 
-  val rxreq_client = io.fromClientTable_clients
-  val p_rxreq_client = io.fromClientTable_clients
+  val rxreq_client = io.fromClientTable
+  val p_rxreq_client = io.fromClientTable
 
   val rxreq_client_present = (rxreq_client.asUInt & dirResult.clients.asUInt).orR
   val p_rxreq_client_present = (p_rxreq_client.asUInt & dirResult.clients.asUInt).orR
