@@ -74,11 +74,17 @@ class L2VPipeREQ(clientComponents: Seq[CCHIComponent], tshrId: Int, nodeId: Int)
 
     val dir_wb_aux = Output(Bool())
 
-    val toPCreditPool = Output(new L2PCreditPool.PathQuery)
-    val fromPCreditPool = Input(new L2PCreditPool.PathGrant)
+    val toPCreditPool = Valid(new L2PCreditPool.Entry)
+    val fromPCreditPool = Input(Bool())
 
     val toClientTable_srcId = Output(UInt(8.W)) // TODO: configurable with upstream nodeId width
     val fromClientTable_clients = Input(Vec(1, Bool())) // TODO: parameterize with coherent l2 client count
+
+    val peer_unlock_dir = Output(Vec(paramL2.mshrSize, Bool()))
+    val peer_unlock_ds = Output(Vec(paramL2.mshrSize, Bool()))
+
+    val self_unlock_dir = Input(Bool())
+    val self_unlock_ds = Input(Bool())
 
     val L1EVT_active = Input(Bool())
   })
@@ -266,6 +272,7 @@ class L2VPipeREQ(clientComponents: Seq[CCHIComponent], tshrId: Int, nodeId: Int)
 
   val s_dn_evict_compack = RegInit(false.B)
 
+  val w_evict_peer_unlock_ds = RegInit(false.B)
 
   // TODO: more state bits here
 
@@ -389,7 +396,7 @@ class L2VPipeREQ(clientComponents: Seq[CCHIComponent], tshrId: Int, nodeId: Int)
   val sched_compack_txreq_rd = issue_txreq_readshared ||
                                issue_txreq_readunique
 
-  val reissue_txreq = io.fromPCreditPool.grant
+  val reissue_txreq = io.fromPCreditPool
 
   val reissue_evict_cancel = configEvictBackRetryCancel &&
                              reissue_txreq &&
@@ -425,15 +432,15 @@ class L2VPipeREQ(clientComponents: Seq[CCHIComponent], tshrId: Int, nodeId: Int)
     p_retryack_srcid := io.DnRXRSP.bits.SrcID.get
   }
 
-  when (io.fromPCreditPool.grant) {
+  when (io.fromPCreditPool) {
     w_dn_pcrdgrant := false.B
   }
 
   io.toPCreditPool.valid := w_dn_pcrdgrant
-  io.toPCreditPool.pCrdType := p_retryack_pcrdtype
-  io.toPCreditPool.srcId := p_retryack_srcid
+  io.toPCreditPool.bits.pCrdType := p_retryack_pcrdtype
+  io.toPCreditPool.bits.srcId := p_retryack_srcid
 
-  assert(!(io.fromPCreditPool.grant && !w_dn_pcrdgrant), s"P-Credit granted on non-retry state in TSHR #${tshrId} REQ vPipe")
+  assert(!(io.fromPCreditPool && !w_dn_pcrdgrant), s"P-Credit granted on non-retry state in TSHR #${tshrId} REQ vPipe")
   // ----------------------------------------------------------------
 
   // -- Interactions with downstream CHI TXREQ channel
@@ -703,7 +710,6 @@ class L2VPipeREQ(clientComponents: Seq[CCHIComponent], tshrId: Int, nodeId: Int)
   // -- Interactions with downstream CHI TXDAT channel
   val dn_txdat_cbwrdata0 = io.DnTXDAT.fire && io.DnTXDAT.bits.Opcode.get === CHI_CopyBackWrData.U && io.DnTXDAT.bits.DataID.get === 0.U
 
-
   val allow_dn_evict_cbwrdata0 = !w_snpresp0 && !w_ds_resp
   val allow_dn_evict_cbwrdata2 = !w_snpresp2 && !w_ds_resp
 
@@ -861,6 +867,18 @@ class L2VPipeREQ(clientComponents: Seq[CCHIComponent], tshrId: Int, nodeId: Int)
   val tag_wr_readshared = rxreq_readshared && !dirResult.hit
   // --------------------------------
 
+  // - EvictBack related meta/tag updates
+  val meta_wr_state_evictback_I_evict = s_evict && evictback_txreq_opcode === CHI_Evict.U
+
+  val meta_wr_state_evictback_I_write = w_dn_evict_compdbid && 
+                                        (dn_rxrsp_comp || dn_rxrsp_compdbidresp)
+
+  val meta_wr_state_evictback_I = meta_wr_state_evictback_I_evict ||
+                                  meta_wr_state_evictback_I_write
+
+  val meta_wr_dirty_evictback_clr = meta_wr_state_evictback_I
+  // --------------------------------
+
   val meta_wr_dirty_sa_set = sa_resp_decision && io.fromSA.PASSDIRTY
   // --------------------------------
 
@@ -871,14 +889,14 @@ class L2VPipeREQ(clientComponents: Seq[CCHIComponent], tshrId: Int, nodeId: Int)
 
   val meta_wr_state_S = meta_wr_state_readshared_S
 
-  val meta_wr_state_I = false.B
+  val meta_wr_state_I = meta_wr_state_evictback_I
 
   val meta_wr_state = meta_wr_state_UU || meta_wr_state_US || meta_wr_state_S || meta_wr_state_I
 
   val meta_wr_dirty_set = meta_wr_dirty_sa_set ||
                           meta_wr_dirty_readunique_set
 
-  val meta_wr_dirty_clr = false.B
+  val meta_wr_dirty_clr = meta_wr_dirty_evictback_clr
 
   val meta_wr_dirty = meta_wr_dirty_set || meta_wr_dirty_clr
 
@@ -1107,7 +1125,7 @@ class L2VPipeREQ(clientComponents: Seq[CCHIComponent], tshrId: Int, nodeId: Int)
   // ----------------------------------------------------------------
 
   // -- Interactions with replacer and eviction through loop-back REQ
-  val local_evictback = io.UpTXREQ.fire && io.UpTXREQ.bits.Opcode === CCHIOpcode.EvictBack.U
+  val txreq_evictback_peer = io.UpTXREQ.fire && io.UpTXREQ.bits.Opcode === CCHIOpcode.EvictBack.U
 
   val expect_replace = !dirResult.hit && (
                            rxreq_readunique ||
@@ -1130,15 +1148,17 @@ class L2VPipeREQ(clientComponents: Seq[CCHIComponent], tshrId: Int, nodeId: Int)
     s_evict := true.B
   }
 
-  when (local_evictback) {
+  when (txreq_evictback_peer) {
     s_evict := false.B
   }
 
-  val lock_dir = expect_replace
-  val lock_ds = expect_replace
+  val lock_dir = expect_replace || p_rxreq_evictback
+  val lock_ds = expect_replace || p_rxreq_evictback
 
-  val unlock_dir = false.B // TODO: connect from other TSHRs, one-hot translated in TSHR top
-  val unlock_ds = false.B // TODO connect from other TSHRs, one-hot translated in TSHR top
+  val unlock_self_evictback = RegNext(meta_wr_state_evictback_I) && !meta_wr_state_evictback_I
+
+  val unlock_dir = io.self_unlock_dir || unlock_self_evictback
+  val unlock_ds = io.self_unlock_ds || unlock_self_evictback
 
   when (lock_dir) {
     w_unlock_dir := true.B
@@ -1180,6 +1200,38 @@ class L2VPipeREQ(clientComponents: Seq[CCHIComponent], tshrId: Int, nodeId: Int)
   io.UpTXREQ.bits.WayValid := false.B
   io.UpTXREQ.bits.Way := 0.U
   io.UpTXREQ.bits.TraceTag := false.B
+  // ----------------------------------------------------------------
+
+  // -- Interactions with peer Refill unlock
+  val evictback_peer_unlock_dir = p_rxreq_evictback
+
+  val evictback_peer_unlock_ds_immediate = p_rxreq_evictback &&
+                                           io.ds_rd_done
+
+  val evictback_peer_unlock_ds_wait = p_rxreq_evictback &&
+                                      !io.ds_rd_done
+
+  val evictback_peer_unlock_ds_late = w_evict_peer_unlock_ds &&
+                                      io.ds_rd_done
+
+  val evictback_peer_unlock_ds = evictback_peer_unlock_ds_immediate ||
+                                 evictback_peer_unlock_ds_late                                      
+
+  when (evictback_peer_unlock_ds_wait) {
+    w_evict_peer_unlock_ds := true.B
+  }
+
+  when (io.ds_rd_done) {
+    w_evict_peer_unlock_ds := false.B
+  }
+
+  io.peer_unlock_dir.zipWithIndex.foreach { case (unlock_dir, i) => {
+    unlock_dir := evictback_peer_unlock_dir && p_rxreq.TxnID === i.U
+  }}
+
+  io.peer_unlock_ds.zipWithIndex.foreach { case (unlock_ds, i) => {
+    unlock_ds := evictback_peer_unlock_ds && p_rxreq.TxnID === i.U
+  }}
   // ----------------------------------------------------------------
 
   // -- Blocking same-PA RXSNP, on waiting of L1 CompAck
