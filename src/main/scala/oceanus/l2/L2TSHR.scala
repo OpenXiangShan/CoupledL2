@@ -410,12 +410,13 @@ class L2TSHR(val id: Int)(implicit val p: Parameters) extends Module with HasL2P
   vPipeREQ.io.UpRXDAT := io.UpRXDAT
 
   // connections between TSHR local and EVT vPipe
+  vPipeEVT.io.tshr_paddr := tshr_paddr
+  vPipeEVT.io.tshr_dirResult := dirResult
+
   meta_write_EVT_mask := vPipeEVT.io.tshr_meta_write_en
   meta_write_EVT_meta := vPipeEVT.io.tshr_meta_write_meta
 
   io.toClientTableEVT := 0.U // connect this when supports multiple coherent upstreams
-
-  // TODO
 
   // connections between TSHR local and SNP vPipe
   vPipeSNP.io.tshr_paddr := tshr_paddr
