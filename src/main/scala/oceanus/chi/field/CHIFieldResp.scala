@@ -1,36 +1,134 @@
 package oceanus.chi.field
 
-import chisel3._
-
 object CHIFieldResp {
-  final class RespValue private[CHIFieldResp] (val value: Int, val name: String) {
-    def U: UInt = value.U(3.W)
-    def isPD: Boolean = (value & 0b100) != 0
-  }
+    
+    /*
+    * Resp field value encodings.
+    */
+    //======================================================
+    val CompData_I                                  = 0b000
+    val DataSepResp_I                               = 0b000
+    val RespSepData_I                               = 0b000
+    //------------------------------------------------------
+    val CompData_UC                                 = 0b010
+    val DataSepResp_UC                              = 0b010
+    val RespSepData_UC                              = 0b010
+    //------------------------------------------------------
+    val CompData_SC                                 = 0b001
+    val DataSepResp_SC                              = 0b001
+    val RespSepData_SC                              = 0b001
+    //------------------------------------------------------
+    val CompData_UD_PD                              = 0b110
+    val DataSepResp_UD_PD                           = 0b110
+    val RespSepData_UD_PD                           = 0b110
+    //------------------------------------------------------
+    val CompData_SD_PD                              = 0b111
+    //======================================================
 
-  private def resp(value: Int, name: String): RespValue =
-    new RespValue(value, name)
+    //======================================================
+    val Comp_I                                      = 0b000
+    //------------------------------------------------------
+    val Comp_UC                                     = 0b010
+    //------------------------------------------------------
+    val Comp_SC                                     = 0b001
+    //------------------------------------------------------
+    val Comp_UD_PD                                  = 0b110
+    //======================================================
 
-  val I: RespValue = resp(0b000, "I")
-  val SC: RespValue = resp(0b001, "SC")
-  val UC: RespValue = resp(0b010, "UC")
-  val I_PD: RespValue = resp(0b100, "I_PD")
-  val SC_PD: RespValue = resp(0b101, "SC_PD")
-  val UC_PD: RespValue = resp(0b110, "UC_PD")
-  val UD_PD: RespValue = UC_PD
+    //======================================================
+    val CopyBackWrData_I                            = 0b000
+    //------------------------------------------------------
+    val CopyBackWrData_UC                           = 0b010
+    //------------------------------------------------------
+    val CopyBackWrData_SC                           = 0b001
+    //------------------------------------------------------
+    val CopyBackWrData_UD_PD                        = 0b110
+    //------------------------------------------------------
+    val CopyBackWrData_SC_PD                        = 0b111
+    //======================================================
+    
+    //======================================================
+    val NonCopyBackWrData                           = 0b000
+    val NCBWrDataCompAck                            = 0b000
+    val WriteDataCancel                             = 0b000
+    //======================================================
 
-  val CopyBackWrData_I: RespValue = I
-  val CopyBackWrData_SC: RespValue = SC
-  val CopyBackWrData_UC: RespValue = UC
-  val CopyBackWrData_UD_PD: RespValue = UD_PD
+    //======================================================
+    val SnpResp_I                                   = 0b000
+    //------------------------------------------------------
+    val SnpResp_UC                                  = 0b010
+    //------------------------------------------------------
+    val SnpResp_SC                                  = 0b001
+    //------------------------------------------------------
+    val SnpResp_UD                                  = 0b010
+    //------------------------------------------------------
+    val SnpResp_SD                                  = 0b011
+    //======================================================
 
-  val CompData_SC: RespValue = SC
-  val CompData_UC: RespValue = UC
-  val CompData_UD_PD: RespValue = UD_PD
+    //======================================================
+    val SnpResp_I_Fwded_I                           = 0b000
+    //------------------------------------------------------
+    val SnpResp_I_Fwded_SC                          = 0b000
+    //------------------------------------------------------
+    val SnpResp_I_Fwded_UC                          = 0b000
+    //------------------------------------------------------
+    val SnpResp_I_Fwded_UD_PD                       = 0b000
+    //------------------------------------------------------
+    val SnpResp_I_Fwded_SD_PD                       = 0b000
+    //------------------------------------------------------
+    val SnpResp_SC_Fwded_I                          = 0b001
+    //------------------------------------------------------
+    val SnpResp_SC_Fwded_SC                         = 0b001
+    //------------------------------------------------------
+    val SnpResp_SC_Fwded_SD_PD                      = 0b001
+    //------------------------------------------------------
+    val SnpResp_UC_Fwded_I                          = 0b010
+    //------------------------------------------------------
+    val SnpResp_UD_Fwded_I                          = 0b010
+    //------------------------------------------------------
+    val SnpResp_SD_Fwded_I                          = 0b011
+    //------------------------------------------------------
+    val SnpResp_SD_Fwded_SC                         = 0b011
+    //======================================================
 
-  val DataSepResp_SC: RespValue = SC
-  val DataSepResp_UC: RespValue = UC
-  val DataSepResp_UD_PD: RespValue = UD_PD
+    //======================================================
+    val SnpRespData_I                               = 0b000
+    //------------------------------------------------------
+    val SnpRespData_UC                              = 0b010
+    val SnpRespData_UD                              = 0b010
+    //------------------------------------------------------
+    val SnpRespData_SC                              = 0b001
+    //------------------------------------------------------
+    val SnpRespData_SD                              = 0b011
+    //------------------------------------------------------
+    val SnpRespData_I_PD                            = 0b100
+    //------------------------------------------------------
+    val SnpRespData_UC_PD                           = 0b110
+    //------------------------------------------------------
+    val SnpRespData_SC_PD                           = 0b101
+    //------------------------------------------------------
+    val SnpRespDataPtl_I_PD                         = 0b100
+    //------------------------------------------------------
+    val SnpRespDataPtl_UD                           = 0b010
+    //======================================================
 
-  def isPD(value: UInt): Bool = value(2)
+    //======================================================
+    val SnpRespData_I_Fwded_SC                      = 0b000
+    //------------------------------------------------------
+    val SnpRespData_I_Fwded_SD_PD                   = 0b000
+    //------------------------------------------------------
+    val SnpRespData_SC_Fwded_SC                     = 0b001
+    //------------------------------------------------------
+    val SnpRespData_SC_Fwded_SD_PD                  = 0b001
+    //------------------------------------------------------
+    val SnpRespData_SD_Fwded_SC                     = 0b011
+    //------------------------------------------------------
+    val SnpRespData_I_PD_Fwded_I                    = 0b100
+    //------------------------------------------------------
+    val SnpRespData_I_PD_Fwded_SC                   = 0b100
+    //------------------------------------------------------
+    val SnpRespData_SC_PD_Fwded_I                   = 0b101
+    //------------------------------------------------------
+    val SnpRespData_SC_PD_Fwded_SC                  = 0b101
+    //======================================================
 }
