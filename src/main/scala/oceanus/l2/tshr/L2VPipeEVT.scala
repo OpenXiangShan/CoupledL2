@@ -26,10 +26,9 @@ class L2VPipeEVT(
     val UpTXRSP = Decoupled(new FlitDnRSP)
     val UpRXDAT = Flipped(Valid(new CHIBundleDAT))
 
-    val tshrId = Input(UInt(log2Ceil(nMSHR).W))
+    val tshr_paddr = Input(UInt(paramL2.physicalAddrWidth.W))
     val tshr_dirResult = Input(new L2Directory.MetaReadResult)
 
-    val tshr_tag_write_en = Output(Bool())
     val tshr_meta_write_en = Output(new L2Directory.MetaWriteMask)
     val tshr_meta_write_meta = Output(new L2Directory.Meta)
 
@@ -51,7 +50,6 @@ class L2VPipeEVT(
   val state = RegInit(sIdle)
 
   val pIsWbFull = RegInit(false.B)
-  val pPaddr = Reg(UInt(paramL2.physicalAddrWidth.W))
   val pTxnId = Reg(UInt(8.W))
   val pTraceTag = Reg(UInt(1.W))
   val pReqWay = Reg(UInt(4.W))
@@ -90,10 +88,9 @@ class L2VPipeEVT(
 
   when (state === sIdle && io.UpRXEVT.valid) {
     pIsWbFull := isWbFull
-    pPaddr := io.UpRXEVT.bits.Addr
     pTxnId := io.UpRXEVT.bits.TxnID
     pTraceTag := io.UpRXEVT.bits.TraceTag
-    pDbid := io.tshrId
+    pDbid := tshrId.U
     pReqWay := dirResult.way
     pMissMeta := dirResult
     dirHit := dirResult.hit
@@ -169,7 +166,6 @@ class L2VPipeEVT(
     }
   }
 
-  io.tshr_tag_write_en := state === sWaitCommit && (pIsWbFull || dirHit)
   io.tshr_meta_write_en := metaMask
   io.tshr_meta_write_meta := newMeta
 
