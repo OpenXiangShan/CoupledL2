@@ -126,10 +126,10 @@ object CCHIOpcode {
   val CompData          = CCHIOpcode(DnDAT, 0x00, "CompData")
 
   // UpDAT channel
-  val NonCopyBackWrData = CCHIOpcode(DnDAT, 0x00, "NonCopyBackWrData")
-//val NCBWrDataCompAck  = CCHIOpcode(DnDAT, 0x01, "NCBWrDataCompAck")
-  val CopyBackWrData    = CCHIOpcode(DnDAT, 0x02, "CopyBackWrData")
-  val SnpRespData       = CCHIOpcode(DnDAT, 0x03, "SnpRespData")
+  val NonCopyBackWrData = CCHIOpcode(UpDAT, 0x00, "NonCopyBackWrData")
+//val NCBWrDataCompAck  = CCHIOpcode(UpDAT, 0x01, "NCBWrDataCompAck")
+  val CopyBackWrData    = CCHIOpcode(UpDAT, 0x02, "CopyBackWrData")
+  val SnpRespData       = CCHIOpcode(UpDAT, 0x03, "SnpRespData")
 }
 
 
