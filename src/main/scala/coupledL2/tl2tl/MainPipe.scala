@@ -760,20 +760,33 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
   /* ===== Hardware Performance Monitor ===== */
   val perfEvents = Seq(
-    ("l2_cache_hit", hit_s3 && req_s3.fromA),
-    ("l2_cache_miss", miss_s3 && req_s3.fromA),
-    ("l2_cache_access", task_s3.valid && (sinkA_req_s3 && !req_prefetch_s3 || sinkC_req_s3)),
-    ("l2_cache_l2wb", task_s3.valid && (mshr_releasedata_s3 || mshr_probeackdata_s3)),
-    ("l2_cache_l1wb", task_s3.valid && sinkC_req_s3 && (req_s3.opcode === ReleaseData)),
-    ("l2_cache_wb_victim", task_s3.valid && mshr_releasedata_s3),
-    ("l2_cache_wb_cleaning_coh", task_s3.valid && mshr_probeackdata_s3),
-    ("l2_cache_prefetch_access", task_s3.valid && sinkA_req_s3 && req_prefetch_s3),
-    ("l2_cache_prefetch_miss", task_s3.valid && sinkA_req_s3 && req_prefetch_s3 && miss_s3),
-    ("l2_cache_access_rd", task_s3.valid && sinkA_req_s3 && !req_prefetch_s3),
-    ("l2_cache_access_wr", task_s3.valid && sinkC_req_s3),
-    ("l2_cache_miss_rd", task_s3.valid && sinkA_req_s3 && !req_prefetch_s3 && miss_s3),
+    ("l2_cache_hit"            , hit_s3 && req_s3.fromA)
+      .withDescription("Upstream TileLink A request that hit in L2."),
+    ("l2_cache_miss"           , miss_s3 && req_s3.fromA)
+      .withDescription("Upstream TileLink A request that missed in L2."),
+    ("l2_cache_access"         , task_s3.valid && (sinkA_req_s3 && !req_prefetch_s3 || sinkC_req_s3))
+      .withDescription("Demand read or write access processed by L2."),
+    ("l2_cache_l2wb"           , task_s3.valid && (mshr_releasedata_s3 || mshr_probeackdata_s3))
+      .withDescription("Cache line written back from L2 to downstream memory."),
+    ("l2_cache_l1wb"           , task_s3.valid && sinkC_req_s3 && (req_s3.opcode === ReleaseData))
+      .withDescription("Dirty cache line written back from L1 to L2."),
+    ("l2_cache_wb_victim"      , task_s3.valid && mshr_releasedata_s3)
+      .withDescription("L2 victim cache line written back on replacement."),
+    ("l2_cache_wb_cleaning_coh", task_s3.valid && mshr_probeackdata_s3)
+      .withDescription("L2 cache line written back while cleaning coherence state."),
+    ("l2_cache_prefetch_access", task_s3.valid && sinkA_req_s3 && req_prefetch_s3)
+      .withDescription("Prefetch access processed by L2."),
+    ("l2_cache_prefetch_miss"  , task_s3.valid && sinkA_req_s3 && req_prefetch_s3 && miss_s3)
+      .withDescription("Prefetch access that missed in L2."),
+    ("l2_cache_access_rd"      , task_s3.valid && sinkA_req_s3 && !req_prefetch_s3)
+      .withDescription("Demand read access processed by L2."),
+    ("l2_cache_access_wr"      , task_s3.valid && sinkC_req_s3)
+      .withDescription("Upstream writeback access processed by L2."),
+    ("l2_cache_miss_rd"        , task_s3.valid && sinkA_req_s3 && !req_prefetch_s3 && miss_s3)
+      .withDescription("Demand read access that missed in L2."),
     //    ("l2_cache_miss_wr", Inclusive L2 always hit),
-    ("l2_cache_inv", task_s3.valid && sinkB_req_s3 && (req_s3.param === toN))
+    ("l2_cache_inv"            , task_s3.valid && sinkB_req_s3 && (req_s3.param === toN))
+      .withDescription("Probe request that invalidates an upstream cache line.")
   )
   generatePerfEvent()
 }

@@ -227,6 +227,6 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
       rxsnp.io.task.valid)                           //@ rxsnp queue + s1
   }
   /* ===== Hardware Performance Monitor ===== */
-  val perfEvents = Seq(mshrCtl, mainPipe).flatMap(_.getPerfEvents)
+  val perfEvents = Seq(mshrCtl, mainPipe).flatMap(_.getPerfEventInfos)
   generatePerfEvent()
 }
