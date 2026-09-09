@@ -1208,7 +1208,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
         state.w_grantfirst := true.B
         state.w_grantlast := true.B
         state.w_grant := true.B
-        state.w_replResp := state.w_replResp || nderr
+        state.w_replResp := state.w_replResp || rxrspNderr
         gotT := rxrspIsU
         gotDirty := false.B
         req.traceTag.get := rxrsp.bits.traceTag.get
