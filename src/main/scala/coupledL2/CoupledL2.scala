@@ -454,8 +454,6 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         in.b.bits.address := restoreAddress(slice.io.in.b.bits.address, i)
         slice.io.sliceId := i.U
 
-        slice.io.error.ready := enableECC.asBool // TODO: fix the datapath as optional
-
         slice.io.l2Flush.foreach(_ := io.l2Flush.getOrElse(false.B))
 
         slice.io.prefetch.zip(prefetcher).foreach {
@@ -499,19 +497,25 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
 
     // ECC error
     if (enableECC) {
-      val l2ECCArb = Module(new Arbiter(new L2CacheErrorInfo()(l2ECCParams), slices.size))
-      val slices_l2ECC = slices.zipWithIndex.map {
+      // A slice reports an ECC error for one cycle only, so capture each error
+      // before arbitration. The queue depth covers a simultaneous error from
+      // every slice while the RR arbiter drains one error per cycle.
+      val l2ECCArb = Module(new RRArbiter(new L2CacheErrorInfo()(l2ECCParams), slices.size))
+      val slicesL2ECC = slices.zipWithIndex.map {
         case (s, i) =>
-          val sliceError = Wire(DecoupledIO(new L2CacheErrorInfo()(l2ECCParams)))
-          sliceError := s.io.error
-          sliceError.bits.address := restoreAddress(s.io.error.bits.address, i)
-          sliceError
+          val l2ECCQueue = Module(new Queue(new L2CacheErrorInfo()(l2ECCParams), entries = slices.size, flow = false))
+          l2ECCQueue.io.enq.valid := s.io.error.valid && s.io.error.bits.valid
+          l2ECCQueue.io.enq.bits := s.io.error.bits
+          l2ECCQueue.io.enq.bits.address := restoreAddress(s.io.error.bits.address, i)
+          s.io.error.ready := true.B
+          l2ECCQueue.io.deq
       }
-      l2ECCArb.io.in <> VecInit(slices_l2ECC)
+      l2ECCArb.io.in <> VecInit(slicesL2ECC)
       l2ECCArb.io.out.ready := true.B
-      io.error.valid := l2ECCArb.io.out.fire && l2ECCArb.io.out.bits.valid
+      io.error.valid := l2ECCArb.io.out.fire
       io.error.address := l2ECCArb.io.out.bits.address
     } else {
+      slices.foreach(_.io.error.ready := false.B)
       io.error.valid := false.B
       io.error.address := 0.U.asTypeOf(io.error.address)
     }
