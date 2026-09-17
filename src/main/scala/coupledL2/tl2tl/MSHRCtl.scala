@@ -246,10 +246,14 @@ class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
   }
 
   val perfEvents = Seq(
-    ("l2_cache_refill", acquireUnit.io.sourceA.fire && acquireUnit.io.task.bits.opcode === AcquireBlock),
-    ("l2_cache_rd_refill", acquireUnit.io.sourceA.fire && acquireUnit.io.task.bits.opcode === AcquireBlock),
-    ("l2_cache_wr_refill", false.B),
+    ("l2_cache_refill"   , acquireUnit.io.sourceA.fire && acquireUnit.io.task.bits.opcode === AcquireBlock)
+      .withDescription("L2 cache-line refill request issued downstream."),
+    ("l2_cache_rd_refill", acquireUnit.io.sourceA.fire && acquireUnit.io.task.bits.opcode === AcquireBlock)
+      .withDescription("L2 read refill request issued downstream."),
+    ("l2_cache_wr_refill", false.B)
+      .withDescription("L2 write refill completed; unsupported in this implementation."),
     ("l2_cache_long_miss", lmiss.reduce(_ + _))
+      .withDescription("L2 misses completing after more than 200 cycles.")
   )
   generatePerfEvent()
 }

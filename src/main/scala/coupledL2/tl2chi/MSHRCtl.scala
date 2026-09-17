@@ -260,11 +260,14 @@ class MSHRCtl(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes 
   }
 
   val perfEvents = Seq(
-    ("l2_cache_refill", io.resps.rxdat.valid && io.resps.rxdat.respInfo.last),
-    ("l2_cache_rd_refill", io.resps.rxdat.valid && io.resps.rxdat.respInfo.last),
-    ("l2_cache_wr_refill", false.B),
+    ("l2_cache_refill"   , io.resps.rxdat.valid && io.resps.rxdat.respInfo.last)
+      .withDescription("L2 cache-line refill completed from the CHI data channel."),
+    ("l2_cache_rd_refill", io.resps.rxdat.valid && io.resps.rxdat.respInfo.last)
+      .withDescription("L2 read refill completed from the CHI data channel."),
+    ("l2_cache_wr_refill", false.B)
+      .withDescription("L2 write refill completed; unsupported in this implementation."),
     ("l2_cache_long_miss", lmiss.reduce(_ + _))
+      .withDescription("L2 misses completing after more than 200 cycles.")
   )
   generatePerfEvent()
 }
-
