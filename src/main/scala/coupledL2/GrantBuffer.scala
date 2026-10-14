@@ -87,7 +87,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     val d = Wire(new TLBundleD(edgeIn.bundle))
     d.opcode := task.opcode
     d.param := task.param
-    d.size := offsetBits.U
+    d.size := Mux(task.opcode === AccessAckData, task.size, offsetBits.U)
     d.source := task.sourceId
     d.sink := grant_id
     d.denied := task.denied
@@ -179,6 +179,9 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   require(beatSize == 2)
   val deqValid = grantQueue.io.deq.valid
   val deqTask = grantQueue.io.deq.bits.task
+  val deqGetSingleBeat = deqTask.opcode === AccessAckData && deqTask.size <= log2Ceil(beatBytes).U
+  // Small Gets use the addressed beat, while block responses keep keyword ordering.
+  val deqFirstBeat = Mux(deqGetSingleBeat, deqTask.off(log2Ceil(beatBytes)), deqTask.isKeyword.getOrElse(false.B))
  // val deqTask.isKeyword.foreach(_ := grantQueue.io.deq.bits.task.isKeyword)
   val deqId   = grantQueue.io.deq.bits.grantid
   val deqData = VecInit(Seq(grantQueueData0.io.deq.bits.data, grantQueueData1.io.deq.bits.data))
@@ -195,8 +198,8 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   grantQueueData0.io.deq.ready := grantQueue.io.deq.ready
   grantQueueData1.io.deq.ready := grantQueue.io.deq.ready
 
-  // if deqTask has data, send the first beat directly and save the remaining beat in grantBuf
-  when(deqValid && io.d.ready && !grantBufValid && deqTask.opcode(0)) {
+  // For multi-beat data responses, send the first beat directly and save the remaining beat in grantBuf
+  when(deqValid && io.d.ready && !grantBufValid && deqTask.opcode(0) && !deqGetSingleBeat) {
     grantBufValid := true.B
     grantBuf.task := deqTask
     grantBuf.task.isKeyword.foreach(_ := deqTask.isKeyword.getOrElse(false.B))
@@ -213,7 +216,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     grantBufValid,
     toTLBundleD(grantBuf.task, grantBuf.data.data, grantBuf.grantid),
    // toTLBundleD(deqTask, deqData(0).data, deqId)
-    toTLBundleD(deqTask, Mux(deqTask.isKeyword.getOrElse(false.B),deqData(1).data,deqData(0).data), deqId)
+    toTLBundleD(deqTask, Mux(deqFirstBeat,deqData(1).data,deqData(0).data), deqId)
   )
 
 
