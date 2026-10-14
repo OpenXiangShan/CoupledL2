@@ -357,6 +357,9 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     tp.get.io.req.ready := (if(hasReceiver) !pfRcv.get.io.req.valid else true.B) &&
       (if(hasBOP) !vbop.get.io.req.valid && !pbop.get.io.req.valid else true.B)
     tp.get.io.feedBack <> io.feedback
+  } else {
+    // Drain cache feedback when no L2 temporal prefetcher consumes it.
+    io.feedback.ready := true.B
   }
   private val mbistPl = MbistPipeline.PlaceMbistPipeline(2, "MbistPipeL2Prefetcher", cacheParams.hasMbist && (hasBOP || hasTPPrefetcher))
 
