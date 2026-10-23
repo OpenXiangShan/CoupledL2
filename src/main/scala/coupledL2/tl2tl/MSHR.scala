@@ -526,7 +526,22 @@ class MSHR(implicit p: Parameters) extends L2Module {
 
   val no_schedule = state.s_refill && state.s_probeack && state.s_release // && state.s_triggerprefetch.getOrElse(true.B)
   val no_wait = state.w_rprobeacklast && state.w_pprobeacklast && state.w_grantlast && state.w_releaseack && state.w_replResp
-  val will_free = no_schedule && no_wait
+  // TSO/coherence fix (bug13): hold the MSHR entry for 3 extra cycles after its last task
+  // dispatches. will_free previously asserted at task DISPATCH (fire-and-forget into the
+  // mainpipe), dropping SinkB's addrConflict block while the grant-install task was still
+  // transiting s0-s3 -- a probe admitted in that window read the PRE-install directory, was
+  // NtoN-acked, and the stale pre-store snapshot installed behind it as a clean BRANCH line
+  // (observed: bug13 aserve@849 state=BRANCH clients=0 serving the violating line). Same transit
+  // hazard the existing blockRefill triple-RegNext already guards on the metaTag/replace path;
+  // this closes the reqTag/acquire path symmetrically. Cost: +3 cycles MSHR occupancy.
+  val will_free_raw = no_schedule && no_wait
+  val free_transit = RegInit(0.U(2.W))
+  when (!(will_free_raw && req_valid)) {
+    free_transit := 0.U
+  }.elsewhen (free_transit =/= 3.U) {
+    free_transit := free_transit + 1.U
+  }
+  val will_free = will_free_raw && free_transit === 3.U
   when (will_free && req_valid) {
     req_valid := false.B
     timer := 0.U

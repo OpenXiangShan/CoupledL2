@@ -373,9 +373,14 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
     )
   )
 
+  // TSO/coherence fix: do not retain a clean BRANCH copy after the last L1 client releases it
+  // (BtoN). A retained clients=0 BRANCH line can be served stale on a later read self-hit if the
+  // writer's invalidation races it; dropping to INVALID forces the reader to re-acquire the
+  // post-write value from L3 (TileLink-legal: silent drop of a clean Branch). Clean BRANCH only.
+  val c_drop_clean_branch = isToN(req_s3.param) && meta_s3.state === BRANCH && !meta_s3.dirty && !wen_c
   val metaW_s3_c = MetaEntry(
     dirty = meta_s3.dirty || wen_c,
-    state = Mux(isParamFromT(req_s3.param), TIP, meta_s3.state),
+    state = Mux(isParamFromT(req_s3.param), TIP, Mux(c_drop_clean_branch, INVALID, meta_s3.state)),
     clients = Fill(clientBits, !isToN(req_s3.param)),
     alias = meta_s3.alias,
     accessed = meta_s3.accessed,
