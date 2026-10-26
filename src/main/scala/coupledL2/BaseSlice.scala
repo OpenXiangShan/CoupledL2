@@ -45,6 +45,6 @@ abstract class BaseSliceIO[T_OUT <: BaseOuterBundle](implicit p: Parameters) ext
   val msAlloc = topDownOpt.map(_ => Vec(mshrsAll, ValidIO(new MSHRAllocStatus)))
 }
 
-abstract class BaseSlice[T_OUT <: BaseOuterBundle](implicit p: Parameters) extends L2Module with HasPerfEvents {
+abstract class BaseSlice[T_OUT <: BaseOuterBundle](implicit p: Parameters) extends L2Module with HasPerfEventInfos {
   val io: BaseSliceIO[T_OUT]
 }

@@ -29,7 +29,7 @@ import coupledL2.prefetch.{PrefetchTrain, PfSource}
 import coupledL2.tl2chi.CHICohStates._
 import coupledL2.MetaData._
 
-class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes with HasPerfEvents {
+class MainPipe(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes with HasPerfEventInfos {
   val io = IO(new Bundle() {
     /* receive task from arbiter at stage 2 */
     val taskFromArb_s2 = Flipped(ValidIO(new TaskBundle()))

@@ -37,7 +37,7 @@ class MSHRSelector(implicit p: Parameters) extends L2Module {
   })
 }
 
-class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEvents {
+class MSHRCtl(implicit p: Parameters) extends L2Module with HasPerfEventInfos {
   val io = IO(new Bundle() {
     /* interact with req arb */
     val fromReqArb = Input(new Bundle() {

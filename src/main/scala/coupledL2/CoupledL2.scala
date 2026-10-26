@@ -304,7 +304,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
   val tpmeta_source_node = if(hasTPPrefetcher) Some(BundleBridgeSource(() => DecoupledIO(new TPmetaReq(hartIdLen, node.in.head._2.bundle.addressBits, offsetBits)))) else None
   val tpmeta_sink_node = if(hasTPPrefetcher) Some(BundleBridgeSink(Some(() => ValidIO(new TPmetaResp(hartIdLen, node.in.head._2.bundle.addressBits, offsetBits))))) else None
 
-  abstract class BaseCoupledL2Imp(wrapper: LazyModule) extends LazyModuleImp(wrapper) with HasPerfEvents {
+  abstract class BaseCoupledL2Imp(wrapper: LazyModule) extends LazyModuleImp(wrapper) with HasPerfEventInfos {
     val banks = node.in.size
     val bankBits = log2Ceil(banks)
     val l2TlbParams: Parameters = p.alterPartial {
