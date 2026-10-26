@@ -218,6 +218,6 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle] {
   monitor.io.fromMainPipe <> mainPipe.io.toMonitor
 
   /* ===== Hardware Performance Monitor ===== */
-  val perfEvents = Seq(mshrCtl, mainPipe).flatMap(_.getPerfEvents)
+  val perfEvents = Seq(mshrCtl, mainPipe).flatMap(_.getPerfEventInfos)
   generatePerfEvent()
 }
