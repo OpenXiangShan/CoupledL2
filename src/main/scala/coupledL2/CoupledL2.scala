@@ -262,11 +262,11 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         supports = TLMasterToSlaveTransferSizes(
           acquireB = xfer,
           acquireT = if (m.supportsAcquireT) xfer else TransferSizes.none,
-          arithmetic = if (m.supportsAcquireT) atom else TransferSizes.none,
-          logical = if (m.supportsAcquireT) atom else TransferSizes.none,
+          arithmetic = TransferSizes.none,
+          logical = TransferSizes.none,
           get = access,
-          putFull = if (m.supportsAcquireT) access else TransferSizes.none,
-          putPartial = if (m.supportsAcquireT) access else TransferSizes.none,
+          putFull = TransferSizes.none,
+          putPartial = TransferSizes.none,
           hint = access
         ),
         fifoId = None
