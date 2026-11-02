@@ -23,6 +23,7 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import org.chipsalliance.cde.config.Parameters
 import utility.{MemReqSource, XSPerfAccumulate, RRArbiterInit}
+import utility.PriorityEncoder
 
 class PipeBufferResp(implicit p: Parameters) extends L2Bundle {
   val data = Vec(beatSize, UInt((beatBytes * 8).W))

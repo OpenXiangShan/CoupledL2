@@ -26,6 +26,7 @@ import utility.sram.SRAMTemplate
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.prefetch.PfSource
 import freechips.rocketchip.tilelink.TLMessages._
+import utility.PriorityEncoder
 
 class MetaEntry(implicit p: Parameters) extends L2Bundle {
   val dirty = Bool()

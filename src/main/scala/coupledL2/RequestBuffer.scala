@@ -26,6 +26,7 @@ import coupledL2._
 import coupledL2.prefetch._
 import coupledL2.utils._
 import utility._
+import utility.PriorityEncoder
 
 class ReqEntry(entries: Int = 4)(implicit p: Parameters) extends L2Bundle() {
   val valid    = Bool()

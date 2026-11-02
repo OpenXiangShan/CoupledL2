@@ -24,6 +24,7 @@ import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import coupledL2.prefetch.PrefetchResp
+import utility.PriorityEncoder
 
 // record info of those with Grant sent, yet GrantAck not received
 // used to block Probe upwards
