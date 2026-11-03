@@ -25,6 +25,7 @@ import freechips.rocketchip.tilelink._
 import org.chipsalliance.cde.config.Parameters
 import utility._
 import utility.PriorityEncoder
+import utility.PopCount
 
 class GrantStatus(implicit p: Parameters) extends L2Bundle {
   val valid  = Bool()

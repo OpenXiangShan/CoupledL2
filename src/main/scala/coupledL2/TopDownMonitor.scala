@@ -23,6 +23,7 @@ import coupledL2.prefetch.PfSource
 import coupledL2.utils._
 import coupledL2.tl2tl.MSHRStatus
 import utility._
+import utility.PopCount
 
 // TODO: Accommodate CHI
 class TopDownMonitor()(implicit p: Parameters) extends L2Module {

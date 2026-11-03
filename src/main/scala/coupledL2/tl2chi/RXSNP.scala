@@ -25,6 +25,7 @@ import scala.collection.View.Fill
 import coupledL2.{TaskBundle, MSHRInfo, MetaEntry, MergeTaskBundle}
 import coupledL2.MetaData._
 import utility.PriorityEncoder
+import utility.PopCount
 
 class RXSNP(
   lCreditNum: Int = 4 // the number of L-Credits that a receiver can provide

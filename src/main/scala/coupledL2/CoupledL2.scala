@@ -34,6 +34,7 @@ import coupledL2.prefetch._
 import huancun.{BankBitsKey, TPmetaReq, TPmetaResp}
 import utility.mbist.{MbistInterface, MbistPipeline}
 import utility.sram.{SramBroadcastBundle, SramHelper}
+import utility.PopCount
 
 trait HasCoupledL2Parameters {
   val p: Parameters

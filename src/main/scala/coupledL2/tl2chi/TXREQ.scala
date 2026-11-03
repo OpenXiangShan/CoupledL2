@@ -21,6 +21,7 @@ import chisel3._
 import chisel3.util._
 import utility._
 import org.chipsalliance.cde.config.Parameters
+import utility.PopCount
 
 class TXBlockBundle(implicit p: Parameters) extends TL2CHIL2Bundle {
   // val blockSinkBReqEntrance = Bool()
