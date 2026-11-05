@@ -34,6 +34,8 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   val io = IO(new BaseSliceIO[OuterBundle] {
     override val out: OuterBundle = new OuterBundle
   })
+  val io_axi = Option.when(p(WithoutLLC))(IO(new freechips.rocketchip.amba.axi4.AXI4Bundle(
+    freechips.rocketchip.amba.axi4.AXI4BundleParameters(addrBits = 48, dataBits = 256, idBits = 4))))
   val io_pCrd = IO(Vec(mshrsAll, new PCrdQueryBundle))
 
   /* Upwards TileLink-related modules */
@@ -205,12 +207,32 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   io.error.bits := RegNext(mainPipe.io.error.bits)
 
   /* Connect downwards channels */
-  io.out.tx.req <> txreq.io.out
-  io.out.tx.dat <> txdat.io.out
-  io.out.tx.rsp <> txrsp.io.out
-  rxsnp.io.rxsnp <> io.out.rx.snp
-  rxdat.io.out <> io.out.rx.dat
-  rxrsp.io.out <> io.out.rx.rsp
+  if (p(WithoutLLC)) {
+    val bridge = Module(new CHIToAXI4(io_axi.get.params))
+    bridge.io.chi.tx.req <> txreq.io.out
+    bridge.io.chi.tx.dat <> txdat.io.out
+    bridge.io.chi.tx.rsp <> txrsp.io.out
+    rxsnp.io.rxsnp <> bridge.io.chi.rx.snp
+    rxdat.io.out <> bridge.io.chi.rx.dat
+    rxrsp.io.out <> bridge.io.chi.rx.rsp
+    io_axi.get <> bridge.io.axi
+    io.out.tx.req.valid := false.B
+    io.out.tx.req.bits := DontCare
+    io.out.tx.dat.valid := false.B
+    io.out.tx.dat.bits := DontCare
+    io.out.tx.rsp.valid := false.B
+    io.out.tx.rsp.bits := DontCare
+    io.out.rx.snp.ready := true.B
+    io.out.rx.dat.ready := true.B
+    io.out.rx.rsp.ready := true.B
+  } else {
+    io.out.tx.req <> txreq.io.out
+    io.out.tx.dat <> txdat.io.out
+    io.out.tx.rsp <> txrsp.io.out
+    rxsnp.io.rxsnp <> io.out.rx.snp
+    rxdat.io.out <> io.out.rx.dat
+    rxrsp.io.out <> io.out.rx.rsp
+  }
 
   io_pCrd <> mshrCtl.io.pCrd
 
