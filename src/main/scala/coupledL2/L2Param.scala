@@ -27,6 +27,7 @@ import huancun.{AliasKey, CacheParameters, IsHitKey, PrefetchKey}
 import coupledL2.prefetch._
 import utility.{Code, MemReqSource, ReqSourceKey}
 
+case object WithoutLLC extends Field[Boolean](false)
 case object EnableCHI extends Field[Boolean](false)
 case object EnableL2ClockGate extends Field[Boolean](true)
 
