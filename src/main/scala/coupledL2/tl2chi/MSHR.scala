@@ -1249,7 +1249,7 @@ class MSHR(implicit p: Parameters) extends TL2CHIL2Module with HasCHIOpcodes {
 
   // RXDAT & RXRSP error handle
   when (rxdatErrValid || rxrspErrValid) {
-    state.w_replResp := state.w_replResp || rxdatErrValid && rxdatNderr || rxrspErrRespSepDataValid && rxrspNderr
+    state.w_replResp := state.w_replResp || rxdatErrValid && rxdatNderr || rxrspErrValid && rxrspNderr
     denied := denied || rxdatErrValid && rxdatNderr || rxrspErrValid && rxrspNderr
     corrupt := corrupt || rxdatErrValid && rxdatDerr
   }
