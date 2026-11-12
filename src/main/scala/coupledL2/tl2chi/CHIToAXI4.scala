@@ -6,6 +6,7 @@ import chisel3.util._
 import coupledL2._
 import freechips.rocketchip.amba.axi4._
 import org.chipsalliance.cde.config.Parameters
+import utility.RRArbiterInit
 
 /** A private, single-core memory endpoint. Each MSHR owns one transaction slot.
   * The write queue records the AW arbitration order and drives W in that order.
@@ -74,7 +75,7 @@ class CHIToAXI4(axiParams: AXI4BundleParameters)(implicit p: Parameters)
   }
 
   // Return completion responses. Write data returns our slot DBID as TxnID.
-  val rsp = Module(new RRArbiter(new CHIRSP, 16))
+  val rsp = Module(new RRArbiterInit(new CHIRSP, 16))
   io.chi.rx.rsp <> rsp.io.out
   for(i <- 0 until 16) {
     // Always request write data promptly; only memory access/completion
@@ -111,10 +112,10 @@ class CHIToAXI4(axiParams: AXI4BundleParameters)(implicit p: Parameters)
     when(newValid.andR) { state(datID) := writeReady }
   }
 
-  val arArb = Module(new RRArbiter(new AXI4BundleAR(axiParams), 16))
+  val arArb = Module(new RRArbiterInit(new AXI4BundleAR(axiParams), 16))
   // AXI addresses must remain stable while VALID is stalled.
   io.axi.ar <> Queue.irrevocable(arArb.io.out, 1)
-  val awArb = Module(new RRArbiter(new AXI4BundleAW(axiParams), 16))
+  val awArb = Module(new RRArbiterInit(new AXI4BundleAW(axiParams), 16))
   val writeOrder = Module(new Queue(UInt(4.W), 16))
   val awOut = Queue.irrevocable(awArb.io.out, 1)
   io.axi.aw.valid := awOut.valid && writeOrder.io.enq.ready
