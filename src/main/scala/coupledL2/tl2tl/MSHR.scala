@@ -312,7 +312,7 @@ class MSHR(implicit p: Parameters) extends L2Module {
         )
       )
     )
-    mp_grant.size := 0.U(msgSizeBits.W)
+    mp_grant.size := req.size
     mp_grant.bufIdx := 0.U(bufIdxBits.W)
     mp_grant.needProbeAckData := false.B
     mp_grant.mshrTask := true.B
